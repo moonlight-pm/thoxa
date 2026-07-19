@@ -1,5 +1,5 @@
 //! Mid-level IR: typed enough for RC insert + C codegen.
-//! R4: heap String + simple RC (dup on copy, drop at end of function).
+//! R5: mut bindings + heap Bytes (fixed buffer, simple RC).
 
 use crate::ast::{
     self, Arg, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item, MatchArm, Method,
@@ -108,12 +108,20 @@ pub enum Ty {
     Bool,
     /// Heap RC String (`ThoxaString*`).
     String,
+    /// Heap RC Bytes (`ThoxaBytes*`) — fixed length, mutable contents.
+    Bytes,
     TrialI64I64,
     User(String),
 }
 
 fn is_heap(ty: &Ty) -> bool {
-    matches!(ty, Ty::String)
+    matches!(ty, Ty::String | Ty::Bytes)
+}
+
+#[derive(Clone)]
+struct Binding {
+    ty: Ty,
+    mutable: bool,
 }
 
 #[derive(Clone)]
@@ -139,7 +147,7 @@ struct TypeInfo {
 struct LowerCtx {
     stmts: Vec<Stmt>,
     temps: u32,
-    env: Vec<HashMap<String, Ty>>,
+    env: Vec<HashMap<String, Binding>>,
     fns: HashMap<String, FnSig>,
     types: HashMap<String, TypeInfo>,
     fn_ret: Ty,
@@ -169,20 +177,24 @@ impl LowerCtx {
         self.env.pop();
     }
 
-    fn define(&mut self, name: &str, ty: Ty) {
-        self.env
-            .last_mut()
-            .unwrap()
-            .insert(name.to_string(), ty);
+    fn define(&mut self, name: &str, ty: Ty, mutable: bool) {
+        self.env.last_mut().unwrap().insert(
+            name.to_string(),
+            Binding { ty, mutable },
+        );
     }
 
-    fn lookup(&self, name: &str) -> Option<Ty> {
+    fn lookup(&self, name: &str) -> Option<Binding> {
         for scope in self.env.iter().rev() {
-            if let Some(ty) = scope.get(name) {
-                return Some(ty.clone());
+            if let Some(b) = scope.get(name) {
+                return Some(b.clone());
             }
         }
         None
+    }
+
+    fn lookup_ty(&self, name: &str) -> Option<Ty> {
+        self.lookup(name).map(|b| b.ty)
     }
 
     fn fresh(&mut self, prefix: &str) -> Place {
@@ -204,6 +216,49 @@ impl LowerCtx {
             }
         }
         self.stmts.push(Stmt::Assign { place, ty, value });
+    }
+
+    /// Bind a name to an already-lowered value (fresh ownership from `place`).
+    fn bind_name(&mut self, name: &str, ty: Ty, mutable: bool, place: Place) {
+        let bound = Place {
+            name: sanitize_name(name),
+        };
+        self.assign(bound, ty.clone(), RValue::Use(place));
+        self.define(name, ty, mutable);
+    }
+
+    /// Reassign a mut binding; drops the old heap value if any.
+    fn reassign_name(&mut self, name: &str, name_span: Span, value: &Expr) -> Result<()> {
+        let binding = self
+            .lookup(name)
+            .ok_or_else(|| Error::at(format!("undefined name `{name}`"), name_span))?;
+        if !binding.mutable {
+            return Err(Error::at(
+                format!("cannot assign to immutable binding `{name}`"),
+                name_span,
+            ));
+        }
+        let (place, ty) = lower_expr(self, value)?;
+        if ty != binding.ty {
+            return Err(Error::at(
+                format!(
+                    "cannot reassign `{name}`: expected {:?}, found {:?}",
+                    binding.ty, ty
+                ),
+                value.span,
+            ));
+        }
+        let bound = Place {
+            name: sanitize_name(name),
+        };
+        if is_heap(&binding.ty) {
+            self.stmts.push(Stmt::Drop {
+                place: bound.clone(),
+            });
+        }
+        // Dup so the RHS temp and the binding both own (end-of-fn drops both).
+        self.assign(bound, ty, RValue::Use(place));
+        Ok(())
     }
 }
 
@@ -350,6 +405,7 @@ fn resolve_ty(t: &TypeExpr, types: &HashMap<String, TypeInfo>) -> Result<Ty> {
         ("Bool", []) => Ok(Ty::Bool),
         ("Void", []) => Ok(Ty::Void),
         ("String", []) => Ok(Ty::String),
+        ("Bytes", []) => Ok(Ty::Bytes),
         ("Trial", [a, b]) => {
             let ok = resolve_ty(a, types)?;
             let err = resolve_ty(b, types)?;
@@ -388,7 +444,7 @@ fn lower_function(
     let mut ctx = LowerCtx::new(fns.clone(), types.clone(), ret_ty.clone());
     for p in &f.params {
         let ty = resolve_ty(&p.ty, types)?;
-        ctx.define(&p.name, ty);
+        ctx.define(&p.name, ty, false);
     }
 
     let ret = lower_block_value(&mut ctx, &f.body, &ret_ty)?;
@@ -442,11 +498,11 @@ fn lower_method(
                 field: sanitize_field(fname),
             },
         );
-        ctx.define(fname, fty.clone());
+        ctx.define(fname, fty.clone(), false);
     }
     for p in &m.params {
         let ty = resolve_ty(&p.ty, types)?;
-        ctx.define(&p.name, ty);
+        ctx.define(&p.name, ty, false);
     }
 
     let ret = lower_block_value(&mut ctx, &m.body, &ret_ty)?;
@@ -506,26 +562,7 @@ fn collect_heap_places(stmts: &[Stmt], out: &mut Vec<String>) {
 
 fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Option<Place>> {
     ctx.push_scope();
-    for item in &block.items {
-        match item {
-            BlockItem::Let {
-                name,
-                name_span,
-                init,
-            } => {
-                let (place, ty) = lower_expr(ctx, init)?;
-                let bound = Place {
-                    name: sanitize_name(name),
-                };
-                ctx.assign(bound, ty.clone(), RValue::Use(place));
-                ctx.define(name, ty);
-                let _ = name_span;
-            }
-            BlockItem::Expr(e) => {
-                let _ = lower_expr(ctx, e)?;
-            }
-        }
-    }
+    lower_block_items(ctx, &block.items)?;
 
     let result = if let Some(tail) = &block.tail {
         let (place, ty) = lower_expr(ctx, tail)?;
@@ -543,6 +580,33 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
     };
     ctx.pop_scope();
     Ok(result)
+}
+
+fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
+    for item in items {
+        match item {
+            BlockItem::Let {
+                name,
+                name_span: _,
+                mutable,
+                init,
+            } => {
+                let (place, ty) = lower_expr(ctx, init)?;
+                ctx.bind_name(name, ty, *mutable, place);
+            }
+            BlockItem::Assign {
+                name,
+                name_span,
+                value,
+            } => {
+                ctx.reassign_name(name, *name_span, value)?;
+            }
+            BlockItem::Expr(e) => {
+                let _ = lower_expr(ctx, e)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
@@ -565,15 +629,14 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
         ExprKind::Interpolate(parts) => lower_interpolate(ctx, parts, expr.span),
         ExprKind::Name(name) => {
             let ty = ctx
-                .lookup(name)
+                .lookup_ty(name)
                 .ok_or_else(|| Error::at(format!("undefined name `{name}`"), expr.span))?;
             let src = Place {
                 name: sanitize_name(name),
             };
-            // Simple RC: reading a heap value produces a new owner (dup).
+            // Simple RC: reading a heap value produces a new owner (`assign` dups).
             if is_heap(&ty) {
                 let p = ctx.fresh("dup");
-                ctx.stmts.push(Stmt::Dup { place: src.clone() });
                 ctx.assign(p.clone(), ty.clone(), RValue::Use(src));
                 Ok((p, ty))
             } else {
@@ -635,25 +698,7 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
                 return Ok((p, Ty::Void));
             }
             ctx.push_scope();
-            for item in &b.items {
-                match item {
-                    BlockItem::Let {
-                        name,
-                        init,
-                        name_span: _,
-                    } => {
-                        let (place, ty) = lower_expr(ctx, init)?;
-                        let bound = Place {
-                            name: sanitize_name(name),
-                        };
-                        ctx.assign(bound, ty.clone(), RValue::Use(place));
-                        ctx.define(name, ty);
-                    }
-                    BlockItem::Expr(e) => {
-                        let _ = lower_expr(ctx, e)?;
-                    }
-                }
-            }
+            lower_block_items(ctx, &b.items)?;
             let (place, ty) = lower_expr(ctx, b.tail.as_ref().unwrap())?;
             ctx.pop_scope();
             Ok((place, ty))
@@ -732,36 +777,56 @@ fn lower_field(
     name: &str,
     name_span: Span,
 ) -> Result<(Place, Ty)> {
+    // Type-level: not used for fields (static methods go through MethodCall).
     let (base_p, base_ty) = lower_expr(ctx, base)?;
-    let type_name = match &base_ty {
-        Ty::User(n) => n.clone(),
-        _ => {
-            return Err(Error::at(
-                format!("field access on non-struct type {base_ty:?}"),
-                name_span,
-            ));
+    match &base_ty {
+        Ty::Bytes => {
+            if name != "count" {
+                return Err(Error::at(
+                    format!("no field `{name}` on Bytes (use .count, .get, .set, .toString)"),
+                    name_span,
+                ));
+            }
+            let p = ctx.fresh("cnt");
+            ctx.assign(
+                p.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::Builtin("bytes_count".into()),
+                    args: vec![base_p],
+                },
+            );
+            Ok((p, Ty::Int64))
         }
-    };
-    let info = ctx
-        .types
-        .get(&type_name)
-        .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), name_span))?;
-    let field_ty = info
-        .fields
-        .iter()
-        .find(|(n, _)| n == name)
-        .map(|(_, t)| t.clone())
-        .ok_or_else(|| Error::at(format!("no field `{name}` on `{type_name}`"), name_span))?;
-    let p = ctx.fresh("fld");
-    ctx.assign(
-        p.clone(),
-        field_ty.clone(),
-        RValue::Field {
-            base: base_p,
-            field: sanitize_field(name),
-        },
-    );
-    Ok((p, field_ty))
+        Ty::User(type_name) => {
+            let info = ctx
+                .types
+                .get(type_name)
+                .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), name_span))?;
+            let field_ty = info
+                .fields
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, t)| t.clone())
+                .ok_or_else(|| {
+                    Error::at(format!("no field `{name}` on `{type_name}`"), name_span)
+                })?;
+            let p = ctx.fresh("fld");
+            ctx.assign(
+                p.clone(),
+                field_ty.clone(),
+                RValue::Field {
+                    base: base_p,
+                    field: sanitize_field(name),
+                },
+            );
+            Ok((p, field_ty))
+        }
+        other => Err(Error::at(
+            format!("field access on non-struct type {other:?}"),
+            name_span,
+        )),
+    }
 }
 
 fn lower_method_call(
@@ -771,49 +836,140 @@ fn lower_method_call(
     method_span: Span,
     args: &[Arg],
 ) -> Result<(Place, Ty)> {
-    let (recv_p, recv_ty) = lower_expr(ctx, receiver)?;
-    let type_name = match &recv_ty {
-        Ty::User(n) => n.clone(),
-        _ => {
-            return Err(Error::at(
-                format!("method call on non-struct type {recv_ty:?}"),
-                method_span,
-            ));
+    // Static methods: `Bytes.fromString(…)`
+    if let ExprKind::Name(type_name) = &receiver.kind {
+        if type_name == "Bytes" && ctx.lookup(type_name).is_none() {
+            return lower_bytes_static(ctx, method, args, method_span);
         }
-    };
-    let info = ctx
-        .types
-        .get(&type_name)
-        .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), method_span))?
-        .clone();
-    let sig = info.methods.get(method).ok_or_else(|| {
-        Error::at(
-            format!("no method `{method}` on `{type_name}`"),
-            method_span,
-        )
-    })?;
-    if !sig.exported {
-        return Err(Error::at(
-            format!("method `{method}` is private"),
-            method_span,
-        ));
     }
-    let arg_places = resolve_call_args(ctx, &sig.params, args, method_span)?;
-    let mut all_args = vec![recv_p];
-    all_args.extend(arg_places);
-    let p = ctx.fresh("mcall");
-    ctx.assign(
-        p.clone(),
-        sig.ret.clone(),
-        RValue::Call {
-            callee: Callee::Method {
-                type_name: type_name.clone(),
-                method: method.to_string(),
-            },
-            args: all_args,
-        },
-    );
-    Ok((p, sig.ret.clone()))
+
+    let (recv_p, recv_ty) = lower_expr(ctx, receiver)?;
+    match &recv_ty {
+        Ty::Bytes => lower_bytes_method(ctx, recv_p, method, args, method_span),
+        Ty::User(type_name) => {
+            let type_name = type_name.clone();
+            let info = ctx
+                .types
+                .get(&type_name)
+                .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), method_span))?
+                .clone();
+            let sig = info.methods.get(method).ok_or_else(|| {
+                Error::at(
+                    format!("no method `{method}` on `{type_name}`"),
+                    method_span,
+                )
+            })?;
+            if !sig.exported {
+                return Err(Error::at(
+                    format!("method `{method}` is private"),
+                    method_span,
+                ));
+            }
+            let arg_places = resolve_call_args(ctx, &sig.params, args, method_span)?;
+            let mut all_args = vec![recv_p];
+            all_args.extend(arg_places);
+            emit_call_result(
+                ctx,
+                Callee::Method {
+                    type_name: type_name.clone(),
+                    method: method.to_string(),
+                },
+                all_args,
+                sig.ret.clone(),
+            )
+        }
+        other => Err(Error::at(
+            format!("method call on non-struct type {other:?}"),
+            method_span,
+        )),
+    }
+}
+
+fn lower_bytes_static(
+    ctx: &mut LowerCtx,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    match method {
+        "fromString" => {
+            let formal = vec![("s".into(), Ty::String)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            emit_call_result(
+                ctx,
+                Callee::Builtin("bytes_from_string".into()),
+                places,
+                Ty::Bytes,
+            )
+        }
+        other => Err(Error::at(
+            format!("unknown static method `Bytes.{other}`"),
+            span,
+        )),
+    }
+}
+
+fn lower_bytes_method(
+    ctx: &mut LowerCtx,
+    recv: Place,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    match method {
+        "get" => {
+            let formal = vec![("i".into(), Ty::Int64)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut all = vec![recv];
+            all.extend(places);
+            emit_call_result(ctx, Callee::Builtin("bytes_get".into()), all, Ty::Int64)
+        }
+        "set" => {
+            let formal = vec![("i".into(), Ty::Int64), ("b".into(), Ty::Int64)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut all = vec![recv];
+            all.extend(places);
+            emit_call_result(ctx, Callee::Builtin("bytes_set".into()), all, Ty::Void)
+        }
+        "toString" => {
+            if !args.is_empty() {
+                return Err(Error::at("Bytes.toString() takes no arguments", span));
+            }
+            emit_call_result(
+                ctx,
+                Callee::Builtin("bytes_to_string".into()),
+                vec![recv],
+                Ty::String,
+            )
+        }
+        other => Err(Error::at(
+            format!("no method `{other}` on Bytes"),
+            span,
+        )),
+    }
+}
+
+/// Emit a call that either assigns a result or is evaluated for side effects (Void).
+fn emit_call_result(
+    ctx: &mut LowerCtx,
+    callee: Callee,
+    args: Vec<Place>,
+    ret: Ty,
+) -> Result<(Place, Ty)> {
+    if ret == Ty::Void {
+        ctx.stmts.push(Stmt::Eval(RValue::Call { callee, args }));
+        let p = ctx.fresh("u");
+        ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
+        Ok((p, Ty::Void))
+    } else {
+        let p = ctx.fresh("mcall");
+        ctx.assign(
+            p.clone(),
+            ret.clone(),
+            RValue::Call { callee, args },
+        );
+        Ok((p, ret))
+    }
 }
 
 fn resolve_call_args(
@@ -1026,14 +1182,14 @@ fn lower_match(
 
     let pass_ty = {
         ctx.push_scope();
-        ctx.define(&pass_bind, Ty::Int64);
+        ctx.define(&pass_bind, Ty::Int64, false);
         let ty = infer_block_ty(ctx, &pass_arm.body)?;
         ctx.pop_scope();
         ty
     };
     let fail_ty = {
         ctx.push_scope();
-        ctx.define(&fail_bind, Ty::Int64);
+        ctx.define(&fail_bind, Ty::Int64, false);
         let ty = infer_block_ty(ctx, &fail_arm.body)?;
         ctx.pop_scope();
         ty
@@ -1083,7 +1239,7 @@ fn lower_match(
         name: sanitize_name(&pass_bind),
     };
     ctx.assign(pass_place, Ty::Int64, RValue::Use(pass_payload));
-    ctx.define(&pass_bind, Ty::Int64);
+    ctx.define(&pass_bind, Ty::Int64, false);
     let pass_val = lower_block_into(ctx, &pass_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut then_body = std::mem::take(&mut ctx.stmts);
@@ -1106,7 +1262,7 @@ fn lower_match(
         name: sanitize_name(&fail_bind),
     };
     ctx.assign(fail_place, Ty::Int64, RValue::Use(fail_payload));
-    ctx.define(&fail_bind, Ty::Int64);
+    ctx.define(&fail_bind, Ty::Int64, false);
     let fail_val = lower_block_into(ctx, &fail_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut else_body = std::mem::take(&mut ctx.stmts);
@@ -1142,7 +1298,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
     match ty {
         Ty::Int64 => ctx.assign(place.clone(), ty.clone(), RValue::Int(0)),
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
-        Ty::String => {
+        Ty::String | Ty::Bytes => {
             ctx.stmts.push(Stmt::Assign {
                 place: place.clone(),
                 ty: ty.clone(),
@@ -1449,25 +1605,7 @@ fn lower_block_into(
     block: &Block,
     expect: &Ty,
 ) -> Result<Option<Place>> {
-    for item in &block.items {
-        match item {
-            BlockItem::Let {
-                name,
-                init,
-                name_span: _,
-            } => {
-                let (place, ty) = lower_expr(ctx, init)?;
-                let bound = Place {
-                    name: sanitize_name(name),
-                };
-                ctx.assign(bound, ty.clone(), RValue::Use(place));
-                ctx.define(name, ty);
-            }
-            BlockItem::Expr(e) => {
-                let _ = lower_expr(ctx, e)?;
-            }
-        }
-    }
+    lower_block_items(ctx, &block.items)?;
     if let Some(tail) = &block.tail {
         let (place, ty) = lower_expr(ctx, tail)?;
         if *expect != Ty::Void && &ty != expect {
@@ -1496,18 +1634,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
     if block.tail.is_none() {
         return Ok(Ty::Void);
     }
-    for item in &block.items {
-        if let BlockItem::Let { name, init, .. } = item {
-            let (place, ty) = lower_expr(&mut tmp, init)?;
-            let bound = Place {
-                name: sanitize_name(name),
-            };
-            tmp.assign(bound, ty.clone(), RValue::Use(place));
-            tmp.define(name, ty);
-        } else if let BlockItem::Expr(e) = item {
-            let _ = lower_expr(&mut tmp, e)?;
-        }
-    }
+    lower_block_items(&mut tmp, &block.items)?;
     let (_, ty) = lower_expr(&mut tmp, block.tail.as_ref().unwrap())?;
     Ok(ty)
 }

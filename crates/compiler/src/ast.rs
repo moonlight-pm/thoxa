@@ -1,4 +1,4 @@
-//! AST for the current language subset (R0–R4).
+//! AST for the current language subset (R0–R5).
 
 use crate::span::Span;
 
@@ -69,7 +69,15 @@ pub enum BlockItem {
     Let {
         name: String,
         name_span: Span,
+        /// `true` for `mut name = …`; `false` for `let name = …`.
+        mutable: bool,
         init: Expr,
+    },
+    /// `name = expr` — only legal for `mut` bindings.
+    Assign {
+        name: String,
+        name_span: Span,
+        value: Expr,
     },
     Expr(Expr),
 }

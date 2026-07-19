@@ -152,3 +152,43 @@ void thoxa_println_string(const ThoxaString *s) {
     fputc('\n', stdout);
     fflush(stdout);
 }
+
+/* --- Bytes -------------------------------------------------------------- */
+
+ThoxaBytes *thoxa_bytes_from_string(const ThoxaString *s) {
+    size_t len = s ? s->len : 0;
+    size_t payload = sizeof(size_t) + len;
+    ThoxaBytes *b = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
+    b->len = len;
+    if (len > 0 && s) {
+        memcpy(b->data, s->data, len);
+    }
+    return b;
+}
+
+size_t thoxa_bytes_count(const ThoxaBytes *b) {
+    return b ? b->len : 0;
+}
+
+static void bytes_check_index(const ThoxaBytes *b, int64_t i) {
+    if (!b || i < 0 || (size_t)i >= b->len) {
+        thoxa_panic("Bytes index out of range");
+    }
+}
+
+int64_t thoxa_bytes_get(const ThoxaBytes *b, int64_t i) {
+    bytes_check_index(b, i);
+    return (int64_t)b->data[(size_t)i];
+}
+
+void thoxa_bytes_set(ThoxaBytes *b, int64_t i, int64_t byte) {
+    bytes_check_index(b, i);
+    b->data[(size_t)i] = (uint8_t)(byte & 0xFF);
+}
+
+ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b) {
+    if (!b || b->len == 0) {
+        return thoxa_string_new("", 0);
+    }
+    return thoxa_string_new((const char *)b->data, b->len);
+}

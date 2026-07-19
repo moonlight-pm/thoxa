@@ -1,0 +1,18 @@
+## Bytes + mut (R5). Fixed heap Bytes with simple RC; mut reassignment.
+fn main() -> Int64 {
+    mut b = Bytes.fromString("abc")
+    println(b.count)
+    println(b.get(0))
+    b.set(0, 65)
+    println(b.toString())
+
+    mut n = 0
+    n = n + 1
+    n = n + 1
+    println(n)
+
+    b = Bytes.fromString("xy")
+    println(b.count)
+    println(b.toString())
+    0
+}

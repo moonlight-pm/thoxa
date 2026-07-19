@@ -132,7 +132,7 @@ fn emit_function(out: &mut String, f: &Function) {
 }
 
 fn is_heap_ty(ty: &Ty) -> bool {
-    matches!(ty, Ty::String)
+    matches!(ty, Ty::String | Ty::Bytes)
 }
 
 fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut HashSet<String>) {
@@ -255,6 +255,11 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                     "print_i64" => "thoxa_print_i64",
                     "println_bool" => "thoxa_println_bool",
                     "print_bool" => "thoxa_print_bool",
+                    "bytes_from_string" => "thoxa_bytes_from_string",
+                    "bytes_count" => "(int64_t)thoxa_bytes_count",
+                    "bytes_get" => "thoxa_bytes_get",
+                    "bytes_set" => "thoxa_bytes_set",
+                    "bytes_to_string" => "thoxa_bytes_to_string",
                     other => other,
                 };
                 out.push_str(c);
@@ -361,6 +366,7 @@ fn c_ty(ty: &Ty) -> String {
         Ty::Int64 => "int64_t".into(),
         Ty::Bool => "bool".into(),
         Ty::String => "ThoxaString*".into(),
+        Ty::Bytes => "ThoxaBytes*".into(),
         Ty::Void => "void".into(),
         Ty::TrialI64I64 => "ThoxaTrialI64I64".into(),
         Ty::User(name) => c_type_name(name),

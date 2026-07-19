@@ -78,7 +78,7 @@ typedef struct {
 | R2 | `Trial` + `match` + `?` | tags, force-to-deal, early return; R2 monomorph is `Trial<Int64,Int64>` (String err → R4) | ✅ |
 | R3 | user `type` + methods | layout, construction; R3 fields Int64/Bool only | ✅ |
 | R4 | `String` / interpolation | heap string + simple RC (dup on copy, drop at fn end) | ✅ |
-| R5 | `Bytes` + mut | buffers |
+| R5 | `Bytes` + mut | fixed heap buffer (fromString/count/get/set/toString); `mut` + reassignment | ✅ |
 | R6 | `extern fn` libc | FFI |
 | R7 | C-layout struct | packing |
 | R8 | modules / multi-file | loader |

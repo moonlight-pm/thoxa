@@ -12,6 +12,7 @@ extern "C" {
 /* --- Type tags ---------------------------------------------------------- */
 
 #define THOXA_TAG_STRING 1
+#define THOXA_TAG_BYTES  2
 
 /* --- I/O ---------------------------------------------------------------- */
 
@@ -58,6 +59,28 @@ size_t thoxa_string_len(const ThoxaString *s);
 
 void thoxa_print_string(const ThoxaString *s);
 void thoxa_println_string(const ThoxaString *s);
+
+/* --- Bytes (fixed mutable buffer, RC heap) ------------------------------ */
+
+/*
+ * Layout: [ThoxaHeader][ThoxaBytes { len, data[len] }]
+ * A ThoxaBytes* points at the payload (after the header).
+ * Fixed length after construction; contents are mutable (FFI / set).
+ */
+typedef struct ThoxaBytes {
+    size_t len;
+    uint8_t data[];
+} ThoxaBytes;
+
+/* Owned Bytes (refcount 1) from a String's UTF-8 bytes (no trailing NUL in payload). */
+ThoxaBytes *thoxa_bytes_from_string(const ThoxaString *s);
+size_t thoxa_bytes_count(const ThoxaBytes *b);
+/* Byte as Int64 (0–255). Index OOB → panic. */
+int64_t thoxa_bytes_get(const ThoxaBytes *b, int64_t i);
+/* Masks `byte` to 0–255. Index OOB → panic. */
+void thoxa_bytes_set(ThoxaBytes *b, int64_t i, int64_t byte);
+/* Fresh owned String with the same bytes (not necessarily valid UTF-8). */
+ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b);
 
 #ifdef __cplusplus
 }

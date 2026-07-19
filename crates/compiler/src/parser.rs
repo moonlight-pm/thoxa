@@ -1,4 +1,4 @@
-//! Recursive-descent + precedence parser (R0–R4).
+//! Recursive-descent + precedence parser (R0–R5).
 
 use crate::ast::*;
 use crate::error::{Error, Result};
@@ -184,7 +184,11 @@ impl Parser {
         let mut elems: Vec<BlockElem> = Vec::new();
         while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
             if self.at(TokenKind::Let) {
-                elems.push(BlockElem::Let(self.parse_let()?));
+                elems.push(BlockElem::Let(self.parse_binding(false)?));
+            } else if self.at(TokenKind::Mut) {
+                elems.push(BlockElem::Let(self.parse_binding(true)?));
+            } else if self.at_ident_assign() {
+                elems.push(BlockElem::Assign(self.parse_assign()?));
             } else {
                 elems.push(BlockElem::Expr(self.parse_expr()?));
             }
@@ -194,36 +198,12 @@ impl Parser {
 
         let (items, tail) = match elems.pop() {
             Some(BlockElem::Expr(e)) => {
-                let items = elems
-                    .into_iter()
-                    .map(|el| match el {
-                        BlockElem::Let(l) => BlockItem::Let {
-                            name: l.name,
-                            name_span: l.name_span,
-                            init: l.init,
-                        },
-                        BlockElem::Expr(e) => BlockItem::Expr(e),
-                    })
-                    .collect();
+                let items = elems.into_iter().map(block_elem_to_item).collect();
                 (items, Some(Box::new(e)))
             }
-            Some(BlockElem::Let(l)) => {
-                let mut items: Vec<BlockItem> = elems
-                    .into_iter()
-                    .map(|el| match el {
-                        BlockElem::Let(l) => BlockItem::Let {
-                            name: l.name,
-                            name_span: l.name_span,
-                            init: l.init,
-                        },
-                        BlockElem::Expr(e) => BlockItem::Expr(e),
-                    })
-                    .collect();
-                items.push(BlockItem::Let {
-                    name: l.name,
-                    name_span: l.name_span,
-                    init: l.init,
-                });
+            Some(other) => {
+                let mut items: Vec<BlockItem> = elems.into_iter().map(block_elem_to_item).collect();
+                items.push(block_elem_to_item(other));
                 (items, None)
             }
             None => (Vec::new(), None),
@@ -236,15 +216,37 @@ impl Parser {
         })
     }
 
-    fn parse_let(&mut self) -> Result<LetBind> {
-        self.expect_kind(&TokenKind::Let)?;
+    /// `ident =` (single `=`, not `==`) at the start of a statement.
+    fn at_ident_assign(&self) -> bool {
+        matches!(self.current().kind, TokenKind::Ident(_))
+            && self.tokens.get(self.pos + 1).map(|t| &t.kind) == Some(&TokenKind::Eq)
+    }
+
+    fn parse_binding(&mut self, mutable: bool) -> Result<LetBind> {
+        if mutable {
+            self.expect_kind(&TokenKind::Mut)?;
+        } else {
+            self.expect_kind(&TokenKind::Let)?;
+        }
         let (name, name_span) = self.expect_ident()?;
         self.expect_kind(&TokenKind::Eq)?;
         let init = self.parse_expr()?;
         Ok(LetBind {
             name,
             name_span,
+            mutable,
             init,
+        })
+    }
+
+    fn parse_assign(&mut self) -> Result<AssignStmt> {
+        let (name, name_span) = self.expect_ident()?;
+        self.expect_kind(&TokenKind::Eq)?;
+        let value = self.parse_expr()?;
+        Ok(AssignStmt {
+            name,
+            name_span,
+            value,
         })
     }
 
@@ -691,12 +693,37 @@ impl Parser {
 struct LetBind {
     name: String,
     name_span: Span,
+    mutable: bool,
     init: Expr,
+}
+
+struct AssignStmt {
+    name: String,
+    name_span: Span,
+    value: Expr,
 }
 
 enum BlockElem {
     Let(LetBind),
+    Assign(AssignStmt),
     Expr(Expr),
+}
+
+fn block_elem_to_item(el: BlockElem) -> BlockItem {
+    match el {
+        BlockElem::Let(l) => BlockItem::Let {
+            name: l.name,
+            name_span: l.name_span,
+            mutable: l.mutable,
+            init: l.init,
+        },
+        BlockElem::Assign(a) => BlockItem::Assign {
+            name: a.name,
+            name_span: a.name_span,
+            value: a.value,
+        },
+        BlockElem::Expr(e) => BlockItem::Expr(e),
+    }
 }
 
 /// Expand a string token into plain `String` or `Interpolate` (handles `{{` / `}}`).

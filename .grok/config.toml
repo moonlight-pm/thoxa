@@ -1,0 +1,23 @@
+# Project-scoped Grok settings (committed). Reduces permission churn for trusted local work.
+# Session still prompts for risky ops not listed (e.g. git push, rm -rf).
+# Docs: ~/.grok/docs/user-guide/22-permissions-and-safety.md
+
+[permission]
+allow = [
+  # Build / test / run (xtask + cargo)
+  "Bash(cargo *)",
+  "Bash(cc *)",
+  "Bash(clang *)",
+  "Bash(clangd *)",
+
+  # File edits (create/overwrite/patch tools map to Edit)
+  "Edit",
+]
+
+# Still ask for destructive / shared-state commands (deny wins over allow if both match)
+deny = [
+  "Bash(rm -rf *)",
+  "Bash(git push *)",
+  "Bash(git push --force *)",
+  "Bash(git reset --hard *)",
+]

@@ -68,5 +68,7 @@ Fallback: committed [`.clangd`](.clangd) with `-Iruntime/include`.
 
 ## Docs
 
+- [Status / next rung](docs/status.md) — living progress (agents: read first)
+- [Agent handoff](AGENTS.md) — session bootstrap for AI tools
 - [Native kernel design](docs/specs/2026-07-18-thoxa-native-kernel-design.md)
 - [Decisions](docs/decisions.md)
