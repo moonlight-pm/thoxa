@@ -1,0 +1,12 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Thoxa build products (generated C, objects, binaries, runtime libs)
+/targets/**
+!/targets/.gitkeep
+
+# Editor / OS
+.DS_Store
+*.swp
+*~

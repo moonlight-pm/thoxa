@@ -1,0 +1,13 @@
+[package]
+name = "make"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ThoxaNative xtask — project build/test commands"
+publish = false
+
+[[bin]]
+name = "make"
+path = "src/main.rs"
+
+[dependencies]

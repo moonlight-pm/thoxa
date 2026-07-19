@@ -1,0 +1,16 @@
+[package]
+name = "thoxa"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Thoxa native compiler (compile-to-C)"
+
+[[bin]]
+name = "thoxa"
+path = "src/main.rs"
+
+[lib]
+name = "thoxa"
+path = "src/lib.rs"
+
+[dependencies]
