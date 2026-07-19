@@ -1,9 +1,9 @@
 //! Mid-level IR: typed enough for RC insert + C codegen.
-//! R3: user types (unboxed structs), construction, methods, field access.
+//! R4: heap String + simple RC (dup on copy, drop at end of function).
 
 use crate::ast::{
-    self, Arg, BinaryOp, Block, BlockItem, Expr, ExprKind, Item, MatchArm, Method, Pattern,
-    TypeDef, TypeExpr, UnaryOp,
+    self, Arg, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item, MatchArm, Method,
+    Pattern, TypeDef, TypeExpr, UnaryOp,
 };
 use crate::error::{Error, Result};
 use crate::span::Span;
@@ -51,6 +51,10 @@ pub enum Stmt {
         else_body: Vec<Stmt>,
     },
     Return { value: Place },
+    /// Bump refcount of a heap object at `place`.
+    Dup { place: Place },
+    /// Drop a heap object at `place` (refcount--).
+    Drop { place: Place },
 }
 
 #[derive(Debug, Clone)]
@@ -58,7 +62,10 @@ pub enum RValue {
     Use(Place),
     Int(i64),
     Bool(bool),
-    Str(String),
+    /// Heap string from UTF-8 bytes (owned, refcount 1).
+    StringLit(String),
+    /// Null heap pointer (for uninit String slots).
+    Null,
     Unary { op: UnaryOp, arg: Place },
     Binary { op: BinaryOp, left: Place, right: Place },
     Call { callee: Callee, args: Vec<Place> },
@@ -69,6 +76,10 @@ pub enum RValue {
     StructLit { type_name: String, fields: Vec<Place> },
     /// `base.field`
     Field { base: Place, field: String },
+    /// Convert Int64/Bool → owned String.
+    ToString { value: Place, from: Ty },
+    /// Non-consuming concat → owned String.
+    StringConcat { left: Place, right: Place },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,9 +106,14 @@ pub enum Ty {
     Void,
     Int64,
     Bool,
-    CStr,
+    /// Heap RC String (`ThoxaString*`).
+    String,
     TrialI64I64,
     User(String),
+}
+
+fn is_heap(ty: &Ty) -> bool {
+    matches!(ty, Ty::String)
 }
 
 #[derive(Clone)]
@@ -181,6 +197,10 @@ impl LowerCtx {
         if let RValue::Use(ref p) = value {
             if p == &place {
                 return;
+            }
+            // Copy of a heap value: bump refcount so source and dest both own.
+            if is_heap(&ty) {
+                self.stmts.push(Stmt::Dup { place: p.clone() });
             }
         }
         self.stmts.push(Stmt::Assign { place, ty, value });
@@ -329,6 +349,7 @@ fn resolve_ty(t: &TypeExpr, types: &HashMap<String, TypeInfo>) -> Result<Ty> {
         ("Int64", []) => Ok(Ty::Int64),
         ("Bool", []) => Ok(Ty::Bool),
         ("Void", []) => Ok(Ty::Void),
+        ("String", []) => Ok(Ty::String),
         ("Trial", [a, b]) => {
             let ok = resolve_ty(a, types)?;
             let err = resolve_ty(b, types)?;
@@ -371,6 +392,7 @@ fn lower_function(
     }
 
     let ret = lower_block_value(&mut ctx, &f.body, &ret_ty)?;
+    insert_function_drops(&mut ctx.stmts, &ret, &ret_ty);
 
     Ok(Function {
         name: f.name.clone(),
@@ -428,6 +450,7 @@ fn lower_method(
     }
 
     let ret = lower_block_value(&mut ctx, &m.body, &ret_ty)?;
+    insert_function_drops(&mut ctx.stmts, &ret, &ret_ty);
 
     Ok(Function {
         name: format!("{}__{}", td.name, m.name),
@@ -438,6 +461,47 @@ fn lower_method(
         ret,
         ret_ty,
     })
+}
+
+/// Drop every heap local at function end except the returned place (moved out).
+fn insert_function_drops(stmts: &mut Vec<Stmt>, ret: &Option<Place>, ret_ty: &Ty) {
+    let mut heap_places = Vec::new();
+    collect_heap_places(stmts, &mut heap_places);
+    let skip = if is_heap(ret_ty) {
+        ret.as_ref().map(|p| p.name.clone())
+    } else {
+        None
+    };
+    let mut seen = std::collections::HashSet::new();
+    for name in heap_places {
+        if skip.as_ref() == Some(&name) {
+            continue;
+        }
+        if seen.insert(name.clone()) {
+            stmts.push(Stmt::Drop {
+                place: Place { name },
+            });
+        }
+    }
+}
+
+fn collect_heap_places(stmts: &[Stmt], out: &mut Vec<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Assign { place, ty, .. } if is_heap(ty) => {
+                out.push(place.name.clone());
+            }
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_heap_places(then_body, out);
+                collect_heap_places(else_body, out);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Option<Place>> {
@@ -495,19 +559,26 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
         }
         ExprKind::String(s) => {
             let p = ctx.fresh("s");
-            ctx.assign(p.clone(), Ty::CStr, RValue::Str(s.clone()));
-            Ok((p, Ty::CStr))
+            ctx.assign(p.clone(), Ty::String, RValue::StringLit(s.clone()));
+            Ok((p, Ty::String))
         }
+        ExprKind::Interpolate(parts) => lower_interpolate(ctx, parts, expr.span),
         ExprKind::Name(name) => {
             let ty = ctx
                 .lookup(name)
                 .ok_or_else(|| Error::at(format!("undefined name `{name}`"), expr.span))?;
-            Ok((
-                Place {
-                    name: sanitize_name(name),
-                },
-                ty,
-            ))
+            let src = Place {
+                name: sanitize_name(name),
+            };
+            // Simple RC: reading a heap value produces a new owner (dup).
+            if is_heap(&ty) {
+                let p = ctx.fresh("dup");
+                ctx.stmts.push(Stmt::Dup { place: src.clone() });
+                ctx.assign(p.clone(), ty.clone(), RValue::Use(src));
+                Ok((p, ty))
+            } else {
+                Ok((src, ty))
+            }
         }
         ExprKind::Unary { op, expr: inner } => {
             let (arg, arg_ty) = lower_expr(ctx, inner)?;
@@ -590,6 +661,69 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
         ExprKind::Try(inner) => lower_try(ctx, inner, expr.span),
         ExprKind::Match { scrutinee, arms } => lower_match(ctx, scrutinee, arms, expr.span),
     }
+}
+
+fn lower_interpolate(
+    ctx: &mut LowerCtx,
+    parts: &[InterpPart],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    if parts.is_empty() {
+        let p = ctx.fresh("s");
+        ctx.assign(p.clone(), Ty::String, RValue::StringLit(String::new()));
+        return Ok((p, Ty::String));
+    }
+
+    let mut acc: Option<Place> = None;
+    for part in parts {
+        let piece = match part {
+            InterpPart::Lit(s) => {
+                let p = ctx.fresh("sl");
+                ctx.assign(p.clone(), Ty::String, RValue::StringLit(s.clone()));
+                p
+            }
+            InterpPart::Expr(e) => {
+                let (v, ty) = lower_expr(ctx, e)?;
+                match ty {
+                    Ty::String => v,
+                    Ty::Int64 | Ty::Bool => {
+                        let p = ctx.fresh("ts");
+                        ctx.assign(
+                            p.clone(),
+                            Ty::String,
+                            RValue::ToString {
+                                value: v,
+                                from: ty,
+                            },
+                        );
+                        p
+                    }
+                    other => {
+                        return Err(Error::at(
+                            format!("cannot interpolate {other:?} into String"),
+                            span,
+                        ));
+                    }
+                }
+            }
+        };
+        acc = Some(match acc {
+            None => piece,
+            Some(left) => {
+                let p = ctx.fresh("cat");
+                ctx.assign(
+                    p.clone(),
+                    Ty::String,
+                    RValue::StringConcat {
+                        left,
+                        right: piece,
+                    },
+                );
+                p
+            }
+        });
+    }
+    Ok((acc.unwrap(), Ty::String))
 }
 
 fn lower_field(
@@ -1008,7 +1142,13 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
     match ty {
         Ty::Int64 => ctx.assign(place.clone(), ty.clone(), RValue::Int(0)),
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
-        Ty::CStr => ctx.assign(place.clone(), ty.clone(), RValue::Str(String::new())),
+        Ty::String => {
+            ctx.stmts.push(Stmt::Assign {
+                place: place.clone(),
+                ty: ty.clone(),
+                value: RValue::Null,
+            });
+        }
         Ty::Void => {}
         Ty::TrialI64I64 => {
             let z = ctx.fresh("tz");
@@ -1125,8 +1265,8 @@ fn lower_call(
             };
             let (arg, ty) = lower_expr(ctx, expr)?;
             let builtin = match (callee, &ty) {
-                ("println", Ty::CStr) => "println",
-                ("print", Ty::CStr) => "print",
+                ("println", Ty::String) => "println_string",
+                ("print", Ty::String) => "print_string",
                 ("println", Ty::Int64) => "println_i64",
                 ("print", Ty::Int64) => "print_i64",
                 ("println", Ty::Bool) => "println_bool",

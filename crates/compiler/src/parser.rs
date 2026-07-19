@@ -1,8 +1,8 @@
-//! Recursive-descent + precedence parser (R0–R3).
+//! Recursive-descent + precedence parser (R0–R4).
 
 use crate::ast::*;
 use crate::error::{Error, Result};
-use crate::lexer::{Token, TokenKind};
+use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::Span;
 
 pub struct Parser {
@@ -472,11 +472,9 @@ impl Parser {
             }
             TokenKind::String(s) => {
                 let s = s.clone();
+                let span = Span::new(start.start, self.current().span.end);
                 self.bump();
-                Ok(Expr {
-                    kind: ExprKind::String(s),
-                    span: Span::new(start.start, self.prev_span().end),
-                })
+                parse_string_literal(s, span)
             }
             TokenKind::Ident(name) => {
                 let name = name.clone();
@@ -699,6 +697,98 @@ struct LetBind {
 enum BlockElem {
     Let(LetBind),
     Expr(Expr),
+}
+
+/// Expand a string token into plain `String` or `Interpolate` (handles `{{` / `}}`).
+fn parse_string_literal(content: String, span: Span) -> Result<Expr> {
+    let mut parts: Vec<InterpPart> = Vec::new();
+    let mut lit = String::new();
+    let chars: Vec<char> = content.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '{' => {
+                if i + 1 < chars.len() && chars[i + 1] == '{' {
+                    lit.push('{');
+                    i += 2;
+                    continue;
+                }
+                if !lit.is_empty() {
+                    parts.push(InterpPart::Lit(std::mem::take(&mut lit)));
+                }
+                i += 1;
+                let expr_start = i;
+                let mut depth = 1usize;
+                while i < chars.len() {
+                    match chars[i] {
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                if depth != 0 {
+                    return Err(Error::at("unclosed interpolation `{`", span));
+                }
+                let expr_src: String = chars[expr_start..i].iter().collect();
+                i += 1; // consume closing `}`
+                let expr = parse_embedded_expr(&expr_src, span)?;
+                parts.push(InterpPart::Expr(expr));
+            }
+            '}' => {
+                if i + 1 < chars.len() && chars[i + 1] == '}' {
+                    lit.push('}');
+                    i += 2;
+                    continue;
+                }
+                return Err(Error::at("unmatched `}` in string (use `}}` for a literal brace)", span));
+            }
+            ch => {
+                lit.push(ch);
+                i += 1;
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Ok(Expr {
+            kind: ExprKind::String(lit),
+            span,
+        });
+    }
+    if !lit.is_empty() {
+        parts.push(InterpPart::Lit(lit));
+    }
+    Ok(Expr {
+        kind: ExprKind::Interpolate(parts),
+        span,
+    })
+}
+
+fn parse_embedded_expr(src: &str, parent_span: Span) -> Result<Expr> {
+    let trimmed = src.trim();
+    if trimmed.is_empty() {
+        return Err(Error::at("empty interpolation expression", parent_span));
+    }
+    let tokens = Lexer::new(trimmed).tokenize().map_err(|e| {
+        Error::at(
+            format!("invalid interpolation expression: {}", e.message),
+            parent_span,
+        )
+    })?;
+    let mut p = Parser::new(tokens);
+    let expr = p.parse_expr()?;
+    if !p.at(TokenKind::Eof) {
+        return Err(Error::at(
+            "trailing tokens in interpolation expression",
+            parent_span,
+        ));
+    }
+    Ok(expr)
 }
 
 #[cfg(test)]

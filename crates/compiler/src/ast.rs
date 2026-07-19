@@ -1,4 +1,4 @@
-//! AST for the current language subset (R0–R3).
+//! AST for the current language subset (R0–R4).
 
 use crate::span::Span;
 
@@ -84,7 +84,10 @@ pub struct Expr {
 pub enum ExprKind {
     Int(i64),
     Bool(bool),
+    /// Plain string literal (no interpolation).
     String(String),
+    /// `"…{expr}…"` with literal and expression parts (after `{{`/`}}` unescape).
+    Interpolate(Vec<InterpPart>),
     Name(String),
     Unary {
         op: UnaryOp,
@@ -124,6 +127,12 @@ pub enum ExprKind {
         scrutinee: Box<Expr>,
         arms: Vec<MatchArm>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum InterpPart {
+    Lit(String),
+    Expr(Expr),
 }
 
 #[derive(Debug, Clone)]

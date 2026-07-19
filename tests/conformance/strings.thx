@@ -1,0 +1,10 @@
+## String interpolation, brace escaping, and character escapes (R4 — heap String + RC).
+fn main() -> Int64 {
+    let name = "Ada"
+    let x = 6
+    let y = 7
+    println("Hello, {name}! {x} * {y} = {x * y}")
+    println("literal {{braces}}")
+    println("tab\tafter\ndone")
+    0
+}

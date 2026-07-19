@@ -82,3 +82,73 @@ void thoxa_drop(void *ptr) {
         free(h);
     }
 }
+
+/* --- String ------------------------------------------------------------- */
+
+ThoxaString *thoxa_string_new(const char *bytes, size_t len) {
+    size_t payload = sizeof(size_t) + len + 1;
+    ThoxaString *s = (ThoxaString *)thoxa_alloc(payload, THOXA_TAG_STRING);
+    s->len = len;
+    if (len > 0 && bytes) {
+        memcpy(s->data, bytes, len);
+    }
+    s->data[len] = '\0';
+    return s;
+}
+
+ThoxaString *thoxa_string_from_cstr(const char *s) {
+    if (!s) {
+        return thoxa_string_new("", 0);
+    }
+    return thoxa_string_new(s, strlen(s));
+}
+
+ThoxaString *thoxa_string_from_i64(int64_t v) {
+    char buf[32];
+    int n = snprintf(buf, sizeof(buf), "%lld", (long long)v);
+    if (n < 0) {
+        thoxa_panic("snprintf failed");
+    }
+    return thoxa_string_new(buf, (size_t)n);
+}
+
+ThoxaString *thoxa_string_from_bool(bool v) {
+    return thoxa_string_from_cstr(v ? "true" : "false");
+}
+
+ThoxaString *thoxa_string_concat(const ThoxaString *a, const ThoxaString *b) {
+    size_t alen = a ? a->len : 0;
+    size_t blen = b ? b->len : 0;
+    size_t len = alen + blen;
+    size_t payload = sizeof(size_t) + len + 1;
+    ThoxaString *s = (ThoxaString *)thoxa_alloc(payload, THOXA_TAG_STRING);
+    s->len = len;
+    if (alen > 0) {
+        memcpy(s->data, a->data, alen);
+    }
+    if (blen > 0) {
+        memcpy(s->data + alen, b->data, blen);
+    }
+    s->data[len] = '\0';
+    return s;
+}
+
+const char *thoxa_string_cstr(const ThoxaString *s) {
+    return s ? s->data : "";
+}
+
+size_t thoxa_string_len(const ThoxaString *s) {
+    return s ? s->len : 0;
+}
+
+void thoxa_print_string(const ThoxaString *s) {
+    if (s && s->len > 0) {
+        fwrite(s->data, 1, s->len, stdout);
+    }
+}
+
+void thoxa_println_string(const ThoxaString *s) {
+    thoxa_print_string(s);
+    fputc('\n', stdout);
+    fflush(stdout);
+}
