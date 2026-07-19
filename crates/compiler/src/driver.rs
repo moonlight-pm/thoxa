@@ -112,7 +112,107 @@ pub fn build_runtime() -> Result<()> {
     if !status.success() {
         return Err(Error::new("ar failed creating libthoxa_rt.a"));
     }
+
+    write_compile_commands(&root, &src, &include)?;
     Ok(())
+}
+
+/// Write a clangd-friendly `compile_commands.json` at the workspace root so
+/// editors resolve `thoxa_rt.h` and system headers the same way `cc` does.
+///
+/// On NixOS, clangd does not see gcc's builtin include paths unless we copy
+/// them into the compile command (or configure `--query-driver` in the editor).
+fn write_compile_commands(root: &Path, src: &Path, include: &Path) -> Result<()> {
+    let directory = root
+        .canonicalize()
+        .unwrap_or_else(|_| root.to_path_buf());
+    let file = src
+        .canonicalize()
+        .unwrap_or_else(|_| src.to_path_buf());
+    let include = include
+        .canonicalize()
+        .unwrap_or_else(|_| include.to_path_buf());
+
+    let mut args: Vec<String> = vec![
+        "cc".into(),
+        "-std=c11".into(),
+        "-Wall".into(),
+        "-Wextra".into(),
+        "-I".into(),
+        include.to_string_lossy().into_owned(),
+    ];
+
+    for sys in cc_system_include_dirs() {
+        args.push("-isystem".into());
+        args.push(sys);
+    }
+
+    args.push("-c".into());
+    args.push(file.to_string_lossy().into_owned());
+
+    let mut args_json = String::from("[\n");
+    for (i, a) in args.iter().enumerate() {
+        if i > 0 {
+            args_json.push_str(",\n");
+        }
+        args_json.push_str(&format!("      \"{}\"", json_escape(a)));
+    }
+    args_json.push_str("\n    ]");
+
+    let body = format!(
+        r#"[
+  {{
+    "directory": "{}",
+    "file": "{}",
+    "arguments": {}
+  }}
+]
+"#,
+        json_escape(&directory.to_string_lossy()),
+        json_escape(&file.to_string_lossy()),
+        args_json
+    );
+
+    let path = root.join("compile_commands.json");
+    fs::write(&path, body).map_err(|e| Error::new(e.to_string()))?;
+    Ok(())
+}
+
+/// Parse `cc -E -Wp,-v -x c -` for the `#include <...>` search list.
+fn cc_system_include_dirs() -> Vec<String> {
+    let output = Command::new("cc")
+        .args(["-E", "-Wp,-v", "-x", "c", "-"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output();
+
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let mut dirs = Vec::new();
+    let mut in_list = false;
+    for line in stderr.lines() {
+        if line.starts_with("#include <...> search starts here:") {
+            in_list = true;
+            continue;
+        }
+        if in_list {
+            if line.starts_with("End of search list") {
+                break;
+            }
+            let path = line.trim();
+            if !path.is_empty() && Path::new(path).is_dir() {
+                dirs.push(path.to_string());
+            }
+        }
+    }
+    dirs
+}
+
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 pub fn emit_c(opts: &BuildOptions) -> Result<PathBuf> {

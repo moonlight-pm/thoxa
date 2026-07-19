@@ -1,0 +1,14 @@
+# clangd config for the C runtime (and any hand-written C).
+#
+# Prefer the compilation database written by `cargo make runtime` — on NixOS
+# that file also embeds gcc's system include paths so <stdio.h> resolves.
+# Fallback flags below cover the project header if the DB is missing.
+#
+# After `cargo make runtime`, restart clangd / reload the editor window.
+
+CompileFlags:
+  Add:
+    - -std=c11
+    - -Wall
+    - -Wextra
+    - -Iruntime/include

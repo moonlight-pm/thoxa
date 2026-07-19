@@ -37,6 +37,22 @@ cargo run -p thoxa -- emit-c tests/conformance/hello.thx
 | `docs/specs/` | Design docs |
 | `docs/decisions.md` | Decision log |
 
+## Editor / C language server
+
+The runtime lives under `runtime/` with headers in `runtime/include/`. Editors using
+**clangd** need that include path (otherwise `thoxa_rt.h` is missing). On **NixOS**,
+clangd also will not see gcc’s system headers (`stdio.h`, `fputs`, `stdout`) unless
+those paths are provided — real `cc` works fine; only the language server is confused.
+
+```bash
+cargo make runtime    # builds libthoxa_rt.a and writes compile_commands.json
+```
+
+That `compile_commands.json` includes `-Iruntime/include` **and** the host `cc`
+system include dirs. Then **reload the window / restart clangd**.
+
+Fallback: committed [`.clangd`](.clangd) with `-Iruntime/include`.
+
 ## Docs
 
 - [Native kernel design](docs/specs/2026-07-18-thoxa-native-kernel-design.md)

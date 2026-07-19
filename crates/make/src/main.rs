@@ -39,7 +39,7 @@ fn print_help() {
 ThoxaNative xtask (`cargo make …`)
 
 Commands:
-    cargo make runtime              Build libthoxa_rt.a under targets/runtime/
+    cargo make runtime              Build libthoxa_rt.a + compile_commands.json
     cargo make test                 Run conformance suite
     cargo make run <file.thx>       Compile and run a program
     cargo make build <file.thx>     Compile to targets/bin/
