@@ -73,10 +73,10 @@ typedef struct {
 
 | Rung | Program | Forces |
 |------|---------|--------|
-| R0 | `hello` — `main`, `println`, return `0` | driver, runtime, C emit skeleton |
-| R1 | arithmetic, `let`, `if` | locals, exprs, control |
-| R2 | `Trial` + `match` + `?` | tags, force-to-deal, early return |
-| R3 | user `type` + methods | layout, construction |
+| R0 | `hello` — `main`, `println`, return `0` | driver, runtime, C emit skeleton | ✅ |
+| R1 | arithmetic, `let`, `if` | locals, exprs, control | ✅ |
+| R2 | `Trial` + `match` + `?` | tags, force-to-deal, early return; R2 monomorph is `Trial<Int64,Int64>` (String err → R4) | ✅ |
+| R3 | user `type` + methods | layout, construction; R3 fields Int64/Bool only | ✅ |
 | R4 | `String` / interpolation | heap string + RC |
 | R5 | `Bytes` + mut | buffers |
 | R6 | `extern fn` libc | FFI |

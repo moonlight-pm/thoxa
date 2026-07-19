@@ -1,7 +1,7 @@
 //! MIR → C source.
 
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::mir::{Callee, Function, Program, RValue, Stmt, Ty};
+use crate::mir::{Callee, Function, Program, RValue, Stmt, TrialTag, Ty, TypeLayout};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 
@@ -11,6 +11,27 @@ pub fn emit_program(program: &Program) -> String {
     out.push_str("#include <stdint.h>\n");
     out.push_str("#include <stdbool.h>\n");
     out.push_str("#include \"thoxa_rt.h\"\n\n");
+
+    out.push_str("typedef struct {\n");
+    out.push_str("    int32_t tag; /* 0 = Pass, 1 = Fail */\n");
+    out.push_str("    int64_t payload;\n");
+    out.push_str("} ThoxaTrialI64I64;\n\n");
+
+    out.push_str("static inline ThoxaTrialI64I64 thoxa_trial_pass(int64_t v) {\n");
+    out.push_str("    ThoxaTrialI64I64 t; t.tag = 0; t.payload = v; return t;\n");
+    out.push_str("}\n");
+    out.push_str("static inline ThoxaTrialI64I64 thoxa_trial_fail(int64_t e) {\n");
+    out.push_str("    ThoxaTrialI64I64 t; t.tag = 1; t.payload = e; return t;\n");
+    out.push_str("}\n\n");
+
+    for t in &program.types {
+        emit_typedef(&mut out, t);
+    }
+
+    for f in &program.functions {
+        emit_proto(&mut out, f);
+    }
+    out.push('\n');
 
     for f in &program.functions {
         emit_function(&mut out, f);
@@ -23,18 +44,63 @@ pub fn emit_program(program: &Program) -> String {
     out
 }
 
-fn emit_function(out: &mut String, f: &Function) {
-    let c_name = c_fn_name(&f.name);
-    let ret = c_ty(f.ret_ty);
-    let _ = writeln!(out, "{ret} {c_name}(void) {{");
+fn emit_typedef(out: &mut String, t: &TypeLayout) {
+    let _ = writeln!(out, "typedef struct {{");
+    for f in &t.fields {
+        let _ = writeln!(out, "    {} {};", c_ty(&f.ty), f.c_name);
+    }
+    if t.fields.is_empty() {
+        out.push_str("    char _pad;\n");
+    }
+    let _ = writeln!(out, "}} {};\n", c_type_name(&t.name));
+}
 
-    // Collect locals
+fn emit_proto(out: &mut String, f: &Function) {
+    let c_name = c_fn_name(f);
+    let ret = c_ty(&f.ret_ty);
+    let _ = write!(out, "{ret} {c_name}(");
+    emit_params(out, f);
+    out.push_str(");\n");
+}
+
+fn emit_params(out: &mut String, f: &Function) {
+    let mut first = true;
+    if let Some((name, ty)) = &f.receiver {
+        let _ = write!(out, "{} {}", c_ty(ty), name);
+        first = false;
+    }
+    if f.params.is_empty() && f.receiver.is_none() {
+        out.push_str("void");
+        return;
+    }
+    for (name, ty) in &f.params {
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        let _ = write!(out, "{} {}", c_ty(ty), name);
+    }
+}
+
+fn emit_function(out: &mut String, f: &Function) {
+    let c_name = c_fn_name(f);
+    let ret = c_ty(&f.ret_ty);
+    let _ = write!(out, "{ret} {c_name}(");
+    emit_params(out, f);
+    out.push_str(") {\n");
+
     let mut locals: Vec<(String, Ty)> = Vec::new();
     let mut seen = HashSet::new();
+    if let Some((name, _)) = &f.receiver {
+        seen.insert(name.clone());
+    }
+    for (name, _) in &f.params {
+        seen.insert(name.clone());
+    }
     collect_locals(&f.body, &mut locals, &mut seen);
     if let Some(ref r) = f.ret {
         if seen.insert(r.name.clone()) {
-            locals.push((r.name.clone(), f.ret_ty));
+            locals.push((r.name.clone(), f.ret_ty.clone()));
         }
     }
 
@@ -42,17 +108,18 @@ fn emit_function(out: &mut String, f: &Function) {
         if *ty == Ty::Void {
             continue;
         }
-        let _ = writeln!(out, "    {} {};", c_ty(*ty), name);
+        let _ = writeln!(out, "    {} {};", c_ty(ty), name);
     }
 
     emit_stmts(out, &f.body, 1);
 
-    match (&f.ret, f.ret_ty) {
-        (Some(p), Ty::Int64) | (Some(p), Ty::Bool) => {
+    match (&f.ret, &f.ret_ty) {
+        (Some(_), Ty::Void) => {}
+        (Some(p), _) => {
             let _ = writeln!(out, "    return {};", p.name);
         }
         (None, Ty::Void) => {}
-        _ => {
+        (None, _) => {
             out.push_str("    return 0;\n");
         }
     }
@@ -64,7 +131,7 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
         match s {
             Stmt::Assign { place, ty, .. } => {
                 if seen.insert(place.name.clone()) {
-                    locals.push((place.name.clone(), *ty));
+                    locals.push((place.name.clone(), ty.clone()));
                 }
             }
             Stmt::Eval(_) => {}
@@ -76,6 +143,7 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
                 collect_locals(then_body, locals, seen);
                 collect_locals(else_body, locals, seen);
             }
+            Stmt::Return { .. } => {}
         }
     }
 }
@@ -108,6 +176,9 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize) {
                     emit_stmts(out, else_body, indent + 1);
                     let _ = writeln!(out, "{pad}}}");
                 }
+            }
+            Stmt::Return { value } => {
+                let _ = writeln!(out, "{pad}return {};", value.name);
             }
         }
     }
@@ -174,7 +245,57 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                 }
                 out.push(')');
             }
+            Callee::User(name) => {
+                out.push_str(&c_free_fn_name(name));
+                out.push('(');
+                for (i, a) in args.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str(&a.name);
+                }
+                out.push(')');
+            }
+            Callee::Method { type_name, method } => {
+                let _ = write!(out, "{}", c_method_name(type_name, method));
+                out.push('(');
+                for (i, a) in args.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str(&a.name);
+                }
+                out.push(')');
+            }
         },
+        RValue::TrialMake { tag, payload } => {
+            let ctor = match tag {
+                TrialTag::Pass => "thoxa_trial_pass",
+                TrialTag::Fail => "thoxa_trial_fail",
+            };
+            let _ = write!(out, "{ctor}({})", payload.name);
+        }
+        RValue::TrialTag(p) => {
+            let _ = write!(out, "(int64_t)({}.tag)", p.name);
+        }
+        RValue::TrialPayload(p) => {
+            let _ = write!(out, "{}.payload", p.name);
+        }
+        RValue::StructLit { type_name, fields } => {
+            // Compound literal — field names assigned in declaration order via positions.
+            // We don't have field names here; cgen uses positional init for the typedef order.
+            let _ = write!(out, "({}){{", c_type_name(type_name));
+            for (i, f) in fields.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(&f.name);
+            }
+            out.push('}');
+        }
+        RValue::Field { base, field } => {
+            let _ = write!(out, "{}.{}", base.name, field);
+        }
     }
 }
 
@@ -197,16 +318,22 @@ fn emit_c_string(out: &mut String, s: &str) {
     out.push('\"');
 }
 
-fn c_ty(ty: Ty) -> &'static str {
+fn c_ty(ty: &Ty) -> String {
     match ty {
-        Ty::Int64 => "int64_t",
-        Ty::Bool => "bool",
-        Ty::CStr => "const char*",
-        Ty::Void => "void",
+        Ty::Int64 => "int64_t".into(),
+        Ty::Bool => "bool".into(),
+        Ty::CStr => "const char*".into(),
+        Ty::Void => "void".into(),
+        Ty::TrialI64I64 => "ThoxaTrialI64I64".into(),
+        Ty::User(name) => c_type_name(name),
     }
 }
 
-fn c_fn_name(thoxa_name: &str) -> String {
+fn c_type_name(thoxa: &str) -> String {
+    format!("Thoxa_{thoxa}")
+}
+
+fn c_free_fn_name(thoxa_name: &str) -> String {
     if thoxa_name == "main" {
         "thoxa_fn_main".to_string()
     } else {
@@ -214,3 +341,16 @@ fn c_fn_name(thoxa_name: &str) -> String {
     }
 }
 
+fn c_method_name(type_name: &str, method: &str) -> String {
+    format!("thoxa_m_{type_name}_{method}")
+}
+
+fn c_fn_name(f: &Function) -> String {
+    if let Some((ty, method)) = f.name.split_once("__") {
+        // Method lowered as Type__method
+        if f.receiver.is_some() {
+            return c_method_name(ty, method);
+        }
+    }
+    c_free_fn_name(&f.name)
+}

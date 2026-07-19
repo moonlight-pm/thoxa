@@ -1,0 +1,26 @@
+## Trial + match + ? (R2). Error payload is Int64 — String arrives with R4.
+fn half(x: Int64) -> Trial<Int64, Int64> {
+    if x % 2 == 0 { Pass(x / 2) } else { Fail(x) }
+}
+
+fn quarter(x: Int64) -> Trial<Int64, Int64> {
+    let a = half(x)?
+    let b = half(a)?
+    Pass(b)
+}
+
+fn main() -> Int64 {
+    match quarter(20) {
+        Pass(v) { println(v) }
+        Fail(e) { println(e) }
+    }
+    match quarter(6) {
+        Pass(v) { println(v) }
+        Fail(e) { println(e) }
+    }
+    match quarter(7) {
+        Pass(v) { println(v) }
+        Fail(e) { println(e) }
+    }
+    0
+}

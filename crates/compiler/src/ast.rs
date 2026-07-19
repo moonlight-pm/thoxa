@@ -1,4 +1,4 @@
-//! AST for the current language subset (R0–R1).
+//! AST for the current language subset (R0–R3).
 
 use crate::span::Span;
 
@@ -10,6 +10,26 @@ pub struct Module {
 #[derive(Debug, Clone)]
 pub enum Item {
     Function(Function),
+    Type(TypeDef),
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeDef {
+    pub name: String,
+    pub name_span: Span,
+    /// Constructor parameters — for R3 these are the stored fields (in order).
+    pub params: Vec<Param>,
+    pub methods: Vec<Method>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Method {
+    pub exported: bool,
+    pub name: String,
+    pub name_span: Span,
+    pub params: Vec<Param>,
+    pub return_type: Option<TypeExpr>,
+    pub body: Block,
 }
 
 #[derive(Debug, Clone)]
@@ -24,20 +44,22 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub struct Param {
     pub name: String,
-    pub ty: Option<TypeExpr>,
+    pub name_span: Span,
+    /// Positional marker `!` (accepted; call sites may still use order or names).
+    pub positional: bool,
+    pub ty: TypeExpr,
 }
 
 #[derive(Debug, Clone)]
 pub struct TypeExpr {
     pub name: String,
+    pub args: Vec<TypeExpr>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    /// Non-tail items (lets and side-effecting expressions).
     pub items: Vec<BlockItem>,
-    /// Final expression value of the block (if any).
     pub tail: Option<Box<Expr>>,
     pub span: Span,
 }
@@ -49,7 +71,6 @@ pub enum BlockItem {
         name_span: Span,
         init: Expr,
     },
-    /// Expression evaluated for side effects (result discarded).
     Expr(Expr),
 }
 
@@ -74,9 +95,23 @@ pub enum ExprKind {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+    /// `f(…)` or `Point(x: 1, y: 2)` — free function / constructor call.
     Call {
         callee: String,
-        args: Vec<Expr>,
+        args: Vec<Arg>,
+    },
+    /// `recv.field` or `recv.method(…)` after postfix lowering.
+    Field {
+        base: Box<Expr>,
+        name: String,
+        name_span: Span,
+    },
+    /// `recv.method(args)`
+    MethodCall {
+        receiver: Box<Expr>,
+        method: String,
+        method_span: Span,
+        args: Vec<Arg>,
     },
     If {
         cond: Box<Expr>,
@@ -84,6 +119,39 @@ pub enum ExprKind {
         else_branch: Option<Block>,
     },
     Block(Block),
+    Try(Box<Expr>),
+    Match {
+        scrutinee: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum Arg {
+    /// Positional argument.
+    Pos(Expr),
+    /// Named argument `name: expr`.
+    Named {
+        name: String,
+        name_span: Span,
+        value: Expr,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Block,
+}
+
+#[derive(Debug, Clone)]
+pub enum Pattern {
+    Variant {
+        name: String,
+        bind: String,
+        bind_span: Span,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

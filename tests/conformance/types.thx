@@ -1,0 +1,17 @@
+## User type + methods (R3). Fields are Int64; String/Float arrive later.
+type Point(x: Int64, y: Int64) {
+    export fn lengthSquared() -> Int64 {
+        x * x + y * y
+    }
+    export fn movedBy(dx: Int64, dy: Int64) -> Point {
+        Point(x: x + dx, y: y + dy)
+    }
+}
+
+fn main() -> Int64 {
+    let p = Point(x: 3, y: 4)
+    println(p.lengthSquared())
+    let q = p.movedBy(dx: 1, dy: 2)
+    println(q.lengthSquared())
+    0
+}

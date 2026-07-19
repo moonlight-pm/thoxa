@@ -1,4 +1,4 @@
-//! Lexer for the current Thoxa subset (R0–R1).
+//! Lexer for the current Thoxa subset (R0–R3).
 
 use crate::error::{Error, Result};
 use crate::span::Span;
@@ -10,6 +10,9 @@ pub enum TokenKind {
     Let,
     If,
     Else,
+    Match,
+    Type,
+    Export,
     True,
     False,
     And,
@@ -24,22 +27,24 @@ pub enum TokenKind {
     RParen,
     LBrace,
     RBrace,
-    Arrow, // ->
+    LAngle,
+    RAngle,
+    Arrow,
     Colon,
     Comma,
-    Eq,    // =
-    EqEq,  // ==
-    Ne,    // !=
-    Lt,
+    Dot,
+    Eq,
+    EqEq,
+    Ne,
     Le,
-    Gt,
     Ge,
     Plus,
     Minus,
     Star,
     Slash,
     Percent,
-    // End
+    Question,
+    Bang,
     Eof,
 }
 
@@ -95,19 +100,22 @@ impl<'a> Lexer<'a> {
             b'}' => self.simple(TokenKind::RBrace, start, 1),
             b':' => self.simple(TokenKind::Colon, start, 1),
             b',' => self.simple(TokenKind::Comma, start, 1),
+            b'.' => self.simple(TokenKind::Dot, start, 1),
             b'+' => self.simple(TokenKind::Plus, start, 1),
             b'*' => self.simple(TokenKind::Star, start, 1),
             b'%' => self.simple(TokenKind::Percent, start, 1),
             b'/' => self.simple(TokenKind::Slash, start, 1),
+            b'?' => self.simple(TokenKind::Question, start, 1),
             b'-' if self.peek(1) == Some(b'>') => self.simple(TokenKind::Arrow, start, 2),
             b'-' => self.simple(TokenKind::Minus, start, 1),
             b'=' if self.peek(1) == Some(b'=') => self.simple(TokenKind::EqEq, start, 2),
             b'=' => self.simple(TokenKind::Eq, start, 1),
             b'!' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Ne, start, 2),
+            b'!' => self.simple(TokenKind::Bang, start, 1),
             b'<' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Le, start, 2),
-            b'<' => self.simple(TokenKind::Lt, start, 1),
+            b'<' => self.simple(TokenKind::LAngle, start, 1),
             b'>' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Ge, start, 2),
-            b'>' => self.simple(TokenKind::Gt, start, 1),
+            b'>' => self.simple(TokenKind::RAngle, start, 1),
             b'"' => self.string(start),
             b if b.is_ascii_digit() => self.number(start),
             b if is_ident_start(b) => self.ident_or_keyword(start),
@@ -222,6 +230,9 @@ impl<'a> Lexer<'a> {
             "let" => TokenKind::Let,
             "if" => TokenKind::If,
             "else" => TokenKind::Else,
+            "match" => TokenKind::Match,
+            "type" => TokenKind::Type,
+            "export" => TokenKind::Export,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "and" => TokenKind::And,
@@ -269,5 +280,25 @@ mod tests {
         assert!(tokens.iter().any(|t| t.kind == TokenKind::EqEq));
         assert!(tokens.iter().any(|t| t.kind == TokenKind::And));
         assert!(tokens.iter().any(|t| t.kind == TokenKind::Not));
+    }
+
+    #[test]
+    fn trial_tokens() {
+        let tokens = Lexer::new("fn half(x: Int64) -> Trial<Int64, Int64> { half(x)? }")
+            .tokenize()
+            .unwrap();
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Question));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::LAngle));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::RAngle));
+    }
+
+    #[test]
+    fn type_tokens() {
+        let tokens = Lexer::new("type Point(x: Int64) { export fn len() -> Int64 { x } } p.x")
+            .tokenize()
+            .unwrap();
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Type));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Export));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Dot));
     }
 }
