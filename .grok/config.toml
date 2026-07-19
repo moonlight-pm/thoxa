@@ -1,23 +1,108 @@
-# Project-scoped Grok settings (committed). Reduces permission churn for trusted local work.
-# Session still prompts for risky ops not listed (e.g. git push, rm -rf).
+# Project-scoped Grok settings (committed).
+# Trusted local worktree: full read/write under this project, and git commits,
+# without per-call prompts. Destructive shared-state ops stay denied.
 # Docs: ~/.grok/docs/user-guide/22-permissions-and-safety.md
+#
+# Note: permission rules are loaded at session start — restart Grok to apply.
 
 [permission]
 allow = [
-  # Build / test / run (xtask + cargo)
+  # --- Project read / write (tools) ---
+  # Bare tool allows cover every path the tools touch; path globs document intent
+  # for absolute and relative forms (rules match the path string as invoked).
+  "Read",
+  "Read(**)",
+  "Read(/home/joshua/Workspace/ThoxaNative/**)",
+  "Edit",
+  "Edit(**)",
+  "Edit(/home/joshua/Workspace/ThoxaNative/**)",
+  "Write",
+  "Write(**)",
+  "Write(/home/joshua/Workspace/ThoxaNative/**)",
+  "Grep",
+  "Grep(**)",
+
+  # --- Git: commits and normal local workflow ---
+  # Explicit commit forms + full `git *` so add/status/diff/log/commit all pass.
+  # `git push` / force / hard-reset remain denied below (deny wins).
+  "Bash(git *)",
+  "Bash(git commit *)",
+  "Bash(git commit:*)",
+  "Bash(git add *)",
+  "Bash(git status *)",
+  "Bash(git status)",
+  "Bash(git diff *)",
+  "Bash(git log *)",
+  "Bash(git show *)",
+  "Bash(git branch *)",
+  "Bash(git rev-parse *)",
+  "Bash(git ls-files *)",
+  "Bash(git restore *)",
+  "Bash(git checkout *)",
+  "Bash(git switch *)",
+  "Bash(git stash *)",
+  "Bash(git merge *)",
+  "Bash(git rebase *)",
+  "Bash(git tag *)",
+  "Bash(git remote *)",
+  "Bash(git fetch *)",
+  "Bash(git pull *)",
+
+  # --- Build / test / local mutations under the project tree ---
   "Bash(cargo *)",
   "Bash(cc *)",
   "Bash(clang *)",
   "Bash(clangd *)",
-
-  # File edits (create/overwrite/patch tools map to Edit)
-  "Edit",
+  "Bash(ar *)",
+  "Bash(make *)",
+  "Bash(mkdir *)",
+  "Bash(cp *)",
+  "Bash(mv *)",
+  "Bash(touch *)",
+  "Bash(chmod *)",
+  "Bash(ln *)",
+  "Bash(install *)",
+  "Bash(rm *)",
+  "Bash(rmdir *)",
+  "Bash(tee *)",
+  "Bash(sed *)",
+  "Bash(awk *)",
+  "Bash(printf *)",
+  "Bash(echo *)",
+  "Bash(cat *)",
+  "Bash(head *)",
+  "Bash(tail *)",
+  "Bash(wc *)",
+  "Bash(sort *)",
+  "Bash(uniq *)",
+  "Bash(tr *)",
+  "Bash(cut *)",
+  "Bash(find *)",
+  "Bash(ls *)",
+  "Bash(pwd)",
+  "Bash(pwd *)",
+  "Bash(test *)",
+  "Bash(true)",
+  "Bash(false)",
+  "Bash(cd *)",
+  "Bash(env *)",
+  "Bash(timeout *)",
+  "Bash(nice *)",
+  "Bash(stdbuf *)",
+  "Bash(xargs *)",
+  "Bash(sh *)",
+  "Bash(bash *)",
+  "Bash(zsh *)",
 ]
 
-# Still ask for destructive / shared-state commands (deny wins over allow if both match)
+# deny always wins over allow. Keep shared-state / irreversible ops gated.
 deny = [
   "Bash(rm -rf *)",
+  "Bash(rm -rf /*)",
   "Bash(git push *)",
   "Bash(git push --force *)",
+  "Bash(git push -f *)",
   "Bash(git reset --hard *)",
+  "Bash(git clean -fd *)",
+  "Bash(git clean -xfd *)",
 ]
