@@ -1,3 +1,8 @@
 [alias]
 # xtask entrypoint: `cargo make test`, `cargo make runtime`, …
 make = "run -p make --"
+
+[build]
+# Keep Cargo artifacts under target/rust so we can group C and Thoxa
+# outputs alongside them (target/c, target/thoxa) without a second root.
+target-dir = "target/rust"

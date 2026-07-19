@@ -34,7 +34,7 @@ See also [docs/decisions.md](../decisions.md).
          → MIR (typed, explicit ops)
          → rc-insert (simple RC first; Perceus later)
          → cgen (MIR → C)
-         → cc + libthoxa_rt → binary under targets/
+         → cc + libthoxa_rt → binary under target/thoxa/
 ```
 
 - **No QBE in phase A.**
@@ -101,14 +101,17 @@ ThoxaNative/
     include/thoxa_rt.h
     src/*.c
   tests/conformance/         # .thx + .out
-  targets/                   # all build products (gitignored contents)
+  target/                    # all build products (gitignored)
+    rust/                    # Cargo (see .cargo/config.toml target-dir)
+    c/                       # C runtime .o / .a
+    thoxa/                   # emitted .c and linked binaries
 ```
 
 ### Conventions
 
 - **Rust sources** live under `crates/`.
 - **Build automation** lives in `crates/make` (xtask). Prefer `cargo make …` over shell scripts.
-- **Thoxa build products** (generated `.c`, objects, binaries, runtime `.a`) go under `targets/` so the source tree stays clean.
+- **All build products** live under `target/`, grouped by kind (`rust/`, `c/`, `thoxa/`).
 
 ## 8. CLI
 

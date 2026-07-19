@@ -24,7 +24,7 @@ fn main() {
         "run" => cmd_run(&args),
         "build" => cmd_build(&args),
         "emit-c" => cmd_emit_c(&args),
-        "clean" => cmd_clean(),
+        "clean" => cmd_clean(&args),
         other => {
             eprintln!("unknown make command `{other}` (try `cargo make help`)");
             2
@@ -38,13 +38,19 @@ fn print_help() {
         "\
 ThoxaNative xtask (`cargo make …`)
 
+Build tree (everything under target/):
+    target/rust/     Cargo (compiler, xtask)
+    target/c/        C runtime (libthoxa_rt.a)
+    target/thoxa/    Thoxa products (c/, bin/)
+
 Commands:
     cargo make runtime              Build libthoxa_rt.a + compile_commands.json
     cargo make test                 Run conformance suite
     cargo make run <file.thx>       Compile and run a program
-    cargo make build <file.thx>     Compile to targets/bin/
-    cargo make emit-c <file.thx>    Write generated C under targets/c/
-    cargo make clean                Remove targets/ contents (keeps .gitkeep)
+    cargo make build <file.thx>     Compile to target/thoxa/bin/
+    cargo make emit-c <file.thx>    Write generated C under target/thoxa/c/
+    cargo make clean                Remove target/c and target/thoxa
+    cargo make clean --all          Also remove target/rust (full wipe)
 "
     );
 }
@@ -57,6 +63,11 @@ fn workspace_root() -> PathBuf {
         .parent()
         .unwrap()
         .to_path_buf()
+}
+
+/// Cargo puts binaries under `target/rust/` (see `.cargo/config.toml`).
+fn thoxa_bin_path() -> PathBuf {
+    workspace_root().join("target/rust/debug/thoxa")
 }
 
 fn ensure_thoxa_built() -> i32 {
@@ -78,7 +89,7 @@ fn run_thoxa(args: &[&str]) -> i32 {
     if ensure_thoxa_built() != 0 {
         return 1;
     }
-    let bin = workspace_root().join("target/debug/thoxa");
+    let bin = thoxa_bin_path();
     let status = Command::new(&bin)
         .args(args)
         .current_dir(workspace_root())
@@ -130,23 +141,39 @@ fn cmd_emit_c(args: &[String]) -> i32 {
     run_thoxa(&refs)
 }
 
-fn cmd_clean() -> i32 {
-    let targets = workspace_root().join("targets");
-    if targets.is_dir() {
-        for entry in fs::read_dir(&targets).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if path.file_name().and_then(|n| n.to_str()) == Some(".gitkeep") {
-                continue;
-            }
-            if path.is_dir() {
-                let _ = fs::remove_dir_all(&path);
-            } else {
-                let _ = fs::remove_file(&path);
-            }
+fn cmd_clean(args: &[String]) -> i32 {
+    let root = workspace_root();
+    let all = args.iter().any(|a| a == "--all" || a == "-a");
+
+    for sub in ["c", "thoxa"] {
+        let path = root.join("target").join(sub);
+        if path.is_dir() {
+            let _ = fs::remove_dir_all(&path);
+            eprintln!("removed {}", path.display());
         }
     }
-    // Also clean cargo target? leave that to `cargo clean`
-    eprintln!("cleaned targets/");
+
+    // Legacy path from earlier layout
+    let legacy = root.join("targets");
+    if legacy.is_dir() {
+        let _ = fs::remove_dir_all(&legacy);
+        eprintln!("removed {}", legacy.display());
+    }
+
+    if all {
+        let rust_dir = root.join("target/rust");
+        if rust_dir.is_dir() {
+            let _ = fs::remove_dir_all(&rust_dir);
+            eprintln!("removed {}", rust_dir.display());
+        }
+        // Drop empty target/ if present
+        let target = root.join("target");
+        if target.is_dir() && fs::read_dir(&target).map(|mut d| d.next().is_none()).unwrap_or(false)
+        {
+            let _ = fs::remove_dir(&target);
+        }
+    }
+
     0
 }
 
@@ -178,7 +205,7 @@ fn cmd_test() -> i32 {
         return 1;
     }
 
-    let thoxa = workspace_root().join("target/debug/thoxa");
+    let thoxa = thoxa_bin_path();
     let mut passed = 0;
     let mut failed = 0;
 
@@ -231,4 +258,3 @@ fn cmd_test() -> i32 {
         0
     }
 }
-

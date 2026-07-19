@@ -16,7 +16,7 @@ Living log of load-bearing choices. Newest first within each section when update
 | D8 | RC ambition day one | Simple correct RC | Perceus later |
 | D9 | Docs path | `docs/specs/`, `docs/decisions.md` | No `docs/superpowers` |
 | D10 | Build automation | `crates/make` xtask, `cargo make …` | No project `.sh` scripts |
-| D11 | Build products | `targets/` | Keep source tree clean |
+| D11 | Build products | Single `target/` tree: `rust/`, `c/`, `thoxa/` | No separate `targets/`; Cargo uses `target/rust` via `.cargo/config.toml` |
 | D12 | Language oracle | `../Thoxa` SPEC + conformance | Reopen syntax only deliberately |
 | D13 | Old QBE tree | Reference only | Do not revive megapass codegen |
 ```

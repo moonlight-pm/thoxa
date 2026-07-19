@@ -13,7 +13,7 @@ cargo make test
 # Run a Thoxa file
 cargo make run tests/conformance/hello.thx
 
-# Emit C only (under targets/)
+# Emit C only (under target/thoxa/c/)
 cargo make emit-c tests/conformance/hello.thx
 ```
 
@@ -31,11 +31,24 @@ cargo run -p thoxa -- emit-c tests/conformance/hello.thx
 |------|------|
 | `crates/compiler` | `thoxa` CLI + compiler library |
 | `crates/make` | xtask (`cargo make …`) |
-| `runtime/` | C runtime (`thoxa_rt`) |
+| `runtime/` | C runtime sources (`thoxa_rt`) |
 | `tests/conformance/` | `.thx` + `.out` programs |
-| `targets/` | All build products |
 | `docs/specs/` | Design docs |
 | `docs/decisions.md` | Decision log |
+
+### Build products (`target/`)
+
+Everything generated lives under one tree:
+
+| Path | Role |
+|------|------|
+| `target/rust/` | Cargo (compiler + xtask binaries, deps) |
+| `target/c/` | C runtime objects + `libthoxa_rt.a` |
+| `target/thoxa/c/` | Generated C from Thoxa sources |
+| `target/thoxa/bin/` | Linked Thoxa program binaries |
+
+`cargo make clean` removes `target/c` and `target/thoxa`.  
+`cargo make clean --all` also removes `target/rust`.
 
 ## Editor / C language server
 

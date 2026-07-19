@@ -1,4 +1,9 @@
-//! Compile pipeline: source → C → binary under `targets/`.
+//! Compile pipeline: source → C → binary under `target/`.
+//!
+//! Layout:
+//! - `target/rust/`   — Cargo (`CARGO_TARGET_DIR` / `.cargo/config.toml`)
+//! - `target/c/`      — C runtime objects and `libthoxa_rt.a`
+//! - `target/thoxa/`  — Thoxa compiler products (`c/`, `bin/`)
 
 use crate::cgen;
 use crate::error::{Error, Result};
@@ -13,9 +18,9 @@ use std::process::{Command, Stdio};
 #[derive(Debug, Clone)]
 pub struct BuildOptions {
     pub source: PathBuf,
-    /// Base name for outputs under targets/ (default: source stem).
+    /// Base name for outputs under `target/thoxa/` (default: source stem).
     pub output_name: Option<String>,
-    /// If set, also write the generated C here (in addition to targets/).
+    /// If set, only write generated C under `target/thoxa/c/`.
     pub emit_c_only: bool,
 }
 
@@ -42,8 +47,24 @@ fn workspace_root() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-pub fn targets_dir() -> PathBuf {
-    workspace_root().join("targets")
+/// Root of all build products: `target/`.
+pub fn target_dir() -> PathBuf {
+    workspace_root().join("target")
+}
+
+/// Cargo output: `target/rust/`.
+pub fn rust_target_dir() -> PathBuf {
+    target_dir().join("rust")
+}
+
+/// C runtime build products: `target/c/`.
+pub fn c_target_dir() -> PathBuf {
+    target_dir().join("c")
+}
+
+/// Thoxa compiler products: `target/thoxa/`.
+pub fn thoxa_target_dir() -> PathBuf {
+    target_dir().join("thoxa")
 }
 
 pub fn runtime_include_dir() -> PathBuf {
@@ -51,7 +72,7 @@ pub fn runtime_include_dir() -> PathBuf {
 }
 
 pub fn runtime_lib_path() -> PathBuf {
-    targets_dir().join("runtime/libthoxa_rt.a")
+    c_target_dir().join("libthoxa_rt.a")
 }
 
 pub fn compile_to_c(source: &Path) -> Result<String> {
@@ -81,7 +102,7 @@ pub fn ensure_runtime() -> Result<()> {
 
 pub fn build_runtime() -> Result<()> {
     let root = workspace_root();
-    let out_dir = targets_dir().join("runtime");
+    let out_dir = c_target_dir();
     fs::create_dir_all(&out_dir).map_err(|e| Error::new(e.to_string()))?;
 
     let src = root.join("runtime/src/thoxa_rt.c");
@@ -218,7 +239,7 @@ fn json_escape(s: &str) -> String {
 pub fn emit_c(opts: &BuildOptions) -> Result<PathBuf> {
     let c_source = compile_to_c(&opts.source)?;
     let name = output_stem(opts);
-    let c_dir = targets_dir().join("c");
+    let c_dir = thoxa_target_dir().join("c");
     fs::create_dir_all(&c_dir).map_err(|e| Error::new(e.to_string()))?;
     let c_path = c_dir.join(format!("{name}.c"));
     fs::write(&c_path, c_source).map_err(|e| Error::new(e.to_string()))?;
@@ -237,7 +258,7 @@ pub fn build(opts: &BuildOptions) -> Result<BuildArtifacts> {
     ensure_runtime()?;
 
     let name = output_stem(opts);
-    let bin_dir = targets_dir().join("bin");
+    let bin_dir = thoxa_target_dir().join("bin");
     fs::create_dir_all(&bin_dir).map_err(|e| Error::new(e.to_string()))?;
     let bin_path = bin_dir.join(&name);
 

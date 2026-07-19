@@ -103,6 +103,6 @@ USAGE:
     thoxa emit-c <file.thx>
     thoxa runtime
 
-Build products land under targets/."
+Build products land under target/ (rust/, c/, thoxa/)."
     );
 }
