@@ -4,7 +4,7 @@
 
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{self, Command};
 
 fn main() {
@@ -232,7 +232,3 @@ fn cmd_test() -> i32 {
     }
 }
 
-#[allow(dead_code)]
-fn _path_exists(p: &Path) -> bool {
-    p.exists()
-}
