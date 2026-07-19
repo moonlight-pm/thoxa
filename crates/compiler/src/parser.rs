@@ -1,4 +1,4 @@
-//! Recursive-descent + precedence parser (R0–R6).
+//! Recursive-descent + precedence parser (R0–R8).
 
 use crate::ast::*;
 use crate::error::{Error, Result};
@@ -18,16 +18,33 @@ impl Parser {
     pub fn parse_module(&mut self) -> Result<Module> {
         let mut items = Vec::new();
         while !self.at(TokenKind::Eof) {
-            if self.at(TokenKind::Type) {
-                items.push(Item::Type(self.parse_type_def()?));
+            let exported = if self.at(TokenKind::Export) {
+                self.bump();
+                true
+            } else {
+                false
+            };
+
+            if self.at(TokenKind::Import) {
+                if exported {
+                    return Err(Error::at(
+                        "`export import` is not supported",
+                        self.peek_span(),
+                    ));
+                }
+                items.push(Item::Import(self.parse_import()?));
+            } else if self.at(TokenKind::Type) {
+                items.push(Item::Type(self.parse_type_def(exported)?));
             } else if self.at(TokenKind::Extern) {
-                items.push(Item::Extern(self.parse_extern()?));
+                items.push(Item::Extern(self.parse_extern(exported)?));
             } else if self.at(TokenKind::Fn) {
-                items.push(Item::Function(self.parse_function()?));
+                items.push(Item::Function(self.parse_function(exported)?));
+            } else if self.at(TokenKind::Let) || self.at(TokenKind::Mut) {
+                items.push(Item::Global(self.parse_global(exported)?));
             } else {
                 return Err(Error::at(
                     format!(
-                        "expected `fn`, `extern`, or `type`, found {:?}",
+                        "expected `fn`, `extern`, `type`, `import`, or `let`/`mut`, found {:?}",
                         self.current().kind
                     ),
                     self.peek_span(),
@@ -37,8 +54,93 @@ impl Parser {
         Ok(Module { items })
     }
 
+    /// `import { a, b as c } from "…"` or `import ns from "…"`
+    fn parse_import(&mut self) -> Result<Import> {
+        self.expect_kind(&TokenKind::Import)?;
+        let kind = if self.at(TokenKind::LBrace) {
+            self.bump();
+            let mut names = Vec::new();
+            if !self.at(TokenKind::RBrace) {
+                loop {
+                    let (name, name_span) = self.expect_ident()?;
+                    let alias = if self.at(TokenKind::As) {
+                        self.bump();
+                        let (a, aspan) = self.expect_ident()?;
+                        Some((a, aspan))
+                    } else {
+                        None
+                    };
+                    names.push(ImportName {
+                        name,
+                        name_span,
+                        alias,
+                    });
+                    if self.at(TokenKind::Comma) {
+                        self.bump();
+                        continue;
+                    }
+                    break;
+                }
+            }
+            self.expect_kind(&TokenKind::RBrace)?;
+            ImportKind::Selective(names)
+        } else {
+            let (binding, binding_span) = self.expect_ident()?;
+            // Namespace binding must be camelCase (value instance).
+            if binding
+                .chars()
+                .next()
+                .map(|c| c.is_uppercase())
+                .unwrap_or(false)
+            {
+                return Err(Error::at(
+                    "a module import binds an instance; use a camelCase name",
+                    binding_span,
+                ));
+            }
+            ImportKind::Namespace {
+                binding,
+                binding_span,
+            }
+        };
+        self.expect_kind(&TokenKind::From)?;
+        let (path, path_span) = self.expect_string()?;
+        Ok(Import {
+            kind,
+            path,
+            path_span,
+        })
+    }
+
+    /// Top-level `let` / `mut name = expr`.
+    fn parse_global(&mut self, exported: bool) -> Result<Global> {
+        let mutable = if self.at(TokenKind::Mut) {
+            self.bump();
+            true
+        } else {
+            self.expect_kind(&TokenKind::Let)?;
+            false
+        };
+        if exported && mutable {
+            return Err(Error::at(
+                "top-level `mut` cannot be exported (module state is private)",
+                self.peek_span(),
+            ));
+        }
+        let (name, name_span) = self.expect_ident()?;
+        self.expect_kind(&TokenKind::Eq)?;
+        let init = self.parse_expr()?;
+        Ok(Global {
+            exported,
+            mutable,
+            name,
+            name_span,
+            init,
+        })
+    }
+
     /// `extern fn name(params) [-> T] from "lib" ["symbol"]`
-    fn parse_extern(&mut self) -> Result<ExternFn> {
+    fn parse_extern(&mut self, exported: bool) -> Result<ExternFn> {
         self.expect_kind(&TokenKind::Extern)?;
         self.expect_kind(&TokenKind::Fn)?;
         let (name, name_span) = self.expect_ident()?;
@@ -76,6 +178,7 @@ impl Parser {
             None
         };
         Ok(ExternFn {
+            exported,
             name,
             name_span,
             params,
@@ -101,33 +204,84 @@ impl Parser {
         }
     }
 
-    fn parse_type_def(&mut self) -> Result<TypeDef> {
+    fn parse_type_def(&mut self, exported: bool) -> Result<TypeDef> {
         self.expect_kind(&TokenKind::Type)?;
         let (name, name_span) = self.expect_ident()?;
-        self.expect_kind(&TokenKind::LParen)?;
+
+        // R3: `type Point(x: Int64) { methods }`
+        // R7: `type Regs { mut a: UInt32 … }` (no constructor paren list)
         let mut params = Vec::new();
-        if !self.at(TokenKind::RParen) {
-            loop {
-                params.push(self.parse_param()?);
-                if self.at(TokenKind::Comma) {
-                    self.bump();
-                    continue;
+        if self.at(TokenKind::LParen) {
+            self.bump();
+            if !self.at(TokenKind::RParen) {
+                loop {
+                    params.push(self.parse_param()?);
+                    if self.at(TokenKind::Comma) {
+                        self.bump();
+                        continue;
+                    }
+                    break;
                 }
-                break;
             }
+            self.expect_kind(&TokenKind::RParen)?;
         }
-        self.expect_kind(&TokenKind::RParen)?;
+
         self.expect_kind(&TokenKind::LBrace)?;
+        let mut fields = Vec::new();
         let mut methods = Vec::new();
         while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
-            methods.push(self.parse_method()?);
+            if self.at(TokenKind::Fn) || self.at(TokenKind::Export) {
+                methods.push(self.parse_method()?);
+            } else if self.at(TokenKind::Mut) || self.at(TokenKind::Let) {
+                fields.push(self.parse_field_decl()?);
+            } else {
+                return Err(Error::at(
+                    "expected field (`mut`/`let name: Type`) or method in type body",
+                    self.peek_span(),
+                ));
+            }
         }
         self.expect_kind(&TokenKind::RBrace)?;
+
+        if !params.is_empty() && !fields.is_empty() {
+            return Err(Error::at(
+                "type cannot have both constructor parameters and body fields",
+                name_span,
+            ));
+        }
+
         Ok(TypeDef {
+            exported,
             name,
             name_span,
             params,
+            fields,
             methods,
+        })
+    }
+
+    /// `[mut|let] name: Type` inside a type body (R7 C-layout fields).
+    fn parse_field_decl(&mut self) -> Result<FieldDecl> {
+        let mutable = if self.at(TokenKind::Mut) {
+            self.bump();
+            true
+        } else if self.at(TokenKind::Let) {
+            self.bump();
+            false
+        } else {
+            return Err(Error::at(
+                "expected `mut` or `let` field",
+                self.peek_span(),
+            ));
+        };
+        let (name, name_span) = self.expect_ident()?;
+        self.expect_kind(&TokenKind::Colon)?;
+        let ty = self.parse_type()?;
+        Ok(FieldDecl {
+            mutable,
+            name,
+            name_span,
+            ty,
         })
     }
 
@@ -170,7 +324,7 @@ impl Parser {
         })
     }
 
-    fn parse_function(&mut self) -> Result<Function> {
+    fn parse_function(&mut self, exported: bool) -> Result<Function> {
         self.expect_kind(&TokenKind::Fn)?;
         let (name, name_span) = self.expect_ident()?;
         self.expect_kind(&TokenKind::LParen)?;
@@ -194,6 +348,7 @@ impl Parser {
         };
         let body = self.parse_block()?;
         Ok(Function {
+            exported,
             name,
             name_span,
             params,
@@ -227,7 +382,7 @@ impl Parser {
             self.bump();
             if !self.at(TokenKind::RAngle) {
                 loop {
-                    args.push(self.parse_type()?);
+                    args.push(self.parse_type_arg()?);
                     if self.at(TokenKind::Comma) {
                         self.bump();
                         continue;
@@ -247,6 +402,16 @@ impl Parser {
         })
     }
 
+    fn parse_type_arg(&mut self) -> Result<TypeArg> {
+        if let TokenKind::Int(n) = self.current().kind {
+            let n = n;
+            let span = self.current().span;
+            self.bump();
+            return Ok(TypeArg::Int { value: n, span });
+        }
+        Ok(TypeArg::Type(self.parse_type()?))
+    }
+
     fn parse_block(&mut self) -> Result<Block> {
         let start = self.peek_span();
         self.expect_kind(&TokenKind::LBrace)?;
@@ -256,7 +421,7 @@ impl Parser {
                 elems.push(BlockElem::Let(self.parse_binding(false)?));
             } else if self.at(TokenKind::Mut) {
                 elems.push(BlockElem::Let(self.parse_binding(true)?));
-            } else if self.at_ident_assign() {
+            } else if self.at_assign_stmt() {
                 elems.push(BlockElem::Assign(self.parse_assign()?));
             } else {
                 elems.push(BlockElem::Expr(self.parse_expr()?));
@@ -285,10 +450,36 @@ impl Parser {
         })
     }
 
-    /// `ident =` (single `=`, not `==`) at the start of a statement.
-    fn at_ident_assign(&self) -> bool {
-        matches!(self.current().kind, TokenKind::Ident(_))
-            && self.tokens.get(self.pos + 1).map(|t| &t.kind) == Some(&TokenKind::Eq)
+    /// Statement starts with an assignable place: `name =`, `name.field =`, or `name.field[i] =`.
+    fn at_assign_stmt(&self) -> bool {
+        if !matches!(self.current().kind, TokenKind::Ident(_)) {
+            return false;
+        }
+        let mut i = self.pos + 1;
+        // Optional `.field`
+        if self.tokens.get(i).map(|t| &t.kind) == Some(&TokenKind::Dot) {
+            i += 1;
+            if !matches!(self.tokens.get(i).map(|t| &t.kind), Some(TokenKind::Ident(_))) {
+                return false;
+            }
+            i += 1;
+            // Optional `[index]`
+            if self.tokens.get(i).map(|t| &t.kind) == Some(&TokenKind::LBracket) {
+                // Scan to matching `]` then expect `=` — approximate: look for `] =` after.
+                let mut depth = 1usize;
+                i += 1;
+                while i < self.tokens.len() && depth > 0 {
+                    match &self.tokens[i].kind {
+                        TokenKind::LBracket => depth += 1,
+                        TokenKind::RBracket => depth -= 1,
+                        TokenKind::Eof => return false,
+                        _ => {}
+                    }
+                    i += 1;
+                }
+            }
+        }
+        self.tokens.get(i).map(|t| &t.kind) == Some(&TokenKind::Eq)
     }
 
     fn parse_binding(&mut self, mutable: bool) -> Result<LetBind> {
@@ -309,14 +500,38 @@ impl Parser {
     }
 
     fn parse_assign(&mut self) -> Result<AssignStmt> {
-        let (name, name_span) = self.expect_ident()?;
+        let (base, base_span) = self.expect_ident()?;
+        let target = if self.at(TokenKind::Dot) {
+            self.bump();
+            let (field, field_span) = self.expect_ident()?;
+            if self.at(TokenKind::LBracket) {
+                self.bump();
+                let index = self.parse_expr()?;
+                self.expect_kind(&TokenKind::RBracket)?;
+                AssignTarget::Index {
+                    base,
+                    base_span,
+                    field,
+                    field_span,
+                    index,
+                }
+            } else {
+                AssignTarget::Field {
+                    base,
+                    base_span,
+                    field,
+                    field_span,
+                }
+            }
+        } else {
+            AssignTarget::Name {
+                name: base,
+                name_span: base_span,
+            }
+        };
         self.expect_kind(&TokenKind::Eq)?;
         let value = self.parse_expr()?;
-        Ok(AssignStmt {
-            name,
-            name_span,
-            value,
-        })
+        Ok(AssignStmt { target, value })
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
@@ -362,7 +577,8 @@ impl Parser {
     }
 
     fn parse_cmp(&mut self) -> Result<Expr> {
-        let mut left = self.parse_add()?;
+        // Bitwise binds tighter than comparison (SPEC §7.5).
+        let mut left = self.parse_bitor()?;
         loop {
             let op = match self.current().kind {
                 TokenKind::EqEq => BinaryOp::Eq,
@@ -371,6 +587,87 @@ impl Parser {
                 TokenKind::Le => BinaryOp::Le,
                 TokenKind::RAngle => BinaryOp::Gt,
                 TokenKind::Ge => BinaryOp::Ge,
+                _ => break,
+            };
+            let start = left.span.start;
+            self.bump();
+            let right = self.parse_bitor()?;
+            let end = right.span.end;
+            left = Expr {
+                kind: ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_bitor(&mut self) -> Result<Expr> {
+        let mut left = self.parse_bitxor()?;
+        while self.at(TokenKind::Pipe) {
+            let start = left.span.start;
+            self.bump();
+            let right = self.parse_bitxor()?;
+            let end = right.span.end;
+            left = Expr {
+                kind: ExprKind::Binary {
+                    op: BinaryOp::BitOr,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_bitxor(&mut self) -> Result<Expr> {
+        let mut left = self.parse_bitand()?;
+        while self.at(TokenKind::Caret) {
+            let start = left.span.start;
+            self.bump();
+            let right = self.parse_bitand()?;
+            let end = right.span.end;
+            left = Expr {
+                kind: ExprKind::Binary {
+                    op: BinaryOp::BitXor,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_bitand(&mut self) -> Result<Expr> {
+        let mut left = self.parse_shift()?;
+        while self.at(TokenKind::Amp) {
+            let start = left.span.start;
+            self.bump();
+            let right = self.parse_shift()?;
+            let end = right.span.end;
+            left = Expr {
+                kind: ExprKind::Binary {
+                    op: BinaryOp::BitAnd,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_shift(&mut self) -> Result<Expr> {
+        let mut left = self.parse_add()?;
+        loop {
+            let op = match self.current().kind {
+                TokenKind::Shl => BinaryOp::Shl,
+                TokenKind::Shr => BinaryOp::Shr,
                 _ => break,
             };
             let start = left.span.start;
@@ -464,6 +761,18 @@ impl Parser {
                 span: Span::new(start.start, end),
             });
         }
+        if self.at(TokenKind::Tilde) {
+            self.bump();
+            let expr = self.parse_unary()?;
+            let end = expr.span.end;
+            return Ok(Expr {
+                kind: ExprKind::Unary {
+                    op: UnaryOp::BitNot,
+                    expr: Box::new(expr),
+                },
+                span: Span::new(start.start, end),
+            });
+        }
         self.parse_postfix()
     }
 
@@ -509,6 +818,21 @@ impl Parser {
                         span: Span::new(start, end),
                     };
                 }
+                continue;
+            }
+            if self.at(TokenKind::LBracket) {
+                let start = expr.span.start;
+                self.bump();
+                let index = self.parse_expr()?;
+                self.expect_kind(&TokenKind::RBracket)?;
+                let end = self.prev_span().end;
+                expr = Expr {
+                    kind: ExprKind::Index {
+                        base: Box::new(expr),
+                        index: Box::new(index),
+                    },
+                    span: Span::new(start, end),
+                };
                 continue;
             }
             break;
@@ -767,8 +1091,7 @@ struct LetBind {
 }
 
 struct AssignStmt {
-    name: String,
-    name_span: Span,
+    target: AssignTarget,
     value: Expr,
 }
 
@@ -787,8 +1110,7 @@ fn block_elem_to_item(el: BlockElem) -> BlockItem {
             init: l.init,
         },
         BlockElem::Assign(a) => BlockItem::Assign {
-            name: a.name,
-            name_span: a.name_span,
+            target: a.target,
             value: a.value,
         },
         BlockElem::Expr(e) => BlockItem::Expr(e),
@@ -992,10 +1314,56 @@ mod tests {
             Item::Type(t) => {
                 assert_eq!(t.name, "Point");
                 assert_eq!(t.params.len(), 2);
+                assert!(t.fields.is_empty());
                 assert_eq!(t.methods.len(), 2);
                 assert!(t.methods[0].exported);
             }
             _ => panic!("expected type"),
         }
+    }
+
+    #[test]
+    fn parse_cstruct_fields() {
+        let module = parse(
+            r#"
+            type Regs {
+                mut a: UInt32
+                mut cc: Array<Byte, 4>
+            }
+            fn main() -> Int64 {
+                mut r = Regs()
+                r.a = 0xFF
+                r.cc[0] = 65
+                0
+            }
+        "#,
+        );
+        match &module.items[0] {
+            Item::Type(t) => {
+                assert_eq!(t.name, "Regs");
+                assert!(t.params.is_empty());
+                assert_eq!(t.fields.len(), 2);
+                assert!(t.fields[0].mutable);
+                assert_eq!(t.fields[1].ty.name, "Array");
+                match &t.fields[1].ty.args[1] {
+                    TypeArg::Int { value: 4, .. } => {}
+                    _ => panic!("expected Array length 4"),
+                }
+            }
+            _ => panic!("expected type"),
+        }
+    }
+
+    #[test]
+    fn parse_hex_and_bitwise() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let x = 0x01020304 & 0xFFFF
+                x
+            }
+        "#,
+        );
+        assert_eq!(module.items.len(), 1);
     }
 }

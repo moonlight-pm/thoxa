@@ -80,8 +80,8 @@ typedef struct {
 | R4 | `String` / interpolation | heap string + simple RC (dup on copy, drop at fn end) | ✅ |
 | R5 | `Bytes` + mut | fixed heap buffer (fromString/count/get/set/toString); `mut` + reassignment | ✅ |
 | R6 | `extern fn` libc | `from "c"` [+ C symbol]; marshal Int32/Int64/UInt64/String/Bytes/Void | ✅ |
-| R7 | C-layout struct | packing |
-| R8 | modules / multi-file | loader |
+| R7 | C-layout struct | packing | ✅ |
+| R8 | modules / multi-file | loader | ✅ |
 | R9 | HTTP example (or subset) | integration |
 
 ## 7. Repository layout

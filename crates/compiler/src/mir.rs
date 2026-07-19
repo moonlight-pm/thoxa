@@ -1,20 +1,32 @@
 //! Mid-level IR: typed enough for RC insert + C codegen.
-//! R6: `extern fn` libc FFI (Int32/UInt64 + marshal String/Bytes).
+//! R8: multi-file modules, import/export, module-level let/mut.
 
 use crate::ast::{
-    self, Arg, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item, MatchArm, Method,
-    Pattern, TypeDef, TypeExpr, UnaryOp,
+    self, Arg, AssignTarget, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item,
+    MatchArm, Method, Pattern, TypeArg, TypeDef, TypeExpr, UnaryOp,
 };
 use crate::error::{Error, Result};
+use crate::loader::{self, BoundImport, Package, SourceModule};
 use crate::span::Span;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct Program {
     pub types: Vec<TypeLayout>,
     /// Extern declarations (for prototypes / includes in cgen).
     pub externs: Vec<ExternDecl>,
+    /// Module-level statics (`export let`, private `mut`, …).
+    pub globals: Vec<GlobalVar>,
+    /// Statements run once before `main` (module value initializers, dep order).
+    pub init: Vec<Stmt>,
     pub functions: Vec<Function>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobalVar {
+    pub name: String,
+    pub ty: Ty,
 }
 
 /// A bound C function (library `"c"` only in R6).
@@ -55,6 +67,21 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     Assign { place: Place, ty: Ty, value: RValue },
+    /// `base.field = value` (C-layout field store; truncates via Cast in value if needed).
+    FieldAssign {
+        base: Place,
+        field: String,
+        ty: Ty,
+        value: Place,
+    },
+    /// `base.field[index] = value` (fixed-array element store).
+    IndexAssign {
+        base: Place,
+        field: String,
+        index: Place,
+        ty: Ty,
+        value: Place,
+    },
     Eval(RValue),
     If {
         cond: Place,
@@ -85,8 +112,16 @@ pub enum RValue {
     TrialPayload(Place),
     /// Construct a user type from field places (declaration order).
     StructLit { type_name: String, fields: Vec<Place> },
+    /// Zero-initialize a C-layout / user struct (`TypeName()`).
+    StructZero { type_name: String },
     /// `base.field`
     Field { base: Place, field: String },
+    /// `base.field[index]` — fixed-array element load.
+    Index {
+        base: Place,
+        field: String,
+        index: Place,
+    },
     /// Convert Int64/Bool → owned String.
     ToString { value: Place, from: Ty },
     /// Non-consuming concat → owned String.
@@ -125,12 +160,19 @@ pub enum Ty {
     Void,
     Int32,
     Int64,
+    UInt32,
     UInt64,
+    /// `Byte` / `UInt8` — fixed 8-bit unsigned.
+    Byte,
     Bool,
     /// Heap RC String (`ThoxaString*`).
     String,
     /// Heap RC Bytes (`ThoxaBytes*`) — fixed length, mutable contents.
     Bytes,
+    /// Fixed inline array field type `Array<T, N>` (not a first-class value).
+    FixedArray { elem: Box<Ty>, len: u64 },
+    /// FFI pointer `Address<T>` (param types only in R7).
+    Address(Box<Ty>),
     TrialI64I64,
     User(String),
 }
@@ -140,20 +182,48 @@ fn is_heap(ty: &Ty) -> bool {
 }
 
 fn is_int(ty: &Ty) -> bool {
-    matches!(ty, Ty::Int32 | Ty::Int64 | Ty::UInt64)
+    matches!(
+        ty,
+        Ty::Int32 | Ty::Int64 | Ty::UInt32 | Ty::UInt64 | Ty::Byte
+    )
+}
+
+fn is_abi_scalar(ty: &Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Int32 | Ty::Int64 | Ty::UInt32 | Ty::UInt64 | Ty::Byte
+    )
+}
+
+fn is_abi_field_ty(ty: &Ty) -> bool {
+    match ty {
+        t if is_abi_scalar(t) => true,
+        Ty::FixedArray { elem, .. } => is_abi_scalar(elem),
+        _ => false,
+    }
 }
 
 fn is_ffi_ty(ty: &Ty) -> bool {
-    matches!(
-        ty,
-        Ty::Int32 | Ty::Int64 | Ty::UInt64 | Ty::String | Ty::Bytes | Ty::Void
-    )
+    match ty {
+        Ty::Int32
+        | Ty::Int64
+        | Ty::UInt32
+        | Ty::UInt64
+        | Ty::Byte
+        | Ty::String
+        | Ty::Bytes
+        | Ty::Void => true,
+        Ty::Address(inner) => matches!(inner.as_ref(), Ty::User(_)),
+        _ => false,
+    }
 }
 
 #[derive(Clone)]
 struct Binding {
     ty: Ty,
     mutable: bool,
+    /// C place name (local `v_x` or module global `g_Mod_x`).
+    place: Place,
 }
 
 #[derive(Clone)]
@@ -162,6 +232,8 @@ struct FnSig {
     ret: Ty,
     /// If set, this name is an `extern fn` (call C, no Thoxa body).
     extern_symbol: Option<String>,
+    /// Mangled MIR/C function name (may differ from source name for non-entry modules).
+    mangled: String,
 }
 
 #[derive(Clone)]
@@ -173,9 +245,27 @@ struct MethodSig {
 }
 
 #[derive(Clone)]
+struct FieldInfo {
+    name: String,
+    ty: Ty,
+    /// `mut` field (required for field assign / Address coercion of whole struct uses place mut).
+    mutable: bool,
+}
+
+#[derive(Clone)]
 struct TypeInfo {
-    fields: Vec<(String, Ty)>,
+    fields: Vec<FieldInfo>,
     methods: HashMap<String, MethodSig>,
+    /// True when constructed with `TypeName()` zero-init (body fields, R7).
+    zero_init: bool,
+}
+
+/// Module-level value (let/mut).
+#[derive(Clone)]
+struct GlobalInfo {
+    ty: Ty,
+    mutable: bool,
+    place: Place,
 }
 
 struct LowerCtx {
@@ -184,14 +274,43 @@ struct LowerCtx {
     env: Vec<HashMap<String, Binding>>,
     fns: HashMap<String, FnSig>,
     types: HashMap<String, TypeInfo>,
+    /// Mangled type name → info (same as types; key is always mangled).
+    /// Local/import name resolution uses `name_to_type`.
+    name_to_type: HashMap<String, String>,
+    /// Local name → mangled fn key in `fns`.
+    name_to_fn: HashMap<String, String>,
+    /// Local name → global (module-level let/mut in this module or imported let).
+    name_to_global: HashMap<String, GlobalInfo>,
+    /// Namespace binding → module id.
+    namespaces: HashMap<String, String>,
+    /// module_id → (export name → mangled type / fn / global key)
+    module_exports: HashMap<String, ModuleExports>,
     fn_ret: Ty,
+    /// Current module id being lowered.
+    module_id: String,
+    is_entry: bool,
+}
+
+#[derive(Clone, Default)]
+struct ModuleExports {
+    types: HashMap<String, String>, // source name → mangled type
+    fns: HashMap<String, String>,   // source name → mangled fn
+    /// source name → global info (place + type)
+    globals: HashMap<String, GlobalInfo>,
 }
 
 impl LowerCtx {
     fn new(
         fns: HashMap<String, FnSig>,
         types: HashMap<String, TypeInfo>,
+        name_to_type: HashMap<String, String>,
+        name_to_fn: HashMap<String, String>,
+        name_to_global: HashMap<String, GlobalInfo>,
+        namespaces: HashMap<String, String>,
+        module_exports: HashMap<String, ModuleExports>,
         fn_ret: Ty,
+        module_id: String,
+        is_entry: bool,
     ) -> Self {
         Self {
             stmts: Vec::new(),
@@ -199,7 +318,14 @@ impl LowerCtx {
             env: vec![HashMap::new()],
             fns,
             types,
+            name_to_type,
+            name_to_fn,
+            name_to_global,
+            namespaces,
+            module_exports,
             fn_ret,
+            module_id,
+            is_entry,
         }
     }
 
@@ -211,10 +337,14 @@ impl LowerCtx {
         self.env.pop();
     }
 
-    fn define(&mut self, name: &str, ty: Ty, mutable: bool) {
+    fn define(&mut self, name: &str, ty: Ty, mutable: bool, place: Place) {
         self.env.last_mut().unwrap().insert(
             name.to_string(),
-            Binding { ty, mutable },
+            Binding {
+                ty,
+                mutable,
+                place,
+            },
         );
     }
 
@@ -224,11 +354,19 @@ impl LowerCtx {
                 return Some(b.clone());
             }
         }
+        // Module-level globals (this module or selective imports).
+        if let Some(g) = self.name_to_global.get(name) {
+            return Some(Binding {
+                ty: g.ty.clone(),
+                mutable: g.mutable,
+                place: g.place.clone(),
+            });
+        }
         None
     }
 
-    fn lookup_ty(&self, name: &str) -> Option<Ty> {
-        self.lookup(name).map(|b| b.ty)
+    fn resolve_type_name(&self, name: &str) -> Option<String> {
+        self.name_to_type.get(name).cloned()
     }
 
     fn fresh(&mut self, prefix: &str) -> Place {
@@ -257,8 +395,8 @@ impl LowerCtx {
         let bound = Place {
             name: sanitize_name(name),
         };
-        self.assign(bound, ty.clone(), RValue::Use(place));
-        self.define(name, ty, mutable);
+        self.assign(bound.clone(), ty.clone(), RValue::Use(place));
+        self.define(name, ty, mutable, bound);
     }
 
     /// Reassign a mut binding; drops the old heap value if any.
@@ -282,9 +420,7 @@ impl LowerCtx {
                 value.span,
             ));
         }
-        let bound = Place {
-            name: sanitize_name(name),
-        };
+        let bound = binding.place.clone();
         if is_heap(&binding.ty) {
             self.stmts.push(Stmt::Drop {
                 place: bound.clone(),
@@ -296,203 +432,570 @@ impl LowerCtx {
     }
 }
 
+/// Lower a single-file module (wrapper used by tests).
 pub fn lower_module(module: &ast::Module) -> Result<Program> {
+    let pkg = Package {
+        project_root: PathBuf::from("."),
+        modules: vec![SourceModule {
+            id: "Main".into(),
+            path: PathBuf::from("Main.thx"),
+            ast: module.clone(),
+            is_entry: true,
+        }],
+    };
+    lower_package(&pkg)
+}
+
+/// Lower a multi-file package into one MIR program.
+pub fn lower_package(package: &Package) -> Result<Program> {
+    let import_maps = loader::build_import_maps(package)?;
+
+    // ---------- Phase 1: register types (mangled names) ----------
     let mut types_info: HashMap<String, TypeInfo> = HashMap::new();
     let mut type_layouts: Vec<TypeLayout> = Vec::new();
-    let mut type_defs: Vec<&TypeDef> = Vec::new();
-    let mut free_fns: Vec<&ast::Function> = Vec::new();
-    let mut extern_items: Vec<&ast::ExternFn> = Vec::new();
+    // (module_id, mangled_type_name, &TypeDef)
+    let mut type_defs: Vec<(String, String, &TypeDef)> = Vec::new();
+    let mut module_exports: HashMap<String, ModuleExports> = HashMap::new();
 
-    for item in &module.items {
-        match item {
-            Item::Type(td) => {
-                if types_info.contains_key(&td.name) {
-                    return Err(Error::at(
-                        format!("duplicate type `{}`", td.name),
-                        td.name_span,
-                    ));
-                }
-                let mut fields = Vec::new();
-                for p in &td.params {
-                    let ty = resolve_ty(&p.ty, &types_info)?;
-                    // R3: only scalar fields (or nested later).
-                    if !matches!(ty, Ty::Int64 | Ty::Bool) {
-                        return Err(Error::at(
-                            "R3 type fields must be Int64 or Bool",
-                            p.ty.span,
-                        ));
-                    }
-                    fields.push((p.name.clone(), ty));
-                }
-                types_info.insert(
-                    td.name.clone(),
-                    TypeInfo {
-                        fields: fields.clone(),
-                        methods: HashMap::new(),
-                    },
-                );
-                type_layouts.push(TypeLayout {
-                    name: td.name.clone(),
-                    fields: fields
-                        .iter()
-                        .map(|(n, t)| FieldLayout {
-                            name: n.clone(),
-                            c_name: sanitize_field(n),
-                            ty: t.clone(),
-                        })
-                        .collect(),
-                });
-                type_defs.push(td);
+    for m in &package.modules {
+        module_exports
+            .entry(m.id.clone())
+            .or_default();
+        for item in &m.ast.items {
+            let Item::Type(td) = item else { continue };
+            let mangled = mangle_type(&m.id, &td.name, m.is_entry);
+            if types_info.contains_key(&mangled) {
+                return Err(Error::at(
+                    format!("duplicate type `{}`", td.name),
+                    td.name_span,
+                ));
             }
-            Item::Function(f) => free_fns.push(f),
-            Item::Extern(e) => extern_items.push(e),
+            // Field types may reference other types; resolve after all types registered.
+            // First pass: placeholder with empty fields if needed — we resolve fields in pass 1b
+            // after all type names exist.
+            type_defs.push((m.id.clone(), mangled.clone(), td));
+            types_info.insert(
+                mangled.clone(),
+                TypeInfo {
+                    fields: Vec::new(),
+                    methods: HashMap::new(),
+                    zero_init: !td.fields.is_empty(),
+                },
+            );
+            if td.exported {
+                module_exports
+                    .get_mut(&m.id)
+                    .unwrap()
+                    .types
+                    .insert(td.name.clone(), mangled);
+            }
         }
     }
 
-    // Fill method signatures (types must already exist for return types).
-    for td in &type_defs {
+    // Per-module local type name map for resolve (source name → mangled), including imports.
+    let mut per_mod_types: HashMap<String, HashMap<String, String>> = HashMap::new();
+    for m in &package.modules {
+        let mut map = HashMap::new();
+        for item in &m.ast.items {
+            if let Item::Type(td) = item {
+                map.insert(
+                    td.name.clone(),
+                    mangle_type(&m.id, &td.name, m.is_entry),
+                );
+            }
+        }
+        if let Some(imports) = import_maps.get(&m.id) {
+            for (local, b) in imports {
+                if let BoundImport::Name {
+                    from_module,
+                    original,
+                } = b
+                {
+                    if let Some(mangled) = module_exports
+                        .get(from_module)
+                        .and_then(|e| e.types.get(original))
+                    {
+                        map.insert(local.clone(), mangled.clone());
+                    }
+                }
+            }
+        }
+        per_mod_types.insert(m.id.clone(), map);
+    }
+
+    // Fill type fields with resolved types.
+    for (mod_id, mangled, td) in &type_defs {
+        let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
+        let mut fields: Vec<FieldInfo> = Vec::new();
+        let zero_init;
+        if !td.fields.is_empty() {
+            zero_init = true;
+            for f in &td.fields {
+                let ty = resolve_ty(&f.ty, &types_info, &name_map)?;
+                if !is_abi_field_ty(&ty) {
+                    return Err(Error::at(
+                        format!(
+                            "C-layout field `{}` must be an ABI scalar or Array<T, N>, got {ty:?}",
+                            f.name
+                        ),
+                        f.ty.span,
+                    ));
+                }
+                if fields.iter().any(|x| x.name == f.name) {
+                    return Err(Error::at(
+                        format!("duplicate field `{}`", f.name),
+                        f.name_span,
+                    ));
+                }
+                fields.push(FieldInfo {
+                    name: f.name.clone(),
+                    ty,
+                    mutable: f.mutable,
+                });
+            }
+        } else {
+            zero_init = false;
+            for p in &td.params {
+                let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
+                if !matches!(ty, Ty::Int64 | Ty::Bool) {
+                    return Err(Error::at(
+                        "constructor-param fields must be Int64 or Bool",
+                        p.ty.span,
+                    ));
+                }
+                fields.push(FieldInfo {
+                    name: p.name.clone(),
+                    ty,
+                    mutable: false,
+                });
+            }
+        }
+        let info = types_info.get_mut(mangled).unwrap();
+        info.fields = fields.clone();
+        info.zero_init = zero_init;
+        type_layouts.push(TypeLayout {
+            name: mangled.clone(),
+            fields: fields
+                .iter()
+                .map(|f| FieldLayout {
+                    name: f.name.clone(),
+                    c_name: sanitize_field(&f.name),
+                    ty: f.ty.clone(),
+                })
+                .collect(),
+        });
+    }
+
+    // Methods
+    for (mod_id, mangled, td) in &type_defs {
+        let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
         for m in &td.methods {
             let ret = match m.return_type.as_ref() {
-                Some(t) => resolve_ty(t, &types_info)?,
+                Some(t) => resolve_ty(t, &types_info, &name_map)?,
                 None => Ty::Void,
             };
             let params = m
                 .params
                 .iter()
-                .map(|p| Ok((p.name.clone(), resolve_ty(&p.ty, &types_info)?)))
+                .map(|p| Ok((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?)))
                 .collect::<Result<Vec<_>>>()?;
-            let sig = MethodSig {
-                params,
-                ret,
-                exported: m.exported,
-            };
-            types_info
-                .get_mut(&td.name)
-                .unwrap()
-                .methods
-                .insert(m.name.clone(), sig);
-        }
-    }
-
-    let mut fns: HashMap<String, FnSig> = HashMap::new();
-    let mut extern_decls: Vec<ExternDecl> = Vec::new();
-
-    for e in &extern_items {
-        if e.library != "c" {
-            return Err(Error::at(
-                format!(
-                    "only library \"c\" is supported (got \"{}\")",
-                    e.library
-                ),
-                e.library_span,
-            ));
-        }
-        let ret = match e.return_type.as_ref() {
-            Some(t) => resolve_ty(t, &types_info)?,
-            None => Ty::Void,
-        };
-        if !is_ffi_ty(&ret) {
-            return Err(Error::at(
-                format!("type {ret:?} is not FFI-marshalable"),
-                e.return_type
-                    .as_ref()
-                    .map(|t| t.span)
-                    .unwrap_or(e.name_span),
-            ));
-        }
-        let mut params = Vec::new();
-        for p in &e.params {
-            let ty = resolve_ty(&p.ty, &types_info)?;
-            if matches!(ty, Ty::Void) || !is_ffi_ty(&ty) {
-                return Err(Error::at(
-                    format!("type {ty:?} is not FFI-marshalable as a parameter"),
-                    p.ty.span,
-                ));
-            }
-            params.push((p.name.clone(), ty));
-        }
-        let c_symbol = e
-            .c_symbol
-            .clone()
-            .unwrap_or_else(|| e.name.clone());
-        if fns
-            .insert(
-                e.name.clone(),
-                FnSig {
-                    params: params.clone(),
-                    ret: ret.clone(),
-                    extern_symbol: Some(c_symbol.clone()),
-                },
-            )
-            .is_some()
-        {
-            return Err(Error::at(
-                format!("duplicate function `{}`", e.name),
-                e.name_span,
-            ));
-        }
-        extern_decls.push(ExternDecl {
-            thoxa_name: e.name.clone(),
-            c_symbol,
-            params,
-            ret,
-        });
-    }
-
-    for f in &free_fns {
-        let ret = resolve_return_ty(f, &types_info)?;
-        let params = f
-            .params
-            .iter()
-            .map(|p| Ok((p.name.clone(), resolve_ty(&p.ty, &types_info)?)))
-            .collect::<Result<Vec<_>>>()?;
-        if fns
-            .insert(
-                f.name.clone(),
-                FnSig {
+            types_info.get_mut(mangled).unwrap().methods.insert(
+                m.name.clone(),
+                MethodSig {
                     params,
                     ret,
-                    extern_symbol: None,
+                    exported: m.exported,
                 },
-            )
-            .is_some()
-        {
-            return Err(Error::at(
-                format!("duplicate function `{}`", f.name),
-                f.name_span,
-            ));
+            );
         }
     }
+
+    // ---------- Phase 2: functions + externs ----------
+    let mut fns: HashMap<String, FnSig> = HashMap::new();
+    let mut extern_decls: Vec<ExternDecl> = Vec::new();
+    // (module, mangled, &Function, is_entry)
+    let mut free_fns: Vec<(String, String, &ast::Function, bool)> = Vec::new();
+
+    for m in &package.modules {
+        let name_map = per_mod_types.get(&m.id).cloned().unwrap_or_default();
+        for item in &m.ast.items {
+            match item {
+                Item::Extern(e) => {
+                    if e.library != "c" {
+                        return Err(Error::at(
+                            format!("only library \"c\" is supported (got \"{}\")", e.library),
+                            e.library_span,
+                        ));
+                    }
+                    let ret = match e.return_type.as_ref() {
+                        Some(t) => resolve_ty(t, &types_info, &name_map)?,
+                        None => Ty::Void,
+                    };
+                    if !is_ffi_ty(&ret) {
+                        return Err(Error::at(
+                            format!("type {ret:?} is not FFI-marshalable"),
+                            e.return_type
+                                .as_ref()
+                                .map(|t| t.span)
+                                .unwrap_or(e.name_span),
+                        ));
+                    }
+                    let mut params = Vec::new();
+                    for p in &e.params {
+                        let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
+                        if matches!(ty, Ty::Void) || !is_ffi_ty(&ty) {
+                            return Err(Error::at(
+                                format!("type {ty:?} is not FFI-marshalable as a parameter"),
+                                p.ty.span,
+                            ));
+                        }
+                        params.push((p.name.clone(), ty));
+                    }
+                    let c_symbol = e.c_symbol.clone().unwrap_or_else(|| e.name.clone());
+                    let mangled = mangle_fn(&m.id, &e.name, m.is_entry);
+                    if fns
+                        .insert(
+                            mangled.clone(),
+                            FnSig {
+                                params: params.clone(),
+                                ret: ret.clone(),
+                                extern_symbol: Some(c_symbol.clone()),
+                                mangled: mangled.clone(),
+                            },
+                        )
+                        .is_some()
+                    {
+                        return Err(Error::at(
+                            format!("duplicate function `{}`", e.name),
+                            e.name_span,
+                        ));
+                    }
+                    if e.exported {
+                        module_exports
+                            .get_mut(&m.id)
+                            .unwrap()
+                            .fns
+                            .insert(e.name.clone(), mangled);
+                    }
+                    extern_decls.push(ExternDecl {
+                        thoxa_name: e.name.clone(),
+                        c_symbol,
+                        params,
+                        ret,
+                    });
+                }
+                Item::Function(f) => {
+                    let mangled = if m.is_entry && f.name == "main" {
+                        "main".to_string()
+                    } else {
+                        mangle_fn(&m.id, &f.name, m.is_entry)
+                    };
+                    let ret = resolve_return_ty(f, m.is_entry, &types_info, &name_map)?;
+                    let params = f
+                        .params
+                        .iter()
+                        .map(|p| {
+                            Ok((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?))
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    if fns
+                        .insert(
+                            mangled.clone(),
+                            FnSig {
+                                params,
+                                ret,
+                                extern_symbol: None,
+                                mangled: mangled.clone(),
+                            },
+                        )
+                        .is_some()
+                    {
+                        return Err(Error::at(
+                            format!("duplicate function `{}`", f.name),
+                            f.name_span,
+                        ));
+                    }
+                    if f.exported {
+                        module_exports
+                            .get_mut(&m.id)
+                            .unwrap()
+                            .fns
+                            .insert(f.name.clone(), mangled.clone());
+                    }
+                    free_fns.push((m.id.clone(), mangled, f, m.is_entry));
+                }
+                _ => {}
+            }
+        }
+    }
+
     if !fns.contains_key("main") {
         return Err(Error::new("program requires `fn main`"));
     }
 
-    let mut functions = Vec::new();
+    // ---------- Phase 3: globals (module-level let/mut) ----------
+    // Placeholders: type of global may reference types; inits lowered later.
+    let mut all_globals: HashMap<String, GlobalInfo> = HashMap::new(); // place name → info
+    // (module_id, &Global, place name)
+    let mut global_defs: Vec<(String, &ast::Global, String)> = Vec::new();
 
-    // Lower methods as free functions with receiver.
-    for td in &type_defs {
-        for m in &td.methods {
-            functions.push(lower_method(td, m, &fns, &types_info)?);
+    for m in &package.modules {
+        let name_map = per_mod_types.get(&m.id).cloned().unwrap_or_default();
+        for item in &m.ast.items {
+            let Item::Global(g) = item else { continue };
+            let place_name = mangle_global(&m.id, &g.name);
+            // Infer type by lowering init in a throwaway context later; for registration
+            // we need the type first — lower init once for type only in phase 4.
+            global_defs.push((m.id.clone(), g, place_name.clone()));
+            // Temporary Void; filled after init type inference.
+            let _ = name_map;
+            all_globals.insert(
+                place_name,
+                GlobalInfo {
+                    ty: Ty::Void, // filled later
+                    mutable: g.mutable,
+                    place: Place {
+                        name: mangle_global(&m.id, &g.name),
+                    },
+                },
+            );
         }
     }
-    for f in &free_fns {
-        functions.push(lower_function(f, &fns, &types_info)?);
+
+    // Infer global types by lowering inits in order (module dep order).
+    let mut program_globals: Vec<GlobalVar> = Vec::new();
+    let mut init_stmts: Vec<Stmt> = Vec::new();
+
+    for m in &package.modules {
+        let (name_to_type, name_to_fn, name_to_global, namespaces) =
+            build_module_name_maps(m, &import_maps, &module_exports, &all_globals, &per_mod_types, &fns)?;
+
+        for item in &m.ast.items {
+            let Item::Global(g) = item else { continue };
+            let place_name = mangle_global(&m.id, &g.name);
+            let mut ctx = LowerCtx::new(
+                fns.clone(),
+                types_info.clone(),
+                name_to_type.clone(),
+                name_to_fn.clone(),
+                name_to_global.clone(),
+                namespaces.clone(),
+                module_exports.clone(),
+                Ty::Void,
+                m.id.clone(),
+                m.is_entry,
+            );
+            let (place, ty) = lower_expr(&mut ctx, &g.init)?;
+            // Move init value into global place.
+            ctx.assign(
+                Place {
+                    name: place_name.clone(),
+                },
+                ty.clone(),
+                RValue::Use(place),
+            );
+            init_stmts.extend(ctx.stmts);
+
+            let ginfo = GlobalInfo {
+                ty: ty.clone(),
+                mutable: g.mutable,
+                place: Place {
+                    name: place_name.clone(),
+                },
+            };
+            all_globals.insert(place_name.clone(), ginfo.clone());
+            if g.exported {
+                module_exports
+                    .get_mut(&m.id)
+                    .unwrap()
+                    .globals
+                    .insert(g.name.clone(), ginfo);
+            }
+            program_globals.push(GlobalVar {
+                name: place_name,
+                ty,
+            });
+        }
+    }
+
+    // ---------- Phase 4: lower methods + free functions ----------
+    let mut functions = Vec::new();
+
+    for (mod_id, mangled_ty, td) in &type_defs {
+        let m = package
+            .modules
+            .iter()
+            .find(|x| x.id == *mod_id)
+            .unwrap();
+        let (name_to_type, name_to_fn, name_to_global, namespaces) =
+            build_module_name_maps(m, &import_maps, &module_exports, &all_globals, &per_mod_types, &fns)?;
+        for method in &td.methods {
+            functions.push(lower_method(
+                mangled_ty,
+                td,
+                method,
+                &fns,
+                &types_info,
+                &name_to_type,
+                &name_to_fn,
+                &name_to_global,
+                &namespaces,
+                &module_exports,
+                mod_id,
+                m.is_entry,
+            )?);
+        }
+    }
+
+    for (mod_id, mangled, f, is_entry) in &free_fns {
+        let m = package
+            .modules
+            .iter()
+            .find(|x| x.id == *mod_id)
+            .unwrap();
+        let (name_to_type, name_to_fn, name_to_global, namespaces) =
+            build_module_name_maps(m, &import_maps, &module_exports, &all_globals, &per_mod_types, &fns)?;
+        functions.push(lower_function(
+            f,
+            mangled,
+            *is_entry,
+            &fns,
+            &types_info,
+            &name_to_type,
+            &name_to_fn,
+            &name_to_global,
+            &namespaces,
+            &module_exports,
+            mod_id,
+        )?);
     }
 
     Ok(Program {
         types: type_layouts,
         externs: extern_decls,
+        globals: program_globals,
+        init: init_stmts,
         functions,
     })
 }
 
-fn resolve_return_ty(f: &ast::Function, types: &HashMap<String, TypeInfo>) -> Result<Ty> {
-    let is_main = f.name == "main";
+fn mangle_type(mod_id: &str, name: &str, is_entry: bool) -> String {
+    if is_entry {
+        name.to_string()
+    } else {
+        format!("{mod_id}_{name}")
+    }
+}
+
+fn mangle_fn(mod_id: &str, name: &str, is_entry: bool) -> String {
+    if is_entry {
+        name.to_string()
+    } else {
+        format!("{mod_id}_{name}")
+    }
+}
+
+fn mangle_global(mod_id: &str, name: &str) -> String {
+    format!("g_{mod_id}_{name}")
+}
+
+fn build_module_name_maps(
+    m: &SourceModule,
+    import_maps: &HashMap<String, HashMap<String, BoundImport>>,
+    module_exports: &HashMap<String, ModuleExports>,
+    all_globals: &HashMap<String, GlobalInfo>,
+    per_mod_types: &HashMap<String, HashMap<String, String>>,
+    fns: &HashMap<String, FnSig>,
+) -> Result<(
+    HashMap<String, String>,
+    HashMap<String, String>,
+    HashMap<String, GlobalInfo>,
+    HashMap<String, String>,
+)> {
+    let mut name_to_type = per_mod_types.get(&m.id).cloned().unwrap_or_default();
+    let mut name_to_fn: HashMap<String, String> = HashMap::new();
+    let mut name_to_global: HashMap<String, GlobalInfo> = HashMap::new();
+    let mut namespaces: HashMap<String, String> = HashMap::new();
+
+    // Local functions
+    for item in &m.ast.items {
+        match item {
+            Item::Function(f) => {
+                let mangled = if m.is_entry && f.name == "main" {
+                    "main".to_string()
+                } else {
+                    mangle_fn(&m.id, &f.name, m.is_entry)
+                };
+                name_to_fn.insert(f.name.clone(), mangled);
+            }
+            Item::Extern(e) => {
+                let mangled = mangle_fn(&m.id, &e.name, m.is_entry);
+                name_to_fn.insert(e.name.clone(), mangled);
+            }
+            Item::Global(g) => {
+                let place = mangle_global(&m.id, &g.name);
+                if let Some(info) = all_globals.get(&place) {
+                    name_to_global.insert(g.name.clone(), info.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Imports
+    if let Some(imports) = import_maps.get(&m.id) {
+        for (local, b) in imports {
+            match b {
+                BoundImport::Name {
+                    from_module,
+                    original,
+                } => {
+                    let exp = module_exports.get(from_module);
+                    if let Some(t) = exp.and_then(|e| e.types.get(original)) {
+                        name_to_type.insert(local.clone(), t.clone());
+                    } else if let Some(f) = exp.and_then(|e| e.fns.get(original)) {
+                        name_to_fn.insert(local.clone(), f.clone());
+                    } else if let Some(info) = exp.and_then(|e| e.globals.get(original)) {
+                        name_to_global.insert(local.clone(), info.clone());
+                    }
+                    // If not yet in exports (global type not filled), try type map from defining module
+                    if !name_to_type.contains_key(local)
+                        && !name_to_fn.contains_key(local)
+                        && !name_to_global.contains_key(local)
+                    {
+                        if let Some(tmap) = per_mod_types.get(from_module) {
+                            if let Some(t) = tmap.get(original) {
+                                name_to_type.insert(local.clone(), t.clone());
+                            }
+                        }
+                        let fmangled = mangle_fn(from_module, original, false);
+                        if fns.contains_key(&fmangled) {
+                            name_to_fn.insert(local.clone(), fmangled);
+                        }
+                    }
+                }
+                BoundImport::Namespace { from_module } => {
+                    namespaces.insert(local.clone(), from_module.clone());
+                }
+            }
+        }
+    }
+
+    Ok((name_to_type, name_to_fn, name_to_global, namespaces))
+}
+
+fn resolve_return_ty(
+    f: &ast::Function,
+    is_entry: bool,
+    types: &HashMap<String, TypeInfo>,
+    name_map: &HashMap<String, String>,
+) -> Result<Ty> {
+    let is_main = is_entry && f.name == "main";
     match f.return_type.as_ref() {
         None if is_main => Ok(Ty::Int64),
         None => Ok(Ty::Void),
         Some(t) => {
-            let ty = resolve_ty(t, types)?;
+            let ty = resolve_ty(t, types, name_map)?;
             if is_main && ty != Ty::Int64 {
                 return Err(Error::at("`main` must return Int64", f.name_span));
             }
@@ -501,18 +1004,24 @@ fn resolve_return_ty(f: &ast::Function, types: &HashMap<String, TypeInfo>) -> Re
     }
 }
 
-fn resolve_ty(t: &TypeExpr, types: &HashMap<String, TypeInfo>) -> Result<Ty> {
+fn resolve_ty(
+    t: &TypeExpr,
+    types: &HashMap<String, TypeInfo>,
+    name_map: &HashMap<String, String>,
+) -> Result<Ty> {
     match (t.name.as_str(), t.args.as_slice()) {
         ("Int32", []) => Ok(Ty::Int32),
         ("Int64", []) => Ok(Ty::Int64),
+        ("UInt32", []) => Ok(Ty::UInt32),
         ("UInt64", []) => Ok(Ty::UInt64),
+        ("Byte" | "UInt8", []) => Ok(Ty::Byte),
         ("Bool", []) => Ok(Ty::Bool),
         ("Void", []) => Ok(Ty::Void),
         ("String", []) => Ok(Ty::String),
         ("Bytes", []) => Ok(Ty::Bytes),
-        ("Trial", [a, b]) => {
-            let ok = resolve_ty(a, types)?;
-            let err = resolve_ty(b, types)?;
+        ("Trial", [TypeArg::Type(a), TypeArg::Type(b)]) => {
+            let ok = resolve_ty(a, types, name_map)?;
+            let err = resolve_ty(b, types, name_map)?;
             if ok == Ty::Int64 && err == Ty::Int64 {
                 Ok(Ty::TrialI64I64)
             } else {
@@ -523,7 +1032,50 @@ fn resolve_ty(t: &TypeExpr, types: &HashMap<String, TypeInfo>) -> Result<Ty> {
             }
         }
         ("Trial", _) => Err(Error::at("Trial expects two type arguments", t.span)),
-        (name, []) if types.contains_key(name) => Ok(Ty::User(name.to_string())),
+        ("Array", [TypeArg::Type(elem), TypeArg::Int { value: n, span: nspan }]) => {
+            if *n < 0 {
+                return Err(Error::at("Array length must be non-negative", *nspan));
+            }
+            let et = resolve_ty(elem, types, name_map)?;
+            if !is_abi_scalar(&et) {
+                return Err(Error::at(
+                    format!("Array element must be an ABI scalar, got {et:?}"),
+                    elem.span,
+                ));
+            }
+            Ok(Ty::FixedArray {
+                elem: Box::new(et),
+                len: *n as u64,
+            })
+        }
+        ("Array", _) => Err(Error::at(
+            "Array expects element type and const length: Array<T, N>",
+            t.span,
+        )),
+        ("Address", [TypeArg::Type(inner)]) => {
+            let pointee = resolve_ty(inner, types, name_map)?;
+            match &pointee {
+                Ty::User(_) => Ok(Ty::Address(Box::new(pointee))),
+                other => Err(Error::at(
+                    format!("Address pointee must be a user struct, got {other:?}"),
+                    inner.span,
+                )),
+            }
+        }
+        ("Address", _) => Err(Error::at("Address expects one type argument", t.span)),
+        (name, []) => {
+            let mangled = name_map
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| name.to_string());
+            if types.contains_key(&mangled) {
+                Ok(Ty::User(mangled))
+            } else if types.contains_key(name) {
+                Ok(Ty::User(name.to_string()))
+            } else {
+                Err(Error::at(format!("unknown type `{name}`"), t.span))
+            }
+        }
         (other, args) if !args.is_empty() => Err(Error::at(
             format!("unsupported generic type `{other}`"),
             t.span,
@@ -534,28 +1086,50 @@ fn resolve_ty(t: &TypeExpr, types: &HashMap<String, TypeInfo>) -> Result<Ty> {
 
 fn lower_function(
     f: &ast::Function,
+    mangled: &str,
+    is_entry: bool,
     fns: &HashMap<String, FnSig>,
     types: &HashMap<String, TypeInfo>,
+    name_to_type: &HashMap<String, String>,
+    name_to_fn: &HashMap<String, String>,
+    name_to_global: &HashMap<String, GlobalInfo>,
+    namespaces: &HashMap<String, String>,
+    module_exports: &HashMap<String, ModuleExports>,
+    module_id: &str,
 ) -> Result<Function> {
-    let is_main = f.name == "main";
-    let ret_ty = resolve_return_ty(f, types)?;
+    let is_main = is_entry && f.name == "main";
+    let ret_ty = resolve_return_ty(f, is_entry, types, name_to_type)?;
     let mut params = Vec::new();
     for p in &f.params {
-        let ty = resolve_ty(&p.ty, types)?;
+        let ty = resolve_ty(&p.ty, types, name_to_type)?;
         params.push((sanitize_name(&p.name), ty));
     }
 
-    let mut ctx = LowerCtx::new(fns.clone(), types.clone(), ret_ty.clone());
+    let mut ctx = LowerCtx::new(
+        fns.clone(),
+        types.clone(),
+        name_to_type.clone(),
+        name_to_fn.clone(),
+        name_to_global.clone(),
+        namespaces.clone(),
+        module_exports.clone(),
+        ret_ty.clone(),
+        module_id.to_string(),
+        is_entry,
+    );
     for p in &f.params {
-        let ty = resolve_ty(&p.ty, types)?;
-        ctx.define(&p.name, ty, false);
+        let ty = resolve_ty(&p.ty, types, name_to_type)?;
+        let place = Place {
+            name: sanitize_name(&p.name),
+        };
+        ctx.define(&p.name, ty, false, place);
     }
 
     let ret = lower_block_value(&mut ctx, &f.body, &ret_ty)?;
     insert_function_drops(&mut ctx.stmts, &ret, &ret_ty);
 
     Ok(Function {
-        name: f.name.clone(),
+        name: mangled.to_string(),
         is_main,
         receiver: None,
         params,
@@ -566,54 +1140,79 @@ fn lower_function(
 }
 
 fn lower_method(
-    td: &TypeDef,
+    mangled_type: &str,
+    _td: &TypeDef,
     m: &Method,
     fns: &HashMap<String, FnSig>,
     types: &HashMap<String, TypeInfo>,
+    name_to_type: &HashMap<String, String>,
+    name_to_fn: &HashMap<String, String>,
+    name_to_global: &HashMap<String, GlobalInfo>,
+    namespaces: &HashMap<String, String>,
+    module_exports: &HashMap<String, ModuleExports>,
+    module_id: &str,
+    is_entry: bool,
 ) -> Result<Function> {
     let ret_ty = match m.return_type.as_ref() {
-        Some(t) => resolve_ty(t, types)?,
+        Some(t) => resolve_ty(t, types, name_to_type)?,
         None => Ty::Void,
     };
-    let recv_ty = Ty::User(td.name.clone());
+    let recv_ty = Ty::User(mangled_type.to_string());
     let recv_place = "_self".to_string();
 
     let mut params = Vec::new();
     for p in &m.params {
-        let ty = resolve_ty(&p.ty, types)?;
+        let ty = resolve_ty(&p.ty, types, name_to_type)?;
         params.push((sanitize_name(&p.name), ty));
     }
 
-    let mut ctx = LowerCtx::new(fns.clone(), types.clone(), ret_ty.clone());
+    let mut ctx = LowerCtx::new(
+        fns.clone(),
+        types.clone(),
+        name_to_type.clone(),
+        name_to_fn.clone(),
+        name_to_global.clone(),
+        namespaces.clone(),
+        module_exports.clone(),
+        ret_ty.clone(),
+        module_id.to_string(),
+        is_entry,
+    );
 
     // Bind fields as bare names from receiver (no `self` in Thoxa).
-    let info = types.get(&td.name).unwrap();
-    for (fname, fty) in &info.fields {
+    let info = types.get(mangled_type).unwrap();
+    for f in &info.fields {
+        if matches!(f.ty, Ty::FixedArray { .. }) {
+            continue;
+        }
         let p = Place {
-            name: sanitize_name(fname),
+            name: sanitize_name(&f.name),
         };
         ctx.assign(
-            p,
-            fty.clone(),
+            p.clone(),
+            f.ty.clone(),
             RValue::Field {
                 base: Place {
                     name: recv_place.clone(),
                 },
-                field: sanitize_field(fname),
+                field: sanitize_field(&f.name),
             },
         );
-        ctx.define(fname, fty.clone(), false);
+        ctx.define(&f.name, f.ty.clone(), false, p);
     }
     for p in &m.params {
-        let ty = resolve_ty(&p.ty, types)?;
-        ctx.define(&p.name, ty, false);
+        let ty = resolve_ty(&p.ty, types, name_to_type)?;
+        let place = Place {
+            name: sanitize_name(&p.name),
+        };
+        ctx.define(&p.name, ty, false, place);
     }
 
     let ret = lower_block_value(&mut ctx, &m.body, &ret_ty)?;
     insert_function_drops(&mut ctx.stmts, &ret, &ret_ty);
 
     Ok(Function {
-        name: format!("{}__{}", td.name, m.name),
+        name: format!("{mangled_type}__{}", m.name),
         is_main: false,
         receiver: Some((recv_place, recv_ty)),
         params,
@@ -698,12 +1297,8 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                 let (place, ty) = lower_expr(ctx, init)?;
                 ctx.bind_name(name, ty, *mutable, place);
             }
-            BlockItem::Assign {
-                name,
-                name_span,
-                value,
-            } => {
-                ctx.reassign_name(name, *name_span, value)?;
+            BlockItem::Assign { target, value } => {
+                lower_assign(ctx, target, value)?;
             }
             BlockItem::Expr(e) => {
                 let _ = lower_expr(ctx, e)?;
@@ -711,6 +1306,174 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Result<()> {
+    match target {
+        AssignTarget::Name { name, name_span } => {
+            ctx.reassign_name(name, *name_span, value)
+        }
+        AssignTarget::Field {
+            base,
+            base_span,
+            field,
+            field_span,
+        } => {
+            let binding = ctx
+                .lookup(base)
+                .ok_or_else(|| Error::at(format!("undefined name `{base}`"), *base_span))?;
+            if !binding.mutable {
+                return Err(Error::at(
+                    format!("cannot assign to field of immutable binding `{base}`"),
+                    *base_span,
+                ));
+            }
+            let type_name = match &binding.ty {
+                Ty::User(n) => n.clone(),
+                other => {
+                    return Err(Error::at(
+                        format!("field assign on non-struct type {other:?}"),
+                        *base_span,
+                    ));
+                }
+            };
+            let info = ctx
+                .types
+                .get(&type_name)
+                .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), *base_span))?
+                .clone();
+            let finfo = info
+                .fields
+                .iter()
+                .find(|f| f.name == *field)
+                .ok_or_else(|| {
+                    Error::at(format!("no field `{field}` on `{type_name}`"), *field_span)
+                })?;
+            if !finfo.mutable {
+                return Err(Error::at(
+                    format!("cannot assign to immutable field `{field}`"),
+                    *field_span,
+                ));
+            }
+            if matches!(finfo.ty, Ty::FixedArray { .. }) {
+                return Err(Error::at(
+                    "cannot assign whole fixed array field (assign elements with [i])",
+                    *field_span,
+                ));
+            }
+            let field_ty = finfo.ty.clone();
+            let (v, vty) = lower_expr(ctx, value)?;
+            let v = coerce_to_field(ctx, v, &vty, &field_ty, value.span)?;
+            ctx.stmts.push(Stmt::FieldAssign {
+                base: binding.place,
+                field: sanitize_field(field),
+                ty: field_ty,
+                value: v,
+            });
+            Ok(())
+        }
+        AssignTarget::Index {
+            base,
+            base_span,
+            field,
+            field_span,
+            index,
+        } => {
+            let binding = ctx
+                .lookup(base)
+                .ok_or_else(|| Error::at(format!("undefined name `{base}`"), *base_span))?;
+            if !binding.mutable {
+                return Err(Error::at(
+                    format!("cannot assign to field of immutable binding `{base}`"),
+                    *base_span,
+                ));
+            }
+            let type_name = match &binding.ty {
+                Ty::User(n) => n.clone(),
+                other => {
+                    return Err(Error::at(
+                        format!("index assign on non-struct type {other:?}"),
+                        *base_span,
+                    ));
+                }
+            };
+            let info = ctx
+                .types
+                .get(&type_name)
+                .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), *base_span))?
+                .clone();
+            let finfo = info
+                .fields
+                .iter()
+                .find(|f| f.name == *field)
+                .ok_or_else(|| {
+                    Error::at(format!("no field `{field}` on `{type_name}`"), *field_span)
+                })?;
+            if !finfo.mutable {
+                return Err(Error::at(
+                    format!("cannot assign to immutable field `{field}`"),
+                    *field_span,
+                ));
+            }
+            let (elem_ty, len) = match &finfo.ty {
+                Ty::FixedArray { elem, len } => (elem.as_ref().clone(), *len),
+                other => {
+                    return Err(Error::at(
+                        format!("cannot index non-array field type {other:?}"),
+                        *field_span,
+                    ));
+                }
+            };
+            let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+            if !is_int(&idx_ty) {
+                return Err(Error::at("array index must be an integer", index.span));
+            }
+            let idx_p = if idx_ty == Ty::Int64 {
+                idx_p
+            } else {
+                coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+            };
+            // Runtime bounds check left to C; const-fold check when index is Int literal.
+            if let ExprKind::Int(n) = &index.kind {
+                if *n < 0 || (*n as u64) >= len {
+                    return Err(Error::at(
+                        format!("index {n} out of bounds for Array of length {len}"),
+                        index.span,
+                    ));
+                }
+            }
+            let (v, vty) = lower_expr(ctx, value)?;
+            let v = coerce_to_field(ctx, v, &vty, &elem_ty, value.span)?;
+            ctx.stmts.push(Stmt::IndexAssign {
+                base: binding.place,
+                field: sanitize_field(field),
+                index: idx_p,
+                ty: elem_ty,
+                value: v,
+            });
+            Ok(())
+        }
+    }
+}
+
+/// Coerce/truncate a value for store into a typed field (width truncation at boundary).
+fn coerce_to_field(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    to: &Ty,
+    span: Span,
+) -> Result<Place> {
+    if from == to {
+        return Ok(place);
+    }
+    if is_int(from) && is_int(to) {
+        return coerce_place(ctx, place, from, to, span);
+    }
+    Err(Error::at(
+        format!("cannot store {from:?} into field of type {to:?}"),
+        span,
+    ))
 }
 
 fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
@@ -732,12 +1495,11 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
         }
         ExprKind::Interpolate(parts) => lower_interpolate(ctx, parts, expr.span),
         ExprKind::Name(name) => {
-            let ty = ctx
-                .lookup_ty(name)
+            let binding = ctx
+                .lookup(name)
                 .ok_or_else(|| Error::at(format!("undefined name `{name}`"), expr.span))?;
-            let src = Place {
-                name: sanitize_name(name),
-            };
+            let ty = binding.ty.clone();
+            let src = binding.place;
             // Simple RC: reading a heap value produces a new owner (`assign` dups).
             if is_heap(&ty) {
                 let p = ctx.fresh("dup");
@@ -751,14 +1513,22 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
             let (arg, arg_ty) = lower_expr(ctx, inner)?;
             match op {
                 UnaryOp::Neg => {
-                    if arg_ty != Ty::Int64 {
-                        return Err(Error::at("unary `-` expects Int64", expr.span));
+                    if !is_int(&arg_ty) {
+                        return Err(Error::at("unary `-` expects an integer", expr.span));
                     }
+                    let arg = if arg_ty == Ty::Int64 {
+                        arg
+                    } else {
+                        coerce_place(ctx, arg, &arg_ty, &Ty::Int64, expr.span)?
+                    };
                     let p = ctx.fresh("neg");
                     ctx.assign(
                         p.clone(),
                         Ty::Int64,
-                        RValue::Unary { op: *op, arg },
+                        RValue::Unary {
+                            op: UnaryOp::Neg,
+                            arg,
+                        },
                     );
                     Ok((p, Ty::Int64))
                 }
@@ -774,6 +1544,27 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
                     );
                     Ok((p, Ty::Bool))
                 }
+                UnaryOp::BitNot => {
+                    if !is_int(&arg_ty) {
+                        return Err(Error::at("bitwise `~` expects an integer", expr.span));
+                    }
+                    // Compute in Int64 so width truncation happens on field store.
+                    let arg = if arg_ty == Ty::Int64 {
+                        arg
+                    } else {
+                        coerce_place(ctx, arg, &arg_ty, &Ty::Int64, expr.span)?
+                    };
+                    let p = ctx.fresh("bnot");
+                    ctx.assign(
+                        p.clone(),
+                        Ty::Int64,
+                        RValue::Unary {
+                            op: UnaryOp::BitNot,
+                            arg,
+                        },
+                    );
+                    Ok((p, Ty::Int64))
+                }
             }
         }
         ExprKind::Binary { op, left, right } => lower_binary(ctx, *op, left, right, expr.span),
@@ -783,6 +1574,7 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
             name,
             name_span,
         } => lower_field(ctx, base, name, *name_span),
+        ExprKind::Index { base, index } => lower_index(ctx, base, index, expr.span),
         ExprKind::MethodCall {
             receiver,
             method,
@@ -847,6 +1639,19 @@ fn lower_interpolate(
                         );
                         p
                     }
+                    ref t if is_int(t) => {
+                        let widened = coerce_place(ctx, v, t, &Ty::Int64, span)?;
+                        let p = ctx.fresh("ts");
+                        ctx.assign(
+                            p.clone(),
+                            Ty::String,
+                            RValue::ToString {
+                                value: widened,
+                                from: Ty::Int64,
+                            },
+                        );
+                        p
+                    }
                     other => {
                         return Err(Error::at(
                             format!("cannot interpolate {other:?} into String"),
@@ -881,7 +1686,20 @@ fn lower_field(
     name: &str,
     name_span: Span,
 ) -> Result<(Place, Ty)> {
-    // Type-level: not used for fields (static methods go through MethodCall).
+    // Namespace member: `geometry.origin` (module-level let).
+    if let ExprKind::Name(ns) = &base.kind {
+        if let Some(mod_id) = ctx.namespaces.get(ns).cloned() {
+            let exp = ctx.module_exports.get(&mod_id).cloned().unwrap_or_default();
+            if let Some(info) = exp.globals.get(name) {
+                return Ok((info.place.clone(), info.ty.clone()));
+            }
+            return Err(Error::at(
+                format!("no exported value `{name}` on namespace `{ns}`"),
+                name_span,
+            ));
+        }
+    }
+
     let (base_p, base_ty) = lower_expr(ctx, base)?;
     match &base_ty {
         Ty::Bytes => {
@@ -910,11 +1728,19 @@ fn lower_field(
             let field_ty = info
                 .fields
                 .iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, t)| t.clone())
+                .find(|f| f.name == name)
+                .map(|f| f.ty.clone())
                 .ok_or_else(|| {
                     Error::at(format!("no field `{name}` on `{type_name}`"), name_span)
                 })?;
+            if matches!(field_ty, Ty::FixedArray { .. }) {
+                return Err(Error::at(
+                    format!(
+                        "fixed array field `{name}` must be indexed (e.g. `.{name}[i]`)"
+                    ),
+                    name_span,
+                ));
+            }
             let p = ctx.fresh("fld");
             ctx.assign(
                 p.clone(),
@@ -933,6 +1759,90 @@ fn lower_field(
     }
 }
 
+fn lower_index(
+    ctx: &mut LowerCtx,
+    base: &Expr,
+    index: &Expr,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    // Expect `struct.field[i]` — peel Field so we don't try to load the whole array.
+    let (struct_expr, field_name, field_span) = match &base.kind {
+        ExprKind::Field {
+            base: s,
+            name,
+            name_span,
+        } => (s.as_ref(), name.as_str(), *name_span),
+        _ => {
+            return Err(Error::at(
+                "indexing is only supported on fixed-array fields (`s.field[i]`)",
+                span,
+            ));
+        }
+    };
+    let (base_p, base_ty) = lower_expr(ctx, struct_expr)?;
+    let type_name = match &base_ty {
+        Ty::User(n) => n.clone(),
+        other => {
+            return Err(Error::at(
+                format!("cannot index field on non-struct type {other:?}"),
+                field_span,
+            ));
+        }
+    };
+    let info = ctx
+        .types
+        .get(&type_name)
+        .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), field_span))?
+        .clone();
+    let finfo = info
+        .fields
+        .iter()
+        .find(|f| f.name == field_name)
+        .ok_or_else(|| {
+            Error::at(
+                format!("no field `{field_name}` on `{type_name}`"),
+                field_span,
+            )
+        })?;
+    let (elem_ty, len) = match &finfo.ty {
+        Ty::FixedArray { elem, len } => (elem.as_ref().clone(), *len),
+        other => {
+            return Err(Error::at(
+                format!("cannot index non-array field type {other:?}"),
+                field_span,
+            ));
+        }
+    };
+    let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+    if !is_int(&idx_ty) {
+        return Err(Error::at("array index must be an integer", index.span));
+    }
+    let idx_p = if idx_ty == Ty::Int64 {
+        idx_p
+    } else {
+        coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+    };
+    if let ExprKind::Int(n) = &index.kind {
+        if *n < 0 || (*n as u64) >= len {
+            return Err(Error::at(
+                format!("index {n} out of bounds for Array of length {len}"),
+                index.span,
+            ));
+        }
+    }
+    let p = ctx.fresh("idx");
+    ctx.assign(
+        p.clone(),
+        elem_ty.clone(),
+        RValue::Index {
+            base: base_p,
+            field: sanitize_field(field_name),
+            index: idx_p,
+        },
+    );
+    Ok((p, elem_ty))
+}
+
 fn lower_method_call(
     ctx: &mut LowerCtx,
     receiver: &Expr,
@@ -944,6 +1854,65 @@ fn lower_method_call(
     if let ExprKind::Name(type_name) = &receiver.kind {
         if type_name == "Bytes" && ctx.lookup(type_name).is_none() {
             return lower_bytes_static(ctx, method, args, method_span);
+        }
+        // Namespace: `mu.add(…)`, `geometry.Point(…)`
+        if let Some(mod_id) = ctx.namespaces.get(type_name).cloned() {
+            let exp = ctx.module_exports.get(&mod_id).cloned().unwrap_or_default();
+            // Type constructor
+            if let Some(mangled_ty) = exp.types.get(method) {
+                let info = ctx.types.get(mangled_ty).unwrap().clone();
+                let p = ctx.fresh("obj");
+                let ty = Ty::User(mangled_ty.clone());
+                if info.zero_init {
+                    if !args.is_empty() {
+                        return Err(Error::at(
+                            format!("`{method}()` takes no arguments (zero-init constructor)"),
+                            method_span,
+                        ));
+                    }
+                    ctx.assign(
+                        p.clone(),
+                        ty.clone(),
+                        RValue::StructZero {
+                            type_name: mangled_ty.clone(),
+                        },
+                    );
+                } else {
+                    let formal: Vec<(String, Ty)> = info
+                        .fields
+                        .iter()
+                        .map(|f| (f.name.clone(), f.ty.clone()))
+                        .collect();
+                    let field_places = resolve_call_args(ctx, &formal, args, method_span)?;
+                    ctx.assign(
+                        p.clone(),
+                        ty.clone(),
+                        RValue::StructLit {
+                            type_name: mangled_ty.clone(),
+                            fields: field_places,
+                        },
+                    );
+                }
+                return Ok((p, ty));
+            }
+            // Free function
+            if let Some(mangled_fn) = exp.fns.get(method) {
+                let sig = ctx.fns.get(mangled_fn).unwrap().clone();
+                let arg_places = resolve_call_args(ctx, &sig.params, args, method_span)?;
+                let callee = if let Some(sym) = &sig.extern_symbol {
+                    Callee::Extern {
+                        c_symbol: sym.clone(),
+                        arg_tys: sig.params.iter().map(|(_, t)| t.clone()).collect(),
+                    }
+                } else {
+                    Callee::User(sig.mangled.clone())
+                };
+                return emit_call_result(ctx, callee, arg_places, sig.ret);
+            }
+            return Err(Error::at(
+                format!("no exported member `{method}` on namespace `{type_name}`"),
+                method_span,
+            ));
         }
     }
 
@@ -1113,23 +2082,7 @@ fn resolve_call_args(
                 Arg::Pos(e) => e,
                 Arg::Named { .. } => unreachable!(),
             };
-            let (p, ty) = lower_expr(ctx, expr)?;
-            let p = if ty == formal[i].1 {
-                p
-            } else if is_int(&ty) && is_int(&formal[i].1) {
-                coerce_place(ctx, p, &ty, &formal[i].1, expr.span)?
-            } else {
-                return Err(Error::at(
-                    format!(
-                        "argument {} (`{}`): expected {:?}, found {:?}",
-                        i + 1,
-                        formal[i].0,
-                        formal[i].1,
-                        ty
-                    ),
-                    expr.span,
-                ));
-            };
+            let p = lower_arg_for_formal(ctx, expr, &formal[i].1, &formal[i].0, i)?;
             places.push(p);
         }
         return Ok(places);
@@ -1146,7 +2099,7 @@ fn resolve_call_args(
             span,
         ));
     }
-    let mut by_name: HashMap<String, (Place, Ty, Span)> = HashMap::new();
+    let mut by_name: HashMap<String, &Expr> = HashMap::new();
     for arg in args {
         match arg {
             Arg::Named {
@@ -1160,33 +2113,88 @@ fn resolve_call_args(
                         *name_span,
                     ));
                 }
-                let (p, ty) = lower_expr(ctx, value)?;
-                by_name.insert(name.clone(), (p, ty, value.span));
+                by_name.insert(name.clone(), value);
             }
             Arg::Pos(_) => unreachable!(),
         }
     }
     let mut places = Vec::new();
-    for (fname, fty) in formal {
-        let (p, ty, vspan) = by_name.remove(fname).ok_or_else(|| {
+    for (i, (fname, fty)) in formal.iter().enumerate() {
+        let expr = by_name.remove(fname).ok_or_else(|| {
             Error::at(format!("missing argument `{fname}`"), span)
         })?;
-        let p = if &ty == fty {
-            p
-        } else if is_int(&ty) && is_int(fty) {
-            coerce_place(ctx, p, &ty, fty, vspan)?
-        } else {
-            return Err(Error::at(
-                format!("argument `{fname}`: expected {fty:?}, found {ty:?}"),
-                vspan,
-            ));
-        };
+        let p = lower_arg_for_formal(ctx, expr, fty, fname, i)?;
         places.push(p);
     }
     if let Some((extra, _)) = by_name.iter().next() {
         return Err(Error::at(format!("unknown argument `{extra}`"), span));
     }
     Ok(places)
+}
+
+/// Lower one call argument against a formal type (int coerce, Address implicit).
+fn lower_arg_for_formal(
+    ctx: &mut LowerCtx,
+    expr: &Expr,
+    formal_ty: &Ty,
+    formal_name: &str,
+    index: usize,
+) -> Result<Place> {
+    // Implicit address: mut struct binding → Address<T>
+    if let Ty::Address(pointee) = formal_ty {
+        let name = match &expr.kind {
+            ExprKind::Name(n) => n.as_str(),
+            _ => {
+                return Err(Error::at(
+                    format!(
+                        "argument {} (`{formal_name}`): Address parameter requires a mut local",
+                        index + 1
+                    ),
+                    expr.span,
+                ));
+            }
+        };
+        let binding = ctx.lookup(name).ok_or_else(|| {
+            Error::at(format!("undefined name `{name}`"), expr.span)
+        })?;
+        if !binding.mutable {
+            return Err(Error::at(
+                format!(
+                    "argument `{formal_name}`: coercing to Address requires a `mut` binding"
+                ),
+                expr.span,
+            ));
+        }
+        match (&binding.ty, pointee.as_ref()) {
+            (Ty::User(got), Ty::User(want)) if got == want => {
+                // Place is the binding itself; cgen emits `&place` for Address args.
+                return Ok(binding.place);
+            }
+            (got, want) => {
+                return Err(Error::at(
+                    format!(
+                        "argument `{formal_name}`: expected Address<{want:?}>, found {got:?}"
+                    ),
+                    expr.span,
+                ));
+            }
+        }
+    }
+
+    let (p, ty) = lower_expr(ctx, expr)?;
+    if &ty == formal_ty {
+        Ok(p)
+    } else if is_int(&ty) && is_int(formal_ty) {
+        coerce_place(ctx, p, &ty, formal_ty, expr.span)
+    } else {
+        Err(Error::at(
+            format!(
+                "argument {} (`{formal_name}`): expected {formal_ty:?}, found {ty:?}",
+                index + 1
+            ),
+            expr.span,
+        ))
+    }
 }
 
 fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)> {
@@ -1294,14 +2302,20 @@ fn lower_match(
 
     let pass_ty = {
         ctx.push_scope();
-        ctx.define(&pass_bind, Ty::Int64, false);
+        let pp = Place {
+            name: sanitize_name(&pass_bind),
+        };
+        ctx.define(&pass_bind, Ty::Int64, false, pp);
         let ty = infer_block_ty(ctx, &pass_arm.body)?;
         ctx.pop_scope();
         ty
     };
     let fail_ty = {
         ctx.push_scope();
-        ctx.define(&fail_bind, Ty::Int64, false);
+        let fp = Place {
+            name: sanitize_name(&fail_bind),
+        };
+        ctx.define(&fail_bind, Ty::Int64, false, fp);
         let ty = infer_block_ty(ctx, &fail_arm.body)?;
         ctx.pop_scope();
         ty
@@ -1350,8 +2364,8 @@ fn lower_match(
     let pass_place = Place {
         name: sanitize_name(&pass_bind),
     };
-    ctx.assign(pass_place, Ty::Int64, RValue::Use(pass_payload));
-    ctx.define(&pass_bind, Ty::Int64, false);
+    ctx.assign(pass_place.clone(), Ty::Int64, RValue::Use(pass_payload));
+    ctx.define(&pass_bind, Ty::Int64, false, pass_place);
     let pass_val = lower_block_into(ctx, &pass_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut then_body = std::mem::take(&mut ctx.stmts);
@@ -1373,8 +2387,8 @@ fn lower_match(
     let fail_place = Place {
         name: sanitize_name(&fail_bind),
     };
-    ctx.assign(fail_place, Ty::Int64, RValue::Use(fail_payload));
-    ctx.define(&fail_bind, Ty::Int64, false);
+    ctx.assign(fail_place.clone(), Ty::Int64, RValue::Use(fail_payload));
+    ctx.define(&fail_bind, Ty::Int64, false, fail_place);
     let fail_val = lower_block_into(ctx, &fail_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut else_body = std::mem::take(&mut ctx.stmts);
@@ -1408,7 +2422,7 @@ fn lower_match(
 
 fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
     match ty {
-        Ty::Int32 | Ty::Int64 | Ty::UInt64 => {
+        Ty::Int32 | Ty::Int64 | Ty::UInt32 | Ty::UInt64 | Ty::Byte => {
             ctx.assign(place.clone(), ty.clone(), RValue::Int(0))
         }
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
@@ -1420,6 +2434,11 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
             });
         }
         Ty::Void => {}
+        Ty::FixedArray { .. } | Ty::Address(_) => {
+            return Err(Error::new(format!(
+                "cannot allocate local of type {ty:?}"
+            )));
+        }
         Ty::TrialI64I64 => {
             let z = ctx.fresh("tz");
             ctx.assign(z.clone(), Ty::Int64, RValue::Int(0));
@@ -1438,28 +2457,38 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                 .get(name)
                 .ok_or_else(|| Error::new(format!("unknown type `{name}`")))?
                 .clone();
-            let mut fields = Vec::new();
-            for (_, fty) in &info.fields {
-                let fp = ctx.fresh("zf");
-                match fty {
-                    Ty::Int64 => ctx.assign(fp.clone(), Ty::Int64, RValue::Int(0)),
-                    Ty::Bool => ctx.assign(fp.clone(), Ty::Bool, RValue::Bool(false)),
-                    _ => {
-                        return Err(Error::new(format!(
-                            "cannot zero-init field type {fty:?}"
-                        )));
+            if info.zero_init {
+                ctx.assign(
+                    place.clone(),
+                    ty.clone(),
+                    RValue::StructZero {
+                        type_name: name.clone(),
+                    },
+                );
+            } else {
+                let mut fields = Vec::new();
+                for f in &info.fields {
+                    let fp = ctx.fresh("zf");
+                    match &f.ty {
+                        Ty::Int64 => ctx.assign(fp.clone(), Ty::Int64, RValue::Int(0)),
+                        Ty::Bool => ctx.assign(fp.clone(), Ty::Bool, RValue::Bool(false)),
+                        other => {
+                            return Err(Error::new(format!(
+                                "cannot zero-init field type {other:?}"
+                            )));
+                        }
                     }
+                    fields.push(fp);
                 }
-                fields.push(fp);
+                ctx.assign(
+                    place.clone(),
+                    ty.clone(),
+                    RValue::StructLit {
+                        type_name: name.clone(),
+                        fields,
+                    },
+                );
             }
-            ctx.assign(
-                place.clone(),
-                ty.clone(),
-                RValue::StructLit {
-                    type_name: name.clone(),
-                    fields,
-                },
-            );
         }
     }
     Ok(())
@@ -1474,9 +2503,61 @@ fn lower_binary(
 ) -> Result<(Place, Ty)> {
     let (l, lt) = lower_expr(ctx, left)?;
     let (r, rt) = lower_expr(ctx, right)?;
-    let (out_ty, need) = match op {
+    match op {
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
-            (Ty::Int64, Ty::Int64)
+            if !is_int(&lt) || !is_int(&rt) {
+                return Err(Error::at(
+                    format!("operator {op:?} expects integer operands"),
+                    span,
+                ));
+            }
+            let left = if lt == Ty::Int64 {
+                l
+            } else {
+                coerce_place(ctx, l, &lt, &Ty::Int64, span)?
+            };
+            let right = if rt == Ty::Int64 {
+                r
+            } else {
+                coerce_place(ctx, r, &rt, &Ty::Int64, span)?
+            };
+            let p = ctx.fresh("bin");
+            ctx.assign(
+                p.clone(),
+                Ty::Int64,
+                RValue::Binary { op, left, right },
+            );
+            Ok((p, Ty::Int64))
+        }
+        BinaryOp::BitAnd
+        | BinaryOp::BitOr
+        | BinaryOp::BitXor
+        | BinaryOp::Shl
+        | BinaryOp::Shr => {
+            if !is_int(&lt) || !is_int(&rt) {
+                return Err(Error::at(
+                    format!("bitwise operator {op:?} expects integer operands"),
+                    span,
+                ));
+            }
+            // Bitwise in Int64; field stores truncate to declared width.
+            let left = if lt == Ty::Int64 {
+                l
+            } else {
+                coerce_place(ctx, l, &lt, &Ty::Int64, span)?
+            };
+            let right = if rt == Ty::Int64 {
+                r
+            } else {
+                coerce_place(ctx, r, &rt, &Ty::Int64, span)?
+            };
+            let p = ctx.fresh("bit");
+            ctx.assign(
+                p.clone(),
+                Ty::Int64,
+                RValue::Binary { op, left, right },
+            );
+            Ok((p, Ty::Int64))
         }
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
             if lt == Ty::Bool && rt == Ty::Bool {
@@ -1493,7 +2574,6 @@ fn lower_binary(
                 return Ok((p, Ty::Bool));
             }
             if is_int(&lt) && is_int(&rt) {
-                // Widen both to Int64 for comparison (R6 FFI widths).
                 let left = if lt == Ty::Int64 {
                     l
                 } else {
@@ -1516,30 +2596,31 @@ fn lower_binary(
                 );
                 return Ok((p, Ty::Bool));
             }
-            return Err(Error::at(
+            Err(Error::at(
                 "comparison operands must have the same type",
                 span,
-            ));
+            ))
         }
-        BinaryOp::And | BinaryOp::Or => (Ty::Bool, Ty::Bool),
-    };
-    if lt != need || rt != need {
-        return Err(Error::at(
-            format!("operator {op:?} expects {need:?} operands"),
-            span,
-        ));
+        BinaryOp::And | BinaryOp::Or => {
+            if lt != Ty::Bool || rt != Ty::Bool {
+                return Err(Error::at(
+                    format!("operator {op:?} expects Bool operands"),
+                    span,
+                ));
+            }
+            let p = ctx.fresh("bin");
+            ctx.assign(
+                p.clone(),
+                Ty::Bool,
+                RValue::Binary {
+                    op,
+                    left: l,
+                    right: r,
+                },
+            );
+            Ok((p, Ty::Bool))
+        }
     }
-    let p = ctx.fresh("bin");
-    ctx.assign(
-        p.clone(),
-        out_ty.clone(),
-        RValue::Binary {
-            op,
-            left: l,
-            right: r,
-        },
-    );
-    Ok((p, out_ty))
 }
 
 fn lower_call(
@@ -1560,8 +2641,8 @@ fn lower_call(
             let (arg, ty) = lower_expr(ctx, expr)?;
             let (print_arg, print_ty) = match &ty {
                 Ty::String | Ty::Int64 | Ty::Bool => (arg, ty),
-                Ty::Int32 | Ty::UInt64 => {
-                    let widened = coerce_place(ctx, arg, &ty, &Ty::Int64, span)?;
+                t if is_int(t) => {
+                    let widened = coerce_place(ctx, arg, t, &Ty::Int64, span)?;
                     (widened, Ty::Int64)
                 }
                 other => {
@@ -1624,27 +2705,54 @@ fn lower_call(
             );
             Ok((p, Ty::TrialI64I64))
         }
-        other if ctx.types.contains_key(other) => {
-            // Constructor: TypeName(field: …)
-            let info = ctx.types.get(other).unwrap().clone();
-            let formal: Vec<(String, Ty)> = info.fields.clone();
-            let field_places = resolve_call_args(ctx, &formal, args, span)?;
-            let p = ctx.fresh("obj");
-            let ty = Ty::User(other.to_string());
-            ctx.assign(
-                p.clone(),
-                ty.clone(),
-                RValue::StructLit {
-                    type_name: other.to_string(),
-                    fields: field_places,
-                },
-            );
-            Ok((p, ty))
-        }
         other => {
+            // Type constructor via local or imported name.
+            if let Some(mangled_ty) = ctx.resolve_type_name(other) {
+                let info = ctx.types.get(&mangled_ty).unwrap().clone();
+                let p = ctx.fresh("obj");
+                let ty = Ty::User(mangled_ty.clone());
+                if info.zero_init {
+                    if !args.is_empty() {
+                        return Err(Error::at(
+                            format!("`{other}()` takes no arguments (zero-init constructor)"),
+                            span,
+                        ));
+                    }
+                    ctx.assign(
+                        p.clone(),
+                        ty.clone(),
+                        RValue::StructZero {
+                            type_name: mangled_ty,
+                        },
+                    );
+                } else {
+                    let formal: Vec<(String, Ty)> = info
+                        .fields
+                        .iter()
+                        .map(|f| (f.name.clone(), f.ty.clone()))
+                        .collect();
+                    let field_places = resolve_call_args(ctx, &formal, args, span)?;
+                    ctx.assign(
+                        p.clone(),
+                        ty.clone(),
+                        RValue::StructLit {
+                            type_name: mangled_ty,
+                            fields: field_places,
+                        },
+                    );
+                }
+                return Ok((p, ty));
+            }
+
+            // Free function via local or imported name.
+            let mangled = ctx
+                .name_to_fn
+                .get(other)
+                .cloned()
+                .unwrap_or_else(|| other.to_string());
             let sig = ctx
                 .fns
-                .get(other)
+                .get(&mangled)
                 .ok_or_else(|| Error::at(format!("unknown function `{other}`"), span))?
                 .clone();
             let arg_places = resolve_call_args(ctx, &sig.params, args, span)?;
@@ -1654,7 +2762,7 @@ fn lower_call(
                     arg_tys: sig.params.iter().map(|(_, t)| t.clone()).collect(),
                 }
             } else {
-                Callee::User(other.to_string())
+                Callee::User(sig.mangled.clone())
             };
             emit_call_result(ctx, callee, arg_places, sig.ret)
         }
@@ -1672,18 +2780,7 @@ fn coerce_place(
     if from == to {
         return Ok(place);
     }
-    let ok = match (from, to) {
-        (Ty::Int64, Ty::Int32)
-        | (Ty::Int64, Ty::UInt64)
-        | (Ty::Int32, Ty::Int64)
-        | (Ty::Int32, Ty::UInt64)
-        | (Ty::UInt64, Ty::Int64)
-        | (Ty::UInt64, Ty::Int32)
-        | (Ty::Int32, Ty::Int32)
-        | (Ty::UInt64, Ty::UInt64)
-        | (Ty::Int64, Ty::Int64) => true,
-        _ => false,
-    };
+    let ok = is_int(from) && is_int(to);
     if !ok {
         return Err(Error::at(
             format!("cannot coerce {from:?} to {to:?}"),
@@ -1821,7 +2918,14 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         env: ctx.env.clone(),
         fns: ctx.fns.clone(),
         types: ctx.types.clone(),
+        name_to_type: ctx.name_to_type.clone(),
+        name_to_fn: ctx.name_to_fn.clone(),
+        name_to_global: ctx.name_to_global.clone(),
+        namespaces: ctx.namespaces.clone(),
+        module_exports: ctx.module_exports.clone(),
         fn_ret: ctx.fn_ret.clone(),
+        module_id: ctx.module_id.clone(),
+        is_entry: ctx.is_entry,
     };
     if block.tail.is_none() {
         return Ok(Ty::Void);

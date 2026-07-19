@@ -1,4 +1,4 @@
-//! Lexer for the current Thoxa subset (R0–R6).
+//! Lexer for the current Thoxa subset (R0–R8).
 
 use crate::error::{Error, Result};
 use crate::span::Span;
@@ -15,7 +15,9 @@ pub enum TokenKind {
     Type,
     Export,
     Extern,
+    Import,
     From,
+    As,
     True,
     False,
     And,
@@ -30,6 +32,8 @@ pub enum TokenKind {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
     LAngle,
     RAngle,
     Arrow,
@@ -46,6 +50,18 @@ pub enum TokenKind {
     Star,
     Slash,
     Percent,
+    /// Bitwise and `&`
+    Amp,
+    /// Bitwise or `|`
+    Pipe,
+    /// Bitwise xor `^`
+    Caret,
+    /// Bitwise not `~`
+    Tilde,
+    /// Shift left `<<`
+    Shl,
+    /// Shift right `>>`
+    Shr,
     Question,
     Bang,
     Eof,
@@ -101,6 +117,8 @@ impl<'a> Lexer<'a> {
             b')' => self.simple(TokenKind::RParen, start, 1),
             b'{' => self.simple(TokenKind::LBrace, start, 1),
             b'}' => self.simple(TokenKind::RBrace, start, 1),
+            b'[' => self.simple(TokenKind::LBracket, start, 1),
+            b']' => self.simple(TokenKind::RBracket, start, 1),
             b':' => self.simple(TokenKind::Colon, start, 1),
             b',' => self.simple(TokenKind::Comma, start, 1),
             b'.' => self.simple(TokenKind::Dot, start, 1),
@@ -109,14 +127,20 @@ impl<'a> Lexer<'a> {
             b'%' => self.simple(TokenKind::Percent, start, 1),
             b'/' => self.simple(TokenKind::Slash, start, 1),
             b'?' => self.simple(TokenKind::Question, start, 1),
+            b'&' => self.simple(TokenKind::Amp, start, 1),
+            b'|' => self.simple(TokenKind::Pipe, start, 1),
+            b'^' => self.simple(TokenKind::Caret, start, 1),
+            b'~' => self.simple(TokenKind::Tilde, start, 1),
             b'-' if self.peek(1) == Some(b'>') => self.simple(TokenKind::Arrow, start, 2),
             b'-' => self.simple(TokenKind::Minus, start, 1),
             b'=' if self.peek(1) == Some(b'=') => self.simple(TokenKind::EqEq, start, 2),
             b'=' => self.simple(TokenKind::Eq, start, 1),
             b'!' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Ne, start, 2),
             b'!' => self.simple(TokenKind::Bang, start, 1),
+            b'<' if self.peek(1) == Some(b'<') => self.simple(TokenKind::Shl, start, 2),
             b'<' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Le, start, 2),
             b'<' => self.simple(TokenKind::LAngle, start, 1),
+            b'>' if self.peek(1) == Some(b'>') => self.simple(TokenKind::Shr, start, 2),
             b'>' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Ge, start, 2),
             b'>' => self.simple(TokenKind::RAngle, start, 1),
             b'"' => self.string(start),
@@ -207,6 +231,37 @@ impl<'a> Lexer<'a> {
     }
 
     fn number(&mut self, start: usize) -> Result<Token> {
+        // Hex: 0x… / 0X…
+        if self.bytes[start] == b'0'
+            && self
+                .peek(1)
+                .map(|c| c == b'x' || c == b'X')
+                .unwrap_or(false)
+        {
+            self.pos += 2; // skip 0x
+            let hex_start = self.pos;
+            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_hexdigit() {
+                self.pos += 1;
+            }
+            if self.pos == hex_start {
+                return Err(Error::at(
+                    "expected hex digits after 0x",
+                    Span::new(start, self.pos),
+                ));
+            }
+            let text = &self.src[hex_start..self.pos];
+            let value = i64::from_str_radix(text, 16).map_err(|_| {
+                Error::at(
+                    format!("invalid hex integer `0x{text}`"),
+                    Span::new(start, self.pos),
+                )
+            })?;
+            return Ok(Token {
+                kind: TokenKind::Int(value),
+                span: Span::new(start, self.pos),
+            });
+        }
+
         while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
             self.pos += 1;
         }
@@ -238,7 +293,9 @@ impl<'a> Lexer<'a> {
             "type" => TokenKind::Type,
             "export" => TokenKind::Export,
             "extern" => TokenKind::Extern,
+            "import" => TokenKind::Import,
             "from" => TokenKind::From,
+            "as" => TokenKind::As,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "and" => TokenKind::And,

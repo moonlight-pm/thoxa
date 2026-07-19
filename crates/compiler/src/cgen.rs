@@ -1,7 +1,7 @@
 //! MIR → C source.
 
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::mir::{Callee, Function, Program, RValue, Stmt, TrialTag, Ty, TypeLayout};
+use crate::mir::{Callee, Function, GlobalVar, Program, RValue, Stmt, TrialTag, Ty, TypeLayout};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 
@@ -11,9 +11,10 @@ pub fn emit_program(program: &Program) -> String {
     out.push_str("#include <stdint.h>\n");
     out.push_str("#include <stdbool.h>\n");
     out.push_str("#include <stddef.h>\n");
-    // R6: libc (`extern fn … from "c"`). Headers provide write/getpid/abs prototypes.
+    // R6/R7: libc (`extern fn … from "c"`). string.h for memcpy/memset; unistd/stdlib for others.
     if !program.externs.is_empty() {
         out.push_str("#include <stdlib.h>\n");
+        out.push_str("#include <string.h>\n");
         out.push_str("#include <unistd.h>\n");
     }
     out.push_str("#include \"thoxa_rt.h\"\n\n");
@@ -35,26 +36,85 @@ pub fn emit_program(program: &Program) -> String {
         emit_typedef(&mut out, t);
     }
 
+    // Module-level statics (R8).
+    for g in &program.globals {
+        emit_global(&mut out, g);
+    }
+    if !program.globals.is_empty() {
+        out.push('\n');
+    }
+
     for f in &program.functions {
         emit_proto(&mut out, f);
     }
     out.push('\n');
 
+    // Module initializer (top-level let/mut values).
+    if !program.init.is_empty() {
+        out.push_str("static void thoxa_module_init(void) {\n");
+        // Temps used by init stmts need locals.
+        let mut locals: Vec<(String, Ty)> = Vec::new();
+        let mut seen = HashSet::new();
+        collect_locals(&program.init, &mut locals, &mut seen);
+        // Don't redeclare globals as locals.
+        let global_names: HashSet<&str> = program.globals.iter().map(|g| g.name.as_str()).collect();
+        for (name, ty) in &locals {
+            if global_names.contains(name.as_str()) {
+                continue;
+            }
+            if *ty == Ty::Void {
+                continue;
+            }
+            if is_heap_ty(ty) {
+                let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
+            } else {
+                let _ = writeln!(out, "    {} {};", c_ty(ty), name);
+            }
+        }
+        emit_stmts(&mut out, &program.init, 1);
+        out.push_str("}\n\n");
+    }
+
+    let global_names: HashSet<String> = program.globals.iter().map(|g| g.name.clone()).collect();
+
     for f in &program.functions {
-        emit_function(&mut out, f);
+        emit_function(&mut out, f, &global_names);
         out.push('\n');
     }
 
     out.push_str("int main(void) {\n");
+    if !program.init.is_empty() {
+        out.push_str("    thoxa_module_init();\n");
+    }
     out.push_str("    return (int)thoxa_fn_main();\n");
     out.push_str("}\n");
     out
 }
 
+fn emit_global(out: &mut String, g: &GlobalVar) {
+    if is_heap_ty(&g.ty) {
+        let _ = writeln!(out, "static {} {} = NULL;", c_ty(&g.ty), g.name);
+    } else {
+        let _ = writeln!(out, "static {} {};", c_ty(&g.ty), g.name);
+    }
+}
+
 fn emit_typedef(out: &mut String, t: &TypeLayout) {
     let _ = writeln!(out, "typedef struct {{");
     for f in &t.fields {
-        let _ = writeln!(out, "    {} {};", c_ty(&f.ty), f.c_name);
+        match &f.ty {
+            Ty::FixedArray { elem, len } => {
+                let _ = writeln!(
+                    out,
+                    "    {} {}[{len}];",
+                    c_ty(elem),
+                    f.c_name
+                );
+            }
+            other => {
+                let _ = writeln!(out, "    {} {};", c_ty(other), f.c_name);
+            }
+        }
     }
     if t.fields.is_empty() {
         out.push_str("    char _pad;\n");
@@ -89,7 +149,7 @@ fn emit_params(out: &mut String, f: &Function) {
     }
 }
 
-fn emit_function(out: &mut String, f: &Function) {
+fn emit_function(out: &mut String, f: &Function, global_names: &HashSet<String>) {
     let c_name = c_fn_name(f);
     let ret = c_ty(&f.ret_ty);
     let _ = write!(out, "{ret} {c_name}(");
@@ -103,6 +163,10 @@ fn emit_function(out: &mut String, f: &Function) {
     }
     for (name, _) in &f.params {
         seen.insert(name.clone());
+    }
+    // Module-level statics are already declared; never redeclare as locals.
+    for g in global_names {
+        seen.insert(g.clone());
     }
     collect_locals(&f.body, &mut locals, &mut seen);
     if let Some(ref r) = f.ret {
@@ -149,7 +213,7 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
                     locals.push((place.name.clone(), ty.clone()));
                 }
             }
-            Stmt::Eval(_) => {}
+            Stmt::FieldAssign { .. } | Stmt::IndexAssign { .. } | Stmt::Eval(_) => {}
             Stmt::If {
                 then_body,
                 else_body,
@@ -163,6 +227,8 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
     }
 }
 
+// Note: FieldAssign/IndexAssign do not introduce new locals.
+
 fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize) {
     let pad = "    ".repeat(indent);
     for s in stmts {
@@ -171,6 +237,38 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize) {
                 let _ = write!(out, "{pad}{} = ", place.name);
                 emit_rvalue(out, value);
                 out.push_str(";\n");
+            }
+            Stmt::FieldAssign {
+                base,
+                field,
+                ty,
+                value,
+            } => {
+                let _ = writeln!(
+                    out,
+                    "{pad}{}.{} = ({}){};",
+                    base.name,
+                    field,
+                    c_ty(ty),
+                    value.name
+                );
+            }
+            Stmt::IndexAssign {
+                base,
+                field,
+                index,
+                ty,
+                value,
+            } => {
+                let _ = writeln!(
+                    out,
+                    "{pad}{}.{}[{}] = ({}){};",
+                    base.name,
+                    field,
+                    index.name,
+                    c_ty(ty),
+                    value.name
+                );
             }
             Stmt::Eval(rv) => {
                 let _ = write!(out, "{pad}");
@@ -231,6 +329,9 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
             UnaryOp::Not => {
                 let _ = write!(out, "!({})", arg.name);
             }
+            UnaryOp::BitNot => {
+                let _ = write!(out, "~({})", arg.name);
+            }
         },
         RValue::Binary { op, left, right } => {
             let opc = match op {
@@ -247,6 +348,11 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                 BinaryOp::Ge => ">=",
                 BinaryOp::And => "&&",
                 BinaryOp::Or => "||",
+                BinaryOp::BitAnd => "&",
+                BinaryOp::BitOr => "|",
+                BinaryOp::BitXor => "^",
+                BinaryOp::Shl => "<<",
+                BinaryOp::Shr => ">>",
             };
             let _ = write!(out, "({}) {} ({})", left.name, opc, right.name);
         }
@@ -314,6 +420,10 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                         Some(Ty::Bytes) => {
                             let _ = write!(out, "(void *)thoxa_bytes_data({})", a.name);
                         }
+                        Some(Ty::Address(_)) => {
+                            // Implicit address-of for mut struct bindings.
+                            let _ = write!(out, "&{}", a.name);
+                        }
                         _ => out.push_str(&a.name),
                     }
                 }
@@ -343,8 +453,15 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
             }
             out.push('}');
         }
+        RValue::StructZero { type_name } => {
+            // C compound literal: all fields (and padding) zero-initialized.
+            let _ = write!(out, "({}){{0}}", c_type_name(type_name));
+        }
         RValue::Field { base, field } => {
             let _ = write!(out, "{}.{}", base.name, field);
+        }
+        RValue::Index { base, field, index } => {
+            let _ = write!(out, "{}.{}[{}]", base.name, field, index.name);
         }
         RValue::ToString { value, from } => match from {
             Ty::Int64 => {
@@ -399,13 +516,20 @@ fn c_ty(ty: &Ty) -> String {
     match ty {
         Ty::Int32 => "int32_t".into(),
         Ty::Int64 => "int64_t".into(),
+        Ty::UInt32 => "uint32_t".into(),
         Ty::UInt64 => "uint64_t".into(),
+        Ty::Byte => "uint8_t".into(),
         Ty::Bool => "bool".into(),
         Ty::String => "ThoxaString*".into(),
         Ty::Bytes => "ThoxaBytes*".into(),
         Ty::Void => "void".into(),
         Ty::TrialI64I64 => "ThoxaTrialI64I64".into(),
         Ty::User(name) => c_type_name(name),
+        Ty::FixedArray { elem, .. } => {
+            // Locals of fixed-array type are not emitted; typedefs handle arrays.
+            c_ty(elem)
+        }
+        Ty::Address(inner) => format!("{}*", c_ty(inner)),
     }
 }
 

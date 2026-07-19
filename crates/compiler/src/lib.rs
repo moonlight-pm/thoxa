@@ -5,6 +5,7 @@ pub mod cgen;
 pub mod driver;
 pub mod error;
 pub mod lexer;
+pub mod loader;
 pub mod mir;
 pub mod parser;
 pub mod span;

@@ -7,9 +7,8 @@
 
 use crate::cgen;
 use crate::error::{Error, Result};
-use crate::lexer::Lexer;
+use crate::loader;
 use crate::mir;
-use crate::parser::Parser;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -76,12 +75,8 @@ pub fn runtime_lib_path() -> PathBuf {
 }
 
 pub fn compile_to_c(source: &Path) -> Result<String> {
-    let src = fs::read_to_string(source).map_err(|e| {
-        Error::new(format!("cannot read {}: {e}", source.display()))
-    })?;
-    let tokens = Lexer::new(&src).tokenize()?;
-    let module = Parser::new(tokens).parse_module()?;
-    let program = mir::lower_module(&module)?;
+    let package = loader::load_package(source)?;
+    let program = mir::lower_package(&package)?;
     Ok(cgen::emit_program(&program))
 }
 

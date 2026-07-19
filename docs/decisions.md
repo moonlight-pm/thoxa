@@ -16,13 +16,42 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-19 — R8 modules / multi-file
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D30 | Import origins (R8) | `./…` and `~/…` only | Named roots `std/` / `ffi` deferred |
+| D31 | Resolution | No `..` segments; `~/` = entry file’s directory | Matches oracle “never climb” |
+| D32 | Export surface | `export` on top-level `fn` / `type` / `let` / `extern`; `mut` never exported | Selective + namespace imports |
+| D33 | Namespace import | `import ns from "…"` camelCase binding; members via `ns.x` | Not a first-class value |
+| D34 | Module-level values | Static C globals + `thoxa_module_init()` before main | Dep-order init; private mut state |
+| D35 | Name mangling | Non-entry: `{Module}_{name}` types/fns; globals `g_{Module}_{name}` | Entry keeps unprefixed names; `main` special |
+
+## 2026-07-19 — R7 C-layout struct / packing
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D23 | Struct layout default | Declaration-order, natural C alignment (markerless) | Matches oracle LF-B; no `repr(C)` |
+| D24 | Body-field types | `type T { [mut\|let] f: Ty }` with ABI scalars / `Array<T,N>` | Separate from R3 constructor-param types |
+| D25 | Construction | `T()` zero-inits C-layout types | No field args; R3 still uses named constructor args |
+| D26 | `Address<T>` | Extern params only; implicit `&` on mut User places | Explicit `address()`, storing Address deferred |
+| D27 | Fixed arrays | Field-only `Array<T, N>`; element get/set via `[i]` | No whole-array bind/slice |
+| D28 | New scalar widths | UInt32, Byte (=UInt8); bitwise on integers in Int64 then truncate on field store | Hex `0x…` literals |
+| D29 | Struct value-copy / `sizeof` | Deferred | Oracle LF-B §9; kilo re-reads via tcgetattr |
+
+### Notes
+
+- Field write is a typed width boundary (truncate). Bitwise ops promote to Int64 for the op.
+- Passing a non-`mut` binding where `Address<T>` is required is a compile error.
+- C codegen emits real C structs (`uint32_t`, `uint8_t f_cc[4]`, …) so padding matches the platform ABI (Regs = 16 bytes on x86-64).
+
 ## 2026-07-19 — R6 extern libc (subset)
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D19 | Extern libraries (R6) | `"c"` only | Headers (`unistd.h`, `stdlib.h`) supply prototypes |
-| D20 | Extern types (R6) | Int32, Int64, UInt64, String, Bytes, Void | Other widths / `Address<T>` with R7+ |
-| D21 | Int width at boundary | Coerce Int64↔Int32/UInt64 at args; widen ints for `==`/`<` etc. | Literals stay Int64 |
+| D19 | Extern libraries (R6) | `"c"` only | Headers (`unistd.h`, `stdlib.h`, `string.h`) supply prototypes |
+| D20 | Extern types (R6) | Int32, Int64, UInt64, String, Bytes, Void | R7 adds UInt32, Byte, `Address<T>` |
+| D21 | Int width at boundary | Coerce Int64↔Int32/UInt64 at args; widen ints for `==`/`<` etc. | Literals stay Int64; R7 extends to UInt32/Byte |
 | D22 | C symbol rename | `from "c" "symbol"` | When Thoxa name ≠ C name |
 
 ---

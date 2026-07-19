@@ -60,8 +60,10 @@ Compiler pipeline (stable): `.thx` → lexer → parser → AST → MIR (+ simpl
 
 Already known (see status + decisions):
 
-- R0–R6 done. **Next = R7 C-layout struct / packing.**
-- Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt64/String/Bytes/Void (D19–D22).
+- R0–R8 done. **Next = R9 HTTP example (or subset).**
+- Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28).
+- C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).
+- Modules: `import` selective/namespace, `export`, `./`+`~/` loader, module-level let/mut (D30–D35).
 - Bytes construction: keep `Bytes.fromString`; defer `"…" as Bytes` to conversions; reject overloaded `Bytes.from` for now (D14–D18).
 - Value model hybrid A; errors `May`/`Trial` + `?` / `match`.
 
