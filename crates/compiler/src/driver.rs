@@ -86,11 +86,25 @@ pub fn compile_to_c(source: &Path) -> Result<String> {
 }
 
 pub fn ensure_runtime() -> Result<()> {
+    // Rebuild when the library is missing or older than runtime sources.
     let lib = runtime_lib_path();
-    if lib.is_file() {
-        return Ok(());
+    let src = workspace_root().join("runtime/src/thoxa_rt.c");
+    let hdr = workspace_root().join("runtime/include/thoxa_rt.h");
+    let needs = match (lib.metadata(), src.metadata(), hdr.metadata()) {
+        (Ok(lib_m), Ok(src_m), Ok(hdr_m)) => {
+            let lib_t = lib_m.modified().ok();
+            let src_t = src_m.modified().ok();
+            let hdr_t = hdr_m.modified().ok();
+            match (lib_t, src_t, hdr_t) {
+                (Some(lt), Some(st), Some(ht)) => lt < st || lt < ht,
+                _ => true,
+            }
+        }
+        _ => true,
+    };
+    if needs {
+        build_runtime()?;
     }
-    build_runtime()?;
     if !lib.is_file() {
         return Err(Error::new(format!(
             "runtime library missing at {} — run `cargo make runtime`",

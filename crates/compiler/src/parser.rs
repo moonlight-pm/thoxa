@@ -1,4 +1,4 @@
-//! Recursive-descent parser for the R0+ subset.
+//! Recursive-descent + precedence parser (R0–R1).
 
 use crate::ast::*;
 use crate::error::{Error, Result};
@@ -27,9 +27,8 @@ impl Parser {
         self.expect_kind(&TokenKind::Fn)?;
         let (name, name_span) = self.expect_ident()?;
         self.expect_kind(&TokenKind::LParen)?;
-        // R0: no parameters yet
         self.expect_kind(&TokenKind::RParen)?;
-        let return_type = if self.at_arrow() {
+        let return_type = if self.at(TokenKind::Arrow) {
             self.bump();
             Some(self.parse_type()?)
         } else {
@@ -53,26 +52,227 @@ impl Parser {
     fn parse_block(&mut self) -> Result<Block> {
         let start = self.peek_span();
         self.expect_kind(&TokenKind::LBrace)?;
-        let mut exprs = Vec::new();
+        let mut elems: Vec<BlockElem> = Vec::new();
         while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
-            exprs.push(self.parse_expr()?);
+            if self.at(TokenKind::Let) {
+                elems.push(BlockElem::Let(self.parse_let()?));
+            } else {
+                elems.push(BlockElem::Expr(self.parse_expr()?));
+            }
         }
         self.expect_kind(&TokenKind::RBrace)?;
         let end = self.prev_span();
-        // Last expression is the block value if present.
-        let (stmts, tail) = if let Some(last) = exprs.pop() {
-            (exprs, Some(Box::new(last)))
-        } else {
-            (exprs, None)
+
+        let (items, tail) = match elems.pop() {
+            Some(BlockElem::Expr(e)) => {
+                let items = elems
+                    .into_iter()
+                    .map(|el| match el {
+                        BlockElem::Let(l) => BlockItem::Let {
+                            name: l.name,
+                            name_span: l.name_span,
+                            init: l.init,
+                        },
+                        BlockElem::Expr(e) => BlockItem::Expr(e),
+                    })
+                    .collect();
+                (items, Some(Box::new(e)))
+            }
+            Some(BlockElem::Let(l)) => {
+                let mut items: Vec<BlockItem> = elems
+                    .into_iter()
+                    .map(|el| match el {
+                        BlockElem::Let(l) => BlockItem::Let {
+                            name: l.name,
+                            name_span: l.name_span,
+                            init: l.init,
+                        },
+                        BlockElem::Expr(e) => BlockItem::Expr(e),
+                    })
+                    .collect();
+                items.push(BlockItem::Let {
+                    name: l.name,
+                    name_span: l.name_span,
+                    init: l.init,
+                });
+                (items, None)
+            }
+            None => (Vec::new(), None),
         };
+
         Ok(Block {
-            stmts,
+            items,
             tail,
             span: Span::new(start.start, end.end),
         })
     }
 
+    fn parse_let(&mut self) -> Result<LetBind> {
+        self.expect_kind(&TokenKind::Let)?;
+        let (name, name_span) = self.expect_ident()?;
+        self.expect_kind(&TokenKind::Eq)?;
+        let init = self.parse_expr()?;
+        Ok(LetBind {
+            name,
+            name_span,
+            init,
+        })
+    }
+
+    /// Precedence climbing entry.
     fn parse_expr(&mut self) -> Result<Expr> {
+        self.parse_or()
+    }
+
+    fn parse_or(&mut self) -> Result<Expr> {
+        let mut left = self.parse_and()?;
+        while self.at(TokenKind::Or) {
+            let start = left.span.start;
+            self.bump();
+            let right = self.parse_and()?;
+            let end = right.span.end;
+            left = Expr {
+                kind: ExprKind::Binary {
+                    op: BinaryOp::Or,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_and(&mut self) -> Result<Expr> {
+        let mut left = self.parse_cmp()?;
+        while self.at(TokenKind::And) {
+            let start = left.span.start;
+            self.bump();
+            let right = self.parse_cmp()?;
+            let end = right.span.end;
+            left = Expr {
+                kind: ExprKind::Binary {
+                    op: BinaryOp::And,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_cmp(&mut self) -> Result<Expr> {
+        let mut left = self.parse_add()?;
+        loop {
+            let op = match self.current().kind {
+                TokenKind::EqEq => BinaryOp::Eq,
+                TokenKind::Ne => BinaryOp::Ne,
+                TokenKind::Lt => BinaryOp::Lt,
+                TokenKind::Le => BinaryOp::Le,
+                TokenKind::Gt => BinaryOp::Gt,
+                TokenKind::Ge => BinaryOp::Ge,
+                _ => break,
+            };
+            let start = left.span.start;
+            self.bump();
+            let right = self.parse_add()?;
+            let end = right.span.end;
+            left = Expr {
+                kind: ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_add(&mut self) -> Result<Expr> {
+        let mut left = self.parse_mul()?;
+        loop {
+            let op = match self.current().kind {
+                TokenKind::Plus => BinaryOp::Add,
+                TokenKind::Minus => BinaryOp::Sub,
+                _ => break,
+            };
+            let start = left.span.start;
+            self.bump();
+            let right = self.parse_mul()?;
+            let end = right.span.end;
+            left = Expr {
+                kind: ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_mul(&mut self) -> Result<Expr> {
+        let mut left = self.parse_unary()?;
+        loop {
+            let op = match self.current().kind {
+                TokenKind::Star => BinaryOp::Mul,
+                TokenKind::Slash => BinaryOp::Div,
+                TokenKind::Percent => BinaryOp::Rem,
+                _ => break,
+            };
+            let start = left.span.start;
+            self.bump();
+            let right = self.parse_unary()?;
+            let end = right.span.end;
+            left = Expr {
+                kind: ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_unary(&mut self) -> Result<Expr> {
+        let start = self.peek_span();
+        if self.at(TokenKind::Minus) {
+            self.bump();
+            let expr = self.parse_unary()?;
+            let end = expr.span.end;
+            return Ok(Expr {
+                kind: ExprKind::Unary {
+                    op: UnaryOp::Neg,
+                    expr: Box::new(expr),
+                },
+                span: Span::new(start.start, end),
+            });
+        }
+        if self.at(TokenKind::Not) {
+            self.bump();
+            let expr = self.parse_unary()?;
+            let end = expr.span.end;
+            return Ok(Expr {
+                kind: ExprKind::Unary {
+                    op: UnaryOp::Not,
+                    expr: Box::new(expr),
+                },
+                span: Span::new(start.start, end),
+            });
+        }
+        self.parse_postfix()
+    }
+
+    fn parse_postfix(&mut self) -> Result<Expr> {
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> Result<Expr> {
         let start = self.peek_span();
         match &self.current().kind {
             TokenKind::Int(n) => {
@@ -80,6 +280,20 @@ impl Parser {
                 self.bump();
                 Ok(Expr {
                     kind: ExprKind::Int(n),
+                    span: Span::new(start.start, self.prev_span().end),
+                })
+            }
+            TokenKind::True => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Bool(true),
+                    span: Span::new(start.start, self.prev_span().end),
+                })
+            }
+            TokenKind::False => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Bool(false),
                     span: Span::new(start.start, self.prev_span().end),
                 })
             }
@@ -119,6 +333,7 @@ impl Parser {
                     })
                 }
             }
+            TokenKind::If => self.parse_if(),
             TokenKind::LBrace => {
                 let block = self.parse_block()?;
                 let span = block.span;
@@ -127,11 +342,53 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::LParen => {
+                self.bump();
+                let e = self.parse_expr()?;
+                self.expect_kind(&TokenKind::RParen)?;
+                Ok(e)
+            }
             _ => Err(Error::at(
                 format!("expected expression, found {:?}", self.current().kind),
                 self.peek_span(),
             )),
         }
+    }
+
+    fn parse_if(&mut self) -> Result<Expr> {
+        let start = self.peek_span();
+        self.expect_kind(&TokenKind::If)?;
+        let cond = self.parse_expr()?;
+        let then_branch = self.parse_block()?;
+        let else_branch = if self.at(TokenKind::Else) {
+            self.bump();
+            // else if …
+            if self.at(TokenKind::If) {
+                let nested = self.parse_if()?;
+                let span = nested.span;
+                Some(Block {
+                    items: Vec::new(),
+                    tail: Some(Box::new(nested)),
+                    span,
+                })
+            } else {
+                Some(self.parse_block()?)
+            }
+        } else {
+            None
+        };
+        let end = else_branch
+            .as_ref()
+            .map(|b| b.span.end)
+            .unwrap_or(then_branch.span.end);
+        Ok(Expr {
+            kind: ExprKind::If {
+                cond: Box::new(cond),
+                then_branch,
+                else_branch,
+            },
+            span: Span::new(start.start, end),
+        })
     }
 
     fn current(&self) -> &Token {
@@ -140,10 +397,6 @@ impl Parser {
 
     fn at(&self, kind: TokenKind) -> bool {
         std::mem::discriminant(&self.current().kind) == std::mem::discriminant(&kind)
-    }
-
-    fn at_arrow(&self) -> bool {
-        matches!(self.current().kind, TokenKind::Arrow)
     }
 
     fn bump(&mut self) {
@@ -192,21 +445,64 @@ impl Parser {
     }
 }
 
+struct LetBind {
+    name: String,
+    name_span: Span,
+    init: Expr,
+}
+
+enum BlockElem {
+    Let(LetBind),
+    Expr(Expr),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::lexer::Lexer;
 
+    fn parse(src: &str) -> Module {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        Parser::new(tokens).parse_module().unwrap()
+    }
+
     #[test]
     fn parse_hello() {
-        let src = r#"
+        let module = parse(
+            r#"
             fn main() -> Int64 {
                 println("Hello, world!")
                 0
             }
-        "#;
-        let tokens = Lexer::new(src).tokenize().unwrap();
-        let module = Parser::new(tokens).parse_module().unwrap();
+        "#,
+        );
+        assert_eq!(module.items.len(), 1);
+    }
+
+    #[test]
+    fn parse_let_and_arith() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let a = 7 + 3
+                println(a)
+                0
+            }
+        "#,
+        );
+        assert_eq!(module.items.len(), 1);
+    }
+
+    #[test]
+    fn parse_if_else() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let x = if 1 < 2 { 10 } else { 20 }
+                x
+            }
+        "#,
+        );
         assert_eq!(module.items.len(), 1);
     }
 }

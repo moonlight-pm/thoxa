@@ -1,0 +1,17 @@
+## Integer arithmetic (truncating division) and comparisons / logical ops.
+## R1 uses println on values directly (string interpolation comes later).
+fn main() -> Int64 {
+    println(7 + 3)
+    println(7 - 3)
+    println(7 * 3)
+    println(7 / 3)
+    println(7 % 3)
+    println(-7 / 3)
+    println(2 < 3)
+    println(3 <= 3)
+    println(4 > 5)
+    println(not true)
+    println(true and false)
+    println(false or true)
+    0
+}

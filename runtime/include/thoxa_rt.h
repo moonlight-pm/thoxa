@@ -1,6 +1,7 @@
 #ifndef THOXA_RT_H
 #define THOXA_RT_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -8,10 +9,14 @@
 extern "C" {
 #endif
 
-/* --- I/O (R0) ----------------------------------------------------------- */
+/* --- I/O ---------------------------------------------------------------- */
 
 void thoxa_print(const char *s);
 void thoxa_println(const char *s);
+void thoxa_print_i64(int64_t v);
+void thoxa_println_i64(int64_t v);
+void thoxa_print_bool(bool v);
+void thoxa_println_bool(bool v);
 void thoxa_panic(const char *msg);
 
 /* --- Heap header (RC foundation; used from R4+) ------------------------- */

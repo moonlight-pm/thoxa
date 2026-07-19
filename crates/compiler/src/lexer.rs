@@ -1,4 +1,4 @@
-//! Lexer for a minimal Thoxa subset (R0+).
+//! Lexer for the current Thoxa subset (R0–R1).
 
 use crate::error::{Error, Result};
 use crate::span::Span;
@@ -7,11 +7,19 @@ use crate::span::Span;
 pub enum TokenKind {
     // Keywords
     Fn,
+    Let,
+    If,
+    Else,
+    True,
+    False,
+    And,
+    Or,
+    Not,
     // Identifiers & literals
     Ident(String),
     Int(i64),
     String(String),
-    // Punctuation
+    // Operators / punctuation
     LParen,
     RParen,
     LBrace,
@@ -19,6 +27,18 @@ pub enum TokenKind {
     Arrow, // ->
     Colon,
     Comma,
+    Eq,    // =
+    EqEq,  // ==
+    Ne,    // !=
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
     // End
     Eof,
 }
@@ -69,63 +89,44 @@ impl<'a> Lexer<'a> {
 
         let b = self.bytes[self.pos];
         match b {
-            b'(' => {
-                self.pos += 1;
-                Ok(Token {
-                    kind: TokenKind::LParen,
-                    span: Span::new(start, self.pos),
-                })
-            }
-            b')' => {
-                self.pos += 1;
-                Ok(Token {
-                    kind: TokenKind::RParen,
-                    span: Span::new(start, self.pos),
-                })
-            }
-            b'{' => {
-                self.pos += 1;
-                Ok(Token {
-                    kind: TokenKind::LBrace,
-                    span: Span::new(start, self.pos),
-                })
-            }
-            b'}' => {
-                self.pos += 1;
-                Ok(Token {
-                    kind: TokenKind::RBrace,
-                    span: Span::new(start, self.pos),
-                })
-            }
-            b':' => {
-                self.pos += 1;
-                Ok(Token {
-                    kind: TokenKind::Colon,
-                    span: Span::new(start, self.pos),
-                })
-            }
-            b',' => {
-                self.pos += 1;
-                Ok(Token {
-                    kind: TokenKind::Comma,
-                    span: Span::new(start, self.pos),
-                })
-            }
-            b'-' if self.peek(1) == Some(b'>') => {
-                self.pos += 2;
-                Ok(Token {
-                    kind: TokenKind::Arrow,
-                    span: Span::new(start, self.pos),
-                })
-            }
+            b'(' => self.simple(TokenKind::LParen, start, 1),
+            b')' => self.simple(TokenKind::RParen, start, 1),
+            b'{' => self.simple(TokenKind::LBrace, start, 1),
+            b'}' => self.simple(TokenKind::RBrace, start, 1),
+            b':' => self.simple(TokenKind::Colon, start, 1),
+            b',' => self.simple(TokenKind::Comma, start, 1),
+            b'+' => self.simple(TokenKind::Plus, start, 1),
+            b'*' => self.simple(TokenKind::Star, start, 1),
+            b'%' => self.simple(TokenKind::Percent, start, 1),
+            b'/' => self.simple(TokenKind::Slash, start, 1),
+            b'-' if self.peek(1) == Some(b'>') => self.simple(TokenKind::Arrow, start, 2),
+            b'-' => self.simple(TokenKind::Minus, start, 1),
+            b'=' if self.peek(1) == Some(b'=') => self.simple(TokenKind::EqEq, start, 2),
+            b'=' => self.simple(TokenKind::Eq, start, 1),
+            b'!' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Ne, start, 2),
+            b'<' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Le, start, 2),
+            b'<' => self.simple(TokenKind::Lt, start, 1),
+            b'>' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Ge, start, 2),
+            b'>' => self.simple(TokenKind::Gt, start, 1),
             b'"' => self.string(start),
             b if b.is_ascii_digit() => self.number(start),
             b if is_ident_start(b) => self.ident_or_keyword(start),
             _ => Err(Error::at(
-                format!("unexpected character {:?}", self.src[self.pos..].chars().next()),
+                format!(
+                    "unexpected character {:?}",
+                    self.src[self.pos..].chars().next()
+                ),
                 Span::new(start, start + 1),
             )),
         }
+    }
+
+    fn simple(&mut self, kind: TokenKind, start: usize, len: usize) -> Result<Token> {
+        self.pos += len;
+        Ok(Token {
+            kind,
+            span: Span::new(start, self.pos),
+        })
     }
 
     fn skip_trivia(&mut self) {
@@ -138,7 +139,6 @@ impl<'a> Lexer<'a> {
                 self.pos += 1;
                 continue;
             }
-            // Line comment: #
             if b == b'#' {
                 self.pos += 1;
                 while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
@@ -151,7 +151,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn string(&mut self, start: usize) -> Result<Token> {
-        self.pos += 1; // opening "
+        self.pos += 1;
         let mut out = String::new();
         while self.pos < self.bytes.len() {
             let b = self.bytes[self.pos];
@@ -165,7 +165,10 @@ impl<'a> Lexer<'a> {
             if b == b'\\' {
                 self.pos += 1;
                 if self.pos >= self.bytes.len() {
-                    return Err(Error::at("unterminated string escape", Span::new(start, self.pos)));
+                    return Err(Error::at(
+                        "unterminated string escape",
+                        Span::new(start, self.pos),
+                    ));
                 }
                 let esc = self.bytes[self.pos];
                 out.push(match esc {
@@ -185,7 +188,6 @@ impl<'a> Lexer<'a> {
                 self.pos += 1;
                 continue;
             }
-            // UTF-8: take full char
             let ch = self.src[self.pos..].chars().next().unwrap();
             out.push(ch);
             self.pos += ch.len_utf8();
@@ -197,11 +199,13 @@ impl<'a> Lexer<'a> {
         while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
             self.pos += 1;
         }
-        // Optional underscores already not handled; R0 is plain digits
         let text = &self.src[start..self.pos];
-        let value: i64 = text
-            .parse()
-            .map_err(|_| Error::at(format!("invalid integer `{text}`"), Span::new(start, self.pos)))?;
+        let value: i64 = text.parse().map_err(|_| {
+            Error::at(
+                format!("invalid integer `{text}`"),
+                Span::new(start, self.pos),
+            )
+        })?;
         Ok(Token {
             kind: TokenKind::Int(value),
             span: Span::new(start, self.pos),
@@ -215,6 +219,14 @@ impl<'a> Lexer<'a> {
         let text = &self.src[start..self.pos];
         let kind = match text {
             "fn" => TokenKind::Fn,
+            "let" => TokenKind::Let,
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            "true" => TokenKind::True,
+            "false" => TokenKind::False,
+            "and" => TokenKind::And,
+            "or" => TokenKind::Or,
+            "not" => TokenKind::Not,
             _ => TokenKind::Ident(text.to_string()),
         };
         Ok(Token {
@@ -246,5 +258,16 @@ mod tests {
         let tokens = Lexer::new(src).tokenize().unwrap();
         assert!(matches!(tokens[0].kind, TokenKind::Fn));
         assert!(matches!(tokens[1].kind, TokenKind::Ident(ref s) if s == "main"));
+    }
+
+    #[test]
+    fn operators() {
+        let tokens = Lexer::new("a + b == 3 and not false")
+            .tokenize()
+            .unwrap();
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Plus));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::EqEq));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::And));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Not));
     }
 }

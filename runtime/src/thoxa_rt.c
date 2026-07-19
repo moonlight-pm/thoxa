@@ -18,6 +18,24 @@ void thoxa_println(const char *s) {
     fflush(stdout);
 }
 
+void thoxa_print_i64(int64_t v) {
+    printf("%lld", (long long)v);
+}
+
+void thoxa_println_i64(int64_t v) {
+    printf("%lld\n", (long long)v);
+    fflush(stdout);
+}
+
+void thoxa_print_bool(bool v) {
+    fputs(v ? "true" : "false", stdout);
+}
+
+void thoxa_println_bool(bool v) {
+    fputs(v ? "true\n" : "false\n", stdout);
+    fflush(stdout);
+}
+
 void thoxa_panic(const char *msg) {
     fprintf(stderr, "thoxa panic: %s\n", msg ? msg : "(null)");
     abort();

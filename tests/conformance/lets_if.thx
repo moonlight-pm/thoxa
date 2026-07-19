@@ -1,0 +1,12 @@
+## let bindings and if/else as an expression.
+fn main() -> Int64 {
+    let a = 7
+    let b = 3
+    let sum = a + b
+    println(sum)
+    let pick = if a > b { a } else { b }
+    println(pick)
+    let label = if sum == 10 { 1 } else { 0 }
+    println(label)
+    0
+}
