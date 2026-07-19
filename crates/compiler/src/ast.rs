@@ -1,4 +1,4 @@
-//! AST for the current language subset (R0–R5).
+//! AST for the current language subset (R0–R6).
 
 use crate::span::Span;
 
@@ -11,6 +11,21 @@ pub struct Module {
 pub enum Item {
     Function(Function),
     Type(TypeDef),
+    Extern(ExternFn),
+}
+
+/// `extern fn name(…) -> T from "lib" ["c_symbol"]` — no body.
+#[derive(Debug, Clone)]
+pub struct ExternFn {
+    pub name: String,
+    pub name_span: Span,
+    pub params: Vec<Param>,
+    pub return_type: Option<TypeExpr>,
+    /// Library name from `from "…"`, e.g. `"c"`.
+    pub library: String,
+    pub library_span: Span,
+    /// Optional C symbol when it differs from the Thoxa name.
+    pub c_symbol: Option<String>,
 }
 
 #[derive(Debug, Clone)]

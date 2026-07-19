@@ -16,6 +16,17 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-19 — R6 extern libc (subset)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D19 | Extern libraries (R6) | `"c"` only | Headers (`unistd.h`, `stdlib.h`) supply prototypes |
+| D20 | Extern types (R6) | Int32, Int64, UInt64, String, Bytes, Void | Other widths / `Address<T>` with R7+ |
+| D21 | Int width at boundary | Coerce Int64↔Int32/UInt64 at args; widen ints for `==`/`<` etc. | Literals stay Int64 |
+| D22 | C symbol rename | `from "c" "symbol"` | When Thoxa name ≠ C name |
+
+---
+
 ## 2026-07-19 — Bytes construction sugar (R5 follow-up)
 
 | ID | Decision | Choice | Notes |

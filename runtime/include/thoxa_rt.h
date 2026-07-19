@@ -75,6 +75,8 @@ typedef struct ThoxaBytes {
 /* Owned Bytes (refcount 1) from a String's UTF-8 bytes (no trailing NUL in payload). */
 ThoxaBytes *thoxa_bytes_from_string(const ThoxaString *s);
 size_t thoxa_bytes_count(const ThoxaBytes *b);
+/* Mutable data pointer for FFI (NULL if b is NULL). */
+uint8_t *thoxa_bytes_data(ThoxaBytes *b);
 /* Byte as Int64 (0–255). Index OOB → panic. */
 int64_t thoxa_bytes_get(const ThoxaBytes *b, int64_t i);
 /* Masks `byte` to 0–255. Index OOB → panic. */

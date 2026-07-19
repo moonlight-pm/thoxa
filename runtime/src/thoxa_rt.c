@@ -170,6 +170,10 @@ size_t thoxa_bytes_count(const ThoxaBytes *b) {
     return b ? b->len : 0;
 }
 
+uint8_t *thoxa_bytes_data(ThoxaBytes *b) {
+    return b ? b->data : NULL;
+}
+
 static void bytes_check_index(const ThoxaBytes *b, int64_t i) {
     if (!b || i < 0 || (size_t)i >= b->len) {
         thoxa_panic("Bytes index out of range");

@@ -1,4 +1,4 @@
-//! Recursive-descent + precedence parser (R0–R5).
+//! Recursive-descent + precedence parser (R0–R6).
 
 use crate::ast::*;
 use crate::error::{Error, Result};
@@ -20,16 +20,85 @@ impl Parser {
         while !self.at(TokenKind::Eof) {
             if self.at(TokenKind::Type) {
                 items.push(Item::Type(self.parse_type_def()?));
+            } else if self.at(TokenKind::Extern) {
+                items.push(Item::Extern(self.parse_extern()?));
             } else if self.at(TokenKind::Fn) {
                 items.push(Item::Function(self.parse_function()?));
             } else {
                 return Err(Error::at(
-                    format!("expected `fn` or `type`, found {:?}", self.current().kind),
+                    format!(
+                        "expected `fn`, `extern`, or `type`, found {:?}",
+                        self.current().kind
+                    ),
                     self.peek_span(),
                 ));
             }
         }
         Ok(Module { items })
+    }
+
+    /// `extern fn name(params) [-> T] from "lib" ["symbol"]`
+    fn parse_extern(&mut self) -> Result<ExternFn> {
+        self.expect_kind(&TokenKind::Extern)?;
+        self.expect_kind(&TokenKind::Fn)?;
+        let (name, name_span) = self.expect_ident()?;
+        self.expect_kind(&TokenKind::LParen)?;
+        let mut params = Vec::new();
+        if !self.at(TokenKind::RParen) {
+            loop {
+                let p = self.parse_param()?;
+                if !p.positional {
+                    return Err(Error::at(
+                        "extern fn parameters must be marked positional with `!`",
+                        p.name_span,
+                    ));
+                }
+                params.push(p);
+                if self.at(TokenKind::Comma) {
+                    self.bump();
+                    continue;
+                }
+                break;
+            }
+        }
+        self.expect_kind(&TokenKind::RParen)?;
+        let return_type = if self.at(TokenKind::Arrow) {
+            self.bump();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        self.expect_kind(&TokenKind::From)?;
+        let (library, library_span) = self.expect_string()?;
+        let c_symbol = if matches!(self.current().kind, TokenKind::String(_)) {
+            Some(self.expect_string()?.0)
+        } else {
+            None
+        };
+        Ok(ExternFn {
+            name,
+            name_span,
+            params,
+            return_type,
+            library,
+            library_span,
+            c_symbol,
+        })
+    }
+
+    fn expect_string(&mut self) -> Result<(String, Span)> {
+        match &self.current().kind {
+            TokenKind::String(s) => {
+                let s = s.clone();
+                let span = self.current().span;
+                self.bump();
+                Ok((s, span))
+            }
+            _ => Err(Error::at(
+                format!("expected string literal, found {:?}", self.current().kind),
+                self.peek_span(),
+            )),
+        }
     }
 
     fn parse_type_def(&mut self) -> Result<TypeDef> {

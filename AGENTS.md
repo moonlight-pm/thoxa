@@ -60,7 +60,8 @@ Compiler pipeline (stable): `.thx` → lexer → parser → AST → MIR (+ simpl
 
 Already known (see status + decisions):
 
-- R0–R5 done. **Next = R6 `extern fn` libc.**
+- R0–R6 done. **Next = R7 C-layout struct / packing.**
+- Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt64/String/Bytes/Void (D19–D22).
 - Bytes construction: keep `Bytes.fromString`; defer `"…" as Bytes` to conversions; reject overloaded `Bytes.from` for now (D14–D18).
 - Value model hybrid A; errors `May`/`Trial` + `?` / `match`.
 

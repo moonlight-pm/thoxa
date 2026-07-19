@@ -1,5 +1,5 @@
 //! Mid-level IR: typed enough for RC insert + C codegen.
-//! R5: mut bindings + heap Bytes (fixed buffer, simple RC).
+//! R6: `extern fn` libc FFI (Int32/UInt64 + marshal String/Bytes).
 
 use crate::ast::{
     self, Arg, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item, MatchArm, Method,
@@ -12,7 +12,18 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct Program {
     pub types: Vec<TypeLayout>,
+    /// Extern declarations (for prototypes / includes in cgen).
+    pub externs: Vec<ExternDecl>,
     pub functions: Vec<Function>,
+}
+
+/// A bound C function (library `"c"` only in R6).
+#[derive(Debug, Clone)]
+pub struct ExternDecl {
+    pub thoxa_name: String,
+    pub c_symbol: String,
+    pub params: Vec<(String, Ty)>,
+    pub ret: Ty,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +91,8 @@ pub enum RValue {
     ToString { value: Place, from: Ty },
     /// Non-consuming concat → owned String.
     StringConcat { left: Place, right: Place },
+    /// Numeric / trivial cast between compatible types.
+    Cast { value: Place, from: Ty, to: Ty },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +107,12 @@ pub enum Callee {
     User(String),
     /// Method: Type_method — C name built in cgen.
     Method { type_name: String, method: String },
+    /// Direct C symbol (libc). Args already coerced to declared types.
+    Extern {
+        c_symbol: String,
+        /// Parameter types (for C marshaling of String/Bytes).
+        arg_tys: Vec<Ty>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -104,7 +123,9 @@ pub struct Place {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ty {
     Void,
+    Int32,
     Int64,
+    UInt64,
     Bool,
     /// Heap RC String (`ThoxaString*`).
     String,
@@ -118,6 +139,17 @@ fn is_heap(ty: &Ty) -> bool {
     matches!(ty, Ty::String | Ty::Bytes)
 }
 
+fn is_int(ty: &Ty) -> bool {
+    matches!(ty, Ty::Int32 | Ty::Int64 | Ty::UInt64)
+}
+
+fn is_ffi_ty(ty: &Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Int32 | Ty::Int64 | Ty::UInt64 | Ty::String | Ty::Bytes | Ty::Void
+    )
+}
+
 #[derive(Clone)]
 struct Binding {
     ty: Ty,
@@ -128,6 +160,8 @@ struct Binding {
 struct FnSig {
     params: Vec<(String, Ty)>,
     ret: Ty,
+    /// If set, this name is an `extern fn` (call C, no Thoxa body).
+    extern_symbol: Option<String>,
 }
 
 #[derive(Clone)]
@@ -267,6 +301,7 @@ pub fn lower_module(module: &ast::Module) -> Result<Program> {
     let mut type_layouts: Vec<TypeLayout> = Vec::new();
     let mut type_defs: Vec<&TypeDef> = Vec::new();
     let mut free_fns: Vec<&ast::Function> = Vec::new();
+    let mut extern_items: Vec<&ast::ExternFn> = Vec::new();
 
     for item in &module.items {
         match item {
@@ -310,6 +345,7 @@ pub fn lower_module(module: &ast::Module) -> Result<Program> {
                 type_defs.push(td);
             }
             Item::Function(f) => free_fns.push(f),
+            Item::Extern(e) => extern_items.push(e),
         }
     }
 
@@ -339,6 +375,70 @@ pub fn lower_module(module: &ast::Module) -> Result<Program> {
     }
 
     let mut fns: HashMap<String, FnSig> = HashMap::new();
+    let mut extern_decls: Vec<ExternDecl> = Vec::new();
+
+    for e in &extern_items {
+        if e.library != "c" {
+            return Err(Error::at(
+                format!(
+                    "only library \"c\" is supported (got \"{}\")",
+                    e.library
+                ),
+                e.library_span,
+            ));
+        }
+        let ret = match e.return_type.as_ref() {
+            Some(t) => resolve_ty(t, &types_info)?,
+            None => Ty::Void,
+        };
+        if !is_ffi_ty(&ret) {
+            return Err(Error::at(
+                format!("type {ret:?} is not FFI-marshalable"),
+                e.return_type
+                    .as_ref()
+                    .map(|t| t.span)
+                    .unwrap_or(e.name_span),
+            ));
+        }
+        let mut params = Vec::new();
+        for p in &e.params {
+            let ty = resolve_ty(&p.ty, &types_info)?;
+            if matches!(ty, Ty::Void) || !is_ffi_ty(&ty) {
+                return Err(Error::at(
+                    format!("type {ty:?} is not FFI-marshalable as a parameter"),
+                    p.ty.span,
+                ));
+            }
+            params.push((p.name.clone(), ty));
+        }
+        let c_symbol = e
+            .c_symbol
+            .clone()
+            .unwrap_or_else(|| e.name.clone());
+        if fns
+            .insert(
+                e.name.clone(),
+                FnSig {
+                    params: params.clone(),
+                    ret: ret.clone(),
+                    extern_symbol: Some(c_symbol.clone()),
+                },
+            )
+            .is_some()
+        {
+            return Err(Error::at(
+                format!("duplicate function `{}`", e.name),
+                e.name_span,
+            ));
+        }
+        extern_decls.push(ExternDecl {
+            thoxa_name: e.name.clone(),
+            c_symbol,
+            params,
+            ret,
+        });
+    }
+
     for f in &free_fns {
         let ret = resolve_return_ty(f, &types_info)?;
         let params = f
@@ -352,6 +452,7 @@ pub fn lower_module(module: &ast::Module) -> Result<Program> {
                 FnSig {
                     params,
                     ret,
+                    extern_symbol: None,
                 },
             )
             .is_some()
@@ -380,6 +481,7 @@ pub fn lower_module(module: &ast::Module) -> Result<Program> {
 
     Ok(Program {
         types: type_layouts,
+        externs: extern_decls,
         functions,
     })
 }
@@ -401,7 +503,9 @@ fn resolve_return_ty(f: &ast::Function, types: &HashMap<String, TypeInfo>) -> Re
 
 fn resolve_ty(t: &TypeExpr, types: &HashMap<String, TypeInfo>) -> Result<Ty> {
     match (t.name.as_str(), t.args.as_slice()) {
+        ("Int32", []) => Ok(Ty::Int32),
         ("Int64", []) => Ok(Ty::Int64),
+        ("UInt64", []) => Ok(Ty::UInt64),
         ("Bool", []) => Ok(Ty::Bool),
         ("Void", []) => Ok(Ty::Void),
         ("String", []) => Ok(Ty::String),
@@ -1010,7 +1114,11 @@ fn resolve_call_args(
                 Arg::Named { .. } => unreachable!(),
             };
             let (p, ty) = lower_expr(ctx, expr)?;
-            if ty != formal[i].1 {
+            let p = if ty == formal[i].1 {
+                p
+            } else if is_int(&ty) && is_int(&formal[i].1) {
+                coerce_place(ctx, p, &ty, &formal[i].1, expr.span)?
+            } else {
                 return Err(Error::at(
                     format!(
                         "argument {} (`{}`): expected {:?}, found {:?}",
@@ -1021,7 +1129,7 @@ fn resolve_call_args(
                     ),
                     expr.span,
                 ));
-            }
+            };
             places.push(p);
         }
         return Ok(places);
@@ -1063,12 +1171,16 @@ fn resolve_call_args(
         let (p, ty, vspan) = by_name.remove(fname).ok_or_else(|| {
             Error::at(format!("missing argument `{fname}`"), span)
         })?;
-        if &ty != fty {
+        let p = if &ty == fty {
+            p
+        } else if is_int(&ty) && is_int(fty) {
+            coerce_place(ctx, p, &ty, fty, vspan)?
+        } else {
             return Err(Error::at(
                 format!("argument `{fname}`: expected {fty:?}, found {ty:?}"),
                 vspan,
             ));
-        }
+        };
         places.push(p);
     }
     if let Some((extra, _)) = by_name.iter().next() {
@@ -1296,7 +1408,9 @@ fn lower_match(
 
 fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
     match ty {
-        Ty::Int64 => ctx.assign(place.clone(), ty.clone(), RValue::Int(0)),
+        Ty::Int32 | Ty::Int64 | Ty::UInt64 => {
+            ctx.assign(place.clone(), ty.clone(), RValue::Int(0))
+        }
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
         Ty::String | Ty::Bytes => {
             ctx.stmts.push(Stmt::Assign {
@@ -1365,23 +1479,47 @@ fn lower_binary(
             (Ty::Int64, Ty::Int64)
         }
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-            if lt != rt {
-                return Err(Error::at("comparison operands must have the same type", span));
+            if lt == Ty::Bool && rt == Ty::Bool {
+                let p = ctx.fresh("cmp");
+                ctx.assign(
+                    p.clone(),
+                    Ty::Bool,
+                    RValue::Binary {
+                        op,
+                        left: l,
+                        right: r,
+                    },
+                );
+                return Ok((p, Ty::Bool));
             }
-            if lt != Ty::Int64 && lt != Ty::Bool {
-                return Err(Error::at("comparison only supports Int64 and Bool", span));
+            if is_int(&lt) && is_int(&rt) {
+                // Widen both to Int64 for comparison (R6 FFI widths).
+                let left = if lt == Ty::Int64 {
+                    l
+                } else {
+                    coerce_place(ctx, l, &lt, &Ty::Int64, span)?
+                };
+                let right = if rt == Ty::Int64 {
+                    r
+                } else {
+                    coerce_place(ctx, r, &rt, &Ty::Int64, span)?
+                };
+                let p = ctx.fresh("cmp");
+                ctx.assign(
+                    p.clone(),
+                    Ty::Bool,
+                    RValue::Binary {
+                        op,
+                        left,
+                        right,
+                    },
+                );
+                return Ok((p, Ty::Bool));
             }
-            let p = ctx.fresh("cmp");
-            ctx.assign(
-                p.clone(),
-                Ty::Bool,
-                RValue::Binary {
-                    op,
-                    left: l,
-                    right: r,
-                },
-            );
-            return Ok((p, Ty::Bool));
+            return Err(Error::at(
+                "comparison operands must have the same type",
+                span,
+            ));
         }
         BinaryOp::And | BinaryOp::Or => (Ty::Bool, Ty::Bool),
     };
@@ -1420,7 +1558,20 @@ fn lower_call(
                 Arg::Named { value, .. } => value,
             };
             let (arg, ty) = lower_expr(ctx, expr)?;
-            let builtin = match (callee, &ty) {
+            let (print_arg, print_ty) = match &ty {
+                Ty::String | Ty::Int64 | Ty::Bool => (arg, ty),
+                Ty::Int32 | Ty::UInt64 => {
+                    let widened = coerce_place(ctx, arg, &ty, &Ty::Int64, span)?;
+                    (widened, Ty::Int64)
+                }
+                other => {
+                    return Err(Error::at(
+                        format!("`{callee}` cannot print {other:?}"),
+                        span,
+                    ));
+                }
+            };
+            let builtin = match (callee, &print_ty) {
                 ("println", Ty::String) => "println_string",
                 ("print", Ty::String) => "print_string",
                 ("println", Ty::Int64) => "println_i64",
@@ -1429,14 +1580,14 @@ fn lower_call(
                 ("print", Ty::Bool) => "print_bool",
                 _ => {
                     return Err(Error::at(
-                        format!("`{callee}` cannot print {ty:?}"),
+                        format!("`{callee}` cannot print {print_ty:?}"),
                         span,
                     ));
                 }
             };
             ctx.stmts.push(Stmt::Eval(RValue::Call {
                 callee: Callee::Builtin(builtin.into()),
-                args: vec![arg],
+                args: vec![print_arg],
             }));
             let p = ctx.fresh("u");
             ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
@@ -1497,18 +1648,59 @@ fn lower_call(
                 .ok_or_else(|| Error::at(format!("unknown function `{other}`"), span))?
                 .clone();
             let arg_places = resolve_call_args(ctx, &sig.params, args, span)?;
-            let p = ctx.fresh("call");
-            ctx.assign(
-                p.clone(),
-                sig.ret.clone(),
-                RValue::Call {
-                    callee: Callee::User(other.to_string()),
-                    args: arg_places,
-                },
-            );
-            Ok((p, sig.ret))
+            let callee = if let Some(sym) = &sig.extern_symbol {
+                Callee::Extern {
+                    c_symbol: sym.clone(),
+                    arg_tys: sig.params.iter().map(|(_, t)| t.clone()).collect(),
+                }
+            } else {
+                Callee::User(other.to_string())
+            };
+            emit_call_result(ctx, callee, arg_places, sig.ret)
         }
     }
+}
+
+/// Coerce a place to a target type when a conversion is defined (FFI integer widths).
+fn coerce_place(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    to: &Ty,
+    span: Span,
+) -> Result<Place> {
+    if from == to {
+        return Ok(place);
+    }
+    let ok = match (from, to) {
+        (Ty::Int64, Ty::Int32)
+        | (Ty::Int64, Ty::UInt64)
+        | (Ty::Int32, Ty::Int64)
+        | (Ty::Int32, Ty::UInt64)
+        | (Ty::UInt64, Ty::Int64)
+        | (Ty::UInt64, Ty::Int32)
+        | (Ty::Int32, Ty::Int32)
+        | (Ty::UInt64, Ty::UInt64)
+        | (Ty::Int64, Ty::Int64) => true,
+        _ => false,
+    };
+    if !ok {
+        return Err(Error::at(
+            format!("cannot coerce {from:?} to {to:?}"),
+            span,
+        ));
+    }
+    let p = ctx.fresh("cast");
+    ctx.assign(
+        p.clone(),
+        to.clone(),
+        RValue::Cast {
+            value: place,
+            from: from.clone(),
+            to: to.clone(),
+        },
+    );
+    Ok(p)
 }
 
 fn lower_if(

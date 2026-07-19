@@ -1,4 +1,4 @@
-//! Lexer for the current Thoxa subset (R0–R5).
+//! Lexer for the current Thoxa subset (R0–R6).
 
 use crate::error::{Error, Result};
 use crate::span::Span;
@@ -14,6 +14,8 @@ pub enum TokenKind {
     Match,
     Type,
     Export,
+    Extern,
+    From,
     True,
     False,
     And,
@@ -235,6 +237,8 @@ impl<'a> Lexer<'a> {
             "match" => TokenKind::Match,
             "type" => TokenKind::Type,
             "export" => TokenKind::Export,
+            "extern" => TokenKind::Extern,
+            "from" => TokenKind::From,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "and" => TokenKind::And,

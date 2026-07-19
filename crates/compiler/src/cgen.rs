@@ -11,7 +11,13 @@ pub fn emit_program(program: &Program) -> String {
     out.push_str("#include <stdint.h>\n");
     out.push_str("#include <stdbool.h>\n");
     out.push_str("#include <stddef.h>\n");
+    // R6: libc (`extern fn … from "c"`). Headers provide write/getpid/abs prototypes.
+    if !program.externs.is_empty() {
+        out.push_str("#include <stdlib.h>\n");
+        out.push_str("#include <unistd.h>\n");
+    }
     out.push_str("#include \"thoxa_rt.h\"\n\n");
+    let _ = program.externs; // used for include selection above
 
     out.push_str("typedef struct {\n");
     out.push_str("    int32_t tag; /* 0 = Pass, 1 = Fail */\n");
@@ -294,6 +300,25 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                 }
                 out.push(')');
             }
+            Callee::Extern { c_symbol, arg_tys } => {
+                let _ = write!(out, "{c_symbol}(");
+                for (i, a) in args.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    let ty = arg_tys.get(i);
+                    match ty {
+                        Some(Ty::String) => {
+                            let _ = write!(out, "thoxa_string_cstr({})", a.name);
+                        }
+                        Some(Ty::Bytes) => {
+                            let _ = write!(out, "(void *)thoxa_bytes_data({})", a.name);
+                        }
+                        _ => out.push_str(&a.name),
+                    }
+                }
+                out.push(')');
+            }
         },
         RValue::TrialMake { tag, payload } => {
             let ctor = match tag {
@@ -339,6 +364,15 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                 left.name, right.name
             );
         }
+        RValue::Cast { value, from, to } => {
+            let _ = write!(
+                out,
+                "({})({})",
+                c_ty(to),
+                value.name
+            );
+            let _ = from; // from is for diagnostics; C cast is enough
+        }
     }
 }
 
@@ -363,7 +397,9 @@ fn emit_c_string(out: &mut String, s: &str) {
 
 fn c_ty(ty: &Ty) -> String {
     match ty {
+        Ty::Int32 => "int32_t".into(),
         Ty::Int64 => "int64_t".into(),
+        Ty::UInt64 => "uint64_t".into(),
         Ty::Bool => "bool".into(),
         Ty::String => "ThoxaString*".into(),
         Ty::Bytes => "ThoxaBytes*".into(),
