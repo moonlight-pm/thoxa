@@ -3460,7 +3460,8 @@ fn lower_match(
             ty: ok_ty.clone(),
         });
     }
-    // Discard `_`: extracted temp keeps ownership and is dropped at fn end (RC).
+    // Pattern discard `_`: no define; body `_` is ordinary lookup (outer scope only).
+    // Extracted temp keeps ownership and is dropped at fn end (RC).
     let pass_val = lower_block_into(ctx, &pass_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut then_body = std::mem::take(&mut ctx.stmts);

@@ -1153,7 +1153,7 @@ impl Parser {
         let (name, name_span) = self.expect_ident()?;
         self.expect_kind(&TokenKind::LParen)?;
         let (bind_raw, bind_span) = self.expect_ident()?;
-        // `_` is a discard: no binding introduced (D66).
+        // Pattern `_` is discard only here (D66). Body `_` is ordinary lookup elsewhere.
         let bind = if bind_raw == "_" {
             None
         } else {

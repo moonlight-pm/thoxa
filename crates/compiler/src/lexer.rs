@@ -160,7 +160,8 @@ impl<'a> Lexer<'a> {
             b'>' => self.simple(TokenKind::RAngle, start, 1),
             b'"' => self.string(start),
             b if b.is_ascii_digit() => self.number(start),
-            // Standalone `_` is the match discard binding (not an identifier start in general).
+            // Standalone `_` → Ident("_") (ordinary name). Match patterns special-case it
+            // as discard (D66); `_foo` is still not an identifier (alpha-only start).
             b'_' if !self.peek(1).map(is_ident_continue).unwrap_or(false) => {
                 self.simple(TokenKind::Ident("_".into()), start, 1)
             }
@@ -410,5 +411,21 @@ mod tests {
             .tokenize()
             .unwrap();
         assert!(tokens.iter().any(|t| t.kind == TokenKind::Return));
+    }
+
+    #[test]
+    fn standalone_underscore_ident() {
+        let tokens = Lexer::new("Pass(_)").tokenize().unwrap();
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(&t.kind, TokenKind::Ident(s) if s == "_")),
+            "standalone `_` should lex as Ident(\"_\")"
+        );
+        // `_foo` is not an identifier (underscore is not is_ident_start).
+        assert!(Lexer::new("_foo").tokenize().is_err());
+        // Bare underscore alone.
+        let one = Lexer::new("_").tokenize().unwrap();
+        assert!(matches!(one[0].kind, TokenKind::Ident(ref s) if s == "_"));
     }
 }

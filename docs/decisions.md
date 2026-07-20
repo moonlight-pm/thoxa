@@ -32,7 +32,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D66 | Match discard `_` | `Pass(_)` / `Fail(_)` — `_` does not introduce a binding | Payload still extracted + RC-owned for end-of-fn drop; no bare `Fail`/`Pass` without parens (grammar churn deferred); lexer accepts standalone `_` only as pattern bind |
+| D66 | Match discard `_` | `Pass(_)` / `Fail(_)` — pattern `_` does not introduce a binding | Standalone `_` lexes as ordinary `Ident("_")` (usable as a normal name in `let`/params/etc.); **only match patterns special-case it** (`bind: None`). A `_` in the arm body is ordinary name lookup (error if unbound; resolves an outer `let _` if present — discard does not shadow). Payload still extracted + RC-owned for end-of-fn drop; no bare `Fail`/`Pass` without parens (grammar churn deferred); `_foo` still rejected (not an ident start) |
 
 ## 2026-07-19 — R9+ file I/O + Router
 

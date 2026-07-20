@@ -1,5 +1,8 @@
 ## Match discard binding `_` (D66): Fail(_) / Pass(_) do not introduce a name.
 ## Discarded heap payloads are still dropped at function end (RC).
+## Pattern `_` only; body `_` is ordinary lookup (no outer `_` here).
+
+type Box(n: Int64) {}
 
 fn half(x: Int64) -> Trial<Int64, String> {
     if x % 2 == 0 {
@@ -14,6 +17,22 @@ fn asMsg(ok!: Bool) -> Trial<String, String> {
         Pass("ok")
     } else {
         Fail("err")
+    }
+}
+
+fn asBytes(ok!: Bool) -> Trial<Bytes, String> {
+    if ok {
+        Pass(Bytes.fromString("ab"))
+    } else {
+        Fail("no-bytes")
+    }
+}
+
+fn asBox(n!: Int64) -> Trial<Box, String> {
+    if n < 0 {
+        Fail("neg")
+    } else {
+        Pass(Box(n: n))
     }
 }
 
@@ -42,6 +61,26 @@ fn main() -> Int64 {
     match asMsg(false) {
         Pass(_) { println("pass-disc") }
         Fail(_) { println("fail-disc") }
+    }
+
+    ## Bytes heap discard.
+    match asBytes(true) {
+        Pass(_) { println("bytes-ok") }
+        Fail(_) { println("bytes-fail") }
+    }
+    match asBytes(false) {
+        Pass(_) { println("bytes-ok") }
+        Fail(_) { println("bytes-fail") }
+    }
+
+    ## User (Int64 field only) discard — exercises needs_drop && !is_heap Dup path.
+    match asBox(3) {
+        Pass(_) { println("box-ok") }
+        Fail(_) { println("box-fail") }
+    }
+    match asBox(-1) {
+        Pass(_) { println("box-ok") }
+        Fail(_) { println("box-fail") }
     }
 
     0

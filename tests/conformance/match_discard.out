@@ -3,3 +3,7 @@ x
 err
 pass-disc
 fail-disc
+bytes-ok
+bytes-fail
+box-ok
+box-fail
