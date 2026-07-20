@@ -1,0 +1,42 @@
+## Array<User>: empty + append + index get + for-in + field access + dropLast.
+## Constructor-param User with String fields (inline elems, field RC — D65).
+type Header(name: String, value: String) {
+    export fn label() -> String {
+        "{name}={value}"
+    }
+}
+
+fn main() -> Int64 {
+    mut xs: Array<Header> = []
+    println("empty_count={xs.count}")
+
+    xs = xs.append(Header(name: "Host", value: "ex"))
+    xs = xs.append(Header(name: "Accept", value: "*/*"))
+    println("count={xs.count}")
+    println("first={xs[0].label()}")
+    println("second_name={xs[1].name}")
+    println("second_value={xs[1].value}")
+
+    mut n = 0
+    for h in xs {
+        n = n + 1
+        println("iter={h.label()}")
+    }
+    println("iters={n}")
+
+    ## Index set mutates shared storage
+    xs[0] = Header(name: "Host", value: "localhost")
+    println("mutated={xs[0].label()}")
+
+    let ys = xs.dropLast()
+    println("dropped_count={ys.count}")
+    println("dropped_only={ys[0].label()}")
+    ## Original still intact
+    println("orig_count={xs.count}")
+
+    ## Literal of User elements
+    let zs = [Header(name: "A", value: "1"), Header(name: "B", value: "2")]
+    println("lit_count={zs.count}")
+    println("lit0={zs[0].name}")
+    0
+}

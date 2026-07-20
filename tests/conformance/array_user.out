@@ -1,0 +1,14 @@
+empty_count=0
+count=2
+first=Host=ex
+second_name=Accept
+second_value=*/*
+iter=Host=ex
+iter=Accept=*/*
+iters=2
+mutated=Host=localhost
+dropped_count=1
+dropped_only=Host=localhost
+orig_count=2
+lit_count=2
+lit0=A

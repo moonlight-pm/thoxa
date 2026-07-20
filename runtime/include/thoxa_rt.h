@@ -16,8 +16,10 @@ extern "C" {
 #define THOXA_TAG_BUFFER 3
 #define THOXA_TAG_ARRAY  4
 
-/* Element slots are int64_t; heap pointers (String/Bytes) are stored bitcast. */
+/* Element slots: heap pointers (String/Bytes) bitcast into 8-byte slots. */
 #define THOXA_ARRAY_FLAG_HEAP_ELEMS 1u
+/* Optional callback for User-inline arrays (field-level RC). */
+typedef void (*ThoxaArrayElemFn)(void *elem);
 
 /* --- I/O ---------------------------------------------------------------- */
 
@@ -128,10 +130,14 @@ ThoxaBytes *thoxa_buffer_freeze(const ThoxaBuffer *b);
 /* --- Array (dynamic, RC heap; functional append/dropLast) ---------------- */
 
 /*
- * Layout: [ThoxaHeader][ThoxaArray { len, cap, flags, items[cap] }]
+ * Layout: [ThoxaHeader][ThoxaArray { len, cap, flags, elem_size, data[cap*elem_size] }]
  * A ThoxaArray* points at the payload (after the header).
- * Slots are int64_t; heap element types (String/Bytes) store pointers bitcast
- * into items[] and set THOXA_ARRAY_FLAG_HEAP_ELEMS so drop/copy walk them.
+ *
+ * D65: variable element size. Int64/Bool/String/Bytes use elem_size=8 with
+ * pointers bitcast into slots; HEAP_ELEMS walks slots with thoxa_dup/drop.
+ * User structs store inline (elem_size = sizeof(C struct)); cgen supplies
+ * ThoxaArrayElemFn for field-level RC on copy/get/set/drop.
+ *
  * Sharing is refcounted on the array object; index set mutates shared storage
  * (oracle list semantics). append/dropLast always allocate a new array.
  */
@@ -139,15 +145,29 @@ typedef struct ThoxaArray {
     size_t len;
     size_t cap;
     uint32_t flags;
-    int64_t items[];
+    uint32_t elem_size;
+    uint8_t data[];
 } ThoxaArray;
 
 /* Empty array. `heap_elems` true when slots hold String/Bytes pointers. */
 ThoxaArray *thoxa_array_new(int heap_elems);
+/* Empty array with explicit element size (User / generic). flags e.g. 0. */
+ThoxaArray *thoxa_array_new_ex(uint32_t elem_size, uint32_t flags);
 /* Owned array of `len` int64 slots (copied from `items`; NULL ok when len=0). */
 ThoxaArray *thoxa_array_from_i64(const int64_t *items, size_t len);
 /* Owned array of `len` heap pointers (each is dup'd into the array). */
 ThoxaArray *thoxa_array_from_ptrs(void *const *items, size_t len);
+/*
+ * Owned array from raw element bytes (len * elem_size). Shallow-copies then
+ * calls `elem_dup` on each slot when non-NULL (User field RC).
+ */
+ThoxaArray *thoxa_array_from_elems(
+    const void *items,
+    size_t len,
+    uint32_t elem_size,
+    uint32_t flags,
+    ThoxaArrayElemFn elem_dup
+);
 int64_t thoxa_array_count(const ThoxaArray *a);
 /* Index get as Int64 (also used for heap pointers bitcast). OOB → panic. */
 int64_t thoxa_array_get_i64(const ThoxaArray *a, int64_t i);
@@ -157,18 +177,49 @@ void thoxa_array_set_i64(ThoxaArray *a, int64_t i, int64_t v);
 void *thoxa_array_get_ptr(const ThoxaArray *a, int64_t i);
 /* Index set heap pointer: dups `p`, drops old slot. */
 void thoxa_array_set_ptr(ThoxaArray *a, int64_t i, void *p);
+/* Typed element get: memcpy into `out` (elem_size bytes), optional field-dup. */
+void thoxa_array_get_elem(
+    const ThoxaArray *a,
+    int64_t i,
+    void *out,
+    ThoxaArrayElemFn elem_dup
+);
+/* Typed element set: drop old, memcpy new, optional field-dup of new. */
+void thoxa_array_set_elem(
+    ThoxaArray *a,
+    int64_t i,
+    const void *elem,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+);
 /* Functional: new array with `v` appended (int64 or bitcast ptr). */
 ThoxaArray *thoxa_array_append_i64(const ThoxaArray *a, int64_t v);
 /* Functional: new array with heap ptr appended (dups elems + dups `p`). */
 ThoxaArray *thoxa_array_append_ptr(const ThoxaArray *a, void *p);
+/*
+ * Functional append of a raw element. Shallow-copies prior elems + new, then
+ * `elem_dup` each slot of the result when non-NULL.
+ * When `a` is non-NULL, elem_size/flags are taken from `a`.
+ */
+ThoxaArray *thoxa_array_append_elem(
+    const ThoxaArray *a,
+    const void *elem,
+    uint32_t elem_size,
+    uint32_t flags,
+    ThoxaArrayElemFn elem_dup
+);
 /* Functional: new array without last element. Empty → panic. */
 ThoxaArray *thoxa_array_drop_last(const ThoxaArray *a);
+/* Like drop_last but field-dups surviving elements (User arrays). */
+ThoxaArray *thoxa_array_drop_last_ex(const ThoxaArray *a, ThoxaArrayElemFn elem_dup);
 /* Display as `[a, b, c]` for Int64 arrays. */
 ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a);
 /* Display as `["a", "b"]` for String arrays. */
 ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a);
 /* Drop with element RC walk when heap_elems. Prefer over bare thoxa_drop. */
 void thoxa_array_drop(ThoxaArray *a);
+/* Drop calling `elem_drop` on each element first (User inline arrays). */
+void thoxa_array_drop_ex(ThoxaArray *a, ThoxaArrayElemFn elem_drop);
 /* Share: bump array RC only (elements stay with the shared object). */
 void thoxa_array_dup(ThoxaArray *a);
 

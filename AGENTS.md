@@ -62,12 +62,13 @@ Already known (see status + decisions):
 
 - R0–R9 done; R9+ through **file I/O + static Router + early `return` (D63)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR2+ → bounded HTTP server).
 - R0–R9 done; R9+ through **file I/O + static Router + User+heap RC (D64)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR DAG → bounded HTTP server; next critical: `Array<User>` / early return).
+- R0–R9 done; R9+ through **file I/O + static Router + User+heap RC (D64) + Array&lt;User&gt; (D65)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR DAG → Request/Response → bounded HTTP server; early return still open).
 - Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28); cgen pulls fcntl/unistd/socket headers when externs present.
 - C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).
 - Modules: `import` selective/namespace, `export`, `./`+`~/` loader, module-level let/mut (D30–D35).
 - Bytes: `fromString`, `Bytes(n)`, `.slice`, `.find(needle[, from])` → index|-1, count/get/set/toString; defer `"…" as Bytes` (D14–D18, D36–D37, D46).
 - Buffer: `Buffer()`/`Buffer(cap)`, COW append/appendBytes, freeze→Bytes (D50–D52).
-- Array: `Array<T>` (Int64/Bool/String/Bytes), literals, empty `[]` + ann, `.count`/`[i]`/append/dropLast, `for x in arr` (D53–D55, D62); fixed `Array<T,N>` still field-only; **User elems still deferred (PR3)**.
+- Array: `Array<T>` (Int64/Bool/String/Bytes/**User**), literals, empty `[]` + ann, `.count`/`[i]`/append/dropLast, `for x in arr` (D53–D55, D62, **D65** inline User + `elem_size`); fixed `Array<T,N>` still field-only.
 - File I/O: `readFile(path) -> Trial<Bytes,String>` (D56, D58); Router `handle(root, path) -> Bytes` (D61); String `==`/`!=` (D60).
 - Control flow: `while` / `loop` / `for` ranges + collection / `break` / `continue` / early `return` (D47, D55, D63). Constructor params: Int64/Bool/String/Bytes (D48–D49).
 - Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45). Avoid User+String inside Trial until field-RC hardened.

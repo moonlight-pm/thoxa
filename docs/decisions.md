@@ -22,6 +22,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 |----|----------|--------|-------|
 | D63 | Early `return` | `return` / `return expr` as expression (like `break`); type-checked against enclosing `fn`/`method` return type | Bare `return` only for `Void`; MIR `Stmt::Return { value: Option<Place> }`; drop live `needs_drop` **Assign** locals before early return / `?` Fail (same set as end-of-fn `collect_drop_places` — **not params**; caller still owns args); exits function from inside loops. **No ASI:** optional value is parsed whenever the next token can start an expression (newline does not end a bare `return`); write `return` then `}` / non-expr, or put the following statement after a non-expr-start token — intentional `return expr` may span lines. |
 
+## 2026-07-20 — Array&lt;User&gt; elements (PR3)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D65 | `Array<User>` storage | `ThoxaArray { len, cap, flags, elem_size, data[] }`; User elems **inline** (`elem_size = sizeof(C struct)`) | Int64/String keep `elem_size=8` + HEAP_ELEMS; User uses cgen `ThoxaArrayElemFn` field RC (dup/drop helpers). Constructor-param User only (Int64/Bool/String/Bytes fields). Conformance: `array_user` |
+
 ## 2026-07-20 — User+heap field RC (PR2)
 
 | ID | Decision | Choice | Notes |
@@ -49,7 +55,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D53 | Dynamic `Array<T>` | Heap RC `ThoxaArray*` (slots as `int64_t`; heap elems bitcast) | Distinct from fixed field `Array<T,N>` (D27); elems: Int64, Bool, String, Bytes (User deferred) |
+| D53 | Dynamic `Array<T>` | Heap RC `ThoxaArray*` (slots as `int64_t`; heap elems bitcast) | Distinct from fixed field `Array<T,N>` (D27); elems: Int64, Bool, String, Bytes; **User via D65** |
 | D54 | Array mutation model | Functional `append`/`dropLast` return new arrays; index set mutates shared storage | Matches oracle list semantics; not Buffer-style COW write-back |
 | D55 | Array surface | Literals, empty `[]` + type ann, `.count`, `[i]`, append, dropLast, `for x in arr`, display | `insertAt`/`removeAt` deferred; typed let `let xs: Array<T> = []` |
 

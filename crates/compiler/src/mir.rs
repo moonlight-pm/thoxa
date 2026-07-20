@@ -187,6 +187,23 @@ pub enum RValue {
         elems: Vec<Place>,
         elem_ty: Ty,
     },
+    /// Typed dynamic-array element load (User: memcpy + field-dup into place).
+    ArrayGet {
+        arr: Place,
+        index: Place,
+        elem_ty: Ty,
+    },
+    /// Functional append of a typed element (User uses blob + field-dup).
+    ArrayAppend {
+        arr: Place,
+        item: Place,
+        elem_ty: Ty,
+    },
+    /// Functional dropLast (User field-dups surviving elements).
+    ArrayDropLast {
+        arr: Place,
+        elem_ty: Ty,
+    },
     /// Convert Int64/Bool/Array → owned String.
     ToString {
         value: Place,
@@ -279,12 +296,39 @@ fn needs_drop(ty: &Ty) -> bool {
 }
 
 /// Element types supported in dynamic `Array<T>` (phase A).
+/// User is allowed when fields are constructor-param scalars/heap (checked at resolve).
 fn is_array_elem_ty(ty: &Ty) -> bool {
-    matches!(ty, Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes)
+    matches!(
+        ty,
+        Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::User(_)
+    )
 }
 
 fn array_elem_is_heap(ty: &Ty) -> bool {
     matches!(ty, Ty::String | Ty::Bytes)
+}
+
+fn array_elem_is_user(ty: &Ty) -> bool {
+    matches!(ty, Ty::User(_))
+}
+
+/// Constructor-param User types only: fields Int64/Bool/String/Bytes (D65).
+fn is_array_user_elem(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
+    match ty {
+        Ty::User(name) => {
+            let Some(info) = types.get(name) else {
+                return false;
+            };
+            // C-layout (zero_init) types stay out of Array for now.
+            if info.zero_init {
+                return false;
+            }
+            info.fields
+                .iter()
+                .all(|f| matches!(f.ty, Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes))
+        }
+        _ => true,
+    }
 }
 
 fn is_trial(ty: &Ty) -> bool {
@@ -1199,7 +1243,15 @@ fn resolve_ty(
             if !is_array_elem_ty(&et) {
                 return Err(Error::at(
                     format!(
-                        "Array element type not yet supported: {et:?} (Int64, Bool, String, Bytes)"
+                        "Array element type not yet supported: {et:?} (Int64, Bool, String, Bytes, User)"
+                    ),
+                    elem.span,
+                ));
+            }
+            if array_elem_is_user(&et) && !is_array_user_elem(&et, types) {
+                return Err(Error::at(
+                    format!(
+                        "Array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {et:?}"
                     ),
                     elem.span,
                 ));
@@ -2178,7 +2230,18 @@ fn lower_for_array(
             ty: elem_ty.clone(),
         });
     }
-    if array_elem_is_heap(&elem_ty) {
+    if array_elem_is_user(&elem_ty) {
+        // ArrayGet memcpy + field-dup owns the loop variable's heap fields.
+        ctx.stmts.push(Stmt::Assign {
+            place: elem_p.clone(),
+            ty: elem_ty.clone(),
+            value: RValue::ArrayGet {
+                arr: arr_p.clone(),
+                index: idx.clone(),
+                elem_ty: elem_ty.clone(),
+            },
+        });
+    } else if array_elem_is_heap(&elem_ty) {
         ctx.stmts.push(Stmt::Assign {
             place: elem_p.clone(),
             ty: elem_ty.clone(),
@@ -2265,6 +2328,14 @@ fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Pl
                 if !is_array_elem_ty(&ty) {
                     return Err(Error::at(
                         format!("array element type not supported: {ty:?}"),
+                        e.span,
+                    ));
+                }
+                if array_elem_is_user(&ty) && !is_array_user_elem(&ty, &ctx.types) {
+                    return Err(Error::at(
+                        format!(
+                            "array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {ty:?}"
+                        ),
                         e.span,
                     ));
                 }
@@ -2526,7 +2597,17 @@ fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Res
             coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
         };
         let p = ctx.fresh("aget");
-        if array_elem_is_heap(&elem_ty) {
+        if array_elem_is_user(&elem_ty) {
+            ctx.assign(
+                p.clone(),
+                elem_ty.clone(),
+                RValue::ArrayGet {
+                    arr: base_p,
+                    index: idx_p,
+                    elem_ty: elem_ty.clone(),
+                },
+            );
+        } else if array_elem_is_heap(&elem_ty) {
             ctx.assign(
                 p.clone(),
                 elem_ty.clone(),
@@ -2862,6 +2943,19 @@ fn lower_array_method(
             let formal = vec![("item".into(), elem.clone())];
             let places = resolve_call_args(ctx, &formal, args, span)?;
             let item = places.into_iter().next().unwrap();
+            if array_elem_is_user(elem) {
+                let p = ctx.fresh("aapp");
+                ctx.assign(
+                    p.clone(),
+                    arr_ty.clone(),
+                    RValue::ArrayAppend {
+                        arr: recv,
+                        item,
+                        elem_ty: elem.clone(),
+                    },
+                );
+                return Ok((p, arr_ty));
+            }
             let item = if *elem == Ty::Bool {
                 // Runtime slots are int64.
                 let p = ctx.fresh("abool");
@@ -2889,6 +2983,18 @@ fn lower_array_method(
         "dropLast" => {
             if !args.is_empty() {
                 return Err(Error::at("Array.dropLast() takes no arguments", span));
+            }
+            if array_elem_is_user(elem) {
+                let p = ctx.fresh("adrop");
+                ctx.assign(
+                    p.clone(),
+                    arr_ty.clone(),
+                    RValue::ArrayDropLast {
+                        arr: recv,
+                        elem_ty: elem.clone(),
+                    },
+                );
+                return Ok((p, arr_ty));
             }
             emit_call_result(
                 ctx,

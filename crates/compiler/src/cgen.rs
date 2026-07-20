@@ -23,7 +23,7 @@ pub fn emit_program(program: &Program) -> String {
     out.push_str("#include \"thoxa_rt.h\"\n\n");
     let _ = program.externs; // used for include selection above
 
-    // User structs first (may appear as Trial ok payloads).
+    // User structs first (may appear as Trial ok payloads / Array elements).
     for t in &program.types {
         emit_typedef(&mut out, t);
     }
@@ -35,6 +35,18 @@ pub fn emit_program(program: &Program) -> String {
         emit_trial_typedef(&mut out, ty);
     }
     if !trial_tys.is_empty() {
+        out.push('\n');
+    }
+
+    // Per-User-type field RC helpers for Array<User> (D65).
+    let mut user_arr_elems: Vec<String> = Vec::new();
+    collect_user_array_elems_program(program, &mut user_arr_elems);
+    for name in &user_arr_elems {
+        if let Some(layout) = program.types.iter().find(|t| t.name == *name) {
+            emit_array_user_elem_rc(&mut out, layout);
+        }
+    }
+    if !user_arr_elems.is_empty() {
         out.push('\n');
     }
 
@@ -290,9 +302,26 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
     for s in stmts {
         match s {
             Stmt::Assign { place, value, .. } => {
-                let _ = write!(out, "{pad}{} = ", place.name);
-                emit_rvalue(out, value);
-                out.push_str(";\n");
+                // User ArrayGet writes through out-param (not an expression).
+                if let RValue::ArrayGet {
+                    arr,
+                    index,
+                    elem_ty: Ty::User(type_name),
+                } = value
+                {
+                    let _ = writeln!(
+                        out,
+                        "{pad}thoxa_array_get_elem({}, {}, &{}, {});",
+                        arr.name,
+                        index.name,
+                        place.name,
+                        array_user_elem_dup_fn(type_name)
+                    );
+                } else {
+                    let _ = write!(out, "{pad}{} = ", place.name);
+                    emit_rvalue(out, value, types);
+                    out.push_str(";\n");
+                }
             }
             Stmt::FieldAssign {
                 base,
@@ -346,6 +375,17 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                         base.name, index.name, value.name
                     );
                 }
+                Ty::User(type_name) => {
+                    let _ = writeln!(
+                        out,
+                        "{pad}thoxa_array_set_elem({}, {}, &{}, {}, {});",
+                        base.name,
+                        index.name,
+                        value.name,
+                        array_user_elem_dup_fn(type_name),
+                        array_user_elem_drop_fn(type_name)
+                    );
+                }
                 _ => {
                     let _ = writeln!(
                         out,
@@ -356,7 +396,7 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
             },
             Stmt::Eval(rv) => {
                 let _ = write!(out, "{pad}");
-                emit_rvalue(out, rv);
+                emit_rvalue(out, rv, types);
                 out.push_str(";\n");
             }
             Stmt::If {
@@ -419,7 +459,8 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
     }
 }
 
-fn emit_rvalue(out: &mut String, rv: &RValue) {
+fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
+    let _ = types;
     match rv {
         RValue::Use(p) => {
             out.push_str(&p.name);
@@ -602,6 +643,38 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
         RValue::ArrayLit { elems, elem_ty } => {
             emit_array_lit(out, elems, elem_ty);
         }
+        RValue::ArrayGet { .. } => {
+            // Handled specially in Stmt::Assign (out-param).
+            out.push_str("/* bad ArrayGet as rvalue */");
+        }
+        RValue::ArrayAppend { arr, item, elem_ty } => match elem_ty {
+            Ty::User(type_name) => {
+                let _ = write!(
+                    out,
+                    "thoxa_array_append_elem({}, &{}, (uint32_t)sizeof({}), 0u, {})",
+                    arr.name,
+                    item.name,
+                    c_type_name(type_name),
+                    array_user_elem_dup_fn(type_name)
+                );
+            }
+            _ => {
+                out.push_str("/* bad ArrayAppend elem */ NULL");
+            }
+        },
+        RValue::ArrayDropLast { arr, elem_ty } => match elem_ty {
+            Ty::User(type_name) => {
+                let _ = write!(
+                    out,
+                    "thoxa_array_drop_last_ex({}, {})",
+                    arr.name,
+                    array_user_elem_dup_fn(type_name)
+                );
+            }
+            _ => {
+                let _ = write!(out, "thoxa_array_drop_last({})", arr.name);
+            }
+        },
         RValue::ToString { value, from } => match from {
             Ty::Int64 => {
                 let _ = write!(out, "thoxa_string_from_i64({})", value.name);
@@ -673,6 +746,28 @@ fn c_ty(ty: &Ty) -> String {
 
 fn emit_array_lit(out: &mut String, elems: &[crate::mir::Place], elem_ty: &Ty) {
     let heap = matches!(elem_ty, Ty::String | Ty::Bytes);
+    if let Ty::User(type_name) = elem_ty {
+        let cty = c_type_name(type_name);
+        let dup = array_user_elem_dup_fn(type_name);
+        if elems.is_empty() {
+            let _ = write!(out, "thoxa_array_new_ex((uint32_t)sizeof({cty}), 0u)");
+            return;
+        }
+        // Compound literal of structs; from_elems shallow-copies then field-dups.
+        let _ = write!(out, "thoxa_array_from_elems((const void *)({cty}[]){{");
+        for (i, e) in elems.iter().enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(&e.name);
+        }
+        let _ = write!(
+            out,
+            "}}, {}, (uint32_t)sizeof({cty}), 0u, {dup})",
+            elems.len()
+        );
+        return;
+    }
     if elems.is_empty() {
         let _ = write!(out, "thoxa_array_new({})", if heap { 1 } else { 0 });
         return;
@@ -806,6 +901,121 @@ fn emit_trial_make(out: &mut String, tag: &TrialTag, payload: &crate::mir::Place
     }
 }
 
+fn array_user_elem_dup_fn(type_name: &str) -> String {
+    format!("thoxa_arr_elem_dup_{type_name}")
+}
+
+fn array_user_elem_drop_fn(type_name: &str) -> String {
+    format!("thoxa_arr_elem_drop_{type_name}")
+}
+
+/// Static field-walk helpers used as ThoxaArrayElemFn for Array<User>.
+fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
+    let cty = c_type_name(&layout.name);
+    let dup = array_user_elem_dup_fn(&layout.name);
+    let drop = array_user_elem_drop_fn(&layout.name);
+    let _ = writeln!(out, "static void {dup}(void *p) {{");
+    let _ = writeln!(out, "    {cty} *e = ({cty} *)p;");
+    for f in &layout.fields {
+        if !needs_drop_ty(&f.ty) {
+            continue;
+        }
+        // Only String/Bytes fields need thoxa_dup (User array elems are ctor-param).
+        match &f.ty {
+            Ty::String | Ty::Bytes | Ty::Buffer => {
+                let _ = writeln!(out, "    thoxa_dup(e->{});", f.c_name);
+            }
+            Ty::Array { .. } => {
+                let _ = writeln!(out, "    thoxa_array_dup(e->{});", f.c_name);
+            }
+            _ => {}
+        }
+    }
+    let _ = writeln!(out, "}}");
+    let _ = writeln!(out, "static void {drop}(void *p) {{");
+    let _ = writeln!(out, "    {cty} *e = ({cty} *)p;");
+    for f in &layout.fields {
+        if !needs_drop_ty(&f.ty) {
+            continue;
+        }
+        match &f.ty {
+            Ty::String | Ty::Bytes | Ty::Buffer => {
+                let _ = writeln!(out, "    thoxa_drop(e->{});", f.c_name);
+            }
+            Ty::Array { .. } => {
+                let _ = writeln!(out, "    thoxa_array_drop(e->{});", f.c_name);
+            }
+            _ => {}
+        }
+    }
+    let _ = writeln!(out, "}}");
+}
+
+fn collect_user_array_elems_program(program: &Program, out: &mut Vec<String>) {
+    for f in &program.functions {
+        collect_user_array_elems_stmts(&f.body, out);
+        push_user_array_elem(&f.ret_ty, out);
+        for (_, ty) in &f.params {
+            push_user_array_elem(ty, out);
+        }
+        if let Some((_, ty)) = &f.receiver {
+            push_user_array_elem(ty, out);
+        }
+    }
+    collect_user_array_elems_stmts(&program.init, out);
+    for g in &program.globals {
+        push_user_array_elem(&g.ty, out);
+    }
+}
+
+fn collect_user_array_elems_stmts(stmts: &[Stmt], out: &mut Vec<String>) {
+    for s in stmts {
+        match s {
+            Stmt::Assign { ty, value, .. } => {
+                push_user_array_elem(ty, out);
+                match value {
+                    RValue::ArrayLit { elem_ty, .. }
+                    | RValue::ArrayGet { elem_ty, .. }
+                    | RValue::ArrayAppend { elem_ty, .. }
+                    | RValue::ArrayDropLast { elem_ty, .. } => {
+                        push_user_array_elem_ty(elem_ty, out);
+                    }
+                    _ => {}
+                }
+            }
+            Stmt::DynIndexAssign { elem_ty, .. } => {
+                push_user_array_elem_ty(elem_ty, out);
+            }
+            Stmt::Dup { ty, .. } | Stmt::Drop { ty, .. } => push_user_array_elem(ty, out),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_user_array_elems_stmts(then_body, out);
+                collect_user_array_elems_stmts(else_body, out);
+            }
+            Stmt::Loop { body } => collect_user_array_elems_stmts(body, out),
+            Stmt::ForRange { body, .. } => collect_user_array_elems_stmts(body, out),
+            _ => {}
+        }
+    }
+}
+
+fn push_user_array_elem(ty: &Ty, out: &mut Vec<String>) {
+    if let Ty::Array { elem } = ty {
+        push_user_array_elem_ty(elem, out);
+    }
+}
+
+fn push_user_array_elem_ty(elem_ty: &Ty, out: &mut Vec<String>) {
+    if let Ty::User(name) = elem_ty {
+        if !out.iter().any(|n| n == name) {
+            out.push(name.clone());
+        }
+    }
+}
+
 fn emit_rc(
     out: &mut String,
     pad: &str,
@@ -819,10 +1029,18 @@ fn emit_rc(
         Ty::String | Ty::Bytes | Ty::Buffer => {
             let _ = writeln!(out, "{pad}{op}({});", place.name);
         }
-        Ty::Array { .. } => {
-            // Array drop walks heap elements; dup only bumps the array object.
+        Ty::Array { elem } => {
+            // Array drop walks heap elements; User uses field-level RC callbacks (D65).
+            // Dup only bumps the array object (elements stay with the shared object).
             if dup {
                 let _ = writeln!(out, "{pad}thoxa_array_dup({});", place.name);
+            } else if let Ty::User(type_name) = elem.as_ref() {
+                let _ = writeln!(
+                    out,
+                    "{pad}thoxa_array_drop_ex({}, {});",
+                    place.name,
+                    array_user_elem_drop_fn(type_name)
+                );
             } else {
                 let _ = writeln!(out, "{pad}thoxa_array_drop({});", place.name);
             }
