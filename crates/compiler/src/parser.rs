@@ -1152,7 +1152,13 @@ impl Parser {
     fn parse_pattern(&mut self) -> Result<Pattern> {
         let (name, name_span) = self.expect_ident()?;
         self.expect_kind(&TokenKind::LParen)?;
-        let (bind, bind_span) = self.expect_ident()?;
+        let (bind_raw, bind_span) = self.expect_ident()?;
+        // `_` is a discard: no binding introduced (D66).
+        let bind = if bind_raw == "_" {
+            None
+        } else {
+            Some(bind_raw)
+        };
         self.expect_kind(&TokenKind::RParen)?;
         let end = self.prev_span().end;
         Ok(Pattern::Variant {

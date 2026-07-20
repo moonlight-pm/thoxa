@@ -3371,20 +3371,24 @@ fn lower_match(
 
     let pass_ty = {
         ctx.push_scope();
-        let pp = Place {
-            name: sanitize_name(&pass_bind),
-        };
-        ctx.define(&pass_bind, ok_ty.clone(), false, pp);
+        if let Some(ref name) = pass_bind {
+            let pp = Place {
+                name: sanitize_name(name),
+            };
+            ctx.define(name, ok_ty.clone(), false, pp);
+        }
         let ty = infer_block_ty(ctx, &pass_arm.body)?;
         ctx.pop_scope();
         ty
     };
     let fail_ty = {
         ctx.push_scope();
-        let fp = Place {
-            name: sanitize_name(&fail_bind),
-        };
-        ctx.define(&fail_bind, err_ty.clone(), false, fp);
+        if let Some(ref name) = fail_bind {
+            let fp = Place {
+                name: sanitize_name(name),
+            };
+            ctx.define(name, err_ty.clone(), false, fp);
+        }
         let ty = infer_block_ty(ctx, &fail_arm.body)?;
         ctx.pop_scope();
         ty
@@ -3441,7 +3445,22 @@ fn lower_match(
             });
         }
     }
-    ctx.define(&pass_bind, ok_ty.clone(), false, pass_place);
+    if let Some(ref name) = pass_bind {
+        let pass_place = Place {
+            name: sanitize_name(name),
+        };
+        if ok_ty != Ty::Void {
+            ctx.assign(pass_place.clone(), ok_ty.clone(), RValue::Use(pass_payload));
+        }
+        ctx.define(name, ok_ty.clone(), false, pass_place);
+    } else if ok_ty != Ty::Void && needs_drop(&ok_ty) && !is_heap(&ok_ty) {
+        // Discard User payload: own a field-RC copy so end-of-fn drop is safe.
+        ctx.stmts.push(Stmt::Dup {
+            place: pass_payload.clone(),
+            ty: ok_ty.clone(),
+        });
+    }
+    // Discard `_`: extracted temp keeps ownership and is dropped at fn end (RC).
     let pass_val = lower_block_into(ctx, &pass_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut then_body = std::mem::take(&mut ctx.stmts);
@@ -3475,7 +3494,20 @@ fn lower_match(
             });
         }
     }
-    ctx.define(&fail_bind, err_ty.clone(), false, fail_place);
+    if let Some(ref name) = fail_bind {
+        let fail_place = Place {
+            name: sanitize_name(name),
+        };
+        if err_ty != Ty::Void {
+            ctx.assign(fail_place.clone(), err_ty.clone(), RValue::Use(fail_payload));
+        }
+        ctx.define(name, err_ty.clone(), false, fail_place);
+    } else if err_ty != Ty::Void && needs_drop(&err_ty) && !is_heap(&err_ty) {
+        ctx.stmts.push(Stmt::Dup {
+            place: fail_payload.clone(),
+            ty: err_ty.clone(),
+        });
+    }
     let fail_val = lower_block_into(ctx, &fail_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut else_body = std::mem::take(&mut ctx.stmts);

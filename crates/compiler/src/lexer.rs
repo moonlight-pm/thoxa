@@ -160,6 +160,10 @@ impl<'a> Lexer<'a> {
             b'>' => self.simple(TokenKind::RAngle, start, 1),
             b'"' => self.string(start),
             b if b.is_ascii_digit() => self.number(start),
+            // Standalone `_` is the match discard binding (not an identifier start in general).
+            b'_' if !self.peek(1).map(is_ident_continue).unwrap_or(false) => {
+                self.simple(TokenKind::Ident("_".into()), start, 1)
+            }
             b if is_ident_start(b) => self.ident_or_keyword(start),
             _ => Err(Error::at(
                 format!(

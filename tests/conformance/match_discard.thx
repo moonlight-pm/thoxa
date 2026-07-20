@@ -1,0 +1,48 @@
+## Match discard binding `_` (D66): Fail(_) / Pass(_) do not introduce a name.
+## Discarded heap payloads are still dropped at function end (RC).
+
+fn half(x: Int64) -> Trial<Int64, String> {
+    if x % 2 == 0 {
+        Pass(x / 2)
+    } else {
+        Fail("odd")
+    }
+}
+
+fn asMsg(ok!: Bool) -> Trial<String, String> {
+    if ok {
+        Pass("ok")
+    } else {
+        Fail("err")
+    }
+}
+
+fn main() -> Int64 {
+    ## Bind ok, discard err payload.
+    match half(20) {
+        Pass(v) { println(v) }
+        Fail(_) { println("fail-side") }
+    }
+    match half(7) {
+        Pass(v) { println(v) }
+        Fail(_) { println("x") }
+    }
+
+    ## Discard ok, bind err.
+    match asMsg(false) {
+        Pass(_) { println("unexpected-pass") }
+        Fail(e) { println(e) }
+    }
+
+    ## Discard both sides (heap String payloads still RC-dropped).
+    match asMsg(true) {
+        Pass(_) { println("pass-disc") }
+        Fail(_) { println("fail-disc") }
+    }
+    match asMsg(false) {
+        Pass(_) { println("pass-disc") }
+        Fail(_) { println("fail-disc") }
+    }
+
+    0
+}

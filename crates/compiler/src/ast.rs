@@ -303,9 +303,10 @@ pub struct MatchArm {
 
 #[derive(Debug, Clone)]
 pub enum Pattern {
+    /// `Pass(name)` / `Fail(name)`. `bind` is `None` for discard `_` (D66).
     Variant {
         name: String,
-        bind: String,
+        bind: Option<String>,
         bind_span: Span,
         span: Span,
     },

@@ -28,6 +28,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 |----|----------|--------|-------|
 | D64 | User+heap RC | `needs_drop` (not `is_heap`) for Trial Pass/Fail/`?`/match extract; method field prolog Dups heap fields; match binds use fresh places | cgen `emit_rc` already field-walks User; MIR must insert balanced Dup/Drop. Unblocks `Trial<User+String>` / File-shaped APIs. Conformance: `user_rc` |
 
+## 2026-07-20 — Match discard binding
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D66 | Match discard `_` | `Pass(_)` / `Fail(_)` — `_` does not introduce a binding | Payload still extracted + RC-owned for end-of-fn drop; no bare `Fail`/`Pass` without parens (grammar churn deferred); lexer accepts standalone `_` only as pattern bind |
+
 ## 2026-07-19 — R9+ file I/O + Router
 
 | ID | Decision | Choice | Notes |
