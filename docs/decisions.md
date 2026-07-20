@@ -16,6 +16,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-20 — Bounded multi-request static server (PR7)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D67 | Bounded server conformance | Single-process loop: listen on ephemeral `bind(0)`; for each of N fixed paths, client `connect(localPort)` then server `accept` → `receive` → `parseRequest` → `Router.handle` → `writeResponse` → `send` → close peer+client; then close listen socket and exit | No threads; no infinite accept loop (CI-safe). N≥2 with ≥1×200 and ≥1×404. Deterministic stdout: `"{path} {status-line}"` + `server-ok`. Integrates Net + Http + Router over `tests/conformance/io_data/web/`. Conformance: `http_server`. Closes post-R9 HTTP critical path; oracle infinite `Main` accept loop remains product-only. |
+
 ## 2026-07-20 — Router type (PR6)
 
 | ID | Decision | Choice | Notes |

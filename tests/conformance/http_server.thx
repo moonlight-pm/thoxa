@@ -1,0 +1,75 @@
+## Bounded multi-request static HTTP server (D67).
+## Bind ephemeral port; N sequential clients (reconnect each time); accept/serve/close;
+## integrate Net + Http + Router; deterministic stdout; process exits (no infinite loop).
+import net from "./httplib/Net"
+import http from "./httplib/Http"
+import { Router } from "./httplib/Router"
+
+fn statusLine(resp!: Bytes) -> String {
+    let cr = resp.find(Bytes.fromString("\r"))
+    if cr < 0 {
+        resp.toString()
+    } else {
+        resp.slice(0, cr).toString()
+    }
+}
+
+fn main() -> Int64 {
+    match serve() {
+        Pass(_) {
+            println("server-ok")
+            0
+        }
+        Fail(e) {
+            println("server-fail {e}")
+            1
+        }
+    }
+}
+
+fn serve() -> Trial<Void, String> {
+    let server = net.createSocket()?
+    server.reuseAddr()?
+    server.bind(0)?
+    server.listen(8)?
+    let port = server.localPort()?
+    let router = Router(root: "tests/conformance/io_data/web")
+
+    ## N=3: one 200 (index), one 200 (css), one 404 (missing).
+    let paths = ["/", "/style.css", "/nope.html"]
+    for path in paths {
+        let client = net.createSocket()?
+        client.connect(port)?
+        let peer = server.accept()?
+
+        let reqBytes = Bytes.fromString("GET {path} HTTP/1.1\r\nHost: x\r\n\r\n")
+        let nw = client.send(reqBytes)
+        if nw < 0 {
+            return Fail("client-send")
+        }
+        let raw = peer.receive()
+        if raw.count == 0 {
+            return Fail("empty-request")
+        }
+        let response = match http.parseRequest(raw) {
+            Pass(req) {
+                router.handle(req)
+            }
+            Fail(msg) {
+                http.badRequest(msg)
+            }
+        }
+        let wire = http.writeResponse(response)
+        let ns = peer.send(wire)
+        if ns < 0 {
+            return Fail("server-send")
+        }
+        let got = client.receive()
+        println("{path} {statusLine(got)}")
+        peer.close()
+        client.close()
+    }
+
+    server.close()
+    Pass(Void)
+}

@@ -4,17 +4,19 @@
 
 ## Next
 
-**Execute:** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](specs/2026-07-19-post-r9-http-completion-plan.md) — remaining queue after PR6 (Router type ✅). **Next = PR7** bounded multi-request static HTTP server.
+**HTTP ladder (bounded server) complete.** Optional polish from the post-R9 plan: **PR8** `Main.thx` dir entry, **PR9** Io OpenMode/errno. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt, infinite accept-loop product binary.
 
 Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; static Router; User+heap field RC (D64); **Array&lt;User&gt; (D65)**.
 Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; static Router; User+heap field RC (D64); Array&lt;User&gt; (D65); early `return` (D63); match discard (D66); **Request/Response/Header + parse/write (D69)**.
 Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; User+heap field RC (D64); Array&lt;User&gt; (D65); early `return` (D63); match discard (D66); Request/Response (D69); **Router type `handle(Request) -> Response` (D70)**.
+Baseline done through **PR7**: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; User+heap field RC (D64); Array&lt;User&gt; (D65); early `return` (D63); match discard (D66); Request/Response (D69); Router type (D70); **bounded multi-request static HTTP server (D67)**.
 
 Critical path: early `return` → ~~User+heap RC~~ → `Array<User>` → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 Critical path: User+heap RC → `Array<User>` → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 Critical path: early `return` → ~~User+heap RC~~ → ~~`Array<User>`~~ → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ → ~~Request/Response~~ → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ → ~~Request/Response~~ → ~~Router type~~ → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
+Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ → ~~Request/Response~~ → ~~Router type~~ → ~~bounded server~~.
 
 ## Done (ladder)
 
@@ -43,6 +45,7 @@ Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ →
 | R9+ | Match discard `Pass(_)`/`Fail(_)` (D66) | `match_discard` |
 | R9+ | Request/Response/Header + parseRequest/writeResponse (D69) | `http_parse` (+ `http`, `http_wire`) |
 | R9+ | Router type `handle(Request) -> Response` (D70) | `router` (via `writeResponse`) |
+| R9+ | Bounded multi-request static HTTP server (D67) | `http_server` |
 
 ## Open design notes (pointers only)
 
@@ -56,7 +59,7 @@ Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ →
 | FFI libraries beyond `"c"` | R6 subset | Only `"c"` (libc via headers) for now |
 | Explicit `address()`, struct copy, `sizeof` | D23–D25 | Deferred (oracle LF-B §9) |
 | Named roots `std/` / `ffi`, dir `Main.thx` | D30–D32 | Deferred; R8 is `./` + `~/` only |
-| Full oracle HTTP | D36–D38 | Request/Response/parse/write (D69) + Router type (D70) shipped; bounded server still post-R9 |
+| Full oracle HTTP | D36–D38 | Request/Response (D69) + Router (D70) + **bounded server (D67)** shipped; infinite accept-loop product binary deferred |
 
 ## Last session
 
@@ -64,6 +67,7 @@ Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ →
 - **2026-07-20 (PR3 Array&lt;User&gt;):** D65 `ThoxaArray` + `elem_size` + inline User structs; cgen field-RC callbacks (`ThoxaArrayElemFn`); get/set/append/dropLast/for-in; conformance `array_user`. Int64/String arrays unchanged.
 - **2026-07-20 (PR2 User+heap RC):** MIR uses `needs_drop` for Trial Pass/Fail/`?`/match extract (User field-walk via cgen `emit_rc`); method prolog Dups heap fields; match binds get fresh places (no cross-match overwrite leak); conformance `user_rc`; ASan clean. Unblocks `Trial<Box(s:String),…>` / File-shaped APIs (D64).
 - **2026-07-20 (PR4 match discard):** `Pass(_)` / `Fail(_)` discard binding (D66); `_` does not define a name; discarded heap payloads still RC-dropped; conformance `match_discard`.
+- **2026-07-20 (PR7 bounded server):** `http_server` binds ephemeral port, N=3 sequential client reconnects (GET `/` 200, `/style.css` 200, `/nope.html` 404); accept/parseRequest/Router.handle/writeResponse/send/close per connection; Net+Http+Router; exits (D67). HTTP ladder complete for this plan.
 - **2026-07-20 (PR6 Router type):** `type Router(root: String) { handle(req: Request) -> Response }`; early return; `ok`/`notFound` + Content-Type; free `handle(root,path)->Bytes` removed; conformance `router` asserts via `writeResponse` status lines (D70).
 - **2026-07-20 (PR5 Request/Response):** `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest`; constructor-param `Array` fields (D69); `user.arrField[i]` index; conformance `http_parse`; `http`/`http_wire` use typed API + `writeResponse`.
 - **2026-07-19 (R9+ file I/O + Router):** `iolib/Io.readFile` (open/lseek/read/close; Fail open|seek|read); cgen `fcntl.h`; String `==`/`!=`; static Router free `handle(root, path)` (later D70 type); for-in heap-elem RC fix; conformance `file_io`, `router`.
