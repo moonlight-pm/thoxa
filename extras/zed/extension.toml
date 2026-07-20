@@ -1,0 +1,25 @@
+id = "thoxa"
+name = "Thoxa"
+version = "0.1.0"
+schema_version = 1
+authors = ["Joshua <joshua@moonlight.pm>"]
+description = "Thoxa language support: thin tree-sitter highlighting plus thoxa lsp (diagnostics + semantic tokens)."
+repository = "file:///home/joshua/Workspace/Thoxa"
+
+# Grammar lives at extras/tree-sitter-thoxa. Zed clones this repo at `rev`
+# (local file:// is fine for a personal dev extension), enters `path`, and
+# compiles the committed `src/parser.c` to WASM — so it uses the COMMITTED
+# grammar, not the dirty working tree.
+#
+# After changing the grammar: regenerate src/, commit, then bump `rev` below
+# to that commit SHA (`git rev-parse HEAD`).
+[grammars.thoxa]
+repository = "file:///home/joshua/Workspace/Thoxa"
+# Placeholder until extras/ is committed — replace with the commit that adds
+# extras/tree-sitter-thoxa/src/parser.c (see extras/README.md).
+rev = "REPLACE_WITH_COMMIT_THAT_ADDS_EXTRAS"
+path = "extras/tree-sitter-thoxa"
+
+[language_servers.thoxa]
+name = "Thoxa LSP"
+languages = ["Thoxa"]

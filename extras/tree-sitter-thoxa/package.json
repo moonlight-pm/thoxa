@@ -1,0 +1,19 @@
+{
+  "name": "tree-sitter-thoxa",
+  "version": "0.1.0",
+  "description": "Lexer-level tree-sitter grammar for the Thoxa language",
+  "license": "MIT",
+  "main": "bindings/node",
+  "keywords": ["tree-sitter", "parser", "thoxa"],
+  "dependencies": {},
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.0"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.thoxa",
+      "file-types": ["thx"],
+      "highlights": "queries/highlights.scm"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "grammars": [
+    {
+      "name": "thoxa",
+      "camelcase": "Thoxa",
+      "scope": "source.thoxa",
+      "path": ".",
+      "file-types": ["thx"],
+      "highlights": ["queries/highlights.scm"]
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Lexer-level tree-sitter grammar for the Thoxa language",
+    "authors": [{ "name": "Joshua" }]
+  }
+}

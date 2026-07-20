@@ -4,6 +4,8 @@ members = [
     "crates/compiler",
     "crates/make",
 ]
+# Zed WASM extension is personal DX under extras/ — not a workspace member.
+exclude = ["extras/zed"]
 default-members = ["crates/compiler"]
 
 [workspace.package]
