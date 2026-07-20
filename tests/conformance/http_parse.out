@@ -9,6 +9,8 @@ Accept=*/*
 incomplete=incomplete request
 badline=malformed request line
 badhdr=malformed header
+emptyname=empty header name
+extra=malformed request line
 GET|/x|HTTP/1.1
 HTTP/1.1 200 OK
 Content-Type: text/plain

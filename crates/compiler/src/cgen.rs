@@ -922,9 +922,10 @@ fn array_user_elem_drop_fn(type_name: &str) -> String {
 }
 
 /// Static field-walk helpers used as ThoxaArrayElemFn for Array<User>.
-/// D65: User array elems are constructor-param only (Int64/Bool/String/Bytes) —
-/// no nested Array/User fields, so only String/Bytes need RC. (Users that hold
-/// Array fields, e.g. Request, are not themselves array elements.)
+/// Array *elements* that are User may only have scalar/heap fields (Int64/Bool/
+/// String/Bytes) — no nested Array/User — so only String/Bytes need RC here (D65).
+/// User *values* may hold `Array` fields (D69, e.g. Request.headers) and are
+/// field-walked by `emit_rc` (not by these element helpers).
 fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
     let cty = c_type_name(&layout.name);
     let dup = array_user_elem_dup_fn(&layout.name);

@@ -110,8 +110,11 @@ export fn parseRequest(raw!: Bytes) -> Trial<Request, String> {
     }
 }
 
-## Summarize a request-line as `METHOD|path|version` (compat for http / http_wire).
-## Returns empty string if malformed.
+## Summarize as `METHOD|path|version` (compat for http / http_wire).
+## Adapter over `parseRequest` (D69): requires a complete request (`\r\n\r\n`),
+## and `path` is query-stripped (oracle-aligned `Request.path`). Pre-PR5 this was a
+## looser request-line-only scan that kept `?query` and did not require the blank line.
+## Returns empty string if parse fails.
 export fn summarizeRequest(raw!: Bytes) -> String {
     match parseRequest(raw) {
         Pass(req) {
