@@ -1,0 +1,71 @@
+## Net — minimal TCP socket layer for R9 (subset of oracle examples/http/Net.thx).
+## Private libc externs + Linux constants; callers use Socket / createSocket.
+
+extern fn sysSocket(domain!: Int32, kind!: Int32, protocol!: Int32) -> Int32 from "c" "socket"
+extern fn sysSetsockopt(fd!: Int32, level!: Int32, optname!: Int32, optval!: Bytes, optlen!: UInt32) -> Int32 from "c" "setsockopt"
+extern fn sysBind(fd!: Int32, addr!: Bytes, addrlen!: UInt32) -> Int32 from "c" "bind"
+extern fn sysListen(fd!: Int32, backlog!: Int32) -> Int32 from "c" "listen"
+extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
+
+## Linux constants (private).
+let afInet = 2
+let sockStream = 1
+let ipProtoIp = 0
+let solSocket = 1
+let soReuseAddr = 2
+let sockaddrLen = 16
+let intSize = 4
+
+## Pack sockaddr_in for 0.0.0.0:port (Linux, little-endian host).
+fn sockaddrIn(port!: Int64) -> Bytes {
+    let addr = Bytes(sockaddrLen)
+    addr.set(0, afInet)
+    addr.set(2, port / 256)
+    addr.set(3, port % 256)
+    addr
+}
+
+## TCP socket. `fd` is Int64 so it fits constructor-param field rules (R3).
+export type Socket(fd: Int64) {
+    export fn reuseAddr() -> Trial<Int64, Int64> {
+        let on = Bytes(intSize)
+        on.set(0, 1)
+        if sysSetsockopt(fd, solSocket, soReuseAddr, on, intSize) < 0 {
+            Fail(1)
+        } else {
+            Pass(0)
+        }
+    }
+
+    ## Bind to 0.0.0.0:port (port 0 = ephemeral).
+    export fn bind(port: Int64) -> Trial<Int64, Int64> {
+        if sysBind(fd, sockaddrIn(port), sockaddrLen) < 0 {
+            Fail(1)
+        } else {
+            Pass(0)
+        }
+    }
+
+    export fn listen(backlog: Int64) -> Trial<Int64, Int64> {
+        if sysListen(fd, backlog) < 0 {
+            Fail(1)
+        } else {
+            Pass(0)
+        }
+    }
+
+    export fn close() -> Int64 {
+        sysClose(fd)
+        0
+    }
+}
+
+## Open a TCP socket; Pass(fd) or Fail(1).
+export fn createSocket() -> Trial<Int64, Int64> {
+    let fd = sysSocket(afInet, sockStream, ipProtoIp)
+    if fd < 0 {
+        Fail(1)
+    } else {
+        Pass(fd)
+    }
+}

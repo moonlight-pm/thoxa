@@ -1,0 +1,16 @@
+GET|/hello|HTTP/1.1
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 3
+Connection: close
+
+ok
+
+HTTP/1.1 400 Bad Request
+Content-Type: text/plain
+Content-Length: 24
+Connection: close
+
+Bad Request: incomplete
+
+listen-ok

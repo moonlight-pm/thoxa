@@ -1,4 +1,4 @@
-//! Lexer for the current Thoxa subset (R0–R8).
+//! Lexer for the current Thoxa subset (R0–R9).
 
 use crate::error::{Error, Result};
 use crate::span::Span;

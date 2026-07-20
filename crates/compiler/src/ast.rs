@@ -1,4 +1,4 @@
-//! AST for the current language subset (R0–R8).
+//! AST for the current language subset (R0–R9).
 
 use crate::span::Span;
 

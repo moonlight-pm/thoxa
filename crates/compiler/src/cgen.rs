@@ -11,11 +11,13 @@ pub fn emit_program(program: &Program) -> String {
     out.push_str("#include <stdint.h>\n");
     out.push_str("#include <stdbool.h>\n");
     out.push_str("#include <stddef.h>\n");
-    // R6/R7: libc (`extern fn … from "c"`). string.h for memcpy/memset; unistd/stdlib for others.
+    // R6–R9: libc (`extern fn … from "c"`). sockets for Net; string.h for memcpy/memset.
     if !program.externs.is_empty() {
         out.push_str("#include <stdlib.h>\n");
         out.push_str("#include <string.h>\n");
         out.push_str("#include <unistd.h>\n");
+        out.push_str("#include <sys/socket.h>\n");
+        out.push_str("#include <netinet/in.h>\n");
     }
     out.push_str("#include \"thoxa_rt.h\"\n\n");
     let _ = program.externs; // used for include selection above
@@ -368,9 +370,11 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                     "println_bool" => "thoxa_println_bool",
                     "print_bool" => "thoxa_print_bool",
                     "bytes_from_string" => "thoxa_bytes_from_string",
+                    "bytes_new" => "thoxa_bytes_new",
                     "bytes_count" => "(int64_t)thoxa_bytes_count",
                     "bytes_get" => "thoxa_bytes_get",
                     "bytes_set" => "thoxa_bytes_set",
+                    "bytes_slice" => "thoxa_bytes_slice",
                     "bytes_to_string" => "thoxa_bytes_to_string",
                     other => other,
                 };

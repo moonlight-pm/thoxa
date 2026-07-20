@@ -16,6 +16,22 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-19 — R9 HTTP subset
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D36 | R9 scope | Subset, not full oracle server | Multi-module Net + Http; offline parse/response; socket lifecycle (create→reuse→bind→listen→close). No accept loop, file router, Buffer, dynamic Array |
+| D18′ | `Bytes(n)` | Ship zero-filled fixed buffer | Forced by sockaddr / setsockopt packing; locks D18 “when forced” |
+| D37 | `Bytes.slice(start, end)` | Half-open copy → new Bytes | Enough for request-line parse without `find` / Array; OOB panics |
+| D38 | Socket errors (R9) | `Trial<Int64, Int64>` codes | String / user-type Trial monomorphs deferred; `Pass(fd)` / `Fail(1)` |
+| D39 | Net surface | Private `extern` + `export type Socket` / `createSocket` | Linux sockaddr_in pack by hand; port `0` = ephemeral for CI |
+
+### Notes
+
+- Oracle `examples/http` remains the north star; R9 proves modules + FFI + Bytes integration without inventing stdlib roots (`ffi` / `std/`).
+- errno/`strerror` not wrapped (would need named `ffi` root or local externs + TLS errno story).
+- Constructor-param types still Int64/Bool only → `Socket(fd: Int64)`; String fields on records still out (no RC-in-struct yet).
+
 ## 2026-07-19 — R8 modules / multi-file
 
 | ID | Decision | Choice | Notes |

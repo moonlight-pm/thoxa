@@ -74,6 +74,8 @@ typedef struct ThoxaBytes {
 
 /* Owned Bytes (refcount 1) from a String's UTF-8 bytes (no trailing NUL in payload). */
 ThoxaBytes *thoxa_bytes_from_string(const ThoxaString *s);
+/* Owned zero-filled Bytes of length `len` (`Bytes(n)`). Negative len → panic. */
+ThoxaBytes *thoxa_bytes_new(int64_t len);
 size_t thoxa_bytes_count(const ThoxaBytes *b);
 /* Mutable data pointer for FFI (NULL if b is NULL). */
 uint8_t *thoxa_bytes_data(ThoxaBytes *b);
@@ -81,6 +83,8 @@ uint8_t *thoxa_bytes_data(ThoxaBytes *b);
 int64_t thoxa_bytes_get(const ThoxaBytes *b, int64_t i);
 /* Masks `byte` to 0–255. Index OOB → panic. */
 void thoxa_bytes_set(ThoxaBytes *b, int64_t i, int64_t byte);
+/* Half-open slice [start, end) → owned Bytes. OOB / start>end → panic. */
+ThoxaBytes *thoxa_bytes_slice(const ThoxaBytes *b, int64_t start, int64_t end);
 /* Fresh owned String with the same bytes (not necessarily valid UTF-8). */
 ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b);
 

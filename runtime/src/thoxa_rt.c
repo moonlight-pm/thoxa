@@ -166,6 +166,18 @@ ThoxaBytes *thoxa_bytes_from_string(const ThoxaString *s) {
     return b;
 }
 
+ThoxaBytes *thoxa_bytes_new(int64_t len) {
+    if (len < 0) {
+        thoxa_panic("Bytes length must be non-negative");
+    }
+    size_t n = (size_t)len;
+    size_t payload = sizeof(size_t) + n;
+    ThoxaBytes *b = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
+    b->len = n;
+    /* thoxa_alloc uses calloc — payload is already zeroed. */
+    return b;
+}
+
 size_t thoxa_bytes_count(const ThoxaBytes *b) {
     return b ? b->len : 0;
 }
@@ -188,6 +200,23 @@ int64_t thoxa_bytes_get(const ThoxaBytes *b, int64_t i) {
 void thoxa_bytes_set(ThoxaBytes *b, int64_t i, int64_t byte) {
     bytes_check_index(b, i);
     b->data[(size_t)i] = (uint8_t)(byte & 0xFF);
+}
+
+ThoxaBytes *thoxa_bytes_slice(const ThoxaBytes *b, int64_t start, int64_t end) {
+    if (!b) {
+        thoxa_panic("Bytes.slice on null");
+    }
+    if (start < 0 || end < start || (size_t)end > b->len) {
+        thoxa_panic("Bytes.slice out of range");
+    }
+    size_t n = (size_t)(end - start);
+    size_t payload = sizeof(size_t) + n;
+    ThoxaBytes *out = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
+    out->len = n;
+    if (n > 0) {
+        memcpy(out->data, b->data + (size_t)start, n);
+    }
+    return out;
 }
 
 ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b) {

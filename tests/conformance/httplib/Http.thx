@@ -1,0 +1,50 @@
+## Http — minimal HTTP/1.1 parse + response (subset of oracle examples/http/Http.thx).
+## No dynamic Array/Buffer: recursive scan + Bytes.slice + string interpolation.
+
+## First index of `needle` (0–255) at or after `start`, or -1.
+fn findByte(data!: Bytes, needle!: Int64, start!: Int64) -> Int64 {
+    if start >= data.count {
+        -1
+    } else if data.get(start) == needle {
+        start
+    } else {
+        findByte(data, needle, start + 1)
+    }
+}
+
+## Summarize a request-line as `METHOD|path|version` (no headers/body).
+## Expects `METHOD path version\r\n…`. Returns empty string if malformed.
+export fn summarizeRequest(raw!: Bytes) -> String {
+    let sp1 = findByte(raw, 32, 0)
+    if sp1 < 0 {
+        ""
+    } else {
+        let sp2 = findByte(raw, 32, sp1 + 1)
+        if sp2 < 0 {
+            ""
+        } else {
+            let cr = findByte(raw, 13, sp2 + 1)
+            if cr < 0 {
+                ""
+            } else {
+                let method = raw.slice(0, sp1).toString()
+                let path = raw.slice(sp1 + 1, sp2).toString()
+                let version = raw.slice(sp2 + 1, cr).toString()
+                "{method}|{path}|{version}"
+            }
+        }
+    }
+}
+
+## Serialize a minimal 200 OK response (text body).
+export fn ok(body!: Bytes) -> Bytes {
+    let text = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.count}\r\nConnection: close\r\n\r\n{body.toString()}"
+    Bytes.fromString(text)
+}
+
+## 400 Bad Request with a short reason line.
+export fn badRequest(msg!: String) -> Bytes {
+    let body = Bytes.fromString("Bad Request: {msg}\n")
+    let text = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: {body.count}\r\nConnection: close\r\n\r\n{body.toString()}"
+    Bytes.fromString(text)
+}

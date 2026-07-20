@@ -82,7 +82,7 @@ typedef struct {
 | R6 | `extern fn` libc | `from "c"` [+ C symbol]; marshal Int32/Int64/UInt64/String/Bytes/Void | ✅ |
 | R7 | C-layout struct | packing | ✅ |
 | R8 | modules / multi-file | loader | ✅ |
-| R9 | HTTP example (or subset) | integration |
+| R9 | HTTP example (or subset) | integration | ✅ subset: Net+Http modules, Bytes(n)/slice, bind/listen |
 
 ## 7. Repository layout
 

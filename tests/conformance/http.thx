@@ -1,0 +1,59 @@
+## R9: HTTP subset — multi-module Net + Http + offline protocol + real socket lifecycle.
+## Oracle: ../Thoxa/examples/http (trimmed: no accept loop, no file router, no Buffer).
+import net from "./httplib/Net"
+import http from "./httplib/Http"
+
+fn main() -> Int64 {
+    ## --- Protocol (deterministic) ---
+    let raw = Bytes.fromString("GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n")
+    let summary = http.summarizeRequest(raw)
+    println(summary)
+
+    let body = Bytes.fromString("ok\n")
+    let res = http.ok(body)
+    println(res.toString())
+
+    let bad = http.badRequest("incomplete")
+    println(bad.toString())
+
+    ## --- Socket lifecycle: create → SO_REUSEADDR → bind(0) → listen → close ---
+    match net.createSocket() {
+        Fail(e) {
+            println("socket-fail {e}")
+            1
+        }
+        Pass(fd) {
+            let sock = net.Socket(fd: fd)
+            match sock.reuseAddr() {
+                Fail(e) {
+                    println("reuse-fail {e}")
+                    sock.close()
+                    1
+                }
+                Pass(ok1) {
+                    match sock.bind(0) {
+                        Fail(e) {
+                            println("bind-fail {e}")
+                            sock.close()
+                            1
+                        }
+                        Pass(ok2) {
+                            match sock.listen(1) {
+                                Fail(e) {
+                                    println("listen-fail {e}")
+                                    sock.close()
+                                    1
+                                }
+                                Pass(ok3) {
+                                    println("listen-ok")
+                                    sock.close()
+                                    0
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

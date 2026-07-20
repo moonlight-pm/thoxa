@@ -1705,7 +1705,7 @@ fn lower_field(
         Ty::Bytes => {
             if name != "count" {
                 return Err(Error::at(
-                    format!("no field `{name}` on Bytes (use .count, .get, .set, .toString)"),
+                    format!("no field `{name}` on Bytes (use .count, .get, .set, .slice, .toString)"),
                     name_span,
                 ));
             }
@@ -1982,6 +1982,18 @@ fn lower_bytes_static(
     }
 }
 
+/// `Bytes(n)` — zero-filled buffer of length `n` (R9 / D18).
+fn lower_bytes_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    let formal = vec![("n".into(), Ty::Int64)];
+    let places = resolve_call_args(ctx, &formal, args, span)?;
+    emit_call_result(
+        ctx,
+        Callee::Builtin("bytes_new".into()),
+        places,
+        Ty::Bytes,
+    )
+}
+
 fn lower_bytes_method(
     ctx: &mut LowerCtx,
     recv: Place,
@@ -2003,6 +2015,13 @@ fn lower_bytes_method(
             let mut all = vec![recv];
             all.extend(places);
             emit_call_result(ctx, Callee::Builtin("bytes_set".into()), all, Ty::Void)
+        }
+        "slice" => {
+            let formal = vec![("start".into(), Ty::Int64), ("end".into(), Ty::Int64)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut all = vec![recv];
+            all.extend(places);
+            emit_call_result(ctx, Callee::Builtin("bytes_slice".into()), all, Ty::Bytes)
         }
         "toString" => {
             if !args.is_empty() {
@@ -2685,13 +2704,17 @@ fn lower_call(
                 Arg::Pos(e) => e,
                 Arg::Named { value, .. } => value,
             };
-            let (payload, pty) = lower_expr(ctx, expr)?;
-            if pty != Ty::Int64 {
+            let (payload_raw, pty) = lower_expr(ctx, expr)?;
+            let payload = if pty == Ty::Int64 {
+                payload_raw
+            } else if is_int(&pty) {
+                coerce_place(ctx, payload_raw, &pty, &Ty::Int64, span)?
+            } else {
                 return Err(Error::at(
-                    format!("`{callee}` expects Int64 payload"),
+                    format!("`{callee}` expects an integer payload"),
                     span,
                 ));
-            }
+            };
             let tag = if callee == "Pass" {
                 TrialTag::Pass
             } else {
@@ -2704,6 +2727,10 @@ fn lower_call(
                 RValue::TrialMake { tag, payload },
             );
             Ok((p, Ty::TrialI64I64))
+        }
+        "Bytes" => {
+            // `Bytes(n)` — zero-filled buffer (R9 / D18). Not a user type.
+            lower_bytes_new(ctx, args, span)
         }
         other => {
             // Type constructor via local or imported name.
