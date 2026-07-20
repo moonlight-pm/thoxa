@@ -5,24 +5,25 @@
 #
 # Note: permission rules are loaded at session start — restart Grok to apply.
 #
-# Whitelist source (2026-07-19): mined ThoxaNative session permission_resolved
-# events. Real user waits (wait_ms > 50) were exclusively run_terminal_command;
-# file tools auto-resolved. Approved shells included cargo/git/cd pipelines,
-# python3, rg, xxd, which, rustc, find/ls/cat family, and ./target binaries.
+# Whitelist source (2026-07-19): mined ThoxaNative (now Thoxa) session
+# permission_resolved events. Real user waits (wait_ms > 50) were exclusively
+# run_terminal_command; file tools auto-resolved. Approved shells included
+# cargo/git/cd pipelines, python3, rg, xxd, which, rustc, find/ls/cat family,
+# and ./target binaries.
 
 [permission]
 allow = [
-  # --- All tools that appeared in ThoxaNative sessions (always allowed) ---
+  # --- All tools that appeared in prior sessions (always allowed) ---
   "Read",
   "Read(**)",
   "Read(/home/joshua/Workspace/**)",
   "Read(/home/joshua/.grok/**)",
   "Edit",
   "Edit(**)",
-  "Edit(/home/joshua/Workspace/ThoxaNative/**)",
+  "Edit(/home/joshua/Workspace/Thoxa/**)",
   "Write",
   "Write(**)",
-  "Write(/home/joshua/Workspace/ThoxaNative/**)",
+  "Write(/home/joshua/Workspace/Thoxa/**)",
   "Grep",
   "Grep(**)",
 
@@ -125,7 +126,7 @@ allow = [
   # Linked conformance / smoke binaries under target/
   "Bash(./target/*)",
   "Bash(target/*)",
-  "Bash(/home/joshua/Workspace/ThoxaNative/target/*)",
+  "Bash(/home/joshua/Workspace/Thoxa/target/*)",
 ]
 
 # deny always wins over allow. Keep shared-state / irreversible ops gated.
