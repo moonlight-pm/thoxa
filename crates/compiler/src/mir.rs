@@ -1531,6 +1531,10 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
     Ok(result)
 }
 
+fn is_empty_array_lit(expr: &Expr) -> bool {
+    matches!(&expr.kind, ExprKind::ArrayLit(elems) if elems.is_empty())
+}
+
 fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
     for item in items {
         match item {
@@ -1541,11 +1545,10 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                 ty: ann,
                 init,
             } => {
-                let (place, ty) = lower_expr(ctx, init)?;
-                let (place, ty) = if let Some(ann) = ann {
-                    let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
-                    if matches!(&ty, Ty::Array { elem } if matches!(elem.as_ref(), Ty::Void)) {
-                        // Empty `[]` — rebuild with the annotated element type.
+                // Annotated empty `[]` — emit only the typed empty lit (skip Void intermediate).
+                if let Some(ann) = ann {
+                    if is_empty_array_lit(init) {
+                        let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
                         let Ty::Array { elem } = &expect else {
                             return Err(Error::at(
                                 format!(
@@ -1554,6 +1557,23 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                                 *name_span,
                             ));
                         };
+                        if !is_array_elem_ty(elem.as_ref()) {
+                            return Err(Error::at(
+                                format!("Array element type not yet supported: {:?}", elem),
+                                *name_span,
+                            ));
+                        }
+                        if array_elem_is_user(elem.as_ref())
+                            && !is_array_user_elem(elem.as_ref(), &ctx.types)
+                        {
+                            return Err(Error::at(
+                                format!(
+                                    "Array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {:?}",
+                                    elem
+                                ),
+                                *name_span,
+                            ));
+                        }
                         let p = ctx.fresh("aempty");
                         ctx.assign(
                             p.clone(),
@@ -1563,8 +1583,15 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                                 elem_ty: elem.as_ref().clone(),
                             },
                         );
-                        (p, expect)
-                    } else if ty != expect {
+                        ctx.bind_name(name, expect, *mutable, p);
+                        continue;
+                    }
+                }
+
+                let (place, ty) = lower_expr(ctx, init)?;
+                let (place, ty) = if let Some(ann) = ann {
+                    let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
+                    if ty != expect {
                         return Err(Error::at(
                             format!(
                                 "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
@@ -2223,15 +2250,9 @@ fn lower_for_array(
     ctx.push_scope();
     ctx.define(name, elem_ty.clone(), false, elem_p.clone());
 
-    if needs_drop(&elem_ty) {
-        // Drop previous iteration's ownership (no-op when NULL on first entry).
-        ctx.stmts.push(Stmt::Drop {
-            place: elem_p.clone(),
-            ty: elem_ty.clone(),
-        });
-    }
     if array_elem_is_user(&elem_ty) {
-        // ArrayGet memcpy + field-dup owns the loop variable's heap fields.
+        // ArrayGet (cgen) field-drops prior ownership of `elem_p`, then memcpy + field-dup.
+        // No separate Drop here — would double-free with the get pre-drop.
         ctx.stmts.push(Stmt::Assign {
             place: elem_p.clone(),
             ty: elem_ty.clone(),
@@ -2242,6 +2263,11 @@ fn lower_for_array(
             },
         });
     } else if array_elem_is_heap(&elem_ty) {
+        // Drop previous iteration's ownership (no-op when NULL on first entry).
+        ctx.stmts.push(Stmt::Drop {
+            place: elem_p.clone(),
+            ty: elem_ty.clone(),
+        });
         ctx.stmts.push(Stmt::Assign {
             place: elem_p.clone(),
             ty: elem_ty.clone(),
@@ -2409,7 +2435,12 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                         );
                         p
                     }
-                    Ty::Array { ref elem } => {
+                    Ty::Array { ref elem }
+                        if matches!(
+                            elem.as_ref(),
+                            Ty::Int64 | Ty::Bool | Ty::String
+                        ) =>
+                    {
                         let p = ctx.fresh("ats");
                         ctx.assign(
                             p.clone(),
@@ -2420,6 +2451,14 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                             },
                         );
                         p
+                    }
+                    Ty::Array { ref elem } => {
+                        return Err(Error::at(
+                            format!(
+                                "cannot interpolate Array<{elem:?}> into String (supported: Int64, Bool, String)"
+                            ),
+                            span,
+                        ));
                     }
                     other => {
                         return Err(Error::at(

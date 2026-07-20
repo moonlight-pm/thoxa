@@ -1,0 +1,13 @@
+s_empty=0
+s_count=3 s0=a s2=c
+s_disp=["a", "b", "c"]
+s_mut=["a", "B", "c"]
+s_iter=a
+s_iter=B
+s_iter=c
+s_iters=3
+s_drop=["a", "B"]
+s_orig=3
+b_count=2 b0len=2 b1=z
+b_sum_len=3
+b_drop_count=1
