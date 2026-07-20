@@ -1,7 +1,11 @@
+root-status=200
 root=HTTP/1.1 200 OK
 about=HTTP/1.1 200 OK
-css=HTTP/1.1 200 OK
+css-status=200
 css-type-ok
+css=HTTP/1.1 200 OK
+trav-status=404
 trav=HTTP/1.1 404 Not Found
 miss=HTTP/1.1 404 Not Found
 rel=HTTP/1.1 404 Not Found
+empty=HTTP/1.1 404 Not Found

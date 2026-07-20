@@ -20,7 +20,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and â
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D70 | Router type | `type Router(root: String) { fn handle(req: Request) -> Response }` | Replaces free `handle(root, path) -> Bytes` (D61). Segments + `..`/`.` reject + index.html + Content-Type via `ok`/`notFound`; early `return` (D63). Absolute path required (`/` first byte). Import `readFile` from `~/iolib/Io`. Conformance: `router` (asserts via `writeResponse` status line). |
+| D70 | Router type | `export type Router(root: String) { export fn handle(req: Request) -> Response }` | Replaces free `handle(root, path) -> Bytes` (D61). Segments + `..`/`.` reject + index.html + Content-Type via `ok`/`notFound`; early `return` (D63). Absolute path required (`/` first byte). Import `readFile` from `~/iolib/Io`. Conformance: `router` (typed `status`/headers + `writeResponse` status line). MIME table is a small subset of oracle (`.html`/`.css`/`.txt`/octet-stream); expand when fixtures need more. |
 
 ## 2026-07-20 â€” Request / Response / Header (PR5)
 
