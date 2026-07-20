@@ -65,6 +65,9 @@ fn serve() -> Trial<Void, String> {
             return Fail("server-send")
         }
         let got = client.receive()
+        if got.count == 0 {
+            return Fail("empty-response")
+        }
         println("{path} {statusLine(got)}")
         peer.close()
         client.close()
