@@ -3590,23 +3590,11 @@ fn lower_match(
             });
         }
     }
+    // Bind name if present (discard `_` → None: no define; extract place still dropped at fn end).
     if let Some(ref name) = pass_bind {
-        let pass_place = Place {
-            name: sanitize_name(name),
-        };
-        if ok_ty != Ty::Void {
-            ctx.assign(pass_place.clone(), ok_ty.clone(), RValue::Use(pass_payload));
-        }
         ctx.define(name, ok_ty.clone(), false, pass_place);
-    } else if ok_ty != Ty::Void && needs_drop(&ok_ty) && !is_heap(&ok_ty) {
-        // Discard User payload: own a field-RC copy so end-of-fn drop is safe.
-        ctx.stmts.push(Stmt::Dup {
-            place: pass_payload.clone(),
-            ty: ok_ty.clone(),
-        });
     }
-    // Pattern discard `_`: no define; body `_` is ordinary lookup (outer scope only).
-    // Extracted temp keeps ownership and is dropped at fn end (RC).
+    // Pattern discard `_`: body `_` is ordinary lookup (outer scope only).
     let pass_val = lower_block_into(ctx, &pass_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut then_body = std::mem::take(&mut ctx.stmts);
@@ -3641,18 +3629,7 @@ fn lower_match(
         }
     }
     if let Some(ref name) = fail_bind {
-        let fail_place = Place {
-            name: sanitize_name(name),
-        };
-        if err_ty != Ty::Void {
-            ctx.assign(fail_place.clone(), err_ty.clone(), RValue::Use(fail_payload));
-        }
         ctx.define(name, err_ty.clone(), false, fail_place);
-    } else if err_ty != Ty::Void && needs_drop(&err_ty) && !is_heap(&err_ty) {
-        ctx.stmts.push(Stmt::Dup {
-            place: fail_payload.clone(),
-            ty: err_ty.clone(),
-        });
     }
     let fail_val = lower_block_into(ctx, &fail_arm.body, &result_ty)?;
     ctx.pop_scope();
