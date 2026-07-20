@@ -103,12 +103,7 @@ fn emit_typedef(out: &mut String, t: &TypeLayout) {
     for f in &t.fields {
         match &f.ty {
             Ty::FixedArray { elem, len } => {
-                let _ = writeln!(
-                    out,
-                    "    {} {}[{len}];",
-                    c_ty(elem),
-                    f.c_name
-                );
+                let _ = writeln!(out, "    {} {}[{len}];", c_ty(elem), f.c_name);
             }
             other => {
                 let _ = writeln!(out, "    {} {};", c_ty(other), f.c_name);
@@ -406,9 +401,14 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
             Stmt::Continue => {
                 let _ = writeln!(out, "{pad}continue;");
             }
-            Stmt::Return { value } => {
-                let _ = writeln!(out, "{pad}return {};", value.name);
-            }
+            Stmt::Return { value } => match value {
+                Some(p) => {
+                    let _ = writeln!(out, "{pad}return {};", p.name);
+                }
+                None => {
+                    let _ = writeln!(out, "{pad}return;");
+                }
+            },
             Stmt::Dup { place, ty } => {
                 emit_rc(out, &pad, place, ty, true, types);
             }
@@ -620,19 +620,10 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
             }
         },
         RValue::StringConcat { left, right } => {
-            let _ = write!(
-                out,
-                "thoxa_string_concat({}, {})",
-                left.name, right.name
-            );
+            let _ = write!(out, "thoxa_string_concat({}, {})", left.name, right.name);
         }
         RValue::Cast { value, from, to } => {
-            let _ = write!(
-                out,
-                "({})({})",
-                c_ty(to),
-                value.name
-            );
+            let _ = write!(out, "({})({})", c_ty(to), value.name);
             let _ = from; // from is for diagnostics; C cast is enough
         }
     }

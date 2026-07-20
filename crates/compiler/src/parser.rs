@@ -269,10 +269,7 @@ impl Parser {
             self.bump();
             false
         } else {
-            return Err(Error::at(
-                "expected `mut` or `let` field",
-                self.peek_span(),
-            ));
+            return Err(Error::at("expected `mut` or `let` field", self.peek_span()));
         };
         let (name, name_span) = self.expect_ident()?;
         self.expect_kind(&TokenKind::Colon)?;
@@ -460,7 +457,10 @@ impl Parser {
         // Optional `.field`
         if self.tokens.get(i).map(|t| &t.kind) == Some(&TokenKind::Dot) {
             i += 1;
-            if !matches!(self.tokens.get(i).map(|t| &t.kind), Some(TokenKind::Ident(_))) {
+            if !matches!(
+                self.tokens.get(i).map(|t| &t.kind),
+                Some(TokenKind::Ident(_))
+            ) {
                 return false;
             }
             i += 1;
@@ -937,6 +937,20 @@ impl Parser {
                     span: Span::new(start.start, self.prev_span().end),
                 })
             }
+            TokenKind::Return => {
+                self.bump();
+                // Optional value: parse when the next token can start an expression
+                // (so bare `return` before `}` is allowed for Void).
+                let value = if self.at_expr_start() {
+                    Some(Box::new(self.parse_expr()?))
+                } else {
+                    None
+                };
+                Ok(Expr {
+                    kind: ExprKind::Return { value },
+                    span: Span::new(start.start, self.prev_span().end),
+                })
+            }
             TokenKind::LBrace => {
                 let block = self.parse_block()?;
                 let span = block.span;
@@ -1000,7 +1014,8 @@ impl Parser {
 
     /// Named `name: expr` if `Ident` followed by `:`, else positional expression.
     fn parse_arg(&mut self) -> Result<Arg> {
-        if matches!(self.current().kind, TokenKind::Ident(_)) && self.peek_kind_is(1, TokenKind::Colon)
+        if matches!(self.current().kind, TokenKind::Ident(_))
+            && self.peek_kind_is(1, TokenKind::Colon)
         {
             let (name, name_span) = self.expect_ident()?;
             self.expect_kind(&TokenKind::Colon)?;
@@ -1156,6 +1171,32 @@ impl Parser {
         std::mem::discriminant(&self.current().kind) == std::mem::discriminant(&kind)
     }
 
+    /// Whether the current token can begin an expression (for optional `return` value).
+    fn at_expr_start(&self) -> bool {
+        matches!(
+            self.current().kind,
+            TokenKind::Int(_)
+                | TokenKind::True
+                | TokenKind::False
+                | TokenKind::String(_)
+                | TokenKind::Ident(_)
+                | TokenKind::If
+                | TokenKind::Match
+                | TokenKind::While
+                | TokenKind::Loop
+                | TokenKind::For
+                | TokenKind::Break
+                | TokenKind::Continue
+                | TokenKind::Return
+                | TokenKind::LBrace
+                | TokenKind::LParen
+                | TokenKind::LBracket
+                | TokenKind::Minus
+                | TokenKind::Not
+                | TokenKind::Tilde
+        )
+    }
+
     fn peek_kind_is(&self, offset: usize, kind: TokenKind) -> bool {
         let i = self.pos + offset;
         if i >= self.tokens.len() {
@@ -1293,7 +1334,10 @@ fn parse_string_literal(content: String, span: Span) -> Result<Expr> {
                     i += 2;
                     continue;
                 }
-                return Err(Error::at("unmatched `}` in string (use `}}` for a literal brace)", span));
+                return Err(Error::at(
+                    "unmatched `}` in string (use `}}` for a literal brace)",
+                    span,
+                ));
             }
             ch => {
                 lit.push(ch);

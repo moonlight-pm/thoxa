@@ -1,0 +1,99 @@
+## Early `return` / `return expr` in nested if, for, while, loop, and match.
+
+fn mid() -> Int64 {
+    let a = 1
+    if a == 1 {
+        return 42
+    }
+    0
+}
+
+fn fromFor() -> Int64 {
+    for i in 0..10 {
+        if i == 3 {
+            return i
+        }
+    }
+    99
+}
+
+fn fromWhile() -> Int64 {
+    mut n = 0
+    while n < 10 {
+        n = n + 1
+        if n == 5 {
+            return n
+        }
+    }
+    99
+}
+
+fn fromLoop() -> Int64 {
+    mut k = 0
+    loop {
+        k = k + 1
+        if k >= 2 {
+            return k
+        }
+    }
+    99
+}
+
+fn fromMatch(t: Trial<Int64, Int64>) -> Int64 {
+    match t {
+        Pass(x) { return x }
+        Fail(e) { e }
+    }
+}
+
+fn nested() -> Int64 {
+    for i in 1..=5 {
+        if i % 2 == 0 {
+            if i == 4 {
+                return i
+            }
+        }
+    }
+    0
+}
+
+## Void early return (side effect then exit).
+fn side() -> Void {
+    println("side")
+    return
+}
+
+fn withHeap() -> Int64 {
+    let s = "keep"
+    println(s)
+    if true {
+        let t = "drop-me"
+        println(t)
+        return 7
+    }
+    0
+}
+
+type Box(n: Int64) {
+    export fn early() -> Int64 {
+        if n > 0 {
+            return n
+        }
+        0
+    }
+}
+
+fn main() -> Int64 {
+    println(mid())
+    println(fromFor())
+    println(fromWhile())
+    println(fromLoop())
+    println(fromMatch(Pass(9)))
+    println(fromMatch(Fail(8)))
+    println(nested())
+    side()
+    println(withHeap())
+    let b = Box(n: 11)
+    println(b.early())
+    0
+}

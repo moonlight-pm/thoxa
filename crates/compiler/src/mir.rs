@@ -66,7 +66,11 @@ pub struct Function {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Assign { place: Place, ty: Ty, value: RValue },
+    Assign {
+        place: Place,
+        ty: Ty,
+        value: RValue,
+    },
     /// `base.field = value` (C-layout field store; truncates via Cast in value if needed).
     FieldAssign {
         base: Place,
@@ -96,7 +100,9 @@ pub enum Stmt {
         else_body: Vec<Stmt>,
     },
     /// Infinite loop: `while (1) { body }`. `break` / `continue` target this.
-    Loop { body: Vec<Stmt> },
+    Loop {
+        body: Vec<Stmt>,
+    },
     /// C-style counted range after `index` is initialized to the start value:
     /// `for (; index < end; index++)` or `<=` when inclusive.
     ForRange {
@@ -107,11 +113,20 @@ pub enum Stmt {
     },
     Break,
     Continue,
-    Return { value: Place },
+    /// Early / `?` return. `None` = bare `return` from a Void function.
+    Return {
+        value: Option<Place>,
+    },
     /// Bump refcount of a heap object (or live Trial heap payload) at `place`.
-    Dup { place: Place, ty: Ty },
+    Dup {
+        place: Place,
+        ty: Ty,
+    },
     /// Drop a heap object (or live Trial heap payload) at `place` (refcount--).
-    Drop { place: Place, ty: Ty },
+    Drop {
+        place: Place,
+        ty: Ty,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -123,9 +138,19 @@ pub enum RValue {
     StringLit(String),
     /// Null heap pointer (for uninit String slots).
     Null,
-    Unary { op: UnaryOp, arg: Place },
-    Binary { op: BinaryOp, left: Place, right: Place },
-    Call { callee: Callee, args: Vec<Place> },
+    Unary {
+        op: UnaryOp,
+        arg: Place,
+    },
+    Binary {
+        op: BinaryOp,
+        left: Place,
+        right: Place,
+    },
+    Call {
+        callee: Callee,
+        args: Vec<Place>,
+    },
     /// Construct a Trial: `payload` is the live side (ok for Pass, err for Fail).
     TrialMake {
         tag: TrialTag,
@@ -138,11 +163,19 @@ pub enum RValue {
     /// Extract `.err` from a Trial place.
     TrialErr(Place),
     /// Construct a user type from field places (declaration order).
-    StructLit { type_name: String, fields: Vec<Place> },
+    StructLit {
+        type_name: String,
+        fields: Vec<Place>,
+    },
     /// Zero-initialize a C-layout / user struct (`TypeName()`).
-    StructZero { type_name: String },
+    StructZero {
+        type_name: String,
+    },
     /// `base.field`
-    Field { base: Place, field: String },
+    Field {
+        base: Place,
+        field: String,
+    },
     /// `base.field[index]` — fixed-array element load.
     Index {
         base: Place,
@@ -155,11 +188,21 @@ pub enum RValue {
         elem_ty: Ty,
     },
     /// Convert Int64/Bool/Array → owned String.
-    ToString { value: Place, from: Ty },
+    ToString {
+        value: Place,
+        from: Ty,
+    },
     /// Non-consuming concat → owned String.
-    StringConcat { left: Place, right: Place },
+    StringConcat {
+        left: Place,
+        right: Place,
+    },
     /// Numeric / trivial cast between compatible types.
-    Cast { value: Place, from: Ty, to: Ty },
+    Cast {
+        value: Place,
+        from: Ty,
+        to: Ty,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,7 +216,10 @@ pub enum Callee {
     Builtin(String),
     User(String),
     /// Method: Type_method — C name built in cgen.
-    Method { type_name: String, method: String },
+    Method {
+        type_name: String,
+        method: String,
+    },
     /// Direct C symbol (libc). Args already coerced to declared types.
     Extern {
         c_symbol: String,
@@ -204,13 +250,21 @@ pub enum Ty {
     /// Heap RC growable Buffer (`ThoxaBuffer*`) — COW on mutate when shared.
     Buffer,
     /// Dynamic growable Array (`ThoxaArray*`) — heap RC; functional append/dropLast.
-    Array { elem: Box<Ty> },
+    Array {
+        elem: Box<Ty>,
+    },
     /// Fixed inline array field type `Array<T, N>` (not a first-class value).
-    FixedArray { elem: Box<Ty>, len: u64 },
+    FixedArray {
+        elem: Box<Ty>,
+        len: u64,
+    },
     /// FFI pointer `Address<T>` (param types only in R7).
     Address(Box<Ty>),
     /// `Trial<Ok, Err>` — monomorphized in cgen.
-    Trial { ok: Box<Ty>, err: Box<Ty> },
+    Trial {
+        ok: Box<Ty>,
+        err: Box<Ty>,
+    },
     User(String),
 }
 
@@ -230,10 +284,7 @@ fn needs_drop(ty: &Ty) -> bool {
 
 /// Element types supported in dynamic `Array<T>` (phase A).
 fn is_array_elem_ty(ty: &Ty) -> bool {
-    matches!(
-        ty,
-        Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes
-    )
+    matches!(ty, Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes)
 }
 
 fn array_elem_is_heap(ty: &Ty) -> bool {
@@ -378,6 +429,9 @@ struct LowerCtx {
     is_entry: bool,
     /// Nesting depth of `loop` / `while` / `for` (for `break` / `continue`).
     loop_depth: u32,
+    /// Heap / Trial-with-heap places assigned so far (for drops on early `return`).
+    /// Same policy as `insert_function_drops` / `collect_drop_places`.
+    drop_places: Vec<(String, Ty)>,
 }
 
 #[derive(Clone, Default)]
@@ -416,6 +470,7 @@ impl LowerCtx {
             module_id,
             is_entry,
             loop_depth: 0,
+            drop_places: Vec::new(),
         }
     }
 
@@ -428,14 +483,10 @@ impl LowerCtx {
     }
 
     fn define(&mut self, name: &str, ty: Ty, mutable: bool, place: Place) {
-        self.env.last_mut().unwrap().insert(
-            name.to_string(),
-            Binding {
-                ty,
-                mutable,
-                place,
-            },
-        );
+        self.env
+            .last_mut()
+            .unwrap()
+            .insert(name.to_string(), Binding { ty, mutable, place });
     }
 
     fn lookup(&self, name: &str) -> Option<Binding> {
@@ -480,7 +531,15 @@ impl LowerCtx {
                 });
             }
         }
+        self.note_drop_place(&place, &ty);
         self.stmts.push(Stmt::Assign { place, ty, value });
+    }
+
+    /// Record a place that owns a heap / Trial-with-heap value (for early-return drops).
+    fn note_drop_place(&mut self, place: &Place, ty: &Ty) {
+        if needs_drop(ty) {
+            self.drop_places.push((place.name.clone(), ty.clone()));
+        }
     }
 
     /// Bind a name to an already-lowered value (fresh ownership from `place`).
@@ -552,9 +611,7 @@ pub fn lower_package(package: &Package) -> Result<Program> {
     let mut module_exports: HashMap<String, ModuleExports> = HashMap::new();
 
     for m in &package.modules {
-        module_exports
-            .entry(m.id.clone())
-            .or_default();
+        module_exports.entry(m.id.clone()).or_default();
         for item in &m.ast.items {
             let Item::Type(td) = item else { continue };
             let mangled = mangle_type(&m.id, &td.name, m.is_entry);
@@ -592,10 +649,7 @@ pub fn lower_package(package: &Package) -> Result<Program> {
         let mut map = HashMap::new();
         for item in &m.ast.items {
             if let Item::Type(td) = item {
-                map.insert(
-                    td.name.clone(),
-                    mangle_type(&m.id, &td.name, m.is_entry),
-                );
+                map.insert(td.name.clone(), mangle_type(&m.id, &td.name, m.is_entry));
             }
         }
         if let Some(imports) = import_maps.get(&m.id) {
@@ -652,10 +706,7 @@ pub fn lower_package(package: &Package) -> Result<Program> {
             for p in &td.params {
                 let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
                 // R3+ : scalars + heap String/Bytes (RC fields). Nested User deferred.
-                if !matches!(
-                    ty,
-                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes
-                ) {
+                if !matches!(ty, Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes) {
                     return Err(Error::at(
                         "constructor-param fields must be Int64, Bool, String, or Bytes",
                         p.ty.span,
@@ -792,9 +843,7 @@ pub fn lower_package(package: &Package) -> Result<Program> {
                     let params = f
                         .params
                         .iter()
-                        .map(|p| {
-                            Ok((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?))
-                        })
+                        .map(|p| Ok((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?)))
                         .collect::<Result<Vec<_>>>()?;
                     if fns
                         .insert(
@@ -834,7 +883,7 @@ pub fn lower_package(package: &Package) -> Result<Program> {
     // ---------- Phase 3: globals (module-level let/mut) ----------
     // Placeholders: type of global may reference types; inits lowered later.
     let mut all_globals: HashMap<String, GlobalInfo> = HashMap::new(); // place name → info
-    // (module_id, &Global, place name)
+                                                                       // (module_id, &Global, place name)
     let mut global_defs: Vec<(String, &ast::Global, String)> = Vec::new();
 
     for m in &package.modules {
@@ -865,8 +914,14 @@ pub fn lower_package(package: &Package) -> Result<Program> {
     let mut init_stmts: Vec<Stmt> = Vec::new();
 
     for m in &package.modules {
-        let (name_to_type, name_to_fn, name_to_global, namespaces) =
-            build_module_name_maps(m, &import_maps, &module_exports, &all_globals, &per_mod_types, &fns)?;
+        let (name_to_type, name_to_fn, name_to_global, namespaces) = build_module_name_maps(
+            m,
+            &import_maps,
+            &module_exports,
+            &all_globals,
+            &per_mod_types,
+            &fns,
+        )?;
 
         for item in &m.ast.items {
             let Item::Global(g) = item else { continue };
@@ -920,13 +975,15 @@ pub fn lower_package(package: &Package) -> Result<Program> {
     let mut functions = Vec::new();
 
     for (mod_id, mangled_ty, td) in &type_defs {
-        let m = package
-            .modules
-            .iter()
-            .find(|x| x.id == *mod_id)
-            .unwrap();
-        let (name_to_type, name_to_fn, name_to_global, namespaces) =
-            build_module_name_maps(m, &import_maps, &module_exports, &all_globals, &per_mod_types, &fns)?;
+        let m = package.modules.iter().find(|x| x.id == *mod_id).unwrap();
+        let (name_to_type, name_to_fn, name_to_global, namespaces) = build_module_name_maps(
+            m,
+            &import_maps,
+            &module_exports,
+            &all_globals,
+            &per_mod_types,
+            &fns,
+        )?;
         for method in &td.methods {
             functions.push(lower_method(
                 mangled_ty,
@@ -946,13 +1003,15 @@ pub fn lower_package(package: &Package) -> Result<Program> {
     }
 
     for (mod_id, mangled, f, is_entry) in &free_fns {
-        let m = package
-            .modules
-            .iter()
-            .find(|x| x.id == *mod_id)
-            .unwrap();
-        let (name_to_type, name_to_fn, name_to_global, namespaces) =
-            build_module_name_maps(m, &import_maps, &module_exports, &all_globals, &per_mod_types, &fns)?;
+        let m = package.modules.iter().find(|x| x.id == *mod_id).unwrap();
+        let (name_to_type, name_to_fn, name_to_global, namespaces) = build_module_name_maps(
+            m,
+            &import_maps,
+            &module_exports,
+            &all_globals,
+            &per_mod_types,
+            &fns,
+        )?;
         functions.push(lower_function(
             f,
             mangled,
@@ -1149,11 +1208,15 @@ fn resolve_ty(
                     elem.span,
                 ));
             }
-            Ok(Ty::Array {
-                elem: Box::new(et),
-            })
+            Ok(Ty::Array { elem: Box::new(et) })
         }
-        ("Array", [TypeArg::Type(elem), TypeArg::Int { value: n, span: nspan }]) => {
+        (
+            "Array",
+            [TypeArg::Type(elem), TypeArg::Int {
+                value: n,
+                span: nspan,
+            }],
+        ) => {
             if *n < 0 {
                 return Err(Error::at("Array length must be non-negative", *nspan));
             }
@@ -1243,6 +1306,7 @@ fn lower_function(
         let place = Place {
             name: sanitize_name(&p.name),
         };
+        ctx.note_drop_place(&place, &ty);
         ctx.define(&p.name, ty, false, place);
     }
 
@@ -1326,6 +1390,7 @@ fn lower_method(
         let place = Place {
             name: sanitize_name(&p.name),
         };
+        ctx.note_drop_place(&place, &ty);
         ctx.define(&p.name, ty, false, place);
     }
 
@@ -1426,7 +1491,9 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                         // Empty `[]` — rebuild with the annotated element type.
                         let Ty::Array { elem } = &expect else {
                             return Err(Error::at(
-                                format!("empty array `[]` needs Array<T> annotation, got {expect:?}"),
+                                format!(
+                                    "empty array `[]` needs Array<T> annotation, got {expect:?}"
+                                ),
                                 *name_span,
                             ));
                         };
@@ -1473,9 +1540,7 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
 
 fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Result<()> {
     match target {
-        AssignTarget::Name { name, name_span } => {
-            ctx.reassign_name(name, *name_span, value)
-        }
+        AssignTarget::Name { name, name_span } => ctx.reassign_name(name, *name_span, value),
         AssignTarget::Field {
             base,
             base_span,
@@ -1752,11 +1817,7 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
                         return Err(Error::at("`not` expects Bool", expr.span));
                     }
                     let p = ctx.fresh("not");
-                    ctx.assign(
-                        p.clone(),
-                        Ty::Bool,
-                        RValue::Unary { op: *op, arg },
-                    );
+                    ctx.assign(p.clone(), Ty::Bool, RValue::Unary { op: *op, arg });
                     Ok((p, Ty::Bool))
                 }
                 UnaryOp::BitNot => {
@@ -1823,6 +1884,7 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
         ),
         ExprKind::Break => lower_break(ctx, expr.span),
         ExprKind::Continue => lower_continue(ctx, expr.span),
+        ExprKind::Return { value } => lower_return(ctx, value.as_deref(), expr.span),
         ExprKind::Block(b) => {
             if b.tail.is_none() {
                 lower_block_value(ctx, b, &Ty::Void)?;
@@ -1863,6 +1925,78 @@ fn lower_continue(ctx: &mut LowerCtx, span: Span) -> Result<(Place, Ty)> {
     Ok(void_place(ctx))
 }
 
+/// `return` / `return expr` — type-check against `fn_ret`, drop live heap locals, emit C return.
+/// The expression types as `fn_ret` so it unifies with sibling if/match arms.
+fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<(Place, Ty)> {
+    let fn_ret = ctx.fn_ret.clone();
+    let ret_place = match value {
+        None => {
+            if fn_ret != Ty::Void {
+                return Err(Error::at(
+                    format!("`return` without a value in function returning {fn_ret:?}"),
+                    span,
+                ));
+            }
+            None
+        }
+        Some(e) => {
+            let (place, ty) = lower_expr(ctx, e)?;
+            if ty != fn_ret {
+                // Allow int width widen/narrow via existing coerce for ints if needed.
+                if is_int(&ty) && is_int(&fn_ret) {
+                    let place = coerce_place(ctx, place, &ty, &fn_ret, e.span)?;
+                    Some(place)
+                } else if fn_ret == Ty::Void && ty == Ty::Void {
+                    None
+                } else {
+                    return Err(Error::at(
+                        format!("return type mismatch: expected {fn_ret:?}, found {ty:?}"),
+                        e.span,
+                    ));
+                }
+            } else if fn_ret == Ty::Void {
+                None
+            } else {
+                Some(place)
+            }
+        }
+    };
+
+    push_early_return(ctx, ret_place.clone(), &fn_ret);
+
+    // Type as fn_ret so `if c { return x } else { y }` unifies; place is a dummy for non-Void.
+    if fn_ret == Ty::Void {
+        Ok(void_place(ctx))
+    } else if let Some(p) = ret_place {
+        // Unreachable after Return, but keep a typed place for if/match result slots.
+        Ok((p, fn_ret))
+    } else {
+        Ok(void_place(ctx))
+    }
+}
+
+/// Drop live `needs_drop` locals (except moved return value), then `Return`.
+fn push_early_return(ctx: &mut LowerCtx, ret: Option<Place>, ret_ty: &Ty) {
+    let skip = if needs_drop(ret_ty) || is_trial(ret_ty) {
+        ret.as_ref().map(|p| p.name.clone())
+    } else {
+        None
+    };
+    let mut seen = std::collections::HashSet::new();
+    for (name, ty) in ctx.drop_places.clone() {
+        if skip.as_ref() == Some(&name) {
+            continue;
+        }
+        if seen.insert(name.clone()) {
+            ctx.stmts.push(Stmt::Drop {
+                place: Place { name },
+                ty,
+            });
+        }
+    }
+    ctx.stmts.push(Stmt::Return { value: ret });
+}
+
 fn lower_loop(ctx: &mut LowerCtx, body: &Block, _span: Span) -> Result<(Place, Ty)> {
     let outer = std::mem::take(&mut ctx.stmts);
     ctx.loop_depth += 1;
@@ -1876,12 +2010,7 @@ fn lower_loop(ctx: &mut LowerCtx, body: &Block, _span: Span) -> Result<(Place, T
     Ok(void_place(ctx))
 }
 
-fn lower_while(
-    ctx: &mut LowerCtx,
-    cond: &Expr,
-    body: &Block,
-    _span: Span,
-) -> Result<(Place, Ty)> {
+fn lower_while(ctx: &mut LowerCtx, cond: &Expr, body: &Block, _span: Span) -> Result<(Place, Ty)> {
     // Desugar: loop { if not cond { break }; body }
     let outer = std::mem::take(&mut ctx.stmts);
     ctx.loop_depth += 1;
@@ -2089,11 +2218,7 @@ fn lower_for_array(
     Ok(void_place(ctx))
 }
 
-fn lower_array_lit(
-    ctx: &mut LowerCtx,
-    elems: &[Expr],
-    span: Span,
-) -> Result<(Place, Ty)> {
+fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Place, Ty)> {
     if elems.is_empty() {
         // Untyped empty — bind site must supply Array<T> annotation.
         let p = ctx.fresh("aempty");
@@ -2155,11 +2280,7 @@ fn lower_array_lit(
     Ok((p, arr_ty))
 }
 
-fn lower_interpolate(
-    ctx: &mut LowerCtx,
-    parts: &[InterpPart],
-    span: Span,
-) -> Result<(Place, Ty)> {
+fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Result<(Place, Ty)> {
     if parts.is_empty() {
         let p = ctx.fresh("s");
         ctx.assign(p.clone(), Ty::String, RValue::StringLit(String::new()));
@@ -2183,10 +2304,7 @@ fn lower_interpolate(
                         ctx.assign(
                             p.clone(),
                             Ty::String,
-                            RValue::ToString {
-                                value: v,
-                                from: ty,
-                            },
+                            RValue::ToString { value: v, from: ty },
                         );
                         p
                     }
@@ -2210,9 +2328,7 @@ fn lower_interpolate(
                             Ty::String,
                             RValue::ToString {
                                 value: v,
-                                from: Ty::Array {
-                                    elem: elem.clone(),
-                                },
+                                from: Ty::Array { elem: elem.clone() },
                             },
                         );
                         p
@@ -2233,10 +2349,7 @@ fn lower_interpolate(
                 ctx.assign(
                     p.clone(),
                     Ty::String,
-                    RValue::StringConcat {
-                        left,
-                        right: piece,
-                    },
+                    RValue::StringConcat { left, right: piece },
                 );
                 p
             }
@@ -2270,7 +2383,9 @@ fn lower_field(
         Ty::Bytes => {
             if name != "count" {
                 return Err(Error::at(
-                    format!("no field `{name}` on Bytes (use .count, .get, .set, .slice, .toString)"),
+                    format!(
+                        "no field `{name}` on Bytes (use .count, .get, .set, .slice, .toString)"
+                    ),
                     name_span,
                 ));
             }
@@ -2342,9 +2457,7 @@ fn lower_field(
                 })?;
             if matches!(field_ty, Ty::FixedArray { .. }) {
                 return Err(Error::at(
-                    format!(
-                        "fixed array field `{name}` must be indexed (e.g. `.{name}[i]`)"
-                    ),
+                    format!("fixed array field `{name}` must be indexed (e.g. `.{name}[i]`)"),
                     name_span,
                 ));
             }
@@ -2373,12 +2486,7 @@ fn lower_field(
     }
 }
 
-fn lower_index(
-    ctx: &mut LowerCtx,
-    base: &Expr,
-    index: &Expr,
-    span: Span,
-) -> Result<(Place, Ty)> {
+fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Result<(Place, Ty)> {
     // Dynamic Array: `arr[i]`
     if !matches!(&base.kind, ExprKind::Field { .. }) {
         let (base_p, base_ty) = lower_expr(ctx, base)?;
@@ -2601,10 +2709,7 @@ fn lower_method_call(
 
     // Buffer mutating methods must use the binding place without Dup and write back
     // the returned pointer (COW may allocate a new unique buffer).
-    if matches!(
-        method,
-        "append" | "appendBytes" | "freeze"
-    ) {
+    if matches!(method, "append" | "appendBytes" | "freeze") {
         if let ExprKind::Name(recv_name) = &receiver.kind {
             if let Some(binding) = ctx.lookup(recv_name) {
                 if binding.ty == Ty::Buffer {
@@ -2695,12 +2800,7 @@ fn lower_bytes_static(
 fn lower_bytes_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
     let formal = vec![("n".into(), Ty::Int64)];
     let places = resolve_call_args(ctx, &formal, args, span)?;
-    emit_call_result(
-        ctx,
-        Callee::Builtin("bytes_new".into()),
-        places,
-        Ty::Bytes,
-    )
+    emit_call_result(ctx, Callee::Builtin("bytes_new".into()), places, Ty::Bytes)
 }
 
 fn lower_buffer_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
@@ -2767,12 +2867,7 @@ fn lower_array_method(
             } else {
                 "array_append_i64"
             };
-            emit_call_result(
-                ctx,
-                Callee::Builtin(builtin.into()),
-                all,
-                arr_ty,
-            )
+            emit_call_result(ctx, Callee::Builtin(builtin.into()), all, arr_ty)
         }
         "dropLast" => {
             if !args.is_empty() {
@@ -2848,10 +2943,7 @@ fn lower_buffer_method(
                 Ty::Bytes,
             )
         }
-        other => Err(Error::at(
-            format!("no method `{other}` on Buffer"),
-            span,
-        )),
+        other => Err(Error::at(format!("no method `{other}` on Buffer"), span)),
     }
 }
 
@@ -2899,10 +2991,7 @@ fn lower_bytes_method(
             let formal = if from_default {
                 vec![("needle".into(), Ty::Bytes)]
             } else {
-                vec![
-                    ("needle".into(), Ty::Bytes),
-                    ("from".into(), Ty::Int64),
-                ]
+                vec![("needle".into(), Ty::Bytes), ("from".into(), Ty::Int64)]
             };
             let places = resolve_call_args(ctx, &formal, needle_args, span)?;
             let mut all = vec![recv];
@@ -2925,10 +3014,7 @@ fn lower_bytes_method(
                 Ty::String,
             )
         }
-        other => Err(Error::at(
-            format!("no method `{other}` on Bytes"),
-            span,
-        )),
+        other => Err(Error::at(format!("no method `{other}` on Bytes"), span)),
     }
 }
 
@@ -2946,11 +3032,7 @@ fn emit_call_result(
         Ok((p, Ty::Void))
     } else {
         let p = ctx.fresh("mcall");
-        ctx.assign(
-            p.clone(),
-            ret.clone(),
-            RValue::Call { callee, args },
-        );
+        ctx.assign(p.clone(), ret.clone(), RValue::Call { callee, args });
         Ok((p, ret))
     }
 }
@@ -2969,10 +3051,7 @@ fn resolve_call_args(
     let all_pos = args.iter().all(|a| matches!(a, Arg::Pos(_)));
 
     if !all_named && !all_pos {
-        return Err(Error::at(
-            "cannot mix positional and named arguments",
-            span,
-        ));
+        return Err(Error::at("cannot mix positional and named arguments", span));
     }
 
     if all_pos {
@@ -3030,9 +3109,9 @@ fn resolve_call_args(
     }
     let mut places = Vec::new();
     for (i, (fname, fty)) in formal.iter().enumerate() {
-        let expr = by_name.remove(fname).ok_or_else(|| {
-            Error::at(format!("missing argument `{fname}`"), span)
-        })?;
+        let expr = by_name
+            .remove(fname)
+            .ok_or_else(|| Error::at(format!("missing argument `{fname}`"), span))?;
         let p = lower_arg_for_formal(ctx, expr, fty, fname, i)?;
         places.push(p);
     }
@@ -3064,14 +3143,12 @@ fn lower_arg_for_formal(
                 ));
             }
         };
-        let binding = ctx.lookup(name).ok_or_else(|| {
-            Error::at(format!("undefined name `{name}`"), expr.span)
-        })?;
+        let binding = ctx
+            .lookup(name)
+            .ok_or_else(|| Error::at(format!("undefined name `{name}`"), expr.span))?;
         if !binding.mutable {
             return Err(Error::at(
-                format!(
-                    "argument `{formal_name}`: coercing to Address requires a `mut` binding"
-                ),
+                format!("argument `{formal_name}`: coercing to Address requires a `mut` binding"),
                 expr.span,
             ));
         }
@@ -3082,9 +3159,7 @@ fn lower_arg_for_formal(
             }
             (got, want) => {
                 return Err(Error::at(
-                    format!(
-                        "argument `{formal_name}`: expected Address<{want:?}>, found {got:?}"
-                    ),
+                    format!("argument `{formal_name}`: expected Address<{want:?}>, found {got:?}"),
                     expr.span,
                 ));
             }
@@ -3132,11 +3207,7 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
     }
 
     let tag = ctx.fresh("tag");
-    ctx.assign(
-        tag.clone(),
-        Ty::Int64,
-        RValue::TrialTag(trial_p.clone()),
-    );
+    ctx.assign(tag.clone(), Ty::Int64, RValue::TrialTag(trial_p.clone()));
     let zero = ctx.fresh("z");
     ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
     let is_fail = ctx.fresh("isf");
@@ -3154,8 +3225,24 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
     let outer = std::mem::take(&mut ctx.stmts);
     let mut then_body = Vec::new();
     if trial_ty == fn_ret {
+        // Drop live heap locals before early return from `?` (same as explicit `return`).
+        let mut drops = Vec::new();
+        let skip = trial_p.name.clone();
+        let mut seen = std::collections::HashSet::new();
+        for (name, ty) in &ctx.drop_places {
+            if name == &skip {
+                continue;
+            }
+            if seen.insert(name.clone()) {
+                drops.push(Stmt::Drop {
+                    place: Place { name: name.clone() },
+                    ty: ty.clone(),
+                });
+            }
+        }
+        then_body.extend(drops);
         then_body.push(Stmt::Return {
-            value: trial_p.clone(),
+            value: Some(trial_p.clone()),
         });
     } else {
         // Extract err, build Fail of fn_ret.
@@ -3189,7 +3276,24 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
                 trial_ty: fn_ret.clone(),
             },
         });
-        then_body.push(Stmt::Return { value: ret_trial });
+        let mut drops = Vec::new();
+        let skip = ret_trial.name.clone();
+        let mut seen = std::collections::HashSet::new();
+        for (name, ty) in &ctx.drop_places {
+            if name == &skip {
+                continue;
+            }
+            if seen.insert(name.clone()) {
+                drops.push(Stmt::Drop {
+                    place: Place { name: name.clone() },
+                    ty: ty.clone(),
+                });
+            }
+        }
+        then_body.extend(drops);
+        then_body.push(Stmt::Return {
+            value: Some(ret_trial),
+        });
     }
     ctx.stmts = outer;
     ctx.stmts.push(Stmt::If {
@@ -3248,7 +3352,9 @@ fn lower_match(
                 }
                 fail_arm = Some(arm);
             }
-            Pattern::Variant { name, span: pspan, .. } => {
+            Pattern::Variant {
+                name, span: pspan, ..
+            } => {
                 return Err(Error::at(
                     format!("unsupported match pattern `{name}`"),
                     *pspan,
@@ -3386,7 +3492,11 @@ fn lower_match(
         name: sanitize_name(&fail_bind),
     };
     if err_ty != Ty::Void {
-        ctx.assign(fail_place.clone(), err_ty.clone(), RValue::Use(fail_payload));
+        ctx.assign(
+            fail_place.clone(),
+            err_ty.clone(),
+            RValue::Use(fail_payload),
+        );
     }
     ctx.define(&fail_bind, err_ty.clone(), false, fail_place);
     let fail_val = lower_block_into(ctx, &fail_arm.body, &result_ty)?;
@@ -3433,6 +3543,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
         }
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } => {
+            ctx.note_drop_place(place, ty);
             ctx.stmts.push(Stmt::Assign {
                 place: place.clone(),
                 ty: ty.clone(),
@@ -3441,9 +3552,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
         }
         Ty::Void => {}
         Ty::FixedArray { .. } | Ty::Address(_) => {
-            return Err(Error::new(format!(
-                "cannot allocate local of type {ty:?}"
-            )));
+            return Err(Error::new(format!("cannot allocate local of type {ty:?}")));
         }
         Ty::Trial { ok, .. } => {
             let z = ctx.fresh("tz");
@@ -3481,6 +3590,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                         Ty::Int64 => ctx.assign(fp.clone(), Ty::Int64, RValue::Int(0)),
                         Ty::Bool => ctx.assign(fp.clone(), Ty::Bool, RValue::Bool(false)),
                         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } => {
+                            ctx.note_drop_place(&fp, &f.ty);
                             ctx.stmts.push(Stmt::Assign {
                                 place: fp.clone(),
                                 ty: f.ty.clone(),
@@ -3537,18 +3647,10 @@ fn lower_binary(
                 coerce_place(ctx, r, &rt, &Ty::Int64, span)?
             };
             let p = ctx.fresh("bin");
-            ctx.assign(
-                p.clone(),
-                Ty::Int64,
-                RValue::Binary { op, left, right },
-            );
+            ctx.assign(p.clone(), Ty::Int64, RValue::Binary { op, left, right });
             Ok((p, Ty::Int64))
         }
-        BinaryOp::BitAnd
-        | BinaryOp::BitOr
-        | BinaryOp::BitXor
-        | BinaryOp::Shl
-        | BinaryOp::Shr => {
+        BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
             if !is_int(&lt) || !is_int(&rt) {
                 return Err(Error::at(
                     format!("bitwise operator {op:?} expects integer operands"),
@@ -3567,11 +3669,7 @@ fn lower_binary(
                 coerce_place(ctx, r, &rt, &Ty::Int64, span)?
             };
             let p = ctx.fresh("bit");
-            ctx.assign(
-                p.clone(),
-                Ty::Int64,
-                RValue::Binary { op, left, right },
-            );
+            ctx.assign(p.clone(), Ty::Int64, RValue::Binary { op, left, right });
             Ok((p, Ty::Int64))
         }
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
@@ -3590,10 +3688,7 @@ fn lower_binary(
             }
             if lt == Ty::String && rt == Ty::String {
                 if !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
-                    return Err(Error::at(
-                        "String only supports `==` and `!=`",
-                        span,
-                    ));
+                    return Err(Error::at("String only supports `==` and `!=`", span));
                 }
                 let eq_p = ctx.fresh("seq");
                 ctx.assign(
@@ -3630,15 +3725,7 @@ fn lower_binary(
                     coerce_place(ctx, r, &rt, &Ty::Int64, span)?
                 };
                 let p = ctx.fresh("cmp");
-                ctx.assign(
-                    p.clone(),
-                    Ty::Bool,
-                    RValue::Binary {
-                        op,
-                        left,
-                        right,
-                    },
-                );
+                ctx.assign(p.clone(), Ty::Bool, RValue::Binary { op, left, right });
                 return Ok((p, Ty::Bool));
             }
             Err(Error::at(
@@ -3675,10 +3762,7 @@ fn lower_pass_fail(
     span: Span,
 ) -> Result<(Place, Ty)> {
     if args.len() != 1 {
-        return Err(Error::at(
-            format!("`{callee}` expects 1 argument"),
-            span,
-        ));
+        return Err(Error::at(format!("`{callee}` expects 1 argument"), span));
     }
     let expr = match &args[0] {
         Arg::Pos(e) => e,
@@ -3786,12 +3870,7 @@ fn coerce_payload(
     ))
 }
 
-fn lower_call(
-    ctx: &mut LowerCtx,
-    callee: &str,
-    args: &[Arg],
-    span: Span,
-) -> Result<(Place, Ty)> {
+fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
     match callee {
         "println" | "print" => {
             if args.len() != 1 {
@@ -3915,22 +3994,13 @@ fn lower_call(
 }
 
 /// Coerce a place to a target type when a conversion is defined (FFI integer widths).
-fn coerce_place(
-    ctx: &mut LowerCtx,
-    place: Place,
-    from: &Ty,
-    to: &Ty,
-    span: Span,
-) -> Result<Place> {
+fn coerce_place(ctx: &mut LowerCtx, place: Place, from: &Ty, to: &Ty, span: Span) -> Result<Place> {
     if from == to {
         return Ok(place);
     }
     let ok = is_int(from) && is_int(to);
     if !ok {
-        return Err(Error::at(
-            format!("cannot coerce {from:?} to {to:?}"),
-            span,
-        ));
+        return Err(Error::at(format!("cannot coerce {from:?} to {to:?}"), span));
     }
     let p = ctx.fresh("cast");
     ctx.assign(
@@ -4047,11 +4117,7 @@ fn lower_if(
     }
 }
 
-fn lower_block_into(
-    ctx: &mut LowerCtx,
-    block: &Block,
-    expect: &Ty,
-) -> Result<Option<Place>> {
+fn lower_block_into(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Option<Place>> {
     lower_block_items(ctx, &block.items)?;
     if let Some(tail) = &block.tail {
         let (place, ty) = lower_expr(ctx, tail)?;
@@ -4085,6 +4151,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         module_id: ctx.module_id.clone(),
         is_entry: ctx.is_entry,
         loop_depth: ctx.loop_depth,
+        drop_places: ctx.drop_places.clone(),
     };
     if block.tail.is_none() {
         return Ok(Ty::Void);

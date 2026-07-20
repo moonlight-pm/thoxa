@@ -29,6 +29,7 @@ pub enum TokenKind {
     Continue,
     For,
     In,
+    Return,
     // Identifiers & literals
     Ident(String),
     Int(i64),
@@ -321,6 +322,7 @@ impl<'a> Lexer<'a> {
             "continue" => TokenKind::Continue,
             "for" => TokenKind::For,
             "in" => TokenKind::In,
+            "return" => TokenKind::Return,
             _ => TokenKind::Ident(text.to_string()),
         };
         Ok(Token {
@@ -356,9 +358,7 @@ mod tests {
 
     #[test]
     fn operators() {
-        let tokens = Lexer::new("a + b == 3 and not false")
-            .tokenize()
-            .unwrap();
+        let tokens = Lexer::new("a + b == 3 and not false").tokenize().unwrap();
         assert!(tokens.iter().any(|t| t.kind == TokenKind::Plus));
         assert!(tokens.iter().any(|t| t.kind == TokenKind::EqEq));
         assert!(tokens.iter().any(|t| t.kind == TokenKind::And));
@@ -398,5 +398,13 @@ mod tests {
         assert!(tokens.iter().any(|t| t.kind == TokenKind::Continue));
         assert!(tokens.iter().any(|t| t.kind == TokenKind::Loop));
         assert!(tokens.iter().any(|t| t.kind == TokenKind::DotDot));
+    }
+
+    #[test]
+    fn return_token() {
+        let tokens = Lexer::new("fn f() -> Int64 { return 1 }")
+            .tokenize()
+            .unwrap();
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Return));
     }
 }

@@ -30,10 +30,7 @@ pub enum ImportKind {
     /// `import { name [as alias], … } from "…"`
     Selective(Vec<ImportName>),
     /// `import binding from "…"` — namespace, camelCase binding only.
-    Namespace {
-        binding: String,
-        binding_span: Span,
-    },
+    Namespace { binding: String, binding_span: Span },
 }
 
 #[derive(Debug, Clone)]
@@ -164,10 +161,7 @@ pub enum BlockItem {
 #[derive(Debug, Clone)]
 pub enum AssignTarget {
     /// `name = expr` — only legal for `mut` bindings.
-    Name {
-        name: String,
-        name_span: Span,
-    },
+    Name { name: String, name_span: Span },
     /// `base.field = expr` — field must be `mut`.
     Field {
         base: String,
@@ -270,6 +264,11 @@ pub enum ExprKind {
     Break,
     /// `continue` — next iteration of the nearest enclosing loop; type `Void`.
     Continue,
+    /// `return` / `return expr` — early exit from the enclosing function/method.
+    /// Typed as the function return type (bare `return` requires `Void`).
+    Return {
+        value: Option<Box<Expr>>,
+    },
     Block(Block),
     Try(Box<Expr>),
     Match {

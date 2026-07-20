@@ -16,6 +16,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-19 — Post-R9 HTTP plan (PR1)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D63 | Early `return` | `return` / `return expr` as expression (like `break`); type-checked against enclosing `fn`/`method` return type | Bare `return` only for `Void`; MIR `Stmt::Return { value: Option<Place> }`; drop live `needs_drop` locals before early return (same set as end-of-fn, excluding moved return value); exits function from inside loops (not just the loop) |
+
 ## 2026-07-19 — R9+ file I/O + Router
 
 | ID | Decision | Choice | Notes |
