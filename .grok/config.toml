@@ -1,18 +1,22 @@
 # Project-scoped Grok settings (committed).
-# Trusted local worktree: full read/write under this project, and git commits,
-# without per-call prompts. Destructive shared-state ops stay denied.
+# Trusted local worktree: local engineering work without per-call prompts.
+# Destructive / shared-state ops stay denied below (deny always wins).
 # Docs: ~/.grok/docs/user-guide/22-permissions-and-safety.md
 #
 # Note: permission rules are loaded at session start — restart Grok to apply.
+#
+# Whitelist source (2026-07-19): mined ThoxaNative session permission_resolved
+# events. Real user waits (wait_ms > 50) were exclusively run_terminal_command;
+# file tools auto-resolved. Approved shells included cargo/git/cd pipelines,
+# python3, rg, xxd, which, rustc, find/ls/cat family, and ./target binaries.
 
 [permission]
 allow = [
-  # --- Project read / write (tools) ---
-  # Bare tool allows cover every path the tools touch; path globs document intent
-  # for absolute and relative forms (rules match the path string as invoked).
+  # --- All tools that appeared in ThoxaNative sessions (always allowed) ---
   "Read",
   "Read(**)",
-  "Read(/home/joshua/Workspace/ThoxaNative/**)",
+  "Read(/home/joshua/Workspace/**)",
+  "Read(/home/joshua/.grok/**)",
   "Edit",
   "Edit(**)",
   "Edit(/home/joshua/Workspace/ThoxaNative/**)",
@@ -22,9 +26,15 @@ allow = [
   "Grep",
   "Grep(**)",
 
-  # --- Git: commits and normal local workflow ---
-  # Explicit commit forms + full `git *` so add/status/diff/log/commit all pass.
-  # `git push` / force / hard-reset remain denied below (deny wins).
+  # Full local shell. Session history showed only bash needed interactive
+  # approval once file tools were covered; bare Bash matches whole-command
+  # forms (`cd … && cargo …`, heredocs, etc.) that prefix rules miss.
+  # Still constrained by `deny` below (push, force-reset, rm -rf /).
+  "Bash",
+  "Bash(*)",
+
+  # Explicit prefixes kept for documentation / tools that log rule names,
+  # and in case a future version treats bare Bash differently.
   "Bash(git *)",
   "Bash(git commit *)",
   "Bash(git commit:*)",
@@ -47,14 +57,32 @@ allow = [
   "Bash(git remote *)",
   "Bash(git fetch *)",
   "Bash(git pull *)",
+  "Bash(git init *)",
+  "Bash(git check-ignore *)",
+  "Bash(git rm *)",
 
-  # --- Build / test / local mutations under the project tree ---
   "Bash(cargo *)",
+  "Bash(rustc *)",
   "Bash(cc *)",
   "Bash(clang *)",
   "Bash(clangd *)",
   "Bash(ar *)",
   "Bash(make *)",
+
+  "Bash(python3 *)",
+  "Bash(python *)",
+  "Bash(rg *)",
+  "Bash(grep *)",
+  "Bash(xxd *)",
+  "Bash(od *)",
+  "Bash(hexdump *)",
+  "Bash(which *)",
+  "Bash(readlink *)",
+  "Bash(dirname *)",
+  "Bash(basename *)",
+  "Bash(realpath *)",
+  "Bash(file *)",
+
   "Bash(mkdir *)",
   "Bash(cp *)",
   "Bash(mv *)",
@@ -93,6 +121,11 @@ allow = [
   "Bash(sh *)",
   "Bash(bash *)",
   "Bash(zsh *)",
+
+  # Linked conformance / smoke binaries under target/
+  "Bash(./target/*)",
+  "Bash(target/*)",
+  "Bash(/home/joshua/Workspace/ThoxaNative/target/*)",
 ]
 
 # deny always wins over allow. Keep shared-state / irreversible ops gated.
