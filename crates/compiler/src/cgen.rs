@@ -22,20 +22,19 @@ pub fn emit_program(program: &Program) -> String {
     out.push_str("#include \"thoxa_rt.h\"\n\n");
     let _ = program.externs; // used for include selection above
 
-    out.push_str("typedef struct {\n");
-    out.push_str("    int32_t tag; /* 0 = Pass, 1 = Fail */\n");
-    out.push_str("    int64_t payload;\n");
-    out.push_str("} ThoxaTrialI64I64;\n\n");
-
-    out.push_str("static inline ThoxaTrialI64I64 thoxa_trial_pass(int64_t v) {\n");
-    out.push_str("    ThoxaTrialI64I64 t; t.tag = 0; t.payload = v; return t;\n");
-    out.push_str("}\n");
-    out.push_str("static inline ThoxaTrialI64I64 thoxa_trial_fail(int64_t e) {\n");
-    out.push_str("    ThoxaTrialI64I64 t; t.tag = 1; t.payload = e; return t;\n");
-    out.push_str("}\n\n");
-
+    // User structs first (may appear as Trial ok payloads).
     for t in &program.types {
         emit_typedef(&mut out, t);
+    }
+
+    // Monomorphized Trial typedefs used by this program.
+    let mut trial_tys: Vec<Ty> = Vec::new();
+    collect_trial_tys_program(program, &mut trial_tys);
+    for ty in &trial_tys {
+        emit_trial_typedef(&mut out, ty);
+    }
+    if !trial_tys.is_empty() {
+        out.push('\n');
     }
 
     // Module-level statics (R8).
@@ -67,11 +66,7 @@ pub fn emit_program(program: &Program) -> String {
             if *ty == Ty::Void {
                 continue;
             }
-            if is_heap_ty(ty) {
-                let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
-            } else {
-                let _ = writeln!(out, "    {} {};", c_ty(ty), name);
-            }
+            emit_local_decl(&mut out, name, ty);
         }
         emit_stmts(&mut out, &program.init, 1);
         out.push_str("}\n\n");
@@ -181,11 +176,7 @@ fn emit_function(out: &mut String, f: &Function, global_names: &HashSet<String>)
         if *ty == Ty::Void {
             continue;
         }
-        if is_heap_ty(ty) {
-            let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
-        } else {
-            let _ = writeln!(out, "    {} {};", c_ty(ty), name);
-        }
+        emit_local_decl(out, name, ty);
     }
 
     emit_stmts(out, &f.body, 1);
@@ -205,6 +196,45 @@ fn emit_function(out: &mut String, f: &Function, global_names: &HashSet<String>)
 
 fn is_heap_ty(ty: &Ty) -> bool {
     matches!(ty, Ty::String | Ty::Bytes)
+}
+
+/// Declare a local with a safe zero value (so branch-skipped drops are no-ops).
+fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
+    match ty {
+        Ty::String | Ty::Bytes => {
+            let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
+        }
+        Ty::Trial { ok, err } => {
+            // tag=0 (Pass), heap sides NULL, scalars 0 — drop is a no-op until assigned.
+            let _ = write!(out, "    {} {} = {{ .tag = 0", c_ty(ty), name);
+            if *ok.as_ref() != Ty::Void {
+                if is_heap_ty(ok) {
+                    out.push_str(", .ok = NULL");
+                } else if matches!(ok.as_ref(), Ty::Bool) {
+                    out.push_str(", .ok = false");
+                } else if matches!(ok.as_ref(), Ty::User(_)) {
+                    let _ = write!(out, ", .ok = ({}){{0}}", c_ty(ok));
+                } else {
+                    out.push_str(", .ok = 0");
+                }
+            }
+            if *err.as_ref() != Ty::Void {
+                if is_heap_ty(err) {
+                    out.push_str(", .err = NULL");
+                } else if matches!(err.as_ref(), Ty::Bool) {
+                    out.push_str(", .err = false");
+                } else if matches!(err.as_ref(), Ty::User(_)) {
+                    let _ = write!(out, ", .err = ({}){{0}}", c_ty(err));
+                } else {
+                    out.push_str(", .err = 0");
+                }
+            }
+            out.push_str(" };\n");
+        }
+        _ => {
+            let _ = writeln!(out, "    {} {};", c_ty(ty), name);
+        }
+    }
 }
 
 fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut HashSet<String>) {
@@ -295,11 +325,11 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize) {
             Stmt::Return { value } => {
                 let _ = writeln!(out, "{pad}return {};", value.name);
             }
-            Stmt::Dup { place } => {
-                let _ = writeln!(out, "{pad}thoxa_dup({});", place.name);
+            Stmt::Dup { place, ty } => {
+                emit_rc(out, &pad, place, ty, true);
             }
-            Stmt::Drop { place } => {
-                let _ = writeln!(out, "{pad}thoxa_drop({});", place.name);
+            Stmt::Drop { place, ty } => {
+                emit_rc(out, &pad, place, ty, false);
             }
         }
     }
@@ -434,18 +464,21 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                 out.push(')');
             }
         },
-        RValue::TrialMake { tag, payload } => {
-            let ctor = match tag {
-                TrialTag::Pass => "thoxa_trial_pass",
-                TrialTag::Fail => "thoxa_trial_fail",
-            };
-            let _ = write!(out, "{ctor}({})", payload.name);
+        RValue::TrialMake {
+            tag,
+            payload,
+            trial_ty,
+        } => {
+            emit_trial_make(out, tag, payload, trial_ty);
         }
         RValue::TrialTag(p) => {
             let _ = write!(out, "(int64_t)({}.tag)", p.name);
         }
-        RValue::TrialPayload(p) => {
-            let _ = write!(out, "{}.payload", p.name);
+        RValue::TrialOk(p) => {
+            let _ = write!(out, "{}.ok", p.name);
+        }
+        RValue::TrialErr(p) => {
+            let _ = write!(out, "{}.err", p.name);
         }
         RValue::StructLit { type_name, fields } => {
             let _ = write!(out, "({}){{", c_type_name(type_name));
@@ -527,13 +560,187 @@ fn c_ty(ty: &Ty) -> String {
         Ty::String => "ThoxaString*".into(),
         Ty::Bytes => "ThoxaBytes*".into(),
         Ty::Void => "void".into(),
-        Ty::TrialI64I64 => "ThoxaTrialI64I64".into(),
+        Ty::Trial { .. } => trial_c_name(ty),
         Ty::User(name) => c_type_name(name),
         Ty::FixedArray { elem, .. } => {
             // Locals of fixed-array type are not emitted; typedefs handle arrays.
             c_ty(elem)
         }
         Ty::Address(inner) => format!("{}*", c_ty(inner)),
+    }
+}
+
+fn trial_c_name(ty: &Ty) -> String {
+    match ty {
+        Ty::Trial { ok, err } => {
+            format!("ThoxaTrial_{}_{}", ty_mangle(ok), ty_mangle(err))
+        }
+        _ => "ThoxaTrial_Invalid".into(),
+    }
+}
+
+fn ty_mangle(ty: &Ty) -> String {
+    match ty {
+        Ty::Void => "Void".into(),
+        Ty::Int32 => "I32".into(),
+        Ty::Int64 => "I64".into(),
+        Ty::UInt32 => "U32".into(),
+        Ty::UInt64 => "U64".into(),
+        Ty::Byte => "Byte".into(),
+        Ty::Bool => "Bool".into(),
+        Ty::String => "String".into(),
+        Ty::Bytes => "Bytes".into(),
+        Ty::User(n) => n.replace('-', "_"),
+        other => format!("{other:?}").replace(['<', '>', ' ', ','], "_"),
+    }
+}
+
+fn emit_trial_typedef(out: &mut String, ty: &Ty) {
+    let Ty::Trial { ok, err } = ty else {
+        return;
+    };
+    let name = trial_c_name(ty);
+    let _ = writeln!(out, "typedef struct {{");
+    out.push_str("    int32_t tag; /* 0 = Pass, 1 = Fail */\n");
+    if *ok.as_ref() != Ty::Void {
+        let _ = writeln!(out, "    {} ok;", c_ty(ok));
+    }
+    if *err.as_ref() != Ty::Void {
+        let _ = writeln!(out, "    {} err;", c_ty(err));
+    }
+    // C forbids empty structs in some modes; ensure at least tag is present.
+    let _ = writeln!(out, "}} {name};");
+}
+
+fn emit_trial_make(out: &mut String, tag: &TrialTag, payload: &crate::mir::Place, trial_ty: &Ty) {
+    let Ty::Trial { ok, err } = trial_ty else {
+        out.push_str("/* bad TrialMake */");
+        return;
+    };
+    let name = trial_c_name(trial_ty);
+    match tag {
+        TrialTag::Pass => {
+            // Compound literal: tag=0, ok=payload (if not Void), err zeroed.
+            let _ = write!(out, "({name}){{ .tag = 0");
+            if *ok.as_ref() != Ty::Void {
+                let _ = write!(out, ", .ok = {}", payload.name);
+            }
+            if *err.as_ref() != Ty::Void {
+                if is_heap_ty(err) {
+                    out.push_str(", .err = NULL");
+                } else if matches!(err.as_ref(), Ty::Bool) {
+                    out.push_str(", .err = false");
+                } else if matches!(err.as_ref(), Ty::User(_)) {
+                    let _ = write!(out, ", .err = ({}){{0}}", c_ty(err));
+                } else {
+                    out.push_str(", .err = 0");
+                }
+            }
+            out.push_str(" }");
+            // Heap ok payload: extra ref owned by the Trial (temp also dropped).
+            // Emitted as statement after assign — see assign path. Dup in MIR for Use;
+            // for TrialMake we emit trailing dup via a statement in MIR... handled below in post?
+            // We dup in emit by wrapping: ({ ...; thoxa_dup; t; }) — use GNU statement expr, or
+            // rely on MIR. Prefer MIR: after TrialMake assign, if heap ok, Dup the trial? No —
+            // cgen emits compound literal sharing pointer; MIR should Dup payload after.
+            // Actually emit: ( (name){...} ) and if heap, the assign in MIR for Pass already
+            // has the payload place still live; we need Dup on the trial's ok field after.
+            // Simplest: if ok is heap, compound literal + runtime will share; MIR inserts
+            // Dup on payload place before TrialMake so RC is 2, then drop payload → 1 in trial.
+            // Wait — Dup on payload before make: RC=2, make shares pointer, drop payload RC=1. OK.
+        }
+        TrialTag::Fail => {
+            let _ = write!(out, "({name}){{ .tag = 1");
+            if *ok.as_ref() != Ty::Void {
+                if is_heap_ty(ok) {
+                    out.push_str(", .ok = NULL");
+                } else if matches!(ok.as_ref(), Ty::Bool) {
+                    out.push_str(", .ok = false");
+                } else if matches!(ok.as_ref(), Ty::User(_)) {
+                    let _ = write!(out, ", .ok = ({}){{0}}", c_ty(ok));
+                } else {
+                    out.push_str(", .ok = 0");
+                }
+            }
+            if *err.as_ref() != Ty::Void {
+                let _ = write!(out, ", .err = {}", payload.name);
+            }
+            out.push_str(" }");
+        }
+    }
+}
+
+fn emit_rc(out: &mut String, pad: &str, place: &crate::mir::Place, ty: &Ty, dup: bool) {
+    let op = if dup { "thoxa_dup" } else { "thoxa_drop" };
+    match ty {
+        Ty::String | Ty::Bytes => {
+            let _ = writeln!(out, "{pad}{op}({});", place.name);
+        }
+        Ty::Trial { ok, err } => {
+            let ok_h = is_heap_ty(ok);
+            let err_h = is_heap_ty(err);
+            if !ok_h && !err_h {
+                return;
+            }
+            let _ = writeln!(out, "{pad}if ({}.tag == 0) {{", place.name);
+            if ok_h {
+                let _ = writeln!(out, "{pad}    {op}({}.ok);", place.name);
+            }
+            let _ = writeln!(out, "{pad}}} else {{");
+            if err_h {
+                let _ = writeln!(out, "{pad}    {op}({}.err);", place.name);
+            }
+            let _ = writeln!(out, "{pad}}}");
+        }
+        _ => {}
+    }
+}
+
+fn collect_trial_tys_program(program: &Program, out: &mut Vec<Ty>) {
+    for f in &program.functions {
+        collect_trial_tys_stmts(&f.body, out);
+        push_trial_ty(&f.ret_ty, out);
+        for (_, ty) in &f.params {
+            push_trial_ty(ty, out);
+        }
+        if let Some((_, ty)) = &f.receiver {
+            push_trial_ty(ty, out);
+        }
+    }
+    collect_trial_tys_stmts(&program.init, out);
+    for g in &program.globals {
+        push_trial_ty(&g.ty, out);
+    }
+}
+
+fn collect_trial_tys_stmts(stmts: &[Stmt], out: &mut Vec<Ty>) {
+    for s in stmts {
+        match s {
+            Stmt::Assign { ty, value, .. } => {
+                push_trial_ty(ty, out);
+                if let RValue::TrialMake { trial_ty, .. } = value {
+                    push_trial_ty(trial_ty, out);
+                }
+            }
+            Stmt::Dup { ty, .. } | Stmt::Drop { ty, .. } => push_trial_ty(ty, out),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_trial_tys_stmts(then_body, out);
+                collect_trial_tys_stmts(else_body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn push_trial_ty(ty: &Ty, out: &mut Vec<Ty>) {
+    if let Ty::Trial { .. } = ty {
+        if !out.iter().any(|t| t == ty) {
+            out.push(ty.clone());
+        }
     }
 }
 

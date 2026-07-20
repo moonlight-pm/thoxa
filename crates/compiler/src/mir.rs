@@ -89,10 +89,10 @@ pub enum Stmt {
         else_body: Vec<Stmt>,
     },
     Return { value: Place },
-    /// Bump refcount of a heap object at `place`.
-    Dup { place: Place },
-    /// Drop a heap object at `place` (refcount--).
-    Drop { place: Place },
+    /// Bump refcount of a heap object (or live Trial heap payload) at `place`.
+    Dup { place: Place, ty: Ty },
+    /// Drop a heap object (or live Trial heap payload) at `place` (refcount--).
+    Drop { place: Place, ty: Ty },
 }
 
 #[derive(Debug, Clone)]
@@ -107,9 +107,17 @@ pub enum RValue {
     Unary { op: UnaryOp, arg: Place },
     Binary { op: BinaryOp, left: Place, right: Place },
     Call { callee: Callee, args: Vec<Place> },
-    TrialMake { tag: TrialTag, payload: Place },
+    /// Construct a Trial: `payload` is the live side (ok for Pass, err for Fail).
+    TrialMake {
+        tag: TrialTag,
+        payload: Place,
+        trial_ty: Ty,
+    },
     TrialTag(Place),
-    TrialPayload(Place),
+    /// Extract `.ok` from a Trial place.
+    TrialOk(Place),
+    /// Extract `.err` from a Trial place.
+    TrialErr(Place),
     /// Construct a user type from field places (declaration order).
     StructLit { type_name: String, fields: Vec<Place> },
     /// Zero-initialize a C-layout / user struct (`TypeName()`).
@@ -173,12 +181,50 @@ pub enum Ty {
     FixedArray { elem: Box<Ty>, len: u64 },
     /// FFI pointer `Address<T>` (param types only in R7).
     Address(Box<Ty>),
-    TrialI64I64,
+    /// `Trial<Ok, Err>` — monomorphized in cgen.
+    Trial { ok: Box<Ty>, err: Box<Ty> },
     User(String),
 }
 
 fn is_heap(ty: &Ty) -> bool {
     matches!(ty, Ty::String | Ty::Bytes)
+}
+
+/// True when a local of this type needs an end-of-scope drop (heap ptr or Trial with heap side).
+fn needs_drop(ty: &Ty) -> bool {
+    is_heap(ty)
+        || matches!(
+            ty,
+            Ty::Trial { ok, err } if is_heap(ok) || is_heap(err)
+        )
+}
+
+fn is_trial(ty: &Ty) -> bool {
+    matches!(ty, Ty::Trial { .. })
+}
+
+fn trial_parts(ty: &Ty) -> Option<(&Ty, &Ty)> {
+    match ty {
+        Ty::Trial { ok, err } => Some((ok.as_ref(), err.as_ref())),
+        _ => None,
+    }
+}
+
+/// Types allowed as Trial ok/err payloads.
+fn is_trial_payload_ty(ty: &Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Void
+            | Ty::Int32
+            | Ty::Int64
+            | Ty::UInt32
+            | Ty::UInt64
+            | Ty::Byte
+            | Ty::Bool
+            | Ty::String
+            | Ty::Bytes
+            | Ty::User(_)
+    )
 }
 
 fn is_int(ty: &Ty) -> bool {
@@ -382,9 +428,12 @@ impl LowerCtx {
             if p == &place {
                 return;
             }
-            // Copy of a heap value: bump refcount so source and dest both own.
-            if is_heap(&ty) {
-                self.stmts.push(Stmt::Dup { place: p.clone() });
+            // Copy of a heap value or Trial-with-heap: bump so source and dest both own.
+            if needs_drop(&ty) {
+                self.stmts.push(Stmt::Dup {
+                    place: p.clone(),
+                    ty: ty.clone(),
+                });
             }
         }
         self.stmts.push(Stmt::Assign { place, ty, value });
@@ -421,9 +470,10 @@ impl LowerCtx {
             ));
         }
         let bound = binding.place.clone();
-        if is_heap(&binding.ty) {
+        if needs_drop(&binding.ty) {
             self.stmts.push(Stmt::Drop {
                 place: bound.clone(),
+                ty: binding.ty.clone(),
             });
         }
         // Dup so the RHS temp and the binding both own (end-of-fn drops both).
@@ -1022,14 +1072,22 @@ fn resolve_ty(
         ("Trial", [TypeArg::Type(a), TypeArg::Type(b)]) => {
             let ok = resolve_ty(a, types, name_map)?;
             let err = resolve_ty(b, types, name_map)?;
-            if ok == Ty::Int64 && err == Ty::Int64 {
-                Ok(Ty::TrialI64I64)
-            } else {
-                Err(Error::at(
-                    "only Trial<Int64, Int64> is supported",
+            if !is_trial_payload_ty(&ok) {
+                return Err(Error::at(
+                    format!("Trial ok type is not supported: {ok:?}"),
                     t.span,
-                ))
+                ));
             }
+            if !is_trial_payload_ty(&err) {
+                return Err(Error::at(
+                    format!("Trial err type is not supported: {err:?}"),
+                    t.span,
+                ));
+            }
+            Ok(Ty::Trial {
+                ok: Box::new(ok),
+                err: Box::new(err),
+            })
         }
         ("Trial", _) => Err(Error::at("Trial expects two type arguments", t.span)),
         ("Array", [TypeArg::Type(elem), TypeArg::Int { value: n, span: nspan }]) => {
@@ -1222,41 +1280,42 @@ fn lower_method(
     })
 }
 
-/// Drop every heap local at function end except the returned place (moved out).
+/// Drop every heap / Trial-with-heap local at function end except the returned place (moved out).
 fn insert_function_drops(stmts: &mut Vec<Stmt>, ret: &Option<Place>, ret_ty: &Ty) {
-    let mut heap_places = Vec::new();
-    collect_heap_places(stmts, &mut heap_places);
-    let skip = if is_heap(ret_ty) {
+    let mut places: Vec<(String, Ty)> = Vec::new();
+    collect_drop_places(stmts, &mut places);
+    let skip = if needs_drop(ret_ty) || is_trial(ret_ty) {
         ret.as_ref().map(|p| p.name.clone())
     } else {
         None
     };
     let mut seen = std::collections::HashSet::new();
-    for name in heap_places {
+    for (name, ty) in places {
         if skip.as_ref() == Some(&name) {
             continue;
         }
         if seen.insert(name.clone()) {
             stmts.push(Stmt::Drop {
                 place: Place { name },
+                ty,
             });
         }
     }
 }
 
-fn collect_heap_places(stmts: &[Stmt], out: &mut Vec<String>) {
+fn collect_drop_places(stmts: &[Stmt], out: &mut Vec<(String, Ty)>) {
     for s in stmts {
         match s {
-            Stmt::Assign { place, ty, .. } if is_heap(ty) => {
-                out.push(place.name.clone());
+            Stmt::Assign { place, ty, .. } if needs_drop(ty) => {
+                out.push((place.name.clone(), ty.clone()));
             }
             Stmt::If {
                 then_body,
                 else_body,
                 ..
             } => {
-                collect_heap_places(then_body, out);
-                collect_heap_places(else_body, out);
+                collect_drop_places(then_body, out);
+                collect_drop_places(else_body, out);
             }
             _ => {}
         }
@@ -1495,13 +1554,18 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
         }
         ExprKind::Interpolate(parts) => lower_interpolate(ctx, parts, expr.span),
         ExprKind::Name(name) => {
+            // Unit value `Void` (type name used as value).
+            if name == "Void" && ctx.lookup(name).is_none() {
+                let p = ctx.fresh("void");
+                return Ok((p, Ty::Void));
+            }
             let binding = ctx
                 .lookup(name)
                 .ok_or_else(|| Error::at(format!("undefined name `{name}`"), expr.span))?;
             let ty = binding.ty.clone();
             let src = binding.place;
-            // Simple RC: reading a heap value produces a new owner (`assign` dups).
-            if is_heap(&ty) {
+            // Simple RC: reading a heap / Trial-with-heap produces a new owner (`assign` dups).
+            if needs_drop(&ty) {
                 let p = ctx.fresh("dup");
                 ctx.assign(p.clone(), ty.clone(), RValue::Use(src));
                 Ok((p, ty))
@@ -2218,12 +2282,24 @@ fn lower_arg_for_formal(
 
 fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)> {
     let (trial_p, trial_ty) = lower_expr(ctx, inner)?;
-    if trial_ty != Ty::TrialI64I64 {
+    let Some((ok_ty, err_ty)) = trial_parts(&trial_ty) else {
         return Err(Error::at("`?` expects a Trial value", span));
-    }
-    if ctx.fn_ret != Ty::TrialI64I64 {
+    };
+    let ok_ty = ok_ty.clone();
+    let err_ty = err_ty.clone();
+    let fn_ret = ctx.fn_ret.clone();
+    let (ret_ok, ret_err) = match &fn_ret {
+        Ty::Trial { ok, err } => (ok.as_ref().clone(), err.as_ref().clone()),
+        _ => {
+            return Err(Error::at(
+                "`?` requires the enclosing function to return Trial",
+                span,
+            ));
+        }
+    };
+    if ret_err != err_ty {
         return Err(Error::at(
-            "`?` requires the enclosing function to return Trial",
+            "`?` error type must match the enclosing function's Trial error type",
             span,
         ));
     }
@@ -2247,10 +2323,47 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
         },
     );
 
+    // On Fail: return a Trial of the *enclosing* type (re-wrap err if ok monomorph differs).
     let outer = std::mem::take(&mut ctx.stmts);
-    let then_body = vec![Stmt::Return {
-        value: trial_p.clone(),
-    }];
+    let mut then_body = Vec::new();
+    if trial_ty == fn_ret {
+        then_body.push(Stmt::Return {
+            value: trial_p.clone(),
+        });
+    } else {
+        // Extract err, build Fail of fn_ret.
+        let err_p = Place {
+            name: format!("_qerr{}", ctx.temps),
+        };
+        ctx.temps += 1;
+        if err_ty != Ty::Void {
+            then_body.push(Stmt::Assign {
+                place: err_p.clone(),
+                ty: err_ty.clone(),
+                value: RValue::TrialErr(trial_p.clone()),
+            });
+            if is_heap(&err_ty) {
+                then_body.push(Stmt::Dup {
+                    place: err_p.clone(),
+                    ty: err_ty.clone(),
+                });
+            }
+        }
+        let ret_trial = Place {
+            name: format!("_qret{}", ctx.temps),
+        };
+        ctx.temps += 1;
+        then_body.push(Stmt::Assign {
+            place: ret_trial.clone(),
+            ty: fn_ret.clone(),
+            value: RValue::TrialMake {
+                tag: TrialTag::Fail,
+                payload: err_p,
+                trial_ty: fn_ret.clone(),
+            },
+        });
+        then_body.push(Stmt::Return { value: ret_trial });
+    }
     ctx.stmts = outer;
     ctx.stmts.push(Stmt::If {
         cond: is_fail,
@@ -2259,12 +2372,24 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
     });
 
     let payload = ctx.fresh("ok");
-    ctx.assign(
-        payload.clone(),
-        Ty::Int64,
-        RValue::TrialPayload(trial_p),
-    );
-    Ok((payload, Ty::Int64))
+    if ok_ty == Ty::Void {
+        // No payload field; leave a dummy place typed Void.
+    } else {
+        ctx.stmts.push(Stmt::Assign {
+            place: payload.clone(),
+            ty: ok_ty.clone(),
+            value: RValue::TrialOk(trial_p),
+        });
+        // Extracted payload shares ownership with the trial until fn end; dup if heap.
+        if is_heap(&ok_ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: payload.clone(),
+                ty: ok_ty.clone(),
+            });
+        }
+    }
+    let _ = ret_ok;
+    Ok((payload, ok_ty))
 }
 
 fn lower_match(
@@ -2308,9 +2433,11 @@ fn lower_match(
     let fail_arm = fail_arm.ok_or_else(|| Error::at("match missing Fail arm", span))?;
 
     let (scrut_p, scrut_ty) = lower_expr(ctx, scrutinee)?;
-    if scrut_ty != Ty::TrialI64I64 {
-        return Err(Error::at("match only supports Trial in R2", span));
-    }
+    let Some((ok_ty, err_ty)) = trial_parts(&scrut_ty) else {
+        return Err(Error::at("match only supports Trial", span));
+    };
+    let ok_ty = ok_ty.clone();
+    let err_ty = err_ty.clone();
 
     let pass_bind = match &pass_arm.pattern {
         Pattern::Variant { bind, .. } => bind.clone(),
@@ -2324,7 +2451,7 @@ fn lower_match(
         let pp = Place {
             name: sanitize_name(&pass_bind),
         };
-        ctx.define(&pass_bind, Ty::Int64, false, pp);
+        ctx.define(&pass_bind, ok_ty.clone(), false, pp);
         let ty = infer_block_ty(ctx, &pass_arm.body)?;
         ctx.pop_scope();
         ty
@@ -2334,7 +2461,7 @@ fn lower_match(
         let fp = Place {
             name: sanitize_name(&fail_bind),
         };
-        ctx.define(&fail_bind, Ty::Int64, false, fp);
+        ctx.define(&fail_bind, err_ty.clone(), false, fp);
         let ty = infer_block_ty(ctx, &fail_arm.body)?;
         ctx.pop_scope();
         ty
@@ -2375,20 +2502,37 @@ fn lower_match(
 
     ctx.push_scope();
     let pass_payload = ctx.fresh("pp");
-    ctx.assign(
-        pass_payload.clone(),
-        Ty::Int64,
-        RValue::TrialPayload(scrut_p.clone()),
-    );
+    if ok_ty != Ty::Void {
+        ctx.stmts.push(Stmt::Assign {
+            place: pass_payload.clone(),
+            ty: ok_ty.clone(),
+            value: RValue::TrialOk(scrut_p.clone()),
+        });
+        if is_heap(&ok_ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: pass_payload.clone(),
+                ty: ok_ty.clone(),
+            });
+        }
+    }
     let pass_place = Place {
         name: sanitize_name(&pass_bind),
     };
-    ctx.assign(pass_place.clone(), Ty::Int64, RValue::Use(pass_payload));
-    ctx.define(&pass_bind, Ty::Int64, false, pass_place);
+    if ok_ty != Ty::Void {
+        ctx.assign(pass_place.clone(), ok_ty.clone(), RValue::Use(pass_payload));
+    }
+    ctx.define(&pass_bind, ok_ty.clone(), false, pass_place);
     let pass_val = lower_block_into(ctx, &pass_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut then_body = std::mem::take(&mut ctx.stmts);
     if let (Some(out_p), Some(pv)) = (&out, pass_val) {
+        // Copy result into out (dup if heap/trial-with-heap).
+        if needs_drop(&result_ty) {
+            then_body.push(Stmt::Dup {
+                place: pv.clone(),
+                ty: result_ty.clone(),
+            });
+        }
         then_body.push(Stmt::Assign {
             place: out_p.clone(),
             ty: result_ty.clone(),
@@ -2398,20 +2542,36 @@ fn lower_match(
 
     ctx.push_scope();
     let fail_payload = ctx.fresh("fp");
-    ctx.assign(
-        fail_payload.clone(),
-        Ty::Int64,
-        RValue::TrialPayload(scrut_p),
-    );
+    if err_ty != Ty::Void {
+        ctx.stmts.push(Stmt::Assign {
+            place: fail_payload.clone(),
+            ty: err_ty.clone(),
+            value: RValue::TrialErr(scrut_p),
+        });
+        if is_heap(&err_ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: fail_payload.clone(),
+                ty: err_ty.clone(),
+            });
+        }
+    }
     let fail_place = Place {
         name: sanitize_name(&fail_bind),
     };
-    ctx.assign(fail_place.clone(), Ty::Int64, RValue::Use(fail_payload));
-    ctx.define(&fail_bind, Ty::Int64, false, fail_place);
+    if err_ty != Ty::Void {
+        ctx.assign(fail_place.clone(), err_ty.clone(), RValue::Use(fail_payload));
+    }
+    ctx.define(&fail_bind, err_ty.clone(), false, fail_place);
     let fail_val = lower_block_into(ctx, &fail_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut else_body = std::mem::take(&mut ctx.stmts);
     if let (Some(out_p), Some(fv)) = (&out, fail_val) {
+        if needs_drop(&result_ty) {
+            else_body.push(Stmt::Dup {
+                place: fv.clone(),
+                ty: result_ty.clone(),
+            });
+        }
         else_body.push(Stmt::Assign {
             place: out_p.clone(),
             ty: result_ty.clone(),
@@ -2458,15 +2618,16 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                 "cannot allocate local of type {ty:?}"
             )));
         }
-        Ty::TrialI64I64 => {
+        Ty::Trial { ok, .. } => {
             let z = ctx.fresh("tz");
-            ctx.assign(z.clone(), Ty::Int64, RValue::Int(0));
+            init_place(ctx, &z, ok)?;
             ctx.assign(
                 place.clone(),
                 ty.clone(),
                 RValue::TrialMake {
                     tag: TrialTag::Pass,
                     payload: z,
+                    trial_ty: ty.clone(),
                 },
             );
         }
@@ -2642,6 +2803,124 @@ fn lower_binary(
     }
 }
 
+fn lower_pass_fail(
+    ctx: &mut LowerCtx,
+    callee: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    if args.len() != 1 {
+        return Err(Error::at(
+            format!("`{callee}` expects 1 argument"),
+            span,
+        ));
+    }
+    let expr = match &args[0] {
+        Arg::Pos(e) => e,
+        Arg::Named { value, .. } => value,
+    };
+    let (payload_raw, pty) = lower_expr(ctx, expr)?;
+
+    // Prefer the enclosing function's Trial return type when present.
+    if let Ty::Trial { ok, err } = ctx.fn_ret.clone() {
+        let expected = if callee == "Pass" {
+            ok.as_ref().clone()
+        } else {
+            err.as_ref().clone()
+        };
+        let payload = coerce_payload(ctx, payload_raw, &pty, &expected, span)?;
+        // Heap payload: bump so Trial and the temp both own (temp dropped at fn end).
+        if is_heap(&expected) {
+            ctx.stmts.push(Stmt::Dup {
+                place: payload.clone(),
+                ty: expected.clone(),
+            });
+        }
+        let tag = if callee == "Pass" {
+            TrialTag::Pass
+        } else {
+            TrialTag::Fail
+        };
+        let p = ctx.fresh("tr");
+        let ty = ctx.fn_ret.clone();
+        ctx.assign(
+            p.clone(),
+            ty.clone(),
+            RValue::TrialMake {
+                tag,
+                payload,
+                trial_ty: ty.clone(),
+            },
+        );
+        return Ok((p, ty));
+    }
+
+    // Infer: Pass/Fail(Int) → Trial<Int64, Int64>; Fail(String) alone not enough.
+    let payload = if pty == Ty::Int64 {
+        payload_raw
+    } else if is_int(&pty) {
+        coerce_place(ctx, payload_raw, &pty, &Ty::Int64, span)?
+    } else if pty == Ty::String && callee == "Fail" {
+        return Err(Error::at(
+            "`Fail(String)` requires an enclosing `-> Trial<…, String>` (or annotate the function)",
+            span,
+        ));
+    } else if pty == Ty::Void && callee == "Pass" {
+        return Err(Error::at(
+            "`Pass(Void)` requires an enclosing `-> Trial<Void, …>`",
+            span,
+        ));
+    } else {
+        return Err(Error::at(
+            format!("`{callee}` payload type {pty:?} needs an annotated Trial return type"),
+            span,
+        ));
+    };
+    let tag = if callee == "Pass" {
+        TrialTag::Pass
+    } else {
+        TrialTag::Fail
+    };
+    let ty = Ty::Trial {
+        ok: Box::new(Ty::Int64),
+        err: Box::new(Ty::Int64),
+    };
+    let p = ctx.fresh("tr");
+    ctx.assign(
+        p.clone(),
+        ty.clone(),
+        RValue::TrialMake {
+            tag,
+            payload,
+            trial_ty: ty.clone(),
+        },
+    );
+    Ok((p, ty))
+}
+
+/// Coerce a Pass/Fail payload into the formal ok/err type.
+fn coerce_payload(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    to: &Ty,
+    span: Span,
+) -> Result<Place> {
+    if from == to {
+        return Ok(place);
+    }
+    if is_int(from) && is_int(to) {
+        return coerce_place(ctx, place, from, to, span);
+    }
+    if *to == Ty::Void && *from == Ty::Void {
+        return Ok(place);
+    }
+    Err(Error::at(
+        format!("Trial payload: expected {to:?}, found {from:?}"),
+        span,
+    ))
+}
+
 fn lower_call(
     ctx: &mut LowerCtx,
     callee: &str,
@@ -2693,41 +2972,7 @@ fn lower_call(
             ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
             Ok((p, Ty::Void))
         }
-        "Pass" | "Fail" => {
-            if args.len() != 1 {
-                return Err(Error::at(
-                    format!("`{callee}` expects 1 argument"),
-                    span,
-                ));
-            }
-            let expr = match &args[0] {
-                Arg::Pos(e) => e,
-                Arg::Named { value, .. } => value,
-            };
-            let (payload_raw, pty) = lower_expr(ctx, expr)?;
-            let payload = if pty == Ty::Int64 {
-                payload_raw
-            } else if is_int(&pty) {
-                coerce_place(ctx, payload_raw, &pty, &Ty::Int64, span)?
-            } else {
-                return Err(Error::at(
-                    format!("`{callee}` expects an integer payload"),
-                    span,
-                ));
-            };
-            let tag = if callee == "Pass" {
-                TrialTag::Pass
-            } else {
-                TrialTag::Fail
-            };
-            let p = ctx.fresh("tr");
-            ctx.assign(
-                p.clone(),
-                Ty::TrialI64I64,
-                RValue::TrialMake { tag, payload },
-            );
-            Ok((p, Ty::TrialI64I64))
-        }
+        "Pass" | "Fail" => lower_pass_fail(ctx, callee, args, span),
         "Bytes" => {
             // `Bytes(n)` — zero-filled buffer (R9 / D18). Not a user type.
             lower_bytes_new(ctx, args, span)
@@ -2871,6 +3116,13 @@ fn lower_if(
     ctx.pop_scope();
     let mut then_body = std::mem::take(&mut ctx.stmts);
     if let (Some(out_p), Some(tp)) = (&out, then_place) {
+        // Own a ref in `out` so branch temps can be dropped safely.
+        if needs_drop(&result_ty) {
+            then_body.push(Stmt::Dup {
+                place: tp.clone(),
+                ty: result_ty.clone(),
+            });
+        }
         then_body.push(Stmt::Assign {
             place: out_p.clone(),
             ty: result_ty.clone(),
@@ -2884,6 +3136,12 @@ fn lower_if(
         ctx.pop_scope();
         let mut body = std::mem::take(&mut ctx.stmts);
         if let (Some(out_p), Some(ep)) = (&out, else_place) {
+            if needs_drop(&result_ty) {
+                body.push(Stmt::Dup {
+                    place: ep.clone(),
+                    ty: result_ty.clone(),
+                });
+            }
             body.push(Stmt::Assign {
                 place: out_p.clone(),
                 ty: result_ty.clone(),

@@ -1,0 +1,57 @@
+## One-shot HTTP over the wire: listen → connect → accept → send/recv → close.
+## No infinite accept loop; deterministic for conformance.
+import net from "./httplib/Net"
+import http from "./httplib/Http"
+
+fn main() -> Int64 {
+    match serveOnce() {
+        Pass(u) {
+            println("wire-ok")
+            0
+        }
+        Fail(e) {
+            println("wire-fail {e}")
+            1
+        }
+    }
+}
+
+fn serveOnce() -> Trial<Void, String> {
+    let server = net.createSocket()?
+    server.reuseAddr()?
+    server.bind(0)?
+    server.listen(1)?
+    let port = server.localPort()?
+
+    let client = net.createSocket()?
+    client.connect(port)?
+
+    let peer = server.accept()?
+
+    let req = Bytes.fromString("GET /wire HTTP/1.1\r\nHost: x\r\n\r\n")
+    let nw = client.send(req)
+    if nw < 0 {
+        Fail("client-send")
+    } else {
+        let raw = peer.receive()
+        if raw.count == 0 {
+            Fail("empty-request")
+        } else {
+            let summary = http.summarizeRequest(raw)
+            println(summary)
+            let body = Bytes.fromString("pong\n")
+            let res = http.ok(body)
+            let ns = peer.send(res)
+            if ns < 0 {
+                Fail("server-send")
+            } else {
+                let got = client.receive()
+                println(got.toString())
+                peer.close()
+                client.close()
+                server.close()
+                Pass(Void)
+            }
+        }
+    }
+}

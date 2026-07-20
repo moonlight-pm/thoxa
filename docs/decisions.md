@@ -16,6 +16,17 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-19 — R9+ Trial monomorphs + wire I/O
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D40 | Trial representation | `Ty::Trial { ok, err }` monomorphized C structs | Fields: `tag` + optional `ok`/`err` (omitted when Void) |
+| D41 | Trial payloads | Void, ints, Bool, String, Bytes, User | Nested Trial / Array / Address not yet |
+| D42 | Pass/Fail typing | Prefer enclosing `-> Trial<…>` annotation | Legacy unannotated Pass/Fail(Int) → `Trial<Int64,Int64>` |
+| D43 | `?` across monomorphs | Same `E`; rewrap `Fail(e)` into outer `Trial<Ok',E>` | Allows `createSocket()?` inside `-> Trial<Void,String>` |
+| D44 | Trial RC | Dup live heap side on copy; drop live side on drop | Zero-init trial locals so branch-skipped drops are safe |
+| D45 | Wire conformance | One-shot listen/connect/accept/recv/send | Ephemeral port via `getsockname`; no infinite accept loop |
+
 ## 2026-07-19 — R9 HTTP subset
 
 | ID | Decision | Choice | Notes |
@@ -23,7 +34,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D36 | R9 scope | Subset, not full oracle server | Multi-module Net + Http; offline parse/response; socket lifecycle (create→reuse→bind→listen→close). No accept loop, file router, Buffer, dynamic Array |
 | D18′ | `Bytes(n)` | Ship zero-filled fixed buffer | Forced by sockaddr / setsockopt packing; locks D18 “when forced” |
 | D37 | `Bytes.slice(start, end)` | Half-open copy → new Bytes | Enough for request-line parse without `find` / Array; OOB panics |
-| D38 | Socket errors (R9) | `Trial<Int64, Int64>` codes | String / user-type Trial monomorphs deferred; `Pass(fd)` / `Fail(1)` |
+| D38 | Socket errors (R9) | Was `Trial<Int64,Int64>` codes | **Superseded by D40–D45** — String / User Trial + wire I/O |
 | D39 | Net surface | Private `extern` + `export type Socket` / `createSocket` | Linux sockaddr_in pack by hand; port `0` = ephemeral for CI |
 
 ### Notes

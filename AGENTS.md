@@ -60,12 +60,12 @@ Compiler pipeline (stable): `.thx` → lexer → parser → AST → MIR (+ simpl
 
 Already known (see status + decisions):
 
-- R0–R9 done (R9 = HTTP **subset**). **Next = post-R9 pressure** (Trial monomorphs, accept/recv, Buffer, … — see `docs/status.md`).
+- R0–R9 done; R9+ Trial monomorphs + wire HTTP done. **Next = post-R9 pressure** (`Bytes.find`, Buffer, Array, loop, files — see `docs/status.md`).
 - Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28).
 - C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).
 - Modules: `import` selective/namespace, `export`, `./`+`~/` loader, module-level let/mut (D30–D35).
 - Bytes: `fromString`, `Bytes(n)` zero-fill, `.slice`, count/get/set/toString; defer `"…" as Bytes` (D14–D18, D36–D37).
-- Value model hybrid A; errors `May`/`Trial` + `?` / `match` (R9 still `Trial<Int64,Int64>` only).
+- Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45).
 
 ## Optional Grok memory
 

@@ -1,5 +1,4 @@
-## R9: HTTP subset — multi-module Net + Http + offline protocol + real socket lifecycle.
-## Oracle: ../Thoxa/examples/http (trimmed: no accept loop, no file router, no Buffer).
+## R9+: HTTP subset — Net/Http modules, Trial monomorphs, offline protocol + socket lifecycle.
 import net from "./httplib/Net"
 import http from "./httplib/Http"
 
@@ -16,35 +15,34 @@ fn main() -> Int64 {
     let bad = http.badRequest("incomplete")
     println(bad.toString())
 
-    ## --- Socket lifecycle: create → SO_REUSEADDR → bind(0) → listen → close ---
+    ## --- Socket lifecycle: create → reuse → bind(0) → listen → close ---
     match net.createSocket() {
         Fail(e) {
             println("socket-fail {e}")
             1
         }
-        Pass(fd) {
-            let sock = net.Socket(fd: fd)
+        Pass(sock) {
             match sock.reuseAddr() {
                 Fail(e) {
                     println("reuse-fail {e}")
                     sock.close()
                     1
                 }
-                Pass(ok1) {
+                Pass(u1) {
                     match sock.bind(0) {
                         Fail(e) {
                             println("bind-fail {e}")
                             sock.close()
                             1
                         }
-                        Pass(ok2) {
+                        Pass(u2) {
                             match sock.listen(1) {
                                 Fail(e) {
                                     println("listen-fail {e}")
                                     sock.close()
                                     1
                                 }
-                                Pass(ok3) {
+                                Pass(u3) {
                                     println("listen-ok")
                                     sock.close()
                                     0

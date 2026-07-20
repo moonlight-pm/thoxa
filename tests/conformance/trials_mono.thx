@@ -1,0 +1,48 @@
+## Trial monomorphs: Void/String and User/String (post-R9).
+type Box(n: Int64) {}
+
+fn asVoid(ok!: Bool) -> Trial<Void, String> {
+    if ok {
+        Pass(Void)
+    } else {
+        Fail("nope")
+    }
+}
+
+fn asBox(n!: Int64) -> Trial<Box, String> {
+    if n < 0 {
+        Fail("negative")
+    } else {
+        Pass(Box(n: n))
+    }
+}
+
+fn chain(n!: Int64) -> Trial<Box, String> {
+    asVoid(true)?
+    let b = asBox(n)?
+    Pass(b)
+}
+
+fn main() -> Int64 {
+    match asVoid(true) {
+        Pass(u) { println("void-ok") }
+        Fail(e) { println(e) }
+    }
+    match asVoid(false) {
+        Pass(u) { println("void-pass?") }
+        Fail(e) { println(e) }
+    }
+    match asBox(7) {
+        Pass(b) { println(b.n) }
+        Fail(e) { println(e) }
+    }
+    match chain(-1) {
+        Pass(b) { println(b.n) }
+        Fail(e) { println(e) }
+    }
+    match chain(3) {
+        Pass(b) { println(b.n) }
+        Fail(e) { println(e) }
+    }
+    0
+}

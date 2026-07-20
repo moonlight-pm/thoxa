@@ -1,13 +1,17 @@
-## Net — minimal TCP socket layer for R9 (subset of oracle examples/http/Net.thx).
-## Private libc externs + Linux constants; callers use Socket / createSocket.
+## Net — TCP sockets for R9+ (closer to oracle examples/http/Net.thx).
+## Errors are Trial<…, String>; ok side may be Void, Socket, or Int64.
 
 extern fn sysSocket(domain!: Int32, kind!: Int32, protocol!: Int32) -> Int32 from "c" "socket"
 extern fn sysSetsockopt(fd!: Int32, level!: Int32, optname!: Int32, optval!: Bytes, optlen!: UInt32) -> Int32 from "c" "setsockopt"
 extern fn sysBind(fd!: Int32, addr!: Bytes, addrlen!: UInt32) -> Int32 from "c" "bind"
 extern fn sysListen(fd!: Int32, backlog!: Int32) -> Int32 from "c" "listen"
+extern fn sysAccept(fd!: Int32, addr!: Bytes, addrlen!: Bytes) -> Int32 from "c" "accept"
+extern fn sysConnect(fd!: Int32, addr!: Bytes, addrlen!: UInt32) -> Int32 from "c" "connect"
+extern fn sysGetsockname(fd!: Int32, addr!: Bytes, addrlen!: Bytes) -> Int32 from "c" "getsockname"
+extern fn sysRecv(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32) -> Int64 from "c" "recv"
+extern fn sysSend(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32) -> Int64 from "c" "send"
 extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
 
-## Linux constants (private).
 let afInet = 2
 let sockStream = 1
 let ipProtoIp = 0
@@ -15,9 +19,9 @@ let solSocket = 1
 let soReuseAddr = 2
 let sockaddrLen = 16
 let intSize = 4
+let recvBufSize = 4096
 
-## Pack sockaddr_in for 0.0.0.0:port (Linux, little-endian host).
-fn sockaddrIn(port!: Int64) -> Bytes {
+fn sockaddrAny(port!: Int64) -> Bytes {
     let addr = Bytes(sockaddrLen)
     addr.set(0, afInet)
     addr.set(2, port / 256)
@@ -25,47 +29,109 @@ fn sockaddrIn(port!: Int64) -> Bytes {
     addr
 }
 
-## TCP socket. `fd` is Int64 so it fits constructor-param field rules (R3).
+fn sockaddrLoopback(port!: Int64) -> Bytes {
+    let addr = Bytes(sockaddrLen)
+    addr.set(0, afInet)
+    addr.set(2, port / 256)
+    addr.set(3, port % 256)
+    addr.set(4, 127)
+    addr.set(5, 0)
+    addr.set(6, 0)
+    addr.set(7, 1)
+    addr
+}
+
+## Read network-order port from a sockaddr_in buffer.
+fn portOf(addr!: Bytes) -> Int64 {
+    addr.get(2) * 256 + addr.get(3)
+}
+
 export type Socket(fd: Int64) {
-    export fn reuseAddr() -> Trial<Int64, Int64> {
+    export fn reuseAddr() -> Trial<Void, String> {
         let on = Bytes(intSize)
         on.set(0, 1)
         if sysSetsockopt(fd, solSocket, soReuseAddr, on, intSize) < 0 {
-            Fail(1)
+            Fail("setsockopt")
         } else {
-            Pass(0)
+            Pass(Void)
         }
     }
 
-    ## Bind to 0.0.0.0:port (port 0 = ephemeral).
-    export fn bind(port: Int64) -> Trial<Int64, Int64> {
-        if sysBind(fd, sockaddrIn(port), sockaddrLen) < 0 {
-            Fail(1)
+    ## Bind to 0.0.0.0:port (0 = ephemeral).
+    export fn bind(port: Int64) -> Trial<Void, String> {
+        if sysBind(fd, sockaddrAny(port), sockaddrLen) < 0 {
+            Fail("bind")
         } else {
-            Pass(0)
+            Pass(Void)
         }
     }
 
-    export fn listen(backlog: Int64) -> Trial<Int64, Int64> {
+    export fn listen(backlog: Int64) -> Trial<Void, String> {
         if sysListen(fd, backlog) < 0 {
-            Fail(1)
+            Fail("listen")
         } else {
-            Pass(0)
+            Pass(Void)
         }
     }
 
-    export fn close() -> Int64 {
+    ## Local port after bind (for ephemeral ports).
+    export fn localPort() -> Trial<Int64, String> {
+        let addr = Bytes(sockaddrLen)
+        let len = Bytes(intSize)
+        len.set(0, sockaddrLen)
+        if sysGetsockname(fd, addr, len) < 0 {
+            Fail("getsockname")
+        } else {
+            Pass(portOf(addr))
+        }
+    }
+
+    export fn accept() -> Trial<Socket, String> {
+        let caddr = Bytes(sockaddrLen)
+        let clen = Bytes(intSize)
+        clen.set(0, sockaddrLen)
+        let client = sysAccept(fd, caddr, clen)
+        if client < 0 {
+            Fail("accept")
+        } else {
+            Pass(Socket(fd: client))
+        }
+    }
+
+    export fn connect(port: Int64) -> Trial<Void, String> {
+        if sysConnect(fd, sockaddrLoopback(port), sockaddrLen) < 0 {
+            Fail("connect")
+        } else {
+            Pass(Void)
+        }
+    }
+
+    ## One recv chunk; empty Bytes when peer closed or error.
+    export fn receive() -> Bytes {
+        let buf = Bytes(recvBufSize)
+        let n = sysRecv(fd, buf, recvBufSize, 0)
+        if n <= 0 {
+            Bytes(0)
+        } else {
+            buf.slice(0, n)
+        }
+    }
+
+    export fn send(data!: Bytes) -> Int64 {
+        sysSend(fd, data, data.count, 0)
+    }
+
+    export fn close() -> Void {
         sysClose(fd)
-        0
+        Void
     }
 }
 
-## Open a TCP socket; Pass(fd) or Fail(1).
-export fn createSocket() -> Trial<Int64, Int64> {
+export fn createSocket() -> Trial<Socket, String> {
     let fd = sysSocket(afInet, sockStream, ipProtoIp)
     if fd < 0 {
-        Fail(1)
+        Fail("socket")
     } else {
-        Pass(fd)
+        Pass(Socket(fd: fd))
     }
 }
