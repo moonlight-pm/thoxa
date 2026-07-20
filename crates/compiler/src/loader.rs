@@ -31,9 +31,37 @@ pub struct Package {
     pub modules: Vec<SourceModule>,
 }
 
+/// Resolve a CLI path to the entry `.thx` file.
+///
+/// - A **file** path is returned as-is (after soft canonicalize).
+/// - A **directory** path resolves to `<dir>/Main.thx` (D68). The directory is
+///   the project root for `~/…` once `load_package` runs on that file.
+pub fn resolve_entry(path: &Path) -> Result<PathBuf> {
+    let path = canonicalize_soft(path)?;
+    if path.is_dir() {
+        let main = path.join("Main.thx");
+        if !main.is_file() {
+            return Err(Error::new(format!(
+                "no Main.thx in {} — a runnable Thoxa project needs a Main.thx",
+                path.display()
+            )));
+        }
+        return Ok(main);
+    }
+    if path.is_file() {
+        return Ok(path);
+    }
+    Err(Error::new(format!(
+        "source not found: {}",
+        path.display()
+    )))
+}
+
 /// Load the entry file and every `./` / `~/` import transitively.
+///
+/// `entry` may be a `.thx` file or a directory containing `Main.thx`.
 pub fn load_package(entry: &Path) -> Result<Package> {
-    let entry = canonicalize_soft(entry)?;
+    let entry = resolve_entry(entry)?;
     if !entry.is_file() {
         return Err(Error::new(format!(
             "source file not found: {}",

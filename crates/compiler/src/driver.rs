@@ -310,10 +310,20 @@ pub fn run(opts: &BuildOptions) -> Result<i32> {
 
 fn output_stem(opts: &BuildOptions) -> String {
     opts.output_name.clone().unwrap_or_else(|| {
-        opts.source
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("out")
-            .to_string()
+        // Directory packages (`thoxa run pkg/`) → use the directory name so
+        // multiple Main.thx packages do not collide on binary name "Main".
+        if opts.source.is_dir() {
+            opts.source
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("out")
+                .to_string()
+        } else {
+            opts.source
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("out")
+                .to_string()
+        }
     })
 }

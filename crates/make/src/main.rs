@@ -46,11 +46,13 @@ Build tree (everything under target/):
 Commands:
     cargo make runtime              Build libthoxa_rt.a + compile_commands.json
     cargo make test                 Run conformance suite
-    cargo make run <file.thx>       Compile and run a program
-    cargo make build <file.thx>     Compile to target/thoxa/bin/
-    cargo make emit-c <file.thx>    Write generated C under target/thoxa/c/
+    cargo make run <file.thx|dir>   Compile and run a program
+    cargo make build <file.thx|dir> Compile to target/thoxa/bin/
+    cargo make emit-c <file.thx|dir> Write generated C under target/thoxa/c/
     cargo make clean                Remove target/c and target/thoxa
     cargo make clean --all          Also remove target/rust (full wipe)
+
+A directory argument resolves to <dir>/Main.thx (same as `thoxa run <dir>`).
 "
     );
 }
@@ -110,7 +112,7 @@ fn cmd_runtime() -> i32 {
 
 fn cmd_run(args: &[String]) -> i32 {
     if args.is_empty() {
-        eprintln!("usage: cargo make run <file.thx>");
+        eprintln!("usage: cargo make run <file.thx|dir>");
         return 2;
     }
     let mut thoxa_args = vec!["run".to_string()];
@@ -121,7 +123,7 @@ fn cmd_run(args: &[String]) -> i32 {
 
 fn cmd_build(args: &[String]) -> i32 {
     if args.is_empty() {
-        eprintln!("usage: cargo make build <file.thx> [-o name]");
+        eprintln!("usage: cargo make build <file.thx|dir> [-o name]");
         return 2;
     }
     let mut thoxa_args = vec!["build".to_string()];
@@ -132,7 +134,7 @@ fn cmd_build(args: &[String]) -> i32 {
 
 fn cmd_emit_c(args: &[String]) -> i32 {
     if args.is_empty() {
-        eprintln!("usage: cargo make emit-c <file.thx>");
+        eprintln!("usage: cargo make emit-c <file.thx|dir>");
         return 2;
     }
     let mut thoxa_args = vec!["emit-c".to_string()];
@@ -192,16 +194,22 @@ fn cmd_test() -> i32 {
         return 1;
     }
 
+    // Top-level `*.thx` files, plus package directories that contain `Main.thx`.
     let mut entries: Vec<PathBuf> = fs::read_dir(&conf)
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("thx"))
+        .filter(|p| {
+            if p.extension().and_then(|x| x.to_str()) == Some("thx") {
+                return true;
+            }
+            p.is_dir() && p.join("Main.thx").is_file()
+        })
         .collect();
     entries.sort();
 
     if entries.is_empty() {
-        eprintln!("no .thx files in tests/conformance");
+        eprintln!("no .thx files or Main.thx packages in tests/conformance");
         return 1;
     }
 
@@ -209,9 +217,14 @@ fn cmd_test() -> i32 {
     let mut passed = 0;
     let mut failed = 0;
 
-    for thx in &entries {
-        let name = thx.file_stem().unwrap().to_string_lossy();
-        let out_path = thx.with_extension("out");
+    for entry in &entries {
+        let name = if entry.is_dir() {
+            entry.file_name().unwrap().to_string_lossy().into_owned()
+        } else {
+            entry.file_stem().unwrap().to_string_lossy().into_owned()
+        };
+        // Sibling `.out`: `hello.thx` → `hello.out`; package dir `pkgmain/` → `pkgmain.out`.
+        let out_path = conf.join(format!("{name}.out"));
         let expected = if out_path.is_file() {
             fs::read_to_string(&out_path).unwrap_or_default()
         } else {
@@ -219,7 +232,7 @@ fn cmd_test() -> i32 {
         };
 
         let output = Command::new(&thoxa)
-            .args(["run", thx.to_str().unwrap()])
+            .args(["run", entry.to_str().unwrap()])
             .current_dir(workspace_root())
             .env("THOXA_ROOT", workspace_root())
             .output();

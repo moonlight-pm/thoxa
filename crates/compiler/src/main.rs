@@ -84,7 +84,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, Error> {
         }
         i += 1;
     }
-    let source = source.ok_or_else(|| Error::new("missing source file"))?;
+    let source = source.ok_or_else(|| Error::new("missing source path (file.thx or directory)"))?;
     Ok(BuildOptions {
         source,
         output_name,
@@ -98,11 +98,12 @@ fn print_usage() {
 thoxa — native Thoxa compiler (compile-to-C)
 
 USAGE:
-    thoxa build  <file.thx> [-o name]
-    thoxa run    <file.thx>
-    thoxa emit-c <file.thx>
+    thoxa build  <file.thx|dir> [-o name]
+    thoxa run    <file.thx|dir>
+    thoxa emit-c <file.thx|dir>
     thoxa runtime
 
+A directory argument resolves to <dir>/Main.thx (project root for ~/ is that dir).
 Build products land under target/ (rust/, c/, thoxa/)."
     );
 }

@@ -1,0 +1,8 @@
+## Package helper: exported via both `./` and `~/` from Main (project root = package dir).
+export fn greet(name: String) -> String {
+    "hello {name}"
+}
+
+export fn twice(n: Int64) -> Int64 {
+    n + n
+}

@@ -16,6 +16,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-20 — Directory entry `Main.thx` (PR8)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D68 | Directory entry | `thoxa run\|build\|emit-c <dir>` resolves `<dir>/Main.thx`; project root for `~/` is that directory (entry file’s parent — same as D31) | Missing `Main.thx` → clear error. File path mode unchanged. Default binary stem for a dir is the directory name (not `Main`). Conformance harness also discovers top-level package dirs with `Main.thx` + sibling `<name>.out`. Conformance: `pkgmain`. Oracle `export fn main` contract not enforced yet (entry still any `fn main`). |
+
 ## 2026-07-20 — Bounded multi-request static server (PR7)
 
 | ID | Decision | Choice | Notes |

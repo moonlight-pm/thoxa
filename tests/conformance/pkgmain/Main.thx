@@ -1,0 +1,10 @@
+## Directory entry (D68): `thoxa run tests/conformance/pkgmain` → this file.
+## `~/` resolves against the package directory (entry file's parent).
+import { greet } from "~/Helper"
+import { twice } from "./Helper"
+
+fn main() -> Int64 {
+    println(greet(name: "pkg"))
+    println("twice = {twice(n: 21)}")
+    0
+}
