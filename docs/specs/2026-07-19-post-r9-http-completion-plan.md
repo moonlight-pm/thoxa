@@ -271,10 +271,10 @@ PR9 Io polish (optional, parallel after PR2)
 - **Files/components affected:** `crates/compiler/src/main.rs` and/or `driver.rs` / `loader.rs`, `crates/make/src/main.rs` if test harness needs dir mode, `tests/conformance/…`, `docs/*`
 - **Dependencies:** PR 7 (so server package can be dir-shaped) — **or** None if only a tiny package is used; prefer soft dep on PR 7 only for optional demo layout
 - **Acceptance:**
-  - [ ] `cargo run -p thoxa -- run tests/conformance/pkgmain` (or make target) runs Main
-  - [ ] `~/` imports resolve from package dir
-  - [ ] File mode `run path.thx` unchanged
-  - [ ] `cargo make test` green
+  - [x] `cargo run -p thoxa -- run tests/conformance/pkgmain` (or make target) runs Main
+  - [x] `~/` imports resolve from package dir
+  - [x] File mode `run path.thx` unchanged
+  - [x] `cargo make test` green
 - **Implementation notes:** D31 already says `~/` = entry file’s directory; for dir entry, entry file is `Main.thx`. Decision D68.
 
 ### PR 9 (optional): Io OpenMode + errno strings

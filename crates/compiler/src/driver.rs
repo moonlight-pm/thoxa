@@ -312,9 +312,10 @@ fn output_stem(opts: &BuildOptions) -> String {
     opts.output_name.clone().unwrap_or_else(|| {
         // Directory packages (`thoxa run pkg/`) → use the directory name so
         // multiple Main.thx packages do not collide on binary name "Main".
+        // Canonicalize first so `.` / `..` yield a real basename (not `"out"`).
         if opts.source.is_dir() {
-            opts.source
-                .file_name()
+            let dir = fs::canonicalize(&opts.source).unwrap_or_else(|_| opts.source.clone());
+            dir.file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or("out")
                 .to_string()

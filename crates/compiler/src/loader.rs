@@ -40,13 +40,19 @@ pub fn resolve_entry(path: &Path) -> Result<PathBuf> {
     let path = canonicalize_soft(path)?;
     if path.is_dir() {
         let main = path.join("Main.thx");
-        if !main.is_file() {
+        if main.is_file() {
+            return Ok(main);
+        }
+        if main.exists() {
             return Err(Error::new(format!(
-                "no Main.thx in {} — a runnable Thoxa project needs a Main.thx",
+                "Main.thx exists but is not a file in {}",
                 path.display()
             )));
         }
-        return Ok(main);
+        return Err(Error::new(format!(
+            "no Main.thx in {} — a runnable Thoxa project needs a Main.thx",
+            path.display()
+        )));
     }
     if path.is_file() {
         return Ok(path);
@@ -381,4 +387,71 @@ pub fn build_import_maps(
     }
 
     Ok(maps)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa_resolve_entry_{label}_{}_{}",
+            std::process::id(),
+            ns
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn resolve_entry_dir_with_main() {
+        let dir = unique_temp_dir("ok");
+        let main = dir.join("Main.thx");
+        fs::write(&main, "fn main() -> Int64 { 0 }\n").unwrap();
+        let got = resolve_entry(&dir).expect("resolve");
+        assert_eq!(got, fs::canonicalize(&main).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_entry_missing_main() {
+        let dir = unique_temp_dir("missing");
+        let err = resolve_entry(&dir).unwrap_err();
+        assert!(
+            err.message.contains("no Main.thx"),
+            "unexpected message: {}",
+            err.message
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_entry_main_not_a_file() {
+        let dir = unique_temp_dir("notfile");
+        // `Main.thx` as a subdirectory, not a regular file.
+        fs::create_dir_all(dir.join("Main.thx")).unwrap();
+        let err = resolve_entry(&dir).unwrap_err();
+        assert!(
+            err.message.contains("exists but is not a file"),
+            "unexpected message: {}",
+            err.message
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_entry_file_unchanged() {
+        let dir = unique_temp_dir("file");
+        let file = dir.join("hello.thx");
+        fs::write(&file, "fn main() -> Int64 { 0 }\n").unwrap();
+        let got = resolve_entry(&file).expect("resolve file");
+        assert_eq!(got, fs::canonicalize(&file).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
