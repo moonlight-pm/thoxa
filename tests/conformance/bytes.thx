@@ -24,5 +24,11 @@ fn main() -> Int64 {
 
     let s = Bytes.fromString("hello").slice(1, 4)
     println(s.toString())
+
+    let hay = Bytes.fromString("abXabY")
+    let needle = Bytes.fromString("ab")
+    println(hay.find(needle))
+    println(hay.find(needle, 1))
+    println(hay.find(Bytes.fromString("ZZ")))
     0
 }

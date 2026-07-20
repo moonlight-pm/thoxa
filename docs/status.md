@@ -6,9 +6,9 @@
 
 **Post-R9 remaining pressure from oracle HTTP**
 
-Done: Trial monomorphs (Void/String/User) + one-shot accept/recv/send (`http_wire`).
+Done: Trial monomorphs; wire accept/recv/send; `Bytes.find`.
 
-Still likely: `Bytes.find`, growable `Buffer`, dynamic `Array`, `loop`/`break`, file I/O for static router, String fields on records — pick by force, not all at once.
+Still likely: growable `Buffer`, dynamic `Array`, `loop`/`break`, file I/O for static router, String fields on records — pick by force, not all at once.
 
 Not yet: Buffer COW, full M4 conversions, `address()` explicit, struct value-copy, `sizeof`, `std/` / `ffi` named roots, `Main.thx` directory entry, full accept-loop server.
 
@@ -43,6 +43,7 @@ Not yet: Buffer COW, full M4 conversions, `address()` explicit, struct value-cop
 
 ## Last session
 
+- **2026-07-19 (R9+ cont.):** `Bytes.find(needle[, from])` → index or -1; Http uses find instead of recursive scan.
 - **2026-07-19 (R9+):** Generalized `Trial<Ok,Err>` (Void/String/User/Int64 monomorphs, heap RC, `?` rewrap); Net: accept/recv/send/connect/getsockname + String errors; `http_wire` one-shot client↔server; `trials_mono`.
 - **2026-07-19 (R9):** HTTP subset — `httplib/Net` (socket/bind/listen/close), `httplib/Http` (request-line parse + response build), entry `http.thx`; `Bytes(n)` zero-fill, `Bytes.slice`; socket headers in cgen; Pass/Fail int widen.
 - **2026-07-19 (R8):** Multi-file modules — `import {…} from` / namespace import, `export` on fn/type/let, `./` + `~/` loader, module-level let/mut statics + init, name mangling; `modules`, `namespaces`, `modstate` conformance.

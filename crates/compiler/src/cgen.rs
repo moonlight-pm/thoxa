@@ -405,6 +405,7 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                     "bytes_get" => "thoxa_bytes_get",
                     "bytes_set" => "thoxa_bytes_set",
                     "bytes_slice" => "thoxa_bytes_slice",
+                    "bytes_find" => "thoxa_bytes_find",
                     "bytes_to_string" => "thoxa_bytes_to_string",
                     other => other,
                 };

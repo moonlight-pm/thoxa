@@ -2087,6 +2087,36 @@ fn lower_bytes_method(
             all.extend(places);
             emit_call_result(ctx, Callee::Builtin("bytes_slice".into()), all, Ty::Bytes)
         }
+        "find" => {
+            // `find(needle)` or `find(needle, from)` — index or -1.
+            let (needle_args, from_default) = match args.len() {
+                1 => (args, true),
+                2 => (args, false),
+                _ => {
+                    return Err(Error::at(
+                        "Bytes.find expects 1 or 2 arguments (needle[, from])",
+                        span,
+                    ));
+                }
+            };
+            let formal = if from_default {
+                vec![("needle".into(), Ty::Bytes)]
+            } else {
+                vec![
+                    ("needle".into(), Ty::Bytes),
+                    ("from".into(), Ty::Int64),
+                ]
+            };
+            let places = resolve_call_args(ctx, &formal, needle_args, span)?;
+            let mut all = vec![recv];
+            all.extend(places);
+            if from_default {
+                let z = ctx.fresh("from");
+                ctx.assign(z.clone(), Ty::Int64, RValue::Int(0));
+                all.push(z);
+            }
+            emit_call_result(ctx, Callee::Builtin("bytes_find".into()), all, Ty::Int64)
+        }
         "toString" => {
             if !args.is_empty() {
                 return Err(Error::at("Bytes.toString() takes no arguments", span));

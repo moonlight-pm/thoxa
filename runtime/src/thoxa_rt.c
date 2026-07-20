@@ -219,6 +219,32 @@ ThoxaBytes *thoxa_bytes_slice(const ThoxaBytes *b, int64_t start, int64_t end) {
     return out;
 }
 
+int64_t thoxa_bytes_find(const ThoxaBytes *hay, const ThoxaBytes *needle, int64_t from) {
+    if (!hay) {
+        return -1;
+    }
+    if (!needle || needle->len == 0) {
+        /* Empty needle matches at `from` if in range, else -1. */
+        if (from < 0 || (size_t)from > hay->len) {
+            return -1;
+        }
+        return from;
+    }
+    if (from < 0) {
+        from = 0;
+    }
+    if ((size_t)from > hay->len || needle->len > hay->len - (size_t)from) {
+        return -1;
+    }
+    size_t last = hay->len - needle->len;
+    for (size_t i = (size_t)from; i <= last; i++) {
+        if (memcmp(hay->data + i, needle->data, needle->len) == 0) {
+            return (int64_t)i;
+        }
+    }
+    return -1;
+}
+
 ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b) {
     if (!b || b->len == 0) {
         return thoxa_string_new("", 0);

@@ -26,6 +26,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D43 | `?` across monomorphs | Same `E`; rewrap `Fail(e)` into outer `Trial<Ok',E>` | Allows `createSocket()?` inside `-> Trial<Void,String>` |
 | D44 | Trial RC | Dup live heap side on copy; drop live side on drop | Zero-init trial locals so branch-skipped drops are safe |
 | D45 | Wire conformance | One-shot listen/connect/accept/recv/send | Ephemeral port via `getsockname`; no infinite accept loop |
+| D46 | `Bytes.find` | `find(needle)` / `find(needle, from)` → Int64 | `-1` if missing; May/Has deferred until May lands |
 
 ## 2026-07-19 — R9 HTTP subset
 

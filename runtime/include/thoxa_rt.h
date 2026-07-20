@@ -85,6 +85,8 @@ int64_t thoxa_bytes_get(const ThoxaBytes *b, int64_t i);
 void thoxa_bytes_set(ThoxaBytes *b, int64_t i, int64_t byte);
 /* Half-open slice [start, end) → owned Bytes. OOB / start>end → panic. */
 ThoxaBytes *thoxa_bytes_slice(const ThoxaBytes *b, int64_t start, int64_t end);
+/* First index of `needle` in `hay` at or after `from`, or -1 if not found. */
+int64_t thoxa_bytes_find(const ThoxaBytes *hay, const ThoxaBytes *needle, int64_t from);
 /* Fresh owned String with the same bytes (not necessarily valid UTF-8). */
 ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b);
 
