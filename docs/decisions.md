@@ -16,6 +16,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-20 — Router type (PR6)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D70 | Router type | `type Router(root: String) { fn handle(req: Request) -> Response }` | Replaces free `handle(root, path) -> Bytes` (D61). Segments + `..`/`.` reject + index.html + Content-Type via `ok`/`notFound`; early `return` (D63). Absolute path required (`/` first byte). Import `readFile` from `~/iolib/Io`. Conformance: `router` (asserts via `writeResponse` status line). |
+
 ## 2026-07-20 — Request / Response / Header (PR5)
 
 | ID | Decision | Choice | Notes |
@@ -54,7 +60,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D58 | File errors | Simple `Fail("open"\|"read"\|"seek")` strings | errno/`strerror` need named `ffi` root (D30) — deferred like Net |
 | D59 | User zero-init | Constructor-param User with String/Bytes fields zero as NULL heap | Match out-places; **field-RC hardened in D64** |
 | D60 | String equality | `==` / `!=` via `thoxa_string_eq` (length + bytes) | Ordering compares not supported |
-| D61 | Static Router | `handle(root, path) -> Bytes` HTTP response | Segments + `..` reject + index.html + Content-Type; no Request type / early return |
+| D61 | Static Router | `handle(root, path) -> Bytes` HTTP response | Segments + `..` reject + index.html + Content-Type; **superseded by D70** (`Router` type + `Response`) |
 | D62 | for-in RC | Drop previous loop-var each iter; last value dropped at fn end | Fixes double-drop of last heap element (was drop-per-iter + fn-end drop) |
 
 ## 2026-07-19 — R9+ dynamic Array

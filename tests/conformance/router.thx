@@ -1,5 +1,18 @@
-## Static-file router — path segments, traversal reject, index.html fallback, Content-Type.
-import { handle } from "./httplib/Router"
+## Static-file Router type — path segments, traversal reject, index.html, Content-Type.
+## Asserts via writeResponse status lines (PR6 / D70).
+import { Router } from "./httplib/Router"
+import { Request, Header, writeResponse } from "./httplib/Http"
+
+fn makeGet(path!: String) -> Request {
+    mut headers: Array<Header> = []
+    Request(
+        method: "GET",
+        path: path,
+        version: "HTTP/1.1",
+        headers: headers,
+        body: Bytes(0)
+    )
+}
 
 fn statusOf(resp!: Bytes) -> String {
     ## First line up to \r (or whole buffer).
@@ -12,18 +25,18 @@ fn statusOf(resp!: Bytes) -> String {
 }
 
 fn main() -> Int64 {
-    let root = "tests/conformance/io_data/web"
+    let router = Router(root: "tests/conformance/io_data/web")
 
     ## Directory → index.html
-    let r0 = handle(root, "/")
+    let r0 = writeResponse(router.handle(makeGet("/")))
     println("root={statusOf(r0)}")
 
     ## Nested index
-    let r1 = handle(root, "/about/")
+    let r1 = writeResponse(router.handle(makeGet("/about/")))
     println("about={statusOf(r1)}")
 
     ## Direct file + content-type css
-    let r2 = handle(root, "/style.css")
+    let r2 = writeResponse(router.handle(makeGet("/style.css")))
     println("css={statusOf(r2)}")
     let ct = Bytes.fromString(r2.toString()).find(Bytes.fromString("text/css"))
     if ct >= 0 {
@@ -33,15 +46,15 @@ fn main() -> Int64 {
     }
 
     ## Path traversal → 404
-    let r3 = handle(root, "/../secret")
+    let r3 = writeResponse(router.handle(makeGet("/../secret")))
     println("trav={statusOf(r3)}")
 
     ## Missing → 404
-    let r4 = handle(root, "/nope.html")
+    let r4 = writeResponse(router.handle(makeGet("/nope.html")))
     println("miss={statusOf(r4)}")
 
     ## Must start with /
-    let r5 = handle(root, "relative")
+    let r5 = writeResponse(router.handle(makeGet("relative")))
     println("rel={statusOf(r5)}")
 
     0

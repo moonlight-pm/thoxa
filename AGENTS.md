@@ -64,6 +64,7 @@ Already known (see status + decisions):
 - R0–R9 done; R9+ through **file I/O + static Router + User+heap RC (D64)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR DAG → bounded HTTP server; next critical: `Array<User>` / early return).
 - R0–R9 done; R9+ through **file I/O + static Router + User+heap RC (D64) + Array&lt;User&gt; (D65)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR DAG → Request/Response → bounded HTTP server; early return still open).
 - R0–R9 done; R9+ through **file I/O + static Router + early `return` (D63) + User+heap RC (D64) + Array&lt;User&gt; (D65) + match discard (D66) + Request/Response (D69)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR6 Router type → bounded HTTP server).
+- R0–R9 done; R9+ through **file I/O + early `return` (D63) + User+heap RC (D64) + Array&lt;User&gt; (D65) + match discard (D66) + Request/Response (D69) + Router type (D70)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR7 bounded HTTP server).
 - Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28); cgen pulls fcntl/unistd/socket headers when externs present.
 - C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).
 - Modules: `import` selective/namespace, `export`, `./`+`~/` loader, module-level let/mut (D30–D35).
@@ -76,6 +77,8 @@ Already known (see status + decisions):
 - Control flow: `while` / `loop` / `for` ranges + collection / `break` / `continue` (D47, D55). Constructor params: Int64/Bool/String/Bytes (D48–D49).
 - Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45). **User+heap in Trial safe (D64)** — method field Dup, Trial extract/`Pass` via `needs_drop`, match bind fresh places.
 - HTTP protocol: `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest` (D69); `summarizeRequest` adapter.
+- File I/O: `readFile(path) -> Trial<Bytes,String>` (D56, D58); String `==`/`!=` (D60).
+- HTTP protocol: `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest` (D69); `summarizeRequest` adapter; **Router type** `handle(req: Request) -> Response` (D70; supersedes D61 free `handle`).
 - Control flow: `while` / `loop` / `for` ranges + collection / `break` / `continue` / early `return` (D47, D55, D63). Constructor params: Int64/Bool/String/Bytes/**Array** (D48–D49, D69).
 - Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45). **User+heap in Trial safe (D64)** — method field Dup, Trial extract/`Pass` via `needs_drop`, match bind fresh places. Match discard `Pass(_)`/`Fail(_)` (D66).
 

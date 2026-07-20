@@ -4,15 +4,17 @@
 
 ## Next
 
-**Execute:** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](specs/2026-07-19-post-r9-http-completion-plan.md) — remaining queue after PR5 (Request/Response ✅). **Next = PR6** Router type + `handle(Request) -> Response`.
+**Execute:** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](specs/2026-07-19-post-r9-http-completion-plan.md) — remaining queue after PR6 (Router type ✅). **Next = PR7** bounded multi-request static HTTP server.
 
 Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; static Router; User+heap field RC (D64); **Array&lt;User&gt; (D65)**.
 Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; static Router; User+heap field RC (D64); Array&lt;User&gt; (D65); early `return` (D63); match discard (D66); **Request/Response/Header + parse/write (D69)**.
+Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; User+heap field RC (D64); Array&lt;User&gt; (D65); early `return` (D63); match discard (D66); Request/Response (D69); **Router type `handle(Request) -> Response` (D70)**.
 
 Critical path: early `return` → ~~User+heap RC~~ → `Array<User>` → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 Critical path: User+heap RC → `Array<User>` → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 Critical path: early `return` → ~~User+heap RC~~ → ~~`Array<User>`~~ → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ → ~~Request/Response~~ → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
+Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ → ~~Request/Response~~ → ~~Router type~~ → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 
 ## Done (ladder)
 
@@ -34,12 +36,13 @@ Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ →
 | R9+ | Growable `Buffer` (COW, geometric cap, freeze→Bytes) | `buffer` |
 | R9+ | Dynamic `Array<T>` (lit, index, append/dropLast, for-in) | `arrays` |
 | R9+ | File I/O (`readFile` free fn) | `file_io` (+ `iolib/`) |
-| R9+ | String `==`/`!=`; static file Router | `router` (+ `httplib/Router`) |
+| R9+ | String `==`/`!=`; static file Router (free `handle`) | `router` (+ `httplib/Router`) |
 | R9+ | Early `return` / `return expr` (D63) | `early_return` |
 | R9+ | User+heap field RC (Trial/match/`?`/method) | `user_rc` |
 | R9+ | Dynamic `Array<User>` (inline elems, D65) | `array_user` |
 | R9+ | Match discard `Pass(_)`/`Fail(_)` (D66) | `match_discard` |
 | R9+ | Request/Response/Header + parseRequest/writeResponse (D69) | `http_parse` (+ `http`, `http_wire`) |
+| R9+ | Router type `handle(Request) -> Response` (D70) | `router` (via `writeResponse`) |
 
 ## Open design notes (pointers only)
 
@@ -53,7 +56,7 @@ Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ →
 | FFI libraries beyond `"c"` | R6 subset | Only `"c"` (libc via headers) for now |
 | Explicit `address()`, struct copy, `sizeof` | D23–D25 | Deferred (oracle LF-B §9) |
 | Named roots `std/` / `ffi`, dir `Main.thx` | D30–D32 | Deferred; R8 is `./` + `~/` only |
-| Full oracle HTTP | D36–D38 | Request/Response/parse/write shipped (D69); Router type + bounded server still post-R9 |
+| Full oracle HTTP | D36–D38 | Request/Response/parse/write (D69) + Router type (D70) shipped; bounded server still post-R9 |
 
 ## Last session
 
@@ -61,8 +64,9 @@ Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ →
 - **2026-07-20 (PR3 Array&lt;User&gt;):** D65 `ThoxaArray` + `elem_size` + inline User structs; cgen field-RC callbacks (`ThoxaArrayElemFn`); get/set/append/dropLast/for-in; conformance `array_user`. Int64/String arrays unchanged.
 - **2026-07-20 (PR2 User+heap RC):** MIR uses `needs_drop` for Trial Pass/Fail/`?`/match extract (User field-walk via cgen `emit_rc`); method prolog Dups heap fields; match binds get fresh places (no cross-match overwrite leak); conformance `user_rc`; ASan clean. Unblocks `Trial<Box(s:String),…>` / File-shaped APIs (D64).
 - **2026-07-20 (PR4 match discard):** `Pass(_)` / `Fail(_)` discard binding (D66); `_` does not define a name; discarded heap payloads still RC-dropped; conformance `match_discard`.
+- **2026-07-20 (PR6 Router type):** `type Router(root: String) { handle(req: Request) -> Response }`; early return; `ok`/`notFound` + Content-Type; free `handle(root,path)->Bytes` removed; conformance `router` asserts via `writeResponse` status lines (D70).
 - **2026-07-20 (PR5 Request/Response):** `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest`; constructor-param `Array` fields (D69); `user.arrField[i]` index; conformance `http_parse`; `http`/`http_wire` use typed API + `writeResponse`.
-- **2026-07-19 (R9+ file I/O + Router):** `iolib/Io.readFile` (open/lseek/read/close; Fail open|seek|read); cgen `fcntl.h`; String `==`/`!=`; `httplib/Router.handle(root, path)` segments/traversal/index.html/Content-Type; for-in heap-elem RC fix (drop previous, not double-drop); avoid `Trial<User+String>` until field-RC hardened; conformance `file_io`, `router`.
+- **2026-07-19 (R9+ file I/O + Router):** `iolib/Io.readFile` (open/lseek/read/close; Fail open|seek|read); cgen `fcntl.h`; String `==`/`!=`; static Router free `handle(root, path)` (later D70 type); for-in heap-elem RC fix; conformance `file_io`, `router`.
 - **2026-07-19 (R9+ Array):** Dynamic `Array<T>` (Int64/Bool/String/Bytes); literals `[…]`, empty `[]` with annotation; `.count`, `[i]` get/set, functional `append`/`dropLast`, `for x in arr`; display in interpolation; conformance `arrays`.
 - **2026-07-19 (R9+ Buffer):** `Buffer()` / `Buffer(cap)`; `.count`/`.capacity`; COW `append`/`appendBytes` (write-back unique ptr); `freeze()` → Bytes (copy); geometric 0→8→16→32; conformance `buffer`.
 - **2026-07-19 (R9+ loops + string fields):** `while` / `loop` / `for i in a..b` / `a..=b` / `break` / `continue`; constructor-param `String`/`Bytes` fields with RC walk on User dup/drop; conformance `control_flow`, `loops`, `string_fields`.

@@ -244,10 +244,10 @@ PR9 Io polish (optional, parallel after PR2)
 - **Files/components affected:** `tests/conformance/httplib/Router.thx`, `tests/conformance/router.thx` + `.out`, `docs/*`
 - **Dependencies:** PR 5
 - **Acceptance:**
-  - [ ] Same behavioral coverage as current router fixture (index, about, css, traversal, missing, non-absolute)
-  - [ ] Returns Response values; test asserts via `writeResponse` status line
-  - [ ] `cargo make test` green
-- **Implementation notes:** Import `readFile` from `~/iolib/Io` (no `..`). Content-Type header on Response.
+  - [x] Same behavioral coverage as current router fixture (index, about, css, traversal, missing, non-absolute)
+  - [x] Returns Response values; test asserts via `writeResponse` status line
+  - [x] `cargo make test` green
+- **Implementation notes:** Import `readFile` from `~/iolib/Io` (no `..`). Content-Type header on Response. **Shipped (D70):** free `handle` removed; call sites use `Router` + `writeResponse`.
 
 ### PR 7: Bounded multi-request static server
 

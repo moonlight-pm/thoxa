@@ -1,7 +1,9 @@
-## Router — static-file map from URL path → file under a root (oracle examples/http/Router.thx subset).
-## No early `return` / OpenMode / Request type yet: free functions + `handle(root, path) -> Bytes`.
+## Router — map an HTTP Request onto files under a root directory. Directories serve
+## `index.html`; path traversal (`..` / `.` segments) is rejected as 404. Content-Type
+## comes from the final file extension. Oracle examples/http/Router.thx subset.
 
 import { readFile } from "~/iolib/Io"
+import { Request, Response, ok, notFound } from "./Http"
 
 ## Split URL path on `/` into non-empty segments.
 fn pathSegments(path!: String) -> Array<String> {
@@ -26,17 +28,17 @@ fn pathSegments(path!: String) -> Array<String> {
     segs
 }
 
+## True when any segment is `.` or `..` (path traversal / current-dir noise).
 fn hasUnsafeSegment(segs!: Array<String>) -> Bool {
-    mut bad = false
     for s in segs {
         if s == ".." {
-            bad = true
+            return true
         }
         if s == "." {
-            bad = true
+            return true
         }
     }
-    bad
+    false
 }
 
 fn joinPath(root!: String, segs!: Array<String>) -> String {
@@ -63,61 +65,47 @@ fn contentTypeFor(path!: String) -> String {
         i = i - 1
     }
     if ext == ".html" {
-        "text/html"
-    } else {
-        if ext == ".css" {
-            "text/css"
-        } else {
-            if ext == ".txt" {
-                "text/plain"
-            } else {
-                "application/octet-stream"
-            }
-        }
+        return "text/html"
     }
+    if ext == ".css" {
+        return "text/css"
+    }
+    if ext == ".txt" {
+        return "text/plain"
+    }
+    "application/octet-stream"
 }
 
-## 404 body (plain text).
-fn notFoundBytes() -> Bytes {
-    let body = Bytes.fromString("Not Found\n")
-    let text = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: {body.count}\r\nConnection: close\r\n\r\n{body.toString()}"
-    Bytes.fromString(text)
-}
-
-## 200 with Content-Type (extends httplib ok's text/plain-only shape for static files).
-fn okTyped(body!: Bytes, contentType!: String) -> Bytes {
-    let text = "HTTP/1.1 200 OK\r\nContent-Type: {contentType}\r\nContent-Length: {body.count}\r\nConnection: close\r\n\r\n{body.toString()}"
-    Bytes.fromString(text)
-}
-
-## Resolve `urlPath` under `root`. Always returns a full HTTP response Bytes.
-export fn handle(root!: String, urlPath!: String) -> Bytes {
-    let raw = Bytes.fromString(urlPath)
-    if raw.count == 0 {
-        notFoundBytes()
-    } else {
+## A static-file router rooted at `root` (cwd-relative).
+export type Router(root: String) {
+    ## Resolve `req.path` under `root` and return a Response. Always a Response
+    ## value (404 on missing/unsafe paths); never a Trial.
+    export fn handle(req!: Request) -> Response {
+        let urlPath = req.path
+        let raw = Bytes.fromString(urlPath)
+        if raw.count == 0 {
+            return notFound()
+        }
         if raw.get(0) != 47 {
-            notFoundBytes()
-        } else {
-            let segs = pathSegments(urlPath)
-            if hasUnsafeSegment(segs) {
-                notFoundBytes()
-            } else {
-                let candidate = joinPath(root, segs)
-                match readFile(candidate) {
+            return notFound()
+        }
+        let segs = pathSegments(urlPath)
+        if hasUnsafeSegment(segs) {
+            return notFound()
+        }
+        let candidate = joinPath(root, segs)
+        match readFile(candidate) {
+            Pass(body) {
+                ok(body, contentTypeFor(candidate))
+            }
+            Fail(_) {
+                let indexPath = "{candidate}/index.html"
+                match readFile(indexPath) {
                     Pass(body) {
-                        okTyped(body, contentTypeFor(candidate))
+                        ok(body, contentTypeFor(indexPath))
                     }
-                    Fail(e) {
-                        let indexPath = "{candidate}/index.html"
-                        match readFile(indexPath) {
-                            Pass(body) {
-                                okTyped(body, contentTypeFor(indexPath))
-                            }
-                            Fail(e2) {
-                                notFoundBytes()
-                            }
-                        }
+                    Fail(_) {
+                        notFound()
                     }
                 }
             }
