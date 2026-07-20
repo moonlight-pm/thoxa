@@ -22,13 +22,19 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 |----|----------|--------|-------|
 | D63 | Early `return` | `return` / `return expr` as expression (like `break`); type-checked against enclosing `fn`/`method` return type | Bare `return` only for `Void`; MIR `Stmt::Return { value: Option<Place> }`; drop live `needs_drop` **Assign** locals before early return / `?` Fail (same set as end-of-fn `collect_drop_places` — **not params**; caller still owns args); exits function from inside loops. **No ASI:** optional value is parsed whenever the next token can start an expression (newline does not end a bare `return`); write `return` then `}` / non-expr, or put the following statement after a non-expr-start token — intentional `return expr` may span lines. |
 
+## 2026-07-20 — User+heap field RC (PR2)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D64 | User+heap RC | `needs_drop` (not `is_heap`) for Trial Pass/Fail/`?`/match extract; method field prolog Dups heap fields; match binds use fresh places | cgen `emit_rc` already field-walks User; MIR must insert balanced Dup/Drop. Unblocks `Trial<User+String>` / File-shaped APIs. Conformance: `user_rc` |
+
 ## 2026-07-19 — R9+ file I/O + Router
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D56 | File surface | Free `readFile(path) -> Trial<Bytes, String>` | Subset of oracle `Io.thx`; whole-file via lseek size; OpenMode/`File` type deferred (User+String in Trial RC soft) |
 | D58 | File errors | Simple `Fail("open"\|"read"\|"seek")` strings | errno/`strerror` need named `ffi` root (D30) — deferred like Net |
-| D59 | User zero-init | Constructor-param User with String/Bytes fields zero as NULL heap | Match out-places; full field-RC on User copy still incomplete |
+| D59 | User zero-init | Constructor-param User with String/Bytes fields zero as NULL heap | Match out-places; **field-RC hardened in D64** |
 | D60 | String equality | `==` / `!=` via `thoxa_string_eq` (length + bytes) | Ordering compares not supported |
 | D61 | Static Router | `handle(root, path) -> Bytes` HTTP response | Segments + `..` reject + index.html + Content-Type; no Request type / early return |
 | D62 | for-in RC | Drop previous loop-var each iter; last value dropped at fn end | Fixes double-drop of last heap element (was drop-per-iter + fn-end drop) |

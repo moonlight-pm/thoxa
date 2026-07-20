@@ -6,6 +6,9 @@
 
 **Execute:** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](specs/2026-07-19-post-r9-http-completion-plan.md) — remaining queue after PR1 (early `return` ✅).
 
+Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; static Router; **User+heap field RC (D64)**.
+
+Critical path: early `return` → ~~User+heap RC~~ → `Array<User>` → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 Critical path: User+heap RC → `Array<User>` → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 
 ## Done (ladder)
@@ -30,6 +33,7 @@ Critical path: User+heap RC → `Array<User>` → Request/Response → Router ty
 | R9+ | File I/O (`readFile` free fn) | `file_io` (+ `iolib/`) |
 | R9+ | String `==`/`!=`; static file Router | `router` (+ `httplib/Router`) |
 | R9+ | Early `return` / `return expr` (D63) | `early_return` |
+| R9+ | User+heap field RC (Trial/match/`?`/method) | `user_rc` |
 
 ## Open design notes (pointers only)
 
@@ -48,6 +52,7 @@ Critical path: User+heap RC → `Array<User>` → Request/Response → Router ty
 ## Last session
 
 - **2026-07-20 (PR1 early return):** Parse/lower `return` / `return expr`; type-check vs enclosing ret; drop live heap locals before early return; C `return` / bare `return;`; conformance `early_return` (if/for/while/loop/match/method/Void). Decision D63.
+- **2026-07-20 (PR2 User+heap RC):** MIR uses `needs_drop` for Trial Pass/Fail/`?`/match extract (User field-walk via cgen `emit_rc`); method prolog Dups heap fields; match binds get fresh places (no cross-match overwrite leak); conformance `user_rc`; ASan clean. Unblocks `Trial<Box(s:String),…>` / File-shaped APIs (D64).
 - **2026-07-19 (R9+ file I/O + Router):** `iolib/Io.readFile` (open/lseek/read/close; Fail open|seek|read); cgen `fcntl.h`; String `==`/`!=`; `httplib/Router.handle(root, path)` segments/traversal/index.html/Content-Type; for-in heap-elem RC fix (drop previous, not double-drop); avoid `Trial<User+String>` until field-RC hardened; conformance `file_io`, `router`.
 - **2026-07-19 (R9+ Array):** Dynamic `Array<T>` (Int64/Bool/String/Bytes); literals `[…]`, empty `[]` with annotation; `.count`, `[i]` get/set, functional `append`/`dropLast`, `for x in arr`; display in interpolation; conformance `arrays`.
 - **2026-07-19 (R9+ Buffer):** `Buffer()` / `Buffer(cap)`; `.count`/`.capacity`; COW `append`/`appendBytes` (write-back unique ptr); `freeze()` → Bytes (copy); geometric 0→8→16→32; conformance `buffer`.

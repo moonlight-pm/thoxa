@@ -1,0 +1,60 @@
+## User+heap field RC: assign, methods, Trial Pass/match/?, sequential calls.
+type Box(s: String) {
+    export fn get() -> String {
+        s
+    }
+    export fn clone() -> Box {
+        Box(s: s)
+    }
+}
+
+fn makeBox(s!: String) -> Trial<Box, String> {
+    if s == "" {
+        Fail("empty")
+    } else {
+        Pass(Box(s: s))
+    }
+}
+
+fn chain(s!: String) -> Trial<Box, String> {
+    let b = makeBox(s)?
+    Pass(b)
+}
+
+fn main() -> Int64 {
+    ## Assign copy: both own the String field
+    let a = Box(s: "hello")
+    let b = a
+    println(a.s)
+    println(b.s)
+
+    ## Method returning Box does not double-free path field
+    let c = a.clone()
+    println(c.s)
+    println(a.get())
+
+    ## Trial Pass + match
+    match makeBox("x") {
+        Pass(box) { println(box.s) }
+        Fail(e) { println(e) }
+    }
+    match makeBox("") {
+        Pass(box) { println(box.s) }
+        Fail(e) { println(e) }
+    }
+
+    ## ? rewrap — two sequential calls (ASan must stay clean)
+    match chain("y") {
+        Pass(box) { println(box.s) }
+        Fail(e) { println(e) }
+    }
+    match chain("z") {
+        Pass(box) { println(box.s) }
+        Fail(e) { println(e) }
+    }
+    match chain("w") {
+        Pass(box) { println(box.s) }
+        Fail(e) { println(e) }
+    }
+    0
+}

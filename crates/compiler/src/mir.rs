@@ -268,10 +268,6 @@ pub enum Ty {
     User(String),
 }
 
-fn is_heap(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. })
-}
-
 /// True when a local of this type needs an end-of-scope drop.
 /// User types always participate (cgen walks fields; no-op when none are heap).
 fn needs_drop(ty: &Ty) -> bool {
@@ -1366,6 +1362,8 @@ fn lower_method(
     );
 
     // Bind fields as bare names from receiver (no `self` in Thoxa).
+    // Heap fields must Dup: the local is dropped at method end while `_self` is a
+    // param (not dropped here). Without Dup, drop(field) would free the caller's ref.
     let info = types.get(mangled_type).unwrap();
     for f in &info.fields {
         if matches!(f.ty, Ty::FixedArray { .. }) {
@@ -1384,6 +1382,12 @@ fn lower_method(
                 field: sanitize_field(&f.name),
             },
         );
+        if needs_drop(&f.ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: p.clone(),
+                ty: f.ty.clone(),
+            });
+        }
         ctx.define(&f.name, f.ty.clone(), false, p);
     }
     for p in &m.params {
@@ -3257,7 +3261,8 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
                 ty: err_ty.clone(),
                 value: RValue::TrialErr(trial_p.clone()),
             });
-            if is_heap(&err_ty) {
+            // needs_drop (not is_heap): User err payloads field-walk via emit_rc.
+            if needs_drop(&err_ty) {
                 then_body.push(Stmt::Dup {
                     place: err_p.clone(),
                     ty: err_ty.clone(),
@@ -3295,8 +3300,9 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
             ty: ok_ty.clone(),
             value: RValue::TrialOk(trial_p),
         });
-        // Extracted payload shares ownership with the trial until fn end; dup if heap.
-        if is_heap(&ok_ty) {
+        // Extracted payload shares ownership with the trial until fn end; dup if droppable
+        // (String/Bytes/User — User field-walks heap members once).
+        if needs_drop(&ok_ty) {
             ctx.stmts.push(Stmt::Dup {
                 place: payload.clone(),
                 ty: ok_ty.clone(),
@@ -3418,25 +3424,22 @@ fn lower_match(
     let outer = std::mem::take(&mut ctx.stmts);
 
     ctx.push_scope();
-    let pass_payload = ctx.fresh("pp");
+    // Fresh bind places per match: same source bind name across sequential matches must
+    // not share one C local (overwrite would leak the previous heap value).
+    // Extract once into the bind and Dup once (needs_drop walks User fields).
+    let pass_place = ctx.fresh("mb");
     if ok_ty != Ty::Void {
         ctx.stmts.push(Stmt::Assign {
-            place: pass_payload.clone(),
+            place: pass_place.clone(),
             ty: ok_ty.clone(),
             value: RValue::TrialOk(scrut_p.clone()),
         });
-        if is_heap(&ok_ty) {
+        if needs_drop(&ok_ty) {
             ctx.stmts.push(Stmt::Dup {
-                place: pass_payload.clone(),
+                place: pass_place.clone(),
                 ty: ok_ty.clone(),
             });
         }
-    }
-    let pass_place = Place {
-        name: sanitize_name(&pass_bind),
-    };
-    if ok_ty != Ty::Void {
-        ctx.assign(pass_place.clone(), ok_ty.clone(), RValue::Use(pass_payload));
     }
     ctx.define(&pass_bind, ok_ty.clone(), false, pass_place);
     let pass_val = lower_block_into(ctx, &pass_arm.body, &result_ty)?;
@@ -3458,29 +3461,19 @@ fn lower_match(
     }
 
     ctx.push_scope();
-    let fail_payload = ctx.fresh("fp");
+    let fail_place = ctx.fresh("mb");
     if err_ty != Ty::Void {
         ctx.stmts.push(Stmt::Assign {
-            place: fail_payload.clone(),
+            place: fail_place.clone(),
             ty: err_ty.clone(),
             value: RValue::TrialErr(scrut_p),
         });
-        if is_heap(&err_ty) {
+        if needs_drop(&err_ty) {
             ctx.stmts.push(Stmt::Dup {
-                place: fail_payload.clone(),
+                place: fail_place.clone(),
                 ty: err_ty.clone(),
             });
         }
-    }
-    let fail_place = Place {
-        name: sanitize_name(&fail_bind),
-    };
-    if err_ty != Ty::Void {
-        ctx.assign(
-            fail_place.clone(),
-            err_ty.clone(),
-            RValue::Use(fail_payload),
-        );
     }
     ctx.define(&fail_bind, err_ty.clone(), false, fail_place);
     let fail_val = lower_block_into(ctx, &fail_arm.body, &result_ty)?;
@@ -3762,8 +3755,9 @@ fn lower_pass_fail(
             err.as_ref().clone()
         };
         let payload = coerce_payload(ctx, payload_raw, &pty, &expected, span)?;
-        // Heap payload: bump so Trial and the temp both own (temp dropped at fn end).
-        if is_heap(&expected) {
+        // Droppable payload (String/Bytes/User): bump so Trial and the temp both own
+        // (temp dropped at fn end). User Dup field-walks heap members once via emit_rc.
+        if needs_drop(&expected) {
             ctx.stmts.push(Stmt::Dup {
                 place: payload.clone(),
                 ty: expected.clone(),
