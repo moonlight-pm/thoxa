@@ -17,7 +17,7 @@ repository = "file:///home/joshua/Workspace/Thoxa"
 repository = "file:///home/joshua/Workspace/Thoxa"
 # Placeholder until extras/ is committed — replace with the commit that adds
 # extras/tree-sitter-thoxa/src/parser.c (see extras/README.md).
-rev = "REPLACE_WITH_COMMIT_THAT_ADDS_EXTRAS"
+rev = "86701b3ea814aae725c62af590559e52a30d1fd2"
 path = "extras/tree-sitter-thoxa"
 
 [language_servers.thoxa]
