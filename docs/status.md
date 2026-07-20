@@ -4,21 +4,13 @@
 
 ## Next
 
-**HTTP ladder + Main.thx dir entry complete.** Optional polish from the post-R9 plan: **PR9** Io OpenMode/errno. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt, infinite accept-loop product binary, oracle `export fn main` on dir entry.
+**Editor plan complete** (phase 1 + phase 2, D71–D79). Optional follow-ons:
 
-Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; static Router; User+heap field RC (D64); **Array&lt;User&gt; (D65)**.
-Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; static Router; User+heap field RC (D64); Array&lt;User&gt; (D65); early `return` (D63); match discard (D66); **Request/Response/Header + parse/write (D69)**.
-Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; User+heap field RC (D64); Array&lt;User&gt; (D65); early `return` (D63); match discard (D66); Request/Response (D69); **Router type `handle(Request) -> Response` (D70)**.
-Baseline done through **PR7**: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; User+heap field RC (D64); Array&lt;User&gt; (D65); early `return` (D63); match discard (D66); Request/Response (D69); Router type (D70); **bounded multi-request static HTTP server (D67)**.
-Baseline done through **PR8**: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; User+heap field RC (D64); Array&lt;User&gt; (D65); early `return` (D63); match discard (D66); Request/Response (D69); Router type (D70); bounded multi-request static HTTP server (D67); **directory entry `Main.thx` (D68)**.
+1. post-R9 **PR9** Io OpenMode/errno polish
+2. Deferred megawork (M4, Perceus, effects, full `std/`/`ffi`, typed-member nav, multi-diag, …)
+3. Manual: after committing `extras/`, set `extras/zed/extension.toml` `[grammars.thoxa].rev`, Install Dev Extension → `extras/zed`
 
-Critical path: early `return` → ~~User+heap RC~~ → `Array<User>` → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
-Critical path: User+heap RC → `Array<User>` → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
-Critical path: early `return` → ~~User+heap RC~~ → ~~`Array<User>`~~ → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
-Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ → ~~Request/Response~~ → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
-Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ → ~~Request/Response~~ → ~~Router type~~ → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
-Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ → ~~Request/Response~~ → ~~Router type~~ → ~~bounded server~~.
-Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ → ~~Request/Response~~ → ~~Router type~~ → ~~bounded server~~ → ~~`Main.thx` dir entry~~.
+HTTP ladder + `Main.thx` complete. Editor: D71–D79.
 
 ## Done (ladder)
 
@@ -66,6 +58,13 @@ Critical path: ~~early `return`~~ → ~~User+heap RC~~ → ~~`Array<User>`~~ →
 
 ## Last session
 
+- **2026-07-20 (editor PR7: cross-module):** `lsp/crossmodule` lazy resolve for hover/def: selective + alias, namespace name/member, `./`+`~/`. Open buffers win over disk (path-matched). `Binding.import_origin`; index stores AST. `check_source_with_overlays` for package check. Unit + handler tests. Decisions D78/D79. Editor phase 2 complete.
+- **2026-07-20 (editor PR6: navigation):** LSP handlers: hover, definition≡declaration, references, documentSymbol, prepareRename/rename. Caps advertised on initialize. Signatures from source line + `##` doc_above; rename casing (PascalCase types / camelCase values). Single-file only (imports → import site). Unit tests def/hover/refs/outline/rename. Decision D77.
+- **2026-07-20 (editor PR5: resolver):** `resolver.rs` + `lsp/index`; D76. MIR lower still own env.
+- **2026-07-20 (editor PR3: extras/):** `extras/tree-sitter-thoxa` + `extras/zed`. D71/D75. Phase 1 complete.
+- **2026-07-20 (editor PR2: thoxa lsp):** `thoxa lsp` stdio JSON-RPC (`Content-Length`); capabilities full sync + semantic tokens; `publishDiagnostics` on didOpen/Change, clear on Close; lexer semantic tokens (type/function/variable); `serde`/`serde_json` (D74). Optional `thoxa check <path>` prints `path:line:col: message`. Unit tests: framing, initialize, diags, tokens, shutdown. Decisions D72/D74.
+- **2026-07-20 (editor PR1: check + spans):** `span::{Position,Range,byte_to_position,span_to_range}` (UTF-8 bytes → 0-based line + UTF-16 character). `lsp::check_source(filename, text) -> Vec<CheckDiagnostic>` — lex/parse/MIR lower, no cgen; first-error only. No imports → `lower_module`; imports + real path → disk package with entry AST overlay; imports without path → clear diagnostic. Unit tests (good/type/lex/parse/import). Decision D73.
+- **2026-07-20 (plan: native editor + LSP):** Wrote [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md). Layout: `extras/{tree-sitter-thoxa,zed}` for DX glue; LSP server in `crates/compiler/src/lsp` as **`thoxa lsp`** (Rust, reuses MIR lower). Phase 1 = PR1–PR3 (check API → lsp → Zed). No Python. Ready to execute next session.
 - **2026-07-20 (PR1 early return):** Parse/lower `return` / `return expr`; type-check vs enclosing ret; drop live heap locals before early return; C `return` / bare `return;`; conformance `early_return` (if/for/while/loop/match/method/Void). Decision D63.
 - **2026-07-20 (PR3 Array&lt;User&gt;):** D65 `ThoxaArray` + `elem_size` + inline User structs; cgen field-RC callbacks (`ThoxaArrayElemFn`); get/set/append/dropLast/for-in; conformance `array_user`. Int64/String arrays unchanged.
 - **2026-07-20 (PR2 User+heap RC):** MIR uses `needs_drop` for Trial Pass/Fail/`?`/match extract (User field-walk via cgen `emit_rc`); method prolog Dups heap fields; match binds get fresh places (no cross-match overwrite leak); conformance `user_rc`; ASan clean. Unblocks `Trial<Box(s:String),…>` / File-shaped APIs (D64).

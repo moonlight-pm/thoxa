@@ -5,24 +5,43 @@ Personal editor glue for native Thoxa. **Not** on the compile-to-C critical path
 | Path | Role |
 |------|------|
 | [`tree-sitter-thoxa/`](tree-sitter-thoxa/) | Thin lexer-level Tree-sitter grammar (committed `src/parser.c`) |
-| [`zed/`](zed/) | Side-loaded Zed **dev** extension (highlighting + `thoxa lsp`) |
+| [`zed/`](zed/) | Zed extension shim + language config (highlighting + launch `thoxa lsp`) |
 
 Product language server: **`thoxa lsp`** in `crates/compiler` (Rust). No Python.
 
-## Quick start (Zed)
+Automation lives in the xtask (**not** shell scripts — D10):
 
-1. Build the native binary:
-   ```sh
-   cargo build -p thoxa
-   # target/rust/debug/thoxa
-   ```
-2. Commit `extras/` (Zed pins a git `rev` for the grammar), then set
-   `extras/zed/extension.toml` → `[grammars.thoxa].rev` to that SHA:
-   ```sh
-   git rev-parse HEAD
-   ```
-3. Zed → **Install Dev Extension** → choose `extras/zed`.
-4. Open `tests/conformance/hello.thx`.
+```bash
+cargo make zed              # languages + grammar WASM + build thoxa + PATH
+cargo make zed --grammar    # grammar WASM only
+cargo make zed --all        # also rebuild extension.wasm (rare)
+```
+
+## Day-to-day: what changes what
+
+| You changed… | Command | Zed action after |
+|--------------|---------|------------------|
+| **Compiler / LSP** (`crates/compiler/…`) | `cargo build -p thoxa` *or* `cargo make zed` | `editor: restart language server` |
+| **Base colors** (`extras/tree-sitter-thoxa/grammar.js`) | `cargo make zed --grammar` | Full quit + restart Zed if colors stale |
+| **Highlight queries / lang config** (`extras/zed/languages/thoxa/*`) | `cargo make zed` | Reopen buffer or restart Zed |
+| **Extension shim** (`extras/zed/src/lib.rs`) | `cargo make zed --all` | Restart Zed |
+
+**Most days you only touch the compiler:**
+
+```sh
+cargo build -p thoxa
+# in Zed: editor: restart language server
+```
+
+The binary is discovered as `~/.local/bin/thoxa` (after `cargo make zed`) or
+`{worktree}/target/rust/debug/thoxa`.
+
+## First-time install
+
+```sh
+cargo make zed --all   # needs emcc for grammar WASM; rustup wasm32-wasip2 for extension
+# Restart Zed; open tests/conformance/hello.thx
+```
 
 Optional user setting for semantic tokens:
 
@@ -30,8 +49,14 @@ Optional user setting for semantic tokens:
 { "languages": { "Thoxa": { "semantic_tokens": "combined" } } }
 ```
 
-Full notes: [`zed/README.md`](zed/README.md). Grammar regenerate:
-[`tree-sitter-thoxa/README.md`](tree-sitter-thoxa/README.md).
+Grammar regenerate (when editing `grammar.js`), if the CLI is available:
+
+```sh
+nix-shell -p tree-sitter clang --run 'export CC=clang; cd extras/tree-sitter-thoxa && tree-sitter generate && tree-sitter test'
+cargo make zed --grammar
+```
+
+(`cargo make zed` also regenerates when `grammar.js` is newer than `parser.c` and `tree-sitter` is on `PATH`.)
 
 ## Smoke
 
@@ -44,4 +69,4 @@ Full notes: [`zed/README.md`](zed/README.md). Grammar regenerate:
 
 ## Layout decisions
 
-See `docs/decisions.md` **D71** (extras root), **D75** (thin grammar), **D72** (`thoxa lsp`).
+See `docs/decisions.md` **D71** (extras root), **D75** (thin grammar), **D72** (`thoxa lsp`), **D10** (xtask, no project shell scripts).

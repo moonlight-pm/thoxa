@@ -1,10 +1,12 @@
 //! `thoxa` CLI.
 
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use thoxa::driver::{self, BuildOptions};
 use thoxa::error::Error;
+use thoxa::lsp;
 
 fn main() -> ExitCode {
     match try_main() {
@@ -49,6 +51,16 @@ fn try_main() -> Result<i32, Error> {
             eprintln!("runtime → {}", driver::runtime_lib_path().display());
             Ok(0)
         }
+        "lsp" => {
+            // Language server: stdio JSON-RPC. Logs go to stderr only.
+            Ok(lsp::run())
+        }
+        "check" => {
+            let path = args
+                .first()
+                .ok_or_else(|| Error::new("check requires a path (file.thx or directory)"))?;
+            run_check(PathBuf::from(path))
+        }
         "-h" | "--help" | "help" => {
             print_usage();
             Ok(0)
@@ -56,6 +68,25 @@ fn try_main() -> Result<i32, Error> {
         other => Err(Error::new(format!(
             "unknown command `{other}` (try `thoxa help`)"
         ))),
+    }
+}
+
+fn run_check(path: PathBuf) -> Result<i32, Error> {
+    let entry = thoxa::loader::resolve_entry(&path)?;
+    let text = fs::read_to_string(&entry).map_err(|e| {
+        Error::new(format!("cannot read {}: {e}", entry.display()))
+    })?;
+    let filename = entry.to_string_lossy();
+    let diags = lsp::check_source(&filename, &text);
+    for d in &diags {
+        let line = d.range.start.line + 1;
+        let col = d.range.start.character + 1;
+        eprintln!("{}:{line}:{col}: {}", d.filename, d.message);
+    }
+    if diags.is_empty() {
+        Ok(0)
+    } else {
+        Ok(1)
     }
 }
 
@@ -101,9 +132,14 @@ USAGE:
     thoxa build  <file.thx|dir> [-o name]
     thoxa run    <file.thx|dir>
     thoxa emit-c <file.thx|dir>
+    thoxa check  <file.thx|dir>
     thoxa runtime
+    thoxa lsp
 
 A directory argument resolves to <dir>/Main.thx (project root for ~/ is that dir).
-Build products land under target/ (rust/, c/, thoxa/)."
+Build products land under target/ (rust/, c/, thoxa/).
+
+`thoxa lsp` speaks Language Server Protocol over stdio (for editors; not interactive).
+`thoxa check` type-checks without codegen and prints path:line:col diagnostics."
     );
 }

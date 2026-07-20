@@ -26,20 +26,26 @@ cargo make test              # conformance (preferred day-to-day gate)
 cargo make run path.thx
 cargo make emit-c path.thx
 cargo make runtime           # libthoxa_rt.a + compile_commands.json
+cargo make zed               # sync extras → local Zed (LSP binary + grammar + lang)
+cargo make zed --grammar     # grammar WASM only
+cargo make zed --all         # also rebuild extension.wasm
 cargo test -p thoxa          # Rust unit tests
 cargo run -p thoxa -- run path.thx
+cargo run -p thoxa -- check path.thx   # typecheck, no cgen
+cargo run -p thoxa -- lsp              # editor language server (stdio)
 ```
 
-All build products under **`target/{rust,c,thoxa}/`**. Prefer `cargo make …` over ad-hoc scripts.
+All build products under **`target/{rust,c,thoxa}/`**. Prefer `cargo make …` over ad-hoc scripts (D10).
 
 ## Layout (where to edit)
 
 | Path | Role |
 |------|------|
-| `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; CLI in `main.rs`, pipeline in `driver.rs` |
+| `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; CLI in `main.rs`, pipeline in `driver.rs`; **`lsp/`** (`check_source` + **`thoxa lsp`**) |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `crates/make/` | xtask (`cargo make`) |
 | `tests/conformance/` | `*.thx` + `*.out` |
+| `extras/` | Non-product DX: `tree-sitter-thoxa` + `zed` dev extension (D71/D75) |
 | `docs/status.md` | **Session progress** (edit when state changes) |
 | `docs/decisions.md` | Locked / deferred decisions (D-ids) |
 | `docs/specs/` | Full design docs |
@@ -60,13 +66,8 @@ Compiler pipeline (stable): `.thx` → lexer → parser → AST → MIR (+ simpl
 
 Already known (see status + decisions):
 
-- R0–R9 done; R9+ through **file I/O + static Router + early `return` (D63)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR2+ → bounded HTTP server).
-- R0–R9 done; R9+ through **file I/O + static Router + User+heap RC (D64)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR DAG → bounded HTTP server; next critical: `Array<User>` / early return).
-- R0–R9 done; R9+ through **file I/O + static Router + User+heap RC (D64) + Array&lt;User&gt; (D65)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR DAG → Request/Response → bounded HTTP server; early return still open).
-- R0–R9 done; R9+ through **file I/O + static Router + early `return` (D63) + User+heap RC (D64) + Array&lt;User&gt; (D65) + match discard (D66) + Request/Response (D69)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR6 Router type → bounded HTTP server).
-- R0–R9 done; R9+ through **file I/O + early `return` (D63) + User+heap RC (D64) + Array&lt;User&gt; (D65) + match discard (D66) + Request/Response (D69) + Router type (D70)** done. **Next = execute** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md) (PR7 bounded HTTP server).
-- R0–R9 done; R9+ through **file I/O + early `return` (D63) + User+heap RC (D64) + Array&lt;User&gt; (D65) + match discard (D66) + Request/Response (D69) + Router type (D70) + bounded multi-request static server (D67 / `http_server`)** done. **HTTP critical path complete.** Optional next from plan: PR8 `Main.thx` dir entry, PR9 Io polish — see [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md).
-- R0–R9 done; R9+ through **file I/O + early `return` (D63) + User+heap RC (D64) + Array&lt;User&gt; (D65) + match discard (D66) + Request/Response (D69) + Router type (D70) + bounded multi-request static server (D67 / `http_server`) + directory entry `Main.thx` (D68 / `pkgmain`)** done. **HTTP critical path + dir entry complete.** Optional next from plan: PR9 Io polish — see [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](docs/specs/2026-07-19-post-r9-http-completion-plan.md).
+- R0–R9 + post-R9 HTTP path **complete** through bounded server (D67) + `Main.thx` dir entry (D68); also early `return` (D63), User+heap RC (D64), `Array<User>` (D65), match discard (D66), Request/Response (D69), Router type (D70). Optional leftover: Io polish (post-R9 PR9).
+- **Editor:** phase 1 + phase 2 complete (D71–D79): `check_source` (+ overlays), `thoxa lsp`, extras, resolver, hover/def/refs/outline/rename, cross-module jump (`./`/`~/`, open buffer wins). MIR lower not yet on shared resolver. **No Python** in product path.
 - Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28); cgen pulls fcntl/unistd/socket headers when externs present.
 - C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).
 - Modules: `import` selective/namespace, `export`, `./`+`~/` loader, module-level let/mut (D30–D35); **`thoxa run <dir>` → `<dir>/Main.thx`** (D68); `~/` = entry file’s directory.

@@ -29,10 +29,11 @@ cargo run -p thoxa -- emit-c tests/conformance/hello.thx
 
 | Path | Role |
 |------|------|
-| `crates/compiler` | `thoxa` CLI + compiler library |
+| `crates/compiler` | `thoxa` CLI + compiler library (+ planned `thoxa lsp`) |
 | `crates/make` | xtask (`cargo make …`) |
 | `runtime/` | C runtime sources (`thoxa_rt`) |
 | `tests/conformance/` | `.thx` + `.out` programs |
+| `extras/` | Non-product DX (tree-sitter, Zed) — planned |
 | `docs/specs/` | Design docs |
 | `docs/decisions.md` | Decision log |
 
@@ -66,9 +67,20 @@ system include dirs. Then **reload the window / restart clangd**.
 
 Fallback: committed [`.clangd`](.clangd) with `-Iruntime/include`.
 
+### Thoxa in Zed
+
+```bash
+cargo make zed            # sync grammar + language files + build thoxa for LSP
+cargo make zed --grammar  # grammar WASM only (after tree-sitter generate)
+cargo make zed --all      # also rebuild the WASM extension shim
+```
+
+See [`extras/README.md`](extras/README.md). After sync: restart the language server
+in Zed (grammar color changes may need a full quit/restart).
 ## Docs
 
 - [Status / next rung](docs/status.md) — living progress (agents: read first)
 - [Agent handoff](AGENTS.md) — session bootstrap for AI tools
 - [Native kernel design](docs/specs/2026-07-18-thoxa-native-kernel-design.md)
+- [Native editor + LSP plan](docs/specs/2026-07-20-native-editor-lsp-plan.md) — Zed + `thoxa lsp` (phase 1)
 - [Decisions](docs/decisions.md)

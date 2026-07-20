@@ -65,13 +65,24 @@ diagnostics and grammar coloring still work.
 If the server does not start: command palette → **`zed: open language server logs`**.
 Confirm `target/rust/debug/thoxa` exists or `thoxa` is on PATH.
 
-## Updating
+## Updating (keep it simple)
 
-- **LSP / compiler change**: rebuild `thoxa`, restart language server in Zed
-  (`editor: restart language server`).
-- **Grammar change**:
-  ```sh
-  cd ../tree-sitter-thoxa
-  nix-shell -p tree-sitter clang --run 'export CC=clang; tree-sitter generate && tree-sitter test'
-  # commit, then set [grammars.thoxa].rev in extension.toml to the new SHA
-  ```
+See the table in [`../README.md`](../README.md). Short version:
+
+| Change | Command | Zed |
+|--------|---------|-----|
+| Compiler / LSP | `cargo build -p thoxa` | `editor: restart language server` |
+| Grammar / highlights / install sync | `cargo make zed` | restart LS; full quit for grammar colors |
+| Extension Rust shim | `cargo make zed --all` | restart Zed |
+
+Grammar regenerate (when you edit `grammar.js`):
+
+```sh
+cd ../tree-sitter-thoxa
+nix-shell -p tree-sitter clang --run 'export CC=clang; tree-sitter generate && tree-sitter test'
+cargo make zed --grammar
+```
+
+`cargo make zed` rebuilds the SIDE_MODULE grammar WASM (needs `emcc`) and
+copies it into `~/.local/share/zed/extensions/installed/thoxa/`. You do **not**
+need to re-run “Install Dev Extension” for normal day-to-day work.

@@ -29,5 +29,12 @@ nix-shell -p tree-sitter clang --run 'export CC=clang
   tree-sitter parse path.thx'
 ```
 
-Zed compiles the grammar to WASM itself; the native-link quirk only affects
-local CLI testing.
+Push the grammar into the local Zed install (SIDE_MODULE WASM via `emcc`):
+
+```sh
+cargo make zed --grammar
+# or full editor sync: cargo make zed
+```
+
+The native-link quirk only affects local `tree-sitter test`; Zed uses the
+WASM produced by `cargo make zed`.

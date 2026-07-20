@@ -6,9 +6,12 @@ pub mod driver;
 pub mod error;
 pub mod lexer;
 pub mod loader;
+pub mod lsp;
 pub mod mir;
 pub mod parser;
+pub mod resolver;
 pub mod span;
 
 pub use driver::{build, emit_c, run, BuildOptions};
 pub use error::{Error, Result};
+pub use lsp::{check_source, CheckDiagnostic};

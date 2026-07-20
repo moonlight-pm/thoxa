@@ -16,6 +16,62 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-20 — Editor PR7: cross-module + open-buffer overlay
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D78 | Cross-module hover/def | Lazy `lsp/crossmodule::resolve_remote` at hover/definition time | Selective imports (incl. `as`), namespace name (`module <spec>` + leading `##`), namespace member (`ns.x`). Jump URI = defining file; open buffer wins over disk (path-matched). Refs/rename stay single-file. Named roots (`std/`) still unsupported. Failures → local fallback (never crash). |
+| D79 | Open-buffer package check | `check_source_with_overlays` re-parses any package module whose path is open | Entry buffer always overlaid; other open docs replace disk AST for `lower_package`. Parse fail on overlay → keep disk AST. Untitled/non-path still cannot check imports. |
+
+## 2026-07-20 — Editor PR6: navigation handlers
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D77 | LSP navigation (single-file) | `hover` / `definition`≡`declaration` / `references` / `documentSymbol` / `prepareRename`+`rename` via `lsp/index` + resolver | Hover: source-line signature + contiguous `##` docs. Rename: binding-id keyed; rejects builtins; PascalCase types / camelCase values. Members without type link stay inert (pending). Cross-module jump: **D78**. |
+
+## 2026-07-20 — Editor PR5: shared lexical resolver
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D76 | Lexical resolver | Standalone `resolver::resolve_module` / `resolve_source` → `Resolution` (bindings + references) | Type-independent scopes; member refs **pending** until type-driven link. Kinds: fn/extern/type/field/method/param/let/mut/forvar/pattern/import/builtin. Single-file: imports bind locally (jump-to-import). `lsp/index::build_index` for navigation. **MIR lower still uses its own env** this PR (conformance unchanged); full types-by-binding lower migration deferred. Position API: UTF-8 spans + `span_covers` / LSP 0-based line+UTF-16 char. |
+
+## 2026-07-20 — Editor PR3: extras/ (grammar + Zed)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D71 | DX glue root | **`extras/`** with `tree-sitter-thoxa` + `zed` | Non-product personal DX; not mixed into `crates/`. Room for future `extras/vscode` etc. |
+| D75 | Thin grammar | Lexer-level tree-sitter only (keywords, casing, literals, comments, operators); no full CST | Churn isolation. Semantic tokens from `thoxa lsp` refine function/variable. Committed `src/parser.c`; Zed pins `[grammars.thoxa].rev` to a commit that contains it (`file://` repo path). |
+
+## 2026-07-20 — Editor PR2: `thoxa lsp`
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D72 | LSP CLI | `thoxa lsp` — Language Server Protocol over **stdio** (Content-Length JSON-RPC); not interactive | Phase 1 caps: `textDocumentSync: Full` (1), `semanticTokensProvider` (full + legend). `publishDiagnostics` on didOpen/didChange; clear on didClose. Handlers catch panics/errors → stderr + empty/error result; loop stays up. Also `thoxa check <file\|dir>` for disk DX (exit 1 on diags). Navigation deferred (phase 2). |
+| D74 | JSON deps | `serde` + `serde_json` on `thoxa` compiler crate | Required for LSP payloads; zero-dep JSON rejected (E8). |
+
+## 2026-07-20 — Editor PR1: check without cgen
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D73 | Check API | `lsp::check_source(filename, text) -> Vec<CheckDiagnostic>` — lex → parse → MIR lower only (no cgen/`cc`) | First diagnostic only (compiler `Error`); `Vec` ready for multi later. Spans: UTF-8 byte offsets → LSP `Range` via `span::{byte_to_position,span_to_range}` with **UTF-16** character units. **Imports:** no `import` → `lower_module` on buffer; imports + path → `load_package` + entry overlay; open-buffer deps via **D79** `check_source_with_overlays`. |
+
+## 2026-07-20 — Native editor / LSP plan
+
+Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md). Phase 1 complete (D71–D75). Phase 2 complete (PR5–PR7, D76–D79).
+
+| Planned | Choice | Status |
+|---------|--------|--------|
+| DX glue root | `extras/{tree-sitter-thoxa,zed}` | **D71** |
+| Thin grammar | lexer-level only | **D75** |
+| LSP server | `crates/compiler/src/lsp` + CLI `thoxa lsp` | **D72** |
+| No Python | Oracle editor/LSP is reference only | locked |
+| Phase 1 | diagnostics + semantic tokens + thin grammar + Zed | **complete** |
+| Check engine | parse + MIR lower (no cgen) | **D73** |
+| Lexical resolver | `resolver` + `lsp/index` | **D76** |
+| Phase 2 nav | hover/def/refs/outline/rename | **D77** |
+| Cross-module | open-buffer overlay | **D78–D79** |
+| JSON | `serde` + `serde_json` on compiler crate | **D74** |
+
 ## 2026-07-20 — Directory entry `Main.thx` (PR8)
 
 | ID | Decision | Choice | Notes |

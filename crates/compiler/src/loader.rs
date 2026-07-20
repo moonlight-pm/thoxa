@@ -191,6 +191,35 @@ fn load_one(
     Ok(())
 }
 
+/// Map an import specifier to a filesystem path **without** requiring the file
+/// to exist. Used by the LSP for open-buffer overlay (target may only be open).
+///
+/// Returns `None` for unsupported specs (`std/…`, `ffi`, `..`, empty).
+pub fn resolve_import_path(
+    spec: &str,
+    importer_dir: &Path,
+    project_root: &Path,
+) -> Option<PathBuf> {
+    if spec.contains("..") {
+        return None;
+    }
+    let path = if let Some(rest) = spec.strip_prefix("./") {
+        if rest.is_empty() {
+            return None;
+        }
+        importer_dir.join(format_thx(rest))
+    } else if let Some(rest) = spec.strip_prefix("~/") {
+        if rest.is_empty() {
+            return None;
+        }
+        project_root.join(format_thx(rest))
+    } else {
+        // Named roots (`std/…`, `ffi`) not supported yet.
+        return None;
+    };
+    Some(path)
+}
+
 fn resolve_specifier(
     spec: &str,
     importer_dir: &Path,
