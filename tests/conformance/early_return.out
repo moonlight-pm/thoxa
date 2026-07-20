@@ -10,3 +10,9 @@ keep
 drop-me
 7
 11
+0
+alive
+echo
+local
+param
+boom

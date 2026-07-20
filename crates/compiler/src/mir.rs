@@ -429,8 +429,8 @@ struct LowerCtx {
     is_entry: bool,
     /// Nesting depth of `loop` / `while` / `for` (for `break` / `continue`).
     loop_depth: u32,
-    /// Heap / Trial-with-heap places assigned so far (for drops on early `return`).
-    /// Same policy as `insert_function_drops` / `collect_drop_places`.
+    /// Heap / Trial-with-heap places from `Assign` so far (for drops on early `return` / `?`).
+    /// Same policy as end-of-fn `collect_drop_places` — **not** params (caller-owned).
     drop_places: Vec<(String, Ty)>,
 }
 
@@ -1306,7 +1306,8 @@ fn lower_function(
         let place = Place {
             name: sanitize_name(&p.name),
         };
-        ctx.note_drop_place(&place, &ty);
+        // Params are borrowed from the caller (same as end-of-fn drops: Assign only).
+        // Do not register them in drop_places — early return / `?` must not drop them.
         ctx.define(&p.name, ty, false, place);
     }
 
@@ -1390,7 +1391,7 @@ fn lower_method(
         let place = Place {
             name: sanitize_name(&p.name),
         };
-        ctx.note_drop_place(&place, &ty);
+        // Params borrowed from caller — not in drop_places (see lower_function).
         ctx.define(&p.name, ty, false, place);
     }
 
@@ -1976,25 +1977,37 @@ fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<
 }
 
 /// Drop live `needs_drop` locals (except moved return value), then `Return`.
+/// Set matches end-of-fn `insert_function_drops` / `collect_drop_places`: **Assign**
+/// places only (params are never registered in `drop_places`).
 fn push_early_return(ctx: &mut LowerCtx, ret: Option<Place>, ret_ty: &Ty) {
+    append_return_with_drops(&mut ctx.stmts, &ctx.drop_places, ret, ret_ty);
+}
+
+/// Shared drop-then-return for explicit `return` and `?` Fail paths.
+fn append_return_with_drops(
+    stmts: &mut Vec<Stmt>,
+    drop_places: &[(String, Ty)],
+    ret: Option<Place>,
+    ret_ty: &Ty,
+) {
     let skip = if needs_drop(ret_ty) || is_trial(ret_ty) {
         ret.as_ref().map(|p| p.name.clone())
     } else {
         None
     };
     let mut seen = std::collections::HashSet::new();
-    for (name, ty) in ctx.drop_places.clone() {
-        if skip.as_ref() == Some(&name) {
+    for (name, ty) in drop_places {
+        if skip.as_ref() == Some(name) {
             continue;
         }
         if seen.insert(name.clone()) {
-            ctx.stmts.push(Stmt::Drop {
-                place: Place { name },
-                ty,
+            stmts.push(Stmt::Drop {
+                place: Place { name: name.clone() },
+                ty: ty.clone(),
             });
         }
     }
-    ctx.stmts.push(Stmt::Return { value: ret });
+    stmts.push(Stmt::Return { value: ret });
 }
 
 fn lower_loop(ctx: &mut LowerCtx, body: &Block, _span: Span) -> Result<(Place, Ty)> {
@@ -3222,28 +3235,16 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
     );
 
     // On Fail: return a Trial of the *enclosing* type (re-wrap err if ok monomorph differs).
+    // Drops use the same helper as explicit `return` (Assign-tracked locals only; not params).
     let outer = std::mem::take(&mut ctx.stmts);
     let mut then_body = Vec::new();
     if trial_ty == fn_ret {
-        // Drop live heap locals before early return from `?` (same as explicit `return`).
-        let mut drops = Vec::new();
-        let skip = trial_p.name.clone();
-        let mut seen = std::collections::HashSet::new();
-        for (name, ty) in &ctx.drop_places {
-            if name == &skip {
-                continue;
-            }
-            if seen.insert(name.clone()) {
-                drops.push(Stmt::Drop {
-                    place: Place { name: name.clone() },
-                    ty: ty.clone(),
-                });
-            }
-        }
-        then_body.extend(drops);
-        then_body.push(Stmt::Return {
-            value: Some(trial_p.clone()),
-        });
+        append_return_with_drops(
+            &mut then_body,
+            &ctx.drop_places,
+            Some(trial_p.clone()),
+            &fn_ret,
+        );
     } else {
         // Extract err, build Fail of fn_ret.
         let err_p = Place {
@@ -3276,24 +3277,7 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
                 trial_ty: fn_ret.clone(),
             },
         });
-        let mut drops = Vec::new();
-        let skip = ret_trial.name.clone();
-        let mut seen = std::collections::HashSet::new();
-        for (name, ty) in &ctx.drop_places {
-            if name == &skip {
-                continue;
-            }
-            if seen.insert(name.clone()) {
-                drops.push(Stmt::Drop {
-                    place: Place { name: name.clone() },
-                    ty: ty.clone(),
-                });
-            }
-        }
-        then_body.extend(drops);
-        then_body.push(Stmt::Return {
-            value: Some(ret_trial),
-        });
+        append_return_with_drops(&mut then_body, &ctx.drop_places, Some(ret_trial), &fn_ret);
     }
     ctx.stmts = outer;
     ctx.stmts.push(Stmt::If {

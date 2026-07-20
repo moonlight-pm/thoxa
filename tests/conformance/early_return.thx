@@ -1,4 +1,5 @@
 ## Early `return` / `return expr` in nested if, for, while, loop, and match.
+## Also: String params must not be dropped on early return / ? Fail (caller owns).
 
 fn mid() -> Int64 {
     let a = 1
@@ -74,6 +75,29 @@ fn withHeap() -> Int64 {
     0
 }
 
+## Param RC: callee must not drop String params (caller retains ownership).
+fn take(s: String) -> Int64 {
+    return 0
+}
+
+fn giveBack(s: String) -> String {
+    return s
+}
+
+## Early return with a live local heap + String param (drop local, not param).
+fn retWithLocal(s: String) -> String {
+    let t = "local"
+    println(t)
+    return s
+}
+
+## `?` Fail with a live String param — must not double-free the arg.
+fn tryFail(s: String) -> Trial<Int64, String> {
+    let t = Fail("boom")
+    t?
+    Pass(0)
+}
+
 type Box(n: Int64) {
     export fn early() -> Int64 {
         if n > 0 {
@@ -95,5 +119,22 @@ fn main() -> Int64 {
     println(withHeap())
     let b = Box(n: 11)
     println(b.early())
+
+    ## caller still owns / can print after early-return callee
+    let msg = "alive"
+    println(take(msg))
+    println(msg)
+
+    let back = giveBack("echo")
+    println(back)
+
+    let again = retWithLocal("param")
+    println(again)
+
+    match tryFail("param-live") {
+        Pass(v) { println(v) }
+        Fail(e) { println(e) }
+    }
+
     0
 }
