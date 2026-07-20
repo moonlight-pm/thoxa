@@ -923,7 +923,8 @@ fn array_user_elem_drop_fn(type_name: &str) -> String {
 
 /// Static field-walk helpers used as ThoxaArrayElemFn for Array<User>.
 /// D65: User array elems are constructor-param only (Int64/Bool/String/Bytes) —
-/// no nested Array/User fields, so only String/Bytes need RC.
+/// no nested Array/User fields, so only String/Bytes need RC. (Users that hold
+/// Array fields, e.g. Request, are not themselves array elements.)
 fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
     let cty = c_type_name(&layout.name);
     let dup = array_user_elem_dup_fn(&layout.name);
@@ -953,6 +954,13 @@ fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
 }
 
 fn collect_user_array_elems_program(program: &Program, out: &mut Vec<String>) {
+    // Type layouts may carry Array<User> fields (e.g. Request.headers) even when a
+    // function only drops the outer User without an explicit Array op — emit helpers.
+    for t in &program.types {
+        for f in &t.fields {
+            push_user_array_elem(&f.ty, out);
+        }
+    }
     for f in &program.functions {
         collect_user_array_elems_stmts(&f.body, out);
         push_user_array_elem(&f.ret_ty, out);

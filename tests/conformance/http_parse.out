@@ -1,0 +1,33 @@
+GET|/x|HTTP/1.1
+hdr_count=1
+host=Host:h
+body_count=0
+path=/search
+POST|/a|HTTP/1.0|n=2
+Host=x
+Accept=*/*
+incomplete=incomplete request
+badline=malformed request line
+badhdr=malformed header
+GET|/x|HTTP/1.1
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 3
+Connection: close
+
+ok
+
+HTTP/1.1 404 Not Found
+Content-Type: text/plain
+Content-Length: 10
+Connection: close
+
+Not Found
+
+HTTP/1.1 400 Bad Request
+Content-Type: text/plain
+Content-Length: 24
+Connection: close
+
+Bad Request: incomplete
+

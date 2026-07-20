@@ -40,7 +40,7 @@ fn serveOnce() -> Trial<Void, String> {
             let summary = http.summarizeRequest(raw)
             println(summary)
             let body = Bytes.fromString("pong\n")
-            let res = http.ok(body)
+            let res = http.writeResponse(http.ok(body, "text/plain"))
             let ns = peer.send(res)
             if ns < 0 {
                 Fail("server-send")

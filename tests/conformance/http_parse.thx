@@ -1,0 +1,73 @@
+## PR5: Request / Response / Header + parseRequest + writeResponse.
+import http from "./httplib/Http"
+
+fn main() -> Int64 {
+    ## --- parseRequest: method/path/version + Host header ---
+    let raw = Bytes.fromString("GET /x HTTP/1.1\r\nHost: h\r\n\r\n")
+    match http.parseRequest(raw) {
+        Pass(req) {
+            println("{req.method}|{req.path}|{req.version}")
+            println("hdr_count={req.headers.count}")
+            println("host={req.headers[0].name}:{req.headers[0].value}")
+            println("body_count={req.body.count}")
+        }
+        Fail(e) {
+            println("parse-fail {e}")
+        }
+    }
+
+    ## Query string stripped from path
+    let qraw = Bytes.fromString("GET /search?q=1 HTTP/1.1\r\n\r\n")
+    match http.parseRequest(qraw) {
+        Pass(req) {
+            println("path={req.path}")
+        }
+        Fail(e) {
+            println("q-fail {e}")
+        }
+    }
+
+    ## Multiple headers
+    let multi = Bytes.fromString("POST /a HTTP/1.0\r\nHost: x\r\nAccept: */*\r\n\r\n")
+    match http.parseRequest(multi) {
+        Pass(req) {
+            println("{req.method}|{req.path}|{req.version}|n={req.headers.count}")
+            println("{req.headers[0].name}={req.headers[0].value}")
+            println("{req.headers[1].name}={req.headers[1].value}")
+        }
+        Fail(e) {
+            println("multi-fail {e}")
+        }
+    }
+
+    ## Malformed / incomplete
+    match http.parseRequest(Bytes.fromString("GET /no-sep")) {
+        Pass(_) { println("unexpected-pass") }
+        Fail(e) { println("incomplete={e}") }
+    }
+    match http.parseRequest(Bytes.fromString("ONLYONE\r\n\r\n")) {
+        Pass(_) { println("unexpected-pass") }
+        Fail(e) { println("badline={e}") }
+    }
+    match http.parseRequest(Bytes.fromString("GET /x HTTP/1.1\r\nbadheader\r\n\r\n")) {
+        Pass(_) { println("unexpected-pass") }
+        Fail(e) { println("badhdr={e}") }
+    }
+
+    ## summarizeRequest still works
+    println(http.summarizeRequest(raw))
+
+    ## writeResponse round-trip: status + Content-Length + body
+    let body = Bytes.fromString("ok\n")
+    let res = http.ok(body, "text/plain")
+    let wire = http.writeResponse(res)
+    println(wire.toString())
+
+    let nf = http.writeResponse(http.notFound())
+    println(nf.toString())
+
+    let br = http.writeResponse(http.badRequest("incomplete"))
+    println(br.toString())
+
+    0
+}

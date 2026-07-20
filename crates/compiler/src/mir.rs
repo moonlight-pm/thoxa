@@ -745,10 +745,15 @@ pub fn lower_package(package: &Package) -> Result<Program> {
             zero_init = false;
             for p in &td.params {
                 let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
-                // R3+ : scalars + heap String/Bytes (RC fields). Nested User deferred.
-                if !matches!(ty, Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes) {
+                // R3+ : scalars + heap String/Bytes; Array<T> for Request/Response headers (D69).
+                // Nested User as a direct field still deferred; Array of User is fine (D65).
+                let ok = matches!(
+                    ty,
+                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
+                );
+                if !ok {
                     return Err(Error::at(
-                        "constructor-param fields must be Int64, Bool, String, or Bytes",
+                        "constructor-param fields must be Int64, Bool, String, Bytes, or Array",
                         p.ty.span,
                     ));
                 }
@@ -2614,126 +2619,121 @@ fn lower_field(
 }
 
 fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Result<(Place, Ty)> {
-    // Dynamic Array: `arr[i]`
-    if !matches!(&base.kind, ExprKind::Field { .. }) {
-        let (base_p, base_ty) = lower_expr(ctx, base)?;
-        let elem_ty = match &base_ty {
-            Ty::Array { elem } => elem.as_ref().clone(),
+    // `struct.field[i]`: FixedArray peels the field; dynamic Array loads then indexes.
+    if let ExprKind::Field {
+        base: s,
+        name,
+        name_span,
+    } = &base.kind
+    {
+        let (struct_p, struct_ty) = lower_expr(ctx, s)?;
+        let type_name = match &struct_ty {
+            Ty::User(n) => n.clone(),
             other => {
                 return Err(Error::at(
-                    format!("cannot index non-Array type {other:?}"),
-                    span,
+                    format!("cannot index field on non-struct type {other:?}"),
+                    *name_span,
                 ));
             }
         };
-        let (idx_p, idx_ty) = lower_expr(ctx, index)?;
-        if !is_int(&idx_ty) {
-            return Err(Error::at("array index must be an integer", index.span));
+        let info = ctx
+            .types
+            .get(&type_name)
+            .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), *name_span))?
+            .clone();
+        let finfo = info
+            .fields
+            .iter()
+            .find(|f| f.name == *name)
+            .ok_or_else(|| {
+                Error::at(
+                    format!("no field `{name}` on `{type_name}`"),
+                    *name_span,
+                )
+            })?;
+        match &finfo.ty {
+            Ty::FixedArray { elem, len } => {
+                let elem_ty = elem.as_ref().clone();
+                let len = *len;
+                let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+                if !is_int(&idx_ty) {
+                    return Err(Error::at("array index must be an integer", index.span));
+                }
+                let idx_p = if idx_ty == Ty::Int64 {
+                    idx_p
+                } else {
+                    coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+                };
+                if let ExprKind::Int(n) = &index.kind {
+                    if *n < 0 || (*n as u64) >= len {
+                        return Err(Error::at(
+                            format!("index {n} out of bounds for Array of length {len}"),
+                            index.span,
+                        ));
+                    }
+                }
+                let p = ctx.fresh("idx");
+                ctx.assign(
+                    p.clone(),
+                    elem_ty.clone(),
+                    RValue::Index {
+                        base: struct_p,
+                        field: sanitize_field(name),
+                        index: idx_p,
+                    },
+                );
+                return Ok((p, elem_ty));
+            }
+            Ty::Array { elem } => {
+                // Load dynamic Array field, then index like a local Array.
+                let arr_p = ctx.fresh("afld");
+                let arr_ty = finfo.ty.clone();
+                ctx.assign(
+                    arr_p.clone(),
+                    arr_ty.clone(),
+                    RValue::Field {
+                        base: struct_p,
+                        field: sanitize_field(name),
+                    },
+                );
+                if needs_drop(&arr_ty) {
+                    ctx.stmts.push(Stmt::Dup {
+                        place: arr_p.clone(),
+                        ty: arr_ty,
+                    });
+                }
+                return lower_array_index(ctx, arr_p, elem.as_ref().clone(), index);
+            }
+            other => {
+                return Err(Error::at(
+                    format!("cannot index non-array field type {other:?}"),
+                    *name_span,
+                ));
+            }
         }
-        let idx_p = if idx_ty == Ty::Int64 {
-            idx_p
-        } else {
-            coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
-        };
-        let p = ctx.fresh("aget");
-        if array_elem_is_user(&elem_ty) {
-            ctx.assign(
-                p.clone(),
-                elem_ty.clone(),
-                RValue::ArrayGet {
-                    arr: base_p,
-                    index: idx_p,
-                    elem_ty: elem_ty.clone(),
-                },
-            );
-        } else if array_elem_is_heap(&elem_ty) {
-            ctx.assign(
-                p.clone(),
-                elem_ty.clone(),
-                RValue::Call {
-                    callee: Callee::Builtin("array_get_ptr".into()),
-                    args: vec![base_p, idx_p],
-                },
-            );
-            ctx.stmts.push(Stmt::Dup {
-                place: p.clone(),
-                ty: elem_ty.clone(),
-            });
-        } else if elem_ty == Ty::Bool {
-            let raw = ctx.fresh("araw");
-            ctx.assign(
-                raw.clone(),
-                Ty::Int64,
-                RValue::Call {
-                    callee: Callee::Builtin("array_get_i64".into()),
-                    args: vec![base_p, idx_p],
-                },
-            );
-            ctx.assign(
-                p.clone(),
-                Ty::Bool,
-                RValue::Cast {
-                    value: raw,
-                    from: Ty::Int64,
-                    to: Ty::Bool,
-                },
-            );
-        } else {
-            ctx.assign(
-                p.clone(),
-                elem_ty.clone(),
-                RValue::Call {
-                    callee: Callee::Builtin("array_get_i64".into()),
-                    args: vec![base_p, idx_p],
-                },
-            );
-        }
-        return Ok((p, elem_ty));
     }
 
-    // Fixed-array field: `struct.field[i]` — peel Field so we don't load the whole array.
-    let (struct_expr, field_name, field_span) = match &base.kind {
-        ExprKind::Field {
-            base: s,
-            name,
-            name_span,
-        } => (s.as_ref(), name.as_str(), *name_span),
-        _ => unreachable!(),
-    };
-    let (base_p, base_ty) = lower_expr(ctx, struct_expr)?;
-    let type_name = match &base_ty {
-        Ty::User(n) => n.clone(),
+    // Dynamic Array: `arr[i]`
+    let (base_p, base_ty) = lower_expr(ctx, base)?;
+    let elem_ty = match &base_ty {
+        Ty::Array { elem } => elem.as_ref().clone(),
         other => {
             return Err(Error::at(
-                format!("cannot index field on non-struct type {other:?}"),
-                field_span,
+                format!("cannot index non-Array type {other:?}"),
+                span,
             ));
         }
     };
-    let info = ctx
-        .types
-        .get(&type_name)
-        .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), field_span))?
-        .clone();
-    let finfo = info
-        .fields
-        .iter()
-        .find(|f| f.name == field_name)
-        .ok_or_else(|| {
-            Error::at(
-                format!("no field `{field_name}` on `{type_name}`"),
-                field_span,
-            )
-        })?;
-    let (elem_ty, len) = match &finfo.ty {
-        Ty::FixedArray { elem, len } => (elem.as_ref().clone(), *len),
-        other => {
-            return Err(Error::at(
-                format!("cannot index non-array field type {other:?}"),
-                field_span,
-            ));
-        }
-    };
+    lower_array_index(ctx, base_p, elem_ty, index)
+}
+
+/// Index into a lowered dynamic `Array` place.
+fn lower_array_index(
+    ctx: &mut LowerCtx,
+    base_p: Place,
+    elem_ty: Ty,
+    index: &Expr,
+) -> Result<(Place, Ty)> {
     let (idx_p, idx_ty) = lower_expr(ctx, index)?;
     if !is_int(&idx_ty) {
         return Err(Error::at("array index must be an integer", index.span));
@@ -2743,24 +2743,59 @@ fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Res
     } else {
         coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
     };
-    if let ExprKind::Int(n) = &index.kind {
-        if *n < 0 || (*n as u64) >= len {
-            return Err(Error::at(
-                format!("index {n} out of bounds for Array of length {len}"),
-                index.span,
-            ));
-        }
+    let p = ctx.fresh("aget");
+    if array_elem_is_user(&elem_ty) {
+        ctx.assign(
+            p.clone(),
+            elem_ty.clone(),
+            RValue::ArrayGet {
+                arr: base_p,
+                index: idx_p,
+                elem_ty: elem_ty.clone(),
+            },
+        );
+    } else if array_elem_is_heap(&elem_ty) {
+        ctx.assign(
+            p.clone(),
+            elem_ty.clone(),
+            RValue::Call {
+                callee: Callee::Builtin("array_get_ptr".into()),
+                args: vec![base_p, idx_p],
+            },
+        );
+        ctx.stmts.push(Stmt::Dup {
+            place: p.clone(),
+            ty: elem_ty.clone(),
+        });
+    } else if elem_ty == Ty::Bool {
+        let raw = ctx.fresh("araw");
+        ctx.assign(
+            raw.clone(),
+            Ty::Int64,
+            RValue::Call {
+                callee: Callee::Builtin("array_get_i64".into()),
+                args: vec![base_p, idx_p],
+            },
+        );
+        ctx.assign(
+            p.clone(),
+            Ty::Bool,
+            RValue::Cast {
+                value: raw,
+                from: Ty::Int64,
+                to: Ty::Bool,
+            },
+        );
+    } else {
+        ctx.assign(
+            p.clone(),
+            elem_ty.clone(),
+            RValue::Call {
+                callee: Callee::Builtin("array_get_i64".into()),
+                args: vec![base_p, idx_p],
+            },
+        );
     }
-    let p = ctx.fresh("idx");
-    ctx.assign(
-        p.clone(),
-        elem_ty.clone(),
-        RValue::Index {
-            base: base_p,
-            field: sanitize_field(field_name),
-            index: idx_p,
-        },
-    );
     Ok((p, elem_ty))
 }
 

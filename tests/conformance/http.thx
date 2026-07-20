@@ -9,10 +9,10 @@ fn main() -> Int64 {
     println(summary)
 
     let body = Bytes.fromString("ok\n")
-    let res = http.ok(body)
+    let res = http.writeResponse(http.ok(body, "text/plain"))
     println(res.toString())
 
-    let bad = http.badRequest("incomplete")
+    let bad = http.writeResponse(http.badRequest("incomplete"))
     println(bad.toString())
 
     ## --- Socket lifecycle: create → reuse → bind(0) → listen → close ---
