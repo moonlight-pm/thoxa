@@ -1,4 +1,5 @@
 ## User+heap field RC: assign, methods, Trial Pass/match/?, sequential calls.
+## Also: multi-field String+Bytes, Fail(User) err payload.
 type Box(s: String) {
     export fn get() -> String {
         s
@@ -7,6 +8,19 @@ type Box(s: String) {
         Box(s: s)
     }
 }
+
+## Multi-heap-field User (String + Bytes).
+type Pair(name: String, data: Bytes) {
+    export fn nameOf() -> String {
+        name
+    }
+    export fn dataOf() -> String {
+        data.toString()
+    }
+}
+
+## User as Trial err payload.
+type ErrMsg(text: String) {}
 
 fn makeBox(s!: String) -> Trial<Box, String> {
     if s == "" {
@@ -19,6 +33,14 @@ fn makeBox(s!: String) -> Trial<Box, String> {
 fn chain(s!: String) -> Trial<Box, String> {
     let b = makeBox(s)?
     Pass(b)
+}
+
+fn makePair(ok!: Bool) -> Trial<Pair, ErrMsg> {
+    if ok {
+        Pass(Pair(name: "pair", data: Bytes.fromString("ab")))
+    } else {
+        Fail(ErrMsg(text: "bad"))
+    }
 }
 
 fn main() -> Int64 {
@@ -55,6 +77,28 @@ fn main() -> Int64 {
     match chain("w") {
         Pass(box) { println(box.s) }
         Fail(e) { println(e) }
+    }
+
+    ## Multi-field String+Bytes: assign copy + method reads
+    let p = Pair(name: "pair", data: Bytes.fromString("ab"))
+    let q = p
+    println(p.nameOf())
+    println(q.dataOf())
+
+    ## Trial Pass(Pair) + Fail(ErrMsg) — User on both sides
+    match makePair(true) {
+        Pass(pr) {
+            println(pr.nameOf())
+            println(pr.dataOf())
+        }
+        Fail(er) { println(er.text) }
+    }
+    match makePair(false) {
+        Pass(pr) {
+            println(pr.nameOf())
+            println(pr.dataOf())
+        }
+        Fail(er) { println(er.text) }
     }
     0
 }
