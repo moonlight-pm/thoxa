@@ -13,6 +13,11 @@ extern "C" {
 
 #define THOXA_TAG_STRING 1
 #define THOXA_TAG_BYTES  2
+#define THOXA_TAG_BUFFER 3
+#define THOXA_TAG_ARRAY  4
+
+/* Element slots are int64_t; heap pointers (String/Bytes) are stored bitcast. */
+#define THOXA_ARRAY_FLAG_HEAP_ELEMS 1u
 
 /* --- I/O ---------------------------------------------------------------- */
 
@@ -54,6 +59,8 @@ ThoxaString *thoxa_string_from_i64(int64_t v);
 ThoxaString *thoxa_string_from_bool(bool v);
 /* Borrows a and b; returns a new owned string (refcount 1). */
 ThoxaString *thoxa_string_concat(const ThoxaString *a, const ThoxaString *b);
+/* Structural equality (length + bytes). NULL equals empty. */
+bool thoxa_string_eq(const ThoxaString *a, const ThoxaString *b);
 const char *thoxa_string_cstr(const ThoxaString *s);
 size_t thoxa_string_len(const ThoxaString *s);
 
@@ -89,6 +96,81 @@ ThoxaBytes *thoxa_bytes_slice(const ThoxaBytes *b, int64_t start, int64_t end);
 int64_t thoxa_bytes_find(const ThoxaBytes *hay, const ThoxaBytes *needle, int64_t from);
 /* Fresh owned String with the same bytes (not necessarily valid UTF-8). */
 ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b);
+
+/* --- Buffer (growable, COW, RC heap) ------------------------------------ */
+
+/*
+ * Layout: [ThoxaHeader][ThoxaBuffer { len, cap, data[cap] }]
+ * A ThoxaBuffer* points at the payload (after the header).
+ * Geometric growth: empty cap=0; first growth → 8; then doubles.
+ * Mutations (append / appendBytes) are copy-on-write when refcount > 1 and
+ * return the (possibly new) unique buffer — assign the result back to the place.
+ */
+typedef struct ThoxaBuffer {
+    size_t len;
+    size_t cap;
+    uint8_t data[];
+} ThoxaBuffer;
+
+/* Empty buffer (count=0, capacity=0). */
+ThoxaBuffer *thoxa_buffer_new(void);
+/* Pre-reserved capacity (still count=0). Negative → panic. */
+ThoxaBuffer *thoxa_buffer_with_capacity(int64_t capacity);
+int64_t thoxa_buffer_count(const ThoxaBuffer *b);
+int64_t thoxa_buffer_capacity(const ThoxaBuffer *b);
+/* COW + append one byte (masked to 0–255). Returns owned unique buffer. */
+ThoxaBuffer *thoxa_buffer_append(ThoxaBuffer *b, int64_t byte);
+/* COW + append all bytes from `src`. Returns owned unique buffer. */
+ThoxaBuffer *thoxa_buffer_append_bytes(ThoxaBuffer *b, const ThoxaBytes *src);
+/* Copy live prefix → owned fixed Bytes (buffer left intact). */
+ThoxaBytes *thoxa_buffer_freeze(const ThoxaBuffer *b);
+
+/* --- Array (dynamic, RC heap; functional append/dropLast) ---------------- */
+
+/*
+ * Layout: [ThoxaHeader][ThoxaArray { len, cap, flags, items[cap] }]
+ * A ThoxaArray* points at the payload (after the header).
+ * Slots are int64_t; heap element types (String/Bytes) store pointers bitcast
+ * into items[] and set THOXA_ARRAY_FLAG_HEAP_ELEMS so drop/copy walk them.
+ * Sharing is refcounted on the array object; index set mutates shared storage
+ * (oracle list semantics). append/dropLast always allocate a new array.
+ */
+typedef struct ThoxaArray {
+    size_t len;
+    size_t cap;
+    uint32_t flags;
+    int64_t items[];
+} ThoxaArray;
+
+/* Empty array. `heap_elems` true when slots hold String/Bytes pointers. */
+ThoxaArray *thoxa_array_new(int heap_elems);
+/* Owned array of `len` int64 slots (copied from `items`; NULL ok when len=0). */
+ThoxaArray *thoxa_array_from_i64(const int64_t *items, size_t len);
+/* Owned array of `len` heap pointers (each is dup'd into the array). */
+ThoxaArray *thoxa_array_from_ptrs(void *const *items, size_t len);
+int64_t thoxa_array_count(const ThoxaArray *a);
+/* Index get as Int64 (also used for heap pointers bitcast). OOB → panic. */
+int64_t thoxa_array_get_i64(const ThoxaArray *a, int64_t i);
+/* Index set Int64 slot. OOB → panic. */
+void thoxa_array_set_i64(ThoxaArray *a, int64_t i, int64_t v);
+/* Index get heap pointer. OOB → panic. Does not dup. */
+void *thoxa_array_get_ptr(const ThoxaArray *a, int64_t i);
+/* Index set heap pointer: dups `p`, drops old slot. */
+void thoxa_array_set_ptr(ThoxaArray *a, int64_t i, void *p);
+/* Functional: new array with `v` appended (int64 or bitcast ptr). */
+ThoxaArray *thoxa_array_append_i64(const ThoxaArray *a, int64_t v);
+/* Functional: new array with heap ptr appended (dups elems + dups `p`). */
+ThoxaArray *thoxa_array_append_ptr(const ThoxaArray *a, void *p);
+/* Functional: new array without last element. Empty → panic. */
+ThoxaArray *thoxa_array_drop_last(const ThoxaArray *a);
+/* Display as `[a, b, c]` for Int64 arrays. */
+ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a);
+/* Display as `["a", "b"]` for String arrays. */
+ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a);
+/* Drop with element RC walk when heap_elems. Prefer over bare thoxa_drop. */
+void thoxa_array_drop(ThoxaArray *a);
+/* Share: bump array RC only (elements stay with the shared object). */
+void thoxa_array_dup(ThoxaArray *a);
 
 #ifdef __cplusplus
 }

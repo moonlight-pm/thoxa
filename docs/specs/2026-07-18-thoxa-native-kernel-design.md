@@ -1,12 +1,12 @@
-# ThoxaNative — Native Kernel Design
+# Thoxa — Native Kernel Design
 
 - **Date:** 2026-07-18
 - **Status:** Approved
-- **Repo:** `ThoxaNative` (sibling to Python `Thoxa`)
+- **Repo:** `Thoxa` (native product; Python oracle archived under `apocrypha/old/ThoxaPython`)
 
 ## 1. Purpose
 
-Re-implement Thoxa natively so **layout, packing, and reference counting** are real shaping forces. Python Thoxa remains the language oracle and experiment bed; this repo is the systems path.
+Re-implement Thoxa natively so **layout, packing, and reference counting** are real shaping forces. Python Thoxa remains the language oracle and experiment bed (now under `apocrypha/old/ThoxaPython`); this repo is the systems path.
 
 ## 2. Locked decisions
 
@@ -17,8 +17,8 @@ Re-implement Thoxa natively so **layout, packing, and reference counting** are r
 | Errors | `May` / `Trial` + force-to-deal (`?` / `match`); signature inference OK |
 | Value model | **Hybrid (A)** — unboxed scalars; inline tags for small sums; RC heap for String/Array/large types; C-layout structs for FFI |
 | Backend (phase A) | **Compile-to-C** |
-| Old QBE Thoxa (`../Thoxa/old/Thoxa`) | Design museum; steal good runtime ideas; do not revive AST→QBE megapass |
-| Python Thoxa | Read-only SPEC + conformance oracle |
+| Old QBE Thoxa (`apocrypha/old/Thoxa`) | Design museum; steal good runtime ideas; do not revive AST→QBE megapass |
+| Python Thoxa | Read-only SPEC + conformance oracle at `apocrypha/old/ThoxaPython` |
 | Host language | Rust (compiler) |
 | Runtime language | C (`thoxa_rt`) |
 | RC day one | Correct simple single-threaded RC (dup/drop/move); Perceus precision later |
@@ -65,7 +65,7 @@ typedef struct {
 
 ## 5. Language surface policy
 
-- Source of truth: `../Thoxa/spec/SPEC.md` unless we deliberately reopen a choice.
+- Source of truth: `apocrypha/old/ThoxaPython/spec/SPEC.md` unless we deliberately reopen a choice.
 - Implement **only** what the current example rung needs.
 - A feature is done only when a checked-in `.thx` compiles, runs, and matches expected output.
 
@@ -76,7 +76,7 @@ typedef struct {
 | R0 | `hello` — `main`, `println`, return `0` | driver, runtime, C emit skeleton | ✅ |
 | R1 | arithmetic, `let`, `if` | locals, exprs, control | ✅ |
 | R2 | `Trial` + `match` + `?` | tags, force-to-deal, early return; R2 monomorph is `Trial<Int64,Int64>` (String err → R4) | ✅ |
-| R3 | user `type` + methods | layout, construction; R3 fields Int64/Bool only | ✅ |
+| R3 | user `type` + methods | layout, construction; fields Int64/Bool (+ String/Bytes post-R9) | ✅ |
 | R4 | `String` / interpolation | heap string + simple RC (dup on copy, drop at fn end) | ✅ |
 | R5 | `Bytes` + mut | fixed heap buffer (fromString/count/get/set/toString); `mut` + reassignment | ✅ |
 | R6 | `extern fn` libc | `from "c"` [+ C symbol]; marshal Int32/Int64/UInt64/String/Bytes/Void | ✅ |
@@ -87,13 +87,14 @@ typedef struct {
 ## 7. Repository layout
 
 ```text
-ThoxaNative/
+Thoxa/
   Cargo.toml                 # workspace
   .cargo/config.toml         # cargo make → xtask
   README.md
   docs/
     decisions.md
     specs/                   # design docs (not docs/superpowers)
+  apocrypha/old/ThoxaPython/ # Python oracle (SPEC + conformance)
   crates/
     compiler/                # thoxa CLI + library
     make/                    # xtask: build/runtime/test helpers

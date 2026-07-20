@@ -82,12 +82,31 @@ pub enum Stmt {
         ty: Ty,
         value: Place,
     },
+    /// `name[index] = value` (dynamic Array element store).
+    DynIndexAssign {
+        base: Place,
+        index: Place,
+        elem_ty: Ty,
+        value: Place,
+    },
     Eval(RValue),
     If {
         cond: Place,
         then_body: Vec<Stmt>,
         else_body: Vec<Stmt>,
     },
+    /// Infinite loop: `while (1) { body }`. `break` / `continue` target this.
+    Loop { body: Vec<Stmt> },
+    /// C-style counted range after `index` is initialized to the start value:
+    /// `for (; index < end; index++)` or `<=` when inclusive.
+    ForRange {
+        index: Place,
+        end: Place,
+        inclusive: bool,
+        body: Vec<Stmt>,
+    },
+    Break,
+    Continue,
     Return { value: Place },
     /// Bump refcount of a heap object (or live Trial heap payload) at `place`.
     Dup { place: Place, ty: Ty },
@@ -130,7 +149,12 @@ pub enum RValue {
         field: String,
         index: Place,
     },
-    /// Convert Int64/Bool → owned String.
+    /// Dynamic Array literal from element places (homogeneous).
+    ArrayLit {
+        elems: Vec<Place>,
+        elem_ty: Ty,
+    },
+    /// Convert Int64/Bool/Array → owned String.
     ToString { value: Place, from: Ty },
     /// Non-consuming concat → owned String.
     StringConcat { left: Place, right: Place },
@@ -177,6 +201,10 @@ pub enum Ty {
     String,
     /// Heap RC Bytes (`ThoxaBytes*`) — fixed length, mutable contents.
     Bytes,
+    /// Heap RC growable Buffer (`ThoxaBuffer*`) — COW on mutate when shared.
+    Buffer,
+    /// Dynamic growable Array (`ThoxaArray*`) — heap RC; functional append/dropLast.
+    Array { elem: Box<Ty> },
     /// Fixed inline array field type `Array<T, N>` (not a first-class value).
     FixedArray { elem: Box<Ty>, len: u64 },
     /// FFI pointer `Address<T>` (param types only in R7).
@@ -187,16 +215,29 @@ pub enum Ty {
 }
 
 fn is_heap(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Bytes)
+    matches!(ty, Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. })
 }
 
-/// True when a local of this type needs an end-of-scope drop (heap ptr or Trial with heap side).
+/// True when a local of this type needs an end-of-scope drop.
+/// User types always participate (cgen walks fields; no-op when none are heap).
 fn needs_drop(ty: &Ty) -> bool {
-    is_heap(ty)
-        || matches!(
-            ty,
-            Ty::Trial { ok, err } if is_heap(ok) || is_heap(err)
-        )
+    match ty {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } | Ty::User(_) => true,
+        Ty::Trial { ok, err } => needs_drop(ok) || needs_drop(err),
+        _ => false,
+    }
+}
+
+/// Element types supported in dynamic `Array<T>` (phase A).
+fn is_array_elem_ty(ty: &Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes
+    )
+}
+
+fn array_elem_is_heap(ty: &Ty) -> bool {
+    matches!(ty, Ty::String | Ty::Bytes)
 }
 
 fn is_trial(ty: &Ty) -> bool {
@@ -335,6 +376,8 @@ struct LowerCtx {
     /// Current module id being lowered.
     module_id: String,
     is_entry: bool,
+    /// Nesting depth of `loop` / `while` / `for` (for `break` / `continue`).
+    loop_depth: u32,
 }
 
 #[derive(Clone, Default)]
@@ -372,6 +415,7 @@ impl LowerCtx {
             fn_ret,
             module_id,
             is_entry,
+            loop_depth: 0,
         }
     }
 
@@ -607,9 +651,13 @@ pub fn lower_package(package: &Package) -> Result<Program> {
             zero_init = false;
             for p in &td.params {
                 let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
-                if !matches!(ty, Ty::Int64 | Ty::Bool) {
+                // R3+ : scalars + heap String/Bytes (RC fields). Nested User deferred.
+                if !matches!(
+                    ty,
+                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes
+                ) {
                     return Err(Error::at(
-                        "constructor-param fields must be Int64 or Bool",
+                        "constructor-param fields must be Int64, Bool, String, or Bytes",
                         p.ty.span,
                     ));
                 }
@@ -1069,6 +1117,7 @@ fn resolve_ty(
         ("Void", []) => Ok(Ty::Void),
         ("String", []) => Ok(Ty::String),
         ("Bytes", []) => Ok(Ty::Bytes),
+        ("Buffer", []) => Ok(Ty::Buffer),
         ("Trial", [TypeArg::Type(a), TypeArg::Type(b)]) => {
             let ok = resolve_ty(a, types, name_map)?;
             let err = resolve_ty(b, types, name_map)?;
@@ -1090,6 +1139,20 @@ fn resolve_ty(
             })
         }
         ("Trial", _) => Err(Error::at("Trial expects two type arguments", t.span)),
+        ("Array", [TypeArg::Type(elem)]) => {
+            let et = resolve_ty(elem, types, name_map)?;
+            if !is_array_elem_ty(&et) {
+                return Err(Error::at(
+                    format!(
+                        "Array element type not yet supported: {et:?} (Int64, Bool, String, Bytes)"
+                    ),
+                    elem.span,
+                ));
+            }
+            Ok(Ty::Array {
+                elem: Box::new(et),
+            })
+        }
         ("Array", [TypeArg::Type(elem), TypeArg::Int { value: n, span: nspan }]) => {
             if *n < 0 {
                 return Err(Error::at("Array length must be non-negative", *nspan));
@@ -1097,7 +1160,7 @@ fn resolve_ty(
             let et = resolve_ty(elem, types, name_map)?;
             if !is_abi_scalar(&et) {
                 return Err(Error::at(
-                    format!("Array element must be an ABI scalar, got {et:?}"),
+                    format!("fixed Array element must be an ABI scalar, got {et:?}"),
                     elem.span,
                 ));
             }
@@ -1107,7 +1170,7 @@ fn resolve_ty(
             })
         }
         ("Array", _) => Err(Error::at(
-            "Array expects element type and const length: Array<T, N>",
+            "Array expects Array<T> (dynamic) or Array<T, N> (fixed field)",
             t.span,
         )),
         ("Address", [TypeArg::Type(inner)]) => {
@@ -1317,6 +1380,8 @@ fn collect_drop_places(stmts: &[Stmt], out: &mut Vec<(String, Ty)>) {
                 collect_drop_places(then_body, out);
                 collect_drop_places(else_body, out);
             }
+            Stmt::Loop { body } => collect_drop_places(body, out),
+            Stmt::ForRange { body, .. } => collect_drop_places(body, out),
             _ => {}
         }
     }
@@ -1349,11 +1414,50 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
         match item {
             BlockItem::Let {
                 name,
-                name_span: _,
+                name_span,
                 mutable,
+                ty: ann,
                 init,
             } => {
                 let (place, ty) = lower_expr(ctx, init)?;
+                let (place, ty) = if let Some(ann) = ann {
+                    let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
+                    if matches!(&ty, Ty::Array { elem } if matches!(elem.as_ref(), Ty::Void)) {
+                        // Empty `[]` — rebuild with the annotated element type.
+                        let Ty::Array { elem } = &expect else {
+                            return Err(Error::at(
+                                format!("empty array `[]` needs Array<T> annotation, got {expect:?}"),
+                                *name_span,
+                            ));
+                        };
+                        let p = ctx.fresh("aempty");
+                        ctx.assign(
+                            p.clone(),
+                            expect.clone(),
+                            RValue::ArrayLit {
+                                elems: vec![],
+                                elem_ty: elem.as_ref().clone(),
+                            },
+                        );
+                        (p, expect)
+                    } else if ty != expect {
+                        return Err(Error::at(
+                            format!(
+                                "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
+                            ),
+                            *name_span,
+                        ));
+                    } else {
+                        (place, expect)
+                    }
+                } else if matches!(&ty, Ty::Array { elem } if matches!(elem.as_ref(), Ty::Void)) {
+                    return Err(Error::at(
+                        "empty array `[]` requires a type annotation (e.g. `Array<Int64>`)",
+                        init.span,
+                    ));
+                } else {
+                    (place, ty)
+                };
                 ctx.bind_name(name, ty, *mutable, place);
             }
             BlockItem::Assign { target, value } => {
@@ -1512,6 +1616,53 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
             });
             Ok(())
         }
+        AssignTarget::DynIndex {
+            name,
+            name_span,
+            index,
+        } => {
+            let binding = ctx
+                .lookup(name)
+                .ok_or_else(|| Error::at(format!("undefined name `{name}`"), *name_span))?;
+            if !binding.mutable {
+                return Err(Error::at(
+                    format!("cannot assign through immutable binding `{name}`"),
+                    *name_span,
+                ));
+            }
+            let elem_ty = match &binding.ty {
+                Ty::Array { elem } => elem.as_ref().clone(),
+                other => {
+                    return Err(Error::at(
+                        format!("index assign on non-Array type {other:?}"),
+                        *name_span,
+                    ));
+                }
+            };
+            let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+            if !is_int(&idx_ty) {
+                return Err(Error::at("array index must be an integer", index.span));
+            }
+            let idx_p = if idx_ty == Ty::Int64 {
+                idx_p
+            } else {
+                coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+            };
+            let (v, vty) = lower_expr(ctx, value)?;
+            if vty != elem_ty {
+                return Err(Error::at(
+                    format!("array element type mismatch: expected {elem_ty:?}, found {vty:?}"),
+                    value.span,
+                ));
+            }
+            ctx.stmts.push(Stmt::DynIndexAssign {
+                base: binding.place,
+                index: idx_p,
+                elem_ty,
+                value: v,
+            });
+            Ok(())
+        }
     }
 }
 
@@ -1639,6 +1790,7 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
             name_span,
         } => lower_field(ctx, base, name, *name_span),
         ExprKind::Index { base, index } => lower_index(ctx, base, index, expr.span),
+        ExprKind::ArrayLit(elems) => lower_array_lit(ctx, elems, expr.span),
         ExprKind::MethodCall {
             receiver,
             method,
@@ -1650,6 +1802,27 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
             then_branch,
             else_branch,
         } => lower_if(ctx, cond, then_branch, else_branch.as_ref(), expr.span),
+        ExprKind::While { cond, body } => lower_while(ctx, cond, body, expr.span),
+        ExprKind::Loop { body } => lower_loop(ctx, body, expr.span),
+        ExprKind::For {
+            name,
+            name_span,
+            start,
+            end,
+            inclusive,
+            body,
+        } => lower_for(
+            ctx,
+            name,
+            *name_span,
+            start,
+            end.as_deref(),
+            *inclusive,
+            body,
+            expr.span,
+        ),
+        ExprKind::Break => lower_break(ctx, expr.span),
+        ExprKind::Continue => lower_continue(ctx, expr.span),
         ExprKind::Block(b) => {
             if b.tail.is_none() {
                 lower_block_value(ctx, b, &Ty::Void)?;
@@ -1666,6 +1839,320 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
         ExprKind::Try(inner) => lower_try(ctx, inner, expr.span),
         ExprKind::Match { scrutinee, arms } => lower_match(ctx, scrutinee, arms, expr.span),
     }
+}
+
+fn void_place(ctx: &mut LowerCtx) -> (Place, Ty) {
+    let p = ctx.fresh("u");
+    ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
+    (p, Ty::Void)
+}
+
+fn lower_break(ctx: &mut LowerCtx, span: Span) -> Result<(Place, Ty)> {
+    if ctx.loop_depth == 0 {
+        return Err(Error::at("`break` outside of a loop", span));
+    }
+    ctx.stmts.push(Stmt::Break);
+    Ok(void_place(ctx))
+}
+
+fn lower_continue(ctx: &mut LowerCtx, span: Span) -> Result<(Place, Ty)> {
+    if ctx.loop_depth == 0 {
+        return Err(Error::at("`continue` outside of a loop", span));
+    }
+    ctx.stmts.push(Stmt::Continue);
+    Ok(void_place(ctx))
+}
+
+fn lower_loop(ctx: &mut LowerCtx, body: &Block, _span: Span) -> Result<(Place, Ty)> {
+    let outer = std::mem::take(&mut ctx.stmts);
+    ctx.loop_depth += 1;
+    ctx.push_scope();
+    lower_block_into(ctx, body, &Ty::Void)?;
+    ctx.pop_scope();
+    ctx.loop_depth -= 1;
+    let body_stmts = std::mem::take(&mut ctx.stmts);
+    ctx.stmts = outer;
+    ctx.stmts.push(Stmt::Loop { body: body_stmts });
+    Ok(void_place(ctx))
+}
+
+fn lower_while(
+    ctx: &mut LowerCtx,
+    cond: &Expr,
+    body: &Block,
+    _span: Span,
+) -> Result<(Place, Ty)> {
+    // Desugar: loop { if not cond { break }; body }
+    let outer = std::mem::take(&mut ctx.stmts);
+    ctx.loop_depth += 1;
+
+    let (cond_p, cond_ty) = lower_expr(ctx, cond)?;
+    if cond_ty != Ty::Bool {
+        ctx.loop_depth -= 1;
+        ctx.stmts = outer;
+        return Err(Error::at("`while` condition must be Bool", cond.span));
+    }
+    let not_p = ctx.fresh("ncond");
+    ctx.assign(
+        not_p.clone(),
+        Ty::Bool,
+        RValue::Unary {
+            op: UnaryOp::Not,
+            arg: cond_p,
+        },
+    );
+    ctx.stmts.push(Stmt::If {
+        cond: not_p,
+        then_body: vec![Stmt::Break],
+        else_body: Vec::new(),
+    });
+
+    ctx.push_scope();
+    lower_block_into(ctx, body, &Ty::Void)?;
+    ctx.pop_scope();
+
+    ctx.loop_depth -= 1;
+    let body_stmts = std::mem::take(&mut ctx.stmts);
+    ctx.stmts = outer;
+    ctx.stmts.push(Stmt::Loop { body: body_stmts });
+    Ok(void_place(ctx))
+}
+
+fn lower_for(
+    ctx: &mut LowerCtx,
+    name: &str,
+    name_span: Span,
+    start: &Expr,
+    end: Option<&Expr>,
+    inclusive: bool,
+    body: &Block,
+    _span: Span,
+) -> Result<(Place, Ty)> {
+    // Collection iteration: `for x in xs`
+    if end.is_none() {
+        return lower_for_array(ctx, name, name_span, start, body);
+    }
+    let end = end.unwrap();
+
+    let (start_p, start_ty) = lower_expr(ctx, start)?;
+    if !is_int(&start_ty) {
+        return Err(Error::at("for-range start must be an integer", start.span));
+    }
+    let start_p = if start_ty == Ty::Int64 {
+        start_p
+    } else {
+        coerce_place(ctx, start_p, &start_ty, &Ty::Int64, start.span)?
+    };
+
+    let (end_p, end_ty) = lower_expr(ctx, end)?;
+    if !is_int(&end_ty) {
+        return Err(Error::at("for-range end must be an integer", end.span));
+    }
+    let end_p = if end_ty == Ty::Int64 {
+        end_p
+    } else {
+        coerce_place(ctx, end_p, &end_ty, &Ty::Int64, end.span)?
+    };
+
+    let idx = Place {
+        name: sanitize_name(name),
+    };
+    // Init index before the C for-loop (step/continue-safe).
+    ctx.assign(idx.clone(), Ty::Int64, RValue::Use(start_p));
+
+    let outer = std::mem::take(&mut ctx.stmts);
+    ctx.loop_depth += 1;
+    ctx.push_scope();
+    ctx.define(name, Ty::Int64, false, idx.clone());
+    // Silence unused if name shadows; name_span kept for future errors.
+    let _ = name_span;
+    lower_block_into(ctx, body, &Ty::Void)?;
+    ctx.pop_scope();
+    ctx.loop_depth -= 1;
+    let body_stmts = std::mem::take(&mut ctx.stmts);
+    ctx.stmts = outer;
+    ctx.stmts.push(Stmt::ForRange {
+        index: idx,
+        end: end_p,
+        inclusive,
+        body: body_stmts,
+    });
+    Ok(void_place(ctx))
+}
+
+/// `for x in arr` — index 0..count, bind element each iteration.
+fn lower_for_array(
+    ctx: &mut LowerCtx,
+    name: &str,
+    name_span: Span,
+    collection: &Expr,
+    body: &Block,
+) -> Result<(Place, Ty)> {
+    let (arr_p, arr_ty) = lower_expr(ctx, collection)?;
+    let elem_ty = match &arr_ty {
+        Ty::Array { elem } => elem.as_ref().clone(),
+        other => {
+            return Err(Error::at(
+                format!("`for … in` collection must be Array, got {other:?}"),
+                collection.span,
+            ));
+        }
+    };
+    let _ = name_span;
+
+    let count_p = ctx.fresh("acnt");
+    ctx.assign(
+        count_p.clone(),
+        Ty::Int64,
+        RValue::Call {
+            callee: Callee::Builtin("array_count".into()),
+            args: vec![arr_p.clone()],
+        },
+    );
+
+    let idx = ctx.fresh("ai");
+    ctx.assign(idx.clone(), Ty::Int64, RValue::Int(0));
+
+    // Loop variable lives across iterations; end-of-fn drops the last value.
+    // Each iteration: drop previous (NULL first), then load + own the next element.
+    let elem_p = Place {
+        name: sanitize_name(name),
+    };
+    init_place(ctx, &elem_p, &elem_ty)?;
+
+    let outer = std::mem::take(&mut ctx.stmts);
+    ctx.loop_depth += 1;
+    ctx.push_scope();
+    ctx.define(name, elem_ty.clone(), false, elem_p.clone());
+
+    if needs_drop(&elem_ty) {
+        // Drop previous iteration's ownership (no-op when NULL on first entry).
+        ctx.stmts.push(Stmt::Drop {
+            place: elem_p.clone(),
+            ty: elem_ty.clone(),
+        });
+    }
+    if array_elem_is_heap(&elem_ty) {
+        ctx.stmts.push(Stmt::Assign {
+            place: elem_p.clone(),
+            ty: elem_ty.clone(),
+            value: RValue::Call {
+                callee: Callee::Builtin("array_get_ptr".into()),
+                args: vec![arr_p.clone(), idx.clone()],
+            },
+        });
+        // get_ptr does not dup; own a ref for the loop variable lifetime.
+        ctx.stmts.push(Stmt::Dup {
+            place: elem_p.clone(),
+            ty: elem_ty.clone(),
+        });
+    } else if elem_ty == Ty::Bool {
+        let raw = ctx.fresh("araw");
+        ctx.stmts.push(Stmt::Assign {
+            place: raw.clone(),
+            ty: Ty::Int64,
+            value: RValue::Call {
+                callee: Callee::Builtin("array_get_i64".into()),
+                args: vec![arr_p.clone(), idx.clone()],
+            },
+        });
+        ctx.stmts.push(Stmt::Assign {
+            place: elem_p.clone(),
+            ty: Ty::Bool,
+            value: RValue::Cast {
+                value: raw,
+                from: Ty::Int64,
+                to: Ty::Bool,
+            },
+        });
+    } else {
+        ctx.stmts.push(Stmt::Assign {
+            place: elem_p.clone(),
+            ty: elem_ty.clone(),
+            value: RValue::Call {
+                callee: Callee::Builtin("array_get_i64".into()),
+                args: vec![arr_p.clone(), idx.clone()],
+            },
+        });
+    }
+    lower_block_into(ctx, body, &Ty::Void)?;
+    ctx.pop_scope();
+    ctx.loop_depth -= 1;
+    let body_stmts = std::mem::take(&mut ctx.stmts);
+    ctx.stmts = outer;
+    ctx.stmts.push(Stmt::ForRange {
+        index: idx,
+        end: count_p,
+        inclusive: false,
+        body: body_stmts,
+    });
+    Ok(void_place(ctx))
+}
+
+fn lower_array_lit(
+    ctx: &mut LowerCtx,
+    elems: &[Expr],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    if elems.is_empty() {
+        // Untyped empty — bind site must supply Array<T> annotation.
+        let p = ctx.fresh("aempty");
+        ctx.assign(
+            p.clone(),
+            Ty::Array {
+                elem: Box::new(Ty::Void),
+            },
+            RValue::ArrayLit {
+                elems: vec![],
+                elem_ty: Ty::Void,
+            },
+        );
+        return Ok((
+            p,
+            Ty::Array {
+                elem: Box::new(Ty::Void),
+            },
+        ));
+    }
+    let mut places = Vec::new();
+    let mut elem_ty: Option<Ty> = None;
+    for e in elems {
+        let (p, ty) = lower_expr(ctx, e)?;
+        match &elem_ty {
+            None => {
+                if !is_array_elem_ty(&ty) {
+                    return Err(Error::at(
+                        format!("array element type not supported: {ty:?}"),
+                        e.span,
+                    ));
+                }
+                elem_ty = Some(ty.clone());
+            }
+            Some(expect) if *expect != ty => {
+                return Err(Error::at(
+                    format!("heterogeneous array: expected {expect:?}, found {ty:?}"),
+                    e.span,
+                ));
+            }
+            Some(_) => {}
+        }
+        places.push(p);
+    }
+    let elem_ty = elem_ty.unwrap();
+    let arr_ty = Ty::Array {
+        elem: Box::new(elem_ty.clone()),
+    };
+    let p = ctx.fresh("alit");
+    ctx.assign(
+        p.clone(),
+        arr_ty.clone(),
+        RValue::ArrayLit {
+            elems: places,
+            elem_ty,
+        },
+    );
+    let _ = span;
+    Ok((p, arr_ty))
 }
 
 fn lower_interpolate(
@@ -1712,6 +2199,20 @@ fn lower_interpolate(
                             RValue::ToString {
                                 value: widened,
                                 from: Ty::Int64,
+                            },
+                        );
+                        p
+                    }
+                    Ty::Array { ref elem } => {
+                        let p = ctx.fresh("ats");
+                        ctx.assign(
+                            p.clone(),
+                            Ty::String,
+                            RValue::ToString {
+                                value: v,
+                                from: Ty::Array {
+                                    elem: elem.clone(),
+                                },
                             },
                         );
                         p
@@ -1784,6 +2285,48 @@ fn lower_field(
             );
             Ok((p, Ty::Int64))
         }
+        Ty::Array { .. } => {
+            if name != "count" {
+                return Err(Error::at(
+                    format!("no field `{name}` on Array (use .count, .append, .dropLast, [i])"),
+                    name_span,
+                ));
+            }
+            let p = ctx.fresh("acnt");
+            ctx.assign(
+                p.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::Builtin("array_count".into()),
+                    args: vec![base_p],
+                },
+            );
+            Ok((p, Ty::Int64))
+        }
+        Ty::Buffer => {
+            let builtin = match name {
+                "count" => "buffer_count",
+                "capacity" => "buffer_capacity",
+                other => {
+                    return Err(Error::at(
+                        format!(
+                            "no field `{other}` on Buffer (use .count, .capacity, .append, .appendBytes, .freeze)"
+                        ),
+                        name_span,
+                    ));
+                }
+            };
+            let p = ctx.fresh("bc");
+            ctx.assign(
+                p.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::Builtin(builtin.into()),
+                    args: vec![base_p],
+                },
+            );
+            Ok((p, Ty::Int64))
+        }
         Ty::User(type_name) => {
             let info = ctx
                 .types
@@ -1814,6 +2357,13 @@ fn lower_field(
                     field: sanitize_field(name),
                 },
             );
+            // Field load aliases the struct's pointer; own a separate ref when heap.
+            if needs_drop(&field_ty) {
+                ctx.stmts.push(Stmt::Dup {
+                    place: p.clone(),
+                    ty: field_ty.clone(),
+                });
+            }
             Ok((p, field_ty))
         }
         other => Err(Error::at(
@@ -1829,19 +2379,81 @@ fn lower_index(
     index: &Expr,
     span: Span,
 ) -> Result<(Place, Ty)> {
-    // Expect `struct.field[i]` — peel Field so we don't try to load the whole array.
+    // Dynamic Array: `arr[i]`
+    if !matches!(&base.kind, ExprKind::Field { .. }) {
+        let (base_p, base_ty) = lower_expr(ctx, base)?;
+        let elem_ty = match &base_ty {
+            Ty::Array { elem } => elem.as_ref().clone(),
+            other => {
+                return Err(Error::at(
+                    format!("cannot index non-Array type {other:?}"),
+                    span,
+                ));
+            }
+        };
+        let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+        if !is_int(&idx_ty) {
+            return Err(Error::at("array index must be an integer", index.span));
+        }
+        let idx_p = if idx_ty == Ty::Int64 {
+            idx_p
+        } else {
+            coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+        };
+        let p = ctx.fresh("aget");
+        if array_elem_is_heap(&elem_ty) {
+            ctx.assign(
+                p.clone(),
+                elem_ty.clone(),
+                RValue::Call {
+                    callee: Callee::Builtin("array_get_ptr".into()),
+                    args: vec![base_p, idx_p],
+                },
+            );
+            ctx.stmts.push(Stmt::Dup {
+                place: p.clone(),
+                ty: elem_ty.clone(),
+            });
+        } else if elem_ty == Ty::Bool {
+            let raw = ctx.fresh("araw");
+            ctx.assign(
+                raw.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::Builtin("array_get_i64".into()),
+                    args: vec![base_p, idx_p],
+                },
+            );
+            ctx.assign(
+                p.clone(),
+                Ty::Bool,
+                RValue::Cast {
+                    value: raw,
+                    from: Ty::Int64,
+                    to: Ty::Bool,
+                },
+            );
+        } else {
+            ctx.assign(
+                p.clone(),
+                elem_ty.clone(),
+                RValue::Call {
+                    callee: Callee::Builtin("array_get_i64".into()),
+                    args: vec![base_p, idx_p],
+                },
+            );
+        }
+        return Ok((p, elem_ty));
+    }
+
+    // Fixed-array field: `struct.field[i]` — peel Field so we don't load the whole array.
     let (struct_expr, field_name, field_span) = match &base.kind {
         ExprKind::Field {
             base: s,
             name,
             name_span,
         } => (s.as_ref(), name.as_str(), *name_span),
-        _ => {
-            return Err(Error::at(
-                "indexing is only supported on fixed-array fields (`s.field[i]`)",
-                span,
-            ));
-        }
+        _ => unreachable!(),
     };
     let (base_p, base_ty) = lower_expr(ctx, struct_expr)?;
     let type_name = match &base_ty {
@@ -1956,6 +2568,13 @@ fn lower_method_call(
                             fields: field_places,
                         },
                     );
+                    // StructLit copies field pointers; take our own refs so arg temps can drop.
+                    if needs_drop(&ty) {
+                        ctx.stmts.push(Stmt::Dup {
+                            place: p.clone(),
+                            ty: ty.clone(),
+                        });
+                    }
                 }
                 return Ok((p, ty));
             }
@@ -1980,9 +2599,35 @@ fn lower_method_call(
         }
     }
 
+    // Buffer mutating methods must use the binding place without Dup and write back
+    // the returned pointer (COW may allocate a new unique buffer).
+    if matches!(
+        method,
+        "append" | "appendBytes" | "freeze"
+    ) {
+        if let ExprKind::Name(recv_name) = &receiver.kind {
+            if let Some(binding) = ctx.lookup(recv_name) {
+                if binding.ty == Ty::Buffer {
+                    return lower_buffer_method(
+                        ctx,
+                        binding.place.clone(),
+                        method,
+                        args,
+                        method_span,
+                        /*write_back*/ method != "freeze",
+                    );
+                }
+            }
+        }
+    }
+
     let (recv_p, recv_ty) = lower_expr(ctx, receiver)?;
     match &recv_ty {
         Ty::Bytes => lower_bytes_method(ctx, recv_p, method, args, method_span),
+        Ty::Buffer => lower_buffer_method(ctx, recv_p, method, args, method_span, false),
+        Ty::Array { elem } => {
+            lower_array_method(ctx, recv_p, elem.as_ref(), method, args, method_span)
+        }
         Ty::User(type_name) => {
             let type_name = type_name.clone();
             let info = ctx
@@ -2056,6 +2701,158 @@ fn lower_bytes_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Plac
         places,
         Ty::Bytes,
     )
+}
+
+fn lower_buffer_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    match args.len() {
+        0 => emit_call_result(
+            ctx,
+            Callee::Builtin("buffer_new".into()),
+            vec![],
+            Ty::Buffer,
+        ),
+        1 => {
+            let formal = vec![("capacity".into(), Ty::Int64)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            emit_call_result(
+                ctx,
+                Callee::Builtin("buffer_with_capacity".into()),
+                places,
+                Ty::Buffer,
+            )
+        }
+        _ => Err(Error::at(
+            "`Buffer()` / `Buffer(capacity)` expects 0 or 1 argument",
+            span,
+        )),
+    }
+}
+
+/// Array methods — functional (return a new array; do not write back).
+fn lower_array_method(
+    ctx: &mut LowerCtx,
+    recv: Place,
+    elem: &Ty,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let arr_ty = Ty::Array {
+        elem: Box::new(elem.clone()),
+    };
+    match method {
+        "append" => {
+            let formal = vec![("item".into(), elem.clone())];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let item = places.into_iter().next().unwrap();
+            let item = if *elem == Ty::Bool {
+                // Runtime slots are int64.
+                let p = ctx.fresh("abool");
+                ctx.assign(
+                    p.clone(),
+                    Ty::Int64,
+                    RValue::Cast {
+                        value: item,
+                        from: Ty::Bool,
+                        to: Ty::Int64,
+                    },
+                );
+                p
+            } else {
+                item
+            };
+            let all = vec![recv, item];
+            let builtin = if array_elem_is_heap(elem) {
+                "array_append_ptr"
+            } else {
+                "array_append_i64"
+            };
+            emit_call_result(
+                ctx,
+                Callee::Builtin(builtin.into()),
+                all,
+                arr_ty,
+            )
+        }
+        "dropLast" => {
+            if !args.is_empty() {
+                return Err(Error::at("Array.dropLast() takes no arguments", span));
+            }
+            emit_call_result(
+                ctx,
+                Callee::Builtin("array_drop_last".into()),
+                vec![recv],
+                arr_ty,
+            )
+        }
+        other => Err(Error::at(
+            format!("no method `{other}` on Array (use .append, .dropLast)"),
+            span,
+        )),
+    }
+}
+
+/// Buffer methods. Mutating ops return a (possibly new) buffer pointer.
+/// When `write_back` is true, assign that pointer onto `recv` (COW place update).
+fn lower_buffer_method(
+    ctx: &mut LowerCtx,
+    recv: Place,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+    write_back: bool,
+) -> Result<(Place, Ty)> {
+    match method {
+        "append" => {
+            let formal = vec![("byte".into(), Ty::Int64)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut all = vec![recv.clone()];
+            all.extend(places);
+            // Ownership transfer: overwrite recv with returned unique buffer.
+            ctx.stmts.push(Stmt::Assign {
+                place: recv.clone(),
+                ty: Ty::Buffer,
+                value: RValue::Call {
+                    callee: Callee::Builtin("buffer_append".into()),
+                    args: all,
+                },
+            });
+            if !write_back {
+                // Receiver was a temporary; still ok — place holds unique buffer.
+            }
+            Ok(void_place(ctx))
+        }
+        "appendBytes" => {
+            let formal = vec![("bytes".into(), Ty::Bytes)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut all = vec![recv.clone()];
+            all.extend(places);
+            ctx.stmts.push(Stmt::Assign {
+                place: recv.clone(),
+                ty: Ty::Buffer,
+                value: RValue::Call {
+                    callee: Callee::Builtin("buffer_append_bytes".into()),
+                    args: all,
+                },
+            });
+            Ok(void_place(ctx))
+        }
+        "freeze" => {
+            if !args.is_empty() {
+                return Err(Error::at("Buffer.freeze() takes no arguments", span));
+            }
+            emit_call_result(
+                ctx,
+                Callee::Builtin("buffer_freeze".into()),
+                vec![recv],
+                Ty::Bytes,
+            )
+        }
+        other => Err(Error::at(
+            format!("no method `{other}` on Buffer"),
+            span,
+        )),
+    }
 }
 
 fn lower_bytes_method(
@@ -2635,7 +3432,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
             ctx.assign(place.clone(), ty.clone(), RValue::Int(0))
         }
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
-        Ty::String | Ty::Bytes => {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } => {
             ctx.stmts.push(Stmt::Assign {
                 place: place.clone(),
                 ty: ty.clone(),
@@ -2676,12 +3473,20 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                     },
                 );
             } else {
+                // Zero-ish placeholder so branch-skipped drops are safe (NULL heap fields).
                 let mut fields = Vec::new();
                 for f in &info.fields {
                     let fp = ctx.fresh("zf");
                     match &f.ty {
                         Ty::Int64 => ctx.assign(fp.clone(), Ty::Int64, RValue::Int(0)),
                         Ty::Bool => ctx.assign(fp.clone(), Ty::Bool, RValue::Bool(false)),
+                        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } => {
+                            ctx.stmts.push(Stmt::Assign {
+                                place: fp.clone(),
+                                ty: f.ty.clone(),
+                                value: RValue::Null,
+                            });
+                        }
                         other => {
                             return Err(Error::new(format!(
                                 "cannot zero-init field type {other:?}"
@@ -2782,6 +3587,36 @@ fn lower_binary(
                     },
                 );
                 return Ok((p, Ty::Bool));
+            }
+            if lt == Ty::String && rt == Ty::String {
+                if !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+                    return Err(Error::at(
+                        "String only supports `==` and `!=`",
+                        span,
+                    ));
+                }
+                let eq_p = ctx.fresh("seq");
+                ctx.assign(
+                    eq_p.clone(),
+                    Ty::Bool,
+                    RValue::Call {
+                        callee: Callee::Builtin("string_eq".into()),
+                        args: vec![l, r],
+                    },
+                );
+                if matches!(op, BinaryOp::Ne) {
+                    let p = ctx.fresh("sne");
+                    ctx.assign(
+                        p.clone(),
+                        Ty::Bool,
+                        RValue::Unary {
+                            op: UnaryOp::Not,
+                            arg: eq_p,
+                        },
+                    );
+                    return Ok((p, Ty::Bool));
+                }
+                return Ok((eq_p, Ty::Bool));
             }
             if is_int(&lt) && is_int(&rt) {
                 let left = if lt == Ty::Int64 {
@@ -3007,6 +3842,7 @@ fn lower_call(
             // `Bytes(n)` — zero-filled buffer (R9 / D18). Not a user type.
             lower_bytes_new(ctx, args, span)
         }
+        "Buffer" => lower_buffer_new(ctx, args, span),
         other => {
             // Type constructor via local or imported name.
             if let Some(mangled_ty) = ctx.resolve_type_name(other) {
@@ -3042,6 +3878,13 @@ fn lower_call(
                             fields: field_places,
                         },
                     );
+                    // StructLit copies field pointers; take our own refs so arg temps can drop.
+                    if needs_drop(&ty) {
+                        ctx.stmts.push(Stmt::Dup {
+                            place: p.clone(),
+                            ty: ty.clone(),
+                        });
+                    }
                 }
                 return Ok((p, ty));
             }
@@ -3241,6 +4084,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         fn_ret: ctx.fn_ret.clone(),
         module_id: ctx.module_id.clone(),
         is_entry: ctx.is_entry,
+        loop_depth: ctx.loop_depth,
     };
     if block.tail.is_none() {
         return Ok(Ty::Void);

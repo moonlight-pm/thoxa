@@ -36,7 +36,7 @@ fn main() {
 fn print_help() {
     eprintln!(
         "\
-ThoxaNative xtask (`cargo make …`)
+Thoxa xtask (`cargo make …`)
 
 Build tree (everything under target/):
     target/rust/     Cargo (compiler, xtask)

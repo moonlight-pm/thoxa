@@ -1,0 +1,48 @@
+## Static-file router — path segments, traversal reject, index.html fallback, Content-Type.
+import { handle } from "./httplib/Router"
+
+fn statusOf(resp!: Bytes) -> String {
+    ## First line up to \r (or whole buffer).
+    let cr = resp.find(Bytes.fromString("\r"))
+    if cr < 0 {
+        resp.toString()
+    } else {
+        resp.slice(0, cr).toString()
+    }
+}
+
+fn main() -> Int64 {
+    let root = "tests/conformance/io_data/web"
+
+    ## Directory → index.html
+    let r0 = handle(root, "/")
+    println("root={statusOf(r0)}")
+
+    ## Nested index
+    let r1 = handle(root, "/about/")
+    println("about={statusOf(r1)}")
+
+    ## Direct file + content-type css
+    let r2 = handle(root, "/style.css")
+    println("css={statusOf(r2)}")
+    let ct = Bytes.fromString(r2.toString()).find(Bytes.fromString("text/css"))
+    if ct >= 0 {
+        println("css-type-ok")
+    } else {
+        println("css-type-missing")
+    }
+
+    ## Path traversal → 404
+    let r3 = handle(root, "/../secret")
+    println("trav={statusOf(r3)}")
+
+    ## Missing → 404
+    let r4 = handle(root, "/nope.html")
+    println("miss={statusOf(r4)}")
+
+    ## Must start with /
+    let r5 = handle(root, "relative")
+    println("rel={statusOf(r5)}")
+
+    0
+}

@@ -1,0 +1,5 @@
+empty: count=0 cap=0
+grown: count=20 cap=32
+cow: one=3 two=2
+call: inner=2 caller=1
+frozen: count=13 text=Hello, Thoxa!

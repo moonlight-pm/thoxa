@@ -1,4 +1,4 @@
-# ThoxaNative — Decision Log
+# Thoxa — Decision Log
 
 Living log of load-bearing choices. Newest first within each section when updated.
 
@@ -15,6 +15,41 @@ Living log of load-bearing choices. Newest first within each section when update
 No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and “where did we say X?” pain are real. Prefer prose + IDs here over premature graph tooling. **Serena-like code-intelligence MCPs are optional**; this repo’s handoff is file-based (`AGENTS.md` + `status.md`), not a separate memory server.
 
 ---
+
+## 2026-07-19 — R9+ file I/O + Router
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D56 | File surface | Free `readFile(path) -> Trial<Bytes, String>` | Subset of oracle `Io.thx`; whole-file via lseek size; OpenMode/`File` type deferred (User+String in Trial RC soft) |
+| D58 | File errors | Simple `Fail("open"\|"read"\|"seek")` strings | errno/`strerror` need named `ffi` root (D30) — deferred like Net |
+| D59 | User zero-init | Constructor-param User with String/Bytes fields zero as NULL heap | Match out-places; full field-RC on User copy still incomplete |
+| D60 | String equality | `==` / `!=` via `thoxa_string_eq` (length + bytes) | Ordering compares not supported |
+| D61 | Static Router | `handle(root, path) -> Bytes` HTTP response | Segments + `..` reject + index.html + Content-Type; no Request type / early return |
+| D62 | for-in RC | Drop previous loop-var each iter; last value dropped at fn end | Fixes double-drop of last heap element (was drop-per-iter + fn-end drop) |
+
+## 2026-07-19 — R9+ dynamic Array
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D53 | Dynamic `Array<T>` | Heap RC `ThoxaArray*` (slots as `int64_t`; heap elems bitcast) | Distinct from fixed field `Array<T,N>` (D27); elems: Int64, Bool, String, Bytes (User deferred) |
+| D54 | Array mutation model | Functional `append`/`dropLast` return new arrays; index set mutates shared storage | Matches oracle list semantics; not Buffer-style COW write-back |
+| D55 | Array surface | Literals, empty `[]` + type ann, `.count`, `[i]`, append, dropLast, `for x in arr`, display | `insertAt`/`removeAt` deferred; typed let `let xs: Array<T> = []` |
+
+## 2026-07-19 — R9+ Buffer
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D50 | Growable Buffer | Heap RC `ThoxaBuffer*` with COW mutate | Geometric cap 0→8→double; `append`/`appendBytes` return unique ptr (MIR write-back on name recv); not FFI-marshalable |
+| D51 | Buffer surface | `Buffer()` / `Buffer(cap)`, `.count`/`.capacity`, append, appendBytes, freeze→Bytes | `freeze` copies live prefix (consume-on-freeze deferred); `reserve` deferred |
+| D52 | Buffer vs Bytes | Buffer builds; freeze → fixed Bytes for FFI/send | Matches D17; no Buffer at extern boundary |
+
+## 2026-07-19 — R9+ control flow + String fields
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D47 | Loops (subset) | `while`, `loop`, `for x in lo..hi` / `lo..=hi`, `break`, `continue` | Loops yield `Void`; **`for x in arr` shipped with D55**; `continue` in range-for hits C for-step |
+| D48 | Constructor-param field types | Int64, Bool, **String**, **Bytes** | Nested User still deferred; C-layout body fields remain ABI-only |
+| D49 | RC on user values | `needs_drop(User)` always; cgen walks heap fields | Dup after `StructLit` and heap field loads; method `_self` is a param (not auto-dropped) |
 
 ## 2026-07-19 — R9+ Trial monomorphs + wire I/O
 
@@ -42,7 +77,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 - Oracle `examples/http` remains the north star; R9 proves modules + FFI + Bytes integration without inventing stdlib roots (`ffi` / `std/`).
 - errno/`strerror` not wrapped (would need named `ffi` root or local externs + TLS errno story).
-- Constructor-param types still Int64/Bool only → `Socket(fd: Int64)`; String fields on records still out (no RC-in-struct yet).
+- Constructor-param types were Int64/Bool only at R9 → `Socket(fd: Int64)`; **String/Bytes fields shipped later (D48–D49)**.
 
 ## 2026-07-19 — R8 modules / multi-file
 
@@ -88,7 +123,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D14 | String → Bytes surface (now) | Keep `Bytes.fromString(s)` | Matches `../Thoxa` SPEC §9.1; R5 ship shape |
+| D14 | String → Bytes surface (now) | Keep `Bytes.fromString(s)` | Matches `apocrypha/old/ThoxaPython` SPEC §9.1; R5 ship shape |
 | D15 | `"…" as Bytes` | Deferred to conversions | Belongs with `as` / `can` / `is` ([M4] in SPEC §11), not a one-off |
 | D16 | Overloaded `Bytes.from(…)` | Reject (for now) | No ad-hoc overloading story; prefer explicit names if more factories appear |
 | D17 | Multi-byte / dynamic build | Prefer `Buffer` path later | `append` / `freeze` → `Bytes`; not `from([1,2,3])` as the main story |
@@ -136,6 +171,6 @@ Revisit D15 when native work takes on [M4] conversions; revisit D17 with Buffer 
 | D9 | Docs path | `docs/specs/`, `docs/decisions.md` | No `docs/superpowers`; no graph until needed |
 | D10 | Build automation | `crates/make` xtask, `cargo make …` | No project `.sh` scripts |
 | D11 | Build products | Single `target/` tree: `rust/`, `c/`, `thoxa/` | No separate `targets/`; Cargo uses `target/rust` via `.cargo/config.toml` |
-| D12 | Language oracle | `../Thoxa` SPEC + conformance | Reopen syntax only deliberately |
+| D12 | Language oracle | `apocrypha/old/ThoxaPython` SPEC + conformance | Reopen syntax only deliberately |
 | D13 | Old QBE tree | Reference only | Do not revive megapass codegen |
 ```

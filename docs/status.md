@@ -1,16 +1,14 @@
-# ThoxaNative — status (keep current)
+# Thoxa — status (keep current)
 
 > Agents: read this at session start. After finishing work, update **Next**, **Done**, and **Last session** before stopping.
 
 ## Next
 
-**Post-R9 remaining pressure from oracle HTTP**
+**Execute:** [`docs/specs/2026-07-19-post-r9-http-completion-plan.md`](specs/2026-07-19-post-r9-http-completion-plan.md) — full remaining queue to bounded multi-request static HTTP server (PR Plan DAG for `/execute-plan`).
 
-Done: Trial monomorphs; wire accept/recv/send; `Bytes.find`.
+Baseline done: Trial monomorphs; wire I/O; loops; String fields; Buffer; Array; file I/O; String `==`/`!=`; static Router (`handle(root,path)`).
 
-Still likely: growable `Buffer`, dynamic `Array`, `loop`/`break`, file I/O for static router, String fields on records — pick by force, not all at once.
-
-Not yet: Buffer COW, full M4 conversions, `address()` explicit, struct value-copy, `sizeof`, `std/` / `ffi` named roots, `Main.thx` directory entry, full accept-loop server.
+Critical path: early `return` → User+heap RC → `Array<User>` → Request/Response → Router type → bounded server. Optional: `Main.thx` dir entry, Io polish. Deferred outside that plan: M4, Perceus, effects, full `std/`/`ffi` roots, Buffer consume, insertAt/removeAt.
 
 ## Done (ladder)
 
@@ -27,22 +25,33 @@ Not yet: Buffer COW, full M4 conversions, `address()` explicit, struct value-cop
 | R8 | modules / multi-file; `import`/`export`; module-level `let`/`mut` | `modules`, `namespaces`, `modstate` |
 | R9 | HTTP subset: Net sockets + Http protocol; `Bytes(n)` / `.slice` | `http` (+ `bytes` slice) |
 | R9+ | Trial monomorphs; accept/recv/send/connect; one-shot wire HTTP | `trials_mono`, `http_wire` |
+| R9+ | Control flow: `while` / `loop` / `for` ranges / `break` / `continue` | `control_flow`, `loops` |
+| R9+ | String/Bytes constructor-param fields (RC-in-struct) | `string_fields` |
+| R9+ | Growable `Buffer` (COW, geometric cap, freeze→Bytes) | `buffer` |
+| R9+ | Dynamic `Array<T>` (lit, index, append/dropLast, for-in) | `arrays` |
+| R9+ | File I/O (`readFile` free fn) | `file_io` (+ `iolib/`) |
+| R9+ | String `==`/`!=`; static file Router | `router` (+ `httplib/Router`) |
 
 ## Open design notes (pointers only)
 
 | Topic | Where | Stance |
 |-------|--------|--------|
 | Bytes construction sugar | `docs/decisions.md` D14–D18 | Keep `fromString`; `Bytes(n)` zero buffer shipped (D18/D36); `as Bytes` with M4 later |
-| Buffer / COW | SPEC §9.1 + `../Thoxa` growable-buffer design | Later; not blocking R9 subset |
+| Buffer / COW | SPEC §9.1 + growable-buffer design | **Shipped** (D50): RC+COW; freeze copies (consume deferred) |
+| Dynamic Array | SPEC §9 + D53 | **Shipped** (D53–D55): `Array<T>` heap RC; functional append; for-in |
 | Algebraic effects | D2 | Deferred until async forces it |
 | Perceus precision RC | D8 | Later MIR pass |
 | FFI libraries beyond `"c"` | R6 subset | Only `"c"` (libc via headers) for now |
 | Explicit `address()`, struct copy, `sizeof` | D23–D25 | Deferred (oracle LF-B §9) |
 | Named roots `std/` / `ffi`, dir `Main.thx` | D30–D32 | Deferred; R8 is `./` + `~/` only |
-| Full oracle HTTP | D36–D38 | Accept loop, files, Array/Buffer, String Trial — post-R9 |
+| Full oracle HTTP | D36–D38 | Files + Router shipped; accept-loop server still post-R9 |
 
 ## Last session
 
+- **2026-07-19 (R9+ file I/O + Router):** `iolib/Io.readFile` (open/lseek/read/close; Fail open|seek|read); cgen `fcntl.h`; String `==`/`!=`; `httplib/Router.handle(root, path)` segments/traversal/index.html/Content-Type; for-in heap-elem RC fix (drop previous, not double-drop); avoid `Trial<User+String>` until field-RC hardened; conformance `file_io`, `router`.
+- **2026-07-19 (R9+ Array):** Dynamic `Array<T>` (Int64/Bool/String/Bytes); literals `[…]`, empty `[]` with annotation; `.count`, `[i]` get/set, functional `append`/`dropLast`, `for x in arr`; display in interpolation; conformance `arrays`.
+- **2026-07-19 (R9+ Buffer):** `Buffer()` / `Buffer(cap)`; `.count`/`.capacity`; COW `append`/`appendBytes` (write-back unique ptr); `freeze()` → Bytes (copy); geometric 0→8→16→32; conformance `buffer`.
+- **2026-07-19 (R9+ loops + string fields):** `while` / `loop` / `for i in a..b` / `a..=b` / `break` / `continue`; constructor-param `String`/`Bytes` fields with RC walk on User dup/drop; conformance `control_flow`, `loops`, `string_fields`.
 - **2026-07-19 (R9+ cont.):** `Bytes.find(needle[, from])` → index or -1; Http uses find instead of recursive scan.
 - **2026-07-19 (R9+):** Generalized `Trial<Ok,Err>` (Void/String/User/Int64 monomorphs, heap RC, `?` rewrap); Net: accept/recv/send/connect/getsockname + String errors; `http_wire` one-shot client↔server; `trials_mono`.
 - **2026-07-19 (R9):** HTTP subset — `httplib/Net` (socket/bind/listen/close), `httplib/Http` (request-line parse + response build), entry `http.thx`; `Bytes(n)` zero-fill, `Bytes.slice`; socket headers in cgen; Pass/Fail int widen.

@@ -1,0 +1,7 @@
+root=HTTP/1.1 200 OK
+about=HTTP/1.1 200 OK
+css=HTTP/1.1 200 OK
+css-type-ok
+trav=HTTP/1.1 404 Not Found
+miss=HTTP/1.1 404 Not Found
+rel=HTTP/1.1 404 Not Found

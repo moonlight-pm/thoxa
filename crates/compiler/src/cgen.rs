@@ -11,11 +11,12 @@ pub fn emit_program(program: &Program) -> String {
     out.push_str("#include <stdint.h>\n");
     out.push_str("#include <stdbool.h>\n");
     out.push_str("#include <stddef.h>\n");
-    // R6–R9: libc (`extern fn … from "c"`). sockets for Net; string.h for memcpy/memset.
+    // R6–R9+: libc (`extern fn … from "c"`). sockets for Net; fcntl for open(2); string.h.
     if !program.externs.is_empty() {
         out.push_str("#include <stdlib.h>\n");
         out.push_str("#include <string.h>\n");
         out.push_str("#include <unistd.h>\n");
+        out.push_str("#include <fcntl.h>\n");
         out.push_str("#include <sys/socket.h>\n");
         out.push_str("#include <netinet/in.h>\n");
     }
@@ -68,14 +69,15 @@ pub fn emit_program(program: &Program) -> String {
             }
             emit_local_decl(&mut out, name, ty);
         }
-        emit_stmts(&mut out, &program.init, 1);
+        emit_stmts(&mut out, &program.init, 1, &program.types);
         out.push_str("}\n\n");
     }
 
     let global_names: HashSet<String> = program.globals.iter().map(|g| g.name.clone()).collect();
+    let type_layouts = &program.types;
 
     for f in &program.functions {
-        emit_function(&mut out, f, &global_names);
+        emit_function(&mut out, f, &global_names, type_layouts);
         out.push('\n');
     }
 
@@ -146,7 +148,12 @@ fn emit_params(out: &mut String, f: &Function) {
     }
 }
 
-fn emit_function(out: &mut String, f: &Function, global_names: &HashSet<String>) {
+fn emit_function(
+    out: &mut String,
+    f: &Function,
+    global_names: &HashSet<String>,
+    types: &[TypeLayout],
+) {
     let c_name = c_fn_name(f);
     let ret = c_ty(&f.ret_ty);
     let _ = write!(out, "{ret} {c_name}(");
@@ -179,7 +186,7 @@ fn emit_function(out: &mut String, f: &Function, global_names: &HashSet<String>)
         emit_local_decl(out, name, ty);
     }
 
-    emit_stmts(out, &f.body, 1);
+    emit_stmts(out, &f.body, 1, types);
 
     match (&f.ret, &f.ret_ty) {
         (Some(_), Ty::Void) => {}
@@ -195,14 +202,27 @@ fn emit_function(out: &mut String, f: &Function, global_names: &HashSet<String>)
 }
 
 fn is_heap_ty(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Bytes)
+    matches!(ty, Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. })
+}
+
+/// Same policy as MIR `needs_drop` — User always walks fields (may be no-op).
+fn needs_drop_ty(ty: &Ty) -> bool {
+    match ty {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } | Ty::User(_) => true,
+        Ty::Trial { ok, err } => needs_drop_ty(ok) || needs_drop_ty(err),
+        _ => false,
+    }
 }
 
 /// Declare a local with a safe zero value (so branch-skipped drops are no-ops).
 fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
     match ty {
-        Ty::String | Ty::Bytes => {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } => {
             let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
+        }
+        Ty::User(_) => {
+            // Zero so field drops of unassigned / branch-skipped locals are safe (NULL heap ptrs).
+            let _ = writeln!(out, "    {} {} = {{0}};", c_ty(ty), name);
         }
         Ty::Trial { ok, err } => {
             // tag=0 (Pass), heap sides NULL, scalars 0 — drop is a no-op until assigned.
@@ -245,7 +265,10 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
                     locals.push((place.name.clone(), ty.clone()));
                 }
             }
-            Stmt::FieldAssign { .. } | Stmt::IndexAssign { .. } | Stmt::Eval(_) => {}
+            Stmt::FieldAssign { .. }
+            | Stmt::IndexAssign { .. }
+            | Stmt::DynIndexAssign { .. }
+            | Stmt::Eval(_) => {}
             Stmt::If {
                 then_body,
                 else_body,
@@ -254,14 +277,20 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
                 collect_locals(then_body, locals, seen);
                 collect_locals(else_body, locals, seen);
             }
-            Stmt::Return { .. } | Stmt::Dup { .. } | Stmt::Drop { .. } => {}
+            Stmt::Loop { body } => collect_locals(body, locals, seen),
+            Stmt::ForRange { body, .. } => collect_locals(body, locals, seen),
+            Stmt::Return { .. }
+            | Stmt::Dup { .. }
+            | Stmt::Drop { .. }
+            | Stmt::Break
+            | Stmt::Continue => {}
         }
     }
 }
 
 // Note: FieldAssign/IndexAssign do not introduce new locals.
 
-fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize) {
+fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayout]) {
     let pad = "    ".repeat(indent);
     for s in stmts {
         match s {
@@ -302,6 +331,34 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize) {
                     value.name
                 );
             }
+            Stmt::DynIndexAssign {
+                base,
+                index,
+                elem_ty,
+                value,
+            } => match elem_ty {
+                Ty::String | Ty::Bytes => {
+                    let _ = writeln!(
+                        out,
+                        "{pad}thoxa_array_set_ptr({}, {}, {});",
+                        base.name, index.name, value.name
+                    );
+                }
+                Ty::Bool => {
+                    let _ = writeln!(
+                        out,
+                        "{pad}thoxa_array_set_i64({}, {}, {} ? INT64_C(1) : INT64_C(0));",
+                        base.name, index.name, value.name
+                    );
+                }
+                _ => {
+                    let _ = writeln!(
+                        out,
+                        "{pad}thoxa_array_set_i64({}, {}, (int64_t){});",
+                        base.name, index.name, value.name
+                    );
+                }
+            },
             Stmt::Eval(rv) => {
                 let _ = write!(out, "{pad}");
                 emit_rvalue(out, rv);
@@ -313,23 +370,50 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize) {
                 else_body,
             } => {
                 let _ = writeln!(out, "{pad}if ({}) {{", cond.name);
-                emit_stmts(out, then_body, indent + 1);
+                emit_stmts(out, then_body, indent + 1, types);
                 if else_body.is_empty() {
                     let _ = writeln!(out, "{pad}}}");
                 } else {
                     let _ = writeln!(out, "{pad}}} else {{");
-                    emit_stmts(out, else_body, indent + 1);
+                    emit_stmts(out, else_body, indent + 1, types);
                     let _ = writeln!(out, "{pad}}}");
                 }
+            }
+            Stmt::Loop { body } => {
+                let _ = writeln!(out, "{pad}while (1) {{");
+                emit_stmts(out, body, indent + 1, types);
+                let _ = writeln!(out, "{pad}}}");
+            }
+            Stmt::ForRange {
+                index,
+                end,
+                inclusive,
+                body,
+            } => {
+                let cmp = if *inclusive { "<=" } else { "<" };
+                // Index already initialized to the range start before this stmt.
+                let _ = writeln!(
+                    out,
+                    "{pad}for (; {} {} {}; {} = {} + INT64_C(1)) {{",
+                    index.name, cmp, end.name, index.name, index.name
+                );
+                emit_stmts(out, body, indent + 1, types);
+                let _ = writeln!(out, "{pad}}}");
+            }
+            Stmt::Break => {
+                let _ = writeln!(out, "{pad}break;");
+            }
+            Stmt::Continue => {
+                let _ = writeln!(out, "{pad}continue;");
             }
             Stmt::Return { value } => {
                 let _ = writeln!(out, "{pad}return {};", value.name);
             }
             Stmt::Dup { place, ty } => {
-                emit_rc(out, &pad, place, ty, true);
+                emit_rc(out, &pad, place, ty, true, types);
             }
             Stmt::Drop { place, ty } => {
-                emit_rc(out, &pad, place, ty, false);
+                emit_rc(out, &pad, place, ty, false, types);
             }
         }
     }
@@ -399,6 +483,7 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                     "print_i64" => "thoxa_print_i64",
                     "println_bool" => "thoxa_println_bool",
                     "print_bool" => "thoxa_print_bool",
+                    "string_eq" => "thoxa_string_eq",
                     "bytes_from_string" => "thoxa_bytes_from_string",
                     "bytes_new" => "thoxa_bytes_new",
                     "bytes_count" => "(int64_t)thoxa_bytes_count",
@@ -407,6 +492,19 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
                     "bytes_slice" => "thoxa_bytes_slice",
                     "bytes_find" => "thoxa_bytes_find",
                     "bytes_to_string" => "thoxa_bytes_to_string",
+                    "buffer_new" => "thoxa_buffer_new",
+                    "buffer_with_capacity" => "thoxa_buffer_with_capacity",
+                    "buffer_count" => "thoxa_buffer_count",
+                    "buffer_capacity" => "thoxa_buffer_capacity",
+                    "buffer_append" => "thoxa_buffer_append",
+                    "buffer_append_bytes" => "thoxa_buffer_append_bytes",
+                    "buffer_freeze" => "thoxa_buffer_freeze",
+                    "array_count" => "thoxa_array_count",
+                    "array_get_i64" => "thoxa_array_get_i64",
+                    "array_get_ptr" => "thoxa_array_get_ptr",
+                    "array_append_i64" => "thoxa_array_append_i64",
+                    "array_append_ptr" => "thoxa_array_append_ptr",
+                    "array_drop_last" => "thoxa_array_drop_last",
                     other => other,
                 };
                 out.push_str(c);
@@ -501,12 +599,21 @@ fn emit_rvalue(out: &mut String, rv: &RValue) {
         RValue::Index { base, field, index } => {
             let _ = write!(out, "{}.{}[{}]", base.name, field, index.name);
         }
+        RValue::ArrayLit { elems, elem_ty } => {
+            emit_array_lit(out, elems, elem_ty);
+        }
         RValue::ToString { value, from } => match from {
             Ty::Int64 => {
                 let _ = write!(out, "thoxa_string_from_i64({})", value.name);
             }
             Ty::Bool => {
                 let _ = write!(out, "thoxa_string_from_bool({})", value.name);
+            }
+            Ty::Array { elem } if matches!(elem.as_ref(), Ty::Int64 | Ty::Bool) => {
+                let _ = write!(out, "thoxa_array_i64_to_string({})", value.name);
+            }
+            Ty::Array { elem } if matches!(elem.as_ref(), Ty::String) => {
+                let _ = write!(out, "thoxa_array_string_to_string({})", value.name);
             }
             _ => {
                 let _ = write!(out, "/* bad ToString */ NULL");
@@ -560,6 +667,8 @@ fn c_ty(ty: &Ty) -> String {
         Ty::Bool => "bool".into(),
         Ty::String => "ThoxaString*".into(),
         Ty::Bytes => "ThoxaBytes*".into(),
+        Ty::Buffer => "ThoxaBuffer*".into(),
+        Ty::Array { .. } => "ThoxaArray*".into(),
         Ty::Void => "void".into(),
         Ty::Trial { .. } => trial_c_name(ty),
         Ty::User(name) => c_type_name(name),
@@ -568,6 +677,40 @@ fn c_ty(ty: &Ty) -> String {
             c_ty(elem)
         }
         Ty::Address(inner) => format!("{}*", c_ty(inner)),
+    }
+}
+
+fn emit_array_lit(out: &mut String, elems: &[crate::mir::Place], elem_ty: &Ty) {
+    let heap = matches!(elem_ty, Ty::String | Ty::Bytes);
+    if elems.is_empty() {
+        let _ = write!(out, "thoxa_array_new({})", if heap { 1 } else { 0 });
+        return;
+    }
+    if heap {
+        out.push_str("thoxa_array_from_ptrs((void *const[]){");
+        for (i, e) in elems.iter().enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            let _ = write!(out, "(void *){}", e.name);
+        }
+        let _ = write!(out, "}}, {})", elems.len());
+    } else {
+        out.push_str("thoxa_array_from_i64((const int64_t[]){");
+        for (i, e) in elems.iter().enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            match elem_ty {
+                Ty::Bool => {
+                    let _ = write!(out, "({} ? INT64_C(1) : INT64_C(0))", e.name);
+                }
+                _ => {
+                    let _ = write!(out, "(int64_t){}", e.name);
+                }
+            }
+        }
+        let _ = write!(out, "}}, {})", elems.len());
     }
 }
 
@@ -591,6 +734,7 @@ fn ty_mangle(ty: &Ty) -> String {
         Ty::Bool => "Bool".into(),
         Ty::String => "String".into(),
         Ty::Bytes => "Bytes".into(),
+        Ty::Buffer => "Buffer".into(),
         Ty::User(n) => n.replace('-', "_"),
         other => format!("{other:?}").replace(['<', '>', ' ', ','], "_"),
     }
@@ -671,25 +815,60 @@ fn emit_trial_make(out: &mut String, tag: &TrialTag, payload: &crate::mir::Place
     }
 }
 
-fn emit_rc(out: &mut String, pad: &str, place: &crate::mir::Place, ty: &Ty, dup: bool) {
+fn emit_rc(
+    out: &mut String,
+    pad: &str,
+    place: &crate::mir::Place,
+    ty: &Ty,
+    dup: bool,
+    types: &[TypeLayout],
+) {
     let op = if dup { "thoxa_dup" } else { "thoxa_drop" };
     match ty {
-        Ty::String | Ty::Bytes => {
+        Ty::String | Ty::Bytes | Ty::Buffer => {
             let _ = writeln!(out, "{pad}{op}({});", place.name);
         }
+        Ty::Array { .. } => {
+            // Array drop walks heap elements; dup only bumps the array object.
+            if dup {
+                let _ = writeln!(out, "{pad}thoxa_array_dup({});", place.name);
+            } else {
+                let _ = writeln!(out, "{pad}thoxa_array_drop({});", place.name);
+            }
+        }
+        Ty::User(name) => {
+            let Some(layout) = types.iter().find(|t| t.name == *name) else {
+                return;
+            };
+            for f in &layout.fields {
+                if !needs_drop_ty(&f.ty) {
+                    continue;
+                }
+                let nested = crate::mir::Place {
+                    name: format!("{}.{}", place.name, f.c_name),
+                };
+                emit_rc(out, pad, &nested, &f.ty, dup, types);
+            }
+        }
         Ty::Trial { ok, err } => {
-            let ok_h = is_heap_ty(ok);
-            let err_h = is_heap_ty(err);
-            if !ok_h && !err_h {
+            let ok_d = needs_drop_ty(ok);
+            let err_d = needs_drop_ty(err);
+            if !ok_d && !err_d {
                 return;
             }
             let _ = writeln!(out, "{pad}if ({}.tag == 0) {{", place.name);
-            if ok_h {
-                let _ = writeln!(out, "{pad}    {op}({}.ok);", place.name);
+            if ok_d {
+                let nested = crate::mir::Place {
+                    name: format!("{}.ok", place.name),
+                };
+                emit_rc(out, &format!("{pad}    "), &nested, ok, dup, types);
             }
             let _ = writeln!(out, "{pad}}} else {{");
-            if err_h {
-                let _ = writeln!(out, "{pad}    {op}({}.err);", place.name);
+            if err_d {
+                let nested = crate::mir::Place {
+                    name: format!("{}.err", place.name),
+                };
+                emit_rc(out, &format!("{pad}    "), &nested, err, dup, types);
             }
             let _ = writeln!(out, "{pad}}}");
         }
@@ -732,6 +911,8 @@ fn collect_trial_tys_stmts(stmts: &[Stmt], out: &mut Vec<Ty>) {
                 collect_trial_tys_stmts(then_body, out);
                 collect_trial_tys_stmts(else_body, out);
             }
+            Stmt::Loop { body } => collect_trial_tys_stmts(body, out),
+            Stmt::ForRange { body, .. } => collect_trial_tys_stmts(body, out),
             _ => {}
         }
     }

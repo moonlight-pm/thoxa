@@ -1,0 +1,126 @@
+## Router — static-file map from URL path → file under a root (oracle examples/http/Router.thx subset).
+## No early `return` / OpenMode / Request type yet: free functions + `handle(root, path) -> Bytes`.
+
+import { readFile } from "~/iolib/Io"
+
+## Split URL path on `/` into non-empty segments.
+fn pathSegments(path!: String) -> Array<String> {
+    let data = Bytes.fromString(path)
+    mut segs: Array<String> = []
+    mut start = 0
+    mut i = 0
+    let n = data.count
+    loop {
+        if i >= n { break }
+        if data.get(i) == 47 {
+            if i > start {
+                segs = segs.append(data.slice(start, i).toString())
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < n {
+        segs = segs.append(data.slice(start, n).toString())
+    }
+    segs
+}
+
+fn hasUnsafeSegment(segs!: Array<String>) -> Bool {
+    mut bad = false
+    for s in segs {
+        if s == ".." {
+            bad = true
+        }
+        if s == "." {
+            bad = true
+        }
+    }
+    bad
+}
+
+fn joinPath(root!: String, segs!: Array<String>) -> String {
+    mut path = root
+    for s in segs {
+        path = "{path}/{s}"
+    }
+    path
+}
+
+## Content-Type from extension (ASCII path via Bytes).
+fn contentTypeFor(path!: String) -> String {
+    let data = Bytes.fromString(path)
+    mut i = data.count - 1
+    mut ext = ""
+    loop {
+        if i < 0 { break }
+        let c = data.get(i)
+        if c == 47 { break }
+        if c == 46 {
+            ext = data.slice(i, data.count).toString()
+            break
+        }
+        i = i - 1
+    }
+    if ext == ".html" {
+        "text/html"
+    } else {
+        if ext == ".css" {
+            "text/css"
+        } else {
+            if ext == ".txt" {
+                "text/plain"
+            } else {
+                "application/octet-stream"
+            }
+        }
+    }
+}
+
+## 404 body (plain text).
+fn notFoundBytes() -> Bytes {
+    let body = Bytes.fromString("Not Found\n")
+    let text = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: {body.count}\r\nConnection: close\r\n\r\n{body.toString()}"
+    Bytes.fromString(text)
+}
+
+## 200 with Content-Type (extends httplib ok's text/plain-only shape for static files).
+fn okTyped(body!: Bytes, contentType!: String) -> Bytes {
+    let text = "HTTP/1.1 200 OK\r\nContent-Type: {contentType}\r\nContent-Length: {body.count}\r\nConnection: close\r\n\r\n{body.toString()}"
+    Bytes.fromString(text)
+}
+
+## Resolve `urlPath` under `root`. Always returns a full HTTP response Bytes.
+export fn handle(root!: String, urlPath!: String) -> Bytes {
+    let raw = Bytes.fromString(urlPath)
+    if raw.count == 0 {
+        notFoundBytes()
+    } else {
+        if raw.get(0) != 47 {
+            notFoundBytes()
+        } else {
+            let segs = pathSegments(urlPath)
+            if hasUnsafeSegment(segs) {
+                notFoundBytes()
+            } else {
+                let candidate = joinPath(root, segs)
+                match readFile(candidate) {
+                    Pass(body) {
+                        okTyped(body, contentTypeFor(candidate))
+                    }
+                    Fail(e) {
+                        let indexPath = "{candidate}/index.html"
+                        match readFile(indexPath) {
+                            Pass(body) {
+                                okTyped(body, contentTypeFor(indexPath))
+                            }
+                            Fail(e2) {
+                                notFoundBytes()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

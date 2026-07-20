@@ -1,0 +1,47 @@
+## Io — file open/read/close (R9+ subset of oracle examples/http/Io.thx).
+## Free-function surface only: returning `File` (User+String) inside Trial trips RC
+## double-drops today (D59 zero-init unblocks match places; field-RC on User copy still soft).
+## OpenMode enum / errno+strerror deferred (named `ffi` root).
+
+extern fn sysOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
+extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
+extern fn sysLseek(fd!: Int32, offset!: Int64, whence!: Int32) -> Int64 from "c" "lseek"
+extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
+
+## Linux: O_RDONLY, SEEK_SET / SEEK_CUR / SEEK_END
+let oRdonly = 0
+let seekSet = 0
+let seekCur = 1
+let seekEnd = 2
+
+## Read the entire contents of `path` as Bytes (open → size via lseek → read → close).
+## Fail tags: "open" | "seek" | "read". Directories open on Linux then fail at read — callers
+## that want index.html fallback treat any Fail the same (see Router).
+export fn readFile(path!: String) -> Trial<Bytes, String> {
+    let fd = sysOpen(path, oRdonly)
+    if fd < 0 {
+        Fail("open")
+    } else {
+        let pos = sysLseek(fd, 0, seekCur)
+        let end = sysLseek(fd, 0, seekEnd)
+        sysLseek(fd, pos, seekSet)
+        let size = end - pos
+        if size < 0 {
+            sysClose(fd)
+            Fail("seek")
+        } else {
+            let buf = Bytes(size)
+            let n = sysRead(fd, buf, size)
+            sysClose(fd)
+            if n < 0 {
+                Fail("read")
+            } else {
+                if n < size {
+                    Pass(buf.slice(0, n))
+                } else {
+                    Pass(buf)
+                }
+            }
+        }
+    }
+}

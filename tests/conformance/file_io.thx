@@ -1,0 +1,36 @@
+## File I/O — `readFile` via iolib/Io (R9+ static-router pressure).
+import { readFile } from "./iolib/Io"
+
+fn main() -> Int64 {
+    ## Happy path: whole-file read of a checked-in fixture (cwd = workspace root).
+    match readFile("tests/conformance/io_data/sample.txt") {
+        Pass(body) {
+            println("body={body.toString()}")
+            println("count={body.count}")
+        }
+        Fail(e) {
+            println("read-fail={e}")
+        }
+    }
+
+    ## Missing file → Fail("open")
+    match readFile("tests/conformance/io_data/does-not-exist.txt") {
+        Pass(body) {
+            println("unexpected={body.count}")
+        }
+        Fail(e) {
+            println("missing={e}")
+        }
+    }
+
+    ## Second successful read (no leftover fd / RC corruption).
+    match readFile("tests/conformance/io_data/sample.txt") {
+        Pass(body) {
+            println("again={body.toString()}")
+        }
+        Fail(e) {
+            println("again-fail={e}")
+        }
+    }
+    0
+}

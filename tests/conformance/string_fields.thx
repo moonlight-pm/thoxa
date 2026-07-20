@@ -1,0 +1,19 @@
+## Constructor-param String fields + methods (RC-in-struct).
+type Person(name: String, age: Int64) {
+    export fn label() -> String {
+        "{name} ({age})"
+    }
+    export fn renamed(newName: String) -> Person {
+        Person(name: newName, age: age)
+    }
+}
+
+fn main() -> Int64 {
+    let p = Person(name: "Ada", age: 36)
+    println(p.label())
+    let q = p.renamed(newName: "Augusta")
+    println(q.label())
+    ## Field read of String
+    println(p.name)
+    0
+}

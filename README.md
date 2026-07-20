@@ -1,8 +1,8 @@
-# ThoxaNative
+# Thoxa
 
-Native implementation of [Thoxa](../Thoxa): compile-to-C, hybrid value layout, simple RC heading toward Perceus.
+Native Thoxa: compile-to-C, hybrid value layout, simple RC heading toward Perceus.
 
-> **Pre-alpha.** Syntax and semantics track `../Thoxa/spec` only as features earn conformance tests here.
+> **Pre-alpha.** Syntax and semantics track the Python oracle at [`apocrypha/old/ThoxaPython/spec`](apocrypha/old/ThoxaPython/spec) only as features earn conformance tests here.
 
 ## Quickstart
 

@@ -148,6 +148,8 @@ pub enum BlockItem {
         name_span: Span,
         /// `true` for `mut name = …`; `false` for `let name = …`.
         mutable: bool,
+        /// Optional type annotation: `let xs: Array<Int64> = []`.
+        ty: Option<TypeExpr>,
         init: Expr,
     },
     /// Assignment to a place: `name = …`, `name.field = …`, or `name.field[i] = …`.
@@ -179,6 +181,12 @@ pub enum AssignTarget {
         base_span: Span,
         field: String,
         field_span: Span,
+        index: Expr,
+    },
+    /// `name[index] = expr` — dynamic Array element write on a mut binding.
+    DynIndex {
+        name: String,
+        name_span: Span,
         index: Expr,
     },
 }
@@ -225,16 +233,43 @@ pub enum ExprKind {
         method_span: Span,
         args: Vec<Arg>,
     },
-    /// `base[index]` — fixed-array field element (R7).
+    /// `base[index]` — fixed-array field element (R7) or dynamic Array element.
     Index {
         base: Box<Expr>,
         index: Box<Expr>,
     },
+    /// `[e1, e2, …]` — dynamic Array literal.
+    ArrayLit(Vec<Expr>),
     If {
         cond: Box<Expr>,
         then_branch: Block,
         else_branch: Option<Block>,
     },
+    /// `while cond { body }` — yields `Void`.
+    While {
+        cond: Box<Expr>,
+        body: Block,
+    },
+    /// `loop { body }` — yields `Void`.
+    Loop {
+        body: Block,
+    },
+    /// `for name in lo..hi` / `lo..=hi` or `for name in collection { body }` — yields `Void`.
+    For {
+        name: String,
+        name_span: Span,
+        /// Range start, or the collection expression when `end` is None.
+        start: Box<Expr>,
+        /// Range end when iterating a range; `None` means `for x in collection`.
+        end: Option<Box<Expr>>,
+        /// `true` for `..=` (inclusive end), `false` for `..` (exclusive). Ignored for collection for.
+        inclusive: bool,
+        body: Block,
+    },
+    /// `break` — exits the nearest enclosing loop; type `Void`.
+    Break,
+    /// `continue` — next iteration of the nearest enclosing loop; type `Void`.
+    Continue,
     Block(Block),
     Try(Box<Expr>),
     Match {

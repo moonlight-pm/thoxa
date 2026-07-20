@@ -450,7 +450,8 @@ impl Parser {
         })
     }
 
-    /// Statement starts with an assignable place: `name =`, `name.field =`, or `name.field[i] =`.
+    /// Statement starts with an assignable place:
+    /// `name =`, `name[i] =`, `name.field =`, or `name.field[i] =`.
     fn at_assign_stmt(&self) -> bool {
         if !matches!(self.current().kind, TokenKind::Ident(_)) {
             return false;
@@ -465,21 +466,33 @@ impl Parser {
             i += 1;
             // Optional `[index]`
             if self.tokens.get(i).map(|t| &t.kind) == Some(&TokenKind::LBracket) {
-                // Scan to matching `]` then expect `=` — approximate: look for `] =` after.
-                let mut depth = 1usize;
-                i += 1;
-                while i < self.tokens.len() && depth > 0 {
-                    match &self.tokens[i].kind {
-                        TokenKind::LBracket => depth += 1,
-                        TokenKind::RBracket => depth -= 1,
-                        TokenKind::Eof => return false,
-                        _ => {}
-                    }
-                    i += 1;
+                if !Self::skip_bracket_group(&self.tokens, &mut i) {
+                    return false;
                 }
+            }
+        } else if self.tokens.get(i).map(|t| &t.kind) == Some(&TokenKind::LBracket) {
+            // `name[index] = …` dynamic Array element assign
+            if !Self::skip_bracket_group(&self.tokens, &mut i) {
+                return false;
             }
         }
         self.tokens.get(i).map(|t| &t.kind) == Some(&TokenKind::Eq)
+    }
+
+    /// Advance `i` past a balanced `[…]` group. `i` starts at `[`.
+    fn skip_bracket_group(tokens: &[Token], i: &mut usize) -> bool {
+        let mut depth = 1usize;
+        *i += 1;
+        while *i < tokens.len() && depth > 0 {
+            match &tokens[*i].kind {
+                TokenKind::LBracket => depth += 1,
+                TokenKind::RBracket => depth -= 1,
+                TokenKind::Eof => return false,
+                _ => {}
+            }
+            *i += 1;
+        }
+        depth == 0
     }
 
     fn parse_binding(&mut self, mutable: bool) -> Result<LetBind> {
@@ -489,12 +502,19 @@ impl Parser {
             self.expect_kind(&TokenKind::Let)?;
         }
         let (name, name_span) = self.expect_ident()?;
+        let ty = if self.at(TokenKind::Colon) {
+            self.bump();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         self.expect_kind(&TokenKind::Eq)?;
         let init = self.parse_expr()?;
         Ok(LetBind {
             name,
             name_span,
             mutable,
+            ty,
             init,
         })
     }
@@ -522,6 +542,15 @@ impl Parser {
                     field,
                     field_span,
                 }
+            }
+        } else if self.at(TokenKind::LBracket) {
+            self.bump();
+            let index = self.parse_expr()?;
+            self.expect_kind(&TokenKind::RBracket)?;
+            AssignTarget::DynIndex {
+                name: base,
+                name_span: base_span,
+                index,
             }
         } else {
             AssignTarget::Name {
@@ -891,6 +920,23 @@ impl Parser {
             }
             TokenKind::If => self.parse_if(),
             TokenKind::Match => self.parse_match(),
+            TokenKind::While => self.parse_while(),
+            TokenKind::Loop => self.parse_loop(),
+            TokenKind::For => self.parse_for(),
+            TokenKind::Break => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Break,
+                    span: Span::new(start.start, self.prev_span().end),
+                })
+            }
+            TokenKind::Continue => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Continue,
+                    span: Span::new(start.start, self.prev_span().end),
+                })
+            }
             TokenKind::LBrace => {
                 let block = self.parse_block()?;
                 let span = block.span;
@@ -904,6 +950,29 @@ impl Parser {
                 let e = self.parse_expr()?;
                 self.expect_kind(&TokenKind::RParen)?;
                 Ok(e)
+            }
+            TokenKind::LBracket => {
+                self.bump();
+                let mut elems = Vec::new();
+                if !self.at(TokenKind::RBracket) {
+                    loop {
+                        elems.push(self.parse_expr()?);
+                        if self.at(TokenKind::Comma) {
+                            self.bump();
+                            // trailing comma ok
+                            if self.at(TokenKind::RBracket) {
+                                break;
+                            }
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                self.expect_kind(&TokenKind::RBracket)?;
+                Ok(Expr {
+                    kind: ExprKind::ArrayLit(elems),
+                    span: Span::new(start.start, self.prev_span().end),
+                })
             }
             _ => Err(Error::at(
                 format!("expected expression, found {:?}", self.current().kind),
@@ -1001,6 +1070,64 @@ impl Parser {
         })
     }
 
+    fn parse_while(&mut self) -> Result<Expr> {
+        let start = self.peek_span();
+        self.expect_kind(&TokenKind::While)?;
+        let cond = self.parse_expr()?;
+        let body = self.parse_block()?;
+        let end = body.span.end;
+        Ok(Expr {
+            kind: ExprKind::While {
+                cond: Box::new(cond),
+                body,
+            },
+            span: Span::new(start.start, end),
+        })
+    }
+
+    fn parse_loop(&mut self) -> Result<Expr> {
+        let start = self.peek_span();
+        self.expect_kind(&TokenKind::Loop)?;
+        let body = self.parse_block()?;
+        let end = body.span.end;
+        Ok(Expr {
+            kind: ExprKind::Loop { body },
+            span: Span::new(start.start, end),
+        })
+    }
+
+    /// `for name in start..end` / `start..=end` or `for name in collection { body }`
+    fn parse_for(&mut self) -> Result<Expr> {
+        let start_span = self.peek_span();
+        self.expect_kind(&TokenKind::For)?;
+        let (name, name_span) = self.expect_ident()?;
+        self.expect_kind(&TokenKind::In)?;
+        let range_start = self.parse_expr()?;
+        let (end_expr, inclusive) = if self.at(TokenKind::DotDotEq) {
+            self.bump();
+            (Some(Box::new(self.parse_expr()?)), true)
+        } else if self.at(TokenKind::DotDot) {
+            self.bump();
+            (Some(Box::new(self.parse_expr()?)), false)
+        } else {
+            // Collection iteration: `for x in xs`
+            (None, false)
+        };
+        let body = self.parse_block()?;
+        let end = body.span.end;
+        Ok(Expr {
+            kind: ExprKind::For {
+                name,
+                name_span,
+                start: Box::new(range_start),
+                end: end_expr,
+                inclusive,
+                body,
+            },
+            span: Span::new(start_span.start, end),
+        })
+    }
+
     fn parse_match_arm(&mut self) -> Result<MatchArm> {
         let pattern = self.parse_pattern()?;
         let body = self.parse_block()?;
@@ -1087,6 +1214,7 @@ struct LetBind {
     name: String,
     name_span: Span,
     mutable: bool,
+    ty: Option<TypeExpr>,
     init: Expr,
 }
 
@@ -1107,6 +1235,7 @@ fn block_elem_to_item(el: BlockElem) -> BlockItem {
             name: l.name,
             name_span: l.name_span,
             mutable: l.mutable,
+            ty: l.ty,
             init: l.init,
         },
         BlockElem::Assign(a) => BlockItem::Assign {
@@ -1253,6 +1382,31 @@ mod tests {
             fn main() -> Int64 {
                 let x = if 1 < 2 { 10 } else { 20 }
                 x
+            }
+        "#,
+        );
+        assert_eq!(module.items.len(), 1);
+    }
+
+    #[test]
+    fn parse_loops() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                mut n = 0
+                while n < 3 {
+                    n = n + 1
+                    if n == 2 { continue }
+                    if n == 3 { break }
+                }
+                loop { break }
+                for i in 0..=2 {
+                    println(i)
+                }
+                for j in 0..2 {
+                    println(j)
+                }
+                0
             }
         "#,
         );

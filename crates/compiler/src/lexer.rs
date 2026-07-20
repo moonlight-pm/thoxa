@@ -23,6 +23,12 @@ pub enum TokenKind {
     And,
     Or,
     Not,
+    While,
+    Loop,
+    Break,
+    Continue,
+    For,
+    In,
     // Identifiers & literals
     Ident(String),
     Int(i64),
@@ -40,6 +46,10 @@ pub enum TokenKind {
     Colon,
     Comma,
     Dot,
+    /// Exclusive range `..`
+    DotDot,
+    /// Inclusive range `..=`
+    DotDotEq,
     Eq,
     EqEq,
     Ne,
@@ -121,6 +131,10 @@ impl<'a> Lexer<'a> {
             b']' => self.simple(TokenKind::RBracket, start, 1),
             b':' => self.simple(TokenKind::Colon, start, 1),
             b',' => self.simple(TokenKind::Comma, start, 1),
+            b'.' if self.peek(1) == Some(b'.') && self.peek(2) == Some(b'=') => {
+                self.simple(TokenKind::DotDotEq, start, 3)
+            }
+            b'.' if self.peek(1) == Some(b'.') => self.simple(TokenKind::DotDot, start, 2),
             b'.' => self.simple(TokenKind::Dot, start, 1),
             b'+' => self.simple(TokenKind::Plus, start, 1),
             b'*' => self.simple(TokenKind::Star, start, 1),
@@ -301,6 +315,12 @@ impl<'a> Lexer<'a> {
             "and" => TokenKind::And,
             "or" => TokenKind::Or,
             "not" => TokenKind::Not,
+            "while" => TokenKind::While,
+            "loop" => TokenKind::Loop,
+            "break" => TokenKind::Break,
+            "continue" => TokenKind::Continue,
+            "for" => TokenKind::For,
+            "in" => TokenKind::In,
             _ => TokenKind::Ident(text.to_string()),
         };
         Ok(Token {
@@ -363,5 +383,20 @@ mod tests {
         assert!(tokens.iter().any(|t| t.kind == TokenKind::Type));
         assert!(tokens.iter().any(|t| t.kind == TokenKind::Export));
         assert!(tokens.iter().any(|t| t.kind == TokenKind::Dot));
+    }
+
+    #[test]
+    fn loop_and_range_tokens() {
+        let tokens = Lexer::new("while true { break } for i in 0..=10 { continue } loop { } 1..2")
+            .tokenize()
+            .unwrap();
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::While));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Break));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::For));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::In));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::DotDotEq));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Continue));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::Loop));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::DotDot));
     }
 }
