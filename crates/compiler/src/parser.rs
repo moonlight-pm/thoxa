@@ -1154,34 +1154,77 @@ impl Parser {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern> {
-        let (name, name_span) = self.expect_ident()?;
-        // Nullary `Not` (May): no parentheses. Payload variants require `(bind)`.
-        if !self.at(TokenKind::LParen) {
-            return Ok(Pattern::Variant {
-                name,
-                bind: None,
-                bind_span: name_span,
-                has_payload: false,
-                span: name_span,
-            });
+        let span = self.peek_span();
+        match &self.current().kind {
+            TokenKind::Else => {
+                self.bump();
+                Ok(Pattern::Else { span })
+            }
+            TokenKind::String(s) => {
+                let value = s.clone();
+                self.bump();
+                Ok(Pattern::StringLit {
+                    value,
+                    span: self.prev_span(),
+                })
+            }
+            TokenKind::Int(n) => {
+                let value = *n;
+                self.bump();
+                Ok(Pattern::IntLit {
+                    value,
+                    span: self.prev_span(),
+                })
+            }
+            TokenKind::True => {
+                self.bump();
+                Ok(Pattern::BoolLit {
+                    value: true,
+                    span: self.prev_span(),
+                })
+            }
+            TokenKind::False => {
+                self.bump();
+                Ok(Pattern::BoolLit {
+                    value: false,
+                    span: self.prev_span(),
+                })
+            }
+            TokenKind::Ident(_) => {
+                let (name, name_span) = self.expect_ident()?;
+                // Nullary `Not` (May): no parentheses. Payload variants require `(bind)`.
+                if !self.at(TokenKind::LParen) {
+                    return Ok(Pattern::Variant {
+                        name,
+                        bind: None,
+                        bind_span: name_span,
+                        has_payload: false,
+                        span: name_span,
+                    });
+                }
+                self.bump();
+                let (bind_raw, bind_span) = self.expect_ident()?;
+                // Pattern `_` is discard only here (D66). Body `_` is ordinary lookup elsewhere.
+                let bind = if bind_raw == "_" {
+                    None
+                } else {
+                    Some(bind_raw)
+                };
+                self.expect_kind(&TokenKind::RParen)?;
+                let end = self.prev_span().end;
+                Ok(Pattern::Variant {
+                    name,
+                    bind,
+                    bind_span,
+                    has_payload: true,
+                    span: Span::new(name_span.start, end),
+                })
+            }
+            other => Err(Error::at(
+                format!("expected match pattern, got {other:?}"),
+                span,
+            )),
         }
-        self.bump();
-        let (bind_raw, bind_span) = self.expect_ident()?;
-        // Pattern `_` is discard only here (D66). Body `_` is ordinary lookup elsewhere.
-        let bind = if bind_raw == "_" {
-            None
-        } else {
-            Some(bind_raw)
-        };
-        self.expect_kind(&TokenKind::RParen)?;
-        let end = self.prev_span().end;
-        Ok(Pattern::Variant {
-            name,
-            bind,
-            bind_span,
-            has_payload: true,
-            span: Span::new(name_span.start, end),
-        })
     }
 
     fn current(&self) -> &Token {

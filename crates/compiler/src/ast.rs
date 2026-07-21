@@ -315,6 +315,14 @@ pub enum Pattern {
         has_payload: bool,
         span: Span,
     },
+    /// String literal pattern: `"exit" { … }` (scrutinee must be String).
+    StringLit { value: String, span: Span },
+    /// Integer literal pattern: `0 { … }` (scrutinee must be Int64).
+    IntLit { value: i64, span: Span },
+    /// Bool literal pattern: `true` / `false` (scrutinee must be Bool).
+    BoolLit { value: bool, span: Span },
+    /// Catch-all `else { … }` — required for value matches (D87).
+    Else { span: Span },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,0 +1,42 @@
+## Value match: string / int / bool literal arms + required `else` (D87).
+fn label(n!: Int64) -> String {
+    match n {
+        0 { "zero" }
+        1 { "one" }
+        else { "many" }
+    }
+}
+
+fn flag(b!: Bool) -> String {
+    match b {
+        true { "yes" }
+        false { "no" }
+        else { "??" }
+    }
+}
+
+fn dispatch(cmd!: String) -> Int64 {
+    match cmd {
+        "exit" { 0 }
+        "help" { 1 }
+        "echo" { 2 }
+        else { 9 }
+    }
+}
+
+fn main() -> Int64 {
+    println(label(0))
+    println(label(1))
+    println(label(7))
+    println(flag(true))
+    println(flag(false))
+    println(dispatch("help"))
+    println(dispatch("echo"))
+    println(dispatch("bogus"))
+    ## match as statement (Void arms)
+    match "pwd" {
+        "pwd" { println("got-pwd") }
+        else { println("other") }
+    }
+    0
+}

@@ -6,12 +6,14 @@ Personal editor glue for native Thoxa. **Not** on the compile-to-C critical path
 |------|------|
 | [`tree-sitter-thoxa/`](tree-sitter-thoxa/) | Thin lexer-level Tree-sitter grammar (committed `src/parser.c`) |
 | [`zed/`](zed/) | Zed extension shim + language config (highlighting + launch `thoxa lsp`) |
+| [`shell/`](shell/) | **thoxash** — Thoxa-written shell (dogfood REPL; not product runtime) |
 
 Product language server: **`thoxa lsp`** in `crates/compiler` (Rust). No Python.
 
 Automation lives in the xtask (**not** shell scripts — D10):
 
 ```bash
+cargo make shell            # run thoxash (extras/shell dogfood REPL)
 cargo make zed              # languages + grammar WASM + build thoxa + PATH
 cargo make zed --grammar    # grammar WASM only
 cargo make zed --all        # also rebuild extension.wasm (rare)

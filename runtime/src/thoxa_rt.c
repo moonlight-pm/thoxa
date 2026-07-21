@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 int32_t thoxa_errno(void) {
     return (int32_t)errno;
@@ -801,4 +803,86 @@ ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a) {
     ThoxaString *s = thoxa_string_new(buf, used);
     free(buf);
     return s;
+}
+
+/* --- Process spawn (thoxash / dogfood) ---------------------------------- */
+
+int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len) {
+    if (!path || path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+    if (argv_len < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    size_t len = (size_t)argv_len;
+    const uint8_t *blob = (const uint8_t *)argv_blob;
+
+    /* Count NUL-terminated strings in the blob. */
+    size_t argc = 0;
+    size_t i = 0;
+    while (i < len) {
+        size_t j = i;
+        while (j < len && blob[j] != 0) {
+            j++;
+        }
+        if (j >= len) {
+            /* Missing trailing NUL — treat remainder as one arg if non-empty. */
+            if (j > i) {
+                argc++;
+            }
+            break;
+        }
+        argc++;
+        i = j + 1;
+    }
+    if (argc == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+    if (pid == 0) {
+        /* Child: build argv pointing into a private copy of the blob. */
+        uint8_t *copy = (uint8_t *)malloc(len > 0 ? len : 1);
+        char **argv = (char **)malloc((argc + 1) * sizeof(char *));
+        if ((!copy && len > 0) || !argv) {
+            _exit(127);
+        }
+        if (len > 0) {
+            memcpy(copy, blob, len);
+        }
+        size_t k = 0;
+        i = 0;
+        while (i < len && k < argc) {
+            argv[k++] = (char *)(copy + i);
+            size_t j = i;
+            while (j < len && copy[j] != 0) {
+                j++;
+            }
+            if (j >= len) {
+                break;
+            }
+            i = j + 1;
+        }
+        argv[k] = NULL;
+        execv(path, argv);
+        _exit(127);
+    }
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        return -1;
+    }
+    if (WIFEXITED(status)) {
+        return (int64_t)WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + (int64_t)WTERMSIG(status);
+    }
+    return -1;
 }

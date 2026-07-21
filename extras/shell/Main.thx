@@ -1,0 +1,356 @@
+## thoxash — Thoxa shell (extras dogfood).
+##
+## v2: external commands via PATH + thoxa_spawn_wait (fork/execv/wait).
+##     Builtins: echo, pwd, cd, help, exit/quit.
+##     No quotes, pipes, redirections, or job control yet.
+##
+## Run:  cargo make shell
+
+extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
+extern fn sysWrite(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "write"
+extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
+extern fn sysChdir(path!: String) -> Int32 from "c" "chdir"
+extern fn sysGetenv(name!: String) -> String from "c" "getenv"
+extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
+extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
+extern fn sysIsatty(fd!: Int32) -> Int32 from "c" "isatty"
+extern fn sysAccess(path!: String, mode!: Int32) -> Int32 from "c" "access"
+## RT helper: Array is not FFI-marshalable yet — argv is NUL-separated Bytes.
+extern fn sysSpawnWait(path!: String, argv!: Bytes, argvLen!: Int64) -> Int64 from "c" "thoxa_spawn_wait"
+
+let cwdBufSize = 4096
+## access(2) X_OK — executable by this user
+let accessXOk = 1
+
+## Write to stdout via write(2) so the prompt appears before blocking on read
+## (stdio `print` is line-buffered and may not flush without a newline).
+fn writeOut(s!: String) {
+    let b = Bytes.fromString(s)
+    sysWrite(1, b, b.count)
+}
+
+fn writePrompt() {
+    writeOut("$ ")
+}
+
+## One line from stdin, byte-at-a-time so pipes and ttys both split on `\n`
+## (a bulk `read` on a pipe can return multiple lines in one shot).
+## - `Not`  → EOF (or read error) with no pending bytes
+## - `Has("")` → blank line
+## CR before LF is dropped.
+fn readLine() -> May<String> {
+    mut acc = Buffer()
+    mut gotAny = false
+    mut done = false
+    mut sawEof = false
+    while done == false {
+        let chunk = Bytes(1)
+        let n = sysRead(0, chunk, 1)
+        if n <= 0 {
+            sawEof = true
+            done = true
+        } else {
+            gotAny = true
+            let b = chunk.get(0)
+            if b == 10 {
+                done = true
+            } else {
+                if b == 13 {
+                    ## skip CR
+                } else {
+                    acc.append(b)
+                }
+            }
+        }
+    }
+    if sawEof {
+        if gotAny {
+            Has(acc.freeze().toString())
+        } else {
+            Not()
+        }
+    } else {
+        Has(acc.freeze().toString())
+    }
+}
+
+## Split `line` on each byte equal to `sep` (e.g. space or ':').
+fn splitOn(line!: String, sep!: Int64) -> Array<String> {
+    let b = Bytes.fromString(line)
+    mut parts: Array<String> = []
+    mut acc = Buffer()
+    mut inPart = false
+    for i in 0..b.count {
+        let c = b.get(i)
+        if c == sep {
+            if inPart {
+                parts = parts.append(acc.freeze().toString())
+                acc = Buffer()
+                inPart = false
+            } else {
+                ## consecutive seps / leading sep → empty component (PATH semantics)
+                parts = parts.append("")
+            }
+        } else {
+            acc.append(c)
+            inPart = true
+        }
+    }
+    if inPart {
+        parts = parts.append(acc.freeze().toString())
+    } else {
+        if b.count > 0 {
+            ## trailing sep → empty final component
+            if b.get(b.count - 1) == sep {
+                parts = parts.append("")
+            }
+        }
+    }
+    parts
+}
+
+## Whitespace split (space / tab). Tabs become spaces first via dual pass.
+fn splitWords(line!: String) -> Array<String> {
+    let b = Bytes.fromString(line)
+    mut words: Array<String> = []
+    mut acc = Buffer()
+    mut inWord = false
+    for i in 0..b.count {
+        let c = b.get(i)
+        if c == 32 {
+            if inWord {
+                words = words.append(acc.freeze().toString())
+                acc = Buffer()
+                inWord = false
+            }
+        } else {
+            if c == 9 {
+                if inWord {
+                    words = words.append(acc.freeze().toString())
+                    acc = Buffer()
+                    inWord = false
+                }
+            } else {
+                acc.append(c)
+                inWord = true
+            }
+        }
+    }
+    if inWord {
+        words = words.append(acc.freeze().toString())
+    }
+    words
+}
+
+## Drop the first word (command); remaining args for builtins / argv tail.
+fn tailArgs(words!: Array<String>) -> Array<String> {
+    mut out: Array<String> = []
+    mut i = 0
+    for w in words {
+        if i > 0 {
+            out = out.append(w)
+        }
+        i = i + 1
+    }
+    out
+}
+
+fn joinSpace(parts!: Array<String>) -> String {
+    mut out = ""
+    mut i = 0
+    for p in parts {
+        if i == 0 {
+            out = p
+        } else {
+            out = "{out} {p}"
+        }
+        i = i + 1
+    }
+    out
+}
+
+fn containsSlash(s!: String) -> Bool {
+    match Bytes.fromString(s).find(Bytes.fromString("/")) {
+        Has(_) { true }
+        Not { false }
+    }
+}
+
+fn isExecutable(path!: String) -> Bool {
+    sysAccess(path, accessXOk) == 0
+}
+
+## Resolve `cmd` to an absolute/relative path for execv.
+## - contains `/` → use as-is if executable
+## - else search PATH (empty component = current directory)
+fn resolveCommand(cmd!: String) -> May<String> {
+    if containsSlash(cmd) {
+        if isExecutable(cmd) {
+            Has(cmd)
+        } else {
+            Not()
+        }
+    } else {
+        let pathEnv = sysGetenv("PATH")
+        mut found = ""
+        mut ok = false
+        if pathEnv == "" {
+            ## empty PATH: only cwd
+            if isExecutable(cmd) {
+                found = cmd
+                ok = true
+            }
+        } else {
+            let dirs = splitOn(pathEnv, 58)
+            for dir in dirs {
+                mut candidate = ""
+                if dir == "" {
+                    candidate = cmd
+                } else {
+                    candidate = "{dir}/{cmd}"
+                }
+                if ok == false {
+                    if isExecutable(candidate) {
+                        found = candidate
+                        ok = true
+                    }
+                }
+            }
+        }
+        if ok {
+            Has(found)
+        } else {
+            Not()
+        }
+    }
+}
+
+## Encode argv as consecutive NUL-terminated strings for thoxa_spawn_wait.
+fn encodeArgv(words!: Array<String>) -> Bytes {
+    mut buf = Buffer()
+    for w in words {
+        buf.appendBytes(Bytes.fromString(w))
+        buf.append(0)
+    }
+    buf.freeze()
+}
+
+fn runExternal(words!: Array<String>) {
+    let cmd = words[0]
+    match resolveCommand(cmd) {
+        Not {
+            println("thoxash: {cmd}: command not found")
+        }
+        Has(path) {
+            let blob = encodeArgv(words)
+            let st = sysSpawnWait(path, blob, blob.count)
+            if st < 0 {
+                println("thoxash: {cmd}: {sysStrerror(sysErrno())}")
+            }
+        }
+    }
+}
+
+fn builtinEcho(args!: Array<String>) {
+    println(joinSpace(args))
+}
+
+fn builtinPwd() {
+    let buf = Bytes(cwdBufSize)
+    let path = sysGetcwd(buf, cwdBufSize)
+    if path == "" {
+        println("pwd: {sysStrerror(sysErrno())}")
+    } else {
+        println(path)
+    }
+}
+
+fn builtinCd(args!: Array<String>) {
+    mut path = ""
+    if args.count == 0 {
+        path = sysGetenv("HOME")
+        if path == "" {
+            println("cd: HOME not set")
+            return
+        }
+    } else {
+        if args.count > 1 {
+            println("cd: too many arguments")
+            return
+        } else {
+            path = args[0]
+        }
+    }
+    let rc = sysChdir(path)
+    if rc != 0 {
+        println("cd: {path}: {sysStrerror(sysErrno())}")
+    }
+}
+
+fn builtinHelp() {
+    println("thoxash 2 — builtins: echo, pwd, cd, help, exit, quit. Else: run via PATH.")
+}
+
+## Run one line. Returns true when the REPL should exit.
+fn evalLine(line!: String) -> Bool {
+    let words = splitWords(line)
+    if words.count == 0 {
+        false
+    } else {
+        let cmd = words[0]
+        let args = tailArgs(words)
+        match cmd {
+            "exit" { true }
+            "quit" { true }
+            "help" {
+                builtinHelp()
+                false
+            }
+            "echo" {
+                builtinEcho(args)
+                false
+            }
+            "pwd" {
+                builtinPwd()
+                false
+            }
+            "cd" {
+                builtinCd(args)
+                false
+            }
+            else {
+                runExternal(words)
+                false
+            }
+        }
+    }
+}
+
+fn main() -> Int64 {
+    println("thoxash 2 — type help, or exit / Ctrl-D to quit")
+    ## Prompts only on a TTY. Pipes/scripts get command output alone (no `$ `
+    ## gluing when silent builtins like `cd` print nothing — a TTY echoes the
+    ## user's Enter after the prompt; a pipe does not).
+    let interactive = sysIsatty(0) != 0
+    mut running = true
+    while running {
+        if interactive {
+            writePrompt()
+        }
+        match readLine() {
+            Not {
+                ## EOF: put the next shell's prompt on a fresh line when interactive
+                if interactive {
+                    println("")
+                }
+                running = false
+            }
+            Has(line) {
+                if evalLine(line) {
+                    running = false
+                }
+            }
+        }
+    }
+    0
+}

@@ -10,11 +10,24 @@ Living log of load-bearing choices. Newest first within each section when update
 | `docs/status.md` | Living “where we are / next rung” — agents update after work |
 | `docs/decisions.md` | Locked choices + deferred analyses (this file) |
 | `docs/specs/` | Full design docs (architecture, rungs, systems) |
+| `docs/ideas/` | Parking lot for language/product sketches — **not** decisions; sleep on them |
 | `.grok/config.toml` | Project permission allows (fewer approval prompts) |
 
 No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and “where did we say X?” pain are real. Prefer prose + IDs here over premature graph tooling. **Serena-like code-intelligence MCPs are optional**; this repo’s handoff is file-based (`AGENTS.md` + `status.md`), not a separate memory server.
 
 ---
+
+## 2026-07-21 — Value match (string / int / bool + else)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D87 | Value `match` patterns | String / Int64 / Bool **literal** arms + required final `else` | SPEC §7.4 subset. Lowers to `if scrut == lit` cascade (`string_eq` for String). Duplicate lits rejected; arms after `else` rejected. Trial/May still Pass/Fail or Has/Not only (exactly two arms). No bare binding pattern / or-patterns / guards yet. Conformance: `match_value`. Dogfood: thoxash `evalLine`. |
+
+## 2026-07-21 — thoxash spawn helper
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D86 | External process spawn (dogfood) | RT `thoxa_spawn_wait(path, argv_blob, argv_len)` — fork/execv/waitpid | Array not FFI-marshalable; argv is consecutive NUL-terminated strings in `Bytes`. Child exec fail → exit 127. Parent returns exit status / 128+sig / -1 on fork fail. Used by `extras/shell` only for now; not a language surface. |
 
 ## 2026-07-20 — May / Has / Not + Bytes.find
 

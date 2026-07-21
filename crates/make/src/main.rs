@@ -23,6 +23,7 @@ fn main() {
         "runtime" => cmd_runtime(),
         "test" => cmd_test(),
         "run" => cmd_run(&args),
+        "shell" => cmd_shell(),
         "build" => cmd_build(&args),
         "emit-c" => cmd_emit_c(&args),
         "clean" => cmd_clean(&args),
@@ -49,6 +50,7 @@ Commands:
     cargo make runtime              Build libthoxa_rt.a + compile_commands.json
     cargo make test                 Run conformance suite
     cargo make run <file.thx|dir>   Compile and run a program
+    cargo make shell                Run thoxash (extras/shell REPL)
     cargo make build <file.thx|dir> Compile to target/thoxa/bin/
     cargo make emit-c <file.thx|dir> Write generated C under target/thoxa/c/
     cargo make clean                Remove target/c and target/thoxa
@@ -127,6 +129,11 @@ fn cmd_run(args: &[String]) -> i32 {
     thoxa_args.extend(args.iter().cloned());
     let refs: Vec<&str> = thoxa_args.iter().map(|s| s.as_str()).collect();
     run_thoxa(&refs)
+}
+
+/// Run the dogfood shell at `extras/shell` (thoxash).
+fn cmd_shell() -> i32 {
+    run_thoxa(&["run", "extras/shell"])
 }
 
 fn cmd_build(args: &[String]) -> i32 {

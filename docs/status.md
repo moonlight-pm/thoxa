@@ -7,6 +7,7 @@
 **HTTP + editor + Io polish complete.** Optional follow-ons:
 
 1. Deferred megawork (M4, Perceus, effects, full `std/`/`ffi`, typed-member nav, multi-diag, File type / method mut-field write-back, Net errno strings, …)
+2. **extras/shell (thoxash)** — v2 externals + string `match` dispatch (D87); next: quotes / pipes / `$?`
 
 HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 
@@ -46,6 +47,9 @@ HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 
 | Topic | Where | Stance |
 |-------|--------|--------|
+| Postfix `having` / `else` for May | [`docs/ideas/2026-07-20-having-else-may.md`](ideas/2026-07-20-having-else-may.md) | **Sleeping** — match sugar, happy path first, block-local bind only; not implementing yet |
+| Immutable values / structural sharing | [`docs/ideas/2026-07-21-immutable-values.md`](ideas/2026-07-21-immutable-values.md) | **Sleeping** — no refs; COW/persistent DS; peers + impact vs D4/D54/D50/D8; not implementing yet |
+| Webapp SSR / components | [`docs/ideas/2026-07-21-webapp-ssr-components.md`](ideas/2026-07-21-webapp-ssr-components.md) | **Sleeping** — HTML `Node` tree, SSR into existing HTTP ladder; sum not inheritance; tag sugar optional desugar; not implementing yet |
 | Bytes construction sugar | `docs/decisions.md` D14–D18 | Keep `fromString`; `Bytes(n)` zero buffer shipped (D18/D36); `as Bytes` with M4 later |
 | Buffer / COW | SPEC §9.1 + growable-buffer design | **Shipped** (D50): RC+COW; freeze copies (consume deferred) |
 | Dynamic Array | SPEC §9 + D53 | **Shipped** (D53–D55, D65): `Array<T>` heap RC; User inline elems + field RC; functional append; for-in |
@@ -58,6 +62,10 @@ HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 
 ## Last session
 
+- **2026-07-21 (D87 value match):** `match` on String/Int64/Bool with literal arms + required `else` (if-cascade; `string_eq`). Trial/May unchanged. Conformance `match_value` (32/32). thoxash `evalLine` uses string match for builtins. Decision D87.
+- **2026-07-21 (thoxash v2):** External commands — PATH search (`access` X_OK; empty component = cwd), absolute/relative if `/` in name; RT `thoxa_spawn_wait` (fork/execv/waitpid; argv as NUL-separated Bytes — Array not FFI yet).
+- **2026-07-21 (thoxash v1):** Builtins `echo` / `pwd` / `cd` + whitespace `splitWords`; `getcwd`/`chdir`/`getenv`/`strerror`/`errno`/`isatty` externs. TTY-only `$ ` prompt. `cargo make shell`.
+- **2026-07-21 (thoxash v0):** `extras/shell` — Thoxa-written echo REPL (`Main.thx`). Prompt via `write(2)`; line read byte-at-a-time (`read` + `Buffer`); `help` / `exit` / `quit` / EOF.
 - **2026-07-20 (May + find):** Builtin `May<T>` / `Has` / `Not` (Trial-shaped monomorphs); match + `?`; `Bytes.find` → `May<Int64>` (D85 / D46′). Conformance `mays`; Http/bytes/router/http_server call sites. Deferred: inferred fallible returns, May↔Trial `?` mix.
 - **2026-07-20 (optional type body):** Types with no fields/methods may omit `{}` — `type Header(name: String, value: String)` and `type Marker`. Empty `{}` still accepted. Parser unit test; Http/Header/Request/Response + a few conformance types updated. Decision D84.
 - **2026-07-20 (LSP library check):** `check_source` no longer requires `fn main` on library modules (Io/Http/…). `LowerOptions.require_main`; buffer with main still gated. Unit tests + `thoxa check iolib/Io.thx` clean. Decision D83.

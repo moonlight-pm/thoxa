@@ -804,6 +804,11 @@ impl<'a> Resolver<'a> {
                     self.define(inner, bname, id);
                 }
             }
+            // Literal / else patterns introduce no bindings.
+            Pattern::StringLit { .. }
+            | Pattern::IntLit { .. }
+            | Pattern::BoolLit { .. }
+            | Pattern::Else { .. } => {}
         }
         self.walk_block(&arm.body, inner);
     }

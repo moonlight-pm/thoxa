@@ -24,6 +24,7 @@ User phrases like **“next item” / “next rung”** mean: implement the **Ne
 ```bash
 cargo make test              # conformance (preferred day-to-day gate)
 cargo make run path.thx
+cargo make shell             # thoxash dogfood REPL (extras/shell)
 cargo make emit-c path.thx
 cargo make runtime           # libthoxa_rt.a + compile_commands.json
 cargo make zed               # sync extras → local Zed (LSP binary + grammar + lang)
@@ -45,7 +46,7 @@ All build products under **`target/{rust,c,thoxa}/`**. Prefer `cargo make …` o
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `crates/make/` | xtask (`cargo make`) |
 | `tests/conformance/` | `*.thx` + `*.out` |
-| `extras/` | Non-product DX: `tree-sitter-thoxa` + `zed` dev extension (D71/D75) |
+| `extras/` | Non-product: `tree-sitter-thoxa` + `zed` (D71/D75); **`shell/`** thoxash dogfood REPL |
 | `docs/status.md` | **Session progress** (edit when state changes) |
 | `docs/decisions.md` | Locked / deferred decisions (D-ids) |
 | `docs/specs/` | Full design docs |
@@ -77,7 +78,7 @@ Already known (see status + decisions):
 - File I/O: `readFile(path) -> Trial<Bytes,String>` (D56); OpenMode Int32 lets `oRdonly`/`oWronly`/`oRdwr` (D81); Fail via `thoxa_errno` + libc `strerror` (D80). String `==`/`!=` (D60).
 - HTTP: `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest` (D69); Router `handle(req) -> Response` (D70); **bounded server** (D67, `http_server`).
 - Control flow: `while` / `loop` / `for` ranges + collection / `break` / `continue` / early `return` (D47, D55, D63). Constructor params: Int64/Bool/String/Bytes/**Array** (D48–D49, D69).
-- Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45); **`May<T>` / `Has`/`Not` shipped (D85)** same payload set; `?` stays within family (no May↔Trial mix). **User+heap in Trial safe (D64)** — method field Dup, Trial extract/`Pass` via `needs_drop`, match bind fresh places. Match discard `Pass(_)`/`Fail(_)` (D66); nullary `Not` pattern.
+- Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45); **`May<T>` / `Has`/`Not` shipped (D85)** same payload set; `?` stays within family (no May↔Trial mix). **User+heap in Trial safe (D64)** — method field Dup, Trial extract/`Pass` via `needs_drop`, match bind fresh places. Match discard `Pass(_)`/`Fail(_)` (D66); nullary `Not` pattern. **Value match (D87):** String/Int64/Bool literal arms + required `else` (cascade of `==` / `string_eq`).
 
 ## Optional Grok memory
 

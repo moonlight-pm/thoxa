@@ -34,6 +34,18 @@ void thoxa_panic(const char *msg);
 /* Thread-local errno after a failed libc call (no named `ffi` root — D80). */
 int32_t thoxa_errno(void);
 
+/*
+ * fork + execv + waitpid for dogfood shells (thoxash).
+ * `argv_blob` is consecutive NUL-terminated strings (total `argv_len` bytes,
+ * each string including its trailing NUL). Used because Array is not yet
+ * FFI-marshalable. Returns:
+ *   0..255     — child exit status (WEXITSTATUS)
+ *   128+sig    — child killed by signal
+ *   -1         — fork failed (errno set; readable via thoxa_errno)
+ * Exec failure in the child exits 127 (shell convention).
+ */
+int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len);
+
 /* --- Heap header (RC) --------------------------------------------------- */
 
 typedef struct ThoxaHeader {
