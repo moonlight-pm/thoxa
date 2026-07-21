@@ -1,0 +1,7 @@
+fn main() -> Int {
+    let y = 1;
+    match y {
+        1 -> { 2 },
+        default -> { 3 }
+    }
+}

@@ -1,0 +1,13 @@
+
+fn getValue() -> MayInt {
+    Has(42)
+}
+
+fn main() -> Int {
+    let maybe = getValue();
+    
+    match maybe {
+        Has(v) -> { v },
+        Not() -> { 0 }
+    }
+}

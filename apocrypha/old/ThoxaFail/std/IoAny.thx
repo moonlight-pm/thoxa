@@ -1,0 +1,93 @@
+# IoAny.thx - I/O implementation with Any type for polymorphic printing
+# This module provides print functions that can handle any type
+
+type Io {
+    # File descriptors
+    export let stdin: Int64 = 0;
+    export let stdout: Int64 = 1;
+    export let stderr: Int64 = 2;
+    
+    # Low-level write syscall wrapper
+    # Returns number of bytes written, or negative on error
+    fn write(fd: Int64, buffer: Int64, count: Int64) -> Int64 {
+        # Platform note: syscall 4 is write on macOS
+        @syscall(4, fd, buffer, count)
+    };
+    
+    # Helper to write a string to a file descriptor
+    fn writeStr(fd: Int64, s: String) -> Int64 {
+        let len = @strlen(s);
+        # Skip the 8-byte length prefix to get to the actual string data
+        let dataPtr = s + 8;
+        write(fd, dataPtr, len)
+    };
+    
+    # Convert Any to String if possible
+    fn anyToString(value: Any) -> String {
+        # For now, we need runtime type checking which isn't implemented yet
+        # So we'll just return a placeholder
+        # TODO: Implement proper runtime type checking and conversion
+        "[Any value]"
+    };
+    
+    # Print any values separated by spaces
+    export fn print(...args: Any) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stdout, " ");
+            };
+            
+            # Convert to string and print
+            let s = anyToString(args[i]);
+            writeStr(stdout, s);
+            
+            i = i + 1;
+        };
+        
+        0
+    };
+    
+    # Print any values with newline
+    export fn println(...args: Any) -> Void {
+        print(...args);
+        writeStr(stdout, "\n");
+        0
+    };
+    
+    # Error output
+    export fn eprint(...args: Any) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stderr, " ");
+            };
+            
+            let s = anyToString(args[i]);
+            writeStr(stderr, s);
+            
+            i = i + 1;
+        };
+        
+        0
+    };
+    
+    # Error output with newline
+    export fn eprintln(...args: Any) -> Void {
+        eprint(...args);
+        writeStr(stderr, "\n");
+        0
+    };
+}

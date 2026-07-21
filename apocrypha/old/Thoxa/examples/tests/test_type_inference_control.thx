@@ -1,0 +1,163 @@
+
+
+fn testIfUnification() -> Int {
+    let x = 10;
+    
+    
+    let result = if x > 5 {
+        x * 2  
+    } else {
+        x + 10  
+    };
+    
+    result
+}
+
+fn testNestedIf() -> String {
+    let x = 10;
+    let y = 20;
+    
+    let msg = if x < y {
+        if x < 15 {
+            "small"  
+        } else {
+            "medium"  
+        }
+    } else {
+        "large"  
+    };
+    
+    msg
+}
+
+fn testMatchPatterns() -> Int {
+    let maybe = Has(42);
+    
+    
+    let result = match maybe {
+        Has(value) -> { value * 2 },  
+        Not() -> { 0 }
+    };
+    
+    result
+}
+
+fn testTrialMatch() -> String {
+    let trial = Pass("success");
+    
+    
+    let msg = match trial {
+        Pass(value) -> { value },  
+        Fail(error) -> { "failed" }
+    };
+    
+    msg
+}
+
+fn testLoopInference() -> Int {
+    mut sum = 0;
+    mut i = 0;
+    
+    
+    loop {
+        if i >= 10 {
+            break;
+        };
+        sum = sum + i;  
+        i = i + 1;
+    };
+    
+    sum
+}
+
+fn testBreakWithValue() -> Int {
+    let result = loop {
+        let x = 42;
+        if x > 40 {
+            break x;  
+        };
+        break 0;
+    };
+    
+    result
+}
+
+fn testForIn() -> Int {
+    let nums = [1, 2, 3, 4, 5];
+    mut sum = 0;
+    
+    
+    for n in nums {
+        sum = sum + n;
+    };
+    
+    sum
+}
+
+fn testComplexControl() -> Int {
+    let values = [10, 20, 30, 40, 50];
+    mut result = 0;
+    
+    for val in values {
+        
+        if val > 25 {
+            let doubled = val * 2;  
+            result = result + doubled;
+        } else {
+            let halved = val / 2;  
+            result = result + halved;
+        };
+    };
+    
+    result
+}
+
+fn testMatchInLoop() -> Int {
+    let maybes = [Has(1), Not(), Has(3), Has(4), Not()];
+    mut sum = 0;
+    
+    for maybe in maybes {
+        match maybe {
+            Has(value) -> {
+                sum = sum + value;  
+            },
+            Not() -> {
+                sum = sum + 0;
+            }
+        };
+    };
+    
+    sum
+}
+
+fn testReturnTypeInference() -> Int {
+    fn helper(x: Int) -> Int {
+        if x > 0 {
+            return x * 2;  
+        };
+        return x + 10;  
+    }
+    
+    helper(5) + helper(-5)
+}
+
+fn main() -> Int {
+    let t1 = testIfUnification();
+    let t2 = testNestedIf();
+    let t3 = testMatchPatterns();
+    let t4 = testTrialMatch();
+    let t5 = testLoopInference();
+    let t6 = testBreakWithValue();
+    let t7 = testForIn();
+    let t8 = testComplexControl();
+    let t9 = testMatchInLoop();
+    let t10 = testReturnTypeInference();
+    
+    let sum = t1 + t3 + t5 + t6 + t7 + t8 + t9 + t10;
+    
+    if sum == 484 {
+        0
+    } else {
+        1
+    }
+}

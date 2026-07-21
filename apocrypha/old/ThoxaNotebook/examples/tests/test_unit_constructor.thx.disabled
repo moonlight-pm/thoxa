@@ -1,0 +1,9 @@
+type Counter(initial: Int) {
+    export let mut count: Int = initial,
+    export let name: String
+}
+
+fn main() -> Void {
+    let c = Counter(10, "test");
+    printInt(c.count);
+}

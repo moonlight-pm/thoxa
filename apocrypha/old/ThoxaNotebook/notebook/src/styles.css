@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-gray-900 text-gray-100 h-full;
+  }
+
+  #root {
+    @apply h-full;
+  }
+
+  /* Global text selection disabled */
+  * {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  /* Allow text selection where needed */
+  .cm-content,
+  .cm-content *,
+  pre,
+  pre *,
+  code,
+  code *,
+  input,
+  textarea {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+  }
+
+  /* Pointer cursor for interactive elements */
+  button,
+  a,
+  [role="button"],
+  [role="link"],
+  [onclick],
+  .cursor-pointer {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply text-gray-100;
+  }
+
+  a {
+    @apply text-blue-400 hover:text-blue-300;
+  }
+
+  code {
+    @apply bg-gray-800 text-gray-300 px-1 py-0.5 rounded;
+  }
+
+  pre {
+    @apply bg-gray-800 text-gray-300;
+  }
+}
+
+/* Custom scrollbar styling */
+@layer utilities {
+  /* Webkit browsers (Chrome, Safari, Edge) */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-gray-900;
+    border-radius: 5px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-gray-700;
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-600;
+  }
+
+  /* Firefox */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #374151 #111827; /* gray-700 gray-900 */
+  }
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .hide-scrollbar {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+  }
+}

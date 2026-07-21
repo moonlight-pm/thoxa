@@ -1,0 +1,23 @@
+## May<T> optionals: Has / Not, with an exhaustive match (no `else` needed).
+fn find(xs!: Array<Int64>, target!: Int64) -> May<Int64> {
+    mut i = 0
+    for x in xs {
+        if x == target { return Has(i) }
+        i = i + 1
+    }
+    Not()
+}
+
+fn describe(m!: May<Int64>) -> String {
+    match m {
+        Has(idx) { "found at {idx}" }
+        Not { "not found" }
+    }
+}
+
+fn main() -> Int64 {
+    let xs = [5, 7, 9, 11]
+    println(describe(find(xs, 9)))
+    println(describe(find(xs, 4)))
+    0
+}

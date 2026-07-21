@@ -1,0 +1,27 @@
+
+fn testMatch(success: Bool) -> Int {
+    let result = if success {
+        Pass("Success!")
+    } else {
+        Fail("Error occurred")
+    };
+    
+    match result {
+        Pass(msg) -> {
+            print("Pass: ");
+            println(msg);
+            0
+        },
+        Fail(err) -> {
+            print("Fail: ");
+            println(err);
+            1
+        }
+    }
+}
+
+fn main() -> Int {
+    let a = testMatch(true);
+    let b = testMatch(false);
+    a + b  
+}

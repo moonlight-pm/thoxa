@@ -1,0 +1,10 @@
+# Hello World - Your first Thoxa program
+
+# Simple printing
+@printStr("Hello, World!\n");
+
+# Using template literals
+let name: String = "Thoxa";
+@printStr("Hello from ${name}!\n");
+
+0

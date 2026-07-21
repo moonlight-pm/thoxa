@@ -1,0 +1,5 @@
+## std/Math — numeric routines. `sqrt` binds libc's `sqrt(3)` directly; the
+## camelCase C symbol matches, so no explicit symbol string is needed. This
+## dogfoods the loader and the FFI: `import { sqrt } from "std/Math"` loads this
+## file, declares the extern in its module env, and binds `sqrt` into the importer.
+export extern fn sqrt(x!: Float64) -> Float64 from "c"

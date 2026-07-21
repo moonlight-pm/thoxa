@@ -1,0 +1,10 @@
+# Working.thx - A simple working example for testing
+
+# Basic arithmetic
+let result: Int64 = 2 + 3 * 4;
+@printStr("2 + 3 * 4 = ");
+@print(result);
+@printStr("\n");
+
+# Return success
+0

@@ -1,0 +1,10 @@
+# Test basic fat pointer generation
+
+# Simple number
+let x: Int64 = 42;
+
+# Try to print the pointer value of x instead of dereferencing
+# This should show us the fat pointer address
+@print(x);
+
+0

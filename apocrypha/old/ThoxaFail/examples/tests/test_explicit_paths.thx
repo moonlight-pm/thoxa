@@ -1,0 +1,9 @@
+# Test with explicit value on all paths
+mut x: Int64 = 0;
+if x > 0 {
+    x = 1;
+} else {
+    x = x;  # Explicitly reassign on else path
+};
+@print(x);
+0

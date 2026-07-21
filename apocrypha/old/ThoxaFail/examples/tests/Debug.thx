@@ -1,0 +1,3 @@
+# Debug test
+@printStr("About to return 42\n");
+42

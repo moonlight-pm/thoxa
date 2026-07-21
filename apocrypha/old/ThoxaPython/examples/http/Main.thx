@@ -1,0 +1,76 @@
+## A minimal HTTP/1.1 static file server in Thoxa. Modules: `Net` (sockets), `Http`
+## (Request/Response protocol), `Io` (files), `Router` (filesystem map over `web/`).
+##
+##   thoxa run examples/http
+##   curl -s http://127.0.0.1:9091/           # web/index.html
+##   curl -s http://127.0.0.1:9091/about/     # web/about/index.html
+##   curl -sD- http://127.0.0.1:9091/style.css
+
+import net from "./Net"
+import http from "./Http"
+import { Router } from "./Router"
+
+export fn main() -> Int64 {
+    let server = Server(port: 9091)?
+    let router = Router("examples/http/web")
+    server.listen()?
+    loop {
+        let client = server.accept()?
+        let raw = client.receive()
+        if raw.count > 0 {
+            match serve(client, router, raw) {
+                Pass { }
+                Fail(e) { println("serve error: {e}") }
+            }
+        }
+        client.close()
+    }
+}
+
+## Parse the request, route it (or 400 on parse failure), write the response.
+fn serve(client!: Client, router!: Router, raw!: Bytes) -> Trial<Void, String> {
+    match http.parseRequest(raw) {
+        Fail(msg) {
+            client.send(http.writeResponse(http.badRequest(msg)))
+            Pass(Void)
+        }
+        Pass(req) {
+            let res = router.handle(req)
+            client.send(http.writeResponse(res))
+            Pass(Void)
+        }
+    }
+}
+
+type Server(host = "127.0.0.1", port = 8000) {
+    let socket = net.createSocket()?
+
+    export fn listen() {
+        socket.reuseAddr()?
+        socket.bind(port)?
+        socket.listen(backlog: 16)?
+        println("http server listening on {host}:{port}")
+    }
+
+    export fn accept() {
+        Client(socket.accept()?)
+    }
+}
+
+## One accepted connection: receive the raw request, send a response, close.
+type Client(socket!: Socket) {
+    ## Read one request chunk; empty Bytes means the peer closed or sent nothing.
+    export fn receive() -> Bytes {
+        socket.receive()
+    }
+
+    ## Write the full response; returns the byte count written.
+    export fn send(data!: Bytes) -> Int64 {
+        socket.send(data)
+    }
+
+    ## Close the connection.
+    export fn close() {
+        socket.close()
+    }
+}

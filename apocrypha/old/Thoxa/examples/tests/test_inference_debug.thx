@@ -1,0 +1,12 @@
+# Minimal type inference test
+
+fn main() -> Int {
+    let x = 42;
+    let y = 10;
+    let result = x + y;  # Should be 52
+    if result == 52 {
+        0  # Success
+    } else {
+        1  # Failure
+    }
+}

@@ -1,0 +1,10 @@
+# Simple loop test
+mut i: Int64 = 0;
+loop {
+    if i >= 3 {
+        break;
+    };
+    i = i + 1;
+};
+@print(i);
+0

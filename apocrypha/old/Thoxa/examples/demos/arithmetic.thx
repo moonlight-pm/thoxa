@@ -1,0 +1,6 @@
+fn main() -> Int {
+    let a = 25;
+    let b = 17;
+    let sum = a + b;
+    sum
+}

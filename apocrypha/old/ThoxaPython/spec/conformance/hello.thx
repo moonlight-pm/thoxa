@@ -1,0 +1,5 @@
+## The canonical greeting — the smallest complete program.
+fn main() -> Int64 {
+    println("Hello, world!")
+    0
+}

@@ -1,0 +1,32 @@
+# Test polymorphic print function using type guards
+
+type Printer {
+    # Simple polymorphic print function
+    export fn printValue(value: Any) -> Void {
+        {
+            if value is Int64 {
+                # We know it's Int64 here
+                @print(value as Int64);
+            } else if value is String {
+                # We know it's String here
+                @printStr(value as String);
+            } else {
+                @printStr("[unknown type]");
+            };
+        };
+        0
+    };
+}
+
+let printer: Printer;
+
+# Test with different types
+let x: Any = 42;
+let y: Any = "hello";
+
+printer.printValue(x);
+@printStr("\n");
+printer.printValue(y);
+@printStr("\n");
+
+0

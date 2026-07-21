@@ -1,0 +1,33 @@
+## String/Char `\xNN` escapes (ASCII, 0x00–0x7f) — the Stage 2 language increment
+## that lets VT100 control sequences be written as ordinary string/char literals.
+## Every value is asserted through `Bytes` or a printable comparison, so this
+## program's stdout (its `.out`) carries no raw control bytes.
+
+export fn main() -> Int64 {
+    ## \xNN in a string is the ASCII character with that codepoint
+    let esc = Bytes.fromString("\x1b")
+    println("esc count={esc.count} byte={esc.get(0)}")
+
+    ## printable \xNN escapes equal their literal spelling
+    let abc = Bytes.fromString("\x41\x42\x43")
+    println("abc count={abc.count} text={abc.toString()}")
+
+    ## a full VT100 sequence is just a string literal
+    let clear = Bytes.fromString("\x1b[2J")
+    println("clear count={clear.count} esc={clear.get(0)} j={clear.get(3)}")
+
+    ## \xNN composes with interpolation and the other escapes
+    let row = 12
+    let col = 40
+    let cup = Bytes.fromString("\x1b[{row};{col}H")
+    println("cup count={cup.count} esc={cup.get(0)}")
+
+    ## hex digits are case-insensitive
+    let low = Bytes.fromString("\x7f")
+    let up = Bytes.fromString("\x7F")
+    println("del low={low.get(0)} up={up.get(0)}")
+
+    ## a Char literal accepts \xNN too (\x41 is 'A')
+    if '\x41' == 'A' { println("charA=ok") } else { println("charA=bad") }
+    0
+}

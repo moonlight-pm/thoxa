@@ -1,0 +1,28 @@
+
+fn testAlloc() {
+    println("Testing discriminated union allocation...");
+    
+    let ptr = thoxaAlloc(100, 100);
+    
+    thoxaIncref(ptr);
+    
+    thoxaDecref(ptr);
+    thoxaDecref(ptr);
+    
+    println("Memory test completed!");
+}
+
+fn testBackwardsCompat() {
+    println("Testing backwards compatible allocation...");
+    
+    let ptr = thoxaAllocRaw(50);
+    thoxaDecref(ptr);
+    
+    println("Backwards compat test completed!");
+}
+
+fn main() -> Int {
+    testAlloc();
+    testBackwardsCompat();
+    0
+}

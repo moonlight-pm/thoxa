@@ -1,0 +1,46 @@
+# Modules and Imports - Using external code
+
+# Import the Math module
+import Math from "./Math";
+
+# Create instance and use it
+let math: Math;
+
+@printStr("2 + 3 = ");
+@print(math.add(2, 3));
+@printStr("\n");
+
+@printStr("5 * 7 = ");
+@print(math.multiply(5, 7));
+@printStr("\n");
+
+@printStr("10! = ");
+@print(math.factorial(10));
+@printStr("\n");
+
+# Destructured imports
+import { add, multiply, pi } from "./Math";
+
+@printStr("\nUsing destructured imports:\n");
+@printStr("Direct add: 10 + 20 = ");
+@print(add(10, 20));
+@printStr("\n");
+
+@printStr("Pi (x100) = ");
+@print(pi);
+@printStr("\n");
+
+# Type definitions with imports
+type Calculator {
+    export fn calculate(a: Int64, b: Int64) -> Int64 {
+        # Can use imported functions
+        add(multiply(a, 2), b)
+    }
+}
+
+let calc: Calculator;
+@printStr("\n2 * 2 + 3 = ");
+@print(calc.calculate(2, 3));
+@printStr("\n");
+
+0

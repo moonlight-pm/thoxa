@@ -1,0 +1,5 @@
+all count=12 text=hello, world
+sub count=5 text=world
+empty count=0
+sub-after count=5 text=world
+split a=ab b=cd

@@ -1,0 +1,13 @@
+## Private module state (M-MOD-4, design §9): `count` is a top-level `mut`, so it
+## is created once when the module loads and is *never* exported. The exported
+## functions close over it and are the only way to read or change it.
+mut count = 0
+
+export fn bump() -> Int64 {
+    count = count + 1
+    count
+}
+
+export fn current() -> Int64 {
+    count
+}

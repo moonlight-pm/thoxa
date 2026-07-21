@@ -1,0 +1,23 @@
+# Test runtime type checking with Any
+let x: Any = 42;
+if x is Int64 {
+    @printStr("x is Int64\n");
+} else {
+    @printStr("x is not Int64\n");
+};
+
+let y: Any = "hello";
+if y is String {
+    @printStr("y is String\n");
+} else {
+    @printStr("y is not String\n");
+};
+
+# Type mismatch check
+if y is Int64 {
+    @printStr("y is Int64 (wrong!)\n");
+} else {
+    @printStr("y is not Int64 (correct)\n");
+};
+
+0

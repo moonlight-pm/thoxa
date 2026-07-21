@@ -1,0 +1,96 @@
+
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+fn multiply(x: Int, y: Int) -> Int {
+    x * y
+}
+
+fn factorial(n: Int) -> Int {
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+}
+
+fn isEven(n: Int) -> Bool {
+    n % 2 == 0
+}
+
+fn max(a: Int, b: Int) -> Int {
+    if a > b { a } else { b }
+}
+
+fn testVoid() -> Int {
+    let x = 1 + 1;
+    x
+}
+
+fn main() -> Int {
+    mut passed = 0;
+    mut failed = 0;
+    
+    let sum = add(10, 20);
+    if sum == 30 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: add(10, 20)");
+        failed = failed + 1;
+    };
+    
+    let prod = multiply(7, 6);
+    if prod == 42 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: multiply(7, 6)");
+        failed = failed + 1;
+    };
+    
+    let fact = factorial(5);
+    if fact == 120 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: factorial(5)");
+        failed = failed + 1;
+    };
+    
+    if isEven(10) {
+        passed = passed + 1;
+    } else {
+        println("FAIL: isEven(10)");
+        failed = failed + 1;
+    };
+    
+    if isEven(7) {
+        println("FAIL: isEven(7) returned true");
+        failed = failed + 1;
+    } else {
+        passed = passed + 1;
+    };
+    
+    let bigger = max(25, 17);
+    if bigger == 25 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: max(25, 17)");
+        failed = failed + 1;
+    };
+    
+    let voidResult = testVoid();
+    if voidResult == 2 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: testVoid()");
+        failed = failed + 1;
+    };
+    
+    print("Function tests: ");
+    printInt(passed);
+    print(" passed, ");
+    printInt(failed);
+    println(" failed");
+    
+    failed
+}

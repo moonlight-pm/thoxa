@@ -1,0 +1,123 @@
+## Find — Stage 6 of the kilo port: incremental search (kilo's `editorFind` +
+## `editorFindCallback`). Ctrl-F opens a "Search:" prompt; as you type, the editor jumps
+## the cursor to the next match; arrows step to the next/previous match (wrapping); Enter
+## keeps the match, ESC restores the pre-search cursor + scroll. Match *highlighting* lands
+## with Stage 7's `hl` array — this stage jumps + scrolls to the match (still fully usable).
+##
+## Find inlines its own read/refresh loop rather than reusing Prompt.promptLine, because
+## the per-keystroke search is exactly the callback kilo passes and Thoxa can't. The search
+## itself is a pure function (`searchFrom`) so it is unit-tested with no terminal.
+
+import { readKey, Press, Up, Down, Left, Right } from "./Keys"
+import { Row } from "./Row"
+import screen from "./Screen"
+import state from "./State"
+
+let hint = " (ESC cancel | Arrows next/prev | Enter confirm)"
+
+## A search hit: file row + byte column. The immutable-record pattern (Stage-0 WindowSize):
+## ctor params are private, projected into public `export let` reads, one-call construction.
+export type Match(r!: Int64, c!: Int64) {
+    export let row = r
+    export let col = c
+}
+
+## A byte is echoable text if it is not a C0/DEL control byte (kilo: !iscntrl && < 128).
+fn isPrintable(b!: Byte) -> Bool {
+    if b < 32 { false } else { b < 127 }
+}
+
+## kilo editorFindCallback's scan: step `direction` (+1/-1) from `lastMatchRow` through the
+## rows, wrapping at both ends, and return the first row whose `chars` contain `query`
+## (leftmost occurrence). `lastMatchRow == -1` is a fresh scan — forced forward from row 0
+## (kilo's `if (last_match == -1) direction = 1`, which also avoids a current = -2 wrap
+## miss). Row-granular and leftmost-in-row, faithful to kilo. Searching `chars` (not the
+## tab-expanded `render`) makes the match column the cursor's byte column directly.
+export fn searchFrom(rows!: Array<Row>, query!: Bytes, lastMatchRow!: Int64,
+                     direction!: Int64) -> May<Match> {
+    if rows.count == 0 { return Not() }
+    mut dir = direction
+    if lastMatchRow == -1 { dir = 1 }
+    mut current = lastMatchRow
+    mut i = 0
+    loop {
+        if i >= rows.count { break }
+        current = current + dir
+        if current == -1 { current = rows.count - 1 }        # wrap to the last row
+        if current == rows.count { current = 0 }             # wrap to the first row
+        match rows[current].bytes().find(query) {
+            Has(col) { return Has(Match(current, col)) }
+            Not { Void }
+        }
+        i = i + 1
+    }
+    Not()
+}
+
+## Ctrl-F incremental search. Saves the cursor + scroll, runs a modal search loop that
+## jumps to matches as the query changes, restores the saved view on ESC (Enter keeps the
+## current match). A draw or read failure ends the search like Enter.
+export fn run() -> Void {
+    let savedCx = state.cursorX()
+    let savedCy = state.cursorY()
+    let savedColoff = state.colOff()
+    let savedRowoff = state.rowOff()
+
+    mut query = Bytes(0)
+    mut lastMatch = -1          # -1 = no match yet; a fresh scan starts forward from row 0
+    mut direction = 1
+    loop {
+        state.setStatusMessage("Search: {query.toString()}{hint}")
+        match screen.refresh() {
+            Fail(e) { state.clearMatch()  break }
+            Pass { Void }
+        }
+        match readKey() {
+            Fail(e) { state.clearMatch()  break }
+            Pass(k) {
+                match k {
+                    Press(b) {
+                        if b == 27 {                       # ESC -> cancel, restore the view
+                            state.restoreView(savedCx, savedCy, savedColoff, savedRowoff)
+                            state.clearMatch()
+                            break
+                        } else if b == b'\r' {             # Enter -> keep the current match
+                            state.clearMatch()
+                            break
+                        } else if b == 127 or b == 8 {     # Backspace / Ctrl-H
+                            if query.count > 0 { query = query.slice(0, query.count - 1) }
+                            lastMatch = -1
+                            direction = 1
+                        } else if isPrintable(b) {
+                            query = query.insertAt(query.count, b)
+                            lastMatch = -1
+                            direction = 1
+                        }
+                    }
+                    Left { direction = -1 }
+                    Up { direction = -1 }
+                    Right { direction = 1 }
+                    Down { direction = 1 }
+                    else { Void }                          # Home/End/PageUp/Down/Delete: ignored
+                }
+                ## Re-search on every key (kilo runs the callback each keystroke, first restoring
+                ## the previous match's highlight). A miss or an empty query clears any prior
+                ## match overlay so a stale blue highlight never lingers on a non-matching span.
+                if query.count > 0 {
+                    match searchFrom(state.allRows(), query, lastMatch, direction) {
+                        Has(m) {
+                            lastMatch = m.row
+                            state.jumpTo(m.col, m.row)
+                            state.setMatch(m.row, m.col, query.count)
+                        }
+                        Not { state.clearMatch() }
+                    }
+                } else {
+                    state.clearMatch()
+                }
+            }
+        }
+    }
+    state.setStatusMessage("")
+    Void
+}

@@ -1,0 +1,29 @@
+fn main() -> Int {
+    let numbers = [1, 2, 3, 4, 5];
+    mut sum = 0;
+    
+    for n in numbers {
+        sum = sum + n;
+    };
+    
+    println("Sum of [1,2,3,4,5] = {sum}");
+    
+    mut product = 1;
+    for x in [2, 3, 4] {
+        product = product * x;
+    };
+    
+    println("Product of [2,3,4] = {product}");
+    
+    let items = [10, 20, 30, 40];
+    mut count = 0;
+    
+    for item in items {
+        count = count + 1;
+    };
+    
+    println("Number of items: {count}");
+    println("Array count property: {items.count}");
+    
+    0
+}

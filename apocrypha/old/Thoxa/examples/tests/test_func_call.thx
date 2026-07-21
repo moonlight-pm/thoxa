@@ -1,0 +1,8 @@
+fn createPoint() -> Int {
+    return 42;
+}
+
+fn main() -> Void {
+    let p = createPoint();
+    println("Got point");
+}

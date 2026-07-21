@@ -1,0 +1,86 @@
+
+fn main() -> Int {
+    mut passed = 0;
+    mut failed = 0;
+    
+    let sum = 10 + 20;
+    if sum == 30 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 10 + 20 != 30");
+        failed = failed + 1;
+    };
+    
+    let diff = 50 - 15;
+    if diff == 35 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 50 - 15 != 35");
+        failed = failed + 1;
+    };
+    
+    let prod = 7 * 6;
+    if prod == 42 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 7 * 6 != 42");
+        failed = failed + 1;
+    };
+    
+    let quot = 100 / 4;
+    if quot == 25 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 100 / 4 != 25");
+        failed = failed + 1;
+    };
+    
+    let rem = 17 % 5;
+    if rem == 2 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 17 % 5 != 2");
+        failed = failed + 1;
+    };
+    
+    let prec1 = 2 + 3 * 4;
+    if prec1 == 14 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 2 + 3 * 4 != 14");
+        failed = failed + 1;
+    };
+    
+    let prec2 = (2 + 3) * 4;
+    if prec2 == 20 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: (2 + 3) * 4 != 20");
+        failed = failed + 1;
+    };
+    
+    let pos = 10;
+    let neg = -pos;
+    if neg == -10 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: -10 != -10");
+        failed = failed + 1;
+    };
+    
+    let dbl = -neg;
+    if dbl == 10 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: --10 != 10");
+        failed = failed + 1;
+    };
+    
+    print("Arithmetic tests: ");
+    printInt(passed);
+    print(" passed, ");
+    printInt(failed);
+    println(" failed");
+    
+    failed
+}

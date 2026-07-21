@@ -1,0 +1,5 @@
+# Minimal test to show SSA issue
+mut x: Int64 = 1;
+x = 2;
+@print(x);
+0

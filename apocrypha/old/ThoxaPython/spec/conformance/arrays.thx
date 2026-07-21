@@ -1,0 +1,14 @@
+## Array literals, indexing, methods, index-assignment on a mutable binding, iteration.
+fn main() -> Int64 {
+    let xs = [10, 20, 30]
+    println("count={xs.count} first={xs[0]} last={xs[2]}")
+    println("appended={xs.append(40)}")
+    println("dropped={xs.dropLast()}")
+    mut ys = [1, 2, 3]
+    ys[1] = 99
+    println("mutated={ys}")
+    mut total = 0
+    for x in xs { total = total + x }
+    println("sum={total}")
+    0
+}

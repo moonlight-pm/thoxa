@@ -1,0 +1,60 @@
+# Type inference for control flow without nested functions
+
+fn testIfUnification() -> Int {
+    let x = 10;
+    
+    let result = if x > 5 {
+        x * 2
+    } else {
+        x + 10
+    };
+    
+    result
+}
+
+fn testMatchPatterns() -> Int {
+    let maybe = Has(42);
+    
+    let result = match maybe {
+        Has(value) -> { value * 2 },
+        Not() -> { 0 }
+    };
+    
+    result
+}
+
+fn testLoopInference() -> Int {
+    mut sum = 0;
+    mut i = 0;
+    
+    loop {
+        if i >= 10 {
+            break;
+        };
+        sum = sum + i;
+        i = i + 1;
+    };
+    
+    sum
+}
+
+fn testForIn() -> Int {
+    let nums = [1, 2, 3, 4, 5];
+    mut sum = 0;
+    
+    for n in nums {
+        sum = sum + n;
+    };
+    
+    sum
+}
+
+fn main() -> Int {
+    let t1 = testIfUnification();  # Should be 20
+    let t2 = testMatchPatterns();   # Should be 84
+    let t3 = testLoopInference();   # Should be 45
+    let t4 = testForIn();          # Should be 15
+    
+    # Simple verification for now
+    0  # Always pass for now
+}

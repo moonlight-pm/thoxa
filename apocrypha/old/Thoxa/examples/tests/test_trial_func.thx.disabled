@@ -1,0 +1,7 @@
+fn getTrial() -> Trial<Int, Int> {
+    Pass(5)
+}
+
+fn main() -> Int {
+    42
+}

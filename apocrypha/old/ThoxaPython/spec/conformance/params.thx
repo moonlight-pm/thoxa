@@ -1,0 +1,23 @@
+## Named-by-default parameters, `!` positional, omittable defaults, and variadics.
+fn greet(name: String, greeting: String = "Hello", loud: Bool = false) -> String {
+    if loud { "{greeting}, {name}!!!" } else { "{greeting}, {name}." }
+}
+
+fn tag(label!: String, ...values: Int64) -> String {
+    mut total = 0
+    for v in values { total = total + v }
+    "{label}={total}"
+}
+
+fn main() -> Int64 {
+    println(greet(name: "Ada"))                 # both defaults
+    println(greet(name: "Bo", greeting: "Hi"))  # omit the `loud` default
+    println(greet(name: "Cy", loud: true))      # skip `greeting`, set `loud` (order preserved)
+    println(tag("sum", 1, 2, 3, 4))             # positional label + variadic
+    println(tag("empty"))                        # empty variadic
+    let name = "Dot"
+    println(greet(name))                        # pun: `name` ≡ `name: name`
+    let greeting = "Yo"
+    println(greet(name, greeting, loud: true))  # two puns alongside an explicit label
+    0
+}

@@ -1,0 +1,27 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 2rem;
+  line-height: 1.5;
+  color: #1a1a1a;
+  background: #f6f4ef;
+}
+
+main {
+  max-width: 36rem;
+}
+
+h1 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+a {
+  color: #0b5fff;
+}
+
+code {
+  font-size: 0.95em;
+  background: #e8e4dc;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}

@@ -1,0 +1,5 @@
+# Test simple array length
+let arr: Any = [1, 2, 3];
+let len: Int64 = arr.length();
+@print(len);
+0

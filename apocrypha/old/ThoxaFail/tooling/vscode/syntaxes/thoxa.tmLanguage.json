@@ -1,0 +1,196 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Thoxa",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.thoxa",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.thoxa",
+          "match": "\\b(if|else|loop|break|continue)\\b"
+        },
+        {
+          "name": "keyword.other.thoxa",
+          "match": "\\b(let|mut|fn|module|export|import|comptime|as)\\b"
+        },
+        {
+          "name": "keyword.operator.reference.thoxa",
+          "match": "&"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.thoxa",
+          "match": "\\b[A-Z][A-Za-z0-9]*\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.thoxa",
+          "match": "\\b(fn)\\s+([a-z][A-Za-z0-9]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.fn.thoxa"
+            },
+            "2": {
+              "name": "entity.name.function.thoxa"
+            }
+          }
+        },
+        {
+          "name": "meta.function-call.thoxa",
+          "match": "\\b([a-z][A-Za-z0-9]*)\\s*\\(",
+          "captures": {
+            "1": {
+              "name": "entity.name.function.call.thoxa"
+            }
+          }
+        },
+        {
+          "name": "support.function.builtin.thoxa",
+          "match": "@(intType|print|printStr|syscall|strlen|intToString)\\b"
+        },
+        {
+          "name": "support.function.builtin.generic.thoxa",
+          "match": "@[a-zA-Z][A-Za-z0-9]*"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.integer.thoxa",
+          "match": "\\b[0-9][0-9_]*\\b"
+        },
+        {
+          "name": "constant.numeric.float.thoxa",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*\\b"
+        },
+        {
+          "name": "constant.numeric.hex.thoxa",
+          "match": "\\b0[xX][0-9a-fA-F][0-9a-fA-F_]*\\b"
+        },
+        {
+          "name": "constant.numeric.binary.thoxa",
+          "match": "\\b0[bB][01][01_]*\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.thoxa",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.thoxa",
+              "match": "\\\\[\\\\\"nrt]"
+            }
+          ]
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arithmetic.thoxa",
+          "match": "(\\+|-|\\*|/|%)"
+        },
+        {
+          "name": "keyword.operator.comparison.thoxa",
+          "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.logical.thoxa",
+          "match": "(&&|\\|\\||!)"
+        },
+        {
+          "name": "keyword.operator.assignment.thoxa",
+          "match": "(=|\\+=|-=|\\*=|/=|%=)"
+        },
+        {
+          "name": "keyword.operator.arrow.thoxa",
+          "match": "->"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.block.thoxa",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.parenthesis.thoxa",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.brackets.thoxa",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.separator.thoxa",
+          "match": "[,;]"
+        },
+        {
+          "name": "punctuation.accessor.thoxa",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.definition.type.thoxa",
+          "match": ":"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.thoxa",
+          "match": "\\b[a-z][A-Za-z0-9]*\\b"
+        }
+      ]
+    }
+  },
+  "scopeName": "source.thoxa"
+}

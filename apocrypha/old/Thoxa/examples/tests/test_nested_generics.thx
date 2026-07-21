@@ -1,0 +1,28 @@
+# Test nested generic function calls
+
+fn identity<T>(x: T) -> T {
+    x
+}
+
+fn double<T>(x: T) -> T {
+    identity(identity(x))  # Nested generic call
+}
+
+fn triple<T>(x: T) -> T {
+    identity(double(x))  # Even more nested
+}
+
+fn process<T>(x: T) -> T {
+    triple(x)  # Call chain of generic functions
+}
+
+fn main() -> Int {
+    let x = 42;
+    let result = process(x);  # Should instantiate process<Int>, triple<Int>, double<Int>, identity<Int>
+    
+    if result == 42 {
+        0  # Success
+    } else {
+        1  # Failure
+    }
+}

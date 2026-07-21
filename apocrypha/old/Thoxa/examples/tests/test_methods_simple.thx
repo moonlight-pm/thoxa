@@ -1,0 +1,11 @@
+type Counter {
+    export let mut count: Int,
+    
+    export fn increment() -> Void {
+        count = count + 1
+    }
+}
+
+fn main() -> Void {
+    println("Testing methods")
+}

@@ -1,0 +1,47 @@
+# Strings and Template Literals
+
+# Basic strings
+let greeting: String = "Hello, Thoxa!";
+@printStr(greeting);
+@printStr("\n");
+
+# String length
+let message: String = "Count the characters";
+@printStr("Length of '${message}': ");
+@print(@strlen(message));
+@printStr("\n");
+
+# Template literals with expressions
+let x: Int64 = 5;
+let y: Int64 = 3;
+@printStr("${x} + ${y} = ${x + y}\n");
+@printStr("${x} * ${y} = ${x * y}\n");
+
+# Complex templates
+type Person {
+    export let name: String = "Alice";
+    export let age: Int64 = 30;
+    
+    as String {
+        "${name} (age ${age})"
+    }
+}
+
+let person: Person;
+@printStr("Person: ${person as String}\n");
+
+# Nested templates
+let outer: Int64 = 10;
+let inner: Int64 = 20;
+@printStr("Nested: ${outer} contains ${"inner value: ${inner}"}\n");
+
+# String with special characters
+@printStr("Line 1\nLine 2\n\tIndented\n");
+
+# C-string compatibility
+let cstr = @cstr("Hello from C");
+@printStr("C string address: ");
+@print(cstr);
+@printStr("\n");
+
+0

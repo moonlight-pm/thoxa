@@ -1,0 +1,27 @@
+// Simple test of try operator
+
+fn get_result() -> Trial<int, int> {
+    Pass(42)
+}
+
+fn use_try() -> Trial<int, int> {
+    let x = get_result()?;
+    Pass(x + 1)
+}
+
+fn main() -> int {
+    match use_try() {
+        Pass(v) -> {
+            print("Got: ");
+            print_int(v);
+            print("\n");
+            return v;
+        },
+        Fail(e) -> {
+            print("Error: ");
+            print_int(e);
+            print("\n");
+            return e;
+        }
+    }
+}

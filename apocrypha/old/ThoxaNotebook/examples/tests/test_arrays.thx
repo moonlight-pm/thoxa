@@ -1,0 +1,16 @@
+fn main() -> Int {
+    let nums = [1, 2, 3, 4, 5];
+    
+    println("Array test");
+    
+    let first = nums[0];
+    printInt(first);
+    
+    let third = nums[2]; 
+    printInt(third);
+    
+    let sum = nums[0] + nums[1] + nums[2] + nums[3] + nums[4];
+    printInt(sum);
+    
+    0
+}

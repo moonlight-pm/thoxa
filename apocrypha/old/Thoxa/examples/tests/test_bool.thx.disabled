@@ -1,0 +1,20 @@
+
+fn testBool(flag: Bool) -> Int {
+    if flag {
+        1
+    } else {
+        2
+    }
+}
+
+fn main() -> Int {
+    let a = testBool(true);   
+    printInt(a);
+    print("\n");
+    
+    let b = testBool(false);  
+    printInt(b);
+    print("\n");
+    
+    a + b  
+}

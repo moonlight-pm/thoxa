@@ -1,0 +1,10 @@
+# Test runtime conversion from Any using 'as'
+let x: Any = 42;
+let y: Int64 = x as Int64;
+@print(y);
+
+let s: Any = "hello";
+let t: String = s as String;
+@printStr(t);
+
+0

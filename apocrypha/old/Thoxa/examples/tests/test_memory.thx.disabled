@@ -1,0 +1,19 @@
+type Point(x: Float, y: Float) {
+    export let x: Float,
+    export let y: Float
+}
+
+fn makePoint(x: Float, y: Float) -> Point {
+    return Point(x, y);
+}
+
+fn usePoint(p: Point) -> Float {
+    return p.x + p.y;
+}
+
+fn main() -> Void {
+    let p1 = makePoint(1.0, 2.0);
+    let p2 = makePoint(3.0, 4.0);
+    let sum = usePoint(p1) + usePoint(p2);
+    println("Points created and used");
+}

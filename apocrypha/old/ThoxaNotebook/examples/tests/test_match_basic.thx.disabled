@@ -1,0 +1,24 @@
+
+fn makePass() -> Trial {
+    Pass(42)
+}
+
+fn makeFail() -> Trial {
+    Fail("error")
+}
+
+fn main() -> Int {
+    let p = makePass();
+    let passResult = match p {
+        Pass(v) -> { 1 },
+        Fail(e) -> { 0 }
+    };
+    
+    let f = makeFail();
+    let failResult = match f {
+        Pass(v) -> { 0 },
+        Fail(e) -> { 1 }
+    };
+    
+    passResult + failResult  
+}

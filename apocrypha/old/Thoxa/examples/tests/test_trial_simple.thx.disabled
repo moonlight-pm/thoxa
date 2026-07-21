@@ -1,0 +1,17 @@
+
+fn getValue() -> Trial<Int, Int> {
+    Pass(42)
+}
+
+fn main() -> Int {
+    match getValue() {
+        Pass(v) -> {
+            print("Success!\n");
+            return v;
+        },
+        Fail(e) -> {
+            print("Error!\n");
+            return e;
+        }
+    }
+}

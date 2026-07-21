@@ -1,0 +1,33 @@
+## Bytes.slice(start, end) — the Stage 3 language increment (fork #5). A copying,
+## strict-bounds byte slice. Every value is asserted through .count/.get/.toString so
+## this program's stdout carries no raw control bytes.
+
+export fn main() -> Int64 {
+    let s = Bytes.fromString("hello, world")
+
+    ## a full-range slice equals the source
+    let all = s.slice(0, s.count)
+    println("all count={all.count} text={all.toString()}")
+
+    ## a sub-range has the right length and bytes
+    let sub = s.slice(7, 12)
+    println("sub count={sub.count} text={sub.toString()}")
+
+    ## an empty slice
+    let empty = s.slice(3, 3)
+    println("empty count={empty.count}")
+
+    ## the slice is an independent copy: mutating a Buffer built from the source
+    ## does not disturb the earlier slice
+    mut b = Buffer()
+    b.appendBytes(s)
+    b.set(7, b'W')
+    println("sub-after count={sub.count} text={sub.toString()}")
+
+    ## splitting on a byte using slice: "ab\ncd" -> "ab", "cd"
+    let data = Bytes.fromString("ab\ncd")
+    let line0 = data.slice(0, 2)
+    let line1 = data.slice(3, 5)
+    println("split a={line0.toString()} b={line1.toString()}")
+    0
+}

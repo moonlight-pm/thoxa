@@ -1,0 +1,30 @@
+# Rust build artifacts
+/target
+
+# Temporary files
+/tmp
+
+# Build outputs
+a.out
+*.s
+*.qbe
+*.o
+*.a
+
+# Runtime build artifacts
+/runtime/*.o
+/runtime/*.a
+/runtime/target/
+
+# Example build artifacts
+/examples/*.qbe
+/examples/*.s
+/examples/tests/*.qbe
+/examples/tests/*.s
+
+# Debug QBE files
+/examples/match_simple_debug.qbe
+/examples/test_*.thx
+
+# OS files
+.DS_Store

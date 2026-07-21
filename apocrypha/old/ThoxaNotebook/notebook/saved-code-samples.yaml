@@ -1,0 +1,251 @@
+# Saved code samples for Thoxa tutorial sections
+# This file is automatically updated when users save their code changes
+
+hello-world:
+- |
+  # Your first Thoxa program
+  println("Hello, World!")
+comments:
+- |
+  # This is a single-line comment
+
+  # Comments can appear anywhere
+  println("Comments are important")  # Even at the end of lines
+
+  # Comments document your code
+  let version: string = "1.0"  # Version number
+  println("Version: " + version)
+variables:
+- |
+  # Immutable variables (cannot be changed)
+  let name: string = "Thoxa"
+  let age: int = 2024
+  let pi: float = 3.14159
+
+  println("Language:", name)
+  println("Year:", age)
+  println("Pi:", pi)
+
+  # Type inference works too
+  let inferred = "Type is inferred as string"
+  println(inferred)
+- |
+  # Tab 2: Example of trying to change immutable variables
+  let x = 1
+  # x = 2  # This would cause an error!
+mutability:
+- |
+  # Mutable variable (can be changed)
+  mut counter: int = 0
+  println("Initial:", counter)
+
+  counter = counter + 1
+  println("After increment:", counter)
+
+  counter = counter * 2
+  println("After doubling:", counter)
+
+  # Using compound assignment
+  counter += 3
+  println("After adding 3:", counter)
+basic-types:
+- |
+  # Numbers
+  let integer: int = 42
+  let float: float = 3.14
+
+  # Strings
+  let text: string = "Hello"
+
+  # Booleans
+  let is_true: bool = true
+  let is_false: bool = false
+
+  println("Integer:", integer)
+  println("Float:", float)
+  println("String:", text)
+  println("True:", is_true)
+  println("False:", is_false)
+
+  # Type inference works
+  let inferred_int = 100
+  let inferred_string = "World"
+  println("Inferred int:", inferred_int)
+  println("Inferred string:", inferred_string)
+arrays:
+- |
+  # Create arrays
+  let numbers: [int] = [1, 2, 3, 4, 5]
+  let names: [string] = ["Alice", "Bob", "Charlie"]
+
+  # Access elements by index (0-based)
+  println("First number:", numbers[0])
+  println("Second name:", names[1])
+
+  # Get array length
+  println("Number count:", len(numbers))
+  println("Name count:", len(names))
+
+  # Arrays can be mixed types with inference
+  let mixed = [1, "two", 3.0, true]
+  println("Mixed array:", mixed)
+custom-types:
+- |
+  type Person(name: string, age: int) {
+      export let name = name
+      export mut age = age
+  }
+
+  # Create an instance (no main() needed!)
+  let alice = Person("Alice", 30)
+
+  # Modify mutable field
+  alice.age = 31
+
+  # Access fields
+  println("Name:", alice.name)
+  println("Age:", alice.age)
+
+  # Assertions validate our code
+  assert(alice.name == "Alice")
+  assert(alice.age == 31)
+
+  # Create another instance
+  let bob = Person("Bob", 25)
+  println(bob.name + " is " + bob.age + " years old")
+defining-functions:
+- |
+  # Define a simple function
+  fn greet() {
+      println("Hello from a function!")
+  }
+
+  # Function with parameters (type annotations required)
+  fn greet_person(name: string) {
+      println("Hello,", name)
+  }
+
+  # Call functions directly - no main() needed!
+  greet()
+  greet_person("Alice")
+  greet_person("Bob")
+
+  # Functions can be called multiple times
+  greet()
+  greet_person("Charlie")
+parameters:
+- |
+  # Function that returns a value
+  fn add(a: int, b: int) {
+      return a + b
+  }
+
+  fn multiply(x: int, y: int) {
+      x * y  # Last expression is returned
+  }
+
+  # Use functions directly at top level
+  let sum = add(5, 3)
+  println("5 + 3 =", sum)
+
+  let product = multiply(4, 7)
+  println("4 * 7 =", product)
+
+  # Functions are first-class values
+  fn double(n: int) {
+      n * 2
+  }
+
+  println("Double 10 =", double(10))
+methods:
+- |
+  # Define a Counter type with a method
+  type Counter(value: int) {
+      export mut value = value
+
+      export fn increment() {
+          value += 1
+      }
+      
+      export fn add(n: int) {
+          value += n
+      }
+  }
+
+  # Use the Counter directly - no main() needed!
+  let c = Counter(0)
+  c.increment()
+  c.increment()
+  c.add(5)
+
+  println("Counter:", c.value)
+  assert(c.value == 7)
+if-else:
+- |
+  # Control flow works at top level
+  let age: int = 18
+
+  if age >= 18 {
+      println("You are an adult")
+  } else {
+      println("You are a minor")
+  }
+
+  # Multiple conditions
+  let score: int = 85
+
+  if score >= 90 {
+      println("Grade: A")
+  } else if score >= 80 {
+      println("Grade: B")
+  } else if score >= 70 {
+      println("Grade: C")
+  } else {
+      println("Grade: F")
+  }
+
+  # If expressions return values
+  let status: string = if age >= 18 { "adult" } else { "minor" }
+  println("Status:", status)
+while-loops:
+- |
+  # Loops work at top level
+  mut count: int = 0
+
+  while count < 5 {
+      println("Count:", count)
+      count += 1  # Using compound assignment
+  }
+
+  println("Done counting!")
+
+  # Countdown
+  mut n: int = 5
+  while n > 0 {
+      println(n, "...")
+      n -= 1  # Using compound assignment
+  }
+  println("Liftoff!")
+for-loops:
+- |
+  # For loops at top level
+  let numbers: [int] = [1, 2, 3, 4, 5]
+
+  # Iterate over array
+  for num in numbers {
+      println("Number:", num)
+  }
+
+  let names: [string] = ["Alice", "Bob", "Charlie"]
+
+  for name in names {
+      println("Hello,", name)
+  }
+
+  # Calculate sum
+  mut sum: int = 0
+  for n in [10, 20, 30, 40] {
+      sum += n  # Using compound assignment
+  }
+  println("Sum:", sum)
+  assert(sum == 100)

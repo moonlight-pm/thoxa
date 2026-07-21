@@ -1,0 +1,74 @@
+# Control Flow - Conditionals and Loops
+
+# If/else statements
+let x: Int64 = 10;
+let y: Int64 = 20;
+
+if x < y {
+    @printStr("x is less than y\n");
+} else {
+    @printStr("x is not less than y\n");
+};
+
+# Nested conditions
+let age: Int64 = 25;
+if age < 18 {
+    @printStr("Minor\n");
+} else {
+    if age < 65 {
+        @printStr("Adult\n");
+    } else {
+        @printStr("Senior\n");
+    };
+};
+
+# Loops with break and continue
+@printStr("\nCounting to 5:\n");
+let i: Int64 = 0;
+loop {
+    if i >= 5 {
+        break;
+    };
+    
+    i = i + 1;
+    @print(i);
+    @printStr(" ");
+};
+@printStr("\n");
+
+# Skip even numbers
+@printStr("\nOdd numbers up to 10:\n");
+let j: Int64 = 0;
+loop {
+    j = j + 1;
+    if j > 10 {
+        break;
+    };
+    
+    # Skip even numbers
+    if j / 2 * 2 == j {
+        continue;
+    };
+    
+    @print(j);
+    @printStr(" ");
+};
+@printStr("\n");
+
+# Factorial using recursion
+type Math {
+    export fn factorial(n: Int64) -> Int64 {
+        if n <= 1 {
+            1
+        } else {
+            n * factorial(n - 1)
+        }
+    }
+}
+
+let math: Math;
+@printStr("\nFactorial of 5: ");
+@print(math.factorial(5));
+@printStr("\n");
+
+0

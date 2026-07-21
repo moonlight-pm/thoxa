@@ -1,0 +1,38 @@
+# Thoxa Standard Library - Basic Types
+# These types are defined in Thoxa itself
+
+# The type of all types
+export let Type: Type = Type;
+
+# Void type - for functions with no meaningful return value
+export let Void: Type = Void;
+
+# String type - pointer to UTF-8 encoded text
+export let String: Type = String;
+
+# Signed integer types
+export let Int8: Type = @intType(true, 8);
+export let Int16: Type = @intType(true, 16);
+export let Int32: Type = @intType(true, 32);
+export let Int64: Type = @intType(true, 64);
+
+# Unsigned integer types  
+export let Uint8: Type = @intType(false, 8);
+export let Uint16: Type = @intType(false, 16);
+export let Uint32: Type = @intType(false, 32);
+export let Uint64: Type = @intType(false, 64);
+
+# Common type aliases
+export let Byte: Type = Uint8;
+export let Size: Type = Uint64;  # Size type for memory operations
+export let Char: Type = Uint8;   # Character type (UTF-8 code unit)
+
+# Legacy compatibility (deprecated - will be removed)
+export let I64: Type = Int64;
+export let I32: Type = Int32;
+export let I16: Type = Int16;
+export let I8: Type = Int8;
+export let U64: Type = Uint64;
+export let U32: Type = Uint32;
+export let U16: Type = Uint16;
+export let U8: Type = Uint8;

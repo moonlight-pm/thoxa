@@ -1,0 +1,178 @@
+@top Program { statement* }
+
+statement {
+  LetStatement |
+  MutStatement |
+  FunctionDef |
+  TypeDef |
+  LoopStatement |
+  WhileStatement |
+  ForStatement |
+  ReturnStatement |
+  BreakStatement |
+  ContinueStatement |
+  SimpleStatement
+}
+
+LetStatement { kw<"let"> kw<"mut">? Identifier (":" Type)? "=" expression ";"? }
+MutStatement { kw<"mut"> Identifier (":" Type)? "=" expression ";"? }
+FunctionDef { kw<"fn"> Identifier "(" Parameters? ")" ("->" Type)? Block }
+TypeDef { kw<"type"> Identifier ("(" ConstructorParams? ")")? TypeBody }
+LoopStatement { kw<"loop"> Block ";"? }
+WhileStatement { kw<"while"> expression Block ";"? }
+ForStatement { kw<"for"> Identifier kw<"in"> expression Block ";"? }
+ReturnStatement { kw<"return"> (expression)? ";"? }
+BreakStatement { kw<"break"> ";"? }
+ContinueStatement { kw<"continue"> ";"? }
+
+SimpleStatement {
+  Identifier "=" expression ";"? |
+  PostfixExpression "." Identifier "=" expression ";"? |
+  PostfixExpression "[" expression "]" "=" expression ";"? |
+  expression ";"?
+}
+
+Block { "{" statement* "}" }
+TypeBody { "{" TypeMember* "}" }
+TypeMember {
+  kw<"export">? kw<"let"> kw<"mut">? Identifier (":" Type)? ("=" expression)? ","? |
+  kw<"export">? FunctionDef ","?
+}
+
+Parameters { Parameter ("," Parameter)* }
+Parameter { Identifier "!"? (":" Type)? ("=" expression)? }
+
+ConstructorParams { ConstructorParam ("," ConstructorParam)* }
+ConstructorParam { Identifier (":" Type)? ("=" expression)? }
+
+Type { Identifier ("<" TypeList ">")? }
+TypeList { Type ("," Type)* }
+
+expression {
+  OrExpression
+}
+
+OrExpression {
+  AndExpression |
+  OrExpression !or kw<"or"> AndExpression
+}
+
+AndExpression {
+  EqualityExpression |
+  AndExpression !and kw<"and"> EqualityExpression
+}
+
+EqualityExpression {
+  ComparisonExpression |
+  EqualityExpression !eq ("==" | "!=") ComparisonExpression
+}
+
+ComparisonExpression {
+  AdditiveExpression |
+  ComparisonExpression !cmp ("<" | ">" | "<=" | ">=") AdditiveExpression
+}
+
+AdditiveExpression {
+  MultiplicativeExpression |
+  AdditiveExpression !add ("+" | "-") MultiplicativeExpression
+}
+
+MultiplicativeExpression {
+  UnaryExpression |
+  MultiplicativeExpression !mul ("*" | "/" | "%") UnaryExpression
+}
+
+UnaryExpression {
+  kw<"not"> UnaryExpression |
+  "-" UnaryExpression |
+  PostfixExpression
+}
+
+PostfixExpression {
+  PrimaryExpression |
+  PostfixExpression !call "(" Arguments? ")" |
+  PostfixExpression !index "[" expression "]" |
+  PostfixExpression !member "." Identifier
+}
+
+PrimaryExpression {
+  Literal |
+  Identifier |
+  "(" expression ")" |
+  ArrayLiteral |
+  IfExpression |
+  MatchExpression |
+  Block
+}
+
+IfExpression {
+  kw<"if"> expression Block 
+  (kw<"else"> kw<"if"> expression Block)* 
+  (kw<"else"> Block)?
+}
+
+MatchExpression {
+  kw<"match"> expression "{" MatchArm* "}" (kw<"else"> Block)?
+}
+
+MatchArm {
+  Pattern "{" (statement)* (expression)? "}"
+}
+
+Pattern {
+  Identifier ":" Identifier |
+  Literal |
+  Identifier
+}
+
+ArrayLiteral { "[" (expression ("," expression)*)? "]" }
+
+Arguments { Argument ("," Argument)* }
+Argument { (Identifier ":")? expression }
+
+Literal {
+  Number |
+  String |
+  Boolean
+}
+
+Boolean { @specialize[@name=Boolean]<Identifier, "true" | "false"> }
+
+@skip { space | LineComment }
+
+kw<term> { @specialize[@name={term}]<Identifier, term> }
+
+@tokens {
+  Identifier { $[a-zA-Z_] $[a-zA-Z0-9_]* }
+  
+  Number { 
+    $[0-9]+ ("." $[0-9]+)? (("e" | "E") ("+" | "-")? $[0-9]+)?
+  }
+  
+  String { 
+    '"' (![\\\n"] | "\\" _)* '"'
+  }
+  
+  LineComment { "#" ![\n]* }
+  
+  space { $[ \t\n\r]+ }
+  
+  "(" ")" "[" "]" "{" "}"
+  "+" "-" "*" "/" "%"
+  "==" "!=" "<" ">" "<=" ">="
+  "=" "." "," ":" ";" "!" "->"
+}
+
+@precedence {
+  member,
+  index,
+  call,
+  mul @left,
+  add @left,
+  cmp @left,
+  eq @left,
+  and @left,
+  or @left
+}
+
+@detectDelim

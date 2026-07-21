@@ -1,0 +1,23 @@
+# Demonstration of polymorphic printing with Any type
+
+# Any type can hold values of different types
+let x: Any = 42;
+let y: Any = "Hello, polymorphic world!";
+let z: Any = 314;  # Another integer
+
+# The builtins @print and @printStr work with Any values
+# because they extract the value part from fat pointers
+@printStr("x = "); @print(x); @printStr("\n");
+@printStr("y = "); @printStr(y); @printStr("\n");
+@printStr("z = "); @print(z); @printStr("\n");
+
+# Type guards allow runtime type checking
+if x is Int64 {
+    @printStr("x is an integer\n");
+};
+
+if y is String {
+    @printStr("y is a string\n");
+};
+
+0

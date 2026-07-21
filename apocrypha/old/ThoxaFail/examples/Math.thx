@@ -1,0 +1,34 @@
+# Math.thx - A simple math type
+
+# Constants
+export let pi: Int64 = 314159;  # Scaled by 100000
+export let e: Int64 = 271828;   # Scaled by 100000
+
+# Private helper
+let scale: Int64 = 100000;
+
+# Basic arithmetic functions
+export fn add(a: Int64, b: Int64) -> Int64 {
+    a + b
+};
+
+export fn subtract(a: Int64, b: Int64) -> Int64 {
+    a - b
+};
+
+export fn multiply(a: Int64, b: Int64) -> Int64 {
+    a * b
+};
+
+export fn divide(a: Int64, b: Int64) -> Int64 {
+    a / b
+};
+
+# More complex functions
+export fn square(x: Int64) -> Int64 {
+    x * x
+};
+
+export fn abs(x: Int64) -> Int64 {
+    if x < 0 { 0 - x } else { x }
+};

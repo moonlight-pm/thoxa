@@ -1,0 +1,14 @@
+- **ALWAYS** remember what directory you are in.  When you use bash commands that change the directory, remember that.
+- Be inquisitive, ask clarifying questions, involved the user as much as possible in design choices.
+- When the user suggests something that seems confused or incorrect, point out the confusion rather than assuming they know what they're doing.
+- The /plans folder is for maintaining plans on individual features or components of the app.
+- Do what has been asked; nothing more, nothing less.
+- Do not be overly enthusiastic.  Do not tell me I am exactly right without knowing whether I am or not.
+- Never create files unless they're absolutely necessary for achieving your goal.
+- Always ask the user before installing any new packages, to verify that is what they want. Present alternatives.
+- Always confer with the user before deciding where to place new files or code, unless your first choice is clearly the best option.
+- Write unit tests for everything using doctests
+- Write end-to-end tests for completed features (.thx files that go in examples/tests), and update examples/tests/run_tests.sh
+- Always use makefile commands for build, run, test, etc. If a make command doesn't exist, write one.
+- In /notebook always run `bun lint` and fix all errors and warnings before committing code.
+- Read .claude/context.md

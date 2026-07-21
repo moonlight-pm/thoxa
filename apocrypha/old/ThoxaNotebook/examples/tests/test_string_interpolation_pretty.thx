@@ -1,0 +1,32 @@
+fn main() -> Int {
+    let name = "World";
+    let greeting = "Hello, {name}!";
+    println(greeting);
+    
+    let count = 42;
+    let message = "The answer is {count}";
+    println(message);
+    
+    let isReady = true;
+    let status = "Ready: {isReady}";
+    println(status);
+    
+    let x = 10;
+    let y = 20;
+    let result = "Sum of {x} and {y} is {x + y}";
+    println(result);
+    
+    let user = "Alice";
+    let score = 95;
+    let passed = score > 80;
+    let report = "User {user} scored {score} - Pass: {passed}";
+    println(report);
+    
+    let escaped = "Use {{double braces}} to show literal braces";
+    println(escaped);
+    
+    println("");
+    println("String interpolation test complete!");
+    
+    0
+}

@@ -1,0 +1,9 @@
+// Test Trial type parsing
+
+fn test() -> Trial<int, int> {
+    Pass(42)
+}
+
+fn main() -> int {
+    0
+}

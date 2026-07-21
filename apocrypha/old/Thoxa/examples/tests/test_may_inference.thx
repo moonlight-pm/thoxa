@@ -1,0 +1,10 @@
+# Test May type inference
+
+fn main() -> Int {
+    let maybe = Has(42);
+    
+    match maybe {
+        Has(value) -> { 0 },  # Return 0 for success
+        Not() -> { 1 }       # Return 1 for failure
+    }
+}

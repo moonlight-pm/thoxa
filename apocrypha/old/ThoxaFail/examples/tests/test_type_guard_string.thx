@@ -1,0 +1,10 @@
+# Test type guard with strings
+let s: String = "hello";
+
+if s is String {
+    @print(1);  # Should print 1
+} else {
+    @print(0);
+};
+
+0

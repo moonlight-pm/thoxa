@@ -1,0 +1,103 @@
+
+
+
+fn identity<T>(x: T) -> T {
+    x
+}
+
+
+fn swap<A, B>(pair: (A, B)) -> (B, A) {
+    (pair.1, pair.0)
+}
+
+
+fn map<T, U>(value: T, f: (T) -> U) -> U {
+    f(value)
+}
+
+
+fn compose<A, B, C>(f: (B) -> C, g: (A) -> B) -> (A) -> C {
+    fn result(x: A) -> C {
+        f(g(x))
+    }
+    result
+}
+
+
+fn unwrapOr<T>(maybe: May<T>, default: T) -> T {
+    match maybe {
+        Has(value) -> { value },
+        Not() -> { default }
+    }
+}
+
+
+fn tryMap<T, E, U>(trial: Trial<T, E>, f: (T) -> U) -> Trial<U, E> {
+    match trial {
+        Pass(value) -> { Pass(f(value)) },
+        Fail(error) -> { Fail(error) }
+    }
+}
+
+
+fn testNestedGenerics() -> Int {
+    
+    let x = identity(42);
+    
+    
+    let s = identity("hello");
+    
+    x
+}
+
+
+fn testMultipleParams() -> Int {
+    0
+}
+
+
+fn testHigherOrder() -> Int {
+    0
+}
+
+
+type Box<T> {
+    export let value: T
+}
+
+fn unbox<T>(box: Box<T>) -> T {
+    box.value
+}
+
+fn testCustomTypes() -> Int {
+    0
+}
+
+
+fn length<T>(list: [T]) -> Int {
+    if list.isEmpty() {
+        0
+    } else {
+        1 + length(list.tail())
+    }
+}
+
+fn testRecursiveGenerics() -> Int {
+    0
+}
+
+fn main() -> Int {
+    let t1 = testNestedGenerics();
+    let t2 = testMultipleParams();
+    let t3 = testHigherOrder();
+    let t4 = testCustomTypes();
+    let t5 = testRecursiveGenerics();
+    
+    let sum = t1 + t2 + t3 + t4 + t5;
+    
+    if sum == 42 {
+        0
+    } else {
+        1
+    }
+}

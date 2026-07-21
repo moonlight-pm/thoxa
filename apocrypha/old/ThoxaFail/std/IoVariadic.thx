@@ -1,0 +1,208 @@
+# IoVariadic.thx - New I/O implementation with variadic print functions
+# This module provides modern print functions using variadic parameters
+
+type Io {
+    # File descriptors
+    export let stdin: Int64 = 0;
+    export let stdout: Int64 = 1;
+    export let stderr: Int64 = 2;
+    
+    # Low-level write syscall wrapper
+    # Returns number of bytes written, or negative on error
+    fn write(fd: Int64, buffer: Int64, count: Int64) -> Int64 {
+        # Platform note: syscall 4 is write on macOS
+        @syscall(4, fd, buffer, count)
+    };
+    
+    # Helper to write a string to a file descriptor
+    fn writeStr(fd: Int64, s: Int64) -> Int64 {
+        let len = @strlen(s);
+        # Skip the 8-byte length prefix to get to the actual string data
+        let dataPtr = s + 8;
+        write(fd, dataPtr, len)
+    };
+    
+    # Print integers (with conversion to string)
+    export fn print(...args: Int64) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stdout, " ");
+            };
+            
+            let s = @intToString(args[i]);
+            writeStr(stdout, s);
+            
+            i = i + 1;
+        };
+        
+        0
+    };
+    
+    # Print integers with newline
+    export fn println(...args: Int64) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stdout, " ");
+            };
+            
+            let s = @intToString(args[i]);
+            writeStr(stdout, s);
+            
+            i = i + 1;
+        };
+        
+        writeStr(stdout, "\n");
+        0
+    };
+    
+    # Print strings (strings are passed as Int64 pointers)
+    export fn printStr(...args: Int64) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stdout, " ");
+            };
+            
+            writeStr(stdout, args[i]);
+            
+            i = i + 1;
+        };
+        
+        0
+    };
+    
+    # Print strings with newline
+    export fn printlnStr(...args: Int64) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stdout, " ");
+            };
+            
+            writeStr(stdout, args[i]);
+            
+            i = i + 1;
+        };
+        
+        writeStr(stdout, "\n");
+        0
+    };
+    
+    # Error output for integers
+    export fn eprint(...args: Int64) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stderr, " ");
+            };
+            
+            let s = @intToString(args[i]);
+            writeStr(stderr, s);
+            
+            i = i + 1;
+        };
+        
+        0
+    };
+    
+    # Error output for integers with newline
+    export fn eprintln(...args: Int64) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stderr, " ");
+            };
+            
+            let s = @intToString(args[i]);
+            writeStr(stderr, s);
+            
+            i = i + 1;
+        };
+        
+        writeStr(stderr, "\n");
+        0
+    };
+    
+    # Error output for strings
+    export fn eprintStr(...args: Int64) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stderr, " ");
+            };
+            
+            writeStr(stderr, args[i]);
+            
+            i = i + 1;
+        };
+        
+        0
+    };
+    
+    # Error output for strings with newline
+    export fn eprintlnStr(...args: Int64) -> Void {
+        let i = 0;
+        let len = args.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                writeStr(stderr, " ");
+            };
+            
+            writeStr(stderr, args[i]);
+            
+            i = i + 1;
+        };
+        
+        writeStr(stderr, "\n");
+        0
+    };
+}

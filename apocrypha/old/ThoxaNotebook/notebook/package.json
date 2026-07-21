@@ -1,0 +1,44 @@
+{
+  "name": "notebook",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bunx --bun waku dev",
+    "build": "bunx --bun waku build",
+    "start": "bunx --bun waku start",
+    "lint": "tsc && biome check --write",
+    "db:migrate": "bun run src/db/migrate.ts"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.13",
+    "@types/bun": "latest",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.13"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@biomejs/biome": "^2.2.3",
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/language": "^6.11.3",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.2",
+    "@lezer/generator": "^1.8.0",
+    "@lezer/highlight": "^1.2.1",
+    "@lezer/lr": "^1.4.2",
+    "@types/js-yaml": "^4.0.9",
+    "@uiw/codemirror-theme-vscode": "^4.25.1",
+    "@uiw/codemirror-themes": "^4.25.1",
+    "@uiw/react-codemirror": "^4.25.1",
+    "js-yaml": "^4.1.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "vite-tsconfig-paths": "^5.1.4",
+    "waku": "^0.26.0"
+  }
+}

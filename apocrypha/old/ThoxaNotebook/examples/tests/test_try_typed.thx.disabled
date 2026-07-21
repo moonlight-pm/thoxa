@@ -1,0 +1,27 @@
+# Test try operator with typed Trial functions
+
+fn get_value() -> Trial<Int, Int> {
+    Pass(42)
+}
+
+fn use_try() -> Trial<Int, Int> {
+    let x = get_value()?;
+    Pass(x + 1)
+}
+
+fn main() -> Int {
+    match use_try() {
+        Pass(v) -> {
+            print("Success: ");
+            print_int(v);
+            print("\n");
+            return v;
+        },
+        Fail(e) -> {
+            print("Error: ");
+            print_int(e);
+            print("\n");
+            return e;
+        }
+    }
+}

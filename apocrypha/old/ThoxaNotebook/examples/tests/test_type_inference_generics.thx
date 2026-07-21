@@ -1,0 +1,139 @@
+
+
+
+fn identity<T>(x: T) -> T {
+    x
+}
+
+
+fn swap<A, B>(pair: (A, B)) -> (B, A) {
+    (pair.1, pair.0)
+}
+
+
+fn map<T, U>(value: T, f: (T) -> U) -> U {
+    f(value)
+}
+
+
+fn compose<A, B, C>(f: (B) -> C, g: (A) -> B) -> (A) -> C {
+    fn result(x: A) -> C {
+        f(g(x))
+    }
+    result
+}
+
+
+fn unwrapOr<T>(maybe: May<T>, default: T) -> T {
+    match maybe {
+        Has(value) -> { value },
+        Not() -> { default }
+    }
+}
+
+
+fn tryMap<T, E, U>(trial: Trial<T, E>, f: (T) -> U) -> Trial<U, E> {
+    match trial {
+        Pass(value) -> { Pass(f(value)) },
+        Fail(error) -> { Fail(error) }
+    }
+}
+
+
+fn testNestedGenerics() -> Int {
+    
+    let x = identity(42);
+    
+    
+    let s = identity("hello");
+    
+    
+    let f = identity(identity);
+    let y = f(100);
+    
+    x + y
+}
+
+
+fn testMultipleParams() -> String {
+    let pair = (42, "hello");
+    
+    
+    let swapped = swap(pair);
+    
+    swapped.0
+}
+
+
+fn testHigherOrder() -> Int {
+    fn double(x: Int) -> Int {
+        x * 2
+    }
+    
+    fn addOne(x: Int) -> Int {
+        x + 1
+    }
+    
+    
+    let result1 = map(5, double);
+    
+    
+    let addOneThenDouble = compose(double, addOne);
+    let result2 = addOneThenDouble(10);
+    
+    result1 + result2
+}
+
+
+type Box<T> {
+    export let value: T
+}
+
+fn unbox<T>(box: Box<T>) -> T {
+    box.value
+}
+
+fn testCustomTypes() -> Int {
+    let intBox = Box { value: 42 };
+    let strBox = Box { value: "test" };
+    
+    
+    let x = unbox(intBox);
+    
+    
+    let s = unbox(strBox);
+    
+    x
+}
+
+
+fn length<T>(list: [T]) -> Int {
+    if list.isEmpty() {
+        0
+    } else {
+        1 + length(list.tail())
+    }
+}
+
+fn testRecursiveGenerics() -> Int {
+    let nums = [1, 2, 3, 4, 5];
+    let strs = ["a", "b", "c"];
+    
+    
+    let numLen = length(nums);
+    
+    
+    let strLen = length(strs);
+    
+    numLen + strLen
+}
+
+fn main() -> Int {
+    let t1 = testNestedGenerics();
+    let t2 = testMultipleParams();
+    let t3 = testHigherOrder();
+    let t4 = testCustomTypes();
+    let t5 = testRecursiveGenerics();
+    
+    t1 + t3 + t4 + t5
+}

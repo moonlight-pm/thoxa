@@ -1,0 +1,49 @@
+# Types and Conversions - Demonstrates Thoxa's type system
+
+# Define a custom type with conversions
+type Temperature {
+    export let celsius: Int64 = 25;
+    
+    # Define conversion to String
+    as String {
+        "${celsius}°C"
+    }
+}
+
+# Create and use the type
+let temp: Temperature;
+@printStr("Temperature: ");
+@printStr(temp as String);
+@printStr("\n");
+
+# Explicit type conversions
+let n: Int64 = 42;
+let s: String = n as String;
+@printStr("Number as string: ${s}\n");
+
+# Check if conversion exists
+if n can String {
+    @printStr("Int64 can convert to String\n");
+};
+
+# Type with method
+type Point {
+    export let x: Int64 = 10;
+    export let y: Int64 = 20;
+    
+    export fn distance(self: &Point) -> Int64 {
+        # Simplified distance calculation
+        self.x + self.y
+    }
+    
+    as String {
+        "(${x}, ${y})"
+    }
+}
+
+let p: Point;
+@print(p.distance());
+@printStr(" is the distance\n");
+@printStr("Point: ${p as String}\n");
+
+0

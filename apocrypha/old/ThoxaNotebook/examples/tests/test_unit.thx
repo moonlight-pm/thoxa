@@ -1,0 +1,48 @@
+
+type Person {
+    export let name: String,
+    export let age: Int
+}
+
+type Point {
+    export let x: Int,
+    export let y: Int
+}
+
+type Counter {
+    export let mut count: Int,
+    export let label: String
+}
+
+fn main() -> Void {
+    let alice = Person {
+        name: "Alice",
+        age: 30
+    };
+    
+    print(alice.name);
+    print(", age: ");
+    printInt(alice.age);
+    println("");
+    
+    let p = Point {
+        x: 10,
+        y: 20
+    };
+    
+    print("Point: (");
+    printInt(p.x);
+    print(", ");
+    printInt(p.y);
+    println(")");
+    
+    let counter = Counter {
+        count: 0,
+        label: "Test Counter"
+    };
+    
+    print(counter.label);
+    print(": ");
+    printInt(counter.count);
+    println("");
+}

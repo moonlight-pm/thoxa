@@ -1,0 +1,6 @@
+## The other half of the `fn` cycle: `isOdd` calls `isEven` from `evens.thx`.
+import { isEven } from "./Evens"
+
+export fn isOdd(n: Int64) -> Bool {
+    if n == 0 { false } else { isEven(n: n - 1) }
+}

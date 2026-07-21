@@ -1,0 +1,23 @@
+
+fn main() -> Int {
+    let hello = "Hello";
+    let space = ", ";
+    let world = "World";
+    let exclaim = "!";
+    
+    let greeting = hello + space + world + exclaim;
+    println(greeting);
+    
+    let a = "apple";
+    let b = "banana";
+    
+    if a == a {
+        println("Equality works!");
+    }
+    
+    if a != b {
+        println("Inequality works!");
+    }
+    
+    0
+}

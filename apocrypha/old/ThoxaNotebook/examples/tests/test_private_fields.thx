@@ -1,0 +1,16 @@
+type BankAccount {
+    let mut balance: Float,        
+    export let accountNumber: String,  
+    
+    export fn getBalance() -> Float {
+        return balance;
+    },
+    
+    fn updateBalance(amount: Float) -> Void {  
+        balance = amount;
+    }
+}
+
+fn main() -> Void {
+    println("Testing private fields");
+}

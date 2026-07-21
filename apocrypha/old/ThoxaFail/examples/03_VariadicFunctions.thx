@@ -1,0 +1,43 @@
+# Variadic Functions Example
+
+# Demonstrates variadic function parameters
+type Math {
+    # Sum any number of integers
+    export fn sum(...values: Int64) -> Int64 {
+        mut total: Int64 = 0;
+        mut i: Int64 = 0;
+        let len: Int64 = values.length();
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            total = total + values[i];
+            i = i + 1;
+        };
+        
+        total
+    };
+};
+
+let math: Math;
+
+# Test with different numbers of arguments
+@printStr("sum() = ");
+@print(math.sum());
+@printStr("\n");
+
+@printStr("sum(5) = ");
+@print(math.sum(5));
+@printStr("\n");
+
+@printStr("sum(1, 2, 3) = ");
+@print(math.sum(1, 2, 3));
+@printStr("\n");
+
+@printStr("sum(10, 20, 30, 40) = ");
+@print(math.sum(10, 20, 30, 40));
+@printStr("\n");
+
+0

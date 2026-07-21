@@ -1,0 +1,106 @@
+## Keys — read and decode one keypress from stdin. Owns the raw byte read (the
+## throwaway `read` that Stage 0 parked in `Main` moves here and becomes real) and
+## the VT100 escape decoding, presenting the result as a `Key` union. Like the rest
+## of the kilo port it works in `Byte`, never `Char`: a byte read is a `Byte`, and a
+## byte literal `b'['` is the readable way to name one (kilo-port fork #3).
+import { errno, strerror } from "ffi"
+
+## A decoded keypress. `Press` carries any ordinary byte — a printable character,
+## Enter (`\r`), Backspace (`\x7f`), a Ctrl-combo, or a lone/unrecognized Escape.
+## Only the VT100-decoded navigation keys get their own tag (mirroring kilo, which
+## keeps Enter/Backspace/Ctrl in the byte space and only escape sequences enumerated).
+export type Press(byte!: Byte) {}
+export type Up {}
+export type Down {}
+export type Left {}
+export type Right {}
+export type Home {}
+export type End {}
+export type PageUp {}
+export type PageDown {}
+export type Delete {}
+export type Key = Press | Up | Down | Left | Right | Home | End | PageUp | PageDown | Delete
+
+## The raw read syscall, kept private behind `readByte`/`readByteOnce` (the `sys`
+## prefix marks the FFI boundary, mirroring `Net`/`Io`/`Terminal`).
+extern fn sysRead(fd!: Int32, buf!: Bytes, n!: UInt64) -> Int64 from "c" "read"
+let stdinFd = 0
+
+let esc = b'\x1b'
+
+## CTRL_KEY(k) = k & 0x1f — the byte a terminal sends for Ctrl-<k>. Reused by the
+## editor dispatch and (later) Find.
+export fn ctrlKey(k!: Byte) -> Byte {
+    k & 0x1f
+}
+
+## Read one byte, blocking. With VMIN=0/VTIME=1 a read returns 0 on a 100ms idle —
+## that is a timeout, not EOF, so we retry (as kilo does). Fail only on a real error.
+fn readByte() -> Trial<Byte, String> {
+    let buf = Bytes(1)
+    loop {
+        let n = sysRead(stdinFd, buf, 1)
+        if n < 0 { return Fail("read: {strerror(errno())}") }
+        if n > 0 { return Pass(buf.get(0)) }
+        # n == 0: idle timeout, keep waiting
+    }
+}
+
+## A single-shot read for escape-sequence bytes: the byte value, or -1 if none
+## arrived within the VTIME window (or on error). A missing follow-on byte means a
+## lone ESC, so the caller decodes it to `Press(esc)` rather than blocking.
+fn readByteOnce() -> Int64 {
+    let buf = Bytes(1)
+    let n = sysRead(stdinFd, buf, 1)
+    if n == 1 { buf.get(0) } else { -1 }
+}
+
+## Read + decode one keypress (kilo's `editorReadKey`). Blocks until a key arrives;
+## `Fail` only on a real read error. An ESC that begins a recognized `\x1b[`/`\x1bO`
+## sequence decodes to a navigation key; anything else is a `Press` of its byte.
+export fn readKey() -> Trial<Key, String> {
+    let c = readByte()?
+    if c != esc {
+        return Pass(Press(c))
+    }
+    # ESC: try to read the sequence; a timeout (-1) means a lone ESC.
+    let s0 = readByteOnce()
+    if s0 < 0 { return Pass(Press(esc)) }
+    let s1 = readByteOnce()
+    if s1 < 0 { return Pass(Press(esc)) }
+
+    if s0 == b'[' {
+        if b'0' <= s1 and s1 <= b'9' {
+            let s2 = readByteOnce()
+            if s2 < 0 { return Pass(Press(esc)) }
+            if s2 != b'~' { return Pass(Press(esc)) }
+            match s1 {
+                b'1' { return Pass(Home()) }
+                b'3' { return Pass(Delete()) }
+                b'4' { return Pass(End()) }
+                b'5' { return Pass(PageUp()) }
+                b'6' { return Pass(PageDown()) }
+                b'7' { return Pass(Home()) }
+                b'8' { return Pass(End()) }
+                else { return Pass(Press(esc)) }
+            }
+        }
+        match s1 {
+            b'A' { return Pass(Up()) }
+            b'B' { return Pass(Down()) }
+            b'C' { return Pass(Right()) }
+            b'D' { return Pass(Left()) }
+            b'H' { return Pass(Home()) }
+            b'F' { return Pass(End()) }
+            else { return Pass(Press(esc)) }
+        }
+    }
+    if s0 == b'O' {
+        match s1 {
+            b'H' { return Pass(Home()) }
+            b'F' { return Pass(End()) }
+            else { return Pass(Press(esc)) }
+        }
+    }
+    Pass(Press(esc))
+}

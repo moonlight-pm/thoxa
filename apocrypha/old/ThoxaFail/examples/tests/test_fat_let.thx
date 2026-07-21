@@ -1,0 +1,11 @@
+# Test let binding in function with fat pointers
+type Test {
+    export fn test() -> Int64 {
+        let x: Int64 = 10;
+        x
+    };
+};
+
+let t: Test;
+@print(t.test());
+0

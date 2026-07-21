@@ -1,0 +1,23 @@
+fn main() -> Int {
+    let a = "apple";
+    let b = "banana";
+    let c = "apple";
+    
+    if a == c {
+        println("apple == apple: correct!");
+    };
+    
+    if a != b {
+        println("apple != banana: correct!");
+    };
+    
+    if a < b {
+        println("apple < banana: correct!");
+    };
+    
+    if b > a {
+        println("banana > apple: correct!");
+    };
+    
+    0
+}

@@ -1,0 +1,24 @@
+
+fn testIfTrial(flag: Bool) -> Int {
+    let msg = if flag {
+        print("true branch\n");
+        42
+    } else {
+        print("false branch\n");
+        99
+    };
+    
+    msg
+}
+
+fn main() -> Int {
+    let a = testIfTrial(true);   
+    printInt(a);
+    print("\n");
+    
+    let b = testIfTrial(false);  
+    printInt(b);
+    print("\n");
+    
+    0
+}

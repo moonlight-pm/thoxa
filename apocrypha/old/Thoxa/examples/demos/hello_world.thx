@@ -1,0 +1,7 @@
+# Hello World example with string literals
+
+fn main() -> Int {
+    println("Hello, World!");
+    println("Welcome to Thoxa!");
+    0
+}

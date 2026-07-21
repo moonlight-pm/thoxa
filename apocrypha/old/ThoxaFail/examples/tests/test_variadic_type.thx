@@ -1,0 +1,11 @@
+# Test variadic parameter type checking
+type Test {
+    export fn test(...nums: Int64) -> Int64 {
+        # nums should be typed as [Int64] inside the function
+        nums.length()
+    };
+};
+
+let t: Test;
+@print(t.test(1, 2, 3));
+0

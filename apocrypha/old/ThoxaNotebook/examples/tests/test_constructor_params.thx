@@ -1,0 +1,9 @@
+type Point(x: Float, y: Float) {
+    export let x: Float,
+    export let y: Float
+}
+
+fn main() -> Void {
+    let p = Point(3.14, 2.71);
+    println("Created point with constructor params");
+}

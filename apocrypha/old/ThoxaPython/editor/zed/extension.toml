@@ -1,0 +1,21 @@
+id = "thoxa"
+name = "Thoxa"
+version = "0.1.0"
+schema_version = 1
+authors = ["Joshua <joshua@moonlight.pm>"]
+description = "Thoxa language support: syntax highlighting plus a language server (diagnostics + semantic tokens)."
+repository = "file:///home/joshua/Workspace/Thoxa/apocrypha/old/ThoxaPython"
+
+# The grammar lives in a subdirectory of the archived Python oracle. Zed clones
+# the repo at `rev` (local file:// is fine for a personal dev extension), enters
+# `path`, and compiles the committed `src/parser.c` to WASM — so it uses the
+# COMMITTED grammar, not the working tree. After changing the grammar: regenerate
+# `src/`, commit, then bump `rev` below.
+[grammars.thoxa]
+repository = "file:///home/joshua/Workspace/Thoxa/apocrypha/old/ThoxaPython"
+rev = "f3d4ad383e6201a22a001f1bf0a913be5d4f10d8"
+path = "editor/tree-sitter-thoxa"
+
+[language_servers.thoxa]
+name = "Thoxa LSP"
+languages = ["Thoxa"]

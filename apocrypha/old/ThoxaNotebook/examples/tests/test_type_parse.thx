@@ -1,0 +1,8 @@
+type Point(x: Float, y: Float) {
+    export let x: Float,
+    export let y: Float
+}
+
+fn main() -> Void {
+    println("test");
+}

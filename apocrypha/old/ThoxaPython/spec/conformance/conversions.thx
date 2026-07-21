@@ -1,0 +1,15 @@
+## The as / can / is conversion triad (runtime).
+type Temp(celsius: Float64) {
+    export fn toString() -> String { "{celsius}C" }
+}
+
+fn main() -> Int64 {
+    println("{7 as Float64}")
+    println("{7.8 as Int64}")
+    println("{255 as String}")
+    let t = Temp(celsius: 21.5)
+    println(t as String)
+    println("{9 is Int64} {9 is Float64} {9.0 is Float64}")
+    println("{9 can Float64} {9 can Bool}")
+    0
+}

@@ -1,0 +1,18 @@
+# Test function parameters with fat pointers
+
+type Math {
+    export fn add(a: Int64, b: Int64) -> Int64 {
+        a + b
+    }
+}
+
+let math: Math;
+
+# Test simple function call
+let x: Int64 = 10;
+let y: Int64 = 20;
+let result: Int64 = math.add(x, y);
+@print(result);
+@printStr("\n");
+
+0

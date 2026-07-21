@@ -1,0 +1,6 @@
+
+fn main() -> Int {
+    let hello = "Hello, World!";
+    println(hello);
+    0
+}

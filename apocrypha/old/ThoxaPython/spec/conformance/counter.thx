@@ -1,0 +1,19 @@
+## A type with a mutable field, a private field, and exported methods.
+type Counter(start: Int64) {
+    mut value = start
+    let step = 2
+    export fn bump() -> Void {
+        value = value + step
+        Void
+    }
+    export fn get() -> Int64 { value }
+}
+
+fn main() -> Int64 {
+    mut c = Counter(start: 1)
+    c.bump()
+    c.bump()
+    c.bump()
+    println("value = {c.get()}")
+    0
+}

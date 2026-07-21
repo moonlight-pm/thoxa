@@ -1,0 +1,16 @@
+# A simple counter using mutable variables
+
+fn main() -> Int {
+    mut count = 0;
+    count = count + 5;
+    
+    # In real code, you could use loops with break/continue
+    # loop {
+    #     count = count + 1;
+    #     if count >= 10 {
+    #         break;
+    #     }
+    # }
+    
+    count
+}

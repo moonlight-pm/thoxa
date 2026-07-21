@@ -1,0 +1,6 @@
+fn main() -> Int {
+    let a = 10 + 20;
+    printInt(a);
+    println("");
+    0
+}

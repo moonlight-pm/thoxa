@@ -1,0 +1,380 @@
+## State — the editor singleton (module-private `mut`, reached only through exported
+## fns). Stage 3 turns the Stage-1/2 "cursor in a screen box" into a "cursor in a file,
+## projected onto a screen": the loaded file is `textRows`, the cursor cx/cy index the
+## *file* (byte offsets), and rowoff/coloff scroll it. File coordinates are `Int64`
+## (byte offsets, from `Bytes.count`/`Row.charCount`); screen dimensions stay `Int32`
+## (from `Terminal.windowSize()`) and widen where the two meet. An Int64 file coordinate
+## is never stored back into an Int32 screen field.
+
+import { Row } from "./Row"
+import fileio from "./FileIO"
+import { Hl, RowHl, Syntax, Matched, highlightRow, plainRow, selectSyntax } from "./Syntax"
+
+## time(2) for the message-bar 5-second fade — called through the Bytes(n) out-param
+## idiom (Address<T> marshals only ABI structs), passing a throwaway Bytes(8) and using
+## the return value exactly as C's time(NULL) does.
+extern fn sysTime(tloc!: Bytes) -> Int64 from "c" "time"
+fn now() -> Int64 { sysTime(Bytes(8)) }
+
+mut cx = 0                     # cursor byte-column into the current row's chars (Int64)
+mut cy = 0                     # cursor file-row (Int64); may equal numRows()
+mut rx = 0                     # cursor render-column (Int64), from cxToRx
+mut rowoff = 0                 # first visible file row (vertical scroll)
+mut coloff = 0                 # first visible render column (horizontal scroll)
+mut rows = 0                   # screen height in cells (Int32)
+mut cols = 0                   # screen width in cells (Int32)
+mut textRows: Array<Row> = []  # the loaded file (kilo's E.row[])
+mut filename = ""              # the file being edited; "" = an unnamed buffer
+mut dirty = false              # unsaved changes since load / last save
+mut statusMessage = ""         # transient message-bar text (save results, warnings, hint)
+mut statusTime = 0             # now() stamp when statusMessage was set (5-second fade)
+mut quitTimes = 3              # KILO_QUIT_TIMES — Ctrl-Q presses left on a dirty buffer
+
+mut activeSyntax: May<Syntax> = Not()   # chosen by filename (selectSyntax)
+mut rowHls: Array<RowHl> = []           # one per file row, parallel to textRows
+mut matchRow = -1                       # the Find match's file row (-1 = none)
+mut matchCol = -1                       # its byte column into that row's chars
+mut matchLen = 0                        # the query's byte length
+
+## -- screen size (unchanged from Stage 2) -----------------------------------
+
+export fn setScreenSize(r!: Int32, c!: Int32) -> Void {
+    rows = r
+    cols = c
+    Void
+}
+
+export fn screenRows() -> Int32 { rows }
+export fn screenCols() -> Int32 { cols }
+
+## The height available for text = the terminal minus the two bottom bars (status +
+## message). Clamped to 0 on a tiny terminal. Used by scroll()/pageUp/pageDown/Screen —
+## the cursor can never land on a bar because scrolling clamps cy into this extent.
+export fn textHeight() -> Int64 { if rows > 2 { rows - 2 } else { 0 } }
+
+## -- the loaded file --------------------------------------------------------
+
+export fn setRows(newRows!: Array<Row>, name!: String) -> Void {
+    textRows = newRows
+    filename = name
+    activeSyntax = selectSyntax(name)
+    refreshHighlight()
+    Void
+}
+
+export fn numRows() -> Int64 { textRows.count }
+export fn row(index!: Int64) -> Row { textRows[index] }
+
+## The whole document, for Find's pure searchFrom (Rows are immutable, so read-only
+## sharing is safe). Named `allRows` because the `rows` name is the screen-height field.
+export fn allRows() -> Array<Row> { textRows }
+
+## -- cursor / scroll reads --------------------------------------------------
+
+export fn cursorX() -> Int64 { cx }
+export fn cursorY() -> Int64 { cy }
+export fn renderX() -> Int64 { rx }
+export fn rowOff() -> Int64 { rowoff }
+export fn colOff() -> Int64 { coloff }
+
+## -- Stage 6 (Find): jump to a search hit, and restore on cancel -------------
+## `jumpTo` sets only cx/cy; the next refresh's scroll() brings the match on-screen.
+## `restoreView` restores all four (a cancelled search must undo scroll too).
+
+export fn jumpTo(col!: Int64, row!: Int64) -> Void {
+    cx = col
+    cy = row
+    Void
+}
+
+export fn restoreView(cxv!: Int64, cyv!: Int64, coloffv!: Int64, rowoffv!: Int64) -> Void {
+    cx = cxv
+    cy = cyv
+    coloff = coloffv
+    rowoff = rowoffv
+    Void
+}
+
+## -- scrolling (kilo editorScroll): keep the cursor on screen ----------------
+
+export fn scroll() -> Void {
+    rx = if cy < textRows.count { row(cy).cxToRx(cx) } else { 0 }
+    if rx < coloff { coloff = rx }
+    if rx >= coloff + cols { coloff = rx - cols + 1 }
+    if cy < rowoff { rowoff = cy }
+    if cy >= rowoff + textHeight() { rowoff = cy - textHeight() + 1 }
+    Void
+}
+
+## -- cursor movement (file coordinates) --------------------------------------
+## Every access to the current row is guarded by `cy < numRows()`, so an empty file
+## or the one-past-the-end cursor never indexes `row(cy)` out of bounds.
+
+## Clamp cx to the current row's length (or 0 past EOF) after a vertical move.
+fn snap() -> Void {
+    let n = if cy < textRows.count { row(cy).charCount() } else { 0 }
+    if cx > n { cx = n }
+    Void
+}
+
+export fn moveLeft() -> Void {
+    if cx > 0 {
+        cx -= 1
+    } else if cy > 0 {
+        cy -= 1
+        cx = row(cy).charCount()
+    }
+    Void
+}
+
+export fn moveRight() -> Void {
+    if cy < textRows.count {
+        let n = row(cy).charCount()
+        if cx < n {
+            cx += 1
+        } else {
+            cy += 1
+            cx = 0
+        }
+    }
+    Void
+}
+
+export fn moveUp() -> Void {
+    if cy > 0 { cy -= 1 }
+    snap()
+    Void
+}
+
+export fn moveDown() -> Void {
+    if cy < textRows.count { cy += 1 }
+    snap()
+    Void
+}
+
+export fn moveHome() -> Void {
+    cx = 0
+    Void
+}
+
+export fn moveEnd() -> Void {
+    if cy < textRows.count { cx = row(cy).charCount() }
+    Void
+}
+
+export fn pageUp() -> Void {
+    cy = rowoff
+    mut k = 0
+    loop {
+        if k >= textHeight() { break }
+        moveUp()
+        k += 1
+    }
+    Void
+}
+
+export fn pageDown() -> Void {
+    cy = rowoff + textHeight() - 1
+    if cy > textRows.count { cy = textRows.count }
+    if cy < 0 { cy = 0 }        # textHeight()==0 (a 1-2 row terminal) would give cy = -1
+    mut k = 0
+    loop {
+        if k >= textHeight() { break }
+        moveDown()
+        k += 1
+    }
+    Void
+}
+
+## -- editing (Stage 4): mutate the file through the Row primitives -----------
+## Rows are spliced functionally (textRows = textRows.insertAt/removeAt); a within-
+## line change swaps the element in place (textRows[cy] = newRow). Every edit sets
+## `dirty`. `cy == numRows()` is the phantom line one past EOF.
+
+export fn isDirty() -> Bool { dirty }
+
+## A fresh empty line.
+fn emptyRow() -> Row { Row(Bytes(0)) }
+
+## kilo editorInsertChar: insert `byte` at the cursor, materializing the phantom
+## EOF row first if the cursor sits one past the last line.
+export fn insertChar(byte!: Byte) -> Void {
+    if cy == numRows() {
+        textRows = textRows.insertAt(numRows(), emptyRow())
+    }
+    textRows[cy] = row(cy).insertChar(cx, byte)
+    cx = cx + 1
+    dirty = true
+    refreshHighlight()
+    Void
+}
+
+## kilo editorInsertNewline: Enter — split the current line at the cursor.
+export fn insertNewline() -> Void {
+    if cx == 0 {
+        textRows = textRows.insertAt(cy, emptyRow())
+    } else {
+        let line = row(cy)
+        textRows = textRows.insertAt(cy + 1, line.drop(cx))
+        textRows[cy] = line.take(cx)
+    }
+    cy = cy + 1
+    cx = 0
+    dirty = true
+    refreshHighlight()
+    Void
+}
+
+## kilo editorDelChar: Backspace — erase left of the cursor, or join with the
+## previous line at column 0. (No `&&` in Thoxa, so the start-of-file guard nests.)
+export fn deleteChar() -> Void {
+    if cy == numRows() { return Void }
+    if cx == 0 {
+        if cy == 0 { return Void }
+        let prev = row(cy - 1)
+        cx = prev.charCount()
+        textRows[cy - 1] = prev.concat(row(cy))
+        textRows = textRows.removeAt(cy)
+        cy = cy - 1
+    } else {
+        textRows[cy] = row(cy).deleteChar(cx - 1)
+        cx = cx - 1
+    }
+    dirty = true
+    refreshHighlight()
+    Void
+}
+
+## kilo's Delete key = move right then Backspace (forward delete / line join).
+export fn deleteForward() -> Void {
+    moveRight()
+    deleteChar()
+    Void
+}
+
+## -- syntax highlight (Stage 7): a derived cache over textRows --------------
+## Recompute every row's highlight, folding the multi-line-comment-open flag from row 0. Called
+## by every mutation of textRows / filename — the invariant that derived highlight never
+## outlives a document change. O(total render bytes); fine for a demo's small files.
+fn refreshHighlight() -> Void {
+    mut hls: Array<RowHl> = []
+    mut open = false
+    mut i = 0
+    loop {
+        if i >= textRows.count { break }
+        let rh = match activeSyntax {
+            Has(s) { highlightRow(textRows[i].renderBytes(), open, s) }
+            Not    { plainRow(textRows[i].renderBytes()) }
+        }
+        open = rh.openComment
+        hls = hls.append(rh)
+        i = i + 1
+    }
+    rowHls = hls
+    Void
+}
+
+## The cells for a file row, with the Find match overlaid (kilo HL_MATCH). Overlay, not
+## save/restore: rows are immutable, so this derives a fresh Array<Hl> for the frame.
+export fn rowCells(filerow!: Int64) -> Array<Hl> {
+    let base = rowHls[filerow].cells
+    if filerow == matchRow { overlayMatch(base, row(filerow)) } else { base }
+}
+
+## Paint render cells [cxToRx(matchCol) .. cxToRx(matchCol+matchLen)) as Matched. The match
+## column is a chars offset (Stage 6 searches chars); cxToRx maps it to render space.
+fn overlayMatch(base!: Array<Hl>, r!: Row) -> Array<Hl> {
+    let rxBegin = r.cxToRx(matchCol)
+    let rxEnd = r.cxToRx(matchCol + matchLen)
+    mut out: Array<Hl> = []
+    mut k = 0
+    loop {
+        if k >= base.count { break }
+        if k >= rxBegin {
+            if k < rxEnd { out = out.append(Matched()) } else { out = out.append(base[k]) }
+        } else { out = out.append(base[k]) }
+        k = k + 1
+    }
+    out
+}
+
+## Find sets/clears the highlighted match as the cursor jumps (Stage 7).
+export fn setMatch(row!: Int64, col!: Int64, length!: Int64) -> Void {
+    matchRow = row  matchCol = col  matchLen = length  Void
+}
+export fn clearMatch() -> Void { matchRow = -1  matchCol = -1  matchLen = 0  Void }
+
+## -- status message (Stage 5) -----------------------------------------------
+## A message-bar line that fades after 5 seconds. The clock read (now()) is split from
+## the freshness policy (messageFor) so tests drive the fade deterministically, the same
+## seam idea as Stage 4 extracting `dispatch`.
+
+export fn setStatusMessageAt(msg!: String, when!: Int64) -> Void {
+    statusMessage = msg
+    statusTime = when
+    Void
+}
+
+## The message if it is still within the 5-second window at `clock`, else "".
+export fn messageFor(clock!: Int64) -> String {
+    if clock - statusTime < 5 { statusMessage } else { "" }
+}
+
+## Live wrappers over the real clock — Main sets, Screen reads currentMessage().
+export fn setStatusMessage(msg!: String) -> Void { setStatusMessageAt(msg, now()) }
+export fn currentMessage() -> String { messageFor(now()) }
+
+export fn currentFilename() -> String { filename }
+
+## Name an unnamed buffer (Stage 6 save-as prompt): set the filename, then save() writes
+## it. The missing half of Stage 5's save(), which reported "no filename" for "".
+export fn setFilename(name!: String) -> Void {
+    filename = name
+    activeSyntax = selectSyntax(name)
+    refreshHighlight()
+    Void
+}
+
+## -- save (Stage 5): the first consumer of `dirty` ---------------------------
+
+## kilo editorSave: write the buffer to `filename`, clear dirty, report the byte count.
+## An unnamed buffer can't save (kilo prompts for a name here; the prompt is deferred).
+export fn save() -> Void {
+    if filename.count == 0 {
+        setStatusMessage("Can't save: no filename")
+        return Void
+    }
+    match fileio.save(filename, textRows) {
+        Pass(n) {
+            dirty = false
+            setStatusMessage("{n} bytes written to disk")
+        }
+        Fail(e) {
+            setStatusMessage("Can't save! {e}")
+        }
+    }
+    Void
+}
+
+## -- quit-confirm (Stage 5): the other consumer of `dirty` -------------------
+
+## kilo's Ctrl-Q dance: returns true iff the editor should quit now. A dirty buffer
+## warns and decrements a counter first (three warnings, then quit); a clean buffer
+## quits immediately.
+export fn confirmQuit() -> Bool {
+    if dirty {
+        if quitTimes > 0 {
+            setStatusMessage("WARNING! Unsaved changes. Press Ctrl-Q {quitTimes} more times to quit.")
+            quitTimes = quitTimes - 1
+            return false
+        }
+    }
+    true
+}
+
+## Any non-quit keypress resets the counter (kilo resets at the end of every keypress
+## that isn't the early-returning Ctrl-Q).
+export fn resetQuitTimes() -> Void {
+    quitTimes = 3
+    Void
+}

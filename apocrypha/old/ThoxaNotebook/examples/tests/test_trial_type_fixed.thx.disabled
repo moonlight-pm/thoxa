@@ -1,0 +1,8 @@
+
+fn test() -> Trial<Int, Int> {
+    Pass(42)
+}
+
+fn main() -> Int {
+    0
+}

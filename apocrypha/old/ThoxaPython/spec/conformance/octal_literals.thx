@@ -1,0 +1,15 @@
+## Octal integer literals `0o…` (Stage 5): a third integer base beside 0x / 0b, for
+## Unix file modes and other bit-grouped constants. An octal literal is a plain integer —
+## the base does not survive lexing, so `0o644` prints as its decimal value.
+fn main() -> Int64 {
+    println("{0o0} {0o7} {0o10} {0o644} {0o777}")
+    println("{0o1_000}")
+    let mode: UInt8 = 0o17u8
+    println("{mode}")
+    ## the actual file-open flags, written in octal (combined with the LF-A bitwise OR)
+    let flags = 0o1 | 0o100 | 0o1000
+    println("{flags}")
+    ## octal and decimal denote the same value
+    println("{0o644 == 420}")
+    0
+}

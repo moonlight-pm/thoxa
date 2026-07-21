@@ -1,0 +1,19 @@
+# Example demonstrating function calls (without parameters for now)
+
+fn getTen() -> Int {
+    10
+}
+
+fn getTwenty() -> Int {
+    20
+}
+
+fn computeSum() -> Int {
+    let a = getTen();
+    let b = getTwenty();
+    a + b
+}
+
+fn main() -> Int {
+    computeSum()
+}

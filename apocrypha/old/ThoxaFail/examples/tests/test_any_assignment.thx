@@ -1,0 +1,11 @@
+# Test if Any type can accept values in user code
+
+# Test assigning different types to Any
+let x: Any = 42;
+let y: Any = "hello";
+
+# For now, just print a marker to show we got this far
+@print(1);
+@printStr("\n");
+
+0

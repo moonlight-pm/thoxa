@@ -1,0 +1,12 @@
+# Simple test of printing Any values directly
+
+let x: Any = 42;
+let y: Any = "hello";
+
+# Test if builtins can handle Any values with fat pointers
+@print(x);
+@printStr("\n");
+@printStr(y);
+@printStr("\n");
+
+0

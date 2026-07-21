@@ -1,0 +1,119 @@
+{
+  "Let binding": {
+    "prefix": "let",
+    "body": [
+      "let ${1:name}: ${2:I64} = ${3:value};"
+    ],
+    "description": "Create an immutable variable binding"
+  },
+  "Mut binding": {
+    "prefix": "mut",
+    "body": [
+      "mut ${1:name}: ${2:I64} = ${3:value};"
+    ],
+    "description": "Create a mutable variable binding"
+  },
+  "If statement": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "\t${2:// then branch}",
+      "}"
+    ],
+    "description": "If statement"
+  },
+  "If-else statement": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:condition} {",
+      "\t${2:// then branch}",
+      "} else {",
+      "\t${3:// else branch}",
+      "}"
+    ],
+    "description": "If-else statement"
+  },
+  "Loop": {
+    "prefix": "loop",
+    "body": [
+      "loop {",
+      "\t${1:// loop body}",
+      "\t",
+      "\tif ${2:condition} {",
+      "\t\tbreak",
+      "\t}",
+      "}"
+    ],
+    "description": "Infinite loop with break condition"
+  },
+  "Counter loop": {
+    "prefix": "counter",
+    "body": [
+      "mut ${1:i}: I64 = ${2:0};",
+      "loop {",
+      "\t${3:// loop body}",
+      "\t",
+      "\t${1:i} = ${1:i} + 1;",
+      "\tif ${1:i} >= ${4:10} {",
+      "\t\tbreak",
+      "\t}",
+      "}"
+    ],
+    "description": "Loop with counter"
+  },
+  "Module definition": {
+    "prefix": "module",
+    "body": [
+      "module ${1:ModuleName} {",
+      "\texport let ${2:field}: ${3:I64} = ${4:0};",
+      "\t$0",
+      "}"
+    ],
+    "description": "Define a module"
+  },
+  "Function definition": {
+    "prefix": "fn",
+    "body": [
+      "fn ${1:functionName}(${2:param}: ${3:I64}) -> ${4:I64} {",
+      "\t${5:// function body}",
+      "}"
+    ],
+    "description": "Define a function"
+  },
+  "Module function": {
+    "prefix": "modfn",
+    "body": [
+      "export fn ${1:functionName}(${2:param}: ${3:I64}) -> ${4:I64} {",
+      "\t${5:// function body}",
+      "}"
+    ],
+    "description": "Define an exported module function"
+  },
+  "Print": {
+    "prefix": "print",
+    "body": [
+      "@print(${1:value});"
+    ],
+    "description": "Print an integer value"
+  },
+  "Print string": {
+    "prefix": "prints",
+    "body": [
+      "@printStr(\"${1:text}\\\\n\");"
+    ],
+    "description": "Print a string with newline"
+  },
+  "Main program": {
+    "prefix": "main",
+    "body": [
+      "# ${1:Program description}",
+      "",
+      "@printStr(\"${2:Hello, World!}\\\\n\");",
+      "",
+      "${3:// Your code here}",
+      "",
+      "0"
+    ],
+    "description": "Basic program structure"
+  }
+}

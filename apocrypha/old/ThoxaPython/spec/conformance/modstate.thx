@@ -1,0 +1,12 @@
+## Module-level private `mut` (M-MOD-4, design §9): a stateful counter module.
+## `count` lives in `counter.thx`, initialized once; each `bump()` mutates that
+## single cell, so state accumulates across calls from this file.
+import { bump, current } from "./modstate/Counter"
+
+fn main() -> Int64 {
+    println("bump -> {bump()}")
+    println("bump -> {bump()}")
+    println("bump -> {bump()}")
+    println("current = {current()}")
+    0
+}

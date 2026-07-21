@@ -1,0 +1,13 @@
+
+fn main() -> Int {
+    let result = Pass("hello");
+    
+    match result {
+        Pass(msg) -> {
+            42
+        },
+        Fail(err) -> {
+            0
+        }
+    }
+}

@@ -1,0 +1,23 @@
+
+fn testMatch(success: Bool) -> Int {
+    let result = if success {
+        Pass("yes")
+    } else {
+        Fail("no")
+    };
+    
+    match result {
+        Pass(msg) -> {
+            1
+        },
+        Fail(err) -> {
+            2
+        }
+    }
+}
+
+fn main() -> Int {
+    let a = testMatch(true);   
+    let b = testMatch(false);  
+    a + b  
+}

@@ -1,0 +1,24 @@
+type Counter(initial: Int) {
+    export let mut count: Int = initial,
+    export let name: String,
+    
+    export fn increment() -> Void {
+        count = count + 1;
+    },
+    
+    export fn decrement() -> Void {
+        count = count - 1;
+    },
+    
+    export fn get() -> Int {
+        return count;
+    },
+    
+    export fn reset() -> Void {
+        count = initial;
+    }
+}
+
+fn main() -> Void {
+    println("Testing complete type");
+}

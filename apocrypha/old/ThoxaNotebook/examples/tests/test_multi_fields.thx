@@ -1,0 +1,9 @@
+type Point {
+    export let x: Float,
+    export let y: Float,
+    export let z: Float
+}
+
+fn main() -> Void {
+    println("Testing multiple fields")
+}

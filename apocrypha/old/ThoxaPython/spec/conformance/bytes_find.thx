@@ -1,0 +1,22 @@
+## Bytes.find (Stage 6): substring search over a byte buffer, May-typed (Has(index) /
+## Not) — never a -1 sentinel. The Thoxa-idiomatic answer to C's strstr, and what the
+## kilo port's incremental Find is built on. Returns the LEFTMOST match index.
+fn show(hay!: Bytes, needle!: Bytes) -> String {
+    match hay.find(needle) {
+        Has(i) { "{i}" }
+        Not { "none" }
+    }
+}
+
+fn main() -> Int64 {
+    let hay = Bytes.fromString("hello world")
+    println(show(hay, Bytes.fromString("hello")))                   # 0  (at the start)
+    println(show(hay, Bytes.fromString("world")))                   # 6
+    println(show(hay, Bytes.fromString("o")))                       # 4  (leftmost of two 'o')
+    println(show(hay, Bytes.fromString("d")))                       # 10 (at the end)
+    println(show(hay, Bytes.fromString(" ")))                       # 5  (single-byte needle)
+    println(show(hay, Bytes.fromString("xyz")))                     # none (absent)
+    println(show(Bytes.fromString("hi"), Bytes.fromString("high"))) # none (needle too long)
+    println(show(hay, Bytes.fromString("")))                        # 0  (empty needle -> start)
+    0
+}

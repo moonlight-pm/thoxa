@@ -1,0 +1,50 @@
+
+fn testIntArray() {
+    println("Testing integer array...");
+    
+    let arr = thoxaArrayNew(10, 8, 0);
+    
+    let val1 = 42;
+    let val2 = 100;
+    let val3 = 255;
+    
+    let len = thoxaArrayLength(arr);
+    print("Initial length: ");
+    printInt(len);
+    
+    let cap = thoxaArrayCapacity(arr);
+    print("Capacity: ");
+    printInt(cap);
+    
+    thoxaDecref(arr);
+    
+    println("Integer array test completed!");
+}
+
+fn testStringArray() {
+    println("Testing string array...");
+    
+    let arr = thoxaArrayNew(5, 8, 20);
+    
+    let s1 = thoxaStringNew("First");
+    let s2 = thoxaStringNew("Second");
+    let s3 = thoxaStringNew("Third");
+    
+    
+    let len = thoxaArrayLength(arr);
+    print("String array length: ");
+    printInt(len);
+    
+    thoxaDecref(s1);
+    thoxaDecref(s2);
+    thoxaDecref(s3);
+    thoxaDecref(arr);
+    
+    println("String array test completed!");
+}
+
+fn main() -> Int {
+    testIntArray();
+    testStringArray();
+    0
+}

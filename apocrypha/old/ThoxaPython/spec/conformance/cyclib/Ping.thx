@@ -1,0 +1,10 @@
+## Half of a cross-file `type` cycle: `Ping.play` builds a `Pong` from
+## `pong.thx` and calls its exported method, which builds a `Ping` back. Type
+## mutual recursion across files also resolves in phase-1 registration (§7).
+import { Pong } from "./Pong"
+
+export type Ping(depth: Int64) {
+    export fn play() -> Int64 {
+        if depth == 0 { 0 } else { Pong(depth: depth - 1).play() + 1 }
+    }
+}

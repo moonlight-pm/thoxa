@@ -1,0 +1,29 @@
+# The three prior implementations are preserved read-only on disk, not tracked here.
+old/
+
+# Scratch / working files
+scratch/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# uv
+# (uv.lock IS tracked)
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Serena (LSP-backed code tooling) local project data
+.serena/

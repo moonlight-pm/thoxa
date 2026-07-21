@@ -1,0 +1,10 @@
+fn main() -> Int {
+    let a = "test";
+    let b = "test";
+    
+    if a == b {
+        println("Equal!");
+    };
+    
+    0
+}

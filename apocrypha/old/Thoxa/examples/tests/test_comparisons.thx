@@ -1,0 +1,87 @@
+
+fn main() -> Int {
+    mut passed = 0;
+    mut failed = 0;
+    
+    let x = 10;
+    let y = 20;
+    let z = 10;
+    
+    if x < y {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 10 < 20");
+        failed = failed + 1;
+    };
+    
+    if y > x {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 20 > 10");
+        failed = failed + 1;
+    };
+    
+    if x <= z {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 10 <= 10");
+        failed = failed + 1;
+    };
+    
+    if x <= y {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 10 <= 20");
+        failed = failed + 1;
+    };
+    
+    if x >= z {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 10 >= 10");
+        failed = failed + 1;
+    };
+    
+    if y >= x {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 20 >= 10");
+        failed = failed + 1;
+    };
+    
+    if x == z {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 10 == 10");
+        failed = failed + 1;
+    };
+    
+    if x != y {
+        passed = passed + 1;
+    } else {
+        println("FAIL: 10 != 20");
+        failed = failed + 1;
+    };
+    
+    if x > y {
+        println("FAIL: 10 > 20 is true");
+        failed = failed + 1;
+    } else {
+        passed = passed + 1;
+    };
+    
+    if x == y {
+        println("FAIL: 10 == 20 is true");
+        failed = failed + 1;
+    } else {
+        passed = passed + 1;
+    };
+    
+    print("Comparison tests: ");
+    printInt(passed);
+    print(" passed, ");
+    printInt(failed);
+    println(" failed");
+    
+    failed
+}

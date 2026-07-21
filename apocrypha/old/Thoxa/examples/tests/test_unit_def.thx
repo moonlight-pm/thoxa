@@ -1,0 +1,12 @@
+type Counter(initial: Int) {
+    export let mut count: Int = initial
+}
+
+type Person {
+    export let name: String,
+    export let age: Int
+}
+
+fn main() -> Void {
+    println("Testing")
+}

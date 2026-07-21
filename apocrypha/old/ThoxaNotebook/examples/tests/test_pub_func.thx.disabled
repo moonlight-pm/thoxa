@@ -1,0 +1,9 @@
+// Test with explicit pub
+
+pub fn test() {
+    print("test\n");
+}
+
+pub fn main() {
+    test();
+}

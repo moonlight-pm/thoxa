@@ -1,0 +1,8 @@
+
+fn test() -> Int {
+    return 42;
+}
+
+fn main() -> Int {
+    return test();
+}

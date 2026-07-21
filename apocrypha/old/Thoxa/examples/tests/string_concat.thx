@@ -1,0 +1,46 @@
+
+fn testConcatenation() {
+    println("Testing string concatenation...");
+    
+    let hello = thoxaStringNew("Hello, ");
+    let world = thoxaStringNew("World!");
+    
+    let combined = thoxaStringConcat(hello, world);
+    
+    let result = thoxaStringCstr(combined);
+    println(result);
+    
+    thoxaDecref(hello);
+    thoxaDecref(world);
+    thoxaDecref(combined);
+    
+    println("Concatenation test completed!");
+}
+
+fn testMultipleConcat() {
+    println("Testing multiple concatenations...");
+    
+    let a = thoxaStringNew("One ");
+    let b = thoxaStringNew("Two ");
+    let c = thoxaStringNew("Three");
+    
+    let ab = thoxaStringConcat(a, b);
+    let abc = thoxaStringConcat(ab, c);
+    
+    let result = thoxaStringCstr(abc);
+    println(result);
+    
+    thoxaDecref(a);
+    thoxaDecref(b);
+    thoxaDecref(c);
+    thoxaDecref(ab);
+    thoxaDecref(abc);
+    
+    println("Multiple concatenation test completed!");
+}
+
+fn main() -> Int {
+    testConcatenation();
+    testMultipleConcat();
+    0
+}

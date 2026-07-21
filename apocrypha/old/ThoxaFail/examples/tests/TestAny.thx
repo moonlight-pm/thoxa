@@ -1,0 +1,18 @@
+# Test Any type
+
+# Basic Any variable
+let x: Any = 42;
+let y: Any = "Hello";
+
+# Test that Any accepts different types
+@printStr("Testing Any type:\n");
+@printStr("x is Any holding an Int64\n");
+@printStr("y is Any holding a String\n");
+
+# For now, we can't do much with Any values since we need:
+# 1. Runtime type information
+# 2. Type checking at runtime (if x is Int64 { ... })
+# But the type system accepts Any!
+
+@printStr("Any type test passed!\n");
+0

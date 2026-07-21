@@ -1,0 +1,12 @@
+# Test simple string concatenation
+
+fn main() -> Int {
+    let hello = "Hello";
+    let world = "World";
+    
+    # Test single concatenation  
+    let greeting = hello + world;
+    println(greeting);
+    
+    0
+}

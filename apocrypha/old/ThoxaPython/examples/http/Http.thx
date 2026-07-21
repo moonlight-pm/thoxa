@@ -1,0 +1,150 @@
+## Http — HTTP/1.1 request parsing and response building. Pure protocol: no syscalls,
+## no FFI. A `Request` carries method/path/version/headers (body stubbed empty for now);
+## a `Response` is status + headers + body, serialized by `writeResponse`.
+
+## One header field: name and value as Strings (ASCII for this demo).
+export type Header(export name: String, export value: String) {}
+
+## A parsed request. `body` is always empty Bytes until body reading lands.
+export type Request(
+    export method: String,
+    export path: String,
+    export version: String,
+    export headers: Array<Header>,
+    export body: Bytes,
+) {}
+
+## A response to serialize: status line, headers, body.
+export type Response(
+    export status: Int64,
+    export reason: String,
+    export headers: Array<Header>,
+    export body: Bytes,
+) {}
+
+## Split `data` on each occurrence of `delim` into an array of slices (empty parts kept).
+fn splitBytes(data!: Bytes, delim!: Bytes) -> Array<Bytes> {
+    mut parts: Array<Bytes> = []
+    mut start = 0
+    let n = data.count
+    let dlen = delim.count
+    loop {
+        let rest = data.slice(start, n)
+        match rest.find(delim) {
+            Not { break }
+            Has(rel) {
+                let i = start + rel
+                parts = parts.append(data.slice(start, i))
+                start = i + dlen
+            }
+        }
+    }
+    parts = parts.append(data.slice(start, n))
+    parts
+}
+
+## Parse a raw request buffer into a Request. Fails on incomplete or malformed input.
+## Body bytes after the header separator are ignored; `body` is always empty.
+export fn parseRequest(raw!: Bytes) -> Trial<Request, String> {
+    let sep = Bytes.fromString("\r\n\r\n")
+    match raw.find(sep) {
+        Not { Fail("incomplete request") }
+        Has(sepAt) {
+            let headerBlock = raw.slice(0, sepAt)
+            let lines = splitBytes(headerBlock, Bytes.fromString("\r\n"))
+            if lines.count == 0 {
+                Fail("empty request")
+            } else {
+                let reqLine = lines[0]
+                let tokens = splitBytes(reqLine, Bytes.fromString(" "))
+                if tokens.count != 3 {
+                    Fail("malformed request line")
+                } else {
+                    let method = tokens[0].toString()
+                    mut target = tokens[1]
+                    let version = tokens[2].toString()
+                    ## Strip query string: path only.
+                    match target.find(Bytes.fromString("?")) {
+                        Has(q) { target = target.slice(0, q) }
+                        Not { Void }
+                    }
+                    let path = target.toString()
+                    mut headers: Array<Header> = []
+                    mut i = 1
+                    loop {
+                        if i >= lines.count { break }
+                        let line = lines[i]
+                        if line.count == 0 {
+                            i = i + 1
+                            continue
+                        }
+                        match line.find(Bytes.fromString(":")) {
+                            Not { return Fail("malformed header") }
+                            Has(colon) {
+                                let name = line.slice(0, colon).toString()
+                                if name.count == 0 {
+                                    return Fail("empty header name")
+                                }
+                                mut valStart = colon + 1
+                                if valStart < line.count {
+                                    if line.get(valStart) == b' ' {
+                                        valStart = valStart + 1
+                                    }
+                                }
+                                let value = line.slice(valStart, line.count).toString()
+                                headers = headers.append(Header(name, value))
+                            }
+                        }
+                        i = i + 1
+                    }
+                    let body = Bytes(0)
+                    Pass(Request(method, path, version, headers, body))
+                }
+            }
+        }
+    }
+}
+
+## 200 OK with the given body and Content-Type.
+export fn ok(body!: Bytes, contentType!: String) -> Response {
+    let headers = [
+        Header(name: "Content-Type", value: contentType),
+        Header(name: "Content-Length", value: "{body.count}"),
+        Header(name: "Connection", value: "close"),
+    ]
+    Response(status: 200, reason: "OK", headers, body)
+}
+
+## 404 Not Found — plain text body.
+export fn notFound() -> Response {
+    let body = Bytes.fromString("Not Found\n")
+    let headers = [
+        Header(name: "Content-Type", value: "text/plain"),
+        Header(name: "Content-Length", value: "{body.count}"),
+        Header(name: "Connection", value: "close"),
+    ]
+    Response(status: 404, reason: "Not Found", headers, body)
+}
+
+## 400 Bad Request — plain text body (optional detail message).
+export fn badRequest(msg!: String) -> Response {
+    let body = Bytes.fromString("Bad Request: {msg}\n")
+    let headers = [
+        Header(name: "Content-Type", value: "text/plain"),
+        Header(name: "Content-Length", value: "{body.count}"),
+        Header(name: "Connection", value: "close"),
+    ]
+    Response(status: 400, reason: "Bad Request", headers, body)
+}
+
+## Serialize a Response to wire bytes (status line + headers + body).
+export fn writeResponse(res!: Response) -> Bytes {
+    let buf = Buffer()
+    buf.appendBytes(Bytes.fromString("HTTP/1.1 {res.status} {res.reason}\r\n"))
+    for h in res.headers {
+        buf.appendBytes(Bytes.fromString("{h.name}: {h.value}\r\n"))
+    }
+    buf.appendBytes(Bytes.fromString("\r\n"))
+    buf.appendBytes(res.body)
+    buf.freeze()
+}

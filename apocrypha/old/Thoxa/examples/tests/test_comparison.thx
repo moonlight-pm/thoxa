@@ -1,0 +1,7 @@
+fn main() -> Void {
+    let x: Float = 5.0;
+    let y: Float = 3.0;
+    if x >= y {
+        println("x is greater or equal");
+    }
+}

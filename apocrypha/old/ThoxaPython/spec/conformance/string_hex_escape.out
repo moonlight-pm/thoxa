@@ -1,0 +1,6 @@
+esc count=1 byte=27
+abc count=3 text=ABC
+clear count=4 esc=27 j=74
+cup count=8 esc=27
+del low=127 up=127
+charA=ok

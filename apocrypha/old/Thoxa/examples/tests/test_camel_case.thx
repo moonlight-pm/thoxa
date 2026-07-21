@@ -1,0 +1,7 @@
+type Test(initialBalance: Float) {
+    let balance: Float = initialBalance
+}
+
+fn main() -> Void {
+    println("Test");
+}

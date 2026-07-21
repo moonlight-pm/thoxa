@@ -1,0 +1,47 @@
+
+fn testPass() {
+    println("Testing Pass constructor...");
+    
+    let successValue = thoxaStringNew("Success!");
+    let success = Pass(successValue);
+    
+    println("Created Pass variant");
+    
+    thoxaDecref(successValue);
+    thoxaDecref(success);
+}
+
+fn testFail() {
+    println("Testing Fail constructor...");
+    
+    let error = thoxaStringNew("Something went wrong");
+    let failure = Fail(error);
+    
+    println("Created Fail variant");
+    
+    thoxaDecref(error);
+    thoxaDecref(failure);
+}
+
+fn testMixed() {
+    println("Testing mixed Trial usage...");
+    
+    let goodValue = thoxaStringNew("All good");
+    let good = Pass(goodValue);
+    let bad = Fail(thoxaStringNew("Error occurred"));
+    
+    println("Created both Pass and Fail");
+    
+    thoxaDecref(goodValue);
+    thoxaDecref(good);
+    thoxaDecref(bad);
+}
+
+fn main() -> Int {
+    testPass();
+    testFail();
+    testMixed();
+    
+    println("Trial tests completed!");
+    0
+}

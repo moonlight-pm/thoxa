@@ -1,0 +1,10 @@
+# Test type guard with false case
+let x: Int64 = 42;
+
+if x is String {
+    @print(1);
+} else {
+    @print(0);  # Should print 0
+};
+
+0

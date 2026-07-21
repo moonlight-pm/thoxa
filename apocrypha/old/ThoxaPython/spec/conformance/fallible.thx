@@ -1,0 +1,82 @@
+## Trial threading by inference: a function or constructor is fallible — and so
+## Trial/May-returning — when its body uses `?` OR directly constructs a variant
+## (`Fail`, `Pass`, `Not`, `Has`). The success tail is then wrapped (`Pass`/`Has`),
+## a `?` short-circuits, and a tail that already yields a Trial (like `passthru`)
+## passes through, not double-wrapped. No explicit `Pass`/`Fail` and no return
+## annotation are needed. `?` and `Pass`/`Fail` select the Trial family; a lone
+## `Not`/`Has` selects May.
+
+## Explicit Trial: no `?`, so it names its own Pass/Fail.
+fn parsePort(s!: Int64) -> Trial<Int64, String> {
+    if s < 0 { Fail("negative port") } else { Pass(s) }
+}
+
+## Inferred Trial: the `?` makes this fallible; the plain tail `n * 2` is auto-`Pass`ed.
+fn doubled(n!: Int64) {
+    let p = parsePort(n)?
+    n * 2
+}
+
+## Inferred Trial with a Trial tail: no `?`, but `parsePort` already yields a Trial,
+## so its result is returned as-is (no second wrap).
+fn passthru(n!: Int64) { parsePort(n) }
+
+## Inferred Trial from a `Fail` *construction* — no `?` and no annotation. The bare
+## success branch is auto-`Pass`ed; the `Fail(...)` branch passes through.
+fn drain(n!: Int64) {
+    if n == 0 { Fail("empty") } else { n }
+}
+
+## `Fail()` with no argument: a failure whose payload defaults to Void.
+fn attempt(ok!: Bool) {
+    if ok { 1 } else { Fail() }
+}
+
+## Inferred May from a `Not()` construction — the bare success branch is auto-`Has`ed.
+fn lookup(n!: Int64) {
+    if n == 0 { Not() } else { n }
+}
+
+## Fallible constructor: the `?` on `parsePort` in the field initializer makes
+## `Server(...)` return `Trial<Server, String>`.
+type Server(port: Int64) {
+    let checked = parsePort(port)?
+    export fn describe() -> String { "server:{port}" }
+}
+
+fn report(t!: Trial<Int64, String>) -> String {
+    match t {
+        Pass(v) { "ok {v}" }
+        Fail(e) { "err {e}" }
+    }
+}
+
+fn reportMay(m!: May<Int64>) -> String {
+    match m {
+        Has(v) { "has {v}" }
+        Not { "none" }
+    }
+}
+
+fn main() -> Int64 {
+    println(report(doubled(21)))     # inferred wrap: Pass(42)
+    println(report(doubled(-1)))     # short-circuit: Fail
+    println(report(passthru(9)))     # Trial tail passed through: Pass(9)
+    println(report(drain(7)))        # inferred from Fail(): Pass(7)
+    println(report(drain(0)))        # Fail("empty")
+    match attempt(false) {           # Fail() with a Void payload
+        Pass(v) { println("ok {v}") }
+        Fail(e) { println("failed") }
+    }
+    println(reportMay(lookup(3)))    # inferred May from Not(): Has(3)
+    println(reportMay(lookup(0)))    # Not()
+    match Server(port: 8080) {       # fallible ctor, success
+        Pass(s) { println(s.describe()) }
+        Fail(e) { println("no server: {e}") }
+    }
+    match Server(port: -1) {         # fallible ctor, short-circuit
+        Pass(s) { println(s.describe()) }
+        Fail(e) { println("no server: {e}") }
+    }
+    0
+}

@@ -1,0 +1,9 @@
+// Test without return types
+
+fn test() {
+    print("test\n");
+}
+
+fn main() {
+    test();
+}

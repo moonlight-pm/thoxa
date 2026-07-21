@@ -1,0 +1,31 @@
+
+fn main() -> Int {
+    let x = 10;
+    let y = 20;
+    
+    if x < y {
+        println("Less than: OK");
+    } else {
+        println("Less than: FAIL");
+    };
+    
+    if y > x {
+        println("Greater than: OK");
+    } else {
+        println("Greater than: FAIL");
+    };
+    
+    if x == 10 {
+        println("Equal: OK");
+    } else {
+        println("Equal: FAIL");
+    };
+    
+    if x != y {
+        println("Not equal: OK");
+    } else {
+        println("Not equal: FAIL");
+    };
+    
+    0
+}

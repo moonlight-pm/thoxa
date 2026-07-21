@@ -1,0 +1,19 @@
+## Methods reading fields by bare name (no `self`) and constructing new instances.
+import { sqrt } from "std/Math"
+
+type Point(x: Float64, y: Float64) {
+    export fn distance() -> Float64 {
+        sqrt(x * x + y * y)
+    }
+    export fn plus(dx: Float64, dy: Float64) -> Point {
+        Point(x: x + dx, y: y + dy)
+    }
+}
+
+fn main() -> Int64 {
+    let p = Point(x: 3.0, y: 4.0)
+    println("dist = {p.distance()}")
+    let q = p.plus(dx: 6.0, dy: 8.0)
+    println("q.dist = {q.distance()}")
+    0
+}

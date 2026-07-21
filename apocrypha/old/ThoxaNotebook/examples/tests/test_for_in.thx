@@ -1,0 +1,26 @@
+fn main() -> Int {
+    let nums = [10, 20, 30, 40, 50];
+    
+    println("Testing for-in loop:");
+    
+    mut sum = 0;
+    for n in nums {
+        printInt(n);
+        sum = sum + n;
+    };
+    
+    println("Sum of all elements:");
+    printInt(sum);
+    
+    println("Testing break in for-in:");
+    mut count = 0;
+    for x in [1, 2, 3, 4, 5] {
+        if x > 3 {
+            break;
+        };
+        count = count + 1;
+    };
+    printInt(count);
+    
+    0
+}

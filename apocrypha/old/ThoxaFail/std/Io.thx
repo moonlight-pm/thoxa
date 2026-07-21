@@ -1,0 +1,53 @@
+# Io.thx - Pure Thoxa I/O implementation
+# This module provides basic input/output functionality using system calls
+
+# File descriptors
+export let stdin: Int64 = 0;
+export let stdout: Int64 = 1;
+export let stderr: Int64 = 2;
+
+# Low-level write syscall wrapper
+# Returns number of bytes written, or negative on error
+export fn write(fd: Int64, buffer: Int64, count: Int64) -> Int64 {
+    # Platform note: syscall 4 is write on macOS
+    # TODO: Abstract this for cross-platform support
+    @syscall(4, fd, buffer, count)
+};
+
+# Print a string to stdout
+# Returns number of bytes written
+export fn printStr(s: Int64) -> Int64 {
+    let len: Int64 = @strlen(s);
+    write(1, s, len)
+};
+
+# Print a string followed by newline
+export fn printStrLn(s: Int64) -> Int64 {
+    printStr(s);
+    write(1, "\n", 1)
+};
+
+# Print an integer to stdout
+export fn print(value: Int64) -> Int64 {
+    let s: Int64 = @intToString(value);
+    let len: Int64 = @strlen(s);
+    write(1, s, len)
+};
+
+# Print an integer followed by newline
+export fn println(value: Int64) -> Int64 {
+    print(value);
+    write(1, "\n", 1)
+};
+
+# Print a string to stderr
+export fn eprint(s: Int64) -> Int64 {
+    let len: Int64 = @strlen(s);
+    write(2, s, len)
+};
+
+# Print a string to stderr followed by newline
+export fn eprintln(s: Int64) -> Int64 {
+    eprint(s);
+    write(2, "\n", 1)
+};

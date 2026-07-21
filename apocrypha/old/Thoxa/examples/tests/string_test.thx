@@ -1,0 +1,34 @@
+
+fn testStrings() {
+    println("Testing string implementation...");
+    
+    let str = thoxaStringNew("Hello, Thoxa!");
+    
+    let cstr = thoxaStringCstr(str);
+    println(cstr);
+    
+    let len = thoxaStringLength(str);
+    printInt(len);
+    
+    thoxaDecref(str);
+    
+    println("String test completed!");
+}
+
+fn testStringLifecycle() {
+    println("Testing string lifecycle...");
+    
+    let s1 = thoxaStringNew("First string");
+    
+    thoxaIncref(s1);  
+    thoxaDecref(s1);  
+    thoxaDecref(s1);  
+    
+    println("Lifecycle test completed!");
+}
+
+fn main() -> Int {
+    testStrings();
+    testStringLifecycle();
+    0
+}

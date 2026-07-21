@@ -1,0 +1,7 @@
+# Test basic fat pointer operations
+let x: Int64 = 10;
+let y: Int64 = 20;
+let z: Int64 = x + y;
+@print(z);
+@printStr("\n");
+0

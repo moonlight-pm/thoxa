@@ -1,0 +1,348 @@
+# Image manipulation tool example showcasing Thoxa syntax
+
+import { File } from "std/fs"
+import { max, min, clamp } from "std/math"
+
+type Pixel(r: UInt8, g: UInt8, b: UInt8, a: UInt8) {
+    export let r = r;
+    export let g = g;
+    export let b = b;
+    export let a = a;
+    
+    export fn toGrayscale() -> Pixel {
+        # Using standard luminance weights
+        let gray = (0.299 * r + 0.587 * g + 0.114 * b) as UInt8;
+        Pixel(gray, gray, gray, a)
+    }
+    
+    export fn blend(other: Pixel, alpha: Float) -> Pixel {
+        let invAlpha = 1.0 - alpha;
+        Pixel(
+            (r * invAlpha + other.r * alpha) as UInt8,
+            (g * invAlpha + other.g * alpha) as UInt8,
+            (b * invAlpha + other.b * alpha) as UInt8,
+            a
+        )
+    }
+}
+
+type Image(width: Int, height: Int) {
+    export let width = width;
+    export let height = height;
+    mut pixels = Array<Pixel>();
+    
+    # Initialize with black pixels
+    let i = 0;
+    loop {
+        if i >= width * height {
+            break;
+        }
+        pixels.push(Pixel(0u8, 0u8, 0u8, 255u8));
+        i = i + 1;
+    }
+    
+    export fn getPixel(x: Int, y: Int) -> May<Pixel> {
+        if x < 0 or x >= width or y < 0 or y >= height {
+            return Not;
+        }
+        Has(pixels[y * width + x])
+    }
+    
+    export fn setPixel(x: Int, y: Int, pixel: Pixel) -> Trial<Void, String> {
+        if x < 0 or x >= width or y < 0 or y >= height {
+            return Fail("Pixel coordinates out of bounds");
+        }
+        pixels[y * width + x] = pixel;
+        Pass(Void)
+    }
+    
+    export fn fill(color: Pixel) {
+        let i = 0;
+        loop {
+            if i >= pixels.len() {
+                break;
+            }
+            pixels[i] = color;
+            i = i + 1;
+        }
+    }
+    
+    export fn clone() -> Image {
+        let newImg = Image(width, height);
+        newImg.pixels = pixels.clone();
+        newImg
+    }
+}
+
+type Filter {
+    export fn apply(img: Image) -> Image;
+}
+
+type GrayscaleFilter {
+    export fn apply(img: Image) -> Image {
+        let result = img.clone();
+        let y = 0;
+        
+        loop {
+            if y >= img.height {
+                break;
+            }
+            
+            let x = 0;
+            loop {
+                if x >= img.width {
+                    break;
+                }
+                
+                match img.getPixel(x, y) {
+                    Has(pixel) {
+                        result.setPixel(x, y, pixel.toGrayscale());
+                    }
+                    Not { }
+                }
+                
+                x = x + 1;
+            }
+            y = y + 1;
+        }
+        
+        result
+    }
+}
+
+type BlurFilter(radius: Int) {
+    export let radius = clamp(radius, 1, 10);
+    
+    export fn apply(img: Image) -> Image {
+        let result = img.clone();
+        let y = 0;
+        
+        loop {
+            if y >= img.height {
+                break;
+            }
+            
+            let x = 0;
+            loop {
+                if x >= img.width {
+                    break;
+                }
+                
+                # Calculate average of surrounding pixels
+                let totalR = 0;
+                let totalG = 0;
+                let totalB = 0;
+                let count = 0;
+                
+                let dy = -radius;
+                loop {
+                    if dy > radius {
+                        break;
+                    }
+                    
+                    let dx = -radius;
+                    loop {
+                        if dx > radius {
+                            break;
+                        }
+                        
+                        match img.getPixel(x + dx, y + dy) {
+                            Has(pixel) {
+                                totalR = totalR + pixel.r;
+                                totalG = totalG + pixel.g;
+                                totalB = totalB + pixel.b;
+                                count = count + 1;
+                            }
+                            Not { }
+                        }
+                        
+                        dx = dx + 1;
+                    }
+                    dy = dy + 1;
+                }
+                
+                if count > 0 {
+                    let avgPixel = Pixel(
+                        (totalR / count) as UInt8,
+                        (totalG / count) as UInt8,
+                        (totalB / count) as UInt8,
+                        255u8
+                    );
+                    result.setPixel(x, y, avgPixel);
+                }
+                
+                x = x + 1;
+            }
+            y = y + 1;
+        }
+        
+        result
+    }
+}
+
+type BrightnessFilter(adjustment: Float) {
+    export let adjustment = clamp(adjustment, -1.0, 1.0);
+    
+    export fn apply(img: Image) -> Image {
+        let result = img.clone();
+        let factor = 1.0 + adjustment;
+        
+        img.pixels.mapInPlace({ pixel =>
+            Pixel(
+                clamp((pixel.r * factor) as Int, 0, 255) as UInt8,
+                clamp((pixel.g * factor) as Int, 0, 255) as UInt8,
+                clamp((pixel.b * factor) as Int, 0, 255) as UInt8,
+                pixel.a
+            )
+        });
+        
+        result
+    }
+}
+
+# Image file format handlers
+type ImageFormat {
+    export fn decode(data: Array<Byte>) -> Trial<Image, String>;
+    export fn encode(img: Image) -> Trial<Array<Byte>, String>;
+}
+
+# Simple PPM format support
+type PPMFormat {
+    export fn decode(data: Array<Byte>) -> Trial<Image, String> {
+        let text = String.fromBytes(data);
+        let lines = text.split("\n");
+        
+        if lines.len() < 3 {
+            return Fail("Invalid PPM format");
+        }
+        
+        if lines[0] != "P3" {
+            return Fail("Only P3 (ASCII RGB) format supported");
+        }
+        
+        # Parse dimensions
+        let dims = lines[1].split(" ");
+        if dims.len() != 2 {
+            return Fail("Invalid dimensions");
+        }
+        
+        let width = match dims[0].parseInt() {
+            Pass(w) { w }
+            Fail(_) { return Fail("Invalid width"); }
+        }
+        
+        let height = match dims[1].parseInt() {
+            Pass(h) { h }
+            Fail(_) { return Fail("Invalid height"); }
+        }
+        
+        let img = Image(width, height);
+        
+        # Parse pixel data...
+        # (Implementation details omitted for brevity)
+        
+        Pass(img)
+    }
+    
+    export fn encode(img: Image) -> Trial<Array<Byte>, String> {
+        let output = "P3\n{img.width} {img.height}\n255\n";
+        
+        let y = 0;
+        loop {
+            if y >= img.height {
+                break;
+            }
+            
+            let x = 0;
+            loop {
+                if x >= img.width {
+                    break;
+                }
+                
+                match img.getPixel(x, y) {
+                    Has(pixel) {
+                        output = output + "{pixel.r} {pixel.g} {pixel.b} ";
+                    }
+                    Not { }
+                }
+                
+                x = x + 1;
+            }
+            output = output + "\n";
+            y = y + 1;
+        }
+        
+        Pass(output.toBytes())
+    }
+}
+
+# Main image processing pipeline
+fn processImage(inputPath: String, outputPath: String, filters: Array<Filter>) -> Trial<Void, String> {
+    # Load image
+    let data = File.readBytes(inputPath)?;
+    let img = PPMFormat.decode(data)?;
+    
+    println("Loaded image: {img.width}x{img.height}");
+    
+    # Apply filters
+    let result = filters.reduce(img, { acc, filter =>
+        println("Applying {filter.type.name} filter...");
+        filter.apply(acc)
+    });
+    
+    # Save result
+    let outputData = PPMFormat.encode(result)?;
+    File.writeBytes(outputPath, outputData)?;
+    
+    println("Saved result to {outputPath}");
+    Pass(Void)
+}
+
+fn main() -> Void {
+    let args = env.args();
+    
+    if args.len() < 3 {
+        println("Usage: image_processor <input> <output> [filters...]");
+        println("Filters: grayscale, blur=<radius>, brightness=<-1.0 to 1.0>");
+        exit(1);
+    }
+    
+    let inputPath = args[1];
+    let outputPath = args[2];
+    let filters = Array<Filter>();
+    
+    # Parse filter arguments
+    let i = 3;
+    loop {
+        if i >= args.len() {
+            break;
+        }
+        
+        let arg = args[i];
+        if arg == "grayscale" {
+            filters.push(GrayscaleFilter());
+        } else if arg.startsWith("blur=") {
+            match arg.substring(5).parseInt() {
+                Pass(radius) { filters.push(BlurFilter(radius)); }
+                Fail(_) { println("Invalid blur radius"); }
+            }
+        } else if arg.startsWith("brightness=") {
+            match arg.substring(11).parseFloat() {
+                Pass(value) { filters.push(BrightnessFilter(value)); }
+                Fail(_) { println("Invalid brightness value"); }
+            }
+        } else {
+            println("Unknown filter: {arg}");
+        }
+        
+        i = i + 1;
+    }
+    
+    match processImage(inputPath, outputPath, filters) {
+        Pass(_) { println("Done!"); }
+        Fail(err) { 
+            println("Error: {err}");
+            exit(1);
+        }
+    }
+}

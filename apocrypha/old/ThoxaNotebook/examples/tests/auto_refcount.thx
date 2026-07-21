@@ -1,0 +1,44 @@
+
+fn testAutoRefcount() {
+    println("Testing automatic reference counting...");
+    
+    mut s1 = thoxaStringNew("First string");
+    
+    let rc1 = thoxaRefcount(s1);
+    print("Initial refcount: ");
+    printInt(rc1);
+    
+    let s2 = s1;  
+    
+    let rc2 = thoxaRefcount(s2);
+    print("After copy refcount: ");
+    printInt(rc2);
+    
+    s1 = thoxaStringNew("Second string");
+    
+    let str2 = thoxaStringCstr(s2);
+    println(str2);
+    
+    thoxaDecref(s1);
+    thoxaDecref(s2);
+    
+    println("Auto refcount test completed!");
+}
+
+fn testScopeCleanup() {
+    println("Testing scope cleanup...");
+    
+    let s = thoxaStringNew("Scoped string");
+    let str = thoxaStringCstr(s);
+    println(str);
+    
+    thoxaDecref(s);
+    
+    println("Scope cleanup test completed!");
+}
+
+fn main() -> Int {
+    testAutoRefcount();
+    testScopeCleanup();
+    0
+}

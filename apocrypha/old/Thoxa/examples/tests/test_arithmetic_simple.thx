@@ -1,0 +1,76 @@
+fn main() -> Int {
+    let a = 10 + 20;
+    if a == 30 {
+        println("Addition: OK");
+    } else {
+        println("Addition: FAIL");
+    };
+    
+    let b = 50 - 15;
+    if b == 35 {
+        println("Subtraction: OK");
+    } else {
+        println("Subtraction: FAIL");
+    };
+    
+    let c = 7 * 6;
+    if c == 42 {
+        println("Multiplication: OK");
+    } else {
+        println("Multiplication: FAIL");
+    };
+    
+    let d = 100 / 4;
+    if d == 25 {
+        println("Division: OK");
+    } else {
+        println("Division: FAIL");
+    };
+    
+    let e = 17 % 5;
+    if e == 2 {
+        println("Modulo: OK");
+    } else {
+        println("Modulo: FAIL");
+    };
+    
+    let x = 10;
+    let y = 20;
+    if x < y {
+        println("Less than: OK");
+    } else {
+        println("Less than: FAIL");
+    };
+    
+    if y > x {
+        println("Greater than: OK");
+    } else {
+        println("Greater than: FAIL");
+    };
+    
+    if x <= 10 {
+        println("Less or equal: OK");
+    } else {
+        println("Less or equal: FAIL");
+    };
+    
+    if x >= 10 {
+        println("Greater or equal: OK");
+    } else {
+        println("Greater or equal: FAIL");
+    };
+    
+    if x == 10 {
+        println("Equal: OK");
+    } else {
+        println("Equal: FAIL");
+    };
+    
+    if x != y {
+        println("Not equal: OK");
+    } else {
+        println("Not equal: FAIL");
+    };
+    
+    0
+}

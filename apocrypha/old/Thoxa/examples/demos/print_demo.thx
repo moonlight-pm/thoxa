@@ -1,0 +1,21 @@
+# Demonstration of print functions
+
+fn main() -> Int {
+    print("Testing Thoxa's print functions:\n");
+    print("1. Printing strings works!\n");
+    
+    print("2. Printing integers: ");
+    printInt(42);
+    
+    print("3. Printing characters: ");
+    printChar('A');
+    printChar(' ');
+    printChar('B');
+    printChar('\n');
+    
+    print("4. Calculating: 10 + 20 = ");
+    printInt(10 + 20);
+    
+    print("\nDone!\n");
+    0
+}

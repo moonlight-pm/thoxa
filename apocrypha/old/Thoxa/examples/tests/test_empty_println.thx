@@ -1,0 +1,6 @@
+fn main() -> Int {
+    println("Test");
+    println("");
+    println("After empty");
+    0
+}

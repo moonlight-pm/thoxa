@@ -1,0 +1,14 @@
+type Point(x: Float, y: Float) {
+    export let x: Float,
+    export let y: Float
+}
+
+fn foo() -> Int {
+    let p = Point(1.0, 2.0);
+    return 42;
+}
+
+fn main() -> Void {
+    let x = foo();
+    println("Got value");
+}

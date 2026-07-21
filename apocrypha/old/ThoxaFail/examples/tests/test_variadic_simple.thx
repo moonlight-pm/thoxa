@@ -1,0 +1,15 @@
+# Simple test for variadic parameter type checking
+type Test {
+    export fn test(...nums: Int64) -> Void {
+        # Inside the function, nums should be typed as [Int64]
+        # But the type checker doesn't recognize this
+        let len: Int64 = nums.length();
+        @print(len);
+        @printStr(" values received\n");
+        0
+    };
+};
+
+let t: Test;
+t.test(1, 2, 3);
+0

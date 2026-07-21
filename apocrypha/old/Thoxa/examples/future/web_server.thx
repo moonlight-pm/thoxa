@@ -1,0 +1,158 @@
+# Simple web server example showcasing Thoxa syntax
+
+import { TcpListener, TcpStream } from "std/net"
+import { spawn } from "std/async"
+import { HashMap } from "std/collections"
+
+type Request {
+    export let method = "";
+    export let path = "";
+    export let headers = HashMap<String, String>();
+    export let body = "";
+}
+
+type Response(status: Int, body: String) {
+    export let status = status;
+    export let body = body;
+    mut headers = HashMap<String, String>();
+    
+    export fn addHeader(key: String, value: String) {
+        headers.set(key, value);
+    }
+    
+    export fn send(stream: TcpStream) -> Trial<Void, String> {
+        let statusText = match status {
+            200 { "OK" }
+            404 { "Not Found" }
+            500 { "Internal Server Error" }
+        } else { "Unknown" }
+        
+        let response = "HTTP/1.1 {status} {statusText}\r\n";
+        
+        headers.set("Content-Length", "{body.len()}");
+        headers.set("Content-Type", "text/html");
+        
+        # Write headers
+        headers.forEach({ key, value =>
+            response = response + "{key}: {value}\r\n";
+        });
+        
+        response = response + "\r\n{body}";
+        stream.write(response.toBytes())
+    }
+}
+
+type Router {
+    mut routes = HashMap<String, Fn(Request) -> Response>();
+    
+    export fn get(path: String, handler: Fn(Request) -> Response) {
+        routes.set("GET:{path}", handler);
+    }
+    
+    export fn post(path: String, handler: Fn(Request) -> Response) {
+        routes.set("POST:{path}", handler);
+    }
+    
+    export fn handle(req: Request) -> Response {
+        let key = "{req.method}:{req.path}";
+        match routes.get(key) {
+            Value(handler) { handler(req) }
+            Void { Response(404, "<h1>404 Not Found</h1>") }
+        }
+    }
+}
+
+fn parseRequest(data: String) -> Trial<Request, String> {
+    let lines = data.split("\r\n");
+    if lines.len() < 1 {
+        return Fail("Invalid request");
+    }
+    
+    let parts = lines[0].split(" ");
+    if parts.len() != 3 {
+        return Fail("Invalid request line");
+    }
+    
+    let req = Request();
+    req.method = parts[0];
+    req.path = parts[1];
+    
+    # Parse headers
+    let i = 1;
+    loop {
+        if i >= lines.len() or lines[i] == "" {
+            break;
+        }
+        
+        let header = lines[i].split(": ");
+        if header.len() == 2 {
+            req.headers.set(header[0], header[1]);
+        }
+        i = i + 1;
+    }
+    
+    Pass(req)
+}
+
+fn handleConnection(stream: TcpStream, router: Router) {
+    match stream.read() {
+        Pass(data) {
+            match parseRequest(String.fromBytes(data)) {
+                Pass(request) {
+                    let response = router.handle(request);
+                    match response.send(stream) {
+                        Pass(_) { println("Response sent"); }
+                        Fail(err) { println("Failed to send: {err}"); }
+                    }
+                }
+                Fail(err) {
+                    println("Failed to parse request: {err}");
+                }
+            }
+        }
+        Fail(err) {
+            println("Failed to read from stream: {err}");
+        }
+    }
+    
+    stream.close();
+}
+
+fn main() -> Void {
+    let router = Router();
+    
+    # Define routes
+    router.get("/", { req =>
+        Response(200, "<h1>Welcome to Thoxa Web Server!</h1>")
+    });
+    
+    router.get("/about", { req =>
+        Response(200, "<h1>About</h1><p>Built with Thoxa!</p>")
+    });
+    
+    router.post("/api/echo", { req =>
+        Response(200, req.body)
+    });
+    
+    # Start server
+    match TcpListener.bind("127.0.0.1:8080") {
+        Pass(listener) {
+            println("Server listening on http://127.0.0.1:8080");
+            
+            loop {
+                match listener.accept() {
+                    Pass(stream) {
+                        # Handle each connection in separate task
+                        spawn({ handleConnection(stream, router); });
+                    }
+                    Fail(err) {
+                        println("Failed to accept connection: {err}");
+                    }
+                }
+            }
+        }
+        Fail(err) {
+            println("Failed to bind to address: {err}");
+        }
+    }
+}

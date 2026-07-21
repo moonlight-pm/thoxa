@@ -1,0 +1,32 @@
+## Byte literals `b'…'` — a Byte (0..255) written in character form. Resolves the
+## kilo-port fork #3: no char↔int conversion, just a byte-native literal. A byte
+## literal is an integer literal spelled as a character, so it is a plain numeric
+## Byte everywhere — arithmetic, bitwise, comparison, equality, and match patterns.
+
+export fn main() -> Int64 {
+    ## bare ASCII characters carry their code
+    println("A={b'A'} 0={b'0'} space={b' '} tilde={b'~'}")
+
+    ## the standard escapes denote their ASCII byte
+    println("nl={b'\n'} cr={b'\r'} tab={b'\t'} nul={b'\0'} quote={b'\''} bslash={b'\\'}")
+
+    ## \xNN reaches the full 0x00..0xff range
+    println("esc={b'\x1b'} del={b'\x7f'} ff={b'\xff'}")
+
+    ## a Byte is a numeric integer: arithmetic + bitwise work
+    println("ctrlQ={b'q' & 0x1f} plus={b' ' + 1}")
+
+    ## ordered comparison (the "char classification" case) is an int compare
+    if b'0' <= b'5' and b'5' <= b'9' { println("range=ok") } else { println("range=bad") }
+
+    ## equality against a plain int literal
+    if b'[' == 91 { println("eq=ok") } else { println("eq=bad") }
+
+    ## byte literals are valid match patterns
+    match 65 {
+        b'A' { println("match=letterA") }
+        b'B' { println("match=letterB") }
+        else { println("match=other") }
+    }
+    0
+}

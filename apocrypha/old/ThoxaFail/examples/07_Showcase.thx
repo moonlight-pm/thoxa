@@ -1,0 +1,112 @@
+# Thoxa Language Showcase - Comprehensive feature demonstration
+
+import Math from "./Math";
+
+# Custom type with multiple features
+type Vector3 {
+    export let x: Int64 = 1;
+    export let y: Int64 = 2; 
+    export let z: Int64 = 3;
+    
+    # Method with self parameter
+    export fn magnitude(self: &Vector3) -> Int64 {
+        # Simplified magnitude calculation
+        self.x * self.x + self.y * self.y + self.z * self.z
+    }
+    
+    # Type conversion
+    as String {
+        "<${x}, ${y}, ${z}>"
+    }
+}
+
+# Demonstration function
+type Demo {
+    export fn run() -> Void {
+        @printStr("=== Thoxa Language Showcase ===\n\n");
+        
+        # 1. Variables and types
+        @printStr("1. Variables and Types:\n");
+        let num: Int64 = 42;
+        let text: String = "Thoxa";
+        @printStr("   Number: ${num}, Text: ${text}\n\n");
+        
+        # 2. Type instances and methods
+        @printStr("2. Custom Types:\n");
+        let vec: Vector3;
+        @printStr("   Vector: ${vec as String}\n");
+        @printStr("   Magnitude: ");
+        @print(vec.magnitude());
+        @printStr("\n\n");
+        
+        # 3. Arrays
+        @printStr("3. Arrays:\n");
+        let primes = [2, 3, 5, 7, 11];
+        @printStr("   First 5 primes: ");
+        printArray(primes);
+        @printStr("\n\n");
+        
+        # 4. Control flow
+        @printStr("4. Control Flow:\n");
+        @printStr("   Fibonacci sequence: ");
+        printFibonacci(8);
+        @printStr("\n\n");
+        
+        # 5. Imports and modules
+        @printStr("5. Using Imported Modules:\n");
+        let math: Math;
+        @printStr("   7! = ");
+        @print(math.factorial(7));
+        @printStr("\n\n");
+        
+        # 6. Type conversions
+        @printStr("6. Type Conversions:\n");
+        if vec can String {
+            @printStr("   Vector can convert to String ✓\n");
+        };
+        let n: Int64 = 123;
+        @printStr("   Number ${n} as string: \"${n as String}\"\n\n");
+        
+        @printStr("=== End of Showcase ===\n");
+        0
+    }
+    
+    # Helper to print array
+    fn printArray(arr: [Int64]) -> Void {
+        let i = 0;
+        let len = arr.length();
+        @printStr("[");
+        loop {
+            if i >= len { break; };
+            if i > 0 { @printStr(", "); };
+            @print(arr[i]);
+            i = i + 1;
+        };
+        @printStr("]");
+        0
+    }
+    
+    # Print Fibonacci sequence
+    fn printFibonacci(n: Int64) -> Void {
+        let a: Int64 = 0;
+        let b: Int64 = 1;
+        let i: Int64 = 0;
+        
+        loop {
+            if i >= n { break; };
+            if i > 0 { @printStr(", "); };
+            @print(a);
+            let temp = a + b;
+            a = b;
+            b = temp;
+            i = i + 1;
+        };
+        0
+    }
+}
+
+# Run the demonstration
+let demo: Demo;
+demo.run();
+
+0

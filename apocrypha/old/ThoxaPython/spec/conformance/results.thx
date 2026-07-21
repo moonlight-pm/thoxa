@@ -1,0 +1,24 @@
+## Trial<T,E> results: Pass / Fail, with the `?` propagation operator.
+fn half(x!: Int64) -> Trial<Int64, String> {
+    if x % 2 == 0 { Pass(x / 2) } else { Fail("odd: {x}") }
+}
+
+fn quarter(x!: Int64) -> Trial<Int64, String> {
+    let a = half(x)?
+    let b = half(a)?
+    Pass(b)
+}
+
+fn report(t!: Trial<Int64, String>) -> String {
+    match t {
+        Pass(v) { "ok {v}" }
+        Fail(e) { "err {e}" }
+    }
+}
+
+fn main() -> Int64 {
+    println(report(quarter(20)))
+    println(report(quarter(6)))
+    println(report(quarter(7)))
+    0
+}

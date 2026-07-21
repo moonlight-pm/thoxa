@@ -1,0 +1,32 @@
+fn main() -> Int {
+    mut nums = [1, 2, 3];
+    
+    println("Initial array:");
+    printInt(nums.count);
+    
+    nums.push(4);
+    nums.push(5);
+    
+    println("After pushing 4 and 5:");
+    printInt(nums.count);
+    
+    let last = nums.pop();
+    match last {
+        Has(value) -> {
+            println("Popped value:");
+            printInt(value);
+        },
+        Not() -> {
+            println("Array was empty!");
+        }
+    };
+    
+    println("Count after pop:");
+    printInt(nums.count);
+    
+    nums.clear();
+    println("Count after clear:");
+    printInt(nums.count);
+    
+    0
+}

@@ -1,0 +1,18 @@
+## Bytes.equals (Stage 7): structural byte-sequence comparison — same length AND same bytes,
+## length-counted. The Thoxa answer to strncmp/strcmp; what the kilo port's keyword / comment
+## / extension matching is built on. (Bytes == Bytes is identity; equals is structural.)
+fn show(a!: Bytes, b!: Bytes) -> String {
+    if a.equals(b) { "yes" } else { "no" }
+}
+
+fn main() -> Int64 {
+    println(show(Bytes.fromString("int"), Bytes.fromString("int")))    # yes
+    println(show(Bytes.fromString("int"), Bytes.fromString("ins")))    # no  (same length)
+    println(show(Bytes.fromString("in"),  Bytes.fromString("int")))    # no  (shorter)
+    println(show(Bytes.fromString("int"), Bytes.fromString("in")))     # no  (longer)
+    println(show(Bytes.fromString(""),    Bytes.fromString("")))       # yes (empty == empty)
+    println(show(Bytes.fromString("//"),  Bytes.fromString("//")))     # yes (a delimiter)
+    let s = Bytes.fromString("void")
+    println(show(s, s))                                                # yes (same buffer)
+    0
+}

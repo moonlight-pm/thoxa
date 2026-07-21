@@ -1,0 +1,11 @@
+# Minimal test for variadic parameter
+type Test {
+    export fn test(...nums: Int64) -> Void {
+        # Just access the array - no method calls
+        nums;
+    };
+};
+
+let t: Test;
+t.test(1, 2, 3);
+0

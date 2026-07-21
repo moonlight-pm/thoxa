@@ -1,0 +1,39 @@
+// Test string operations in Thoxa
+
+fn main() -> Int {
+    // Test basic string creation
+    let hello = "Hello";
+    let world = "World";
+    
+    // Test string concatenation
+    let greeting = hello + ", " + world + "!";
+    
+    // Print the result
+    println(greeting);
+    
+    // Test string comparison
+    let str1 = "apple";
+    let str2 = "banana";
+    
+    if str1 == str1 {
+        println("String equality works!");
+    }
+    
+    if str1 != str2 {
+        println("String inequality works!");
+    }
+    
+    if str1 < str2 {
+        println("apple < banana: correct!");
+    }
+    
+    // Test empty strings
+    let empty = "";
+    let space = " ";
+    let combined = empty + space + empty;
+    print("Empty string test: '");
+    print(combined);
+    println("'");
+    
+    0
+}

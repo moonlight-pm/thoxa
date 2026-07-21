@@ -1,0 +1,10 @@
+# Test if parsing completes
+
+fn use_try() -> Trial<Int, Int> {
+    let x = 42;
+    Pass(x)
+}
+
+fn main() -> Int {
+    0
+}

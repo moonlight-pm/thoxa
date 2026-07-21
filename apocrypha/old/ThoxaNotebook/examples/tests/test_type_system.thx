@@ -1,0 +1,8 @@
+type Person(name: String, age: Int) {
+    export let name: String,
+    export let age: Int
+}
+
+fn main() -> Void {
+    println("Type system test");
+}

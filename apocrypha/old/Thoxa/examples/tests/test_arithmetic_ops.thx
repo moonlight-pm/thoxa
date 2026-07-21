@@ -1,0 +1,98 @@
+fn main() -> Int {
+    let a = 10 + 20;
+    if a == 30 {
+        println("✓ Addition");
+    } else {
+        println("✗ Addition");
+    };
+    
+    let b = 50 - 15;
+    if b == 35 {
+        println("✓ Subtraction");
+    } else {
+        println("✗ Subtraction");
+    };
+    
+    let c = 7 * 6;
+    if c == 42 {
+        println("✓ Multiplication");
+    } else {
+        println("✗ Multiplication");
+    };
+    
+    let d = 100 / 4;
+    if d == 25 {
+        println("✓ Division");
+    } else {
+        println("✗ Division");
+    };
+    
+    let e = 17 % 5;
+    if e == 2 {
+        println("✓ Modulo");
+    } else {
+        println("✗ Modulo");
+    };
+    
+    let x = 10;
+    let y = 20;
+    if x < y {
+        println("✓ Less than");
+    } else {
+        println("✗ Less than");
+    };
+    
+    if y > x {
+        println("✓ Greater than");
+    } else {
+        println("✗ Greater than");
+    };
+    
+    if x <= 10 {
+        println("✓ Less or equal");
+    } else {
+        println("✗ Less or equal");
+    };
+    
+    if x >= 10 {
+        println("✓ Greater or equal");
+    } else {
+        println("✗ Greater or equal");
+    };
+    
+    if x == 10 {
+        println("✓ Equal");
+    } else {
+        println("✗ Equal");
+    };
+    
+    if x != y {
+        println("✓ Not equal");
+    } else {
+        println("✗ Not equal");
+    };
+    
+    let p1 = 2 + 3 * 4;
+    if p1 == 14 {
+        println("✓ Precedence (2 + 3 * 4 = 14)");
+    } else {
+        println("✗ Precedence (2 + 3 * 4 != 14)");
+    };
+    
+    let p2 = (2 + 3) * 4;
+    if p2 == 20 {
+        println("✓ Parentheses ((2 + 3) * 4 = 20)");
+    } else {
+        println("✗ Parentheses ((2 + 3) * 4 != 20)");
+    };
+    
+    let pos = 10;
+    let neg = -pos;
+    if neg == -10 {
+        println("✓ Negation");
+    } else {
+        println("✗ Negation");
+    };
+    
+    0
+}

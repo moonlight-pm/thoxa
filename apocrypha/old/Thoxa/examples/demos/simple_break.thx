@@ -1,0 +1,16 @@
+# Simple test for break statement
+
+fn main() -> Int {
+    mut i = 0;
+    loop {
+        i = i + 1;
+        if i == 3 {
+            break;
+            0  # Unreachable but makes the block have a value
+        } else {
+            0
+        };
+    };
+    printInt(i);  # Should print 3
+    0
+}

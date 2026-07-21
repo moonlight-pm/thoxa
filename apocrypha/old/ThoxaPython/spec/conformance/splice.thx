@@ -1,0 +1,26 @@
+## insertAt / removeAt — the Stage 4 value splice (fork #4). Copying and strict-
+## bounds on both Bytes (a byte in a line) and Array (a row in the file). Every value
+## is asserted through .count/.get/.toString/index so stdout carries no control bytes.
+
+export fn main() -> Int64 {
+    ## Bytes: insert a byte mid-line, remove one, and at the end (append).
+    let b = Bytes.fromString("helo")
+    let ins = b.insertAt(2, b'l')          # h e [l] l o
+    let del = b.removeAt(1)                # h l o
+    let app = b.insertAt(b.count, b'!')    # at == count -> append
+    println("bytes ins={ins.toString()} del={del.toString()} app={app.toString()}")
+
+    ## Bytes splice is copying: the source is untouched by the ops above.
+    println("bytes src count={b.count} text={b.toString()}")
+
+    ## Array: insert an element mid-sequence, remove one, and at the end.
+    let xs = [10, 20, 30]
+    let ays = xs.insertAt(1, 99)           # [10, 99, 20, 30]
+    let azs = xs.removeAt(0)               # [20, 30]
+    println("array ins count={ays.count} at1={ays[1]}")
+    println("array del count={azs.count} at0={azs[0]}")
+
+    ## Array splice is copying: the source array is untouched.
+    println("array src count={xs.count} at1={xs[1]}")
+    0
+}

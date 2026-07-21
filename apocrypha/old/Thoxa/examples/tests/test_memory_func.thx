@@ -1,0 +1,31 @@
+type Point(x: Float, y: Float) {
+    export let x: Float,
+    export let y: Float
+}
+
+fn createPoint(x: Float, y: Float) -> Point {
+    let p = Point(x, y);
+    println("Created point in function");
+    return p;
+}
+
+fn usePoint(p: Point) -> Void {
+    println("Using point in function");
+}
+
+fn main() -> Void {
+    let p1 = createPoint(1.0, 2.0);
+    println("Got point from function");
+    
+    usePoint(p1);
+    println("Returned from usePoint");
+    
+    usePoint(Point(3.0, 4.0));
+    println("Direct creation and pass done");
+    
+    mut p2 = Point(5.0, 6.0);
+    p2 = createPoint(7.0, 8.0);
+    println("Reassignment done");
+    
+    println("All tests complete");
+}

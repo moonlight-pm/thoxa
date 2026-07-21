@@ -1,0 +1,26 @@
+[project]
+name = "thoxa"
+version = "0.0.1"
+description = "Thoxa — a novel systems programming language (pre-alpha, unfrozen)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+thoxa = "thoxa.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["thoxa"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

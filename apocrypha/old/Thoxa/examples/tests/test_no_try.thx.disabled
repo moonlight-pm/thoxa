@@ -1,0 +1,20 @@
+// Test without try operator
+
+fn get_value() -> Trial<int, int> {
+    Pass(42)
+}
+
+fn use_value() -> Trial<int, int> {
+    let result = get_value();
+    match result {
+        Pass(x) -> Pass(x + 1),
+        Fail(e) -> Fail(e)
+    }
+}
+
+fn main() -> int {
+    match use_value() {
+        Pass(v) -> v,
+        Fail(e) -> e
+    }
+}

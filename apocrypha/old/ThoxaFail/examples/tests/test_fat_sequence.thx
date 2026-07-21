@@ -1,0 +1,12 @@
+# Test sequence of let bindings
+type Test {
+    export fn test() -> Int64 {
+        let x: Int64 = 10;
+        let y: Int64 = 20;
+        x + y
+    };
+};
+
+let t: Test;
+@print(t.test());
+0

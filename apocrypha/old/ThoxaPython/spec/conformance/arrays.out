@@ -1,0 +1,5 @@
+count=3 first=10 last=30
+appended=[10, 20, 30, 40]
+dropped=[10, 20]
+mutated=[1, 99, 3]
+sum=60

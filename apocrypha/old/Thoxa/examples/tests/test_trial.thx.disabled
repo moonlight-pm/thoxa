@@ -1,0 +1,8 @@
+
+fn main() -> Int {
+    let passResult = Pass("hello");
+    
+    let failResult = Fail("error");
+    
+    42  
+}

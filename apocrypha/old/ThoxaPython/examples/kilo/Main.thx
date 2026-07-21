@@ -1,0 +1,199 @@
+## kilo — Stage 5 driver: a text editor that saves. Enter raw mode, load the file named
+## on the command line (`arguments[1]`) as rows, then loop: poll the terminal size, paint
+## the window + status/message bars with `Screen.refresh()`, read a decoded `Key`, and
+## dispatch it — arrows/Home/End/PageUp/PageDown move, printables/Enter/Backspace/Delete
+## edit, Ctrl-S saves, and Ctrl-Q quits (with a quit-confirm on unsaved changes). A
+## missing/unreadable file opens an empty buffer (kilo's new-file behaviour). The screen
+## is cleared and the terminal restored on every exit path.
+##
+##   thoxa run examples/kilo examples/kilo/sample.txt   # needs a real terminal
+
+import terminal from "./Terminal"
+import state from "./State"
+import screen from "./Screen"
+import fileio from "./FileIO"
+import find from "./Find"
+import prompt from "./Prompt"
+import { readKey, ctrlKey, Key, Press, Up, Down, Left, Right, Home, End, PageUp, PageDown, Delete } from "./Keys"
+
+## What the driver loop must do after a key. dispatch() stays free of terminal I/O (State
+## mutations only, so it is unit-testable as key -> Action); the interactive sub-loops that
+## Ctrl-F and an unnamed-buffer Ctrl-S need (their own read/refresh loops) run in the loop.
+export type Quit {}         # Ctrl-Q, and it is time to quit
+export type RunFind {}      # Ctrl-F -> open the incremental-search sub-loop
+export type PromptSave {}   # Ctrl-S on an unnamed buffer -> open the save-as prompt
+export type Resume {}       # keep looping (a move/edit/inline-save/quit-warning happened)
+export type Action = Quit | RunFind | PromptSave | Resume
+
+## Map a decoded key to a driver Action. Pure of terminal I/O (State mutations only), so
+## the byte→action mapping is deterministically testable (tests/test_kilo_dispatch.py); the
+## sub-loops for RunFind/PromptSave run in the driver loop (main), never here.
+export fn dispatch(k!: Key) -> Action {
+    ## Ctrl-Q is the only key that must NOT reset the quit counter (it *is* the counter):
+    ## on a dirty buffer it warns and counts down. Every other key resets the counter —
+    ## kilo's reset-at-the-end-of-every-keypress.
+    if isQuitKey(k) {
+        if state.confirmQuit() { return Quit() }
+        return Resume()
+    }
+    ## Ctrl-F and an unnamed-buffer Ctrl-S need a modal sub-loop → hand back an intent (and
+    ## reset the counter, as any non-Ctrl-Q key does). A named-buffer Ctrl-S saves inline
+    ## in applyKey below.
+    match k {
+        Press(b) {
+            if b == ctrlKey(b'f') {
+                state.resetQuitTimes()
+                return RunFind()
+            } else if b == ctrlKey(b's') {
+                if state.currentFilename().count == 0 {
+                    state.resetQuitTimes()
+                    return PromptSave()
+                }
+            }
+        }
+        else { Void }
+    }
+    applyKey(k)
+    state.resetQuitTimes()
+    Resume()
+}
+
+## True iff `k` is the Ctrl-Q quit key.
+fn isQuitKey(k!: Key) -> Bool {
+    match k {
+        Press(b) { b == ctrlKey(b'q') }
+        Up { false }
+        Down { false }
+        Left { false }
+        Right { false }
+        Home { false }
+        End { false }
+        PageUp { false }
+        PageDown { false }
+        Delete { false }
+    }
+}
+
+## Apply a (non-quit) key's editor action.
+fn applyKey(k!: Key) -> Void {
+    match k {
+        Press(b) {
+            ## Ctrl-S saves. Enter splits the line; Backspace (127) / Ctrl-H erase;
+            ## Ctrl-L and ESC are no-ops; every other byte (including Tab) is inserted.
+            if b == ctrlKey(b's') {
+                state.save()
+            } else if b == b'\r' {
+                state.insertNewline()
+            } else if b == 127 {
+                state.deleteChar()
+            } else if b == ctrlKey(b'h') {
+                state.deleteChar()
+            } else if b == ctrlKey(b'l') {
+                Void
+            } else if b == 27 {
+                Void
+            } else {
+                state.insertChar(b)
+            }
+        }
+        Up { state.moveUp() }
+        Down { state.moveDown() }
+        Left { state.moveLeft() }
+        Right { state.moveRight() }
+        Home { state.moveHome() }
+        End { state.moveEnd() }
+        PageUp { state.pageUp() }
+        PageDown { state.pageDown() }
+        Delete { state.deleteForward() }
+    }
+}
+
+export fn main(arguments: Array<String>) -> Int64 {
+    ## arguments[0] is the program (module path); arguments[1] is the file to view. A
+    ## missing or unreadable file becomes an empty new buffer (Fail => no rows).
+    if arguments.count > 1 {
+        let path = arguments[1]
+        match fileio.open(path) {
+            Pass(rows) { state.setRows(rows, path) }
+            Fail(e) { state.setRows([], path) }
+        }
+    }
+
+    ## Seed the screen size from the terminal (fall back to a default off a tty, so
+    ## cursor clamping still has sane bounds).
+    match terminal.windowSize() {
+        Pass(size) { state.setScreenSize(size.rows, size.cols) }
+        Fail(e) {
+            println("window size unavailable ({e}); assuming 24x80")
+            state.setScreenSize(24, 80)
+        }
+    }
+
+    mut term = terminal.RawMode()
+    match term.enable() {
+        Fail(e) {
+            println("could not enter raw mode: {e}")
+            return 1
+        }
+        Pass { Void }
+    }
+
+    ## Wipe any leftover shell output before the first paint.
+    match screen.clear() {
+        Fail(e) { print("clear failed: {e}\r\n") }
+        Pass { Void }
+    }
+
+    ## kilo's startup hint (fades after 5s or when a save/quit message replaces it).
+    state.setStatusMessage("HELP: Ctrl-S = save | Ctrl-F = find | Ctrl-Q = quit")
+
+    loop {
+        ## Poll the size every frame — the roadmap's SIGWINCH sidestep.
+        match terminal.windowSize() {
+            Pass(size) { state.setScreenSize(size.rows, size.cols) }
+            Fail(e) { Void }
+        }
+        match screen.refresh() {
+            Fail(e) {
+                print("refresh error: {e}\r\n")
+                break
+            }
+            Pass { Void }
+        }
+        match readKey() {
+            Fail(e) {
+                print("read error: {e}\r\n")
+                break
+            }
+            Pass(k) {
+                match dispatch(k) {
+                    Quit { break }
+                    Resume { Void }
+                    RunFind { find.run() }
+                    PromptSave {
+                        ## The save-as prompt for an unnamed buffer: a confirmed name is set
+                        ## and saved; ESC (Not) leaves the buffer unnamed.
+                        match prompt.promptLine("Save as (ESC to cancel): ") {
+                            Has(name) {
+                                state.setFilename(name)
+                                state.save()
+                            }
+                            Not { state.setStatusMessage("Save aborted") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ## Leave a clean screen and a cooked terminal behind.
+    match screen.clear() {
+        Pass { Void }
+        Fail(e) { Void }
+    }
+    match term.restore() {
+        Pass { Void }
+        Fail(e) { println("restore failed: {e}") }
+    }
+    0
+}

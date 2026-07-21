@@ -1,0 +1,8 @@
+## Half of a cross-file `fn` cycle (M-MOD-4, design §7): `isEven` calls `isOdd`
+## from `odds.thx`, which calls back here. Mutual recursion across files is
+## legitimate and resolves in phase-1 registration — no init order needed.
+import { isOdd } from "./Odds"
+
+export fn isEven(n: Int64) -> Bool {
+    if n == 0 { true } else { isOdd(n: n - 1) }
+}

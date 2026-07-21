@@ -1,0 +1,6 @@
+# Test runtime conversion from Any with type mismatch
+let x: Any = "hello";
+# This should trap at runtime because x contains a String, not Int64
+let y: Int64 = x as Int64;
+@print(y);
+0

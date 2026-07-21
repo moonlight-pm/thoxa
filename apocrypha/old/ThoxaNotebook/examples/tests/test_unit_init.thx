@@ -1,0 +1,9 @@
+type Constants {
+    export let pi: Float = 3.14159,
+    export let e: Float = 2.71828,
+    export let mut counter: Int = 0
+}
+
+fn main() -> Void {
+    println("Constants defined")
+}

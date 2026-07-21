@@ -1,0 +1,211 @@
+## Screen — Stage 3 of the kilo port: build one terminal frame in a `Buffer` and flush
+## it with a single write(2). Draws the loaded file's visible window: for each screen
+## row, the tab-expanded `render` of the corresponding file row, horizontally windowed
+## by `coloff` (Row.window) and vertically offset by `rowoff`. Rows past end-of-file
+## show a `~`; only for an empty buffer (numRows()==0) is the centred welcome banner
+## drawn (truncated to the width with Bytes.slice). The cursor is positioned from the
+## render coordinate `rx` (not `cx`). Flicker-free refresh: hide the cursor, home it,
+## erase each line, reposition, show — one write. Depends only on `State`.
+##
+##   \x1b[?25l hide cursor    \x1b[H home        \x1b[K erase-to-end-of-line
+##   \x1b[<r>;<c>H position    \x1b[?25h show     \x1b[2J clear whole screen
+
+import state from "./State"
+import { color, Normal } from "./Syntax"
+import { errno, strerror } from "ffi"
+
+let stdoutFileno = 1
+
+## VT100 control sequences — ASCII `\xNN` escapes (the Stage 2 language increment).
+let hideCursor = "\x1b[?25l"
+let showCursor = "\x1b[?25h"
+let cursorHome = "\x1b[H"
+let clearLine = "\x1b[K"
+let clearScreen = "\x1b[2J"
+let invertOn = "\x1b[7m"       # SGR reverse video — the status bar
+let invertOff = "\x1b[m"       # SGR reset
+
+let sgrReset = "\x1b[39m"       # SGR default foreground — the per-row color reset
+
+let welcome = "Kilo editor -- version 0.0.1"
+
+## write(2) — the single-syscall frame flush. Private, per the per-module extern
+## convention.
+extern fn sysWrite(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "write"
+
+fn screenErr(what!: String) -> String {
+    "{what}: {strerror(errno())}"
+}
+
+## Flush a finished frame with one write(); Fail on a write error.
+fn flush(frame!: Bytes) -> Trial<Void, String> {
+    if sysWrite(stdoutFileno, frame, frame.count) < 0 {
+        return Fail(screenErr("write"))
+    }
+    Pass(Void)
+}
+
+## One visible file row, render bytes interleaved with SGR color changes (kilo editorDrawRows).
+## `cells` (full render, match overlaid) is indexed from `begin` — the same clamp Row.window
+## uses — so bytes and classes stay aligned. Returns Bytes (Buffer is value-typed; a callee
+## can't append into refresh's frame).
+fn drawRowBytes(filerow!: Int64, coloff!: Int64, cols!: Int64) -> Bytes {
+    let r = state.row(filerow)
+    let visible = r.window(coloff, cols)
+    let cells = state.rowCells(filerow)
+    let count = r.renderCount()
+    let begin = if coloff > count { count } else { coloff }
+
+    mut out = Buffer()
+    mut currentColor = -1
+    mut j = 0
+    loop {
+        if j >= visible.count { break }
+        let hl = cells[begin + j]
+        match hl {
+            Normal {
+                if currentColor != -1 {
+                    out.appendBytes(Bytes.fromString(sgrReset))
+                    currentColor = -1
+                }
+            }
+            else {
+                let col = color(hl)
+                if col != currentColor {
+                    out.appendBytes(Bytes.fromString("\x1b[{col}m"))
+                    currentColor = col
+                }
+            }
+        }
+        out.append(visible.get(j))
+        j = j + 1
+    }
+    out.appendBytes(Bytes.fromString(sgrReset))
+    out.freeze()
+}
+
+## Paint one full frame: scroll the viewport to the cursor, draw each visible file row
+## (or a `~`/welcome past end-of-file), reposition the cursor from `rx`, show it — all
+## built in one `Buffer` and written once. Built inline (no mutating helper: `Buffer`
+## has copy-on-write value semantics, so a callee's appends would not reach us).
+export fn refresh() -> Trial<Void, String> {
+    state.scroll()
+
+    ## Stage 5: the text region is the terminal minus the two bottom bars.
+    let textRows = state.textHeight()
+    let cols = state.screenCols()
+    let numRows = state.numRows()
+    let rowoff = state.rowOff()
+    let coloff = state.colOff()
+
+    mut buf = Buffer()
+    buf.appendBytes(Bytes.fromString(hideCursor))
+    buf.appendBytes(Bytes.fromString(cursorHome))
+
+    let welcomeRow = textRows / 3
+    mut y = 0
+    loop {
+        if y >= textRows {
+            break
+        }
+        let filerow = y + rowoff
+        if filerow >= numRows {
+            ## no file content on this screen line
+            if numRows == 0 {
+                if y == welcomeRow {
+                    ## centred welcome banner, truncated to the width via slice
+                    let banner = Bytes.fromString(welcome)
+                    let len = if banner.count > cols { cols } else { banner.count }
+                    let pad = (cols - len) / 2
+                    if pad > 0 {
+                        buf.append(b'~')
+                        mut sp = pad - 1
+                        loop {
+                            if sp <= 0 {
+                                break
+                            }
+                            buf.append(b' ')
+                            sp = sp - 1
+                        }
+                    }
+                    buf.appendBytes(banner.slice(0, len))
+                } else {
+                    buf.append(b'~')
+                }
+            } else {
+                buf.append(b'~')
+            }
+        } else {
+            ## the file row's visible window, syntax-colored (kilo editorDrawRows)
+            buf.appendBytes(drawRowBytes(filerow, coloff, cols))
+        }
+        buf.appendBytes(Bytes.fromString(clearLine))
+        ## every text row now ends \r\n — a bar always follows below it.
+        buf.appendBytes(Bytes.fromString("\r\n"))
+        y = y + 1
+    }
+
+    ## The two bottom bars (kilo editorDrawStatusBar / editorDrawMessageBar). Each helper
+    ## builds and returns its own Bytes — Buffer is value-typed, so a callee cannot append
+    ## into ours.
+    buf.appendBytes(statusBarBytes(cols, numRows))
+    buf.appendBytes(messageBarBytes(cols))
+
+    ## Reposition the cursor from the render coordinate (rx), screen-space, 1-based.
+    let curRow = (state.cursorY() - rowoff) + 1
+    let curCol = (state.renderX() - coloff) + 1
+    buf.appendBytes(Bytes.fromString("\x1b[{curRow};{curCol}H"))
+    buf.appendBytes(Bytes.fromString(showCursor))
+
+    flush(buf.freeze())
+}
+
+## kilo editorDrawStatusBar: an inverted-video line — filename (or [No Name]), line
+## count, and (modified) on the left; the cursor's line position on the right; spaces
+## padding the middle so the right group sits flush-right. Truncated to the width.
+fn statusBarBytes(cols!: Int64, numRows!: Int64) -> Bytes {
+    let fname = state.currentFilename()
+    let name = if fname.count == 0 { "[No Name]" } else { fname }
+    let modified = if state.isDirty() { " (modified)" } else { "" }
+    let left = Bytes.fromString("{name} - {numRows} lines{modified}")
+    let right = Bytes.fromString("{state.cursorY() + 1}/{numRows}")
+
+    mut bar = Buffer()
+    bar.appendBytes(Bytes.fromString(invertOn))
+    let leftLen = if left.count > cols { cols } else { left.count }
+    bar.appendBytes(left.slice(0, leftLen))
+    mut col = leftLen
+    loop {
+        if col >= cols { break }
+        if cols - col == right.count {
+            bar.appendBytes(right)
+            break
+        }
+        bar.append(b' ')
+        col = col + 1
+    }
+    bar.appendBytes(Bytes.fromString(invertOff))
+    ## a bar always precedes the last line, so terminate it with \r\n.
+    bar.appendBytes(Bytes.fromString("\r\n"))
+    bar.freeze()
+}
+
+## kilo editorDrawMessageBar: erase the line, then the current (unfaded) message,
+## truncated to the width. This is the LAST screen line, so no trailing \r\n.
+fn messageBarBytes(cols!: Int64) -> Bytes {
+    mut bar = Buffer()
+    bar.appendBytes(Bytes.fromString(clearLine))
+    let msg = Bytes.fromString(state.currentMessage())
+    let msgLen = if msg.count > cols { cols } else { msg.count }
+    bar.appendBytes(msg.slice(0, msgLen))
+    bar.freeze()
+}
+
+## Wipe the whole screen and home the cursor. Used for the initial paint and before
+## quitting, so the shell prompt returns to a clean screen.
+export fn clear() -> Trial<Void, String> {
+    mut buf = Buffer()
+    buf.appendBytes(Bytes.fromString(clearScreen))
+    buf.appendBytes(Bytes.fromString(cursorHome))
+    flush(buf.freeze())
+}

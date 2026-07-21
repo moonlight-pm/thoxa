@@ -1,0 +1,16 @@
+type BankAccount(initialBalance: Float) {
+    export let mut balance: Float = initialBalance,
+    
+    export fn withdraw(amount: Float) -> Bool {
+        if balance >= amount {
+            balance = balance - amount;
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
+
+fn main() -> Void {
+    println("Test");
+}

@@ -1,0 +1,79 @@
+## kilo Stage 0 (Terminal) — deterministic slice. Self-contained: the conformance
+## harness runs each file standalone, so this re-declares the termios/winsize structs,
+## the raw-mode flag constants, and the `rawFlags` transformation from
+## examples/kilo/Terminal.thx, and pins the exact bit results plus struct/array/winsize
+## field I/O. The live raw-mode toggle needs a real tty and is a manual smoke test.
+
+let echo = 0x8
+let icanon = 0x2
+let isig = 0x1
+let iexten = 0x8000
+let ixon = 0x400
+let icrnl = 0x100
+let brkint = 0x2
+let inpck = 0x10
+let istrip = 0x20
+let opost = 0x1
+let cs8 = 0x30
+let vmin = 6
+let vtime = 5
+
+## struct termios (Linux x86-64) — the full 60-byte layout; ctypes computes the tail
+## padding between `cc` and `ispeed`. Every field mut (the kernel writes them).
+type Termios {
+    mut iflag: UInt32
+    mut oflag: UInt32
+    mut cflag: UInt32
+    mut lflag: UInt32
+    mut line: Byte
+    mut cc: Array<Byte, 32>
+    mut ispeed: UInt32
+    mut ospeed: UInt32
+}
+
+## struct winsize — 4 x UInt16 = exactly 8 bytes.
+type Winsize {
+    mut rows: UInt16
+    mut cols: UInt16
+    mut x: UInt16
+    mut y: UInt16
+}
+
+## Hand-rolled cfmakeraw: cooked termios -> raw, in place (mirrors Terminal.rawFlags).
+fn rawFlags(raw!: Termios) -> Void {
+    raw.iflag = raw.iflag & ~(brkint | icrnl | inpck | istrip | ixon)
+    raw.oflag = raw.oflag & ~opost
+    raw.cflag = raw.cflag | cs8
+    raw.lflag = raw.lflag & ~(echo | icanon | iexten | isig)
+    raw.cc[vmin] = 0
+    raw.cc[vtime] = 1
+    Void
+}
+
+fn main() -> Int64 {
+    mut t = Termios()
+    println("init {t.iflag} {t.oflag} {t.cflag} {t.lflag} {t.cc[0]}")
+
+    ## A representative cooked state: each flag field carries the bits kilo touches plus
+    ## one extra bit that must survive the transform (proving the masks clear/set exactly
+    ## the intended bits and preserve the rest).
+    t.iflag = brkint | icrnl | inpck | istrip | ixon | 0x1   # + IGNBRK (0x1) survives the clear
+    t.oflag = opost | 0x4                                    # + 0x4 survives the clear
+    t.cflag = 0x100                                          # a bit outside CS8; CS8 is added
+    t.lflag = echo | icanon | iexten | isig | 0x100         # + 0x100 survives the clear
+    t.cc[0] = 3                                              # VINTR — untouched by rawFlags
+    t.cc[vmin] = 99                                          # overwritten to 0
+    t.cc[vtime] = 99                                         # overwritten to 1
+
+    rawFlags(t)
+    println("raw {t.iflag} {t.oflag} {t.cflag} {t.lflag}")
+    println("cc {t.cc[0]} {t.cc[vmin]} {t.cc[vtime]}")
+
+    ## Winsize field I/O + a UInt16 width-truncating store (0x10005 -> low 16 bits = 5).
+    mut ws = Winsize()
+    ws.rows = 24
+    ws.cols = 80
+    ws.x = 0x10005
+    println("ws {ws.rows} {ws.cols} {ws.x}")
+    0
+}

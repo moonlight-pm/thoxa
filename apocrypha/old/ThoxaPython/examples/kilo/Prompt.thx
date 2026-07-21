@@ -1,0 +1,56 @@
+## Prompt — Stage 6 of the kilo port: a modal line-input prompt (kilo's `editorPrompt`,
+## minus the callback Thoxa can't express). It echoes into the message bar (raw mode has
+## no terminal echo) and reuses the single-frame refresh; the typed text is an ordinary
+## `Bytes`. Used for the save-as prompt (an unnamed buffer). Find's incremental search has
+## the same shape but inlines its own loop, because its per-keystroke search *is* the
+## callback we cannot pass — see Find.thx.
+##
+## Depends on Keys (read a key), Screen (redraw), State (set the echoed message) — no
+## cycle, since nothing Keys/Screen/State import reaches Prompt.
+
+import { readKey, Press } from "./Keys"
+import screen from "./Screen"
+import state from "./State"
+
+## A byte is echoable text if it is not a C0/DEL control byte (kilo: !iscntrl && < 128).
+fn isPrintable(b!: Byte) -> Bool {
+    if b < 32 { false } else { b < 127 }
+}
+
+## Modal line-input: draw "{label}{typed}" in the message bar each keystroke and read a
+## key. Returns Has(text) on Enter with content, Not on ESC (or an empty Enter keeps
+## prompting). Backspace / Ctrl-H erase the last byte; navigation keys are ignored (a
+## plain line editor). A draw or read failure aborts the prompt as a cancel (Not).
+export fn promptLine(label!: String) -> May<String> {
+    mut query = Bytes(0)
+    loop {
+        state.setStatusMessage("{label}{query.toString()}")
+        match screen.refresh() {
+            Fail(e) { return Not() }
+            Pass { Void }
+        }
+        match readKey() {
+            Fail(e) { return Not() }
+            Pass(k) {
+                match k {
+                    Press(b) {
+                        if b == 27 {                       # ESC -> cancel
+                            state.setStatusMessage("")
+                            return Not()
+                        } else if b == b'\r' {             # Enter -> confirm iff non-empty
+                            if query.count > 0 {
+                                state.setStatusMessage("")
+                                return Has(query.toString())
+                            }
+                        } else if b == 127 or b == 8 {     # Backspace / Ctrl-H
+                            if query.count > 0 { query = query.slice(0, query.count - 1) }
+                        } else if isPrintable(b) {
+                            query = query.insertAt(query.count, b)
+                        }
+                    }
+                    else { Void }                          # navigation keys: ignored here
+                }
+            }
+        }
+    }
+}

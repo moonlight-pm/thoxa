@@ -1,0 +1,7 @@
+A=65 0=48 space=32 tilde=126
+nl=10 cr=13 tab=9 nul=0 quote=39 bslash=92
+esc=27 del=127 ff=255
+ctrlQ=17 plus=33
+range=ok
+eq=ok
+match=letterA

@@ -1,0 +1,46 @@
+{
+  "name": "thoxa",
+  "displayName": "Thoxa Language Support",
+  "description": "Syntax highlighting and language support for Thoxa programming language",
+  "version": "0.0.1",
+  "publisher": "thoxa-lang",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "thoxa",
+    "thx",
+    "systems programming"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "thoxa",
+        "aliases": [
+          "Thoxa",
+          "thoxa"
+        ],
+        "extensions": [
+          ".thx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "thoxa",
+        "scopeName": "source.thoxa",
+        "path": "./syntaxes/thoxa.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "thoxa",
+        "path": "./snippets/thoxa.json"
+      }
+    ]
+  }
+}

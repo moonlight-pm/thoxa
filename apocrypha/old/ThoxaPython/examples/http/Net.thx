@@ -1,0 +1,122 @@
+## Net — a small socket layer wrapping raw libc syscalls behind a `Socket` type.
+## The `extern fn`s and the Linux constants below are private: callers work in
+## terms of `createSocket` / `bind` / `accept` / … and never see a raw fd or a bare
+## magic number. This is the seed of a portable stdlib socket module.
+import { errno, strerror } from "ffi"
+
+## Raw libc syscalls — the FFI boundary, kept private behind the Socket API. The
+## Thoxa names carry a `sys` prefix so they don't collide with the wrapper methods
+## below; the `from "c" "…"` clause binds each to its real libc symbol.
+extern fn sysSocket(domain!: Int32, kind!: Int32, protocol!: Int32) -> Int32 from "c" "socket"
+extern fn sysSetsockopt(fd!: Int32, level!: Int32, optname!: Int32, optval!: Bytes, optlen!: UInt32) -> Int32 from "c" "setsockopt"
+extern fn sysBind(fd!: Int32, addr!: Bytes, addrlen!: UInt32) -> Int32 from "c" "bind"
+extern fn sysListen(fd!: Int32, backlog!: Int32) -> Int32 from "c" "listen"
+extern fn sysAccept(fd!: Int32, addr!: Bytes, addrlen!: Bytes) -> Int32 from "c" "accept"
+extern fn sysRecv(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32) -> Int64 from "c" "recv"
+extern fn sysSend(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32) -> Int64 from "c" "send"
+extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
+
+## Linux socket constants, named here purely for documentation (a portable stdlib
+## would define them once). Private: they exist to explain the syscall arguments.
+let afInet      = 2       # AF_INET      — IPv4 address family
+let sockStream  = 1       # SOCK_STREAM  — reliable byte stream (TCP)
+let ipProtoIp   = 0       # IPPROTO_IP   — default protocol for the socket type
+let solSocket   = 1       # SOL_SOCKET   — option level for socket-wide options
+let soReuseAddr = 2       # SO_REUSEADDR — allow reuse of a local address
+let sockaddrLen = 16      # sizeof(struct sockaddr_in)
+let intSize     = 4       # sizeof(int)  — width of a setsockopt flag / socklen_t
+let recvBufSize = 4096    # bytes drained per request read
+
+## Pack a 16-byte sockaddr_in for 0.0.0.0:port (Linux layout, little-endian host).
+fn sockaddrIn(port!: Int32) -> Bytes {
+    let addr = Bytes(sockaddrLen)
+    addr.set(0, afInet)        # sin_family = AF_INET, in host byte order
+    addr.set(2, port / 256)    # sin_port, in network (big-endian) byte order
+    addr.set(3, port % 256)
+    addr                       # bytes 4..15 stay zero: INADDR_ANY + padding
+}
+
+## "context: reason" from the current errno, for a Fail payload.
+fn sockErr(what!: String) -> String {
+    "{what}: {strerror(errno())}"
+}
+
+## A socket file descriptor with a typed, semantic API over the raw syscalls.
+export type Socket(fd: Int32) {
+    ## SO_REUSEADDR so a restart doesn't trip over TIME_WAIT.
+    export fn reuseAddr() -> Trial<Void, String> {
+        let on = Bytes(intSize)
+        on.set(0, 1)
+        if sysSetsockopt(fd, solSocket, soReuseAddr, on, intSize) < 0 {
+            Fail(sockErr("setsockopt"))
+        } else {
+            Pass(Void)
+        }
+    }
+
+    ## Bind to 0.0.0.0:port.
+    export fn bind(port: Int32) -> Trial<Void, String> {
+        if sysBind(fd, sockaddrIn(port), sockaddrLen) < 0 {
+            Fail(sockErr("bind"))
+        } else {
+            Pass(Void)
+        }
+    }
+
+    ## Start listening with the given accept backlog.
+    export fn listen(backlog: Int32) -> Trial<Void, String> {
+        if sysListen(fd, backlog) < 0 {
+            Fail(sockErr("listen"))
+        } else {
+            Pass(Void)
+        }
+    }
+
+    ## Accept one client, returning its own Socket.
+    export fn accept() -> Trial<Socket, String> {
+        let caddr = Bytes(sockaddrLen)
+        let clen = Bytes(intSize)
+        clen.set(0, sockaddrLen)
+        let client = sysAccept(fd, caddr, clen)
+        if client < 0 {
+            Fail(sockErr("accept"))
+        } else {
+            Pass(Socket(fd: client))
+        }
+    }
+
+    ## Drain one request chunk into a Bytes buffer. Empty (count 0) when the peer
+    ## closed or an error returned a non-positive length — callers treat that as
+    ## "nothing to serve."
+    export fn receive() -> Bytes {
+        let buf = Bytes(recvBufSize)
+        let n = sysRecv(fd, buf, recvBufSize, 0)
+        if n <= 0 {
+            Bytes(0)
+        } else {
+            buf.slice(0, n)
+        }
+    }
+
+    ## Send a buffer in full; returns the byte count written. The payload is
+    ## positional — `send(bytes)`, not `send(data: bytes)`.
+    export fn send(data!: Bytes) -> Int64 {
+        sysSend(fd, data, data.count, 0)
+    }
+
+    ## Close the descriptor.
+    export fn close() -> Void {
+        sysClose(fd)
+        Void
+    }
+}
+
+## Open a TCP socket, or fail with the libc error text.
+export fn createSocket() -> Trial<Socket, String> {
+    let fd = sysSocket(afInet, sockStream, ipProtoIp)
+    if fd < 0 {
+        Fail(sockErr("socket"))
+    } else {
+        Pass(Socket(fd: fd))
+    }
+}

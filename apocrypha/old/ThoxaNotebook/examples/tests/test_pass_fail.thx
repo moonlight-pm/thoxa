@@ -1,0 +1,32 @@
+
+fn main() -> Int {
+    let passResult = Pass("hello");
+    print("Created Pass\n");
+    
+    let failResult = Fail("error");
+    print("Created Fail\n");
+    
+    match passResult {
+        Pass(msg) -> {
+            print("Matched Pass\n");
+            0
+        },
+        Fail(err) -> {
+            print("Matched Fail (wrong!)\n");
+            1
+        }
+    };
+    
+    match failResult {
+        Pass(msg) -> {
+            print("Matched Pass (wrong!)\n");
+            0
+        },
+        Fail(err) -> {
+            print("Matched Fail\n");
+            1
+        }
+    };
+    
+    0
+}

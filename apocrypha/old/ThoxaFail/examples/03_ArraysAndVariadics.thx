@@ -1,0 +1,47 @@
+# Arrays and Variadic Functions
+# NOTE: Temporarily disabled due to variadic parameter type checking issue
+
+# Note: Array type syntax [Type] is not yet implemented in the parser
+# For now, arrays infer their type from their elements
+
+# Variadic function example
+type Printer {
+    export fn printMany(...values: Int64) -> Void {
+        mut i: Int64 = 0;
+        let len: Int64 = values.length();
+        
+        @printStr("Printing ");
+        @print(len);
+        @printStr(" values: ");
+        
+        loop {
+            if i >= len {
+                break;
+            };
+            
+            if i > 0 {
+                @printStr(", ");
+            };
+            
+            @print(values[i]);
+            i = i + 1;
+        };
+        
+        @printStr("\n");
+    };
+};
+
+let printer: Printer;
+
+# Call with different numbers of arguments
+printer.printMany(1);
+printer.printMany(1, 2);
+printer.printMany(1, 2, 3);
+printer.printMany(10, 20, 30, 40, 50);
+
+# Empty call
+printer.printMany();
+
+# TODO: Re-enable once variadic parameter type checking is fixed
+# This example demonstrates variadic functions but is temporarily disabled
+0

@@ -1,0 +1,34 @@
+## C-struct FFI: zero-init, typed UInt32 fields, a bitwise (LF-A) field edit, a
+## fixed Array<Byte, N> field, and a round-trip through libc memcpy/memset by
+## address. Self-contained and deterministic — no terminal needed.
+type Regs {
+    mut a: UInt32
+    mut b: UInt32
+    mut tag: Byte
+    mut cc: Array<Byte, 4>
+}
+
+extern fn memcpy(dst!: Address<Regs>, src!: Address<Regs>, n!: UInt64) from "c"
+extern fn memset(p!: Address<Regs>, c!: Int32, n!: UInt64) from "c"
+
+fn main() -> Int64 {
+    mut r = Regs()
+    println("{r.a} {r.b} {r.tag} {r.cc[0]}")
+    r.a = 0x01020304
+    r.b = r.a & 0xFFFF
+    r.tag = 200
+    r.cc[0] = 65
+    r.cc[3] = 90
+    println("{r.a} {r.b} {r.tag} {r.cc[0]} {r.cc[3]}")
+
+    mut s = Regs()
+    memcpy(s, r, 16)
+    println("{s.a} {s.b} {s.tag} {s.cc[0]} {s.cc[3]}")
+
+    memset(r, 0, 16)
+    println("{r.a} {r.b} {r.cc[0]}")
+
+    memset(s, 67, 16)
+    println("{s.cc[0]} {s.cc[3]} {s.tag}")
+    0
+}

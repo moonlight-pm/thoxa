@@ -1,0 +1,6 @@
+
+fn main() -> Int {
+    let x = 10;
+    let y = match x;  
+    0
+}

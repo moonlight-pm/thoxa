@@ -1,0 +1,48 @@
+
+type Point {
+    export let x: Float,
+    export let y: Float,
+    export let z: Float
+}
+
+type Counter {
+    export let mut count: Int,
+    export let name: String
+}
+
+type Server(host: String, port: Int) {
+    export let address: String = host,
+    export let portNumber: Int = port,
+    export let mut connections: Int = 0,
+    
+    export fn getUrl() -> String {
+        return address;  
+    }
+}
+
+type BankAccount(initialBalance: Float) {
+    export let mut balance: Float = initialBalance,
+    export let accountNumber: String,
+    
+    export fn deposit(amount: Float) -> Void {
+        balance = balance + amount;
+    },
+    
+    export fn withdraw(amount: Float) -> Bool {
+        if balance >= amount {
+            balance = balance - amount;
+            return true;
+        } else {
+            return false;
+        }
+    },
+    
+    export fn getBalance() -> Float {
+        return balance;
+    }
+}
+
+fn main() -> Void {
+    println("New Thoxa syntax demonstration");
+    
+}

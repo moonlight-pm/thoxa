@@ -1,0 +1,93 @@
+# Test basic type inference scenarios
+
+fn testLiterals() -> Int {
+    let x = 42;  # Should infer Int
+    let y = "hello";  # Should infer String  
+    let z = true;  # Should infer Bool
+    let f = 3.14;  # Should infer Float
+    
+    if z {
+        x
+    } else {
+        0
+    }
+}
+
+fn testVariableBinding() -> String {
+    let a = "test";
+    let b = a;  # Should infer String from a
+    let c = b;  # Should infer String from b
+    c
+}
+
+fn testBinaryOps() -> Int {
+    let x = 10;
+    let y = 20;
+    let sum = x + y;  # Should infer Int
+    let diff = x - y;  # Should infer Int
+    let prod = x * y;  # Should infer Int
+    let quot = x / y;  # Should infer Int
+    sum + diff + prod + quot
+}
+
+fn testComparisons() -> Bool {
+    let x = 5;
+    let y = 10;
+    let eq = x == y;  # Should infer Bool
+    let ne = x != y;  # Should infer Bool
+    let lt = x < y;   # Should infer Bool
+    let gt = x > y;   # Should infer Bool
+    let le = x <= y;  # Should infer Bool
+    let ge = x >= y;  # Should infer Bool
+    eq or ne or lt or gt or le or ge
+}
+
+fn testLogicalOps() -> Bool {
+    let a = true;
+    let b = false;
+    let andResult = a and b;  # Should infer Bool
+    let orResult = a or b;   # Should infer Bool
+    let notResult = not a;    # Should infer Bool
+    andResult or orResult or notResult
+}
+
+fn testArrayLiterals() -> Int {
+    let nums = [1, 2, 3, 4, 5];  # Should infer [Int]
+    let strs = ["a", "b", "c"];  # Should infer [String]
+    nums[0] + nums[1]
+}
+
+fn testIfExpression() -> Int {
+    let cond = true;
+    let result = if cond {
+        42  # Both branches should unify to Int
+    } else {
+        100
+    };
+    result
+}
+
+fn testNestedExpressions() -> Int {
+    let x = 10;
+    let y = 20;
+    let z = if x < y {
+        x + 5
+    } else {
+        y - 5
+    };
+    z * 2
+}
+
+fn main() -> Int {
+    let t1 = testLiterals();
+    let t2 = testVariableBinding();
+    let t3 = testBinaryOps();
+    let t4 = testComparisons();
+    let t5 = testLogicalOps();
+    let t6 = testArrayLiterals();
+    let t7 = testIfExpression();
+    let t8 = testNestedExpressions();
+    
+    # All tests should pass, return 0 for success
+    0
+}

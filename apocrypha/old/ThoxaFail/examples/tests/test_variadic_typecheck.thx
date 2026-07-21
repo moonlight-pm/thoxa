@@ -1,0 +1,10 @@
+# Test type checking for variadic parameters
+type Test {
+    export fn test(...nums: Int64) -> Void {
+        # This should fail type checking because nums.length() isn't recognized
+        nums.length();
+        0
+    };
+};
+
+0

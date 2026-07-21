@@ -1,0 +1,23 @@
+# Try operator test with proper naming
+
+fn getValue() -> Trial<Int, Int> {
+    Pass(42)
+}
+
+fn useTry() -> Trial<Int, Int> {
+    let x = getValue()?;
+    Pass(x + 1)
+}
+
+fn main() -> Int {
+    match useTry() {
+        Pass(v) -> {
+            print("Success!\n");
+            return v;
+        },
+        Fail(e) -> {
+            print("Error!\n");
+            return e;
+        }
+    }
+}

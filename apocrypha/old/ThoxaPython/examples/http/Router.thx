@@ -1,0 +1,126 @@
+## Router — map an HTTP Request onto files under a root directory. Directories serve
+## `index.html`; path traversal (`..` / `.` segments) is rejected as 404. Content-Type
+## comes from the final file extension.
+
+import io from "./Io"
+import { Request, Response, ok, notFound } from "./Http"
+
+## Split a URL path string on `/` into non-empty segments (Bytes workhorses under the hood).
+fn pathSegments(path!: String) -> Array<String> {
+    let data = Bytes.fromString(path)
+    mut segs: Array<String> = []
+    mut start = 0
+    mut i = 0
+    let n = data.count
+    loop {
+        if i >= n { break }
+        if data.get(i) == b'/' {
+            if i > start {
+                segs = segs.append(data.slice(start, i).toString())
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < n {
+        segs = segs.append(data.slice(start, n).toString())
+    }
+    segs
+}
+
+## True when any segment is `.` or `..` (literal path traversal / current-dir noise).
+fn hasUnsafeSegment(segs!: Array<String>) -> Bool {
+    for s in segs {
+        if s == ".." { return true }
+        if s == "." { return true }
+    }
+    false
+}
+
+## Join root + segments with `/`. Empty segments → just root.
+fn joinPath(root!: String, segs!: Array<String>) -> String {
+    mut path = root
+    for s in segs {
+        path = "{path}/{s}"
+    }
+    path
+}
+
+## Extension of a filesystem path (including the leading `.`), or empty if none.
+fn extensionOf(path!: String) -> String {
+    let data = Bytes.fromString(path)
+    mut i = data.count - 1
+    loop {
+        if i < 0 { return "" }
+        let c = data.get(i)
+        if c == b'/' { return "" }
+        if c == b'.' {
+            return data.slice(i, data.count).toString()
+        }
+        i = i - 1
+    }
+    ""
+}
+
+## Map a final file path's extension to a Content-Type.
+fn contentTypeFor(path!: String) -> String {
+    let ext = extensionOf(path)
+    if ext == ".html" { return "text/html" }
+    if ext == ".htm" { return "text/html" }
+    if ext == ".css" { return "text/css" }
+    if ext == ".js" { return "application/javascript" }
+    if ext == ".json" { return "application/json" }
+    if ext == ".txt" { return "text/plain" }
+    if ext == ".png" { return "image/png" }
+    if ext == ".jpg" { return "image/jpeg" }
+    if ext == ".jpeg" { return "image/jpeg" }
+    if ext == ".gif" { return "image/gif" }
+    if ext == ".svg" { return "image/svg+xml" }
+    if ext == ".ico" { return "image/x-icon" }
+    "application/octet-stream"
+}
+
+## Try to open and read a file; Pass(body) or Fail on any open/read error.
+fn readFile(path!: String) -> Trial<Bytes, String> {
+    mut file = io.File(path)
+    file.open(io.ReadOnly())?
+    let body = file.read()?
+    file.close()
+    Pass(body)
+}
+
+## A static-file router rooted at `root` (cwd-relative, e.g. "examples/http/web").
+export type Router(root!: String) {
+    ## Resolve `req.path` under `root` and return a Response. Always succeeds as a
+    ## Response value (404 on missing/unsafe paths); never a Trial.
+    export fn handle(req!: Request) -> Response {
+        let urlPath = req.path
+        if urlPath.count == 0 {
+            return notFound()
+        }
+        if urlPath[0] != "/" {
+            return notFound()
+        }
+        let segs = pathSegments(urlPath)
+        if hasUnsafeSegment(segs) {
+            return notFound()
+        }
+        let candidate = joinPath(root, segs)
+        match readFile(candidate) {
+            Pass(body) {
+                ok(body, contentTypeFor(candidate))
+            }
+            Fail {
+                let indexPath = "{candidate}/index.html"
+                match readFile(indexPath) {
+                    Pass(body) {
+                        ok(body, contentTypeFor(indexPath))
+                    }
+                    Fail {
+                        notFound()
+                    }
+                }
+            }
+        }
+    }
+}

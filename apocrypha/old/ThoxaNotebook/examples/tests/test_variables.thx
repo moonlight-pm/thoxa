@@ -1,0 +1,69 @@
+
+fn main() -> Int {
+    mut passed = 0;
+    mut failed = 0;
+    
+    let x = 42;
+    if x == 42 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: immutable binding");
+        failed = failed + 1;
+    };
+    
+    mut y = 10;
+    y = 20;
+    if y == 20 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: mutable assignment");
+        failed = failed + 1;
+    };
+    
+    mut z = 5;
+    z = z + 10;
+    z = z * 2;
+    if z == 30 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: multiple assignments");
+        failed = failed + 1;
+    };
+    
+    
+    let outer = 1;
+    {
+        let inner = 2;
+        if inner == 2 {
+            passed = passed + 1;
+        } else {
+            println("FAIL: inner scope");
+            failed = failed + 1;
+        };
+    };
+    if outer == 1 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: outer scope");
+        failed = failed + 1;
+    };
+    
+    let blockResult = {
+        let temp = 10;
+        temp * 5
+    };
+    if blockResult == 50 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: block expression");
+        failed = failed + 1;
+    };
+    
+    print("Variable tests: ");
+    printInt(passed);
+    print(" passed, ");
+    printInt(failed);
+    println(" failed");
+    
+    failed
+}

@@ -1,0 +1,17 @@
+# Test try operator
+
+fn get_value() -> Void {
+    Pass(42)
+}
+
+fn use_value() -> Void {
+    let x = get_value()?;
+    Pass(x + 1)
+}
+
+fn main() -> Int {
+    match use_value() {
+        Pass(v) -> v,
+        Fail(e) -> e
+    }
+}

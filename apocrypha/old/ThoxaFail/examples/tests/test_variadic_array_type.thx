@@ -1,0 +1,12 @@
+# Test that variadic parameter is typed as array
+type Test {
+    export fn test(...nums: Int64) -> Void {
+        # This should work now - nums is typed as [Int64]
+        let len: Int64 = nums.length();
+        @print(len);
+    };
+};
+
+let t: Test;
+t.test(1, 2, 3);
+0

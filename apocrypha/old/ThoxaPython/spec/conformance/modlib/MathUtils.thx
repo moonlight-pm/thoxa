@@ -1,0 +1,16 @@
+## Numeric helpers. Its own `~/` import of geometry makes the graph transitive:
+## the entry reaches geometry both directly and through this module.
+import { Point } from "~/modlib/Geometry"
+
+export fn add(a: Int64, b: Int64) -> Int64 {
+    a + b
+}
+
+export fn double(n: Int64) -> Int64 {
+    add(a: n, b: n)
+}
+
+export fn originSum() -> Int64 {
+    let p = Point(x: 3, y: 4)
+    p.sum()
+}

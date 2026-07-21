@@ -1,0 +1,12 @@
+fn getValue() -> Void {
+    Pass(42)
+}
+
+fn useValue() -> Void {
+    let x = getValue();
+    Pass(43)
+}
+
+fn main() -> Int {
+    0
+}

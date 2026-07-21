@@ -1,0 +1,82 @@
+## Io — a small file layer wrapping raw libc syscalls behind a `File` type. Like
+## `Net`, the `extern fn`s and the Linux constants below are private: a caller opens
+## a `File`, picks an `OpenMode`, and reads it — never touching a raw fd or a bare
+## flag. This is the seed of a portable stdlib io module; buffered streams are next.
+import { errno, strerror } from "ffi"
+
+## Raw libc syscalls — the FFI boundary, kept private behind the File API. `sysOpen`
+## takes the path as a `String`, which the FFI marshals as a NUL-terminated
+## `const char *`, so no manual buffer is needed. The `sys` prefix marks the boundary,
+## mirroring the std socket code.
+extern fn sysOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
+extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
+extern fn sysLseek(fd!: Int32, offset!: Int64, whence!: Int32) -> Int64 from "c" "lseek"
+extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
+
+## open(2) access modes, named as an enum so a caller can't pass a bogus flag. Each mode
+## carries its Linux libc flag value (O_RDONLY=0, O_WRONLY=1, O_RDWR=2), read back out with
+## `as Int32` at the syscall boundary — no separate mapping needed. A real stdlib would add
+## combinable flags (O_CREAT, O_TRUNC, …) once byte/bit ops land; for now these are the
+## three POSIX access modes.
+export type ReadOnly 0
+export type WriteOnly 1
+export type ReadWrite 2
+export type OpenMode = ReadOnly | WriteOnly | ReadWrite
+
+## lseek(2) whence values (Linux).
+let seekSet = 0    # SEEK_SET — offset from the start of the file
+let seekCur = 1    # SEEK_CUR — offset from the current position
+let seekEnd = 2    # SEEK_END — offset from the end of the file
+
+## "context: reason" from the current errno, for a Fail payload.
+fn fileErr(what!: String) -> String {
+    "{what}: {strerror(errno())}"
+}
+
+## An open file, addressed by path. `open` acquires the descriptor, `read` pulls bytes
+## from the current offset (or the whole file), `close` releases it. The fd is private
+## mutable state — -1 until opened.
+export type File(path!: String) {
+    mut fd = -1
+
+    ## Open the file in the given mode, or fail with the libc error text.
+    export fn open(mode!: OpenMode) -> Trial<Void, String> {
+        fd = sysOpen(path, mode as Int32)
+        if fd < 0 {
+            Fail(fileErr("open {path}"))
+        } else {
+            Pass(Void)
+        }
+    }
+
+    ## Read `requestedSize` bytes from the current offset, advancing it; with no size
+    ## (or 0), read from the current offset to end-of-file. Sized for a regular file —
+    ## one read fills the buffer; partial-read/pipe handling waits for buffered streams.
+    export fn read(requestedSize!: Int64 = 0) -> Trial<Bytes, String> {
+        let size = if requestedSize > 0 {
+            requestedSize
+        } else {
+            let pos = sysLseek(fd, 0, seekCur)
+            let end = sysLseek(fd, 0, seekEnd)
+            sysLseek(fd, pos, seekSet)
+            end - pos
+        }
+        if size < 0 {
+            Fail(fileErr("seek {path}"))
+        } else {
+            let buf = Bytes(size)
+            let n = sysRead(fd, buf, size)
+            if n < 0 {
+                Fail(fileErr("read {path}"))
+            } else {
+                Pass(buf)
+            }
+        }
+    }
+
+    ## Close the descriptor.
+    export fn close() -> Void {
+        sysClose(fd)
+        Void
+    }
+}

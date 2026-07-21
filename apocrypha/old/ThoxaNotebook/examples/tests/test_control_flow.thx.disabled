@@ -1,0 +1,86 @@
+fn main() -> Int {
+    mut passed = 0;
+    mut failed = 0;
+    
+    let result = if 10 > 5 { 100 } else { 200 };
+    if result == 100 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: if/else expression");
+        failed = failed + 1;
+    };
+    
+    let x = 10;
+    let y = 20;
+    let nested = if x < y {
+        if x == 10 {
+            42
+        } else {
+            0
+        }
+    } else {
+        99
+    };
+    if nested == 42 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: nested if");
+        failed = failed + 1;
+    };
+    
+    mut counter = 0;
+    mut loopResult = 0;
+    loop {
+        counter = counter + 1;
+        if counter >= 5 {
+            loopResult = counter;
+            break;
+        };
+    };
+    if loopResult == 5 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: loop with break");
+        failed = failed + 1;
+    };
+    
+    mut whileCounter = 0;
+    mut whileSum = 0;
+    while whileCounter < 3 {
+        whileSum = whileSum + whileCounter;
+        whileCounter = whileCounter + 1;
+    };
+    if whileSum == 3 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: while loop");
+        failed = failed + 1;
+    };
+    
+    mut continueCounter = 0;
+    mut continueSum = 0;
+    loop {
+        continueCounter = continueCounter + 1;
+        if continueCounter == 3 {
+            continue;
+        };
+        continueSum = continueSum + continueCounter;
+        if continueCounter >= 5 {
+            break;
+        };
+    };
+    if continueSum == 12 {
+        passed = passed + 1;
+    } else {
+        println("FAIL: continue in loop");
+        failed = failed + 1;
+    };
+    
+    print("Control flow tests: ");
+    printInt(passed);
+    print(" passed, ");
+    printInt(failed);
+    println(" failed");
+    
+    failed
+}

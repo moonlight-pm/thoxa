@@ -1,0 +1,8 @@
+type OldStyle {
+    name: String,
+    age: Int
+}
+
+fn main() -> Void {
+    println("Should not compile");
+}

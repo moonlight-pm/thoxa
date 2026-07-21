@@ -1,0 +1,15 @@
+type Test {
+    export let mut x: Int,
+    
+    export fn check() -> Bool {
+        if x > 0 {
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
+
+fn main() -> Void {
+    println("Test");
+}

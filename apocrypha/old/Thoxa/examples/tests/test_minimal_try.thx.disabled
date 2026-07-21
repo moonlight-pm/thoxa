@@ -1,0 +1,17 @@
+// Minimal test of try operator
+
+fn get_value() -> Trial<int, int> {
+    Pass(42)
+}
+
+fn use_value() -> Trial<int, int> {
+    let x = get_value()?;
+    Pass(x + 1)
+}
+
+fn main() -> int {
+    match use_value() {
+        Pass(v) -> v,
+        Fail(e) -> e
+    }
+}

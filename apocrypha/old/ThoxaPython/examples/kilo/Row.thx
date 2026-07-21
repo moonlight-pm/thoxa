@@ -1,0 +1,115 @@
+## Row — Stage 3 of the kilo port: one text line (kilo's `erow`). `chars` is the raw
+## bytes; `render` is the display expansion (tabs → spaces to the next tab stop), built
+## once at construction. Both are `Bytes` — the viewer is byte-oriented (fork #5: rows
+## are byte-buffers end-to-end, ASCII-first). Read-only; the rebuild-on-edit path lands
+## with editing (Stage 4).
+
+let tabStop = 8    # KILO_TAB_STOP
+
+## Expand tabs in `chars` to spaces up to the next multiple of `tabStop`. Positional
+## `chars!` so the bare `expandTabs(chars)` in the field initializer binds.
+fn expandTabs(chars!: Bytes) -> Bytes {
+    mut buf = Buffer()
+    mut col = 0
+    mut i = 0
+    let n = chars.count
+    loop {
+        if i >= n { break }
+        let b = chars.get(i)
+        if b == b'\t' {
+            buf.append(b' ')
+            col = col + 1
+            loop {
+                if col % tabStop == 0 { break }
+                buf.append(b' ')
+                col = col + 1
+            }
+        } else {
+            buf.append(b)
+            col = col + 1
+        }
+        i = i + 1
+    }
+    buf.freeze()
+}
+
+export type Row(chars!: Bytes) {
+    let render = expandTabs(chars)
+
+    export fn charCount() -> Int64 { chars.count }
+    export fn renderCount() -> Int64 { render.count }
+
+    ## chars-index → render-column (kilo editorRowCxToRx): a tab advances to the stop.
+    export fn cxToRx(cx!: Int64) -> Int64 {
+        mut rx = 0
+        mut i = 0
+        loop {
+            if i >= cx { break }
+            if chars.get(i) == b'\t' {
+                rx = rx + (tabStop - 1) - (rx % tabStop)
+            }
+            rx = rx + 1
+            i = i + 1
+        }
+        rx
+    }
+
+    ## The visible byte window of `render`: render[coloff .. coloff+width], both bounds
+    ## clamped into [0, renderCount] so the strict Bytes.slice never traps. Empty when
+    ## scrolled past the line's end.
+    export fn window(coloff!: Int64, width!: Int64) -> Bytes {
+        let count = render.count
+        let begin = if coloff > count { count } else { coloff }
+        let stop = if coloff + width > count { count } else { coloff + width }
+        render.slice(begin, stop)
+    }
+
+    ## -- editing (Stage 4) -------------------------------------------------
+    ## Each returns a NEW Row, so the constructor rebuilds `render` (kilo's
+    ## editorUpdateRow); `chars` stays immutable.
+
+    ## Insert `byte` at char-index `at` (0 ≤ at ≤ charCount()).
+    export fn insertChar(at!: Int64, byte!: Byte) -> Row {
+        Row(chars.insertAt(at, byte))
+    }
+
+    ## Delete the byte at char-index `at` (0 ≤ at < charCount()).
+    export fn deleteChar(at!: Int64) -> Row {
+        Row(chars.removeAt(at))
+    }
+
+    ## Prefix row chars[0, count) — the part left of a split at `count`.
+    export fn take(count!: Int64) -> Row {
+        Row(chars.slice(0, count))
+    }
+
+    ## Suffix row chars[count, charCount()) — the part right of a split at `count`.
+    export fn drop(count!: Int64) -> Row {
+        Row(chars.slice(count, chars.count))
+    }
+
+    ## Join (kilo editorRowAppendString): a new Row with `other`'s bytes appended.
+    ## Reads `other.bytes()` (a public method) — a private field of another instance
+    ## is not readable across instances.
+    export fn concat(other!: Row) -> Row {
+        mut buf = Buffer()
+        buf.appendBytes(chars)
+        buf.appendBytes(other.bytes())
+        Row(buf.freeze())
+    }
+
+    ## A fresh copy of the raw line bytes (public read for `concat` and callers).
+    export fn bytes() -> Bytes {
+        chars.slice(0, chars.count)
+    }
+
+    ## A fresh copy of the full rendered (tab-expanded) line — Syntax classifies this.
+    export fn renderBytes() -> Bytes {
+        render.slice(0, render.count)
+    }
+
+    ## The line as a String (tests + the Stage-5 status bar).
+    export fn text() -> String {
+        chars.toString()
+    }
+}

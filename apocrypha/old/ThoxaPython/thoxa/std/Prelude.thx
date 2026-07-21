@@ -1,0 +1,39 @@
+## The Thoxa prelude — the closed, spec-enumerated vocabulary auto-imported into
+## every module (design §4.2). It is an ordinary `std/Prelude` module: `May` and
+## `Trial` are plain sum types, exactly as a user would define them, which keeps
+## the runtime honest and the prelude self-hostable.
+
+## Optional value: `Has(value)` holds a value, `Not` holds nothing. The payload is
+## positional — write `Has(3)`, not `Has(value: 3)`.
+export type Has<T>(value!: T) {}
+export type Not {}
+export type May<T> = Has<T> | Not
+
+## Result of a fallible operation: `Pass(value)` on success, `Fail(error)` on failure.
+## Both payloads are positional — `Pass(x)` and `Fail(e)`, no label. `Fail`'s payload
+## defaults to `Void`, so `Fail()` is a failure that carries no information.
+export type Pass<T>(value!: T) {}
+export type Fail<E>(error!: E = Void) {}
+export type Trial<T, E> = Pass<T> | Fail<E>
+
+## --- Console I/O -----------------------------------------------------------
+## `print`/`println` are the prelude's single I/O carve-out (design §4.2), now
+## written in Thoxa over libc rather than the host: they marshal a `String` into
+## a `Bytes` buffer and hand it to `write(2)` on stdout (fd 1). `sysWrite` is the
+## raw syscall, kept private behind the two helpers (its `sys` prefix marks the
+## FFI boundary, mirroring std socket code); callers never touch a raw fd.
+extern fn sysWrite(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "write"
+
+## Write `text` to stdout with no trailing newline.
+export fn print(text!: String) -> Void {
+    let buf = Bytes.fromString(text)
+    sysWrite(1, buf, buf.count)
+    Void
+}
+
+## Write `text` to stdout followed by a newline. With no argument, prints just the
+## newline. Any value interpolates, so `println("{n}")` prints `n` for any `n`.
+export fn println(text!: String = "") -> Void {
+    print("{text}\n")
+    Void
+}

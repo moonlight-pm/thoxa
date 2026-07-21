@@ -1,0 +1,35 @@
+
+fn testMatch(success: Bool) -> Int {
+    let result = if success {
+        Pass("yes")
+    } else {
+        Fail("no")
+    };
+    
+    match result {
+        Pass(msg) -> {
+            print("Got Pass\n");
+            1
+        },
+        Fail(err) -> {
+            print("Got Fail\n");
+            2
+        }
+    }
+}
+
+fn main() -> Int {
+    let a = testMatch(true);   
+    printInt(a);
+    print("\n");
+    
+    let b = testMatch(false);  
+    printInt(b);
+    print("\n");
+    
+    let sum = a + b;
+    printInt(sum);
+    print("\n");
+    
+    sum  
+}

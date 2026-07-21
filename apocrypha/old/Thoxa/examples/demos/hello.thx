@@ -1,0 +1,5 @@
+# Simple hello world that returns 42
+
+fn main() -> Int {
+    42  # Exit code will be 42
+}

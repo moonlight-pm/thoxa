@@ -1,0 +1,33 @@
+type TestTypes(
+    b: Bool,
+    i: Int,
+    f: Float
+) {
+    export let b: Bool,
+    export let i: Int,
+    export let f: Float
+}
+
+fn makeTest() -> TestTypes {
+    return TestTypes(true, 42, 3.14);
+}
+
+fn useTest(t: TestTypes) -> Int {
+    return t.i;
+}
+
+fn checkBool(t: TestTypes) -> Bool {
+    return t.b;
+}
+
+fn addFloats(t: TestTypes) -> Float {
+    return t.f + 1.0;
+}
+
+fn main() -> Void {
+    let t = makeTest();
+    let i = useTest(t);
+    let b = checkBool(t);
+    let f = addFloats(t);
+    println("Types working");
+}

@@ -1,0 +1,29 @@
+# Test type guards
+let x: Any = 42;
+let y: Any = "hello";
+
+# Test if x is Int64
+if x is Int64 {
+    @print(1);  # Should print 1
+} else {
+    @print(0);
+}
+@printStr("\n");
+
+# Test if y is Int64
+if y is Int64 {
+    @print(1);
+} else {
+    @print(0);  # Should print 0
+}
+@printStr("\n");
+
+# Test if y is String
+if y is String {
+    @print(1);  # Should print 1
+} else {
+    @print(0);
+}
+@printStr("\n");
+
+0

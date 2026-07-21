@@ -1,0 +1,14 @@
+## Cross-file modules (M-MOD-1): a local `./` import and a project `~/` import,
+## using each other's exported fn, type, and let. Only exported names cross.
+import { add, double, originSum } from "./modlib/MathUtils"
+import { Point, origin } from "~/modlib/Geometry"
+
+fn main() -> Int64 {
+    println("add = {add(a: 2, b: 3)}")
+    println("double = {double(n: 21)}")
+    let p = Point(x: 3, y: 4)
+    println("p.sum = {p.sum()}")
+    println("origin.sum = {origin.sum()}")
+    println("originSum = {originSum()}")
+    0
+}

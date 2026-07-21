@@ -1,0 +1,9 @@
+fn main() -> Int {
+    let a = 10 + 20;
+    if a == 30 {
+        println("Addition works");
+    } else {
+        println("Addition broken");
+    };
+    0
+}

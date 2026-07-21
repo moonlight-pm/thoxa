@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thoxa"
+version = "0.1.0"
+description = "Thoxa programming language interpreter"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "lark>=1.1.9",
+    "rich>=13.0.0",
+    "click>=8.1.0",
+]
+
+[project.scripts]
+thoxa = "thoxa.cli:main"
+
+[tool.setuptools]
+packages = ["thoxa"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.8.0",
+    "ruff>=0.3.0",
+]

@@ -1,0 +1,6 @@
+fn main() -> Void {
+    let x: Int = 5;
+    let y: Int = 3;
+    let result: Bool = x > y;
+    println("Done");
+}

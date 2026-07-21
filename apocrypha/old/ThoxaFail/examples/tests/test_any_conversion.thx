@@ -1,0 +1,22 @@
+# Test converting Any values back to concrete types
+
+let x: Any = 42;
+let y: Any = "hello";
+
+# Try to convert Any to concrete type when we know the type
+if x is Int64 {
+    # We know x is Int64, so this should work
+    # But we need runtime conversion support
+    let n: Int64 = x as Int64;
+    @print(n);
+    @printStr("\n");
+};
+
+if y is String {
+    # We know y is String
+    let s: String = y as String;
+    @printStr(s);
+    @printStr("\n");
+};
+
+0

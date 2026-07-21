@@ -1,0 +1,14 @@
+type Point(x: Float, y: Float) {
+    export let x: Float,
+    export let y: Float
+}
+
+fn makePoint(x: Float, y: Float) -> Point {
+    return Point(x, y);
+}
+
+fn main() -> Void {
+    let p1 = makePoint(1.0, 2.0);
+    let p2 = makePoint(3.0, 4.0);
+    println("Points created");
+}

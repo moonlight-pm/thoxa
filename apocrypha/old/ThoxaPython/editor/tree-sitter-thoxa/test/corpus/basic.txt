@@ -1,0 +1,150 @@
+==================
+function definition
+==================
+
+fn f() -> Int64 { 0 }
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (bracket)
+  (bracket)
+  (operator)
+  (type_identifier)
+  (bracket)
+  (number)
+  (bracket))
+
+==================
+type, named arg, comment
+==================
+
+## a point
+type Point(x: Int64) {}
+fn dist(a!: Point) -> Int64 { a }
+
+---
+
+(source_file
+  (comment)
+  (keyword)
+  (type_identifier)
+  (bracket)
+  (identifier)
+  (delimiter)
+  (type_identifier)
+  (bracket)
+  (bracket)
+  (bracket)
+  (keyword)
+  (identifier)
+  (bracket)
+  (identifier)
+  (operator)
+  (delimiter)
+  (type_identifier)
+  (bracket)
+  (operator)
+  (type_identifier)
+  (bracket)
+  (identifier)
+  (bracket))
+
+==================
+literals
+==================
+
+let n = 0xFF_u8
+let s = "hi {x} {{lit}}"
+let c = 'a'
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (number)
+  (keyword)
+  (identifier)
+  (operator)
+  (string)
+  (keyword)
+  (identifier)
+  (operator)
+  (char))
+
+==================
+module, extern, match
+==================
+
+import net from "./Net"
+
+export extern fn close(fd!: Int32) -> Int32 from "c" "close"
+
+export fn main() -> Int64 {
+    match net.accept() {
+        Pass(s) { s.close() }
+        Fail(e) { 1 }
+    }
+}
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (keyword)
+  (string)
+  (keyword)
+  (keyword)
+  (keyword)
+  (identifier)
+  (bracket)
+  (identifier)
+  (operator)
+  (delimiter)
+  (type_identifier)
+  (bracket)
+  (operator)
+  (type_identifier)
+  (keyword)
+  (string)
+  (string)
+  (keyword)
+  (keyword)
+  (identifier)
+  (bracket)
+  (bracket)
+  (operator)
+  (type_identifier)
+  (bracket)
+  (keyword)
+  (identifier)
+  (operator)
+  (identifier)
+  (bracket)
+  (bracket)
+  (bracket)
+  (type_identifier)
+  (bracket)
+  (identifier)
+  (bracket)
+  (bracket)
+  (identifier)
+  (operator)
+  (identifier)
+  (bracket)
+  (bracket)
+  (bracket)
+  (type_identifier)
+  (bracket)
+  (identifier)
+  (bracket)
+  (bracket)
+  (number)
+  (bracket)
+  (bracket)
+  (bracket))

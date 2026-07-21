@@ -1,0 +1,120 @@
+## FileIO — Stage 3 of the kilo port: open a file and split it into `Row`s (kilo's
+## editorOpen). Mirrors examples/http/Io.thx — private `sys`-prefixed libc externs
+## behind a `Trial`-returning API. Reads the whole file in one pass, splits on `\n`,
+## strips a trailing `\r`.
+
+import { Row } from "./Row"
+import { errno, strerror } from "ffi"
+
+extern fn sysOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
+extern fn sysOpen3(path!: String, flags!: Int32, mode!: Int32) -> Int32 from "c" "open"
+extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
+extern fn sysWrite(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "write"
+extern fn sysLseek(fd!: Int32, offset!: Int64, whence!: Int32) -> Int64 from "c" "lseek"
+extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
+
+let oRdOnly = 0
+let seekSet = 0
+let seekEnd = 2
+
+## Save flags, in octal (Stage 5's language increment) — Linux asm-generic values.
+let oWrOnly = 0o1       # O_WRONLY
+let oCreat  = 0o100     # O_CREAT  (64)
+let oTrunc  = 0o1000    # O_TRUNC  (512)
+
+fn fileErr(what!: String) -> String {
+    "{what}: {strerror(errno())}"
+}
+
+## Split file bytes into rows on `\n`, dropping a trailing `\r` (CRLF endings).
+fn splitRows(data!: Bytes) -> Array<Row> {
+    mut rows: Array<Row> = []
+    let n = data.count
+    mut start = 0
+    mut i = 0
+    loop {
+        if i >= n { break }
+        if data.get(i) == b'\n' {
+            mut end = i
+            if end > start {
+                if data.get(end - 1) == b'\r' { end = end - 1 }
+            }
+            rows = rows.append(Row(data.slice(start, end)))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    ## a final line with no trailing newline
+    if start < n {
+        rows = rows.append(Row(data.slice(start, n)))
+    }
+    rows
+}
+
+## Open `path` read-only and load it as rows. Fail (with the libc error) on any
+## open/seek/read error — the caller decides what a failure means (Stage 3's Main
+## treats it as an empty new buffer).
+export fn open(path!: String) -> Trial<Array<Row>, String> {
+    let fd = sysOpen(path, oRdOnly)
+    if fd < 0 {
+        return Fail(fileErr("open {path}"))
+    }
+    let size = sysLseek(fd, 0, seekEnd)
+    sysLseek(fd, 0, seekSet)          # rewind — otherwise read starts at EOF
+    if size < 0 {
+        sysClose(fd)
+        return Fail(fileErr("seek {path}"))
+    }
+    if size == 0 {
+        sysClose(fd)
+        return Pass([])
+    }
+    let buf = Bytes(size)
+    let got = sysRead(fd, buf, size)
+    sysClose(fd)
+    if got < 0 {
+        return Fail(fileErr("read {path}"))
+    }
+    Pass(splitRows(buf))
+}
+
+## -- save (Stage 5) ---------------------------------------------------------
+
+## kilo editorRowsToString: join every row's bytes with `\n`, a trailing `\n` after
+## each line, so the file ends with a newline and round-trips back through splitRows.
+fn rowsToString(rows!: Array<Row>) -> Bytes {
+    mut buf = Buffer()
+    mut i = 0
+    loop {
+        if i >= rows.count { break }
+        buf.appendBytes(rows[i].bytes())
+        buf.append(b'\n')
+        i = i + 1
+    }
+    buf.freeze()
+}
+
+## kilo editorSave: serialize the rows and write them out with O_WRONLY|O_CREAT|O_TRUNC
+## (mode 0644). Returns the number of bytes written; Fail with the libc error on any
+## open/write failure. The rows are a parameter, so FileIO never imports State.
+export fn save(path!: String, rows!: Array<Row>) -> Trial<Int64, String> {
+    let data = rowsToString(rows)
+    let flags = oWrOnly | oCreat | oTrunc
+    let fd = sysOpen3(path, flags, 0o644)
+    if fd < 0 {
+        return Fail(fileErr("open {path}"))
+    }
+    let n = sysWrite(fd, data, data.count)
+    sysClose(fd)
+    if n < 0 {
+        return Fail(fileErr("write {path}"))
+    }
+    ## A short (partial) write is a failure, not success — otherwise State.save would
+    ## clear `dirty` and report success while the file on disk is truncated (kilo guards
+    ## the same way with `write(...) == len`). errno is not meaningful for a short write,
+    ## so report the counts directly rather than through strerror.
+    if n < data.count {
+        return Fail("write {path}: incomplete write ({n} of {data.count} bytes)")
+    }
+    Pass(n)
+}

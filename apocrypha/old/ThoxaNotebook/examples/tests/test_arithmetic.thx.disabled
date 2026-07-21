@@ -1,0 +1,148 @@
+fn testAddition() -> Bool {
+    let a = 10
+    let b = 20
+    let result = a + b
+    result == 30
+}
+
+fn testSubtraction() -> Bool {
+    let x = 50
+    let y = 15
+    let result = x - y
+    result == 35
+}
+
+fn testMultiplication() -> Bool {
+    let m = 7
+    let n = 6
+    let result = m * n
+    result == 42
+}
+
+fn testDivision() -> Bool {
+    let p = 100
+    let q = 4
+    let result = p / q
+    result == 25
+}
+
+fn testModulo() -> Bool {
+    let a = 17
+    let b = 5
+    let result = a % b
+    result == 2
+}
+
+fn testComparisons() -> Bool {
+    let x = 10
+    let y = 20
+    let z = 10
+    
+    let less = x < y
+    let greater = y > x
+    let lessEq = x <= z
+    let greaterEq = x >= z
+    let equal = x == z
+    let notEqual = x != y
+    
+    less and greater and lessEq and greaterEq and equal and notEqual
+}
+
+fn testPrecedence() -> Bool {
+    let result1 = 2 + 3 * 4
+    let expected1 = 14
+    
+    let result2 = (2 + 3) * 4
+    let expected2 = 20
+    
+    let result3 = 10 - 2 * 3 + 4
+    let expected3 = 8
+    
+    (result1 == expected1) and (result2 == expected2) and (result3 == expected3)
+}
+
+fn testNegation() -> Bool {
+    let x = 10
+    let neg = -x
+    let doubleNeg = --x
+    
+    (neg == -10) and (doubleNeg == 10)
+}
+
+fn main() -> Int {
+    mut passed = 0
+    mut failed = 0
+    
+    if testAddition() {
+        println("✓ Addition")
+        passed = passed + 1
+    } else {
+        println("✗ Addition") 
+        failed = failed + 1
+    }
+    
+    if testSubtraction() {
+        println("✓ Subtraction")
+        passed = passed + 1
+    } else {
+        println("✗ Subtraction")
+        failed = failed + 1
+    }
+    
+    if testMultiplication() {
+        println("✓ Multiplication")
+        passed = passed + 1
+    } else {
+        println("✗ Multiplication")
+        failed = failed + 1
+    }
+    
+    if testDivision() {
+        println("✓ Division")
+        passed = passed + 1
+    } else {
+        println("✗ Division")
+        failed = failed + 1
+    }
+    
+    if testModulo() {
+        println("✓ Modulo")
+        passed = passed + 1
+    } else {
+        println("✗ Modulo")
+        failed = failed + 1
+    }
+    
+    if testComparisons() {
+        println("✓ Comparisons")
+        passed = passed + 1
+    } else {
+        println("✗ Comparisons")
+        failed = failed + 1
+    }
+    
+    if testPrecedence() {
+        println("✓ Precedence")
+        passed = passed + 1
+    } else {
+        println("✗ Precedence")
+        failed = failed + 1
+    }
+    
+    if testNegation() {
+        println("✓ Negation")
+        passed = passed + 1
+    } else {
+        println("✗ Negation")
+        failed = failed + 1
+    }
+    
+    println("")
+    print("Passed: ")
+    printInt(passed)
+    print(" Failed: ")
+    printInt(failed)
+    println("")
+    
+    if failed > 0 { 1 } else { 0 }
+}

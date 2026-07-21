@@ -1,0 +1,22 @@
+## A user-defined sum type, constructor destructuring, and an `else` arm.
+type Circle(radius: Float64) {}
+type Square(side: Float64) {}
+type Shape = Circle | Square
+
+fn area(s!: Shape) -> Float64 {
+    match s {
+        Circle(r) { 3.14 * r * r }
+        Square(side) { side * side }
+    }
+}
+
+fn main() -> Int64 {
+    println("{area(Circle(radius: 2.0))}")
+    println("{area(Square(side: 3.0))}")
+    let label = match 42 {
+        0 { "zero" }
+        else { "other" }
+    }
+    println(label)
+    0
+}

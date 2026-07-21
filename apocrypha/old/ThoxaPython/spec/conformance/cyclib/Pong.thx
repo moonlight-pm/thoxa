@@ -1,0 +1,8 @@
+## The other half of the `type` cycle: `Pong.play` bounces back into `Ping`.
+import { Ping } from "./Ping"
+
+export type Pong(depth: Int64) {
+    export fn play() -> Int64 {
+        if depth == 0 { 0 } else { Ping(depth: depth - 1).play() + 1 }
+    }
+}

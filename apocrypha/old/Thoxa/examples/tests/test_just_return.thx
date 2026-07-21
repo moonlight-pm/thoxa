@@ -1,0 +1,8 @@
+fn foo() -> Int {
+    return 42;
+}
+
+fn main() -> Void {
+    let x = foo();
+    println("Got value");
+}

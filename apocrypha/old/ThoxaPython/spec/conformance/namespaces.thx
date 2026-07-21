@@ -1,0 +1,17 @@
+## Namespace import (M-MOD-2): a `./` namespace bound to a freely-chosen camelCase
+## instance name (`mu`), plus one bound conventionally. A module file is a type
+## (PascalCase); the import is a singleton instance (camelCase). Qualified access
+## reaches an exported fn, a type, and a let; only exported names cross and the
+## namespace itself is never a value.
+import mu       from "./modlib/MathUtils"
+import geometry from "./modlib/Geometry"
+
+fn main() -> Int64 {
+    println("add = {mu.add(a: 2, b: 3)}")
+    println("double = {mu.double(n: 21)}")
+    let p = geometry.Point(x: 3, y: 4)
+    println("p.sum = {p.sum()}")
+    println("origin.sum = {geometry.origin.sum()}")
+    println("originSum = {mu.originSum()}")
+    0
+}

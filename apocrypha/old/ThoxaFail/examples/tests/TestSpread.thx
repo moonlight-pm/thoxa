@@ -1,0 +1,16 @@
+# Test spread operator with arrays
+
+# Import the variadic print functions
+import { println } from "../std/IoVariadic";
+
+# Create an array
+let numbers = [1, 2, 3, 4, 5];
+
+# Try to use spread operator (not implemented yet)
+# println(...numbers);
+
+# For now, print them manually
+let io: Io;
+io.println(1, 2, 3, 4, 5);
+
+0

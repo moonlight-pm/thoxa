@@ -1,0 +1,44 @@
+# Test polymorphic behavior with Any
+
+type Printer {
+    # For now, we rely on the fact that builtins extract values from fat pointers
+    export fn printAny(value: Any) -> Void {
+        # This works because @print extracts the value from the fat pointer
+        @print(value);
+        0
+    };
+    
+    export fn printlnAny(value: Any) -> Void {
+        @print(value);
+        @printStr("\n");
+        0
+    };
+    
+    # Print multiple values
+    export fn printMany(...values: Any) -> Void {
+        let i = 0;
+        let len = values.length();
+        
+        loop {
+            if i >= len { break; };
+            
+            if i > 0 { @printStr(" "); };
+            
+            @print(values[i]);
+            i = i + 1;
+        };
+        @printStr("\n");
+        0
+    };
+}
+
+let printer: Printer;
+
+# Test with different types
+printer.printlnAny(42);
+printer.printlnAny(100);
+
+# Test with multiple values
+printer.printMany(1, 2, 3, 4, 5);
+
+0

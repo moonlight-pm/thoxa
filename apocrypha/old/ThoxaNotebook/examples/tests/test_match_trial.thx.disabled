@@ -1,0 +1,17 @@
+
+fn divide(a: Int, b: Int) -> Trial {
+    if b == 0 {
+        Fail("Division by zero")
+    } else {
+        Pass(a / b)
+    }
+}
+
+fn main() -> Int {
+    let result = divide(10, 2);
+    
+    match result {
+        Pass(value) -> { value },
+        Fail(msg) -> { 0 }
+    }
+}

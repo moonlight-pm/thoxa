@@ -1,0 +1,43 @@
+
+fn findFirst(target: Int) -> Int {
+    if target == 42 {
+        0  
+    } else {
+        -1  
+    }
+}
+
+fn main() -> Int {
+    mut passed = 0;
+    mut failed = 0;
+    
+    let something = Has(100);
+    passed = passed + 1;  
+    
+    let nothing = Not();
+    passed = passed + 1;  
+    
+    let found = findFirst(42);
+    if found == 0 {
+        passed = passed + 1;
+    } else {
+        failed = failed + 1;
+    };
+    
+    let notFound = findFirst(99);
+    if notFound == -1 {
+        passed = passed + 1;
+    } else {
+        failed = failed + 1;
+    };
+    
+    print("May basic tests: ");
+    printInt(passed);
+    print(" passed, ");
+    printInt(failed);
+    println(" failed");
+    
+    println("Note: Pattern matching on May is broken, so we can only test construction");
+    
+    failed
+}

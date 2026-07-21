@@ -1,0 +1,252 @@
+## Syntax — Stage 7 of the kilo port: classify a row's rendered bytes into highlight classes
+## (kilo's editorUpdateSyntax + editorSyntaxToColor + editorSelectSyntaxHighlight). Pure — no
+## terminal, no singleton — so the whole state machine is unit-tested deterministically. The
+## per-cell class is a closed sum type (`Hl`); its ANSI color is a separate rendering match.
+
+## kilo's HL_* enum. HL_COMMENT and HL_MLCOMMENT are merged (same color, nothing branches on
+## the distinction). `Matched` is kilo's HL_MATCH (named to avoid Find.Match).
+export type Normal {}
+export type Comment {}
+export type Keyword1 {}
+export type Keyword2 {}
+export type Str {}
+export type Number {}
+export type Matched {}
+export type Hl = Normal | Comment | Keyword1 | Keyword2 | Str | Number | Matched
+
+## kilo editorSyntaxToColor — the VT100 SGR code. Normal (39 = default fg) is handled by the
+## emitter (Screen), which special-cases it; this returns the code for a colored class.
+export fn color(h!: Hl) -> Int64 {
+    match h {
+        Number { 31 }
+        Str { 35 }
+        Comment { 36 }
+        Keyword1 { 33 }
+        Keyword2 { 32 }
+        Matched { 34 }
+        Normal { 39 }
+    }
+}
+
+## A language's highlighting rules (kilo struct editorSyntax). Immutable record: ctor params
+## private, projected to public reads. Two explicit keyword lists replace kilo's trailing-`|`
+## keyword-2 marker; kw2 (types) → green. numbers/strings are kilo's HL_HIGHLIGHT_* flags.
+export type Syntax(
+    keywords1!: Array<Bytes>, keywords2!: Array<Bytes>,
+    single!: Bytes, mlStart!: Bytes, mlEnd!: Bytes,
+    numbers!: Bool, strings!: Bool
+) {
+    export let kw1 = keywords1
+    export let kw2 = keywords2
+    export let scs = single
+    export let mcs = mlStart
+    export let mce = mlEnd
+    export let hlNumbers = numbers
+    export let hlStrings = strings
+}
+
+## One row's highlight cells (one Hl per render byte) plus whether it ends inside an open
+## /* … */ (kilo's hl_open_comment) — the only state that crosses rows.
+export type RowHl(cellList!: Array<Hl>, openFlag!: Bool) {
+    export let cells = cellList
+    export let openComment = openFlag
+}
+
+## kilo's C_HL_keywords / C_HL_extensions as one builder.
+fn cSyntax() -> Syntax {
+    let kw1 = [ Bytes.fromString("switch"), Bytes.fromString("if"),
+                Bytes.fromString("while"),  Bytes.fromString("for"),
+                Bytes.fromString("break"),  Bytes.fromString("continue"),
+                Bytes.fromString("return"), Bytes.fromString("else"),
+                Bytes.fromString("struct"), Bytes.fromString("union"),
+                Bytes.fromString("typedef"),Bytes.fromString("static"),
+                Bytes.fromString("enum"),   Bytes.fromString("class"),
+                Bytes.fromString("case") ]
+    let kw2 = [ Bytes.fromString("int"),    Bytes.fromString("long"),
+                Bytes.fromString("double"), Bytes.fromString("float"),
+                Bytes.fromString("char"),   Bytes.fromString("unsigned"),
+                Bytes.fromString("signed"), Bytes.fromString("void") ]
+    Syntax(kw1, kw2, Bytes.fromString("//"), Bytes.fromString("/*"),
+           Bytes.fromString("*/"), true, true)
+}
+
+## kilo editorSelectSyntaxHighlight — pick the language by the filename's extension.
+export fn selectSyntax(filename!: String) -> May<Syntax> {
+    let name = Bytes.fromString(filename)
+    if endsWith(name, Bytes.fromString(".c"))   { return Has(cSyntax()) }
+    if endsWith(name, Bytes.fromString(".h"))   { return Has(cSyntax()) }
+    if endsWith(name, Bytes.fromString(".cpp")) { return Has(cSyntax()) }
+    Not()
+}
+
+## Do the bytes of `hay` at index `at` equal `needle`? (kilo !strncmp.) Guarded so an
+## out-of-range window is "no match", not a slice trap.
+fn matchesAt(hay!: Bytes, at!: Int64, needle!: Bytes) -> Bool {
+    if at + needle.count > hay.count { return false }
+    hay.slice(at, at + needle.count).equals(needle)
+}
+
+fn endsWith(hay!: Bytes, suffix!: Bytes) -> Bool {
+    if suffix.count > hay.count { return false }
+    matchesAt(hay, hay.count - suffix.count, suffix)
+}
+
+## kilo is_separator: whitespace, NUL, or a C punctuation byte.
+let punctuation: Array<Byte> = [ b',', b'.', b'(', b')', b'+', b'-', b'/', b'*',
+                                 b'=', b'~', b'%', b'<', b'>', b'[', b']', b';' ]
+fn isSeparator(c!: Byte) -> Bool {
+    if c == b' '    { return true }
+    if c == b'\t'   { return true }
+    if c == b'\n'   { return true }
+    if c == b'\r'   { return true }
+    if c == b'\x0b' { return true }   # vertical tab (kilo is_separator via isspace)
+    if c == b'\x0c' { return true }   # form feed
+    if c == 0       { return true }
+    punctuation.contains(c)
+}
+
+## The byte at `at` treated as a separator, where end-of-line counts as one (kilo reads
+## render's trailing NUL, and is_separator('\0') is true).
+fn separatorAt(render!: Bytes, at!: Int64) -> Bool {
+    if at >= render.count { true } else { isSeparator(render.get(at)) }
+}
+
+fn isDigit(c!: Byte) -> Bool { if c < b'0' { false } else { c <= b'9' } }
+fn isNumberHl(h!: Hl) -> Bool { match h { Number { true } else { false } } }
+
+## No active syntax → every cell Normal, never in a comment (kilo E.syntax == NULL).
+export fn plainRow(render!: Bytes) -> RowHl {
+    mut cells: Array<Hl> = []
+    mut i = 0
+    loop { if i >= render.count { break }  cells = cells.append(Normal())  i = i + 1 }
+    RowHl(cells, false)
+}
+
+## A matched keyword: its byte length + whether it is a type keyword (kw2 → green).
+type Keyword(length!: Int64, kw2Flag!: Bool) {
+    export let len = length
+    export let isKw2 = kw2Flag
+}
+
+## The byte-length of the first keyword in `list` matching at `i` with a separator after it.
+fn firstMatch(render!: Bytes, i!: Int64, list!: Array<Bytes>) -> May<Int64> {
+    for kw in list {
+        if matchesAt(render, i, kw) {
+            if separatorAt(render, i + kw.count) { return Has(kw.count) }
+        }
+    }
+    Not()
+}
+
+## The first keyword (kw1 then kw2) whose bytes sit at `i` bounded by a separator, else Not.
+fn keywordAt(render!: Bytes, i!: Int64, s!: Syntax) -> May<Keyword> {
+    match firstMatch(render, i, s.kw1) { Has(w) { return Has(Keyword(w, false)) } Not { Void } }
+    match firstMatch(render, i, s.kw2) { Has(w) { return Has(Keyword(w, true))  } Not { Void } }
+    Not()
+}
+
+## kilo editorUpdateSyntax. `render` = the row's rendered bytes; `prevOpen` = the previous
+## row's openComment (false for row 0); `s` = the active Syntax. Returns one Hl per render byte
+## plus this row's openComment. Invariant: cells.count == i every iteration (each branch
+## appends exactly as many cells as it advances `i`).
+export fn highlightRow(render!: Bytes, prevOpen!: Bool, s!: Syntax) -> RowHl {
+    let n = render.count
+    mut cells: Array<Hl> = []
+    mut prevSep = true
+    mut inString: Int64 = 0        # 0 = not in a string; else the open quote byte
+    mut inComment = prevOpen
+    mut i = 0
+    loop {
+        if i >= n { break }
+        let c = render.get(i)
+        let prevHl = if cells.count > 0 { cells[cells.count - 1] } else { Normal() }
+
+        ## 1. single-line comment: // to end of line
+        if inString == 0 {
+            if inComment == false {
+                if matchesAt(render, i, s.scs) {
+                    loop { if i >= n { break }  cells = cells.append(Comment())  i = i + 1 }
+                    continue
+                }
+            }
+        }
+
+        ## 2. multi-line comment /* … */
+        if inString == 0 {
+            if inComment {
+                cells = cells.append(Comment())
+                if matchesAt(render, i, s.mce) {
+                    mut k = 1
+                    loop { if k >= s.mce.count { break }  cells = cells.append(Comment())  k = k + 1 }
+                    i = i + s.mce.count
+                    inComment = false
+                    prevSep = true
+                    continue
+                }
+                i = i + 1
+                continue
+            } else if matchesAt(render, i, s.mcs) {
+                mut k = 0
+                loop { if k >= s.mcs.count { break }  cells = cells.append(Comment())  k = k + 1 }
+                i = i + s.mcs.count
+                inComment = true
+                continue
+            }
+        }
+
+        ## 3. strings: track the open quote; \ escapes the next byte
+        if s.hlStrings {
+            if inString != 0 {
+                cells = cells.append(Str())
+                if c == b'\\' {
+                    if i + 1 < n { cells = cells.append(Str())  i = i + 2  continue }
+                }
+                if c == inString { inString = 0 }
+                i = i + 1
+                prevSep = true
+                continue
+            } else if c == b'"' or c == b'\'' {
+                inString = c
+                cells = cells.append(Str())
+                i = i + 1
+                continue
+            }
+        }
+
+        ## 4. numbers: a digit after a separator or another digit; a '.' continuing a number
+        if s.hlNumbers {
+            let startsNum = if isDigit(c) { prevSep or isNumberHl(prevHl) } else { false }
+            let dotNum = if c == b'.' { isNumberHl(prevHl) } else { false }
+            if startsNum or dotNum {
+                cells = cells.append(Number())
+                i = i + 1
+                prevSep = false
+                continue
+            }
+        }
+
+        ## 5. keywords — only at a separator boundary on both sides
+        if prevSep {
+            match keywordAt(render, i, s) {
+                Has(kw) {
+                    mut k = 0
+                    loop {
+                        if k >= kw.len { break }
+                        cells = cells.append(if kw.isKw2 { Keyword2() } else { Keyword1() })
+                        k = k + 1
+                    }
+                    i = i + kw.len
+                    prevSep = false
+                    continue
+                }
+                Not { Void }
+            }
+        }
+
+        ## 6. default: a normal byte
+        cells = cells.append(Normal())
+        prevSep = isSeparator(c)
+        i = i + 1
+    }
+    RowHl(cells, inComment)
+}

@@ -1,0 +1,21 @@
+# Test early return statements
+
+fn checkPositive(n: Int) -> Int {
+    if n > 0 {
+        return n;
+    };
+    
+    # This code is after an early return
+    printInt(0);  # This should not execute when n > 0
+    0 - n  # Return negative of n
+}
+
+fn main() -> Int {
+    let a = checkPositive(5);
+    printInt(a);  # Should print 5
+    
+    let b = checkPositive(0 - 3);
+    printInt(b);  # Should print 3
+    
+    0
+}

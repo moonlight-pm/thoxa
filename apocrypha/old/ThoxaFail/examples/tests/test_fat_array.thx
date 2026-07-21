@@ -1,0 +1,13 @@
+# Test arrays with fat pointers
+type Test {
+    export fn testArray() -> Void {
+        let arr: Any = [1, 2, 3];
+        @print(arr[0]);
+        @printStr("\n");
+        0
+    };
+};
+
+let t: Test;
+t.testArray();
+0

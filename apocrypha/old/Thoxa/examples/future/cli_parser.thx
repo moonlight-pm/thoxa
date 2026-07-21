@@ -1,0 +1,281 @@
+# Command line parser example showcasing Thoxa syntax
+
+import { env, exit } from "std/process"
+import { HashMap } from "std/collections"
+
+type Flag(name: String, short: Char, description: String, hasValue: Bool) {
+    export let name = name;
+    export let short = short;
+    export let description = description;
+    export let hasValue = hasValue;
+}
+
+type Command(name: String, description: String) {
+    export let name = name;
+    export let description = description;
+    mut flags = Array<Flag>();
+    mut handler = Not;
+    mut subcommands = HashMap<String, Command>();
+    
+    export fn flag(name: String, short: Char, desc: String, hasValue: Bool) -> Command {
+        flags.push(Flag(name, short, desc, hasValue));
+        self  # Return self for chaining
+    }
+    
+    export fn action(fn: Fn(ParsedArgs) -> Void) -> Command {
+        handler = Has(fn);
+        self
+    }
+    
+    export fn subcommand(cmd: Command) -> Command {
+        subcommands.set(cmd.name, cmd);
+        self
+    }
+}
+
+type ParsedArgs {
+    export let command = "";
+    export let flags = HashMap<String, String>();
+    export let positional = Array<String>();
+}
+
+type Parser {
+    let root = Command("", "");
+    
+    export fn name(n: String) -> Parser {
+        root.name = n;
+        self
+    }
+    
+    export fn description(d: String) -> Parser {
+        root.description = d;
+        self
+    }
+    
+    export fn flag(name: String, short: Char, desc: String, hasValue: Bool) -> Parser {
+        root.flag(name, short, desc, hasValue);
+        self
+    }
+    
+    export fn command(cmd: Command) -> Parser {
+        root.subcommand(cmd);
+        self
+    }
+    
+    export fn parse(args: Array<String>) -> Trial<ParsedArgs, String> {
+        let parsed = ParsedArgs();
+        let i = 1;  # Skip program name
+        
+        # Look for subcommand
+        if i < args.len() and not args[i].startsWith("-") {
+            match root.subcommands.get(args[i]) {
+                Has(cmd) {
+                    parsed.command = cmd.name;
+                    i = i + 1;
+                }
+                Not { }
+            }
+        }
+        
+        # Parse flags and positional args
+        loop {
+            if i >= args.len() {
+                break;
+            }
+            
+            let arg = args[i];
+            
+            if arg.startsWith("--") {
+                # Long flag
+                let flagName = arg.substring(2);
+                let flag = findFlag(flagName);
+                
+                match flag {
+                    Has(f) {
+                        if f.hasValue {
+                            if i + 1 >= args.len() {
+                                return Fail("Flag --{flagName} requires a value");
+                            }
+                            parsed.flags.set(f.name, args[i + 1]);
+                            i = i + 2;
+                        } else {
+                            parsed.flags.set(f.name, "true");
+                            i = i + 1;
+                        }
+                    }
+                    Not {
+                        return Fail("Unknown flag: {arg}");
+                    }
+                }
+            } else if arg.startsWith("-") and arg.len() > 1 {
+                # Short flag(s)
+                let chars = arg.substring(1).toChars();
+                let j = 0;
+                loop {
+                    if j >= chars.len() {
+                        break;
+                    }
+                    
+                    let flag = findFlagByShort(chars[j]);
+                    match flag {
+                        Has(f) {
+                            if f.hasValue and j == chars.len() - 1 {
+                                if i + 1 >= args.len() {
+                                    return Fail("Flag -{chars[j]} requires a value");
+                                }
+                                parsed.flags.set(f.name, args[i + 1]);
+                                i = i + 1;
+                            } else {
+                                parsed.flags.set(f.name, "true");
+                            }
+                        }
+                        Not {
+                            return Fail("Unknown flag: -{chars[j]}");
+                        }
+                    }
+                    j = j + 1;
+                }
+                i = i + 1;
+            } else {
+                # Positional argument
+                parsed.positional.push(arg);
+                i = i + 1;
+            }
+        }
+        
+        Pass(parsed)
+    }
+    
+    fn findFlag(name: String) -> May<Flag> {
+        let cmd = match parsed.command {
+            "" { root }
+            _ { 
+                match root.subcommands.get(parsed.command) {
+                    Has(c) { c }
+                    Not { return Not; }
+                }
+            }
+        }
+        
+        cmd.flags.find({ f => f.name == name })
+    }
+    
+    fn findFlagByShort(c: Char) -> May<Flag> {
+        let cmd = match parsed.command {
+            "" { root }
+            _ { 
+                match root.subcommands.get(parsed.command) {
+                    Has(c) { c }
+                    Not { return Not; }
+                }
+            }
+        }
+        
+        cmd.flags.find({ f => f.short == c })
+    }
+    
+    export fn run() {
+        let args = env.args();
+        
+        match parse(args) {
+            Pass(parsed) {
+                let cmd = match parsed.command {
+                    "" { root }
+                    _ { 
+                        match root.subcommands.get(parsed.command) {
+                            Has(c) { c }
+                            Not { 
+                                println("Unknown command: {parsed.command}");
+                                showHelp();
+                                exit(1);
+                            }
+                        }
+                    }
+                }
+                
+                match cmd.handler {
+                    Has(handler) { handler(parsed); }
+                    Not { showHelp(); }
+                }
+            }
+            Fail(err) {
+                println("Error: {err}");
+                showHelp();
+                exit(1);
+            }
+        }
+    }
+    
+    fn showHelp() {
+        println("{root.name} - {root.description}");
+        println("\nUsage: {root.name} [command] [options]");
+        
+        if root.subcommands.len() > 0 {
+            println("\nCommands:");
+            root.subcommands.forEach({ name, cmd =>
+                println("  {name,-12} {cmd.description}");
+            });
+        }
+        
+        if root.flags.len() > 0 {
+            println("\nOptions:");
+            root.flags.forEach({ flag =>
+                let short = match flag.short {
+                    '\0' { "  " }
+                    c { "-{c}" }
+                }
+                println("  {short} --{flag.name,-10} {flag.description}");
+            });
+        }
+    }
+}
+
+# Example usage
+fn main() -> Void {
+    let parser = Parser()
+        .name("myapp")
+        .description("A sample CLI application")
+        .flag("verbose", 'v', "Enable verbose output", false)
+        .flag("config", 'c', "Config file path", true);
+    
+    # Add subcommands
+    let buildCmd = Command("build", "Build the project")
+        .flag("release", 'r', "Build in release mode", false)
+        .flag("target", 't', "Target architecture", true)
+        .action({ args =>
+            let release = args.flags.get("release").isHas();
+            let target = match args.flags.get("target") {
+                Has(t) { t }
+                Not { "native" }
+            }
+            
+            println("Building project...");
+            println("  Release mode: {release}");
+            println("  Target: {target}");
+            
+            if args.positional.len() > 0 {
+                println("  Files: {args.positional.join(', ')}");
+            }
+        });
+    
+    let testCmd = Command("test", "Run tests")
+        .flag("filter", 'f', "Filter test names", true)
+        .flag("parallel", 'p', "Run tests in parallel", false)
+        .action({ args =>
+            println("Running tests...");
+            
+            match args.flags.get("filter") {
+                Has(filter) { println("  Filter: {filter}"); }
+                Not { }
+            }
+            
+            if args.flags.get("parallel").isHas() {
+                println("  Running in parallel");
+            }
+        });
+    
+    parser
+        .command(buildCmd)
+        .command(testCmd)
+        .run();
+}

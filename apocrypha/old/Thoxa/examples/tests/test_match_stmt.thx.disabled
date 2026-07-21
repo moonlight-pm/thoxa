@@ -1,0 +1,9 @@
+
+fn main() -> Int {
+    let x = 10;
+    
+    match x {
+        10 -> { 100 }
+        default -> { 200 }
+    }
+}

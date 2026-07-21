@@ -1,0 +1,20 @@
+fn main() -> Int {
+    let nums = [10, 20, 30, 40, 50];
+    
+    println("Array count test");
+    
+    let len = nums.count;
+    printInt(len);
+    
+    mut i = 0;
+    mut sum = 0;
+    while i < nums.count {
+        sum = sum + nums[i];
+        i = i + 1;
+    };
+    
+    println("Sum of all elements");
+    printInt(sum);
+    
+    0
+}

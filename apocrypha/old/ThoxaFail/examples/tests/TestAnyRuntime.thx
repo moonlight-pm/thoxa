@@ -1,0 +1,20 @@
+# Test runtime type information with Any
+
+# Create Any variables
+let x: Any = 42;
+let y: Any = "Hello";
+
+# Debug: print the raw pointer values
+# The Any values should be pointers to fat pointers
+@printStr("x pointer value: ");
+@print(x);
+@printStr("\n");
+
+@printStr("y pointer value: ");
+@print(y);
+@printStr("\n");
+
+# If fat pointers are working, these should be different addresses
+# and dereferencing them should give us type tags
+
+0

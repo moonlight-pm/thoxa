@@ -1,0 +1,19 @@
+# Test the polymorphic print module
+
+import Print from "../../std/Print";
+
+let print: Print;
+
+# Test with different types
+let x: Any = 42;
+let y: Any = "hello";
+
+print.print(x);
+@printStr("\n");
+print.print(y);
+@printStr("\n");
+
+# Test println with multiple values
+print.println(x, y);
+
+0

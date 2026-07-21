@@ -1,0 +1,126 @@
+## Terminal — the kilo raw-mode + window-size layer, wrapping the Linux termios/ioctl
+## boundary behind a semantic, `Trial`-returning API. Like `examples/http`'s `Net`/`Io`,
+## the `extern fn`s and the magic-number constants below are private: a caller works in
+## terms of a `RawMode` handle and `windowSize()`, never a raw `struct termios` or a bare
+## flag. This is the seed of a portable stdlib terminal module.
+import { errno, strerror } from "ffi"
+
+## termios/ioctl constants (Linux x86-64), named for documentation, kept private.
+let echo = 0x8          # ECHO    — echo input characters
+let icanon = 0x2        # ICANON  — canonical (line-buffered) mode
+let isig = 0x1          # ISIG    — INTR/QUIT/SUSP generate signals
+let iexten = 0x8000     # IEXTEN  — extended input processing
+let ixon = 0x400        # IXON    — XON/XOFF flow control on output
+let icrnl = 0x100       # ICRNL   — translate CR to NL on input
+let brkint = 0x2        # BRKINT  — a break sends SIGINT
+let inpck = 0x10        # INPCK   — input parity checking
+let istrip = 0x20       # ISTRIP  — strip the 8th bit
+let opost = 0x1         # OPOST   — output post-processing (e.g. NL -> CRNL)
+let cs8 = 0x30          # CS8     — 8-bit character size
+let vmin = 6            # VMIN    — c_cc index: min bytes for a read
+let vtime = 5           # VTIME   — c_cc index: read timeout (tenths of a second)
+let tcsaflush = 2       # TCSAFLUSH — apply after draining output, flushing input
+let tiocgwinsz = 0x5413 # TIOCGWINSZ — get window size
+let stdinFileno = 0
+let stdoutFileno = 1
+
+## struct termios (Linux x86-64) — the full 60-byte layout. `tcgetattr`/`tcsetattr` read
+## and write `sizeof(struct termios)` bytes through the pointer, so every field (plus the
+## tail padding ctypes computes between `cc` and `ispeed`) must be present or the kernel
+## would write past the block. All fields mut: the kernel writes them; `rawFlags` edits
+## the flag words.
+type Termios {
+    mut iflag: UInt32
+    mut oflag: UInt32
+    mut cflag: UInt32
+    mut lflag: UInt32
+    mut line: Byte
+    mut cc: Array<Byte, 32>
+    mut ispeed: UInt32
+    mut ospeed: UInt32
+}
+
+## struct winsize — 4 x UInt16 = exactly 8 bytes.
+type Winsize {
+    mut rows: UInt16
+    mut cols: UInt16
+    mut x: UInt16
+    mut y: UInt16
+}
+
+## Raw libc calls — the FFI boundary, kept private behind the API. The `sys` prefix marks
+## the boundary (mirroring `Net`/`Io`); the struct pointer is passed implicitly (the
+## `Termios`/`Winsize` value coerces to `Address<T>`, and the kernel writes through it).
+## `ioctl` is variadic in C; a fixed 3-arg declaration is correct because the pointer is
+## passed positionally.
+extern fn sysTcgetattr(fd!: Int32, p!: Address<Termios>) -> Int32 from "c" "tcgetattr"
+extern fn sysTcsetattr(fd!: Int32, act!: Int32, p!: Address<Termios>) -> Int32 from "c" "tcsetattr"
+extern fn sysIoctl(fd!: Int32, request!: UInt64, ws!: Address<Winsize>) -> Int32 from "c" "ioctl"
+
+## "context: reason" from the current errno, for a Fail payload.
+fn termErr(what!: String) -> String {
+    "{what}: {strerror(errno())}"
+}
+
+## Turn a cooked termios into raw mode, in place — a hand-rolled cfmakeraw. Factored out
+## so the deterministic conformance slice can pin the exact bitmasks it produces. Mutates
+## the passed struct (a C struct is not copied on a call), so the caller sees the result.
+fn rawFlags(raw!: Termios) -> Void {
+    raw.iflag = raw.iflag & ~(brkint | icrnl | inpck | istrip | ixon)
+    raw.oflag = raw.oflag & ~opost
+    raw.cflag = raw.cflag | cs8
+    raw.lflag = raw.lflag & ~(echo | icanon | iexten | isig)
+    raw.cc[vmin] = 0      # return each byte immediately...
+    raw.cc[vtime] = 1     # ...or after a 100ms timeout with nothing typed
+    Void
+}
+
+## The terminal window size, in character cells. A public immutable data record: the
+## ctor params project into `export let` fields, so callers read `size.rows`/`size.cols`
+## directly (a ctor-param field is private, and an all-scalar body-field record would be
+## an ABI struct) while the value stays immutable and construction stays one call.
+export type WindowSize(r!: Int32, c!: Int32) {
+    export let rows = r
+    export let cols = c
+}
+
+## Owns the terminal's original settings. `enable()` switches stdin to raw mode; `restore()`
+## puts the saved settings back. `restore()` is idempotent — a no-op before `enable()` or
+## after a prior restore — so every exit path can call it safely.
+export type RawMode() {
+    mut orig = Termios()
+    mut active = false
+
+    ## Save the current terminal settings and switch stdin to raw mode.
+    export fn enable() -> Trial<Void, String> {
+        if sysTcgetattr(stdinFileno, orig) < 0 { return Fail(termErr("tcgetattr")) }
+        mut raw = Termios()
+        sysTcgetattr(stdinFileno, raw)   # a second read is the working copy (no struct-copy primitive yet)
+        rawFlags(raw)
+        if sysTcsetattr(stdinFileno, tcsaflush, raw) < 0 { return Fail(termErr("tcsetattr")) }
+        active = true
+        Pass(Void)
+    }
+
+    ## Restore the saved settings. Safe to call even if raw mode was never enabled.
+    export fn restore() -> Trial<Void, String> {
+        if not active { return Pass(Void) }
+        if sysTcsetattr(stdinFileno, tcsaflush, orig) < 0 { return Fail(termErr("tcsetattr")) }
+        active = false
+        Pass(Void)
+    }
+}
+
+## Query the window size via `ioctl(TIOCGWINSZ)`. Fails cleanly when unavailable — stdout
+## is not a tty, or a terminal that reports 0 columns; the cursor-probe fallback is
+## deferred to after Keys (Stage 1).
+export fn windowSize() -> Trial<WindowSize, String> {
+    mut ws = Winsize()
+    if sysIoctl(stdoutFileno, tiocgwinsz, ws) < 0 {
+        Fail(termErr("ioctl TIOCGWINSZ"))
+    } else if ws.cols == 0 {
+        Fail("ioctl TIOCGWINSZ: zero columns")
+    } else {
+        Pass(WindowSize(ws.rows, ws.cols))
+    }
+}

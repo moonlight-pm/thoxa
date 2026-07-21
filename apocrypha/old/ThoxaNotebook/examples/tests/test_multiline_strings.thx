@@ -1,0 +1,42 @@
+fn main() -> Int {
+    let simple = "
+        This is a multi-line string
+        with automatic dedenting.
+        It preserves relative indentation.
+    ";
+    
+    println(simple);
+    println("---");
+    
+    let codeExample = "
+        fn example() {{
+            println(\"Hello from indented code!\");
+            return 42;
+        }}
+    ";
+    
+    println(codeExample);
+    println("---");
+    
+    let mixed = "
+        Line 1 - normal indent
+            Line 2 - extra indent
+        Line 3 - back to normal
+            
+        Line 5 - after blank line
+    ";
+    
+    println(mixed);
+    println("---");
+    
+    let x = 4;
+    let interpolated = "
+        Multi-line strings work with interpolation too!
+        Let's test: 2 + 2 = {x}
+        And booleans: {true}
+    ";
+    
+    println(interpolated);
+    
+    0
+}

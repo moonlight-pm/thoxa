@@ -1,0 +1,3 @@
+isEven(10) = true
+isOdd(7) = true
+ping/pong plays = 6

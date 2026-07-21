@@ -1,0 +1,28 @@
+# Example demonstrating multiple functions with parameters
+
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+fn subtract(a: Int, b: Int) -> Int {
+    a - b
+}
+
+fn multiply(a: Int, b: Int) -> Int {
+    a * b
+}
+
+fn divide(a: Int, b: Int) -> Int {
+    a / b
+}
+
+fn calculate(x: Int, y: Int, z: Int) -> Int {
+    let sum = add(x, y);
+    let product = multiply(sum, z);
+    product
+}
+
+fn main() -> Int {
+    # Calculate: (5 + 3) * 4 = 32
+    calculate(5, 3, 4)
+}

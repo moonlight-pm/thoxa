@@ -1,0 +1,7 @@
+type Test(x: Float) {
+    let y: Float = x
+}
+
+fn main() -> Void {
+    println("Test");
+}

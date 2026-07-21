@@ -1,0 +1,14 @@
+# Test variadic functions with Any type
+
+type IO {
+    export fn println(...args: Any) -> Void {
+        @print(1234);  # Just print something to test
+        @printStr("\n");
+        0
+    };
+}
+
+let io: IO;
+io.println(42, "hello", 123);
+
+0

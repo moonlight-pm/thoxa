@@ -1,0 +1,13 @@
+## Circular imports (M-MOD-4, design §7): `fn` and `type` mutual recursion across
+## files is allowed. `evens`/`odds` reference each other's exported functions and
+## `ping`/`pong` each other's exported types; the entry pulls all four and runs.
+import { isEven } from "./cyclib/Evens"
+import { isOdd } from "./cyclib/Odds"
+import { Ping } from "./cyclib/Ping"
+
+fn main() -> Int64 {
+    println("isEven(10) = {isEven(n: 10)}")
+    println("isOdd(7) = {isOdd(n: 7)}")
+    println("ping/pong plays = {Ping(depth: 6).play()}")
+    0
+}

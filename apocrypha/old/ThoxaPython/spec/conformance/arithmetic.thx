@@ -1,0 +1,11 @@
+## Integer arithmetic, truncating division, comparison and logical operators.
+fn main() -> Int64 {
+    println("{7 + 3}")
+    println("{7 - 3}")
+    println("{7 * 3}")
+    println("{7 / 3}")
+    println("{7 % 3}")
+    println("{-7 / 3}")
+    println("{2 < 3} {3 <= 3} {4 > 5} {not true} {true and false} {false or true}")
+    0
+}

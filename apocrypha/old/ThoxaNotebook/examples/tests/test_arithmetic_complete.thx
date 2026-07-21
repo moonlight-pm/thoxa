@@ -1,0 +1,151 @@
+fn main() -> Int {
+    println("=== Arithmetic Operations Test Suite ===");
+    println("");
+    
+    let a = 10 + 20;
+    if a == 30 {
+        println("✓ Addition: 10 + 20 = 30");
+    } else {
+        print("✗ Addition: 10 + 20 = ");
+        printInt(a);
+        println("");
+    };
+    
+    let b = 50 - 15;
+    if b == 35 {
+        println("✓ Subtraction: 50 - 15 = 35");
+    } else {
+        print("✗ Subtraction: 50 - 15 = ");
+        printInt(b);
+        println("");
+    };
+    
+    let c = 7 * 6;
+    if c == 42 {
+        println("✓ Multiplication: 7 * 6 = 42");
+    } else {
+        print("✗ Multiplication: 7 * 6 = ");
+        printInt(c);
+        println("");
+    };
+    
+    let d = 100 / 4;
+    if d == 25 {
+        println("✓ Division: 100 / 4 = 25");
+    } else {
+        print("✗ Division: 100 / 4 = ");
+        printInt(d);
+        println("");
+    };
+    
+    let e = 17 % 5;
+    if e == 2 {
+        println("✓ Modulo: 17 % 5 = 2");
+    } else {
+        print("✗ Modulo: 17 % 5 = ");
+        printInt(e);
+        println("");
+    };
+    
+    println("");
+    println("=== Comparison Operations ===");
+    println("");
+    
+    let x = 10;
+    let y = 20;
+    
+    if x < y {
+        println("✓ Less than: 10 < 20");
+    } else {
+        println("✗ Less than: 10 < 20 failed");
+    };
+    
+    if y > x {
+        println("✓ Greater than: 20 > 10");
+    } else {
+        println("✗ Greater than: 20 > 10 failed");
+    };
+    
+    if x <= 10 {
+        println("✓ Less or equal: 10 <= 10");
+    } else {
+        println("✗ Less or equal: 10 <= 10 failed");
+    };
+    
+    if x >= 10 {
+        println("✓ Greater or equal: 10 >= 10");
+    } else {
+        println("✗ Greater or equal: 10 >= 10 failed");
+    };
+    
+    if x == 10 {
+        println("✓ Equal: 10 == 10");
+    } else {
+        println("✗ Equal: 10 == 10 failed");
+    };
+    
+    if x != y {
+        println("✓ Not equal: 10 != 20");
+    } else {
+        println("✗ Not equal: 10 != 20 failed");
+    };
+    
+    println("");
+    println("=== Operator Precedence ===");
+    println("");
+    
+    let p1 = 2 + 3 * 4;
+    if p1 == 14 {
+        println("✓ Precedence: 2 + 3 * 4 = 14");
+    } else {
+        print("✗ Precedence: 2 + 3 * 4 = ");
+        printInt(p1);
+        println(" (expected 14)");
+    };
+    
+    let p2 = (2 + 3) * 4;
+    if p2 == 20 {
+        println("✓ Parentheses: (2 + 3) * 4 = 20");
+    } else {
+        print("✗ Parentheses: (2 + 3) * 4 = ");
+        printInt(p2);
+        println(" (expected 20)");
+    };
+    
+    let p3 = 10 - 2 * 3 + 4;
+    if p3 == 8 {
+        println("✓ Complex: 10 - 2 * 3 + 4 = 8");
+    } else {
+        print("✗ Complex: 10 - 2 * 3 + 4 = ");
+        printInt(p3);
+        println(" (expected 8)");
+    };
+    
+    println("");
+    println("=== Unary Operations ===");
+    println("");
+    
+    let pos = 10;
+    let neg = -pos;
+    if neg == -10 {
+        println("✓ Negation: -10");
+    } else {
+        print("✗ Negation: got ");
+        printInt(neg);
+        println(" (expected -10)");
+    };
+    
+    let dbl = -neg;
+    if dbl == 10 {
+        println("✓ Double negation: --10 = 10");
+    } else {
+        print("✗ Double negation: got ");
+        printInt(dbl);
+        println(" (expected 10)");
+    };
+    
+    println("");
+    println("=== Test Complete ===");
+    
+    0
+}

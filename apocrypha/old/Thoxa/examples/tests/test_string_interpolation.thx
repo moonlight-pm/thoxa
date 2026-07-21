@@ -1,0 +1,29 @@
+fn main() -> Int {
+    let name = "World";
+    let greeting = "Hello, {name}!";
+    print(greeting);
+    
+    let count = 42;
+    let message = "The answer is {count}";
+    print(message);
+    
+    let isReady = true;
+    let status = "Ready: {isReady}";
+    print(status);
+    
+    let x = 10;
+    let y = 20;
+    let result = "Sum of {x} and {y} is {x + y}";
+    print(result);
+    
+    let user = "Alice";
+    let score = 95;
+    let passed = score > 80;
+    let report = "User {user} scored {score} - Pass: {passed}";
+    print(report);
+    
+    let escaped = "Use {{double braces}} to show literal braces";
+    print(escaped);
+    
+    0
+}

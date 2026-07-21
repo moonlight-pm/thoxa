@@ -1,0 +1,47 @@
+// Test the try operator (?) for error propagation
+
+fn might_fail(x: int) -> Trial<int, int> {
+    if x < 0 {
+        return Fail(x);
+    }
+    Pass(x * 2)
+}
+
+fn chain_operations(x: int) -> Trial<int, int> {
+    // Use the try operator to propagate errors
+    let a = might_fail(x)?;
+    let b = might_fail(a)?;
+    Pass(b + 1)
+}
+
+fn main() -> int {
+    // Test successful chain
+    match chain_operations(5) {
+        Pass(value) -> {
+            print("Success: ");
+            print_int(value);
+            print("\n");
+        },
+        Fail(error) -> {
+            print("Error: ");
+            print_int(error);
+            print("\n");
+        }
+    };
+    
+    // Test failing chain
+    match chain_operations(-5) {
+        Pass(value) -> {
+            print("Success: ");
+            print_int(value);
+            print("\n");
+        },
+        Fail(error) -> {
+            print("Error: ");
+            print_int(error);
+            print("\n");
+        }
+    };
+    
+    0
+}

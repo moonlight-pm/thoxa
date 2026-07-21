@@ -1,0 +1,9 @@
+fn main() -> Int {
+    let nums = [1, 2, 3];
+    
+    for n in nums {
+        printInt(n);
+    };
+    
+    0
+}

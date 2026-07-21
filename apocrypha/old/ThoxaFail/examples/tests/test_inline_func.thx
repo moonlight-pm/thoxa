@@ -1,0 +1,4 @@
+# Test inline arithmetic
+@print(10 + 20);
+@printStr("\n");
+0

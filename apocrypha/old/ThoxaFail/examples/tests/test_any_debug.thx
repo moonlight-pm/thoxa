@@ -1,0 +1,20 @@
+# Test runtime type checking debug
+let x: Any = "hello";
+
+# First check the type
+if x is String {
+    @printStr("x is String\n");
+};
+
+if x is Int64 {
+    @printStr("x is Int64???\n");
+} else {
+    @printStr("x is not Int64\n");
+};
+
+# Now try conversion - this should trap
+@printStr("About to convert String to Int64...\n");
+let y: Int64 = x as Int64;
+@printStr("Should not reach here!\n");
+@print(y);
+0

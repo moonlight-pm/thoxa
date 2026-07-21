@@ -1,0 +1,115 @@
+let address = "0.0.0.0";
+let port = 8080;
+
+type Server {
+    let address: String;
+    let port: Int;
+    let routes: [Route];
+
+    func get<Handler>(path: String, handler: Handler) where
+        Handler is Response;
+    func get(path: String, handler: (Request) -> Response);
+};
+
+
+let server = Server(address: address, port: port);
+
+server.get("/hello/:message?name=:name&count=:count", (message: &String, name: &String?, count: Int?) -> Response {
+    loop count or 1 {
+        println("Message for: ${name or "Guest"}
+                ${message}");
+        println();
+    }
+    "Message recieved"
+});
+
+server.get("/hello/:message?name=:name&count=:count", (request: Request) {
+    # Hash with multiple types
+    # Could we hint that in the request given here, that params["message"] is guaranteed to be present?
+    let message = request.params["message"];
+    let name = request.params["name"] or "Guest";
+    let count = request.params["count"] or 1;
+    loop count {
+        println("Message for: ${name or "Guest"}
+                ${message}");
+        println();
+    }
+    Response {
+        status: 200,
+        headers: {
+            "Content-Type": "text/plain"
+        }
+        body: "Message received"
+    }
+});
+
+let server = Server {
+    address,
+    port,
+    routes: [ # The Route type is known to be used here.
+        {
+            path: "/hello/:message?name=:name&count=:count",
+            handler: (message: &String, name: &String?, count: Int?) -> Response {
+                loop count or 1 {
+                    println("Message for: ${name or "Guest"}
+                            ${message}");
+                    println();
+                }
+                Response {
+                    status: 200,
+                    headers: {
+                        "Content-Type": "text/plain"
+                    },
+                    body: "Message received"
+                }
+            }
+        },
+    ]
+}
+
+let route = Route {
+    path: "/hello/:message?name=:name&count=:count",
+    handler: (message: &String, name: &String?, count: Int?) -> Response {
+        loop count or 1 {
+            println("Message for: ${name or "Guest"}
+                    ${message}");
+            println();
+        }
+        Response {
+            status: 200,
+            headers: {
+                "Content-Type": "text/plain"
+            },
+            body: "Message received"
+        }
+    }
+}
+
+type Trial<T> {
+    export variant Pass(value: T);
+    export variant Fail(error: String);
+}
+
+fn foo() -> Trial<Int> {
+    if (true) {
+        Pass(42)
+    } else {
+        Fail("An error occurred")
+    }
+}
+
+fn bar() -> Trial<Any> { # All types can be coerced to Any
+    foo()?
+}
+
+fn baz() {
+    match bar() {
+        Pass(value) => {
+            println("Success: ${value}");
+        },
+        Fail(error) => {
+            println("Error: ${error}");
+        }
+    };
+    # Evaluates to Void
+}
