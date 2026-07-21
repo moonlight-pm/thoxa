@@ -71,13 +71,13 @@ Already known (see status + decisions):
 - Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28, **D82** String *returns* via `thoxa_string_from_cstr`); cgen pulls fcntl/unistd/socket headers when externs present.
 - C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).
 - Modules: `import` selective/namespace, `export`, `./`+`~/` loader, module-level let/mut (D30–D35); **`thoxa run <dir>` → `<dir>/Main.thx`** (D68); `~/` = entry file’s directory.
-- Bytes: `fromString`, `Bytes(n)`, `.slice`, `.find(needle[, from])` → index|-1, count/get/set/toString; defer `"…" as Bytes` (D14–D18, D36–D37, D46).
+- Bytes: `fromString`, `Bytes(n)`, `.slice`, `.find(needle[, from])` → `May<Int64>` (`Has(i)`/`Not`), count/get/set/toString; defer `"…" as Bytes` (D14–D18, D36–D37, D46′/D85).
 - Buffer: `Buffer()`/`Buffer(cap)`, COW append/appendBytes, freeze→Bytes (D50–D52).
 - Array: `Array<T>` (Int64/Bool/String/Bytes/**User**), literals, empty `[]` + ann, `.count`/`[i]`/append/dropLast, `for x in arr` (D53–D55, D62, **D65** inline User + `elem_size`); fixed `Array<T,N>` still field-only; `user.arrField[i]` for dynamic Array fields (D69).
 - File I/O: `readFile(path) -> Trial<Bytes,String>` (D56); OpenMode Int32 lets `oRdonly`/`oWronly`/`oRdwr` (D81); Fail via `thoxa_errno` + libc `strerror` (D80). String `==`/`!=` (D60).
 - HTTP: `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest` (D69); Router `handle(req) -> Response` (D70); **bounded server** (D67, `http_server`).
 - Control flow: `while` / `loop` / `for` ranges + collection / `break` / `continue` / early `return` (D47, D55, D63). Constructor params: Int64/Bool/String/Bytes/**Array** (D48–D49, D69).
-- Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45). **User+heap in Trial safe (D64)** — method field Dup, Trial extract/`Pass` via `needs_drop`, match bind fresh places. Match discard `Pass(_)`/`Fail(_)` (D66).
+- Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45); **`May<T>` / `Has`/`Not` shipped (D85)** same payload set; `?` stays within family (no May↔Trial mix). **User+heap in Trial safe (D64)** — method field Dup, Trial extract/`Pass` via `needs_drop`, match bind fresh places. Match discard `Pass(_)`/`Fail(_)` (D66); nullary `Not` pattern.
 
 ## Optional Grok memory
 

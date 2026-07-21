@@ -16,6 +16,13 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-20 — May / Has / Not + Bytes.find
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D85 | `May<T>` builtin | Parallel to Trial: `Has(x)` / `Not()`; monomorph C struct `tag` + optional `value`; match `Has(v)` / `Not`; `?` unwraps Has or returns Not from `-> May<…>` | Payload set same as Trial ok (Void/ints/Bool/String/Bytes/User). **No** inferred fallible returns, May↔Trial `?` mixing, or nested May/Array payloads. `Not` pattern is nullary (no parens); construct with `Not()`. |
+| D46′ | `Bytes.find` | `find(needle[, from]) -> May<Int64>` | **Supersedes D46** (`-1` sentinel). Runtime still returns -1; MIR wraps to `Has(i)` / `Not`. Empty needle → `Has(from)` (in range); missing → `Not`. Conformance: `mays`, `bytes`; Http call sites match. |
+
 ## 2026-07-20 — Optional empty type body
 
 | ID | Decision | Choice | Notes |
@@ -114,7 +121,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D69 | HTTP protocol types | `Header(name,value)`, `Request(method,path,version,headers,body)`, `Response(status,reason,headers,body)`; `parseRequest(raw) -> Trial<Request,String>`; `writeResponse(res) -> Bytes`; `ok`/`notFound`/`badRequest` → `Response` | Constructor-param fields may be `Array<T>` (heap RC via existing User field walk); `user.arrField[i]` loads dynamic Array then indexes (FixedArray peel unchanged). Headers: simple `Name: value` until blank; body always empty. `Bytes.find` → `-1` (not May). **`summarizeRequest` is intentionally an adapter over `parseRequest`** (requires `\r\n\r\n`; path is query-stripped) — not the pre-PR5 request-line-only scan. Empty method/path/version tokens not rejected (oracle parity; tighten later if server forces). Phase-A RC may over-dup on `Trial<Request>` / `Array<Header>` (LSan noise; no UAF; not a conformance gate). Conformance: `http_parse`. |
+| D69 | HTTP protocol types | `Header(name,value)`, `Request(method,path,version,headers,body)`, `Response(status,reason,headers,body)`; `parseRequest(raw) -> Trial<Request,String>`; `writeResponse(res) -> Bytes`; `ok`/`notFound`/`badRequest` → `Response` | Constructor-param fields may be `Array<T>` (heap RC via existing User field walk); `user.arrField[i]` loads dynamic Array then indexes (FixedArray peel unchanged). Headers: simple `Name: value` until blank; body always empty. `Bytes.find` → `May<Int64>` (**D85**). **`summarizeRequest` is intentionally an adapter over `parseRequest`** (requires `\r\n\r\n`; path is query-stripped) — not the pre-PR5 request-line-only scan. Empty method/path/version tokens not rejected (oracle parity; tighten later if server forces). Phase-A RC may over-dup on `Trial<Request>` / `Array<Header>` (LSan noise; no UAF; not a conformance gate). Conformance: `http_parse`. |
 
 ## 2026-07-19 — Post-R9 HTTP plan (PR1)
 
@@ -185,7 +192,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | D43 | `?` across monomorphs | Same `E`; rewrap `Fail(e)` into outer `Trial<Ok',E>` | Allows `createSocket()?` inside `-> Trial<Void,String>` |
 | D44 | Trial RC | Dup live heap side on copy; drop live side on drop | Zero-init trial locals so branch-skipped drops are safe |
 | D45 | Wire conformance | One-shot listen/connect/accept/recv/send | Ephemeral port via `getsockname`; no infinite accept loop |
-| D46 | `Bytes.find` | `find(needle)` / `find(needle, from)` → Int64 | `-1` if missing; May/Has deferred until May lands |
+| D46 | `Bytes.find` | Was Int64 / `-1` if missing | **Superseded by D46′ / D85** — now `May<Int64>` |
 
 ## 2026-07-19 — R9 HTTP subset
 

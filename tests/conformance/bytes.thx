@@ -27,8 +27,17 @@ fn main() -> Int64 {
 
     let hay = Bytes.fromString("abXabY")
     let needle = Bytes.fromString("ab")
-    println(hay.find(needle))
-    println(hay.find(needle, 1))
-    println(hay.find(Bytes.fromString("ZZ")))
+    match hay.find(needle) {
+        Has(i) { println(i) }
+        Not { println("none") }
+    }
+    match hay.find(needle, 1) {
+        Has(i) { println(i) }
+        Not { println("none") }
+    }
+    match hay.find(Bytes.fromString("ZZ")) {
+        Has(i) { println(i) }
+        Not { println("none") }
+    }
     0
 }

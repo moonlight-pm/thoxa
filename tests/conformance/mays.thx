@@ -1,0 +1,40 @@
+## May / Has / Not + Bytes.find -> May<Int64> (D85).
+fn firstAb(hay!: Bytes) -> May<Int64> {
+    let i = hay.find(Bytes.fromString("ab"))?
+    Has(i)
+}
+
+fn main() -> Int64 {
+    let hay = Bytes.fromString("xxabY")
+    match hay.find(Bytes.fromString("ab")) {
+        Has(i) { println("found={i}") }
+        Not { println("missing") }
+    }
+    match hay.find(Bytes.fromString("zz")) {
+        Has(i) { println("found={i}") }
+        Not { println("missing") }
+    }
+    match firstAb(hay) {
+        Has(i) { println("q={i}") }
+        Not { println("q-miss") }
+    }
+    match firstAb(Bytes.fromString("nope")) {
+        Has(i) { println("q={i}") }
+        Not { println("q-miss") }
+    }
+    ## Explicit Has / Not constructors (Not needs `-> May` for typing).
+    let m = Has(7)
+    match m {
+        Has(v) { println("has={v}") }
+        Not { println("not") }
+    }
+    match noInt() {
+        Has(v) { println("has={v}") }
+        Not { println("not") }
+    }
+    0
+}
+
+fn noInt() -> May<Int64> {
+    Not()
+}

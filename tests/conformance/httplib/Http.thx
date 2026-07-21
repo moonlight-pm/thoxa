@@ -25,86 +25,121 @@ export type Response(
 ## Body bytes after the header separator are ignored; `body` is always empty.
 export fn parseRequest(raw!: Bytes) -> Trial<Request, String> {
     let sep = Bytes.fromString("\r\n\r\n")
-    let sepAt = raw.find(sep)
-    if sepAt < 0 {
-        Fail("incomplete request")
-    } else {
-        let headerBlock = raw.slice(0, sepAt)
-        let crlf = Bytes.fromString("\r\n")
-        ## First line = request line; remaining lines = headers.
-        let firstCrlf = headerBlock.find(crlf)
-        let reqLine = if firstCrlf < 0 {
-            headerBlock
-        } else {
-            headerBlock.slice(0, firstCrlf)
+    match raw.find(sep) {
+        Not {
+            Fail("incomplete request")
         }
-        let sp = Bytes.fromString(" ")
-        let sp1 = reqLine.find(sp)
-        if sp1 < 0 {
-            Fail("malformed request line")
-        } else {
-            let sp2 = reqLine.find(sp, sp1 + 1)
-            if sp2 < 0 {
-                Fail("malformed request line")
-            } else {
-                ## Reject extra spaces / extra tokens on the request line.
-                let sp3 = reqLine.find(sp, sp2 + 1)
-                if sp3 >= 0 {
+        Has(sepAt) {
+            let headerBlock = raw.slice(0, sepAt)
+            let crlf = Bytes.fromString("\r\n")
+            ## First line = request line; remaining lines = headers.
+            let reqLine = match headerBlock.find(crlf) {
+                Not { headerBlock }
+                Has(firstCrlf) { headerBlock.slice(0, firstCrlf) }
+            }
+            let sp = Bytes.fromString(" ")
+            match reqLine.find(sp) {
+                Not {
                     Fail("malformed request line")
-                } else {
-                    let method = reqLine.slice(0, sp1).toString()
-                    mut target = reqLine.slice(sp1 + 1, sp2)
-                    let version = reqLine.slice(sp2 + 1, reqLine.count).toString()
-                    ## Strip query string: path only.
-                    let q = target.find(Bytes.fromString("?"))
-                    if q >= 0 {
-                        target = target.slice(0, q)
-                    }
-                    let path = target.toString()
-                    mut headers: Array<Header> = []
-                    if firstCrlf >= 0 {
-                        mut pos = firstCrlf + 2
-                        let n = headerBlock.count
-                        loop {
-                            if pos >= n { break }
-                            let next = headerBlock.find(crlf, pos)
-                            let lineEnd = if next < 0 { n } else { next }
-                            let line = headerBlock.slice(pos, lineEnd)
-                            if line.count == 0 {
-                                ## empty line inside header block — skip
-                            } else {
-                                let colon = line.find(Bytes.fromString(":"))
-                                if colon < 0 {
-                                    return Fail("malformed header")
+                }
+                Has(sp1) {
+                    match reqLine.find(sp, sp1 + 1) {
+                        Not {
+                            Fail("malformed request line")
+                        }
+                        Has(sp2) {
+                            ## Reject extra spaces / extra tokens on the request line.
+                            match reqLine.find(sp, sp2 + 1) {
+                                Has(_) {
+                                    Fail("malformed request line")
                                 }
-                                let name = line.slice(0, colon).toString()
-                                if name == "" {
-                                    return Fail("empty header name")
+                                Not {
+                                    parseRequestBody(reqLine, sp1, sp2, headerBlock, crlf)
                                 }
-                                mut valStart = colon + 1
-                                if valStart < line.count {
-                                    if line.get(valStart) == 32 {
-                                        valStart = valStart + 1
-                                    }
-                                }
-                                let value = line.slice(valStart, line.count).toString()
-                                headers = headers.append(Header(name: name, value: value))
                             }
-                            if next < 0 {
-                                break
-                            }
-                            pos = next + 2
                         }
                     }
-                    let body = Bytes(0)
-                    Pass(Request(
-                        method: method,
-                        path: path,
-                        version: version,
-                        headers: headers,
-                        body: body
-                    ))
                 }
+            }
+        }
+    }
+}
+
+## Finish parse after a valid request-line layout (method SP target SP version).
+fn parseRequestBody(
+    reqLine!: Bytes,
+    sp1: Int64,
+    sp2: Int64,
+    headerBlock!: Bytes,
+    crlf!: Bytes
+) -> Trial<Request, String> {
+    let method = reqLine.slice(0, sp1).toString()
+    mut target = reqLine.slice(sp1 + 1, sp2)
+    let version = reqLine.slice(sp2 + 1, reqLine.count).toString()
+    ## Strip query string: path only.
+    match target.find(Bytes.fromString("?")) {
+        Has(q) {
+            target = target.slice(0, q)
+        }
+        Not { Void }
+    }
+    let path = target.toString()
+    mut headers: Array<Header> = []
+    match headerBlock.find(crlf) {
+        Not { Void }
+        Has(firstCrlf) {
+            mut pos = firstCrlf + 2
+            let n = headerBlock.count
+            loop {
+                if pos >= n { break }
+                let lineEnd = match headerBlock.find(crlf, pos) {
+                    Not { n }
+                    Has(next) { next }
+                }
+                let line = headerBlock.slice(pos, lineEnd)
+                if line.count == 0 {
+                    ## empty line inside header block — skip
+                } else {
+                    let h = parseHeaderLine(line)?
+                    headers = headers.append(h)
+                }
+                match headerBlock.find(crlf, pos) {
+                    Not { break }
+                    Has(next) {
+                        pos = next + 2
+                    }
+                }
+            }
+        }
+    }
+    let body = Bytes(0)
+    Pass(Request(
+        method: method,
+        path: path,
+        version: version,
+        headers: headers,
+        body: body
+    ))
+}
+
+fn parseHeaderLine(line!: Bytes) -> Trial<Header, String> {
+    match line.find(Bytes.fromString(":")) {
+        Not {
+            Fail("malformed header")
+        }
+        Has(colon) {
+            let name = line.slice(0, colon).toString()
+            if name == "" {
+                Fail("empty header name")
+            } else {
+                mut valStart = colon + 1
+                if valStart < line.count {
+                    if line.get(valStart) == 32 {
+                        valStart = valStart + 1
+                    }
+                }
+                let value = line.slice(valStart, line.count).toString()
+                Pass(Header(name: name, value: value))
             }
         }
     }

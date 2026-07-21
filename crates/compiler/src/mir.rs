@@ -162,6 +162,15 @@ pub enum RValue {
     TrialOk(Place),
     /// Extract `.err` from a Trial place.
     TrialErr(Place),
+    /// Construct a May: `payload` is live for Has; ignored for Not.
+    MayMake {
+        tag: MayTag,
+        payload: Place,
+        may_ty: Ty,
+    },
+    MayTag(Place),
+    /// Extract `.value` from a May place (Has side).
+    MayValue(Place),
     /// Construct a user type from field places (declaration order).
     StructLit {
         type_name: String,
@@ -228,6 +237,12 @@ pub enum TrialTag {
     Fail = 1,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MayTag {
+    Has = 0,
+    Not = 1,
+}
+
 #[derive(Debug, Clone)]
 pub enum Callee {
     Builtin(String),
@@ -284,6 +299,10 @@ pub enum Ty {
         ok: Box<Ty>,
         err: Box<Ty>,
     },
+    /// `May<T>` — monomorphized in cgen (`Has` / `Not`).
+    May {
+        inner: Box<Ty>,
+    },
     User(String),
 }
 
@@ -293,6 +312,7 @@ fn needs_drop(ty: &Ty) -> bool {
     match ty {
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } | Ty::User(_) => true,
         Ty::Trial { ok, err } => needs_drop(ok) || needs_drop(err),
+        Ty::May { inner } => needs_drop(inner),
         _ => false,
     }
 }
@@ -337,6 +357,10 @@ fn is_trial(ty: &Ty) -> bool {
     matches!(ty, Ty::Trial { .. })
 }
 
+fn is_may(ty: &Ty) -> bool {
+    matches!(ty, Ty::May { .. })
+}
+
 fn trial_parts(ty: &Ty) -> Option<(&Ty, &Ty)> {
     match ty {
         Ty::Trial { ok, err } => Some((ok.as_ref(), err.as_ref())),
@@ -344,7 +368,14 @@ fn trial_parts(ty: &Ty) -> Option<(&Ty, &Ty)> {
     }
 }
 
-/// Types allowed as Trial ok/err payloads.
+fn may_inner(ty: &Ty) -> Option<&Ty> {
+    match ty {
+        Ty::May { inner } => Some(inner.as_ref()),
+        _ => None,
+    }
+}
+
+/// Types allowed as Trial ok/err or May payloads.
 fn is_trial_payload_ty(ty: &Ty) -> bool {
     matches!(
         ty,
@@ -1270,6 +1301,19 @@ fn resolve_ty(
             })
         }
         ("Trial", _) => Err(Error::at("Trial expects two type arguments", t.span)),
+        ("May", [TypeArg::Type(a)]) => {
+            let inner = resolve_ty(a, types, name_map)?;
+            if !is_trial_payload_ty(&inner) {
+                return Err(Error::at(
+                    format!("May payload type is not supported: {inner:?}"),
+                    t.span,
+                ));
+            }
+            Ok(Ty::May {
+                inner: Box::new(inner),
+            })
+        }
+        ("May", _) => Err(Error::at("May expects one type argument", t.span)),
         ("Array", [TypeArg::Type(elem)]) => {
             let et = resolve_ty(elem, types, name_map)?;
             if !is_array_elem_ty(&et) {
@@ -1501,7 +1545,7 @@ fn lower_method(
 fn insert_function_drops(stmts: &mut Vec<Stmt>, ret: &Option<Place>, ret_ty: &Ty) {
     let mut places: Vec<(String, Ty)> = Vec::new();
     collect_drop_places(stmts, &mut places);
-    let skip = if needs_drop(ret_ty) || is_trial(ret_ty) {
+    let skip = if needs_drop(ret_ty) || is_trial(ret_ty) || is_may(ret_ty) {
         ret.as_ref().map(|p| p.name.clone())
     } else {
         None
@@ -2105,7 +2149,7 @@ fn append_return_with_drops(
     ret: Option<Place>,
     ret_ty: &Ty,
 ) {
-    let skip = if needs_drop(ret_ty) || is_trial(ret_ty) {
+    let skip = if needs_drop(ret_ty) || is_trial(ret_ty) || is_may(ret_ty) {
         ret.as_ref().map(|p| p.name.clone())
     } else {
         None
@@ -3202,7 +3246,7 @@ fn lower_bytes_method(
             emit_call_result(ctx, Callee::Builtin("bytes_slice".into()), all, Ty::Bytes)
         }
         "find" => {
-            // `find(needle)` or `find(needle, from)` — index or -1.
+            // `find(needle[, from]) -> May<Int64>` — Has(i) or Not (never -1 at surface).
             let (needle_args, from_default) = match args.len() {
                 1 => (args, true),
                 2 => (args, false),
@@ -3226,7 +3270,65 @@ fn lower_bytes_method(
                 ctx.assign(z.clone(), Ty::Int64, RValue::Int(0));
                 all.push(z);
             }
-            emit_call_result(ctx, Callee::Builtin("bytes_find".into()), all, Ty::Int64)
+            let idx = ctx.fresh("findi");
+            ctx.assign(
+                idx.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::Builtin("bytes_find".into()),
+                    args: all,
+                },
+            );
+            // Wrap runtime -1 / index into May<Int64>.
+            let may_ty = Ty::May {
+                inner: Box::new(Ty::Int64),
+            };
+            let out = ctx.fresh("findm");
+            init_place(ctx, &out, &may_ty)?;
+            let zero = ctx.fresh("fz");
+            ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
+            let missing = ctx.fresh("fmiss");
+            ctx.assign(
+                missing.clone(),
+                Ty::Bool,
+                RValue::Binary {
+                    op: BinaryOp::Lt,
+                    left: idx.clone(),
+                    right: zero,
+                },
+            );
+            let outer = std::mem::take(&mut ctx.stmts);
+            let mut then_body = Vec::new();
+            let dummy = Place {
+                name: format!("_notp{}", ctx.temps),
+            };
+            ctx.temps += 1;
+            then_body.push(Stmt::Assign {
+                place: out.clone(),
+                ty: may_ty.clone(),
+                value: RValue::MayMake {
+                    tag: MayTag::Not,
+                    payload: dummy,
+                    may_ty: may_ty.clone(),
+                },
+            });
+            let mut else_body = Vec::new();
+            else_body.push(Stmt::Assign {
+                place: out.clone(),
+                ty: may_ty.clone(),
+                value: RValue::MayMake {
+                    tag: MayTag::Has,
+                    payload: idx,
+                    may_ty: may_ty.clone(),
+                },
+            });
+            ctx.stmts = outer;
+            ctx.stmts.push(Stmt::If {
+                cond: missing,
+                then_body,
+                else_body,
+            });
+            Ok((out, may_ty))
         }
         "toString" => {
             if !args.is_empty() {
@@ -3408,9 +3510,12 @@ fn lower_arg_for_formal(
 }
 
 fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)> {
-    let (trial_p, trial_ty) = lower_expr(ctx, inner)?;
-    let Some((ok_ty, err_ty)) = trial_parts(&trial_ty) else {
-        return Err(Error::at("`?` expects a Trial value", span));
+    let (scrut_p, scrut_ty) = lower_expr(ctx, inner)?;
+    if is_may(&scrut_ty) {
+        return lower_try_may(ctx, scrut_p, scrut_ty, span);
+    }
+    let Some((ok_ty, err_ty)) = trial_parts(&scrut_ty) else {
+        return Err(Error::at("`?` expects a Trial or May value", span));
     };
     let ok_ty = ok_ty.clone();
     let err_ty = err_ty.clone();
@@ -3419,7 +3524,7 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
         Ty::Trial { ok, err } => (ok.as_ref().clone(), err.as_ref().clone()),
         _ => {
             return Err(Error::at(
-                "`?` requires the enclosing function to return Trial",
+                "`?` on Trial requires the enclosing function to return Trial",
                 span,
             ));
         }
@@ -3432,7 +3537,7 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
     }
 
     let tag = ctx.fresh("tag");
-    ctx.assign(tag.clone(), Ty::Int64, RValue::TrialTag(trial_p.clone()));
+    ctx.assign(tag.clone(), Ty::Int64, RValue::TrialTag(scrut_p.clone()));
     let zero = ctx.fresh("z");
     ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
     let is_fail = ctx.fresh("isf");
@@ -3450,11 +3555,11 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
     // Drops use the same helper as explicit `return` (Assign-tracked locals only; not params).
     let outer = std::mem::take(&mut ctx.stmts);
     let mut then_body = Vec::new();
-    if trial_ty == fn_ret {
+    if scrut_ty == fn_ret {
         append_return_with_drops(
             &mut then_body,
             &ctx.drop_places,
-            Some(trial_p.clone()),
+            Some(scrut_p.clone()),
             &fn_ret,
         );
     } else {
@@ -3467,7 +3572,7 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
             then_body.push(Stmt::Assign {
                 place: err_p.clone(),
                 ty: err_ty.clone(),
-                value: RValue::TrialErr(trial_p.clone()),
+                value: RValue::TrialErr(scrut_p.clone()),
             });
             // needs_drop (not is_heap): User err payloads field-walk via emit_rc.
             if needs_drop(&err_ty) {
@@ -3506,7 +3611,7 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
         ctx.stmts.push(Stmt::Assign {
             place: payload.clone(),
             ty: ok_ty.clone(),
-            value: RValue::TrialOk(trial_p),
+            value: RValue::TrialOk(scrut_p),
         });
         // Extracted payload shares ownership with the trial until fn end; dup if droppable
         // (String/Bytes/User — User field-walks heap members once).
@@ -3521,6 +3626,108 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
     Ok((payload, ok_ty))
 }
 
+fn lower_try_may(
+    ctx: &mut LowerCtx,
+    may_p: Place,
+    may_ty: Ty,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let inner_ty = may_inner(&may_ty)
+        .ok_or_else(|| Error::at("`?` expects a May value", span))?
+        .clone();
+    let fn_ret = ctx.fn_ret.clone();
+    if !is_may(&fn_ret) {
+        return Err(Error::at(
+            "`?` on May requires the enclosing function to return May",
+            span,
+        ));
+    }
+    // Payload monomorph must match when rewrapping is a no-op; different May inners
+    // are ok only when returning the same May value wholesale on Not.
+    let ret_inner = may_inner(&fn_ret).unwrap().clone();
+
+    let tag = ctx.fresh("mtag");
+    ctx.assign(tag.clone(), Ty::Int64, RValue::MayTag(may_p.clone()));
+    let zero = ctx.fresh("mz");
+    ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
+    let is_not = ctx.fresh("isn");
+    ctx.assign(
+        is_not.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Ne,
+            left: tag,
+            right: zero,
+        },
+    );
+
+    let outer = std::mem::take(&mut ctx.stmts);
+    let mut then_body = Vec::new();
+    if may_ty == fn_ret {
+        append_return_with_drops(
+            &mut then_body,
+            &ctx.drop_places,
+            Some(may_p.clone()),
+            &fn_ret,
+        );
+    } else {
+        // Not has no payload — build Not of enclosing May.
+        let dummy = Place {
+            name: format!("_qnot{}", ctx.temps),
+        };
+        ctx.temps += 1;
+        let ret_may = Place {
+            name: format!("_qret{}", ctx.temps),
+        };
+        ctx.temps += 1;
+        then_body.push(Stmt::Assign {
+            place: ret_may.clone(),
+            ty: fn_ret.clone(),
+            value: RValue::MayMake {
+                tag: MayTag::Not,
+                payload: dummy,
+                may_ty: fn_ret.clone(),
+            },
+        });
+        append_return_with_drops(&mut then_body, &ctx.drop_places, Some(ret_may), &fn_ret);
+    }
+    ctx.stmts = outer;
+    ctx.stmts.push(Stmt::If {
+        cond: is_not,
+        then_body,
+        else_body: Vec::new(),
+    });
+
+    let payload = ctx.fresh("has");
+    if inner_ty == Ty::Void {
+        // no payload
+    } else {
+        ctx.stmts.push(Stmt::Assign {
+            place: payload.clone(),
+            ty: inner_ty.clone(),
+            value: RValue::MayValue(may_p),
+        });
+        if needs_drop(&inner_ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: payload.clone(),
+                ty: inner_ty.clone(),
+            });
+        }
+    }
+    // When Has payload types differ, coerce integers if needed.
+    if inner_ty != ret_inner && is_int(&inner_ty) && is_int(&ret_inner) {
+        let coerced = coerce_place(ctx, payload, &inner_ty, &ret_inner, span)?;
+        return Ok((coerced, ret_inner));
+    }
+    if inner_ty != ret_inner && inner_ty != Ty::Void {
+        return Err(Error::at(
+            format!("`?` May payload {inner_ty:?} does not match enclosing May<{ret_inner:?}>"),
+            span,
+        ));
+    }
+    Ok((payload, inner_ty))
+}
+
 fn lower_match(
     ctx: &mut LowerCtx,
     scrutinee: &Expr,
@@ -3529,32 +3736,61 @@ fn lower_match(
 ) -> Result<(Place, Ty)> {
     if arms.len() != 2 {
         return Err(Error::at(
-            "match on Trial requires exactly Pass and Fail arms",
+            "match requires exactly two arms (Pass/Fail or Has/Not)",
             span,
         ));
     }
 
+    let (scrut_p, scrut_ty) = lower_expr(ctx, scrutinee)?;
+    if is_may(&scrut_ty) {
+        return lower_match_may(ctx, scrut_p, scrut_ty, arms, span);
+    }
+    if is_trial(&scrut_ty) {
+        return lower_match_trial(ctx, scrut_p, scrut_ty, arms, span);
+    }
+    Err(Error::at("match only supports Trial or May", span))
+}
+
+fn lower_match_trial(
+    ctx: &mut LowerCtx,
+    scrut_p: Place,
+    scrut_ty: Ty,
+    arms: &[MatchArm],
+    span: Span,
+) -> Result<(Place, Ty)> {
     let mut pass_arm: Option<&MatchArm> = None;
     let mut fail_arm: Option<&MatchArm> = None;
     for arm in arms {
         match &arm.pattern {
-            Pattern::Variant { name, .. } if name == "Pass" => {
-                if pass_arm.is_some() {
-                    return Err(Error::at("duplicate Pass arm", span));
+            Pattern::Variant {
+                name,
+                has_payload,
+                span: pspan,
+                ..
+            } if name == "Pass" || name == "Fail" => {
+                if !has_payload {
+                    return Err(Error::at(
+                        format!("`{name}` pattern requires a binding `(name)` or `(_)`"),
+                        *pspan,
+                    ));
                 }
-                pass_arm = Some(arm);
-            }
-            Pattern::Variant { name, .. } if name == "Fail" => {
-                if fail_arm.is_some() {
-                    return Err(Error::at("duplicate Fail arm", span));
+                if name == "Pass" {
+                    if pass_arm.is_some() {
+                        return Err(Error::at("duplicate Pass arm", span));
+                    }
+                    pass_arm = Some(arm);
+                } else {
+                    if fail_arm.is_some() {
+                        return Err(Error::at("duplicate Fail arm", span));
+                    }
+                    fail_arm = Some(arm);
                 }
-                fail_arm = Some(arm);
             }
             Pattern::Variant {
                 name, span: pspan, ..
             } => {
                 return Err(Error::at(
-                    format!("unsupported match pattern `{name}`"),
+                    format!("unsupported match pattern `{name}` for Trial"),
                     *pspan,
                 ));
             }
@@ -3563,7 +3799,6 @@ fn lower_match(
     let pass_arm = pass_arm.ok_or_else(|| Error::at("match missing Pass arm", span))?;
     let fail_arm = fail_arm.ok_or_else(|| Error::at("match missing Fail arm", span))?;
 
-    let (scrut_p, scrut_ty) = lower_expr(ctx, scrutinee)?;
     let Some((ok_ty, err_ty)) = trial_parts(&scrut_ty) else {
         return Err(Error::at("match only supports Trial", span));
     };
@@ -3601,16 +3836,7 @@ fn lower_match(
         ctx.pop_scope();
         ty
     };
-    let result_ty = match (&pass_ty, &fail_ty) {
-        (Ty::Void, Ty::Void) => Ty::Void,
-        (a, b) if a == b => a.clone(),
-        (a, b) => {
-            return Err(Error::at(
-                format!("match arms have different types ({a:?} vs {b:?})"),
-                span,
-            ));
-        }
-    };
+    let result_ty = unify_match_arm_tys(&pass_ty, &fail_ty, span)?;
 
     let out = if result_ty == Ty::Void {
         None
@@ -3636,9 +3862,6 @@ fn lower_match(
     let outer = std::mem::take(&mut ctx.stmts);
 
     ctx.push_scope();
-    // Fresh bind places per match: same source bind name across sequential matches must
-    // not share one C local (overwrite would leak the previous heap value).
-    // Extract once into the bind and Dup once (needs_drop walks User fields).
     let pass_place = ctx.fresh("mb");
     if ok_ty != Ty::Void {
         ctx.stmts.push(Stmt::Assign {
@@ -3653,28 +3876,13 @@ fn lower_match(
             });
         }
     }
-    // Bind name if present (discard `_` → None: no define; extract place still dropped at fn end).
     if let Some(ref name) = pass_bind {
         ctx.define(name, ok_ty.clone(), false, pass_place);
     }
-    // Pattern discard `_`: body `_` is ordinary lookup (outer scope only).
     let pass_val = lower_block_into(ctx, &pass_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut then_body = std::mem::take(&mut ctx.stmts);
-    if let (Some(out_p), Some(pv)) = (&out, pass_val) {
-        // Copy result into out (dup if heap/trial-with-heap).
-        if needs_drop(&result_ty) {
-            then_body.push(Stmt::Dup {
-                place: pv.clone(),
-                ty: result_ty.clone(),
-            });
-        }
-        then_body.push(Stmt::Assign {
-            place: out_p.clone(),
-            ty: result_ty.clone(),
-            value: RValue::Use(pv),
-        });
-    }
+    assign_match_result(&mut then_body, &out, pass_val, &result_ty);
 
     ctx.push_scope();
     let fail_place = ctx.fresh("mb");
@@ -3697,19 +3905,7 @@ fn lower_match(
     let fail_val = lower_block_into(ctx, &fail_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut else_body = std::mem::take(&mut ctx.stmts);
-    if let (Some(out_p), Some(fv)) = (&out, fail_val) {
-        if needs_drop(&result_ty) {
-            else_body.push(Stmt::Dup {
-                place: fv.clone(),
-                ty: result_ty.clone(),
-            });
-        }
-        else_body.push(Stmt::Assign {
-            place: out_p.clone(),
-            ty: result_ty.clone(),
-            value: RValue::Use(fv),
-        });
-    }
+    assign_match_result(&mut else_body, &out, fail_val, &result_ty);
 
     ctx.stmts = outer;
     if let Some(ref out_p) = out {
@@ -3721,6 +3917,201 @@ fn lower_match(
         else_body,
     });
 
+    match_result_place(ctx, out, result_ty)
+}
+
+fn lower_match_may(
+    ctx: &mut LowerCtx,
+    scrut_p: Place,
+    scrut_ty: Ty,
+    arms: &[MatchArm],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let mut has_arm: Option<&MatchArm> = None;
+    let mut not_arm: Option<&MatchArm> = None;
+    for arm in arms {
+        match &arm.pattern {
+            Pattern::Variant {
+                name,
+                has_payload,
+                span: pspan,
+                ..
+            } if name == "Has" => {
+                if !has_payload {
+                    return Err(Error::at(
+                        "`Has` pattern requires a binding `(name)` or `(_)`",
+                        *pspan,
+                    ));
+                }
+                if has_arm.is_some() {
+                    return Err(Error::at("duplicate Has arm", span));
+                }
+                has_arm = Some(arm);
+            }
+            Pattern::Variant {
+                name,
+                has_payload,
+                bind,
+                span: pspan,
+                ..
+            } if name == "Not" => {
+                if *has_payload {
+                    return Err(Error::at(
+                        "`Not` pattern takes no binding (write `Not { … }`)",
+                        *pspan,
+                    ));
+                }
+                if bind.is_some() {
+                    return Err(Error::at("`Not` pattern takes no binding", *pspan));
+                }
+                if not_arm.is_some() {
+                    return Err(Error::at("duplicate Not arm", span));
+                }
+                not_arm = Some(arm);
+            }
+            Pattern::Variant {
+                name, span: pspan, ..
+            } => {
+                return Err(Error::at(
+                    format!("unsupported match pattern `{name}` for May"),
+                    *pspan,
+                ));
+            }
+        }
+    }
+    let has_arm = has_arm.ok_or_else(|| Error::at("match missing Has arm", span))?;
+    let not_arm = not_arm.ok_or_else(|| Error::at("match missing Not arm", span))?;
+
+    let inner_ty = may_inner(&scrut_ty)
+        .ok_or_else(|| Error::at("match only supports May", span))?
+        .clone();
+
+    let has_bind = match &has_arm.pattern {
+        Pattern::Variant { bind, .. } => bind.clone(),
+    };
+
+    let has_ty = {
+        ctx.push_scope();
+        if let Some(ref name) = has_bind {
+            let pp = Place {
+                name: sanitize_name(name),
+            };
+            ctx.define(name, inner_ty.clone(), false, pp);
+        }
+        let ty = infer_block_ty(ctx, &has_arm.body)?;
+        ctx.pop_scope();
+        ty
+    };
+    let not_ty = {
+        ctx.push_scope();
+        let ty = infer_block_ty(ctx, &not_arm.body)?;
+        ctx.pop_scope();
+        ty
+    };
+    let result_ty = unify_match_arm_tys(&has_ty, &not_ty, span)?;
+
+    let out = if result_ty == Ty::Void {
+        None
+    } else {
+        Some(ctx.fresh("m"))
+    };
+
+    let tag = ctx.fresh("mtag");
+    ctx.assign(tag.clone(), Ty::Int64, RValue::MayTag(scrut_p.clone()));
+    let zero = ctx.fresh("mz");
+    ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
+    let is_has = ctx.fresh("ish");
+    ctx.assign(
+        is_has.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Eq,
+            left: tag,
+            right: zero,
+        },
+    );
+
+    let outer = std::mem::take(&mut ctx.stmts);
+
+    ctx.push_scope();
+    let has_place = ctx.fresh("mb");
+    if inner_ty != Ty::Void {
+        ctx.stmts.push(Stmt::Assign {
+            place: has_place.clone(),
+            ty: inner_ty.clone(),
+            value: RValue::MayValue(scrut_p),
+        });
+        if needs_drop(&inner_ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: has_place.clone(),
+                ty: inner_ty.clone(),
+            });
+        }
+    }
+    if let Some(ref name) = has_bind {
+        ctx.define(name, inner_ty.clone(), false, has_place);
+    }
+    let has_val = lower_block_into(ctx, &has_arm.body, &result_ty)?;
+    ctx.pop_scope();
+    let mut then_body = std::mem::take(&mut ctx.stmts);
+    assign_match_result(&mut then_body, &out, has_val, &result_ty);
+
+    ctx.push_scope();
+    let not_val = lower_block_into(ctx, &not_arm.body, &result_ty)?;
+    ctx.pop_scope();
+    let mut else_body = std::mem::take(&mut ctx.stmts);
+    assign_match_result(&mut else_body, &out, not_val, &result_ty);
+
+    ctx.stmts = outer;
+    if let Some(ref out_p) = out {
+        init_place(ctx, out_p, &result_ty)?;
+    }
+    ctx.stmts.push(Stmt::If {
+        cond: is_has,
+        then_body,
+        else_body,
+    });
+
+    match_result_place(ctx, out, result_ty)
+}
+
+fn unify_match_arm_tys(a: &Ty, b: &Ty, span: Span) -> Result<Ty> {
+    match (a, b) {
+        (Ty::Void, Ty::Void) => Ok(Ty::Void),
+        (x, y) if x == y => Ok(x.clone()),
+        (x, y) => Err(Error::at(
+            format!("match arms have different types ({x:?} vs {y:?})"),
+            span,
+        )),
+    }
+}
+
+fn assign_match_result(
+    body: &mut Vec<Stmt>,
+    out: &Option<Place>,
+    val: Option<Place>,
+    result_ty: &Ty,
+) {
+    if let (Some(out_p), Some(v)) = (out, val) {
+        if needs_drop(result_ty) {
+            body.push(Stmt::Dup {
+                place: v.clone(),
+                ty: result_ty.clone(),
+            });
+        }
+        body.push(Stmt::Assign {
+            place: out_p.clone(),
+            ty: result_ty.clone(),
+            value: RValue::Use(v),
+        });
+    }
+}
+
+fn match_result_place(
+    ctx: &mut LowerCtx,
+    out: Option<Place>,
+    result_ty: Ty,
+) -> Result<(Place, Ty)> {
     match out {
         Some(p) => Ok((p, result_ty)),
         None => {
@@ -3759,6 +4150,20 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                     tag: TrialTag::Pass,
                     payload: z,
                     trial_ty: ty.clone(),
+                },
+            );
+        }
+        Ty::May { inner } => {
+            // Zero as Not so branch-skipped drops are no-ops.
+            let z = ctx.fresh("mz");
+            init_place(ctx, &z, inner)?;
+            ctx.assign(
+                place.clone(),
+                ty.clone(),
+                RValue::MayMake {
+                    tag: MayTag::Not,
+                    payload: z,
+                    may_ty: ty.clone(),
                 },
             );
         }
@@ -4066,6 +4471,97 @@ fn coerce_payload(
     ))
 }
 
+fn lower_has(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    if args.len() != 1 {
+        return Err(Error::at("`Has` expects 1 argument", span));
+    }
+    let expr = match &args[0] {
+        Arg::Pos(e) => e,
+        Arg::Named { value, .. } => value,
+    };
+    let (payload_raw, pty) = lower_expr(ctx, expr)?;
+
+    if let Ty::May { inner } = ctx.fn_ret.clone() {
+        let expected = inner.as_ref().clone();
+        let payload = coerce_payload(ctx, payload_raw, &pty, &expected, span)?;
+        if needs_drop(&expected) {
+            ctx.stmts.push(Stmt::Dup {
+                place: payload.clone(),
+                ty: expected.clone(),
+            });
+        }
+        let p = ctx.fresh("may");
+        let ty = ctx.fn_ret.clone();
+        ctx.assign(
+            p.clone(),
+            ty.clone(),
+            RValue::MayMake {
+                tag: MayTag::Has,
+                payload,
+                may_ty: ty.clone(),
+            },
+        );
+        return Ok((p, ty));
+    }
+
+    // Infer Has(Int) → May<Int64>.
+    let payload = if pty == Ty::Int64 {
+        payload_raw
+    } else if is_int(&pty) {
+        coerce_place(ctx, payload_raw, &pty, &Ty::Int64, span)?
+    } else {
+        return Err(Error::at(
+            format!("`Has` payload type {pty:?} needs an annotated May return type"),
+            span,
+        ));
+    };
+    let ty = Ty::May {
+        inner: Box::new(Ty::Int64),
+    };
+    let p = ctx.fresh("may");
+    ctx.assign(
+        p.clone(),
+        ty.clone(),
+        RValue::MayMake {
+            tag: MayTag::Has,
+            payload,
+            may_ty: ty.clone(),
+        },
+    );
+    Ok((p, ty))
+}
+
+fn lower_not(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    if !args.is_empty() {
+        return Err(Error::at("`Not()` takes no arguments", span));
+    }
+    let ty = if let Ty::May { .. } = &ctx.fn_ret {
+        ctx.fn_ret.clone()
+    } else {
+        // Bare Not() without May return — default May<Int64> (find-shaped); prefer annotation.
+        return Err(Error::at(
+            "`Not()` requires an enclosing `-> May<…>` (or annotate the function)",
+            span,
+        ));
+    };
+    let dummy = ctx.fresh("notp");
+    // Dummy payload zero for compound literal (ignored when tag=Not).
+    if let Ty::May { inner } = &ty {
+        init_place(ctx, &dummy, inner)?;
+    }
+    let p = ctx.fresh("may");
+    ctx.assign(
+        p.clone(),
+        ty.clone(),
+        RValue::MayMake {
+            tag: MayTag::Not,
+            payload: dummy,
+            may_ty: ty.clone(),
+        },
+    );
+    Ok((p, ty))
+}
+
 fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
     match callee {
         "println" | "print" => {
@@ -4113,6 +4609,8 @@ fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Res
             Ok((p, Ty::Void))
         }
         "Pass" | "Fail" => lower_pass_fail(ctx, callee, args, span),
+        "Has" => lower_has(ctx, args, span),
+        "Not" => lower_not(ctx, args, span),
         "Bytes" => {
             // `Bytes(n)` — zero-filled buffer (R9 / D18). Not a user type.
             lower_bytes_new(ctx, args, span)

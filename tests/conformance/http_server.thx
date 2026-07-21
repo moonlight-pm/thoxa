@@ -6,11 +6,9 @@ import http from "./httplib/Http"
 import { Router } from "./httplib/Router"
 
 fn statusLine(resp!: Bytes) -> String {
-    let cr = resp.find(Bytes.fromString("\r"))
-    if cr < 0 {
-        resp.toString()
-    } else {
-        resp.slice(0, cr).toString()
+    match resp.find(Bytes.fromString("\r")) {
+        Has(cr) { resp.slice(0, cr).toString() }
+        Not { resp.toString() }
     }
 }
 

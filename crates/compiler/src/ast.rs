@@ -303,12 +303,16 @@ pub struct MatchArm {
 
 #[derive(Debug, Clone)]
 pub enum Pattern {
-    /// `Pass(name)` / `Fail(name)`. `bind` is `None` for pattern discard `_` (D66).
+    /// `Pass(name)` / `Fail(name)` / `Has(name)` — `bind` is `None` for discard `_` (D66).
+    /// Nullary `Not` has `bind: None` and no parentheses (`has_payload: false`).
     /// Body `_` is not special — ordinary name lookup (no pattern binding is introduced).
     Variant {
         name: String,
+        /// Bound name, or `None` for `_` discard / nullary patterns.
         bind: Option<String>,
         bind_span: Span,
+        /// `false` for nullary `Not` (no `(…)`); `true` for `Pass`/`Fail`/`Has(…)`.
+        has_payload: bool,
         span: Span,
     },
 }

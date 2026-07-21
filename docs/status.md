@@ -40,6 +40,7 @@ HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 | R9+ | Router type `handle(Request) -> Response` (D70) | `router` (via `writeResponse`) |
 | R9+ | Bounded multi-request static HTTP server (D67) | `http_server` |
 | R9+ | Directory entry `Main.thx` (D68) | `pkgmain` |
+| R9+ | `May<T>` / `Has` / `Not`; `Bytes.find` → `May<Int64>` (D85) | `mays`, `bytes` (+ Http) |
 
 ## Open design notes (pointers only)
 
@@ -57,6 +58,7 @@ HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 
 ## Last session
 
+- **2026-07-20 (May + find):** Builtin `May<T>` / `Has` / `Not` (Trial-shaped monomorphs); match + `?`; `Bytes.find` → `May<Int64>` (D85 / D46′). Conformance `mays`; Http/bytes/router/http_server call sites. Deferred: inferred fallible returns, May↔Trial `?` mix.
 - **2026-07-20 (optional type body):** Types with no fields/methods may omit `{}` — `type Header(name: String, value: String)` and `type Marker`. Empty `{}` still accepted. Parser unit test; Http/Header/Request/Response + a few conformance types updated. Decision D84.
 - **2026-07-20 (LSP library check):** `check_source` no longer requires `fn main` on library modules (Io/Http/…). `LowerOptions.require_main`; buffer with main still gated. Unit tests + `thoxa check iolib/Io.thx` clean. Decision D83.
 - **2026-07-20 (PR9 Io polish):** Open flags `oRdonly`/`oWronly`/`oRdwr`; `thoxa_errno` RT + libc `strerror` extern; Fail messages `"open {path}: …"`; cgen String return marshal (`thoxa_string_from_cstr`); `file_io` asserts constant + ENOENT strerror. File type deferred (method mut-field write-back). Decisions D80–D82. `cargo make test` 30/30.

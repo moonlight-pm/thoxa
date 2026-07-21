@@ -1155,7 +1155,17 @@ impl Parser {
 
     fn parse_pattern(&mut self) -> Result<Pattern> {
         let (name, name_span) = self.expect_ident()?;
-        self.expect_kind(&TokenKind::LParen)?;
+        // Nullary `Not` (May): no parentheses. Payload variants require `(bind)`.
+        if !self.at(TokenKind::LParen) {
+            return Ok(Pattern::Variant {
+                name,
+                bind: None,
+                bind_span: name_span,
+                has_payload: false,
+                span: name_span,
+            });
+        }
+        self.bump();
         let (bind_raw, bind_span) = self.expect_ident()?;
         // Pattern `_` is discard only here (D66). Body `_` is ordinary lookup elsewhere.
         let bind = if bind_raw == "_" {
@@ -1169,6 +1179,7 @@ impl Parser {
             name,
             bind,
             bind_span,
+            has_payload: true,
             span: Span::new(name_span.start, end),
         })
     }
