@@ -41,10 +41,15 @@ pub struct CheckDiagnostic {
 /// Returns an empty vec on success, or a single diagnostic on the first error
 /// (matches the compiler's first-error model; API is `Vec` for multi-diag later).
 ///
+/// **Entry vs library:**
+/// - Buffer defines `fn main` → program check (`require_main`).
+/// - No `main` → library check (typecheck exports/types/fns without requiring
+///   an entry point). Fixes false diagnostics on `iolib/`, `httplib/`, etc.
+///
 /// **Imports:**
-/// - No `import` items → single-file `lower_module` on the buffer only.
+/// - No `import` items → single-file lower on the buffer only.
 /// - Has imports and `filename` is an existing file path → load the package from
-///   disk for dependencies, but **overlay** the entry module's AST with the
+///   disk for dependencies, but **overlay** the open module's AST with the
 ///   buffer parse (so unsaved edits on the open file are checked).
 /// - Use [`check_source_with_overlays`] so other open buffers also replace disk.
 /// - Has imports but `filename` is not a real path → one diagnostic explaining
@@ -66,6 +71,15 @@ pub fn check_source_with_overlays(
     }
 }
 
+fn module_has_main(module: &Module) -> bool {
+    module.items.iter().any(|item| {
+        matches!(
+            item,
+            Item::Function(f) if f.name == "main"
+        )
+    })
+}
+
 fn check_source_inner(
     filename: &str,
     text: &str,
@@ -78,9 +92,14 @@ fn check_source_inner(
         .items
         .iter()
         .any(|item| matches!(item, Item::Import(_)));
+    let has_main = module_has_main(&module);
+    let opts = mir::LowerOptions {
+        require_main: has_main,
+    };
 
     if !has_imports {
-        mir::lower_module(&module)?;
+        // Library modules (Io.thx, Helper.thx, …) have no main — still typecheck.
+        mir::lower_module_with(&module, opts)?;
         return Ok(());
     }
 
@@ -94,36 +113,36 @@ fn check_source_inner(
     }
 
     let mut package = loader::load_package(path)?;
-    overlay_entry_ast(&mut package, module, path);
+    overlay_open_ast(&mut package, module, path, has_main);
     apply_open_overlays(&mut package, overlays, path);
-    mir::lower_package(&package)?;
+    mir::lower_package_with(&package, opts)?;
     Ok(())
 }
 
-/// Replace the entry module's AST with the in-memory parse of the buffer.
-fn overlay_entry_ast(package: &mut Package, module: Module, entry_path: &Path) {
-    let entry_canon = canonicalize_soft(entry_path);
+/// Replace the open module's AST with the in-memory buffer parse.
+///
+/// When the buffer defines `fn main`, keep/promote it as package entry. When it
+/// does not (library module open as the load root), demote `is_entry` so names
+/// mangle as a library and `require_main` can be off.
+fn overlay_open_ast(package: &mut Package, module: Module, open_path: &Path, has_main: bool) {
+    let open_canon = canonicalize_soft(open_path);
     for m in &mut package.modules {
-        if m.is_entry {
+        if m.is_entry || paths_equal(&m.path, open_path, open_canon.as_ref()) {
             m.ast = module;
-            return;
-        }
-        if paths_equal(&m.path, entry_path, entry_canon.as_ref()) {
-            m.ast = module;
-            m.is_entry = true;
+            m.is_entry = has_main;
             return;
         }
     }
-    // Fallback: if load_package somehow lacked entry, push one.
+    // Fallback: if load_package somehow lacked the open file, push one.
     package.modules.push(SourceModule {
-        id: entry_path
+        id: open_path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("Main")
             .to_string(),
-        path: entry_path.to_path_buf(),
+        path: open_path.to_path_buf(),
         ast: module,
-        is_entry: true,
+        is_entry: has_main,
     });
 }
 
@@ -409,6 +428,62 @@ mod tests {
         assert_eq!(diags.len(), 1, "{diags:?}");
         assert!(diags[0].message.contains("Bool"), "{}", diags[0].message);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn library_module_without_main_ok() {
+        // Export-only modules must typecheck without `fn main` (LSP on Io.thx / Http.thx).
+        let src = "export fn answer() -> Int64 { 42 }\nexport let n = 1\n";
+        let diags = check_source("Helper.thx", src);
+        assert!(diags.is_empty(), "library should not require main: {diags:?}");
+    }
+
+    #[test]
+    fn library_module_still_reports_type_errors() {
+        let src = "export fn bad() -> Int64 { if 3 { 0 } 0 }\n";
+        let diags = check_source("Lib.thx", src);
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert!(diags[0].message.contains("Bool"), "{}", diags[0].message);
+        assert!(
+            !diags[0].message.contains("main"),
+            "should not be a missing-main error: {}",
+            diags[0].message
+        );
+    }
+
+    #[test]
+    fn library_with_imports_no_main_ok() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa-lib-check-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("Helper.thx");
+        let lib = dir.join("Lib.thx");
+        fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
+        let src = "import { answer } from \"./Helper\"\nexport fn use() -> Int64 { answer() }\n";
+        fs::write(&lib, src).unwrap();
+        let diags = check_source(lib.to_str().unwrap(), src);
+        assert!(diags.is_empty(), "library with imports: {diags:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn program_without_main_still_errors() {
+        // Single-file program path used to always require main via lower_module.
+        // With require_main only when main is present, bare helpers are libs.
+        // A true program check is `thoxa build` / buffer that *has* a broken main.
+        let src = "fn main() -> Bool { true }\n";
+        let diags = check_source("<input>", src);
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert!(
+            diags[0].message.to_lowercase().contains("int64")
+                || diags[0].message.contains("main"),
+            "{}",
+            diags[0].message
+        );
     }
 
     #[test]

@@ -1,5 +1,5 @@
 ## Trial monomorphs: Void/String and User/String (post-R9).
-type Box(n: Int64) {}
+type Box(n: Int64)
 
 fn asVoid(ok!: Bool) -> Trial<Void, String> {
     if ok {

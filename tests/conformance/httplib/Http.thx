@@ -2,7 +2,7 @@
 ## Pure protocol: no syscalls. Request body is always empty Bytes until body reading lands.
 
 ## One header field: name and value as Strings (ASCII for this demo).
-export type Header(name: String, value: String) {}
+export type Header(name: String, value: String)
 
 ## A parsed request. `body` is always empty Bytes until body reading lands.
 export type Request(
@@ -11,7 +11,7 @@ export type Request(
     version: String,
     headers: Array<Header>,
     body: Bytes
-) {}
+)
 
 ## A response to serialize: status line, headers, body.
 export type Response(
@@ -19,7 +19,7 @@ export type Response(
     reason: String,
     headers: Array<Header>,
     body: Bytes
-) {}
+)
 
 ## Parse a raw request buffer into a Request. Fails on incomplete or malformed input.
 ## Body bytes after the header separator are ignored; `body` is always empty.

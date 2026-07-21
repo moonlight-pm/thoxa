@@ -57,6 +57,8 @@ HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 
 ## Last session
 
+- **2026-07-20 (optional type body):** Types with no fields/methods may omit `{}` — `type Header(name: String, value: String)` and `type Marker`. Empty `{}` still accepted. Parser unit test; Http/Header/Request/Response + a few conformance types updated. Decision D84.
+- **2026-07-20 (LSP library check):** `check_source` no longer requires `fn main` on library modules (Io/Http/…). `LowerOptions.require_main`; buffer with main still gated. Unit tests + `thoxa check iolib/Io.thx` clean. Decision D83.
 - **2026-07-20 (PR9 Io polish):** Open flags `oRdonly`/`oWronly`/`oRdwr`; `thoxa_errno` RT + libc `strerror` extern; Fail messages `"open {path}: …"`; cgen String return marshal (`thoxa_string_from_cstr`); `file_io` asserts constant + ENOENT strerror. File type deferred (method mut-field write-back). Decisions D80–D82. `cargo make test` 30/30.
 - **2026-07-20 (status):** Confirmed Zed manual leftover done — `extras/` committed, `[grammars.thoxa].rev` pinned to commit with `parser.c`, install/sync via `cargo make zed` + README. Removed from Next.
 - **2026-07-20 (editor PR7: cross-module):** `lsp/crossmodule` lazy resolve for hover/def: selective + alias, namespace name/member, `./`+`~/`. Open buffers win over disk (path-matched). `Binding.import_origin`; index stores AST. `check_source_with_overlays` for package check. Unit + handler tests. Decisions D78/D79. Editor phase 2 complete.

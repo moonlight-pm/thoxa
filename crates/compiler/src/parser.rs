@@ -208,7 +208,7 @@ impl Parser {
         self.expect_kind(&TokenKind::Type)?;
         let (name, name_span) = self.expect_ident()?;
 
-        // R3: `type Point(x: Int64) { methods }`
+        // R3: `type Point(x: Int64)` or `type Point(x: Int64) { methods }`
         // R7: `type Regs { mut a: UInt32 … }` (no constructor paren list)
         let mut params = Vec::new();
         if self.at(TokenKind::LParen) {
@@ -226,22 +226,26 @@ impl Parser {
             self.expect_kind(&TokenKind::RParen)?;
         }
 
-        self.expect_kind(&TokenKind::LBrace)?;
+        // Body is optional: `type Point(x: Int64, y: Int64)` needs no `{}`
+        // when there are no fields or methods. Empty `{}` still accepted.
         let mut fields = Vec::new();
         let mut methods = Vec::new();
-        while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
-            if self.at(TokenKind::Fn) || self.at(TokenKind::Export) {
-                methods.push(self.parse_method()?);
-            } else if self.at(TokenKind::Mut) || self.at(TokenKind::Let) {
-                fields.push(self.parse_field_decl()?);
-            } else {
-                return Err(Error::at(
-                    "expected field (`mut`/`let name: Type`) or method in type body",
-                    self.peek_span(),
-                ));
+        if self.at(TokenKind::LBrace) {
+            self.bump();
+            while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
+                if self.at(TokenKind::Fn) || self.at(TokenKind::Export) {
+                    methods.push(self.parse_method()?);
+                } else if self.at(TokenKind::Mut) || self.at(TokenKind::Let) {
+                    fields.push(self.parse_field_decl()?);
+                } else {
+                    return Err(Error::at(
+                        "expected field (`mut`/`let name: Type`) or method in type body",
+                        self.peek_span(),
+                    ));
+                }
             }
+            self.expect_kind(&TokenKind::RBrace)?;
         }
-        self.expect_kind(&TokenKind::RBrace)?;
 
         if !params.is_empty() && !fields.is_empty() {
             return Err(Error::at(
@@ -1523,6 +1527,46 @@ mod tests {
                 assert!(t.methods[0].exported);
             }
             _ => panic!("expected type"),
+        }
+    }
+
+    #[test]
+    fn parse_type_without_body() {
+        let module = parse(
+            r#"
+            type Header(name: String, value: String)
+            type Marker
+            type EmptyBody(n: Int64) {}
+            fn main() -> Int64 { 0 }
+        "#,
+        );
+        assert_eq!(module.items.len(), 4);
+        match &module.items[0] {
+            Item::Type(t) => {
+                assert_eq!(t.name, "Header");
+                assert_eq!(t.params.len(), 2);
+                assert!(t.fields.is_empty());
+                assert!(t.methods.is_empty());
+            }
+            _ => panic!("expected Header type"),
+        }
+        match &module.items[1] {
+            Item::Type(t) => {
+                assert_eq!(t.name, "Marker");
+                assert!(t.params.is_empty());
+                assert!(t.fields.is_empty());
+                assert!(t.methods.is_empty());
+            }
+            _ => panic!("expected Marker type"),
+        }
+        match &module.items[2] {
+            Item::Type(t) => {
+                assert_eq!(t.name, "EmptyBody");
+                assert_eq!(t.params.len(), 1);
+                assert!(t.fields.is_empty());
+                assert!(t.methods.is_empty());
+            }
+            _ => panic!("expected EmptyBody type"),
         }
     }
 

@@ -20,7 +20,7 @@ type Pair(name: String, data: Bytes) {
 }
 
 ## User as Trial err payload.
-type ErrMsg(text: String) {}
+type ErrMsg(text: String)
 
 fn makeBox(s!: String) -> Trial<Box, String> {
     if s == "" {

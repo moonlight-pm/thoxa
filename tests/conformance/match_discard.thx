@@ -2,7 +2,7 @@
 ## Discarded heap payloads are still dropped at function end (RC).
 ## Pattern `_` only; body `_` is ordinary lookup (no outer `_` here).
 
-type Box(n: Int64) {}
+type Box(n: Int64)
 
 fn half(x: Int64) -> Trial<Int64, String> {
     if x % 2 == 0 {

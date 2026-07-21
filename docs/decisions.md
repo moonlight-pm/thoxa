@@ -16,6 +16,18 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-20 — Optional empty type body
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D84 | Type body braces | `{}` optional when a type has no body fields and no methods | `type Header(name: String, value: String)` and bare `type Marker` are valid; empty `{}` still accepted. Body-field (R7) and method-bearing types still need `{ … }`. |
+
+## 2026-07-20 — LSP: library modules need no main
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D83 | Check `require_main` | Buffer defines `fn main` → require it; else library check (`LowerOptions.require_main = false`) | Fixes false “program requires `fn main`” on `iolib/`/`httplib/` etc. Build/run still always require main via `lower_package`. Open library demotes `is_entry` so names mangle as a library. |
+
 ## 2026-07-20 — post-R9 PR9: Io OpenMode + errno polish
 
 | ID | Decision | Choice | Notes |
@@ -61,7 +73,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D73 | Check API | `lsp::check_source(filename, text) -> Vec<CheckDiagnostic>` — lex → parse → MIR lower only (no cgen/`cc`) | First diagnostic only (compiler `Error`); `Vec` ready for multi later. Spans: UTF-8 byte offsets → LSP `Range` via `span::{byte_to_position,span_to_range}` with **UTF-16** character units. **Imports:** no `import` → `lower_module` on buffer; imports + path → `load_package` + entry overlay; open-buffer deps via **D79** `check_source_with_overlays`. |
+| D73 | Check API | `lsp::check_source(filename, text) -> Vec<CheckDiagnostic>` — lex → parse → MIR lower only (no cgen/`cc`) | First diagnostic only (compiler `Error`); `Vec` ready for multi later. Spans: UTF-8 byte offsets → LSP `Range` via `span::{byte_to_position,span_to_range}` with **UTF-16** character units. **Imports:** no `import` → single-file lower; imports + path → `load_package` + open-module overlay; open-buffer deps via **D79** `check_source_with_overlays`. **Main:** buffer with `fn main` → `require_main`; library modules without main typecheck freely (**D83**). |
 
 ## 2026-07-20 — Native editor / LSP plan
 

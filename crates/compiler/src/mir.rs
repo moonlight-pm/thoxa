@@ -627,22 +627,47 @@ impl LowerCtx {
     }
 }
 
-/// Lower a single-file module (wrapper used by tests).
+/// Options for MIR lowering.
+#[derive(Debug, Clone, Copy)]
+pub struct LowerOptions {
+    /// When true (build/run default), the package must define `fn main`.
+    /// When false (LSP / `thoxa check` on library modules), skip that gate.
+    pub require_main: bool,
+}
+
+impl Default for LowerOptions {
+    fn default() -> Self {
+        Self { require_main: true }
+    }
+}
+
+/// Lower a single-file module (wrapper used by tests / single-file programs).
 pub fn lower_module(module: &ast::Module) -> Result<Program> {
+    lower_module_with(module, LowerOptions::default())
+}
+
+/// Lower a single-file module with explicit options (e.g. library check, no main).
+pub fn lower_module_with(module: &ast::Module, opts: LowerOptions) -> Result<Program> {
+    let is_entry = opts.require_main;
     let pkg = Package {
         project_root: PathBuf::from("."),
         modules: vec![SourceModule {
             id: "Main".into(),
             path: PathBuf::from("Main.thx"),
             ast: module.clone(),
-            is_entry: true,
+            is_entry,
         }],
     };
-    lower_package(&pkg)
+    lower_package_with(&pkg, opts)
 }
 
-/// Lower a multi-file package into one MIR program.
+/// Lower a multi-file package into one MIR program (requires `fn main`).
 pub fn lower_package(package: &Package) -> Result<Program> {
+    lower_package_with(package, LowerOptions::default())
+}
+
+/// Lower a multi-file package with explicit options.
+pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Program> {
     let import_maps = loader::build_import_maps(package)?;
 
     // ---------- Phase 1: register types (mangled names) ----------
@@ -923,7 +948,7 @@ pub fn lower_package(package: &Package) -> Result<Program> {
         }
     }
 
-    if !fns.contains_key("main") {
+    if opts.require_main && !fns.contains_key("main") {
         return Err(Error::new("program requires `fn main`"));
     }
 
