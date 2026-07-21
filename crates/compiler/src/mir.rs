@@ -242,6 +242,8 @@ pub enum Callee {
         c_symbol: String,
         /// Parameter types (for C marshaling of String/Bytes).
         arg_tys: Vec<Ty>,
+        /// Return type (for C→Thoxa marshaling, e.g. `char*` → String).
+        ret_ty: Ty,
     },
 }
 
@@ -2866,6 +2868,7 @@ fn lower_method_call(
                     Callee::Extern {
                         c_symbol: sym.clone(),
                         arg_tys: sig.params.iter().map(|(_, t)| t.clone()).collect(),
+                        ret_ty: sig.ret.clone(),
                     }
                 } else {
                     Callee::User(sig.mangled.clone())
@@ -4152,6 +4155,7 @@ fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Res
                 Callee::Extern {
                     c_symbol: sym.clone(),
                     arg_tys: sig.params.iter().map(|(_, t)| t.clone()).collect(),
+                    ret_ty: sig.ret.clone(),
                 }
             } else {
                 Callee::User(sig.mangled.clone())

@@ -283,6 +283,7 @@ PR9 Io polish (optional, parallel after PR2)
 - **Files/components affected:** `tests/conformance/iolib/Io.thx`, `file_io.*`, `docs/*`
 - **Dependencies:** PR 2 (if File type returns)
 - **Acceptance:** Documented; tests still pass.
+- **Shipped (D80–D82):** `oRdonly`/`oWronly`/`oRdwr`; `thoxa_errno` + `strerror` extern; path+strerror Fail; cgen String return marshal. File type deferred (method mut-field write-back).
 
 ---
 

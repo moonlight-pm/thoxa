@@ -1,7 +1,10 @@
-## File I/O — `readFile` via iolib/Io (R9+ static-router pressure).
-import { readFile } from "./iolib/Io"
+## File I/O — `readFile` via iolib/Io (R9+; PR9 errno/OpenMode polish).
+import { readFile, oRdonly } from "./iolib/Io"
 
 fn main() -> Int64 {
+    ## OpenMode constant is exported (Linux O_RDONLY == 0).
+    println("oRdonly={oRdonly}")
+
     ## Happy path: whole-file read of a checked-in fixture (cwd = workspace root).
     match readFile("tests/conformance/io_data/sample.txt") {
         Pass(body) {
@@ -13,7 +16,7 @@ fn main() -> Int64 {
         }
     }
 
-    ## Missing file → Fail("open")
+    ## Missing file → Fail with path + strerror (ENOENT).
     match readFile("tests/conformance/io_data/does-not-exist.txt") {
         Pass(body) {
             println("unexpected={body.count}")

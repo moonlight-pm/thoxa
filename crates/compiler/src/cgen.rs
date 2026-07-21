@@ -590,7 +590,15 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                 }
                 out.push(')');
             }
-            Callee::Extern { c_symbol, arg_tys } => {
+            Callee::Extern {
+                c_symbol,
+                arg_tys,
+                ret_ty,
+            } => {
+                // C→Thoxa: libc `char *` returns become owned ThoxaString.
+                if matches!(ret_ty, Ty::String) {
+                    out.push_str("thoxa_string_from_cstr(");
+                }
                 let _ = write!(out, "{c_symbol}(");
                 for (i, a) in args.iter().enumerate() {
                     if i > 0 {
@@ -612,6 +620,9 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     }
                 }
                 out.push(')');
+                if matches!(ret_ty, Ty::String) {
+                    out.push(')');
+                }
             }
         },
         RValue::TrialMake {

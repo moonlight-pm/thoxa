@@ -1,26 +1,39 @@
 ## Io — file open/read/close (R9+ subset of oracle examples/http/Io.thx).
-## Free-function surface only: returning `File` (User+String) inside Trial trips RC
-## double-drops today (D59 zero-init unblocks match places; field-RC on User copy still soft).
-## OpenMode enum / errno+strerror deferred (named `ffi` root).
+## Free-function surface: whole-file `readFile` (File type deferred — method
+## mut-field write-back not yet in native). Open flags are Int32 constants
+## (ADT OpenMode waits on sum types). errno/strerror without a named `ffi` root:
+## `thoxa_errno` RT helper + libc `strerror` via `extern … from "c"`.
 
 extern fn sysOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
 extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
 extern fn sysLseek(fd!: Int32, offset!: Int64, whence!: Int32) -> Int64 from "c" "lseek"
 extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
+extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
+extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
 
-## Linux: O_RDONLY, SEEK_SET / SEEK_CUR / SEEK_END
-let oRdonly = 0
+## open(2) access modes (Linux / POSIX). Combinable O_CREAT/O_TRUNC later.
+export let oRdonly = 0
+export let oWronly = 1
+export let oRdwr = 2
+
+## lseek(2) whence values (Linux).
 let seekSet = 0
 let seekCur = 1
 let seekEnd = 2
 
+## "context: reason" from the current errno, for a Fail payload.
+fn fileErr(what!: String) -> String {
+    "{what}: {sysStrerror(sysErrno())}"
+}
+
 ## Read the entire contents of `path` as Bytes (open → size via lseek → read → close).
-## Fail tags: "open" | "seek" | "read". Directories open on Linux then fail at read — callers
-## that want index.html fallback treat any Fail the same (see Router).
+## Fail messages: "open …: <strerror>" | "seek …" | "read …". Directories open on
+## Linux then fail at read — callers that want index.html fallback treat any Fail
+## the same (see Router).
 export fn readFile(path!: String) -> Trial<Bytes, String> {
     let fd = sysOpen(path, oRdonly)
     if fd < 0 {
-        Fail("open")
+        Fail(fileErr("open {path}"))
     } else {
         let pos = sysLseek(fd, 0, seekCur)
         let end = sysLseek(fd, 0, seekEnd)
@@ -28,13 +41,13 @@ export fn readFile(path!: String) -> Trial<Bytes, String> {
         let size = end - pos
         if size < 0 {
             sysClose(fd)
-            Fail("seek")
+            Fail(fileErr("seek {path}"))
         } else {
             let buf = Bytes(size)
             let n = sysRead(fd, buf, size)
             sysClose(fd)
             if n < 0 {
-                Fail("read")
+                Fail(fileErr("read {path}"))
             } else {
                 if n < size {
                     Pass(buf.slice(0, n))

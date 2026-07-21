@@ -1,8 +1,13 @@
 #include "thoxa_rt.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+int32_t thoxa_errno(void) {
+    return (int32_t)errno;
+}
 
 void thoxa_print(const char *s) {
     if (s) {

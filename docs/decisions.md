@@ -16,6 +16,14 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-20 — post-R9 PR9: Io OpenMode + errno polish
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D80 | errno / strerror without `ffi` root | `thoxa_errno()` in `thoxa_rt` + `extern fn … from "c" "strerror"`; Fail via `fileErr("{what}: {strerror(errno)}")` | No named `import { errno, strerror } from "ffi"` (D30 still deferred). Path included in open/seek/read tags. Conformance expects English ENOENT text. |
+| D81 | OpenMode (native) | Exported Int32 module lets `oRdonly`/`oWronly`/`oRdwr` (POSIX 0/1/2) | ADT `OpenMode = ReadOnly \| …` deferred with sum types. Oracle-style `File` type deferred until method mut-field write-back (`fd = …` in methods). Free `readFile` remains the surface (D56). |
+| D82 | Extern String return | C `char*` → `thoxa_string_from_cstr(…)` in cgen | Completes D20 marshal for String *returns* (args already used `thoxa_string_cstr`). |
+
 ## 2026-07-20 — Editor PR7: cross-module + open-buffer overlay
 
 | ID | Decision | Choice | Notes |
@@ -124,8 +132,8 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D56 | File surface | Free `readFile(path) -> Trial<Bytes, String>` | Subset of oracle `Io.thx`; whole-file via lseek size; OpenMode/`File` type deferred (User+String in Trial RC soft) |
-| D58 | File errors | Simple `Fail("open"\|"read"\|"seek")` strings | errno/`strerror` need named `ffi` root (D30) — deferred like Net |
+| D56 | File surface | Free `readFile(path) -> Trial<Bytes, String>` | Subset of oracle `Io.thx`; whole-file via lseek size; **OpenMode constants shipped (D81)**; `File` type still deferred (method mut-field write-back) |
+| D58 | File errors | Was simple `Fail("open"\|"read"\|"seek")` | **Superseded by D80** — path + strerror via RT errno + libc extern |
 | D59 | User zero-init | Constructor-param User with String/Bytes fields zero as NULL heap | Match out-places; **field-RC hardened in D64** |
 | D60 | String equality | `==` / `!=` via `thoxa_string_eq` (length + bytes) | Ordering compares not supported |
 | D61 | Static Router | `handle(root, path) -> Bytes` HTTP response | Segments + `..` reject + index.html + Content-Type; **superseded by D70** (`Router` type + `Response`) |
@@ -180,7 +188,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 ### Notes
 
 - Oracle `examples/http` remains the north star; R9 proves modules + FFI + Bytes integration without inventing stdlib roots (`ffi` / `std/`).
-- errno/`strerror` not wrapped (would need named `ffi` root or local externs + TLS errno story).
+- errno/`strerror`: **shipped for Io (D80)** without named `ffi` root; Net still uses static Fail tags.
 - Constructor-param types were Int64/Bool only at R9 → `Socket(fd: Int64)`; **String/Bytes fields shipped later (D48–D49)**.
 
 ## 2026-07-19 — R8 modules / multi-file

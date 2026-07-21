@@ -4,13 +4,11 @@
 
 ## Next
 
-**Editor plan complete** (phase 1 + phase 2, D71–D79). Optional follow-ons:
+**HTTP + editor + Io polish complete.** Optional follow-ons:
 
-1. post-R9 **PR9** Io OpenMode/errno polish
-2. Deferred megawork (M4, Perceus, effects, full `std/`/`ffi`, typed-member nav, multi-diag, …)
-3. Manual: after committing `extras/`, set `extras/zed/extension.toml` `[grammars.thoxa].rev`, Install Dev Extension → `extras/zed`
+1. Deferred megawork (M4, Perceus, effects, full `std/`/`ffi`, typed-member nav, multi-diag, File type / method mut-field write-back, Net errno strings, …)
 
-HTTP ladder + `Main.thx` complete. Editor: D71–D79.
+HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 
 ## Done (ladder)
 
@@ -32,6 +30,7 @@ HTTP ladder + `Main.thx` complete. Editor: D71–D79.
 | R9+ | Growable `Buffer` (COW, geometric cap, freeze→Bytes) | `buffer` |
 | R9+ | Dynamic `Array<T>` (lit, index, append/dropLast, for-in) | `arrays` |
 | R9+ | File I/O (`readFile` free fn) | `file_io` (+ `iolib/`) |
+| R9+ | Io OpenMode constants + errno/strerror Fail (D80–D82) | `file_io` (updated) |
 | R9+ | String `==`/`!=`; static file Router (free `handle`) | `router` (+ `httplib/Router`) |
 | R9+ | Early `return` / `return expr` (D63) | `early_return` |
 | R9+ | User+heap field RC (Trial/match/`?`/method) | `user_rc` |
@@ -58,6 +57,8 @@ HTTP ladder + `Main.thx` complete. Editor: D71–D79.
 
 ## Last session
 
+- **2026-07-20 (PR9 Io polish):** Open flags `oRdonly`/`oWronly`/`oRdwr`; `thoxa_errno` RT + libc `strerror` extern; Fail messages `"open {path}: …"`; cgen String return marshal (`thoxa_string_from_cstr`); `file_io` asserts constant + ENOENT strerror. File type deferred (method mut-field write-back). Decisions D80–D82. `cargo make test` 30/30.
+- **2026-07-20 (status):** Confirmed Zed manual leftover done — `extras/` committed, `[grammars.thoxa].rev` pinned to commit with `parser.c`, install/sync via `cargo make zed` + README. Removed from Next.
 - **2026-07-20 (editor PR7: cross-module):** `lsp/crossmodule` lazy resolve for hover/def: selective + alias, namespace name/member, `./`+`~/`. Open buffers win over disk (path-matched). `Binding.import_origin`; index stores AST. `check_source_with_overlays` for package check. Unit + handler tests. Decisions D78/D79. Editor phase 2 complete.
 - **2026-07-20 (editor PR6: navigation):** LSP handlers: hover, definition≡declaration, references, documentSymbol, prepareRename/rename. Caps advertised on initialize. Signatures from source line + `##` doc_above; rename casing (PascalCase types / camelCase values). Single-file only (imports → import site). Unit tests def/hover/refs/outline/rename. Decision D77.
 - **2026-07-20 (editor PR5: resolver):** `resolver.rs` + `lsp/index`; D76. MIR lower still own env.

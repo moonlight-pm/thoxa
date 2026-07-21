@@ -31,6 +31,9 @@ void thoxa_print_bool(bool v);
 void thoxa_println_bool(bool v);
 void thoxa_panic(const char *msg);
 
+/* Thread-local errno after a failed libc call (no named `ffi` root — D80). */
+int32_t thoxa_errno(void);
+
 /* --- Heap header (RC) --------------------------------------------------- */
 
 typedef struct ThoxaHeader {

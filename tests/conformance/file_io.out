@@ -1,6 +1,7 @@
+oRdonly=0
 body=hello from file
 
 count=16
-missing=open
+missing=open tests/conformance/io_data/does-not-exist.txt: No such file or directory
 again=hello from file
 

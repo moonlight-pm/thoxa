@@ -66,22 +66,16 @@ Compiler pipeline (stable): `.thx` → lexer → parser → AST → MIR (+ simpl
 
 Already known (see status + decisions):
 
-- R0–R9 + post-R9 HTTP path **complete** through bounded server (D67) + `Main.thx` dir entry (D68); also early `return` (D63), User+heap RC (D64), `Array<User>` (D65), match discard (D66), Request/Response (D69), Router type (D70). Optional leftover: Io polish (post-R9 PR9).
+- R0–R9 + post-R9 HTTP path **complete** through bounded server (D67) + `Main.thx` dir entry (D68); also early `return` (D63), User+heap RC (D64), `Array<User>` (D65), match discard (D66), Request/Response (D69), Router type (D70), Io OpenMode/errno polish (D80–D82).
 - **Editor:** phase 1 + phase 2 complete (D71–D79): `check_source` (+ overlays), `thoxa lsp`, extras, resolver, hover/def/refs/outline/rename, cross-module jump (`./`/`~/`, open buffer wins). MIR lower not yet on shared resolver. **No Python** in product path.
-- Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28); cgen pulls fcntl/unistd/socket headers when externs present.
+- Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28, **D82** String *returns* via `thoxa_string_from_cstr`); cgen pulls fcntl/unistd/socket headers when externs present.
 - C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).
 - Modules: `import` selective/namespace, `export`, `./`+`~/` loader, module-level let/mut (D30–D35); **`thoxa run <dir>` → `<dir>/Main.thx`** (D68); `~/` = entry file’s directory.
 - Bytes: `fromString`, `Bytes(n)`, `.slice`, `.find(needle[, from])` → index|-1, count/get/set/toString; defer `"…" as Bytes` (D14–D18, D36–D37, D46).
 - Buffer: `Buffer()`/`Buffer(cap)`, COW append/appendBytes, freeze→Bytes (D50–D52).
 - Array: `Array<T>` (Int64/Bool/String/Bytes/**User**), literals, empty `[]` + ann, `.count`/`[i]`/append/dropLast, `for x in arr` (D53–D55, D62, **D65** inline User + `elem_size`); fixed `Array<T,N>` still field-only; `user.arrField[i]` for dynamic Array fields (D69).
-- File I/O: `readFile(path) -> Trial<Bytes,String>` (D56, D58); Router `handle(root, path) -> Bytes` (D61); String `==`/`!=` (D60).
-- Control flow: `while` / `loop` / `for` ranges + collection / `break` / `continue` / early `return` (D47, D55, D63). Constructor params: Int64/Bool/String/Bytes (D48–D49).
-- Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45). Avoid User+String inside Trial until field-RC hardened.
-- Control flow: `while` / `loop` / `for` ranges + collection / `break` / `continue` (D47, D55). Constructor params: Int64/Bool/String/Bytes (D48–D49).
-- Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45). **User+heap in Trial safe (D64)** — method field Dup, Trial extract/`Pass` via `needs_drop`, match bind fresh places.
-- HTTP protocol: `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest` (D69); `summarizeRequest` adapter.
-- File I/O: `readFile(path) -> Trial<Bytes,String>` (D56, D58); String `==`/`!=` (D60).
-- HTTP: `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest` (D69); Router `handle(req) -> Response` (D70); **bounded server** listen+N reconnect accept/serve/close (D67, `http_server`).
+- File I/O: `readFile(path) -> Trial<Bytes,String>` (D56); OpenMode Int32 lets `oRdonly`/`oWronly`/`oRdwr` (D81); Fail via `thoxa_errno` + libc `strerror` (D80). String `==`/`!=` (D60).
+- HTTP: `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest` (D69); Router `handle(req) -> Response` (D70); **bounded server** (D67, `http_server`).
 - Control flow: `while` / `loop` / `for` ranges + collection / `break` / `continue` / early `return` (D47, D55, D63). Constructor params: Int64/Bool/String/Bytes/**Array** (D48–D49, D69).
 - Value model hybrid A; errors `May`/`Trial` + `?` / `match` — `Trial<Ok,Err>` monomorphs (Void/String/User/ints; D40–D45). **User+heap in Trial safe (D64)** — method field Dup, Trial extract/`Pass` via `needs_drop`, match bind fresh places. Match discard `Pass(_)`/`Fail(_)` (D66).
 
