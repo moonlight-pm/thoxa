@@ -4,12 +4,12 @@
 
 ## Next
 
-**Session/REPL plan largely shipped (PR0–PR6).** Optional polish:
+**Session/REPL shipped (PR0–PR7 + polish).** Optional follow-ons:
 
-1. **Session follow-ons** — true in-process dlopen `step` ABI (D93 v2); richer pipelines/redirs in Thoxa not only host; prelude absorption out of compiler embed.
+1. **Session** — in-process dlopen `step` ABI (D93 v2); Thoxa-side pipes/redirs (not only host); prelude out of compiler embed; thread `Shell.status` into chunks (host `status` is a stopgap).
 2. Deferred megawork (M4, Perceus, effects, full `std/`/`ffi`, typed-member nav, multi-diag, File type / method mut-field write-back, Net errno strings, …)
 
-HTTP ladder + editor + Io polish complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md).
+HTTP + editor + Io complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md).
 
 ## Done (ladder)
 

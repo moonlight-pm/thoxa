@@ -117,8 +117,14 @@ fn needs_more(chunk: &str) -> bool {
     in_str || depth > 0
 }
 
-fn run_chunk(chunk: &str, decls: &mut Vec<String>, _interactive: bool) -> Result<i32> {
+fn run_chunk(chunk: &str, decls: &mut Vec<String>, prev_status: i32) -> Result<i32> {
     let trimmed = chunk.trim();
+
+    // Host-side `status` — session chunks always start Shell at 0; host tracks real status.
+    if trimmed == "status" {
+        println!("{prev_status}");
+        return Ok(prev_status);
+    }
 
     // Host-side cd so directory persists across compile/exec children.
     if let Some(st) = try_host_cd(trimmed)? {
