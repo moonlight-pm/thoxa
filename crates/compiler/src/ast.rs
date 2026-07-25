@@ -15,6 +15,10 @@ pub enum Item {
     Import(Import),
     /// Top-level `let` / `mut` (module-level value; `mut` is never exported).
     Global(Global),
+    /// Top-level statement for **session scripts** (no `fn main`).
+    /// Host/session prep lifts these into `Shell.step` body (D90).
+    /// Not valid in ordinary programs after session prepare.
+    SessionStmt(BlockItem),
 }
 
 /// `import { a, b as c } from "…"` or `import ns from "…"`.

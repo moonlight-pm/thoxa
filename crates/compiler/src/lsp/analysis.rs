@@ -92,14 +92,27 @@ fn check_source_inner(
         .items
         .iter()
         .any(|item| matches!(item, Item::Import(_)));
-    let has_main = module_has_main(&module);
-    let opts = mir::LowerOptions {
-        require_main: has_main,
-    };
 
     if !has_imports {
-        // Library modules (Io.thx, Helper.thx, …) have no main — still typecheck.
-        mir::lower_module_with(&module, opts)?;
+        // Single-file: session prepare (no-main scripts) then lower.
+        let mut package = Package {
+            project_root: PathBuf::from("."),
+            modules: vec![SourceModule {
+                id: "Main".into(),
+                path: PathBuf::from(filename),
+                ast: module,
+                is_entry: true,
+            }],
+        };
+        crate::session::prepare_package(&mut package)?;
+        let has_main = package
+            .modules
+            .iter()
+            .any(|m| m.is_entry && module_has_main(&m.ast));
+        let opts = mir::LowerOptions {
+            require_main: has_main,
+        };
+        mir::lower_package_with(&package, opts)?;
         return Ok(());
     }
 
@@ -112,9 +125,18 @@ fn check_source_inner(
         ));
     }
 
+    let has_main = module_has_main(&module);
     let mut package = loader::load_package(path)?;
     overlay_open_ast(&mut package, module, path, has_main);
     apply_open_overlays(&mut package, overlays, path);
+    crate::session::prepare_package(&mut package)?;
+    let has_main_after = package
+        .modules
+        .iter()
+        .any(|m| m.is_entry && module_has_main(&m.ast));
+    let opts = mir::LowerOptions {
+        require_main: has_main_after,
+    };
     mir::lower_package_with(&package, opts)?;
     Ok(())
 }

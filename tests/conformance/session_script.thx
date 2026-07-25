@@ -1,0 +1,4 @@
+## Session script (no fn main): top-level statements → Shell.step + synthetic main.
+println("hello session")
+let n = 1 + 2
+println("n={n}")

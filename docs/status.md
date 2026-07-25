@@ -4,10 +4,10 @@
 
 ## Next
 
-**HTTP + editor + Io polish complete.** Optional follow-ons:
+**HTTP + editor + Io polish complete.** Session/REPL plan in progress.
 
-1. Deferred megawork (M4, Perceus, effects, full `std/`/`ffi`, typed-member nav, multi-diag, File type / method mut-field write-back, Net errno strings, …)
-2. **extras/shell (thoxash)** — v2 externals + string `match` dispatch (D87); next: quotes / pipes / `$?`
+1. **Session model** — [`docs/specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md). **PR0 done** (`Shell` + `status` in extras/shell). **Next:** PR1 — no-`main` session scripts (compiler splice).
+2. Deferred megawork (M4, Perceus, effects, full `std/`/`ffi`, typed-member nav, multi-diag, File type / method mut-field write-back, Net errno strings, …)
 
 HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 
@@ -62,6 +62,9 @@ HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 
 ## Last session
 
+- **2026-07-24 (session PR0):** `extras/shell` v4 — `type Shell(status)` with `echo`/`pwd`/`cd`/`run`/`showStatus`/`help` returning new Shell; REPL threads `mut shell`; builtin `status` prints field; process exit = `shell.status` (false→1, not found→127, unclosed quote→2). `EvalResult(Shell,…)` blocked by ctor-param rules → `sessionDone` module mut. README desugar table. Next: plan PR1 session scripts.
+- **2026-07-24 (session/REPL plan):** Locked approach 3 — Thoxa is the REPL; `Shell` + desugar + compile. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md).
+- **2026-07-24 (thoxash v3):** Quote-aware `splitWords`.
 - **2026-07-21 (D87 value match):** `match` on String/Int64/Bool with literal arms + required `else` (if-cascade; `string_eq`). Trial/May unchanged. Conformance `match_value` (32/32). thoxash `evalLine` uses string match for builtins. Decision D87.
 - **2026-07-21 (thoxash v2):** External commands — PATH search (`access` X_OK; empty component = cwd), absolute/relative if `/` in name; RT `thoxa_spawn_wait` (fork/execv/waitpid; argv as NUL-separated Bytes — Array not FFI yet).
 - **2026-07-21 (thoxash v1):** Builtins `echo` / `pwd` / `cd` + whitespace `splitWords`; `getcwd`/`chdir`/`getenv`/`strerror`/`errno`/`isatty` externs. TTY-only `$ ` prompt. `cargo make shell`.

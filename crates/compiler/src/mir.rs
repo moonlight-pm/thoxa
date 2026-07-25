@@ -1198,7 +1198,10 @@ fn build_module_name_maps(
                     name_to_global.insert(g.name.clone(), info.clone());
                 }
             }
-            _ => {}
+            Item::SessionStmt(_) => {
+                // Must be lifted by session::prepare before lower.
+            }
+            Item::Type(_) | Item::Import(_) => {}
         }
     }
 

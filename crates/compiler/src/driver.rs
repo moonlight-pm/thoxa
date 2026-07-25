@@ -75,7 +75,8 @@ pub fn runtime_lib_path() -> PathBuf {
 }
 
 pub fn compile_to_c(source: &Path) -> Result<String> {
-    let package = loader::load_package(source)?;
+    let mut package = loader::load_package(source)?;
+    crate::session::prepare_package(&mut package)?;
     let program = mir::lower_package(&package)?;
     Ok(cgen::emit_program(&program))
 }

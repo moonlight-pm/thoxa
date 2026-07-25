@@ -10,6 +10,7 @@ pub mod lsp;
 pub mod mir;
 pub mod parser;
 pub mod resolver;
+pub mod session;
 pub mod span;
 
 pub use driver::{build, emit_c, run, BuildOptions};

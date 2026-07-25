@@ -1,0 +1,7 @@
+## Session script with user Shell.step (no top-level stmts).
+type Shell(status: Int64) {
+    export fn step() -> Shell {
+        println("custom step")
+        Shell(status: 0)
+    }
+}

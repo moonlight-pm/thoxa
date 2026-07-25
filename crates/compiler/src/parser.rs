@@ -42,16 +42,34 @@ impl Parser {
             } else if self.at(TokenKind::Let) || self.at(TokenKind::Mut) {
                 items.push(Item::Global(self.parse_global(exported)?));
             } else {
-                return Err(Error::at(
-                    format!(
-                        "expected `fn`, `extern`, `type`, `import`, or `let`/`mut`, found {:?}",
-                        self.current().kind
-                    ),
-                    self.peek_span(),
-                ));
+                // Session-script top-level statement (assign or expression).
+                // Ordinary programs with `fn main` reject these in session::prepare
+                // if mixed incorrectly; pure programs never produce them if the
+                // author only uses decls — free stmts mark a session body.
+                if exported {
+                    return Err(Error::at(
+                        "`export` only applies to declarations, not statements",
+                        self.peek_span(),
+                    ));
+                }
+                items.push(Item::SessionStmt(self.parse_session_stmt()?));
             }
         }
         Ok(Module { items })
+    }
+
+    /// Top-level session body item: assignment or expression statement.
+    /// (`let`/`mut` at module level remain `Global` — visible from `step`.)
+    fn parse_session_stmt(&mut self) -> Result<BlockItem> {
+        if self.at_assign_stmt() {
+            let a = self.parse_assign()?;
+            Ok(BlockItem::Assign {
+                target: a.target,
+                value: a.value,
+            })
+        } else {
+            Ok(BlockItem::Expr(self.parse_expr()?))
+        }
     }
 
     /// `import { a, b as c } from "…"` or `import ns from "…"`

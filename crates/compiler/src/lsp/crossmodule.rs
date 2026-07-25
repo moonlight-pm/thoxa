@@ -155,7 +155,7 @@ fn walk_item_member(item: &Item, span: Span) -> Option<(String, String)> {
             None
         }
         Item::Global(g) => walk_expr_member(&g.init, span),
-        Item::Extern(_) | Item::Import(_) => None,
+        Item::Extern(_) | Item::Import(_) | Item::SessionStmt(_) => None,
     }
 }
 
