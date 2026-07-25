@@ -124,27 +124,46 @@ fn is_decl_prefix(t: &str) -> bool {
 }
 
 fn line_parses_as_thoxa(line: &str) -> bool {
-    use crate::ast::{BlockItem, ExprKind, Item};
+    use crate::ast::{BlockItem, Item};
     let Ok(tokens) = Lexer::new(line).tokenize() else {
         return false;
     };
     let Ok(module) = Parser::new(tokens).parse_module() else {
         return false;
     };
-    // Word-like lines parse as a sequence of Name / String session exprs
-    // (`echo hello`, `echo "hi there"`). That is command skin, not Thoxa.
-    // Real Thoxa has calls, operators, assigns, keywords, etc.
+    // Word-like / path-like lines parse as a sequence of session exprs that are
+    // not real Thoxa statements:
+    //   echo hello          → Name, Name
+    //   echo "hi there"     → Name, String
+    //   wc AGENTS.md        → Name, Field(AGENTS, md)   ← was mis-kept as Thoxa
+    //   ls /tmp             → often Binary Div of names
+    // Real Thoxa has calls, assigns, most operators, keywords, etc.
     if module.items.is_empty() {
         return false;
     }
     let command_shaped = module.items.iter().all(|item| match item {
-        Item::SessionStmt(BlockItem::Expr(e)) => matches!(
-            e.kind,
-            ExprKind::Name(_) | ExprKind::String(_) | ExprKind::Int(_) | ExprKind::Bool(_)
-        ),
+        Item::SessionStmt(BlockItem::Expr(e)) => expr_is_command_atom(e),
         _ => false,
     });
     !command_shaped
+}
+
+/// True for atoms that appear when a shell line is naively parsed as Thoxa.
+fn expr_is_command_atom(e: &crate::ast::Expr) -> bool {
+    use crate::ast::{BinaryOp, ExprKind};
+    match &e.kind {
+        ExprKind::Name(_) | ExprKind::String(_) | ExprKind::Int(_) | ExprKind::Bool(_) => true,
+        // `AGENTS.md`, `foo.bar.baz` — path-like, not intentional field reads at stmt level
+        ExprKind::Field { base, .. } => expr_is_command_atom(base),
+        // `a/b`, `ls / tmp` style path fragments (Div only; `%` is Rem)
+        ExprKind::Binary {
+            op: BinaryOp::Div,
+            left,
+            right,
+        } => expr_is_command_atom(left) && expr_is_command_atom(right),
+        // Unary minus on a number is still not a command argv shape we care about
+        _ => false,
+    }
 }
 
 /// Returns `Some(thoxa_stmt)` when `line` is a command; `None` if empty words.
@@ -299,5 +318,23 @@ mod tests {
     fn desugar_session_echo_line() {
         let src = desugar_session_source("echo hello\n").unwrap();
         assert!(src.contains(r#"shell = shell.echo(["hello"])"#));
+    }
+
+    #[test]
+    fn desugar_path_arg_with_dot() {
+        // Was mis-parsed as Field(AGENTS, md) and kept as broken Thoxa.
+        let src = desugar_session_source("wc AGENTS.md\n").unwrap();
+        assert!(
+            src.contains(r#"shell = shell.run(["wc", "AGENTS.md"])"#),
+            "got: {src}"
+        );
+    }
+
+    #[test]
+    fn keep_real_field_in_call() {
+        // Calls mean real Thoxa — do not steal.
+        let src = desugar_session_source(r#"println(p.name)"#).unwrap();
+        assert!(src.contains("println"));
+        assert!(!src.contains("shell = shell.run"));
     }
 }
