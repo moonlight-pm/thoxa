@@ -48,16 +48,17 @@ HTTP + editor + Io complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md
 
 | Topic | Where | Stance |
 |-------|--------|--------|
-| Session dlopen step ABI | session plan D93 | **Partial** — host compile-per-chunk + `ThoxaShellState`/`thoxa_pipe` placeholders |
+| Session dlopen step ABI | session plan D93 | **Partial** — host compile-per-chunk; host `cd` / `\|` / `status`; path-arg command skin |
+| Command skin vs Thoxa | D92 | Path-like atoms (`AGENTS.md`, `/`) desugar as commands, not field/div |
 | Postfix `having` / `else` for May | [`docs/ideas/2026-07-20-having-else-may.md`](ideas/2026-07-20-having-else-may.md) | **Sleeping** |
 | Immutable values / structural sharing | [`docs/ideas/2026-07-21-immutable-values.md`](ideas/2026-07-21-immutable-values.md) | **Sleeping** |
 | Webapp SSR / components | [`docs/ideas/2026-07-21-webapp-ssr-components.md`](ideas/2026-07-21-webapp-ssr-components.md) | **Sleeping** |
 
 ## Last session
 
-- **2026-07-24 (session PR0–PR7):** Full session ladder. PR0 Shell dogfood; PR1 session scripts (`SessionStmt` → `Shell.step`); PR2 command sugar + `session_prelude.thx`; PR3 RT `ThoxaShellState` + `thoxa_pipe`; PR4 bare `thoxa` REPL; PR5 decl accumulation + multiline; PR6 host `\|` pipelines; PR7 decisions D88–D95 + docs. `cargo make shell` → bare `thoxa`.
+- **2026-07-24 (session polish):** Command sugar treats path-like tokens as shell args (`wc AGENTS.md` was Field-parsed and failed). REPL `status` builtin prints host-tracked exit code. Status doc refreshed.
+- **2026-07-24 (session PR0–PR7):** Full session ladder — Shell dogfood, session scripts, command sugar + prelude, RT helpers, bare `thoxa` REPL, decl accumulate/multiline, host pipes, D88–D95. `cargo make shell` → bare `thoxa`.
 - **2026-07-24 (session plan):** Approach 3 locked in specs.
-- **2026-07-21 (D87 value match + thoxash v0–v3):** prior shell dogfood.
 
 ## Verify quickly
 
