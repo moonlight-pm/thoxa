@@ -1,10 +1,12 @@
 ## thoxash — Thoxa shell (extras dogfood).
 ##
-## v2: external commands via PATH + thoxa_spawn_wait (fork/execv/wait).
-##     Builtins: echo, pwd, cd, help, exit/quit.
-##     No quotes, pipes, redirections, or job control yet.
+## v4 (session plan PR0): type Shell(status) + methods.
+##     Builtins: echo, pwd, cd, help, status, exit/quit.
+##     Externals: PATH + thoxa_spawn_wait; status from wait.
+##     Quotes: "…" '…' \ (v3). No pipes / host REPL yet.
 ##
 ## Run:  cargo make shell
+## Plan: docs/specs/2026-07-24-thoxa-session-repl.md
 
 extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
 extern fn sysWrite(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "write"
@@ -21,6 +23,116 @@ extern fn sysSpawnWait(path!: String, argv!: Bytes, argvLen!: Int64) -> Int64 fr
 let cwdBufSize = 4096
 ## access(2) X_OK — executable by this user
 let accessXOk = 1
+## ASCII for the word splitter
+let chSpace = 32
+let chTab = 9
+let chDQuote = 34
+let chSQuote = 39
+let chBSlash = 92
+## splitWords quote state: 0 normal, 1 inside ", 2 inside '
+let qsNormal = 0
+let qsDouble = 1
+let qsSingle = 2
+
+## ---------------------------------------------------------------------------
+## Session value (plan PR0). Methods return a new Shell with updated status.
+## ---------------------------------------------------------------------------
+
+type Shell(status: Int64) {
+    ## Print args joined by spaces (no args → blank line). Always status 0.
+    export fn echo(args: Array<String>) -> Shell {
+        println(joinSpace(args))
+        Shell(status: 0)
+    }
+
+    ## Print cwd. Fail → message + status 1.
+    export fn pwd() -> Shell {
+        let buf = Bytes(cwdBufSize)
+        let path = sysGetcwd(buf, cwdBufSize)
+        if path == "" {
+            println("pwd: {sysStrerror(sysErrno())}")
+            Shell(status: 1)
+        } else {
+            println(path)
+            Shell(status: 0)
+        }
+    }
+
+    ## Change directory. No arg → $HOME. Fail → status 1.
+    export fn cd(args: Array<String>) -> Shell {
+        if args.count > 1 {
+            println("cd: too many arguments")
+            Shell(status: 1)
+        } else {
+            mut path = ""
+            mut bad = false
+            if args.count == 0 {
+                path = sysGetenv("HOME")
+                if path == "" {
+                    println("cd: HOME not set")
+                    bad = true
+                }
+            } else {
+                path = args[0]
+            }
+            if bad {
+                Shell(status: 1)
+            } else {
+                let rc = sysChdir(path)
+                if rc != 0 {
+                    println("cd: {path}: {sysStrerror(sysErrno())}")
+                    Shell(status: 1)
+                } else {
+                    Shell(status: 0)
+                }
+            }
+        }
+    }
+
+    ## Run argv[0] via PATH (or path with /). Updates status from wait.
+    ## not found → 127; fork/exec infrastructure fail → 1; else child status.
+    export fn run(argv: Array<String>) -> Shell {
+        if argv.count == 0 {
+            Shell(status: 0)
+        } else {
+            let cmd = argv[0]
+            match resolveCommand(cmd) {
+                Not {
+                    println("thoxash: {cmd}: command not found")
+                    Shell(status: 127)
+                }
+                Has(path) {
+                    let blob = encodeArgv(argv)
+                    let st = sysSpawnWait(path, blob, blob.count)
+                    if st < 0 {
+                        println("thoxash: {cmd}: {sysStrerror(sysErrno())}")
+                        Shell(status: 1)
+                    } else {
+                        Shell(status: st)
+                    }
+                }
+            }
+        }
+    }
+
+    ## Print last status without changing it (smoke / inspection).
+    export fn showStatus() -> Shell {
+        println("{status}")
+        Shell(status: status)
+    }
+
+    export fn help() -> Shell {
+        println("thoxash 4 — Shell(status). Builtins: echo, pwd, cd, help, status, exit, quit. Quotes + PATH.")
+        Shell(status: 0)
+    }
+}
+
+## Word-split outcome: ok=false → unclosed quote (items empty).
+type Words(ok: Bool, items: Array<String>)
+
+## Set by evalLine on exit/quit (constructor params cannot hold nested User yet,
+## so we cannot return (Shell, done) as one value — module mut is fine for dogfood).
+mut sessionDone = false
 
 ## Write to stdout via write(2) so the prompt appears before blocking on read
 ## (stdio `print` is line-buffered and may not flush without a newline).
@@ -109,37 +221,96 @@ fn splitOn(line!: String, sep!: Int64) -> Array<String> {
     parts
 }
 
-## Whitespace split (space / tab). Tabs become spaces first via dual pass.
-fn splitWords(line!: String) -> Array<String> {
+## Quote-aware word split (shell-ish subset). See README / session plan.
+fn splitWords(line!: String) -> Words {
     let b = Bytes.fromString(line)
     mut words: Array<String> = []
     mut acc = Buffer()
     mut inWord = false
-    for i in 0..b.count {
+    mut state = qsNormal
+    mut escape = false
+    mut i = 0
+    while i < b.count {
         let c = b.get(i)
-        if c == 32 {
-            if inWord {
-                words = words.append(acc.freeze().toString())
-                acc = Buffer()
-                inWord = false
-            }
+        if escape {
+            acc.append(c)
+            inWord = true
+            escape = false
         } else {
-            if c == 9 {
-                if inWord {
-                    words = words.append(acc.freeze().toString())
-                    acc = Buffer()
-                    inWord = false
+            if state == qsDouble {
+                if c == chBSlash {
+                    escape = true
+                } else {
+                    if c == chDQuote {
+                        state = qsNormal
+                    } else {
+                        acc.append(c)
+                        inWord = true
+                    }
                 }
             } else {
-                acc.append(c)
-                inWord = true
+                if state == qsSingle {
+                    if c == chSQuote {
+                        state = qsNormal
+                    } else {
+                        acc.append(c)
+                        inWord = true
+                    }
+                } else {
+                    ## normal (unquoted)
+                    if c == chBSlash {
+                        escape = true
+                        inWord = true
+                    } else {
+                        if c == chDQuote {
+                            state = qsDouble
+                            inWord = true
+                        } else {
+                            if c == chSQuote {
+                                state = qsSingle
+                                inWord = true
+                            } else {
+                                if c == chSpace {
+                                    if inWord {
+                                        words = words.append(acc.freeze().toString())
+                                        acc = Buffer()
+                                        inWord = false
+                                    }
+                                } else {
+                                    if c == chTab {
+                                        if inWord {
+                                            words = words.append(acc.freeze().toString())
+                                            acc = Buffer()
+                                            inWord = false
+                                        }
+                                    } else {
+                                        acc.append(c)
+                                        inWord = true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+        i = i + 1
     }
-    if inWord {
-        words = words.append(acc.freeze().toString())
+    if escape {
+        ## trailing backslash → keep a literal `\`
+        acc.append(chBSlash)
+        inWord = true
     }
-    words
+    if state != qsNormal {
+        println("thoxash: unclosed quote")
+        mut empty: Array<String> = []
+        Words(ok: false, items: empty)
+    } else {
+        if inWord {
+            words = words.append(acc.freeze().toString())
+        }
+        Words(ok: true, items: words)
+    }
 }
 
 ## Drop the first word (command); remaining args for builtins / argv tail.
@@ -235,103 +406,61 @@ fn encodeArgv(words!: Array<String>) -> Bytes {
     buf.freeze()
 }
 
-fn runExternal(words!: Array<String>) {
-    let cmd = words[0]
-    match resolveCommand(cmd) {
-        Not {
-            println("thoxash: {cmd}: command not found")
-        }
-        Has(path) {
-            let blob = encodeArgv(words)
-            let st = sysSpawnWait(path, blob, blob.count)
-            if st < 0 {
-                println("thoxash: {cmd}: {sysStrerror(sysErrno())}")
-            }
-        }
-    }
-}
-
-fn builtinEcho(args!: Array<String>) {
-    println(joinSpace(args))
-}
-
-fn builtinPwd() {
-    let buf = Bytes(cwdBufSize)
-    let path = sysGetcwd(buf, cwdBufSize)
-    if path == "" {
-        println("pwd: {sysStrerror(sysErrno())}")
+## Run one line against the session Shell. Returns the updated Shell.
+## Sets sessionDone on exit/quit.
+fn evalLine(shell!: Shell, line!: String) -> Shell {
+    let parsed = splitWords(line)
+    if parsed.ok == false {
+        ## unclosed quote
+        Shell(status: 2)
     } else {
-        println(path)
-    }
-}
-
-fn builtinCd(args!: Array<String>) {
-    mut path = ""
-    if args.count == 0 {
-        path = sysGetenv("HOME")
-        if path == "" {
-            println("cd: HOME not set")
-            return
-        }
-    } else {
-        if args.count > 1 {
-            println("cd: too many arguments")
-            return
+        let words = parsed.items
+        if words.count == 0 {
+            ## blank line: keep status
+            shell
         } else {
-            path = args[0]
-        }
-    }
-    let rc = sysChdir(path)
-    if rc != 0 {
-        println("cd: {path}: {sysStrerror(sysErrno())}")
-    }
-}
-
-fn builtinHelp() {
-    println("thoxash 2 — builtins: echo, pwd, cd, help, exit, quit. Else: run via PATH.")
-}
-
-## Run one line. Returns true when the REPL should exit.
-fn evalLine(line!: String) -> Bool {
-    let words = splitWords(line)
-    if words.count == 0 {
-        false
-    } else {
-        let cmd = words[0]
-        let args = tailArgs(words)
-        match cmd {
-            "exit" { true }
-            "quit" { true }
-            "help" {
-                builtinHelp()
-                false
-            }
-            "echo" {
-                builtinEcho(args)
-                false
-            }
-            "pwd" {
-                builtinPwd()
-                false
-            }
-            "cd" {
-                builtinCd(args)
-                false
-            }
-            else {
-                runExternal(words)
-                false
+            let cmd = words[0]
+            let args = tailArgs(words)
+            match cmd {
+                "exit" {
+                    sessionDone = true
+                    shell
+                }
+                "quit" {
+                    sessionDone = true
+                    shell
+                }
+                "help" {
+                    shell.help()
+                }
+                "echo" {
+                    shell.echo(args)
+                }
+                "pwd" {
+                    shell.pwd()
+                }
+                "cd" {
+                    shell.cd(args)
+                }
+                "status" {
+                    shell.showStatus()
+                }
+                else {
+                    shell.run(words)
+                }
             }
         }
     }
 }
 
 fn main() -> Int64 {
-    println("thoxash 2 — type help, or exit / Ctrl-D to quit")
+    println("thoxash 4 — type help, or exit / Ctrl-D to quit")
     ## Prompts only on a TTY. Pipes/scripts get command output alone (no `$ `
     ## gluing when silent builtins like `cd` print nothing — a TTY echoes the
     ## user's Enter after the prompt; a pipe does not).
     let interactive = sysIsatty(0) != 0
+    mut shell = Shell(status: 0)
+    sessionDone = false
     mut running = true
     while running {
         if interactive {
@@ -346,11 +475,13 @@ fn main() -> Int64 {
                 running = false
             }
             Has(line) {
-                if evalLine(line) {
+                shell = evalLine(shell, line)
+                if sessionDone {
                     running = false
                 }
             }
         }
     }
-    0
+    ## Process exit code = final session status (session plan D94′/script path).
+    shell.status
 }

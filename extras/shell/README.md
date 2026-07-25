@@ -5,74 +5,89 @@ A **Thoxa-written shell**, living in the monorepo as double dogfood:
 1. **Use Thoxa** to build a real interactive program (REPL, libc via `extern`, Io patterns).
 2. **Drive language gaps** from real needs (process spawn, argv, line editing, …) instead of abstract rungs.
 
-Not on the compile-to-C product path. Not a bash/zsh script runner — dialect and builtins grow from *using* it.
+Not on the compile-to-C product path. Not a bash/zsh script runner.
 
-## v2 (now)
+**Direction:** Thoxa is the session language. This binary dogfoods `type Shell` until bare `thoxa` owns the REPL.  
+Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](../../docs/specs/2026-07-24-thoxa-session-repl.md).
 
-Word-split, builtins, and **external commands** (PATH + `fork`/`execv`/`wait`):
+## v4 (now) — `Shell` + `status`
 
-| Input | Behavior |
-|-------|----------|
-| `echo …` | print args joined by spaces (no args → blank line) |
-| `pwd` | print cwd (`getcwd`) |
-| `cd [path]` | change dir (`chdir`); no arg → `$HOME` |
-| `help` | one-line usage |
-| `exit` / `quit` | leave |
-| other word | resolve via PATH (or absolute/relative if `/` present); run |
-| missing | `thoxash: …: command not found` |
-| Ctrl-D / EOF | leave |
+Session value:
 
-Whitespace split only (space/tab). No quotes, pipes, redirections, jobs, or history yet.
+```thoxa
+type Shell(status: Int64) {
+    echo(args) -> Shell
+    pwd() -> Shell
+    cd(args) -> Shell
+    run(argv) -> Shell
+    showStatus() -> Shell   ## builtin name: status
+    help() -> Shell
+}
+```
 
-`$ ` prompts only when stdin is a TTY; piped input is silent on the prompt (cleaner smoke tests).
+Methods return a **new** `Shell` with updated `status`. The REPL holds `mut shell` and threads it through `evalLine`. Process exit code = final `shell.status`.
 
-Spawn uses RT helper `thoxa_spawn_wait` (Array is not FFI-marshalable yet — argv is a NUL-separated `Bytes` blob).
+| Input | Behavior | Typical status |
+|-------|----------|----------------|
+| `echo …` | print args (spaces); quotes ok | 0 |
+| `pwd` | print cwd | 0 / 1 |
+| `cd [path]` | chdir; no arg → `$HOME` | 0 / 1 |
+| `status` | print `shell.status` (unchanged) | same |
+| `help` | usage | 0 |
+| `exit` / `quit` | leave (exit code = status) | — |
+| other word | PATH / path with `/` via `run` | child / 127 / 1 |
+| unclosed quote | error; line not run | 2 |
+| Ctrl-D / EOF | leave | final status |
+
+### Word split (unchanged from v3)
+
+| Form | Behavior |
+|------|----------|
+| unquoted space/tab | separates words |
+| `"…"` | keep spaces; `\` escapes next byte |
+| `'…'` | literal until closing `'` |
+| unquoted `\` | escapes next byte |
+| adjacent pieces | join into one word |
+| `""` / `''` | empty word |
+
+### Target desugar table (host not present yet)
+
+When the session host exists, command skin becomes real Thoxa on `Shell`:
+
+| Prompt | Toward |
+|--------|--------|
+| `echo a b` | `shell = shell.echo(["a", "b"])` |
+| `cd /tmp` | `shell = shell.cd(["/tmp"])` |
+| `uname -a` | `shell = shell.run(["uname", "-a"])` |
+| `status` | `shell = shell.showStatus()` |
+| `let x = 1` | as-is Thoxa (later) |
+
+No shell `if`/`for`/`fn`. Programming = Thoxa.
+
+`$ ` prompts only on a TTY. Spawn uses RT `thoxa_spawn_wait` (argv = NUL-separated `Bytes`).
 
 ```bash
 # from repo root
 cargo make shell
-# or
-cargo make run extras/shell
-cargo run -p thoxa -- run extras/shell
 
-# non-interactive smoke
-printf 'echo hi\nuname -s\npwd\nexit\n' | cargo make shell
+# smoke status
+printf 'echo hi\nstatus\nfalse\nstatus\nexit\n' | cargo make shell
+# → hi / 0 / 1 ; process exit 1
 ```
 
-Entry is `Main.thx` (directory entry, D68).
-
-## Why a REPL first
-
-A shell is basically:
-
-```text
-loop {
-  prompt
-  read line
-  parse → eval → print status
-}
-```
-
-v0 was **eval = echo**. v1 hung real builtins off `evalLine` / `splitWords`. v2 runs externals the same way.
-
-## Likely next rungs (not scheduled)
-
-Rough order — only when dogfooding wants them:
-
-1. **Quotes / escapes** in word split.
-2. **Pipes / redirections**.
-3. **Exit status** (`$?` / `status`) after spawn.
-4. **Line editing / history** — may stay crude (`read` only) for a long time.
-5. **Config** — optional `~/…` startup file written in Thoxa *or* shell dialect later.
-
-Compatibility with bash/zsh **scripts** is explicitly out of scope. Familiarity of *interactive* habits (prompt, enter runs a line, Ctrl-D) is enough.
+Entry is `Main.thx` (D68).
 
 ## Layout
 
 ```text
 extras/shell/
-  Main.thx     # entry: REPL loop + readLine + eval
-  README.md    # this file
+  Main.thx     # Shell + REPL loop
+  README.md
 ```
 
-Keep it small until a second module earns its keep (e.g. `Line.thx`, `Exec.thx`).
+## Next (plan PRs)
+
+1. **PR1** — compiler: no-`main` session scripts (`Shell.step` wrap).
+2. **PR2+** — command desugar, bare `thoxa` REPL, pipes, …
+
+Keep this file small until a second module earns its keep.
