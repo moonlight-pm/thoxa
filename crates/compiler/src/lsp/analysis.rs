@@ -85,7 +85,9 @@ fn check_source_inner(
     text: &str,
     overlays: &HashMap<PathBuf, String>,
 ) -> Result<()> {
-    let tokens = Lexer::new(text).tokenize()?;
+    // Session command sugar (same as loader entry path).
+    let text = crate::command::desugar_session_source(text)?;
+    let tokens = Lexer::new(&text).tokenize()?;
     let module = Parser::new(tokens).parse_module()?;
 
     let has_imports = module

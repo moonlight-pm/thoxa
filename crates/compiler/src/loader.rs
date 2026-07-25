@@ -127,6 +127,12 @@ fn load_one(
     let src = fs::read_to_string(&path).map_err(|e| {
         Error::new(format!("cannot read {}: {e}", path.display()))
     })?;
+    // Entry session scripts: command-skin desugar before parse (PR2).
+    let src = if is_entry {
+        crate::command::desugar_session_source(&src)?
+    } else {
+        src
+    };
     let tokens = Lexer::new(&src).tokenize()?;
     let ast = Parser::new(tokens).parse_module()?;
     let id = path

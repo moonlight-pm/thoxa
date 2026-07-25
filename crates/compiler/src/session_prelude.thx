@@ -1,0 +1,208 @@
+## Injected session Shell API (compiler prelude — not a user file).
+## Used when a session script needs the default Shell with builtins.
+
+extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
+extern fn sysChdir(path!: String) -> Int32 from "c" "chdir"
+extern fn sysGetenv(name!: String) -> String from "c" "getenv"
+extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
+extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
+extern fn sysAccess(path!: String, mode!: Int32) -> Int32 from "c" "access"
+extern fn sysSpawnWait(path!: String, argv!: Bytes, argvLen!: Int64) -> Int64 from "c" "thoxa_spawn_wait"
+
+let sessionCwdBufSize = 4096
+let sessionAccessXOk = 1
+
+fn sessionEmptyStrings() -> Array<String> {
+    mut e: Array<String> = []
+    e
+}
+
+fn sessionJoinSpace(parts!: Array<String>) -> String {
+    mut out = ""
+    mut i = 0
+    for p in parts {
+        if i == 0 {
+            out = p
+        } else {
+            out = "{out} {p}"
+        }
+        i = i + 1
+    }
+    out
+}
+
+fn sessionSplitOn(line!: String, sep!: Int64) -> Array<String> {
+    let b = Bytes.fromString(line)
+    mut parts: Array<String> = []
+    mut acc = Buffer()
+    mut inPart = false
+    for i in 0..b.count {
+        let c = b.get(i)
+        if c == sep {
+            if inPart {
+                parts = parts.append(acc.freeze().toString())
+                acc = Buffer()
+                inPart = false
+            } else {
+                parts = parts.append("")
+            }
+        } else {
+            acc.append(c)
+            inPart = true
+        }
+    }
+    if inPart {
+        parts = parts.append(acc.freeze().toString())
+    } else {
+        if b.count > 0 {
+            if b.get(b.count - 1) == sep {
+                parts = parts.append("")
+            }
+        }
+    }
+    parts
+}
+
+fn sessionContainsSlash(s!: String) -> Bool {
+    match Bytes.fromString(s).find(Bytes.fromString("/")) {
+        Has(_) { true }
+        Not { false }
+    }
+}
+
+fn sessionIsExecutable(path!: String) -> Bool {
+    sysAccess(path, sessionAccessXOk) == 0
+}
+
+fn sessionResolveCommand(cmd!: String) -> May<String> {
+    if sessionContainsSlash(cmd) {
+        if sessionIsExecutable(cmd) {
+            Has(cmd)
+        } else {
+            Not()
+        }
+    } else {
+        let pathEnv = sysGetenv("PATH")
+        mut found = ""
+        mut ok = false
+        if pathEnv == "" {
+            if sessionIsExecutable(cmd) {
+                found = cmd
+                ok = true
+            }
+        } else {
+            let dirs = sessionSplitOn(pathEnv, 58)
+            for dir in dirs {
+                mut candidate = ""
+                if dir == "" {
+                    candidate = cmd
+                } else {
+                    candidate = "{dir}/{cmd}"
+                }
+                if ok == false {
+                    if sessionIsExecutable(candidate) {
+                        found = candidate
+                        ok = true
+                    }
+                }
+            }
+        }
+        if ok {
+            Has(found)
+        } else {
+            Not()
+        }
+    }
+}
+
+fn sessionEncodeArgv(words!: Array<String>) -> Bytes {
+    mut buf = Buffer()
+    for w in words {
+        buf.appendBytes(Bytes.fromString(w))
+        buf.append(0)
+    }
+    buf.freeze()
+}
+
+type Shell(status: Int64) {
+    export fn echo(args: Array<String>) -> Shell {
+        println(sessionJoinSpace(args))
+        Shell(status: 0)
+    }
+
+    export fn pwd() -> Shell {
+        let buf = Bytes(sessionCwdBufSize)
+        let path = sysGetcwd(buf, sessionCwdBufSize)
+        if path == "" {
+            println("pwd: {sysStrerror(sysErrno())}")
+            Shell(status: 1)
+        } else {
+            println(path)
+            Shell(status: 0)
+        }
+    }
+
+    export fn cd(args: Array<String>) -> Shell {
+        if args.count > 1 {
+            println("cd: too many arguments")
+            Shell(status: 1)
+        } else {
+            mut path = ""
+            mut bad = false
+            if args.count == 0 {
+                path = sysGetenv("HOME")
+                if path == "" {
+                    println("cd: HOME not set")
+                    bad = true
+                }
+            } else {
+                path = args[0]
+            }
+            if bad {
+                Shell(status: 1)
+            } else {
+                let rc = sysChdir(path)
+                if rc != 0 {
+                    println("cd: {path}: {sysStrerror(sysErrno())}")
+                    Shell(status: 1)
+                } else {
+                    Shell(status: 0)
+                }
+            }
+        }
+    }
+
+    export fn run(argv: Array<String>) -> Shell {
+        if argv.count == 0 {
+            Shell(status: 0)
+        } else {
+            let cmd = argv[0]
+            match sessionResolveCommand(cmd) {
+                Not {
+                    println("thoxa: {cmd}: command not found")
+                    Shell(status: 127)
+                }
+                Has(path) {
+                    let blob = sessionEncodeArgv(argv)
+                    let st = sysSpawnWait(path, blob, blob.count)
+                    if st < 0 {
+                        println("thoxa: {cmd}: {sysStrerror(sysErrno())}")
+                        Shell(status: 1)
+                    } else {
+                        Shell(status: st)
+                    }
+                }
+            }
+        }
+    }
+
+    export fn showStatus() -> Shell {
+        println("{status}")
+        Shell(status: status)
+    }
+
+    export fn help() -> Shell {
+        println("thoxa session — Shell: echo, pwd, cd, status, help, run via PATH")
+        Shell(status: 0)
+    }
+}

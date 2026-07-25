@@ -1,0 +1,3 @@
+## Session command sugar (PR2): word lines desugar to Shell methods.
+echo "hello sugar"
+echo a b c

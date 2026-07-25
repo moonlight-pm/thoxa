@@ -2,6 +2,7 @@
 
 pub mod ast;
 pub mod cgen;
+pub mod command;
 pub mod driver;
 pub mod error;
 pub mod lexer;

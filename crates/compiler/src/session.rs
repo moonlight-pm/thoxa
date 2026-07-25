@@ -1,32 +1,42 @@
-//! Session script preparation (plan PR1+).
+//! Session script preparation (plan PR1–PR2).
 //!
 //! When the **entry** module has no `fn main`, treat it as a session script:
 //! - Top-level [`Item::SessionStmt`]s become the body of `Shell.step`.
-//! - If the user already defined `Shell.step` and there are no session stmts,
-//!   only a synthetic `main` is injected.
+//! - Default `Shell` + helpers come from `session_prelude.thx` when needed.
 //! - Synthetic `main` is `Shell(status: 0).step().status`.
 //!
-//! Programs with `fn main` are unchanged. Session stmts + `main` is an error.
+//! Command sugar ([`crate::command`]) rewrites lines **before** parse.
 
 use crate::ast::*;
 use crate::error::{Error, Result};
+use crate::lexer::Lexer;
 use crate::loader::{Package, SourceModule};
+use crate::parser::Parser;
 use crate::span::Span;
+
+const SESSION_PRELUDE: &str = include_str!("session_prelude.thx");
 
 /// Rewrite the package entry for session mode when needed.
 pub fn prepare_package(package: &mut Package) -> Result<()> {
+    if package.modules.is_empty() {
+        return Err(Error::new("package has no modules"));
+    }
+    // Prefer `is_entry`; fall back to last module (loader dependency order).
+    // LSP may demote library buffers so `is_entry` is false on all modules.
     let entry_idx = package
         .modules
         .iter()
         .position(|m| m.is_entry)
-        .ok_or_else(|| Error::new("package has no entry module"))?;
+        .unwrap_or(package.modules.len() - 1);
     prepare_entry(&mut package.modules[entry_idx])
 }
 
 fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
-    let has_main = entry.ast.items.iter().any(|item| {
-        matches!(item, Item::Function(f) if f.name == "main")
-    });
+    let has_main = entry
+        .ast
+        .items
+        .iter()
+        .any(|item| matches!(item, Item::Function(f) if f.name == "main"));
     let session_stmts: Vec<BlockItem> = entry
         .ast
         .items
@@ -47,7 +57,6 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
         return Ok(());
     }
 
-    // Drop SessionStmt items from the module; they move into step.
     entry
         .ast
         .items
@@ -68,8 +77,7 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
     });
 
     if session_stmts.is_empty() && !has_step {
-        // Library module (Io.thx, helpers, …) — leave unchanged.
-        // `thoxa run` still fails later with "program requires fn main".
+        // Library module — leave unchanged.
         return Ok(());
     }
 
@@ -80,20 +88,26 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
     }
 
     if !session_stmts.is_empty() {
-        let step = make_step_method(session_stmts);
-        match shell_idx {
-            Some(i) => {
-                if let Item::Type(t) = &mut entry.ast.items[i] {
-                    ensure_shell_status_param(t)?;
-                    t.methods.push(step);
-                }
-            }
-            None => {
-                entry.ast.items.push(Item::Type(make_shell_type(step)));
+        let needs_prelude = shell_idx.is_none();
+        if needs_prelude {
+            inject_prelude(entry)?;
+        } else if let Some(i) = shell_idx {
+            if let Item::Type(t) = &entry.ast.items[i] {
+                ensure_shell_status_param(t)?;
             }
         }
+        let step = make_step_method(session_stmts);
+        // Re-find Shell after possible prelude inject.
+        let shell_idx = entry
+            .ast
+            .items
+            .iter()
+            .position(|item| matches!(item, Item::Type(t) if t.name == "Shell"))
+            .ok_or_else(|| Error::new("internal: Shell missing after session prepare"))?;
+        if let Item::Type(t) = &mut entry.ast.items[shell_idx] {
+            t.methods.push(step);
+        }
     } else if let Some(i) = shell_idx {
-        // step already present — still require status ctor field for synthetic main
         if let Item::Type(t) = &entry.ast.items[i] {
             ensure_shell_status_param(t)?;
         }
@@ -104,6 +118,20 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
     }
 
     entry.ast.items.push(Item::Function(make_session_main()));
+    Ok(())
+}
+
+fn inject_prelude(entry: &mut SourceModule) -> Result<()> {
+    let tokens = Lexer::new(SESSION_PRELUDE)
+        .tokenize()
+        .map_err(|e| Error::new(format!("session prelude lex: {e}")))?;
+    let prelude = Parser::new(tokens)
+        .parse_module()
+        .map_err(|e| Error::new(format!("session prelude parse: {e}")))?;
+    // Insert prelude items before user items (externs/helpers/Shell first).
+    let mut merged = prelude.items;
+    merged.append(&mut entry.ast.items);
+    entry.ast.items = merged;
     Ok(())
 }
 
@@ -121,26 +149,6 @@ fn ensure_shell_status_param(t: &TypeDef) -> Result<()> {
         ));
     }
     Ok(())
-}
-
-fn make_shell_type(step: Method) -> TypeDef {
-    TypeDef {
-        exported: false,
-        name: "Shell".into(),
-        name_span: Span::dummy(),
-        params: vec![Param {
-            name: "status".into(),
-            name_span: Span::dummy(),
-            positional: false,
-            ty: TypeExpr {
-                name: "Int64".into(),
-                args: vec![],
-                span: Span::dummy(),
-            },
-        }],
-        fields: vec![],
-        methods: vec![step],
-    }
 }
 
 fn shell_status_zero() -> Expr {
@@ -161,7 +169,17 @@ fn shell_status_zero() -> Expr {
 }
 
 fn make_step_method(stmts: Vec<BlockItem>) -> Method {
-    // Body: user statements, then `Shell(status: 0)` so step returns Shell.
+    // mut shell = Shell(status: 0)
+    // <user stmts — may assign shell = shell.echo(…)>
+    // shell
+    let mut items = vec![BlockItem::Let {
+        name: "shell".into(),
+        name_span: Span::dummy(),
+        mutable: true,
+        ty: None,
+        init: shell_status_zero(),
+    }];
+    items.extend(stmts);
     Method {
         exported: true,
         name: "step".into(),
@@ -173,8 +191,11 @@ fn make_step_method(stmts: Vec<BlockItem>) -> Method {
             span: Span::dummy(),
         }),
         body: Block {
-            items: stmts,
-            tail: Some(Box::new(shell_status_zero())),
+            items,
+            tail: Some(Box::new(Expr {
+                kind: ExprKind::Name("shell".into()),
+                span: Span::dummy(),
+            })),
             span: Span::dummy(),
         },
     }
@@ -220,8 +241,7 @@ fn make_session_main() -> Function {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::Lexer;
-    use crate::parser::Parser;
+    use crate::command::desugar_session_source;
 
     fn parse(src: &str) -> Module {
         let tokens = Lexer::new(src).tokenize().expect("lex");
@@ -229,10 +249,11 @@ mod tests {
     }
 
     fn prep(src: &str) -> Module {
+        let desugared = desugar_session_source(src).expect("desugar");
         let mut entry = SourceModule {
             id: "Main".into(),
             path: std::path::PathBuf::from("Main.thx"),
-            ast: parse(src),
+            ast: parse(&desugared),
             is_entry: true,
         };
         prepare_entry(&mut entry).expect("prepare");
@@ -255,10 +276,7 @@ mod tests {
             })
             .expect("Shell");
         assert!(shell.methods.iter().any(|m| m.name == "step"));
-        assert!(!m
-            .items
-            .iter()
-            .any(|i| matches!(i, Item::SessionStmt(_))));
+        assert!(shell.methods.iter().any(|m| m.name == "echo"));
     }
 
     #[test]
