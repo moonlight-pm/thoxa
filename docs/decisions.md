@@ -17,6 +17,19 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-25 — Session `path()` hook
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D100 | Session PATH hook | Optional `fn path(parent: Array<String>) -> Array<String>` in rc/decls; host runs after rc and on decl change | `parent` = current process PATH split on `:`. Return components **replace** process PATH (join `:`); empty `[]` clears PATH. No merge unless body appends `parent`. Host captures pre-hook PATH as `THOXA_TOOLCHAIN_PATH` / `capture_toolchain_path` so `cc`/`ar` still resolve when session PATH is empty/minimal. Unit: `repl::tests`. |
+
+## 2026-07-25 — Parameter defaults + std color hex
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D98 | Parameter defaults (M3 subset) | `name: T = expr` on non-`!` formals; omit at call (named or trailing positional); defaults lowered at **call site** | Positional `!` and `extern` cannot default. Non-default formals may not follow a defaulted one. Methods/ctors still all-required. Conformance: `param_defaults`. |
+| D99 | Hex color → SGR | `std/Ansi.parseRgba` / `fgHex` / `bgHex`; primary `#RRGGBB`, also `#RRGGBBAA` (optional `#`); alpha optional, ignored for SGR (`a=255` if omitted) | Invalid hex → black SGR. `defaultPrompt(signature: String = "#3B9DC2")` uses `fgHex` for user@host. |
+
 ## 2026-07-24 — Session / REPL (Thoxa is the session language)
 
 | ID | Decision | Choice | Notes |
@@ -29,7 +42,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D93 | REPL execution (v1) | Host loop: compile each stmt chunk as session script; **decls accumulate**; host-side `cd` + `\|` pipelines | Full in-process dlopen step ABI deferred; `ThoxaShellState` + `thoxa_pipe` in RT for next step |
 | D94 | Script execution | Splice + synthetic `main` + normal executable | No dlopen |
 | D95 | extras/shell | Dogfood prototype of Shell API; product face is bare `thoxa` | `cargo make shell` → bare `thoxa` |
-| D96 | Session rc + prompt | Interactive REPL loads `$HOME/.config/thoxa/shell.thx` (missing = no-op). Decls accumulate; stmts run once. Optional `fn prompt() -> String` — host rebuilds prompt binary when decls change, **runs** it every primary prompt. Host sets `THOXA_STATUS`. Default `$ `; continuation `> ` fixed. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC` | Real Thoxa (not a second grammar). Piped REPL / session scripts do not load rc. |
+| D96 | Session rc + prompt | Interactive REPL loads `$HOME/.config/thoxa/shell.thx` (missing = no-op). Decls accumulate; stmts run once. Optional `fn prompt() -> String` — host rebuilds prompt binary when decls change, **runs** it every primary prompt. Host sets `THOXA_STATUS`. Default `$ `; continuation `> ` fixed. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC` | Real Thoxa (not a second grammar). Piped REPL / session scripts do not load rc. Optional `fn path` → **D100**. |
 | D97 | Product `std/` root | Import `"std/Module"` resolves under product std tree (`THOXA_STD` → `{THOXA_ROOT}/std` → workspace `std/` → next to `thoxa` binary). Modules: `Str`, `Path`, `Ansi`, `Env`, `Git`, `Prompt` (`defaultPrompt`). `ffi` still deferred | Partial unlock of D30 named roots for session prompts + shared helpers. Conformance: `stdlib`. |
 
 ## 2026-07-21 — Value match (string / int / bool + else)

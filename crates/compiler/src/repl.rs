@@ -10,11 +10,17 @@
 //!
 //! **status:** last process exit code (session `shell.status`).
 //!
-//! **rc / prompt (D96):** interactive REPL loads `~/.config/thoxa/shell.thx`
-//! once at start (decls accumulate; statements run once). If the session
-//! defines `fn prompt() -> String`, the host rebuilds a small prompt binary
-//! when decls change and **runs** it every primary prompt (live time/cwd/…).
-//! Host sets `THOXA_STATUS` so Thoxa can read last status via `getenv`.
+//! **rc / prompt / path (D96, D100):** interactive REPL loads
+//! `~/.config/thoxa/shell.thx` once at start (decls accumulate; statements run
+//! once). If the session defines `fn prompt() -> String`, the host rebuilds a
+//! small prompt binary when decls change and **runs** it every primary prompt
+//! (live time/cwd/…). Host sets `THOXA_STATUS` so Thoxa can read last status
+//! via `getenv`.
+//!
+//! If the session defines `fn path(parent: Array<String>) -> Array<String>`,
+//! the host runs it after rc load and whenever decls change: `parent` is the
+//! current process `PATH` split on `:`; the returned components **replace**
+//! process `PATH` (joined with `:`). Chunk/prompt children inherit that env.
 
 use crate::command::{desugar_command_line, desugar_session_source, split_words};
 use crate::driver::{self, BuildOptions};
@@ -34,6 +40,8 @@ pub fn run_repl() -> Result<i32> {
     if interactive {
         println!("thoxa session — Thoxa is the language; commands desugar to Shell");
         println!("type help, or exit / Ctrl-D to quit");
+        // Capture PATH for host `cc`/`ar` before rc `path()` can replace it.
+        driver::capture_toolchain_path();
         match load_shell_rc(&mut decls) {
             Ok(st) => status = st,
             Err(e) => {
@@ -42,6 +50,9 @@ pub fn run_repl() -> Result<i32> {
             }
         }
         prompt_state.on_decls_changed(&decls);
+        if let Err(e) = apply_path_hook(&decls) {
+            eprintln!("error: path: {e}");
+        }
     }
 
     let mut stdout = io::stdout();
@@ -92,6 +103,9 @@ pub fn run_repl() -> Result<i32> {
                 status = st;
                 if decls_changed {
                     prompt_state.on_decls_changed(&decls);
+                    if let Err(e) = apply_path_hook(&decls) {
+                        eprintln!("error: path: {e}");
+                    }
                 }
             }
             Err(e) => {
@@ -425,6 +439,167 @@ fn strip_one_trailing_newline(s: &str) -> &str {
         .unwrap_or(s)
 }
 
+// ── path() ────────────────────────────────────────────────────────────────
+
+/// True when accumulated decl sources define `fn path` (not `pathFoo`).
+pub fn decls_define_path(decls: &[String]) -> bool {
+    for d in decls {
+        for line in d.lines() {
+            if line_defines_fn_path(line) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn line_defines_fn_path(line: &str) -> bool {
+    let t = line.trim();
+    let t = t.strip_prefix("export ").unwrap_or(t).trim_start();
+    let Some(rest) = t.strip_prefix("fn ") else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let Some(after) = rest.strip_prefix("path") else {
+        return false;
+    };
+    after.starts_with('(')
+        || after
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_whitespace())
+}
+
+/// If `fn path` is defined, run it with parent PATH components and replace
+/// process `PATH` with the joined return value. No-op when undefined.
+///
+/// Captures the pre-hook PATH once for host tools (`cc` / `ar`) so an empty or
+/// minimal session PATH does not break compile-per-chunk.
+fn apply_path_hook(decls: &[String]) -> Result<()> {
+    if !decls_define_path(decls) {
+        return Ok(());
+    }
+    // Snapshot toolchain PATH before we overwrite session PATH.
+    driver::capture_toolchain_path();
+    let parent = current_path_components();
+    let components = run_path_hook(decls, &parent)?;
+    let joined = components.join(":");
+    // Empty return → empty PATH (commands only via absolute paths).
+    std::env::set_var("PATH", &joined);
+    Ok(())
+}
+
+fn current_path_components() -> Vec<String> {
+    match std::env::var("PATH") {
+        Ok(p) if !p.is_empty() => p.split(':').map(|s| s.to_string()).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Build + run the path binary; return path components (one per stdout line).
+fn run_path_hook(decls: &[String], parent: &[String]) -> Result<Vec<String>> {
+    // Path binary build needs `cc`; capture toolchain PATH if not already.
+    driver::capture_toolchain_path();
+    let bin = build_path_binary(decls, parent)?;
+    let out = Command::new(&bin)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .output()
+        .map_err(|e| Error::new(format!("path exec: {e}")))?;
+    if !out.status.success() {
+        return Err(Error::new(format!(
+            "path exited {}",
+            out.status.code().unwrap_or(1)
+        )));
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    Ok(parse_path_hook_stdout(&s))
+}
+
+/// One component per non-empty line (trailing newline stripped per line).
+fn parse_path_hook_stdout(s: &str) -> Vec<String> {
+    s.lines()
+        .map(|l| l.trim_end_matches('\r').to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Program binary (has `main`): call `path(parent: …)` and println each component.
+/// Uses `main` rather than a session script so `for`/`let` type ann work (session
+/// stmt bodies are still a thinner surface).
+fn build_path_binary(decls: &[String], parent: &[String]) -> Result<PathBuf> {
+    let mut src = String::new();
+    for d in decls {
+        src.push_str(d);
+        if !d.ends_with('\n') {
+            src.push('\n');
+        }
+    }
+    // Parent may be empty — need an annotated empty Array<String>.
+    src.push_str("fn main() -> Int64 {\n");
+    src.push_str("    let parent: Array<String> = ");
+    src.push_str(&thoxa_string_array_lit(parent));
+    src.push('\n');
+    src.push_str("    let result = path(parent: parent)\n");
+    src.push_str("    for p in result {\n");
+    src.push_str("        println(p)\n");
+    src.push_str("    }\n");
+    src.push_str("    0\n");
+    src.push_str("}\n");
+
+    let dir = driver::thoxa_target_dir().join("repl");
+    fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
+    // Unique names: parallel unit tests must not clobber a shared path.thx / binary.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let stem = format!("repl_path_{}_{}", std::process::id(), stamp);
+    let path = dir.join(format!("{stem}.thx"));
+    fs::write(&path, &src).map_err(|e| Error::new(e.to_string()))?;
+
+    let opts = BuildOptions {
+        source: path,
+        output_name: Some(stem),
+        emit_c_only: false,
+    };
+    let art = driver::build(&opts)?;
+    art.bin_path
+        .ok_or_else(|| Error::new("path: no binary"))
+}
+
+fn thoxa_string_array_lit(items: &[String]) -> String {
+    if items.is_empty() {
+        return "[]".to_string();
+    }
+    let mut out = String::from("[");
+    for (i, s) in items.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&thoxa_string_lit(s));
+    }
+    out.push(']');
+    out
+}
+
+fn thoxa_string_lit(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 // ── chunks ────────────────────────────────────────────────────────────────
 
 struct ChunkOutcome {
@@ -701,6 +876,118 @@ fn prompt() -> String {
         assert_eq!(out, "s=7$ ");
     }
 
+    #[test]
+    fn path_name_detection() {
+        assert!(decls_define_path(&[
+            "fn path(parent: Array<String>) -> Array<String> {\n    parent\n}".into()
+        ]));
+        assert!(decls_define_path(&[
+            "export fn path(parent: Array<String>) -> Array<String> { parent }".into()
+        ]));
+        assert!(!decls_define_path(&[
+            "fn pathHelper(parent: Array<String>) -> Array<String> { parent }".into()
+        ]));
+        assert!(!decls_define_path(&["fn other() -> Int64 { 0 }".into()]));
+    }
+
+    #[test]
+    fn path_hook_replaces_with_returned_components() {
+        let decls = vec![
+            r#"
+fn path(parent: Array<String>) -> Array<String> {
+    ["/opt/custom", "/run/system"]
+}
+"#
+            .trim()
+            .to_string(),
+        ];
+        assert!(decls_define_path(&decls));
+        let parent = vec!["/old/a".into(), "/old/b".into()];
+        let out = run_path_hook(&decls, &parent).expect("path hook");
+        assert_eq!(out, vec!["/opt/custom", "/run/system"]);
+    }
+
+    #[test]
+    fn path_hook_can_merge_parent() {
+        let decls = vec![
+            r#"
+fn path(parent: Array<String>) -> Array<String> {
+    mut out: Array<String> = ["/first"]
+    for p in parent {
+        out = out.append(p)
+    }
+    out
+}
+"#
+            .trim()
+            .to_string(),
+        ];
+        let parent = vec!["/a".into(), "/b".into()];
+        let out = run_path_hook(&decls, &parent).expect("path merge");
+        assert_eq!(out, vec!["/first", "/a", "/b"]);
+    }
+
+    #[test]
+    fn path_hook_empty_array_return_clears_path() {
+        // Serialize PATH mutations so parallel tests still find `cc`.
+        let _lock = env_path_lock();
+        driver::capture_toolchain_path();
+
+        // Bare `[]` with `-> Array<String>` (typed empty return).
+        let decls = vec![
+            r#"
+fn path(parent: Array<String>) -> Array<String> {
+    []
+}
+"#
+            .trim()
+            .to_string(),
+        ];
+        let parent = vec!["/a".into(), "/b".into()];
+        let out = run_path_hook(&decls, &parent).expect("empty path");
+        assert!(out.is_empty(), "expected no components, got {out:?}");
+
+        // apply_path_hook must set process PATH to "" (not leave parent).
+        // Keep a real toolchain PATH captured first so the hook build can spawn cc.
+        let prev = std::env::var("PATH").ok();
+        apply_path_hook(&decls).expect("apply empty path");
+        let after = std::env::var("PATH").unwrap_or_else(|_| "<unset>".into());
+        assert_eq!(after, "", "PATH should be cleared, got {after:?}");
+        // Host tools still resolve via THOXA_TOOLCHAIN_PATH / capture.
+        let still = run_path_hook(&decls, &parent).expect("rebuild after empty PATH");
+        assert!(still.is_empty());
+        match prev {
+            Some(p) => std::env::set_var("PATH", p),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+
+    #[test]
+    fn path_hook_empty_via_annotated_local() {
+        let decls = vec![
+            r#"
+fn path(parent: Array<String>) -> Array<String> {
+    mut out: Array<String> = []
+    out
+}
+"#
+            .trim()
+            .to_string(),
+        ];
+        let out = run_path_hook(&decls, &["/x".into()]).expect("empty local");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn parse_path_stdout_skips_empty_lines() {
+        assert_eq!(
+            parse_path_hook_stdout("/a\n\n/b\n"),
+            vec!["/a".to_string(), "/b".to_string()]
+        );
+        assert!(parse_path_hook_stdout("").is_empty());
+        assert!(parse_path_hook_stdout("\n\n").is_empty());
+    }
+
     fn tempfile_dir(prefix: &str) -> PathBuf {
         let base = std::env::temp_dir().join(format!(
             "{prefix}_{}",
@@ -709,5 +996,11 @@ fn prompt() -> String {
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         base
+    }
+
+    /// Guard for tests that mutate process PATH (parallel test safety).
+    fn env_path_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 }

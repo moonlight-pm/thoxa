@@ -440,6 +440,8 @@ struct Binding {
 #[derive(Clone)]
 struct FnSig {
     params: Vec<(String, Ty)>,
+    /// Parallel to `params`: default expression when the call omits this argument.
+    defaults: Vec<Option<Expr>>,
     ret: Ty,
     /// If set, this name is an `extern fn` (call C, no Thoxa body).
     extern_symbol: Option<String>,
@@ -894,6 +896,12 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     }
                     let mut params = Vec::new();
                     for p in &e.params {
+                        if p.default.is_some() {
+                            return Err(Error::at(
+                                "extern fn parameters cannot have defaults",
+                                p.name_span,
+                            ));
+                        }
                         let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
                         if matches!(ty, Ty::Void) || !is_ffi_ty(&ty) {
                             return Err(Error::at(
@@ -910,6 +918,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                             mangled.clone(),
                             FnSig {
                                 params: params.clone(),
+                                defaults: vec![None; params.len()],
                                 ret: ret.clone(),
                                 extern_symbol: Some(c_symbol.clone()),
                                 mangled: mangled.clone(),
@@ -943,16 +952,33 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         mangle_fn(&m.id, &f.name, m.is_entry)
                     };
                     let ret = resolve_return_ty(f, m.is_entry, &types_info, &name_map)?;
-                    let params = f
-                        .params
-                        .iter()
-                        .map(|p| Ok((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?)))
-                        .collect::<Result<Vec<_>>>()?;
+                    let mut params = Vec::new();
+                    let mut defaults = Vec::new();
+                    for p in &f.params {
+                        params.push((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?));
+                        defaults.push(p.default.clone());
+                    }
+                    // Non-defaulted params may not follow a defaulted one (positional omit rule).
+                    let mut seen_default = false;
+                    for (i, d) in defaults.iter().enumerate() {
+                        if d.is_some() {
+                            seen_default = true;
+                        } else if seen_default {
+                            return Err(Error::at(
+                                format!(
+                                    "parameter `{}` without a default follows a defaulted parameter",
+                                    params[i].0
+                                ),
+                                f.params[i].name_span,
+                            ));
+                        }
+                    }
                     if fns
                         .insert(
                             mangled.clone(),
                             FnSig {
                                 params,
+                                defaults,
                                 ret,
                                 extern_symbol: None,
                                 mangled: mangled.clone(),
@@ -1593,7 +1619,16 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
     lower_block_items(ctx, &block.items)?;
 
     let result = if let Some(tail) = &block.tail {
-        let (place, ty) = lower_expr(ctx, tail)?;
+        // Empty `[]` as block tail: take elem type from expected Array<T> (e.g. fn return).
+        let (place, ty) = if is_empty_array_lit(tail) {
+            if let Ty::Array { elem } = expect {
+                lower_empty_array_typed(ctx, elem.as_ref(), tail.span)?
+            } else {
+                lower_expr(ctx, tail)?
+            }
+        } else {
+            lower_expr(ctx, tail)?
+        };
         if *expect != Ty::Void && &ty != expect {
             return Err(Error::at(
                 format!("expected {expect:?}, found {ty:?}"),
@@ -1612,6 +1647,37 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
 
 fn is_empty_array_lit(expr: &Expr) -> bool {
     matches!(&expr.kind, ExprKind::ArrayLit(elems) if elems.is_empty())
+}
+
+/// Typed empty array literal (when context supplies `Array<T>`).
+fn lower_empty_array_typed(ctx: &mut LowerCtx, elem: &Ty, span: Span) -> Result<(Place, Ty)> {
+    if !is_array_elem_ty(elem) {
+        return Err(Error::at(
+            format!("Array element type not yet supported: {elem:?}"),
+            span,
+        ));
+    }
+    if array_elem_is_user(elem) && !is_array_user_elem(elem, &ctx.types) {
+        return Err(Error::at(
+            format!(
+                "Array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {elem:?}"
+            ),
+            span,
+        ));
+    }
+    let arr_ty = Ty::Array {
+        elem: Box::new(elem.clone()),
+    };
+    let p = ctx.fresh("aempty");
+    ctx.assign(
+        p.clone(),
+        arr_ty.clone(),
+        RValue::ArrayLit {
+            elems: vec![],
+            elem_ty: elem.clone(),
+        },
+    );
+    Ok((p, arr_ty))
 }
 
 fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
@@ -2103,7 +2169,16 @@ fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<
             None
         }
         Some(e) => {
-            let (place, ty) = lower_expr(ctx, e)?;
+            // `return []` with `-> Array<T>`: empty lit takes T from the return type.
+            let (place, ty) = if is_empty_array_lit(e) {
+                if let Ty::Array { elem } = &fn_ret {
+                    lower_empty_array_typed(ctx, elem.as_ref(), e.span)?
+                } else {
+                    lower_expr(ctx, e)?
+                }
+            } else {
+                lower_expr(ctx, e)?
+            };
             if ty != fn_ret {
                 // Allow int width widen/narrow via existing coerce for ints if needed.
                 if is_int(&ty) && is_int(&fn_ret) {
@@ -3373,9 +3448,25 @@ fn resolve_call_args(
     args: &[Arg],
     span: Span,
 ) -> Result<Vec<Place>> {
+    resolve_call_args_with_defaults(ctx, formal, &[], args, span)
+}
+
+/// Like [`resolve_call_args`], but `defaults[i]` fills formal `i` when omitted.
+/// `defaults` may be shorter than `formal` (missing entries mean no default).
+fn resolve_call_args_with_defaults(
+    ctx: &mut LowerCtx,
+    formal: &[(String, Ty)],
+    defaults: &[Option<Expr>],
+    args: &[Arg],
+    span: Span,
+) -> Result<Vec<Place>> {
     if args.is_empty() && formal.is_empty() {
         return Ok(Vec::new());
     }
+
+    let default_at = |i: usize| -> Option<&Expr> {
+        defaults.get(i).and_then(|d| d.as_ref())
+    };
 
     let all_named = args.iter().all(|a| matches!(a, Arg::Named { .. }));
     let all_pos = args.iter().all(|a| matches!(a, Arg::Pos(_)));
@@ -3385,15 +3476,29 @@ fn resolve_call_args(
     }
 
     if all_pos {
-        if args.len() != formal.len() {
+        if args.len() > formal.len() {
             return Err(Error::at(
                 format!(
-                    "expected {} argument(s), found {}",
+                    "expected at most {} argument(s), found {}",
                     formal.len(),
                     args.len()
                 ),
                 span,
             ));
+        }
+        // Trailing formals may be defaulted when fewer positional args are given.
+        for i in args.len()..formal.len() {
+            if default_at(i).is_none() {
+                return Err(Error::at(
+                    format!(
+                        "expected {} argument(s), found {} (missing `{}`)",
+                        formal.len(),
+                        args.len(),
+                        formal[i].0
+                    ),
+                    span,
+                ));
+            }
         }
         let mut places = Vec::new();
         for (i, arg) in args.iter().enumerate() {
@@ -3404,20 +3509,15 @@ fn resolve_call_args(
             let p = lower_arg_for_formal(ctx, expr, &formal[i].1, &formal[i].0, i)?;
             places.push(p);
         }
+        for i in args.len()..formal.len() {
+            let expr = default_at(i).expect("checked above");
+            let p = lower_arg_for_formal(ctx, expr, &formal[i].1, &formal[i].0, i)?;
+            places.push(p);
+        }
         return Ok(places);
     }
 
-    // Named: match by name, require all formals present, declaration order for result.
-    if args.len() != formal.len() {
-        return Err(Error::at(
-            format!(
-                "expected {} argument(s), found {}",
-                formal.len(),
-                args.len()
-            ),
-            span,
-        ));
-    }
+    // Named: match by name; omitted formals use defaults; declaration order for result.
     let mut by_name: HashMap<String, &Expr> = HashMap::new();
     for arg in args {
         match arg {
@@ -3439,9 +3539,13 @@ fn resolve_call_args(
     }
     let mut places = Vec::new();
     for (i, (fname, fty)) in formal.iter().enumerate() {
-        let expr = by_name
-            .remove(fname)
-            .ok_or_else(|| Error::at(format!("missing argument `{fname}`"), span))?;
+        let expr = if let Some(e) = by_name.remove(fname) {
+            e
+        } else if let Some(d) = default_at(i) {
+            d
+        } else {
+            return Err(Error::at(format!("missing argument `{fname}`"), span));
+        };
         let p = lower_arg_for_formal(ctx, expr, fty, fname, i)?;
         places.push(p);
     }
@@ -4940,7 +5044,8 @@ fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Res
                 .get(&mangled)
                 .ok_or_else(|| Error::at(format!("unknown function `{other}`"), span))?
                 .clone();
-            let arg_places = resolve_call_args(ctx, &sig.params, args, span)?;
+            let arg_places =
+                resolve_call_args_with_defaults(ctx, &sig.params, &sig.defaults, args, span)?;
             let callee = if let Some(sym) = &sig.extern_symbol {
                 Callee::Extern {
                     c_symbol: sym.clone(),

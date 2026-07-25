@@ -164,6 +164,7 @@ Build products land under target/ (rust/, c/, thoxa/).
 Session scripts omit `fn main`; top-level statements become Shell.step.
 Interactive REPL loads ~/.config/thoxa/shell.thx (THOXA_SHELL_RC / THOXA_NORC).
 Optional fn prompt() -> String customizes the primary prompt (THOXA_STATUS env).
+Optional fn path(parent: Array<String>) -> Array<String> replaces process PATH.
 import from \"std/…\" (Str Path Ansi Env Git); THOXA_STD overrides the tree.
 `thoxa lsp` speaks Language Server Protocol over stdio (for editors).
 `thoxa check` type-checks without codegen and prints path:line:col diagnostics."

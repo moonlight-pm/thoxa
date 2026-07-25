@@ -12,6 +12,65 @@ use crate::mir;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
+
+/// Snapshot of PATH for host tools (`cc` / `ar`) before session `path()` replaces it.
+/// Set once via [`capture_toolchain_path`]; consulted by [`host_tool`].
+static TOOLCHAIN_PATH: OnceLock<String> = OnceLock::new();
+
+/// Env var mirror of [`TOOLCHAIN_PATH`] so subprocesses / tests can inspect it.
+pub const TOOLCHAIN_PATH_ENV: &str = "THOXA_TOOLCHAIN_PATH";
+
+/// Capture the current process `PATH` once for later host-tool resolution.
+/// Safe to call repeatedly; first non-empty PATH wins.
+pub fn capture_toolchain_path() {
+    if TOOLCHAIN_PATH.get().is_some() {
+        return;
+    }
+    let path = std::env::var("PATH").unwrap_or_default();
+    if path.is_empty() {
+        // Fall back to env var if set (e.g. tests).
+        if let Ok(p) = std::env::var(TOOLCHAIN_PATH_ENV) {
+            let _ = TOOLCHAIN_PATH.set(p);
+        }
+        return;
+    }
+    let _ = TOOLCHAIN_PATH.set(path.clone());
+    // Also publish for any external tooling; ignore if already set.
+    if std::env::var_os(TOOLCHAIN_PATH_ENV).is_none() {
+        std::env::set_var(TOOLCHAIN_PATH_ENV, &path);
+    }
+}
+
+fn toolchain_search_path() -> String {
+    if let Some(p) = TOOLCHAIN_PATH.get() {
+        return p.clone();
+    }
+    if let Ok(p) = std::env::var(TOOLCHAIN_PATH_ENV) {
+        return p;
+    }
+    std::env::var("PATH").unwrap_or_default()
+}
+
+/// Resolve `program` on the toolchain search path (absolute path if found).
+fn resolve_host_tool(program: &str) -> PathBuf {
+    let search = toolchain_search_path();
+    for dir in search.split(':') {
+        if dir.is_empty() {
+            continue;
+        }
+        let cand = Path::new(dir).join(program);
+        if cand.is_file() {
+            return cand;
+        }
+    }
+    PathBuf::from(program)
+}
+
+/// `Command` for a host build tool (`cc`, `ar`, …) that survives empty session PATH.
+fn host_tool(program: &str) -> Command {
+    Command::new(resolve_host_tool(program))
+}
 
 /// Workspace-relative paths resolved from cwd or `THOXA_ROOT`.
 #[derive(Debug, Clone)]
@@ -120,7 +179,7 @@ pub fn build_runtime() -> Result<()> {
     let lib = out_dir.join("libthoxa_rt.a");
     let include = root.join("runtime/include");
 
-    let status = Command::new("cc")
+    let status = host_tool("cc")
         .args(["-std=c11", "-O2", "-c"])
         .arg(&src)
         .arg("-I")
@@ -134,7 +193,7 @@ pub fn build_runtime() -> Result<()> {
     }
 
     // ar rcs lib.a obj
-    let status = Command::new("ar")
+    let status = host_tool("ar")
         .args(["rcs"])
         .arg(&lib)
         .arg(&obj)
@@ -272,7 +331,7 @@ pub fn build(opts: &BuildOptions) -> Result<BuildArtifacts> {
     fs::create_dir_all(&bin_dir).map_err(|e| Error::new(e.to_string()))?;
     let bin_path = bin_dir.join(&name);
 
-    let status = Command::new("cc")
+    let status = host_tool("cc")
         .args(["-std=c11", "-O2"])
         .arg(&c_path)
         .arg("-I")

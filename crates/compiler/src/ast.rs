@@ -119,6 +119,9 @@ pub struct Param {
     /// Positional marker `!` (accepted; call sites may still use order or names).
     pub positional: bool,
     pub ty: TypeExpr,
+    /// Default value (`name: T = expr`). Positional (`!`) params cannot have defaults.
+    /// Omitted arguments are filled at the call site (SPEC §4.1 / M3).
+    pub default: Option<Expr>,
 }
 
 #[derive(Debug, Clone)]

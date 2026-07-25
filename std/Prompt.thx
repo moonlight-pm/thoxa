@@ -2,19 +2,19 @@
 ##
 ## Default style matches a common zsh PROMPT:
 ##   %F{#666666}%* %F{#3B9DC2}%n@%m %F{#cccccc}%2~%F{#2A7A9E}$(git_branch)%F{#ffffff} §
+##
+## The "signature" color is the user@host segment (historically cyan / #3B9DC2).
+## Override with RGB hex (preferred) or RGB+A: `defaultPrompt(signature: "#FF8800")`.
 
-import { fg, sgr0 } from "./Ansi"
+import { brightBlack, white, blue, brightWhite, sgr0, fgHex } from "./Ansi"
 import { localHms, userName, hostname } from "./Env"
 import { cwdShort } from "./Path"
 import { branch } from "./Git"
 
 ## Time · user@host · short path · git branch · §
-export fn defaultPrompt() -> String {
-    let gray = fg(102, 102, 102)
-    let cyan = fg(59, 157, 194)
-    let light = fg(204, 204, 204)
-    let blue = fg(42, 122, 158)
-    let white = fg(255, 255, 255)
+## `signature` is `#RRGGBB` (or optional `#RRGGBBAA`; alpha ignored). Default #3B9DC2.
+export fn defaultPrompt(signature: String = "#3B9DC2") -> String {
+    let sig = fgHex(signature)
     let reset = sgr0()
-    "{gray}{localHms()} {cyan}{userName()}@{hostname()} {light}{cwdShort()}{blue}{branch()}{white} § {reset}"
+    "{brightBlack}{localHms()} {sig}{userName()}@{hostname()} {white}{cwdShort()}{sig}{branch()}{brightWhite} § {reset}"
 }

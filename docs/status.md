@@ -4,9 +4,9 @@
 
 ## Next
 
-**Session/REPL + thin `std/` (D96–D97).** Optional follow-ons:
+**Session/REPL + thin `std/` (D96–D100).** Optional follow-ons:
 
-1. **Session** — in-process dlopen `step` ABI (D93 v2) so `prompt()` is a direct call; Thoxa-side pipes/redirs (not only host); prelude out of compiler embed; thread `Shell.status` into chunks (host `status` / `THOXA_STATUS` are stopgaps).
+1. **Session** — in-process dlopen `step` ABI (D93 v2) so `prompt()`/`path()` are direct calls; Thoxa-side pipes/redirs (not only host); prelude out of compiler embed; thread `Shell.status` into chunks (host `status` / `THOXA_STATUS` are stopgaps).
 2. Grow `std/` (more Str/Path/Io) and eventually `ffi`; deferred megawork (M4, Perceus, effects, typed-member nav, multi-diag, File type / method mut-field write-back, Net errno strings, …)
 
 HTTP + editor + Io complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md).
@@ -44,7 +44,10 @@ HTTP + editor + Io complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md
 | R9+ | `May<T>` / `Has` / `Not`; `Bytes.find` → `May<Int64>` (D85) | `mays`, `bytes` (+ Http) |
 | Session | no-main scripts + command sugar + bare `thoxa` REPL (D88–D95) | `session_script`, `session_step`, `session_cmd` |
 | Session | `~/.config/thoxa/shell.thx` rc + `fn prompt() -> String` (D96) | unit: `repl::tests` |
+| Session | `fn path(parent) -> Array<String>` replaces PATH; empty `[]` ok (D100) | unit: `repl::tests` |
 | std | Named root `std/` + Str/Path/Ansi/Env/Git/Prompt (D97) | `stdlib` |
+| Lang | Param defaults M3 subset (D98); empty `[]` from `-> Array<T>` | `param_defaults` |
+| std | Ansi 16 colors + `fgHex`/`parseRgba`; prompt signature hex (D99) | `stdlib` |
 
 ## Open design notes (pointers only)
 
@@ -58,23 +61,26 @@ HTTP + editor + Io complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md
 
 ## Last session
 
+- **2026-07-25 (D98–D100 + login shell):** Session readiness for default-shell experiments.
+  - **D98** param defaults: `name: T = expr`; omit at call (named or trailing pos). Conformance: `param_defaults`.
+  - **D99** Ansi: 16 colors; `parseRgba` / `fgHex` / `bgHex` (`#RRGGBB` primary, AA optional/ignored); `defaultPrompt(signature: … = "#3B9DC2")`.
+  - **D100** `fn path(parent: Array<String>) -> Array<String>` after rc / decl change; return **replaces** PATH; empty `[]` clears PATH. Host captures toolchain PATH so `cc`/`ar` still work.
+  - Empty `[]` as fn return/`return []` when expected `Array<T>` (MIR).
+  - `cargo make shell --login` — clean login-like env, cwd=`$HOME`, minimal PATH (test default-shell readiness).
+  - Conformance: `stdlib`, `param_defaults`; unit: `repl::tests`.
 - **2026-07-25 (D96–D97 ship):** Session rc + custom prompt + product `std/`.
-  - Interactive REPL loads `~/.config/thoxa/shell.thx`; optional `fn prompt() -> String` (rebuild on decl change, run every line; `THOXA_STATUS`).
-  - Named root `std/` (`Str`, `Path`, `Ansi`, `Env`, `Git`, `Prompt.defaultPrompt`).
-  - RT: `thoxa_local_hms`, `thoxa_hostname`; cgen `_DEFAULT_SOURCE` + `time.h` for libc prompt helpers.
-  - Personal rc is ~6 lines (`import { defaultPrompt } from "std/Prompt"` + `fn prompt`).
-  - Conformance: `stdlib`; unit: `repl::tests`.
-- **2026-07-24 (session polish):** Path-arg command skin; host `status` builtin.
-- **2026-07-24 (session PR0–PR7):** Full session ladder D88–D95.
+- **2026-07-24 (session polish + PR0–PR7):** Path-arg command skin; host `status`; full session ladder D88–D95.
 
 ## Verify quickly
 
 ```bash
 cargo make test
-# REPL (interactive loads ~/.config/thoxa/shell.thx)
+cargo test -p thoxa --lib repl::
+# REPL (interactive loads ~/.config/thoxa/shell.thx; optional path/prompt)
 printf 'echo hi\nexit\n' | cargo run -p thoxa --
-# session script
-cargo run -p thoxa -- tests/conformance/session_cmd.thx
-# std root
+# Login-like env (no parent cargo/dev PATH)
+cargo make shell --login
+# std + defaults
 cargo run -p thoxa -- tests/conformance/stdlib.thx
+cargo run -p thoxa -- tests/conformance/param_defaults.thx
 ```

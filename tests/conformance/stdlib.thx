@@ -1,7 +1,7 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
 import { startsWith, dropPrefix, trimNewline } from "std/Str"
 import { dirname, basename, shortPath } from "std/Path"
-import { fg, sgr0 } from "std/Ansi"
+import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 
 fn main() -> Int64 {
     if startsWith("hello", "he") {
@@ -26,6 +26,56 @@ fn main() -> Int64 {
         println("sgr0-empty")
     } else {
         println("sgr0-ok")
+    }
+    ## Named ANSI colors are prebuilt fg sequences (non-empty).
+    if cyan == "" {
+        println("cyan-empty")
+    } else {
+        println("cyan-ok")
+    }
+    if brightWhite == "" {
+        println("brightWhite-empty")
+    } else {
+        println("brightWhite-ok")
+    }
+    ## Hex parse: 6-digit RGB (no alpha → a=255) and 8-digit RGBA.
+    match parseRgba("#3B9DC2") {
+        Has(c) {
+            println("{c.r},{c.g},{c.b},{c.a}")
+        }
+        Not {
+            println("parse-fail")
+        }
+    }
+    match parseRgba("#3B9DC2FF") {
+        Has(c) {
+            println("{c.r},{c.g},{c.b},{c.a}")
+        }
+        Not {
+            println("parse8-fail")
+        }
+    }
+    match parseRgba("FF0000") {
+        Has(c) {
+            println("{c.r},{c.g},{c.b},{c.a}")
+        }
+        Not {
+            println("parse6-fail")
+        }
+    }
+    match parseRgba("nope") {
+        Has(_) {
+            println("bad-ok")
+        }
+        Not {
+            println("bad-not")
+        }
+    }
+    let hx = fgHex("#3B9DC2")
+    if hx == "" {
+        println("fgHex-empty")
+    } else {
+        println("fgHex-ok")
     }
     0
 }

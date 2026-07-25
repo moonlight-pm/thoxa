@@ -1,0 +1,10 @@
+## Named parameters with defaults (SPEC §4.1 / M3 subset).
+fn greet(name: String, greeting: String = "Hello") -> String {
+    "{greeting}, {name}"
+}
+
+fn main() -> Int64 {
+    println(greet(name: "Ada"))
+    println(greet(name: "Bo", greeting: "Hi"))
+    0
+}

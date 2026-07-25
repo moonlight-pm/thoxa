@@ -25,6 +25,7 @@ User phrases like **“next item” / “next rung”** mean: implement the **Ne
 cargo make test              # conformance (preferred day-to-day gate)
 cargo make run path.thx
 cargo make shell             # product session REPL (bare `thoxa`)
+cargo make shell --login     # same, clean login-like env (default-shell readiness)
 cargo make emit-c path.thx
 cargo make runtime           # libthoxa_rt.a + compile_commands.json
 cargo make zed               # sync extras → local Zed (LSP binary + grammar + lang)
@@ -70,8 +71,9 @@ Compiler pipeline (stable): `.thx` → lexer → parser → AST → MIR (+ simpl
 Already known (see status + decisions):
 
 - R0–R9 + post-R9 HTTP path **complete** through bounded server (D67) + `Main.thx` dir entry (D68); also early `return` (D63), User+heap RC (D64), `Array<User>` (D65), match discard (D66), Request/Response (D69), Router type (D70), Io OpenMode/errno polish (D80–D82).
-- **Session/REPL (D88–D96):** bare `thoxa` REPL; no-main scripts → `Shell.step`; command sugar; decls accumulate in REPL; host `cd` + `\|`; interactive loads `~/.config/thoxa/shell.thx`; optional `fn prompt() -> String` (+ `THOXA_STATUS`). Plan: `docs/specs/2026-07-24-thoxa-session-repl.md`.
-- **std/ (D97):** `import { … } from "std/Str"` (also Path/Ansi/Env/Git/Prompt). Root: `THOXA_STD` / workspace `std/`.
+- **Session/REPL (D88–D96, D100):** bare `thoxa` REPL; no-main scripts → `Shell.step`; command sugar; decls accumulate in REPL; host `cd` + `\|`; interactive loads `~/.config/thoxa/shell.thx`; optional `fn prompt() -> String` (+ `THOXA_STATUS`); optional `fn path(parent: Array<String>) -> Array<String>` replaces process PATH. Plan: `docs/specs/2026-07-24-thoxa-session-repl.md`.
+- **std/ (D97, D99):** `import { … } from "std/Str"` (also Path/Ansi/Env/Git/Prompt). Root: `THOXA_STD` / workspace `std/`. Ansi: 16 colors + `fgHex`/`parseRgba` (`#RRGGBB` or `#RRGGBBAA`); `defaultPrompt(signature: … = "#3B9DC2")`.
+- **Param defaults (D98):** `name: T = expr` on non-`!` formals; omit at call (named or trailing positional).
 - **Editor:** phase 1 + phase 2 complete (D71–D79): `check_source` (+ overlays), `thoxa lsp`, extras, resolver, hover/def/refs/outline/rename, cross-module jump (`./`/`~/`, open buffer wins). MIR lower not yet on shared resolver. **No Python** in product path.
 - Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28, **D82** String *returns* via `thoxa_string_from_cstr`); cgen pulls fcntl/unistd/socket headers when externs present.
 - C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).

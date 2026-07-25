@@ -386,11 +386,24 @@ impl Parser {
         };
         self.expect_kind(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
+        let default = if self.at(TokenKind::Eq) {
+            if positional {
+                return Err(Error::at(
+                    "positional parameters (`!`) cannot have defaults",
+                    name_span,
+                ));
+            }
+            self.bump();
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
         Ok(Param {
             name,
             name_span,
             positional,
             ty,
+            default,
         })
     }
 
