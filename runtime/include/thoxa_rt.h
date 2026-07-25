@@ -46,6 +46,19 @@ int32_t thoxa_errno(void);
  */
 int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len);
 
+/*
+ * Session / REPL helpers (plan PR3+).
+ * `ThoxaShellState` is the stable C view of session status for future dlopen
+ * step objects. Today the host mostly uses process exit codes; this struct is
+ * the ABI placeholder.
+ */
+typedef struct ThoxaShellState {
+    int64_t status;
+} ThoxaShellState;
+
+/* pipe(2) wrapper — used by pipeline session APIs (PR6). Returns 0 or -1. */
+int32_t thoxa_pipe(int32_t fds_out[2]);
+
 /* --- Heap header (RC) --------------------------------------------------- */
 
 typedef struct ThoxaHeader {

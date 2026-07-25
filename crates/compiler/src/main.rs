@@ -20,9 +20,9 @@ fn main() -> ExitCode {
 
 fn try_main() -> Result<i32, Error> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
+    // Bare `thoxa` → session REPL (plan D88).
     if args.is_empty() {
-        print_usage();
-        return Ok(2);
+        return thoxa::repl::run_repl();
     }
     let cmd = args.remove(0);
     match cmd.as_str() {
@@ -61,14 +61,33 @@ fn try_main() -> Result<i32, Error> {
                 .ok_or_else(|| Error::new("check requires a path (file.thx or directory)"))?;
             run_check(PathBuf::from(path))
         }
+        "repl" => thoxa::repl::run_repl(),
         "-h" | "--help" | "help" => {
             print_usage();
             Ok(0)
+        }
+        // `thoxa path.thx` / `thoxa dir/` — run as program or session script.
+        other if looks_like_source_path(other) => {
+            let opts = BuildOptions {
+                source: PathBuf::from(other),
+                output_name: None,
+                emit_c_only: false,
+            };
+            driver::run(&opts)
         }
         other => Err(Error::new(format!(
             "unknown command `{other}` (try `thoxa help`)"
         ))),
     }
+}
+
+fn looks_like_source_path(s: &str) -> bool {
+    let p = PathBuf::from(s);
+    p.exists()
+        || s.ends_with(".thx")
+        || s.contains('/')
+        || s == "."
+        || s == ".."
 }
 
 fn run_check(path: PathBuf) -> Result<i32, Error> {
@@ -126,11 +145,14 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, Error> {
 fn print_usage() {
     eprintln!(
         "\
-thoxa — native Thoxa compiler (compile-to-C)
+thoxa — native Thoxa compiler + session REPL (compile-to-C)
 
 USAGE:
-    thoxa build  <file.thx|dir> [-o name]
+    thoxa                        Session REPL (commands desugar to Shell)
+    thoxa repl                   Same as bare thoxa
+    thoxa <file.thx|dir>         Run program (main) or session script (no main)
     thoxa run    <file.thx|dir>
+    thoxa build  <file.thx|dir> [-o name]
     thoxa emit-c <file.thx|dir>
     thoxa check  <file.thx|dir>
     thoxa runtime
@@ -139,7 +161,8 @@ USAGE:
 A directory argument resolves to <dir>/Main.thx (project root for ~/ is that dir).
 Build products land under target/ (rust/, c/, thoxa/).
 
-`thoxa lsp` speaks Language Server Protocol over stdio (for editors; not interactive).
+Session scripts omit `fn main`; top-level statements become Shell.step.
+`thoxa lsp` speaks Language Server Protocol over stdio (for editors).
 `thoxa check` type-checks without codegen and prints path:line:col diagnostics."
     );
 }

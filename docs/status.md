@@ -4,12 +4,12 @@
 
 ## Next
 
-**HTTP + editor + Io polish complete.** Session/REPL plan in progress.
+**Session/REPL plan largely shipped (PR0–PR6).** Optional polish:
 
-1. **Session model** — [`docs/specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md). **PR0 done** (`Shell` + `status` in extras/shell). **Next:** PR1 — no-`main` session scripts (compiler splice).
+1. **Session follow-ons** — true in-process dlopen `step` ABI (D93 v2); richer pipelines/redirs in Thoxa not only host; prelude absorption out of compiler embed.
 2. Deferred megawork (M4, Perceus, effects, full `std/`/`ffi`, typed-member nav, multi-diag, File type / method mut-field write-back, Net errno strings, …)
 
-HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
+HTTP ladder + editor + Io polish complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md).
 
 ## Done (ladder)
 
@@ -42,67 +42,29 @@ HTTP ladder + `Main.thx` complete. Editor: D71–D79 + Zed. Io PR9: D80–D82.
 | R9+ | Bounded multi-request static HTTP server (D67) | `http_server` |
 | R9+ | Directory entry `Main.thx` (D68) | `pkgmain` |
 | R9+ | `May<T>` / `Has` / `Not`; `Bytes.find` → `May<Int64>` (D85) | `mays`, `bytes` (+ Http) |
+| Session | no-main scripts + command sugar + bare `thoxa` REPL (D88–D95) | `session_script`, `session_step`, `session_cmd` |
 
 ## Open design notes (pointers only)
 
 | Topic | Where | Stance |
 |-------|--------|--------|
-| Postfix `having` / `else` for May | [`docs/ideas/2026-07-20-having-else-may.md`](ideas/2026-07-20-having-else-may.md) | **Sleeping** — match sugar, happy path first, block-local bind only; not implementing yet |
-| Immutable values / structural sharing | [`docs/ideas/2026-07-21-immutable-values.md`](ideas/2026-07-21-immutable-values.md) | **Sleeping** — no refs; COW/persistent DS; peers + impact vs D4/D54/D50/D8; not implementing yet |
-| Webapp SSR / components | [`docs/ideas/2026-07-21-webapp-ssr-components.md`](ideas/2026-07-21-webapp-ssr-components.md) | **Sleeping** — HTML `Node` tree, SSR into existing HTTP ladder; sum not inheritance; tag sugar optional desugar; not implementing yet |
-| Bytes construction sugar | `docs/decisions.md` D14–D18 | Keep `fromString`; `Bytes(n)` zero buffer shipped (D18/D36); `as Bytes` with M4 later |
-| Buffer / COW | SPEC §9.1 + growable-buffer design | **Shipped** (D50): RC+COW; freeze copies (consume deferred) |
-| Dynamic Array | SPEC §9 + D53 | **Shipped** (D53–D55, D65): `Array<T>` heap RC; User inline elems + field RC; functional append; for-in |
-| Algebraic effects | D2 | Deferred until async forces it |
-| Perceus precision RC | D8 | Later MIR pass |
-| FFI libraries beyond `"c"` | R6 subset | Only `"c"` (libc via headers) for now |
-| Explicit `address()`, struct copy, `sizeof` | D23–D25 | Deferred (oracle LF-B §9) |
-| Named roots `std/` / `ffi` | D30–D32 | Deferred; R8 is `./` + `~/` only; **dir `Main.thx` shipped (D68)** |
-| Full oracle HTTP | D36–D38 | Request/Response (D69) + Router (D70) + **bounded server (D67)** shipped; infinite accept-loop product binary deferred |
+| Session dlopen step ABI | session plan D93 | **Partial** — host compile-per-chunk + `ThoxaShellState`/`thoxa_pipe` placeholders |
+| Postfix `having` / `else` for May | [`docs/ideas/2026-07-20-having-else-may.md`](ideas/2026-07-20-having-else-may.md) | **Sleeping** |
+| Immutable values / structural sharing | [`docs/ideas/2026-07-21-immutable-values.md`](ideas/2026-07-21-immutable-values.md) | **Sleeping** |
+| Webapp SSR / components | [`docs/ideas/2026-07-21-webapp-ssr-components.md`](ideas/2026-07-21-webapp-ssr-components.md) | **Sleeping** |
 
 ## Last session
 
-- **2026-07-24 (session PR0):** `extras/shell` v4 — `type Shell(status)` with `echo`/`pwd`/`cd`/`run`/`showStatus`/`help` returning new Shell; REPL threads `mut shell`; builtin `status` prints field; process exit = `shell.status` (false→1, not found→127, unclosed quote→2). `EvalResult(Shell,…)` blocked by ctor-param rules → `sessionDone` module mut. README desugar table. Next: plan PR1 session scripts.
-- **2026-07-24 (session/REPL plan):** Locked approach 3 — Thoxa is the REPL; `Shell` + desugar + compile. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md).
-- **2026-07-24 (thoxash v3):** Quote-aware `splitWords`.
-- **2026-07-21 (D87 value match):** `match` on String/Int64/Bool with literal arms + required `else` (if-cascade; `string_eq`). Trial/May unchanged. Conformance `match_value` (32/32). thoxash `evalLine` uses string match for builtins. Decision D87.
-- **2026-07-21 (thoxash v2):** External commands — PATH search (`access` X_OK; empty component = cwd), absolute/relative if `/` in name; RT `thoxa_spawn_wait` (fork/execv/waitpid; argv as NUL-separated Bytes — Array not FFI yet).
-- **2026-07-21 (thoxash v1):** Builtins `echo` / `pwd` / `cd` + whitespace `splitWords`; `getcwd`/`chdir`/`getenv`/`strerror`/`errno`/`isatty` externs. TTY-only `$ ` prompt. `cargo make shell`.
-- **2026-07-21 (thoxash v0):** `extras/shell` — Thoxa-written echo REPL (`Main.thx`). Prompt via `write(2)`; line read byte-at-a-time (`read` + `Buffer`); `help` / `exit` / `quit` / EOF.
-- **2026-07-20 (May + find):** Builtin `May<T>` / `Has` / `Not` (Trial-shaped monomorphs); match + `?`; `Bytes.find` → `May<Int64>` (D85 / D46′). Conformance `mays`; Http/bytes/router/http_server call sites. Deferred: inferred fallible returns, May↔Trial `?` mix.
-- **2026-07-20 (optional type body):** Types with no fields/methods may omit `{}` — `type Header(name: String, value: String)` and `type Marker`. Empty `{}` still accepted. Parser unit test; Http/Header/Request/Response + a few conformance types updated. Decision D84.
-- **2026-07-20 (LSP library check):** `check_source` no longer requires `fn main` on library modules (Io/Http/…). `LowerOptions.require_main`; buffer with main still gated. Unit tests + `thoxa check iolib/Io.thx` clean. Decision D83.
-- **2026-07-20 (PR9 Io polish):** Open flags `oRdonly`/`oWronly`/`oRdwr`; `thoxa_errno` RT + libc `strerror` extern; Fail messages `"open {path}: …"`; cgen String return marshal (`thoxa_string_from_cstr`); `file_io` asserts constant + ENOENT strerror. File type deferred (method mut-field write-back). Decisions D80–D82. `cargo make test` 30/30.
-- **2026-07-20 (status):** Confirmed Zed manual leftover done — `extras/` committed, `[grammars.thoxa].rev` pinned to commit with `parser.c`, install/sync via `cargo make zed` + README. Removed from Next.
-- **2026-07-20 (editor PR7: cross-module):** `lsp/crossmodule` lazy resolve for hover/def: selective + alias, namespace name/member, `./`+`~/`. Open buffers win over disk (path-matched). `Binding.import_origin`; index stores AST. `check_source_with_overlays` for package check. Unit + handler tests. Decisions D78/D79. Editor phase 2 complete.
-- **2026-07-20 (editor PR6: navigation):** LSP handlers: hover, definition≡declaration, references, documentSymbol, prepareRename/rename. Caps advertised on initialize. Signatures from source line + `##` doc_above; rename casing (PascalCase types / camelCase values). Single-file only (imports → import site). Unit tests def/hover/refs/outline/rename. Decision D77.
-- **2026-07-20 (editor PR5: resolver):** `resolver.rs` + `lsp/index`; D76. MIR lower still own env.
-- **2026-07-20 (editor PR3: extras/):** `extras/tree-sitter-thoxa` + `extras/zed`. D71/D75. Phase 1 complete.
-- **2026-07-20 (editor PR2: thoxa lsp):** `thoxa lsp` stdio JSON-RPC (`Content-Length`); capabilities full sync + semantic tokens; `publishDiagnostics` on didOpen/Change, clear on Close; lexer semantic tokens (type/function/variable); `serde`/`serde_json` (D74). Optional `thoxa check <path>` prints `path:line:col: message`. Unit tests: framing, initialize, diags, tokens, shutdown. Decisions D72/D74.
-- **2026-07-20 (editor PR1: check + spans):** `span::{Position,Range,byte_to_position,span_to_range}` (UTF-8 bytes → 0-based line + UTF-16 character). `lsp::check_source(filename, text) -> Vec<CheckDiagnostic>` — lex/parse/MIR lower, no cgen; first-error only. No imports → `lower_module`; imports + real path → disk package with entry AST overlay; imports without path → clear diagnostic. Unit tests (good/type/lex/parse/import). Decision D73.
-- **2026-07-20 (plan: native editor + LSP):** Wrote [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md). Layout: `extras/{tree-sitter-thoxa,zed}` for DX glue; LSP server in `crates/compiler/src/lsp` as **`thoxa lsp`** (Rust, reuses MIR lower). Phase 1 = PR1–PR3 (check API → lsp → Zed). No Python. Ready to execute next session.
-- **2026-07-20 (PR1 early return):** Parse/lower `return` / `return expr`; type-check vs enclosing ret; drop live heap locals before early return; C `return` / bare `return;`; conformance `early_return` (if/for/while/loop/match/method/Void). Decision D63.
-- **2026-07-20 (PR3 Array&lt;User&gt;):** D65 `ThoxaArray` + `elem_size` + inline User structs; cgen field-RC callbacks (`ThoxaArrayElemFn`); get/set/append/dropLast/for-in; conformance `array_user`. Int64/String arrays unchanged.
-- **2026-07-20 (PR2 User+heap RC):** MIR uses `needs_drop` for Trial Pass/Fail/`?`/match extract (User field-walk via cgen `emit_rc`); method prolog Dups heap fields; match binds get fresh places (no cross-match overwrite leak); conformance `user_rc`; ASan clean. Unblocks `Trial<Box(s:String),…>` / File-shaped APIs (D64).
-- **2026-07-20 (PR4 match discard):** `Pass(_)` / `Fail(_)` discard binding (D66); `_` does not define a name; discarded heap payloads still RC-dropped; conformance `match_discard`.
-- **2026-07-20 (PR8 Main.thx dir entry):** `thoxa run|build|emit-c <dir>` → `<dir>/Main.thx`; `~/` project root = that dir (D31/D68); harness discovers package dirs + sibling `<name>.out`; conformance `pkgmain` (Helper via `./` + `~/`).
-- **2026-07-20 (PR7 bounded server):** `http_server` binds ephemeral port, N=3 sequential client reconnects (GET `/` 200, `/style.css` 200, `/nope.html` 404); accept/parseRequest/Router.handle/writeResponse/send/close per connection; Net+Http+Router; exits (D67). HTTP ladder complete for this plan.
-- **2026-07-20 (PR6 Router type):** `type Router(root: String) { handle(req: Request) -> Response }`; early return; `ok`/`notFound` + Content-Type; free `handle(root,path)->Bytes` removed; conformance `router` asserts via `writeResponse` status lines (D70).
-- **2026-07-20 (PR5 Request/Response):** `Header`/`Request`/`Response`; `parseRequest`/`writeResponse`/`ok`/`notFound`/`badRequest`; constructor-param `Array` fields (D69); `user.arrField[i]` index; conformance `http_parse`; `http`/`http_wire` use typed API + `writeResponse`.
-- **2026-07-19 (R9+ file I/O + Router):** `iolib/Io.readFile` (open/lseek/read/close; Fail open|seek|read); cgen `fcntl.h`; String `==`/`!=`; static Router free `handle(root, path)` (later D70 type); for-in heap-elem RC fix; conformance `file_io`, `router`.
-- **2026-07-19 (R9+ Array):** Dynamic `Array<T>` (Int64/Bool/String/Bytes); literals `[…]`, empty `[]` with annotation; `.count`, `[i]` get/set, functional `append`/`dropLast`, `for x in arr`; display in interpolation; conformance `arrays`.
-- **2026-07-19 (R9+ Buffer):** `Buffer()` / `Buffer(cap)`; `.count`/`.capacity`; COW `append`/`appendBytes` (write-back unique ptr); `freeze()` → Bytes (copy); geometric 0→8→16→32; conformance `buffer`.
-- **2026-07-19 (R9+ loops + string fields):** `while` / `loop` / `for i in a..b` / `a..=b` / `break` / `continue`; constructor-param `String`/`Bytes` fields with RC walk on User dup/drop; conformance `control_flow`, `loops`, `string_fields`.
-- **2026-07-19 (R9+ cont.):** `Bytes.find(needle[, from])` → index or -1; Http uses find instead of recursive scan.
-- **2026-07-19 (R9+):** Generalized `Trial<Ok,Err>` (Void/String/User/Int64 monomorphs, heap RC, `?` rewrap); Net: accept/recv/send/connect/getsockname + String errors; `http_wire` one-shot client↔server; `trials_mono`.
-- **2026-07-19 (R9):** HTTP subset — `httplib/Net` (socket/bind/listen/close), `httplib/Http` (request-line parse + response build), entry `http.thx`; `Bytes(n)` zero-fill, `Bytes.slice`; socket headers in cgen; Pass/Fail int widen.
-- **2026-07-19 (R8):** Multi-file modules — `import {…} from` / namespace import, `export` on fn/type/let, `./` + `~/` loader, module-level let/mut statics + init, name mangling; `modules`, `namespaces`, `modstate` conformance.
-- **2026-07-19 (R7):** C-layout structs (`type Regs { mut a: UInt32 … }`), zero-init `Regs()`, field/index assign, `Array<Byte,N>`, `Address<T>` implicit on mut places, bitwise, hex lits, UInt32/Byte; `cstruct_ffi`.
-- **2026-07-19 (later):** R6 `extern fn` libc.
-- **2026-07-19:** R5 (`mut`, `Bytes`), D14–D18, agent handoff.
+- **2026-07-24 (session PR0–PR7):** Full session ladder. PR0 Shell dogfood; PR1 session scripts (`SessionStmt` → `Shell.step`); PR2 command sugar + `session_prelude.thx`; PR3 RT `ThoxaShellState` + `thoxa_pipe`; PR4 bare `thoxa` REPL; PR5 decl accumulation + multiline; PR6 host `\|` pipelines; PR7 decisions D88–D95 + docs. `cargo make shell` → bare `thoxa`.
+- **2026-07-24 (session plan):** Approach 3 locked in specs.
+- **2026-07-21 (D87 value match + thoxash v0–v3):** prior shell dogfood.
 
 ## Verify quickly
 
 ```bash
 cargo make test
+# REPL
+printf 'echo hi\nexit\n' | cargo run -p thoxa --
+# session script
+cargo run -p thoxa -- tests/conformance/session_cmd.thx
 ```

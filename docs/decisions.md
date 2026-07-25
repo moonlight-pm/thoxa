@@ -17,6 +17,19 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-07-24 — Session / REPL (Thoxa is the session language)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D88 | Session product shape | Bare `thoxa` / `thoxa repl` = session REPL; `thoxa path` runs program (`main`/`Main.thx`) or **session script** (no `main`); subcommands unchanged | Plan: `docs/specs/2026-07-24-thoxa-session-repl.md` |
+| D89 | Session value | `type Shell(status: Int64)` + methods (`echo`/`pwd`/`cd`/`run`/…) | Real Thoxa; status field (not bash `$?` core). Prelude: `session_prelude.thx` |
+| D90 | Session code placement | Decls stay module-level; top-level stmts → `Shell.step` body; synthetic `main` returns `step().status` | `Item::SessionStmt`; `session::prepare` |
+| D91 | In-function import/type | Not required; host lifts / top-level decls only | Deferred general nested modules |
+| D92 | Command sugar | Thoxa-first; bare word/string sequences desugar to `shell = shell.*` | `command.rs`; quotes from thoxash v3 |
+| D93 | REPL execution (v1) | Host loop: compile each stmt chunk as session script; **decls accumulate**; host-side `cd` + `\|` pipelines | Full in-process dlopen step ABI deferred; `ThoxaShellState` + `thoxa_pipe` in RT for next step |
+| D94 | Script execution | Splice + synthetic `main` + normal executable | No dlopen |
+| D95 | extras/shell | Dogfood prototype of Shell API; product face is bare `thoxa` | `cargo make shell` → bare `thoxa` |
+
 ## 2026-07-21 — Value match (string / int / bool + else)
 
 | ID | Decision | Choice | Notes |

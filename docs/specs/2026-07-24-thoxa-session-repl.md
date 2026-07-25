@@ -3,8 +3,8 @@
 > **For agentic workers:** This is the design input for later `/execute-plan` or manual PR sessions. Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `docs/status.md` + `docs/decisions.md` + `AGENTS.md` when a PR finishes. Do **not** invent a second shell language.
 
 **Date:** 2026-07-24  
-**Status:** In progress — **PR0 done** (2026-07-24). Next: PR1 session scripts.  
-**Baseline:** Native ladder through HTTP + editor + Io polish; `extras/shell` thoxash **v4** (`type Shell(status)`, methods, quotes, PATH spawn). CLI: `thoxa run|build|check|lsp|…`; bare `thoxa` prints usage. Compile path: `.thx` → MIR → cgen → `cc` + `libthoxa_rt` (no tree-walk interpreter).
+**Status:** **Shipped (PR0–PR6)** with documented gaps (dlopen step ABI deferred; host `cd`/`|`). Decisions D88–D95.  
+**Baseline:** Native ladder + session scripts + command sugar + bare `thoxa` REPL.
 
 **Goal:** Make **Thoxa the session language**. Interactive and no-`main` scripts share one model: a live **`Shell`** value, user text desugared into real Thoxa, compiled, and executed as a method body on that value. Familiar command skin stays thin; programming is always Thoxa.
 
@@ -271,14 +271,14 @@ Each PR is independently reviewable; conformance or explicit smoke is the gate.
 
 | PR | Title | Depends | Deliverable |
 |----|-------|---------|-------------|
-| **PR0** ✅ | Shell type + status in `extras/shell` | — | `type Shell`, methods, status after builtin/run; README desugar table; smoke |
-| **PR1** | Session script detection + splice (no sugar) | PR0 optional | Driver/MIR or AST wrap: no-main → synthetic `Shell.step` + `main`; conformance `session_script` |
-| **PR2** | Command sugar desugar (shared) | PR1 | Word-split + quotes → Thoxa call AST/text; used by scripts; tests |
-| **PR3** | Stable `Shell` C ABI + RT helpers | PR1 | Layout / `thoxa_shell_*` as needed for host-held state |
-| **PR4** | `thoxa` bare REPL via dlopen steps | PR2, PR3 | No-arg REPL; accumulate decls; keep shell; `cargo make shell` → bare `thoxa` |
-| **PR5** | REPL `let` promotion + multiline | PR4 | Cross-chunk bindings; block continuation |
-| **PR6** | Pipes sugar + RT pipeline | PR4+ | `pipeline` method + `\|` desugar; limited conformance/smoke |
-| **PR7** | Prelude / docs absorption | PR5+ | Move API out of extras when stable; decisions + AGENTS |
+| **PR0** ✅ | Shell type + status in `extras/shell` | — | dogfood Shell |
+| **PR1** ✅ | Session script splice | PR0 | `session_script`, `session_step` |
+| **PR2** ✅ | Command sugar + prelude | PR1 | `session_cmd`; `session_prelude.thx` |
+| **PR3** ✅ | RT session helpers | PR1 | `ThoxaShellState`, `thoxa_pipe` |
+| **PR4** ✅ | Bare `thoxa` REPL | PR2–3 | `repl.rs`; compile-per-chunk (dlopen deferred) |
+| **PR5** ✅ | Decl accumulate + multiline | PR4 | `let`/`type`/… persist; brace continuation |
+| **PR6** ✅ | Host `\|` pipelines | PR4 | OS pipe in REPL host |
+| **PR7** ✅ | Docs + D88–D95 | — | decisions, status, AGENTS |
 
 **Parallelism:** PR0 can proceed immediately (dogfood). PR1 is the first compiler PR. PR3 can overlap PR2 after PR1 lands.
 

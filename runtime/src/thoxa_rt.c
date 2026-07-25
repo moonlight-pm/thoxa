@@ -886,3 +886,17 @@ int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_l
     }
     return -1;
 }
+
+int32_t thoxa_pipe(int32_t fds_out[2]) {
+    int fds[2];
+    if (!fds_out) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (pipe(fds) != 0) {
+        return -1;
+    }
+    fds_out[0] = (int32_t)fds[0];
+    fds_out[1] = (int32_t)fds[1];
+    return 0;
+}

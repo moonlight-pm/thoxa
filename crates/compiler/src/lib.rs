@@ -10,6 +10,7 @@ pub mod loader;
 pub mod lsp;
 pub mod mir;
 pub mod parser;
+pub mod repl;
 pub mod resolver;
 pub mod session;
 pub mod span;

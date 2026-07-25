@@ -24,13 +24,15 @@ User phrases like **“next item” / “next rung”** mean: implement the **Ne
 ```bash
 cargo make test              # conformance (preferred day-to-day gate)
 cargo make run path.thx
-cargo make shell             # thoxash dogfood REPL (extras/shell)
+cargo make shell             # product session REPL (bare `thoxa`)
 cargo make emit-c path.thx
 cargo make runtime           # libthoxa_rt.a + compile_commands.json
 cargo make zed               # sync extras → local Zed (LSP binary + grammar + lang)
 cargo make zed --grammar     # grammar WASM only
 cargo make zed --all         # also rebuild extension.wasm
 cargo test -p thoxa          # Rust unit tests
+cargo run -p thoxa --                 # session REPL (D88)
+cargo run -p thoxa -- path.thx        # program or session script
 cargo run -p thoxa -- run path.thx
 cargo run -p thoxa -- check path.thx   # typecheck, no cgen
 cargo run -p thoxa -- lsp              # editor language server (stdio)
@@ -42,11 +44,11 @@ All build products under **`target/{rust,c,thoxa}/`**. Prefer `cargo make …` o
 
 | Path | Role |
 |------|------|
-| `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; CLI in `main.rs`, pipeline in `driver.rs`; **`lsp/`** (`check_source` + **`thoxa lsp`**) |
+| `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; CLI in `main.rs`, pipeline in `driver.rs`; **`session`/`command`/`repl`**; **`lsp/`** |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `crates/make/` | xtask (`cargo make`) |
-| `tests/conformance/` | `*.thx` + `*.out` |
-| `extras/` | Non-product: `tree-sitter-thoxa` + `zed` (D71/D75); **`shell/`** thoxash dogfood REPL |
+| `tests/conformance/` | `*.thx` + `*.out` (incl. `session_*`) |
+| `extras/` | Non-product: `tree-sitter-thoxa` + `zed`; **`shell/`** Shell API dogfood (product REPL is bare `thoxa`) |
 | `docs/status.md` | **Session progress** (edit when state changes) |
 | `docs/decisions.md` | Locked / deferred decisions (D-ids) |
 | `docs/specs/` | Full design docs |
@@ -68,6 +70,7 @@ Compiler pipeline (stable): `.thx` → lexer → parser → AST → MIR (+ simpl
 Already known (see status + decisions):
 
 - R0–R9 + post-R9 HTTP path **complete** through bounded server (D67) + `Main.thx` dir entry (D68); also early `return` (D63), User+heap RC (D64), `Array<User>` (D65), match discard (D66), Request/Response (D69), Router type (D70), Io OpenMode/errno polish (D80–D82).
+- **Session/REPL (D88–D95):** bare `thoxa` REPL; no-main scripts → `Shell.step`; command sugar; decls accumulate in REPL; host `cd` + `\|`. Plan: `docs/specs/2026-07-24-thoxa-session-repl.md`.
 - **Editor:** phase 1 + phase 2 complete (D71–D79): `check_source` (+ overlays), `thoxa lsp`, extras, resolver, hover/def/refs/outline/rename, cross-module jump (`./`/`~/`, open buffer wins). MIR lower not yet on shared resolver. **No Python** in product path.
 - Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28, **D82** String *returns* via `thoxa_string_from_cstr`); cgen pulls fcntl/unistd/socket headers when externs present.
 - C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).

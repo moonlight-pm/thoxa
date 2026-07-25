@@ -7,8 +7,14 @@ A **Thoxa-written shell**, living in the monorepo as double dogfood:
 
 Not on the compile-to-C product path. Not a bash/zsh script runner.
 
-**Direction:** Thoxa is the session language. This binary dogfoods `type Shell` until bare `thoxa` owns the REPL.  
+**Direction:** Thoxa is the session language. **Product REPL is bare `thoxa`** (D88). This package remains a pure-Thoxa dogfood of `type Shell`.  
 Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](../../docs/specs/2026-07-24-thoxa-session-repl.md).
+
+```bash
+cargo run -p thoxa --              # product session REPL
+cargo make shell                   # same
+cargo make run extras/shell        # this dogfood binary
+```
 
 ## v4 (now) — `Shell` + `status`
 

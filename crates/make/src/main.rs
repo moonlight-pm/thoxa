@@ -131,9 +131,10 @@ fn cmd_run(args: &[String]) -> i32 {
     run_thoxa(&refs)
 }
 
-/// Run the dogfood shell at `extras/shell` (thoxash).
+/// Run the product session REPL (`thoxa` with no args).
+/// Dogfood thoxash remains: `cargo make run extras/shell`.
 fn cmd_shell() -> i32 {
-    run_thoxa(&["run", "extras/shell"])
+    run_thoxa(&[])
 }
 
 fn cmd_build(args: &[String]) -> i32 {
