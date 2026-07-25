@@ -97,6 +97,11 @@ size_t thoxa_string_len(const ThoxaString *s);
 void thoxa_print_string(const ThoxaString *s);
 void thoxa_println_string(const ThoxaString *s);
 
+/* Session prompt helpers (D96): return cstr; Thoxa extern -> String
+ * copies via thoxa_string_from_cstr. Buffers are thread-local. */
+const char *thoxa_local_hms(void); /* local "HH:MM:SS" */
+const char *thoxa_hostname(void);  /* gethostname(2), or "localhost" */
+
 /* --- Bytes (fixed mutable buffer, RC heap) ------------------------------ */
 
 /*

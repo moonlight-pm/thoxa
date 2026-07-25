@@ -1,0 +1,69 @@
+## std/Git — lightweight repo probes (no `git` subprocess).
+
+import { startsWith, dropPrefix, trimNewline } from "./Str"
+import { dirname, cwd } from "./Path"
+
+extern fn cOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
+extern fn cRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
+extern fn cClose(fd!: Int32) -> Int32 from "c" "close"
+
+## O_RDONLY is 0 on Linux / *BSD.
+let oRdonly = 0
+
+fn readFileLimited(path!: String, max!: Int64) -> String {
+    let fd = cOpen(path, oRdonly)
+    if fd < 0 {
+        ""
+    } else {
+        let buf = Bytes(max)
+        let n = cRead(fd, buf, max)
+        cClose(fd)
+        if n <= 0 {
+            ""
+        } else {
+            buf.slice(0, n).toString()
+        }
+    }
+}
+
+## Branch name for `dir`, walking parents for `.git/HEAD`.
+## Detached HEAD / missing repo → `""`. On a branch → `" <name>"` (zsh-style).
+export fn branchSuffix(startDir!: String) -> String {
+    let refPrefix = "ref: refs/heads/"
+    if startDir == "" {
+        ""
+    } else {
+        mut dir = startDir
+        mut out = ""
+        mut steps = 0
+        loop {
+            if steps > 64 {
+                break
+            }
+            let headPath = "{dir}/.git/HEAD"
+            let raw = trimNewline(readFileLimited(headPath, 256))
+            if raw != "" {
+                if startsWith(raw, refPrefix) {
+                    let name = dropPrefix(raw, refPrefix)
+                    out = " {name}"
+                }
+                break
+            }
+            if dir == "/" {
+                break
+            }
+            let parent = dirname(dir)
+            if parent == dir {
+                break
+            }
+            dir = parent
+            steps = steps + 1
+        }
+        out
+    }
+}
+
+## `branchSuffix(cwd())`.
+export fn branch() -> String {
+    branchSuffix(cwd())
+}

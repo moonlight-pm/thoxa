@@ -1,0 +1,20 @@
+## std/Prompt — ready-made session primary prompts.
+##
+## Default style matches a common zsh PROMPT:
+##   %F{#666666}%* %F{#3B9DC2}%n@%m %F{#cccccc}%2~%F{#2A7A9E}$(git_branch)%F{#ffffff} §
+
+import { fg, sgr0 } from "./Ansi"
+import { localHms, userName, hostname } from "./Env"
+import { cwdShort } from "./Path"
+import { branch } from "./Git"
+
+## Time · user@host · short path · git branch · §
+export fn defaultPrompt() -> String {
+    let gray = fg(102, 102, 102)
+    let cyan = fg(59, 157, 194)
+    let light = fg(204, 204, 204)
+    let blue = fg(42, 122, 158)
+    let white = fg(255, 255, 255)
+    let reset = sgr0()
+    "{gray}{localHms()} {cyan}{userName()}@{hostname()} {light}{cwdShort()}{blue}{branch()}{white} § {reset}"
+}

@@ -70,7 +70,8 @@ Compiler pipeline (stable): `.thx` → lexer → parser → AST → MIR (+ simpl
 Already known (see status + decisions):
 
 - R0–R9 + post-R9 HTTP path **complete** through bounded server (D67) + `Main.thx` dir entry (D68); also early `return` (D63), User+heap RC (D64), `Array<User>` (D65), match discard (D66), Request/Response (D69), Router type (D70), Io OpenMode/errno polish (D80–D82).
-- **Session/REPL (D88–D95):** bare `thoxa` REPL; no-main scripts → `Shell.step`; command sugar; decls accumulate in REPL; host `cd` + `\|`. Plan: `docs/specs/2026-07-24-thoxa-session-repl.md`.
+- **Session/REPL (D88–D96):** bare `thoxa` REPL; no-main scripts → `Shell.step`; command sugar; decls accumulate in REPL; host `cd` + `\|`; interactive loads `~/.config/thoxa/shell.thx`; optional `fn prompt() -> String` (+ `THOXA_STATUS`). Plan: `docs/specs/2026-07-24-thoxa-session-repl.md`.
+- **std/ (D97):** `import { … } from "std/Str"` (also Path/Ansi/Env/Git/Prompt). Root: `THOXA_STD` / workspace `std/`.
 - **Editor:** phase 1 + phase 2 complete (D71–D79): `check_source` (+ overlays), `thoxa lsp`, extras, resolver, hover/def/refs/outline/rename, cross-module jump (`./`/`~/`, open buffer wins). MIR lower not yet on shared resolver. **No Python** in product path.
 - Extern: `extern fn … from "c"` [+ `"c_symbol"`]; marshal Int32/Int64/UInt32/UInt64/Byte/String/Bytes/Void/`Address<T>` (D19–D22, D26–D28, **D82** String *returns* via `thoxa_string_from_cstr`); cgen pulls fcntl/unistd/socket headers when externs present.
 - C-layout: body fields, `T()` zero-init, field/index assign, fixed `Array<T,N>`, implicit Address on mut places (D23–D29).

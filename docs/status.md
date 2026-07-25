@@ -4,10 +4,10 @@
 
 ## Next
 
-**Session/REPL shipped (PR0–PR7 + polish).** Optional follow-ons:
+**Session/REPL + thin `std/` (D96–D97).** Optional follow-ons:
 
-1. **Session** — in-process dlopen `step` ABI (D93 v2); Thoxa-side pipes/redirs (not only host); prelude out of compiler embed; thread `Shell.status` into chunks (host `status` is a stopgap).
-2. Deferred megawork (M4, Perceus, effects, full `std/`/`ffi`, typed-member nav, multi-diag, File type / method mut-field write-back, Net errno strings, …)
+1. **Session** — in-process dlopen `step` ABI (D93 v2) so `prompt()` is a direct call; Thoxa-side pipes/redirs (not only host); prelude out of compiler embed; thread `Shell.status` into chunks (host `status` / `THOXA_STATUS` are stopgaps).
+2. Grow `std/` (more Str/Path/Io) and eventually `ffi`; deferred megawork (M4, Perceus, effects, typed-member nav, multi-diag, File type / method mut-field write-back, Net errno strings, …)
 
 HTTP + editor + Io complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md).
 
@@ -43,6 +43,8 @@ HTTP + editor + Io complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md
 | R9+ | Directory entry `Main.thx` (D68) | `pkgmain` |
 | R9+ | `May<T>` / `Has` / `Not`; `Bytes.find` → `May<Int64>` (D85) | `mays`, `bytes` (+ Http) |
 | Session | no-main scripts + command sugar + bare `thoxa` REPL (D88–D95) | `session_script`, `session_step`, `session_cmd` |
+| Session | `~/.config/thoxa/shell.thx` rc + `fn prompt() -> String` (D96) | unit: `repl::tests` |
+| std | Named root `std/` + Str/Path/Ansi/Env/Git/Prompt (D97) | `stdlib` |
 
 ## Open design notes (pointers only)
 
@@ -56,16 +58,23 @@ HTTP + editor + Io complete. Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md
 
 ## Last session
 
-- **2026-07-24 (session polish):** Command sugar treats path-like tokens as shell args (`wc AGENTS.md` was Field-parsed and failed). REPL `status` builtin prints host-tracked exit code. Status doc refreshed.
-- **2026-07-24 (session PR0–PR7):** Full session ladder — Shell dogfood, session scripts, command sugar + prelude, RT helpers, bare `thoxa` REPL, decl accumulate/multiline, host pipes, D88–D95. `cargo make shell` → bare `thoxa`.
-- **2026-07-24 (session plan):** Approach 3 locked in specs.
+- **2026-07-25 (D96–D97 ship):** Session rc + custom prompt + product `std/`.
+  - Interactive REPL loads `~/.config/thoxa/shell.thx`; optional `fn prompt() -> String` (rebuild on decl change, run every line; `THOXA_STATUS`).
+  - Named root `std/` (`Str`, `Path`, `Ansi`, `Env`, `Git`, `Prompt.defaultPrompt`).
+  - RT: `thoxa_local_hms`, `thoxa_hostname`; cgen `_DEFAULT_SOURCE` + `time.h` for libc prompt helpers.
+  - Personal rc is ~6 lines (`import { defaultPrompt } from "std/Prompt"` + `fn prompt`).
+  - Conformance: `stdlib`; unit: `repl::tests`.
+- **2026-07-24 (session polish):** Path-arg command skin; host `status` builtin.
+- **2026-07-24 (session PR0–PR7):** Full session ladder D88–D95.
 
 ## Verify quickly
 
 ```bash
 cargo make test
-# REPL
+# REPL (interactive loads ~/.config/thoxa/shell.thx)
 printf 'echo hi\nexit\n' | cargo run -p thoxa --
 # session script
 cargo run -p thoxa -- tests/conformance/session_cmd.thx
+# std root
+cargo run -p thoxa -- tests/conformance/stdlib.thx
 ```

@@ -1,3 +1,4 @@
+#define _DEFAULT_SOURCE
 #include "thoxa_rt.h"
 
 #include <errno.h>
@@ -5,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 int32_t thoxa_errno(void) {
@@ -899,4 +901,31 @@ int32_t thoxa_pipe(int32_t fds_out[2]) {
     fds_out[0] = (int32_t)fds[0];
     fds_out[1] = (int32_t)fds[1];
     return 0;
+}
+
+/* --- Session prompt helpers (D96) --------------------------------------- */
+
+const char *thoxa_local_hms(void) {
+    static _Thread_local char buf[16];
+    time_t t = time(NULL);
+    struct tm tm;
+    if (localtime_r(&t, &tm) == NULL) {
+        memcpy(buf, "??:??:??", 9);
+        return buf;
+    }
+    if (strftime(buf, sizeof buf, "%H:%M:%S", &tm) == 0) {
+        memcpy(buf, "??:??:??", 9);
+        return buf;
+    }
+    return buf;
+}
+
+const char *thoxa_hostname(void) {
+    static _Thread_local char buf[256];
+    if (gethostname(buf, sizeof buf) != 0) {
+        memcpy(buf, "localhost", 10);
+        return buf;
+    }
+    buf[sizeof buf - 1] = '\0';
+    return buf;
 }

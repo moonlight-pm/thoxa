@@ -1,0 +1,109 @@
+## std/Path — path string helpers (POSIX `/` separators).
+
+import { startsWith, dropPrefix } from "./Str"
+
+extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
+extern fn sysGetenv(name!: String) -> String from "c" "getenv"
+
+let pathCwdBufSize = 4096
+
+export fn lastSlash(s!: String) -> Int64 {
+    let b = Bytes.fromString(s)
+    mut i = b.count - 1
+    mut found = 0 - 1
+    loop {
+        if i < 0 {
+            break
+        }
+        if b.get(i) == 47 {
+            found = i
+            break
+        }
+        i = i - 1
+    }
+    found
+}
+
+export fn dirname(path!: String) -> String {
+    let i = lastSlash(path)
+    if i < 0 {
+        "."
+    } else {
+        if i == 0 {
+            "/"
+        } else {
+            Bytes.fromString(path).slice(0, i).toString()
+        }
+    }
+}
+
+export fn basename(path!: String) -> String {
+    let i = lastSlash(path)
+    if i < 0 {
+        path
+    } else {
+        let b = Bytes.fromString(path)
+        if i + 1 >= b.count {
+            ""
+        } else {
+            b.slice(i + 1, b.count).toString()
+        }
+    }
+}
+
+## Current working directory, or "" on failure.
+export fn cwd() -> String {
+    let buf = Bytes(pathCwdBufSize)
+    sysGetcwd(buf, pathCwdBufSize)
+}
+
+## zsh-style `%2~`: home as `~`, then at most the last two path components.
+export fn shortPath(full!: String) -> String {
+    let home = sysGetenv("HOME")
+    mut path = full
+    if home != "" {
+        if full == home {
+            path = "~"
+        } else {
+            let homeSlash = "{home}/"
+            if startsWith(full, homeSlash) {
+                let rest = dropPrefix(full, homeSlash)
+                path = "~/{rest}"
+            }
+        }
+    }
+    if path == "/" {
+        "/"
+    } else {
+        if path == "~" {
+            "~"
+        } else {
+            let parent = dirname(path)
+            let base = basename(path)
+            if parent == "/" {
+                "/{base}"
+            } else {
+                if parent == "~" {
+                    "~/{base}"
+                } else {
+                    if parent == "." {
+                        base
+                    } else {
+                        let grand = basename(parent)
+                        "{grand}/{base}"
+                    }
+                }
+            }
+        }
+    }
+}
+
+## `shortPath(cwd())`, or `"?"` if getcwd fails.
+export fn cwdShort() -> String {
+    let path = cwd()
+    if path == "" {
+        "?"
+    } else {
+        shortPath(path)
+    }
+}

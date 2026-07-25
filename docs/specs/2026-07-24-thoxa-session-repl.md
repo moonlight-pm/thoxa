@@ -279,6 +279,7 @@ Each PR is independently reviewable; conformance or explicit smoke is the gate.
 | **PR5** ✅ | Decl accumulate + multiline | PR4 | `let`/`type`/… persist; brace continuation |
 | **PR6** ✅ | Host `\|` pipelines | PR4 | OS pipe in REPL host |
 | **PR7** ✅ | Docs + D88–D95 | — | decisions, status, AGENTS |
+| **PR8** ✅ | Session rc + `prompt()` (D96) | PR5 | `~/.config/thoxa/shell.thx`; cached prompt binary |
 
 **Parallelism:** PR0 can proceed immediately (dogfood). PR1 is the first compiler PR. PR3 can overlap PR2 after PR1 lands.
 

@@ -1,0 +1,25 @@
+## std/Ansi — terminal SGR helpers (truecolor + reset).
+
+## Truecolor foreground: ESC[38;2;r;g;bm
+export fn fg(r!: Int64, g!: Int64, b!: Int64) -> String {
+    mut buf = Buffer()
+    buf.append(27)
+    buf.appendBytes(Bytes.fromString("[38;2;{r};{g};{b}m"))
+    buf.freeze().toString()
+}
+
+## Truecolor background: ESC[48;2;r;g;bm
+export fn bg(r!: Int64, g!: Int64, b!: Int64) -> String {
+    mut buf = Buffer()
+    buf.append(27)
+    buf.appendBytes(Bytes.fromString("[48;2;{r};{g};{b}m"))
+    buf.freeze().toString()
+}
+
+## Reset all attributes: ESC[0m
+export fn sgr0() -> String {
+    mut buf = Buffer()
+    buf.append(27)
+    buf.appendBytes(Bytes.fromString("[0m"))
+    buf.freeze().toString()
+}

@@ -29,6 +29,8 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D93 | REPL execution (v1) | Host loop: compile each stmt chunk as session script; **decls accumulate**; host-side `cd` + `\|` pipelines | Full in-process dlopen step ABI deferred; `ThoxaShellState` + `thoxa_pipe` in RT for next step |
 | D94 | Script execution | Splice + synthetic `main` + normal executable | No dlopen |
 | D95 | extras/shell | Dogfood prototype of Shell API; product face is bare `thoxa` | `cargo make shell` → bare `thoxa` |
+| D96 | Session rc + prompt | Interactive REPL loads `$HOME/.config/thoxa/shell.thx` (missing = no-op). Decls accumulate; stmts run once. Optional `fn prompt() -> String` — host rebuilds prompt binary when decls change, **runs** it every primary prompt. Host sets `THOXA_STATUS`. Default `$ `; continuation `> ` fixed. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC` | Real Thoxa (not a second grammar). Piped REPL / session scripts do not load rc. |
+| D97 | Product `std/` root | Import `"std/Module"` resolves under product std tree (`THOXA_STD` → `{THOXA_ROOT}/std` → workspace `std/` → next to `thoxa` binary). Modules: `Str`, `Path`, `Ansi`, `Env`, `Git`, `Prompt` (`defaultPrompt`). `ffi` still deferred | Partial unlock of D30 named roots for session prompts + shared helpers. Conformance: `stdlib`. |
 
 ## 2026-07-21 — Value match (string / int / bool + else)
 
@@ -240,7 +242,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D30 | Import origins (R8) | `./…` and `~/…` only | Named roots `std/` / `ffi` deferred |
+| D30 | Import origins (R8) | `./…` and `~/…` only at ship; **D97** adds `std/…` | `ffi` still deferred |
 | D31 | Resolution | No `..` segments; `~/` = entry file’s directory | Matches oracle “never climb” |
 | D32 | Export surface | `export` on top-level `fn` / `type` / `let` / `extern`; `mut` never exported | Selective + namespace imports |
 | D33 | Namespace import | `import ns from "…"` camelCase binding; members via `ns.x` | Not a first-class value |

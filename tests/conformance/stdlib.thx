@@ -1,0 +1,31 @@
+## std/ named root (D97) — Str + Path + Ansi smoke.
+import { startsWith, dropPrefix, trimNewline } from "std/Str"
+import { dirname, basename, shortPath } from "std/Path"
+import { fg, sgr0 } from "std/Ansi"
+
+fn main() -> Int64 {
+    if startsWith("hello", "he") {
+        println("starts-ok")
+    } else {
+        println("starts-bad")
+    }
+    println(dropPrefix("hello", "he"))
+    println(trimNewline("line\n"))
+    println(dirname("/a/b/c"))
+    println(basename("/a/b/c"))
+    println(shortPath("/tmp/foo/bar"))
+    ## fg/sgr0 must be non-empty SGR sequences (byte 27 present via length).
+    let c = fg(1, 2, 3)
+    let r = sgr0()
+    if c == "" {
+        println("fg-empty")
+    } else {
+        println("fg-ok")
+    }
+    if r == "" {
+        println("sgr0-empty")
+    } else {
+        println("sgr0-ok")
+    }
+    0
+}

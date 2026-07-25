@@ -3,7 +3,8 @@
 //! Specifiers:
 //! - `./…` relative to the importing file's directory (no `..` segments)
 //! - `~/…` relative to the project root (entry file's directory)
-//! - bare roots (`std/…`, `ffi`) — deferred beyond R8
+//! - `std/…` product standard library (D97) — `THOXA_STD`, else `{THOXA_ROOT|workspace}/std`
+//! - bare `ffi` / `ffi/…` — still deferred
 
 use crate::ast::{self, Import, ImportKind, Item};
 use crate::error::{Error, Result};
@@ -197,10 +198,61 @@ fn load_one(
     Ok(())
 }
 
+/// Directory containing product `std/*.thx` modules (D97).
+///
+/// Order: `THOXA_STD` → `{THOXA_ROOT}/std` → workspace walk (`…/std` next to
+/// `crates/compiler`) → `../std` / `../../std` relative to the running `thoxa`
+/// binary (dev builds under `target/rust/debug`).
+pub fn std_lib_root() -> Result<PathBuf> {
+    if let Ok(p) = std::env::var("THOXA_STD") {
+        let p = PathBuf::from(p);
+        if p.is_dir() {
+            return Ok(p);
+        }
+        return Err(Error::new(format!(
+            "THOXA_STD is not a directory: {}",
+            p.display()
+        )));
+    }
+    if let Ok(root) = std::env::var("THOXA_ROOT") {
+        let p = PathBuf::from(root).join("std");
+        if p.is_dir() {
+            return Ok(p);
+        }
+    }
+    // Walk up from cwd for a Thoxa workspace.
+    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    loop {
+        let marker = dir.join("crates/compiler/Cargo.toml");
+        let std_dir = dir.join("std");
+        if marker.is_file() && std_dir.is_dir() {
+            return Ok(std_dir);
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    // Dev binary: target/rust/debug/thoxa → ../../../std
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for up in ["../../../std", "../../std", "../std", "std"] {
+                let candidate = dir.join(up);
+                if candidate.is_dir() {
+                    return canonicalize_soft(&candidate);
+                }
+            }
+        }
+    }
+    Err(Error::new(
+        "cannot find Thoxa std library (set THOXA_STD or THOXA_ROOT, or run from a workspace)",
+    ))
+}
+
 /// Map an import specifier to a filesystem path **without** requiring the file
 /// to exist. Used by the LSP for open-buffer overlay (target may only be open).
 ///
-/// Returns `None` for unsupported specs (`std/…`, `ffi`, `..`, empty).
+/// Returns `None` for unsupported specs (`ffi`, `..`, empty) or when `std/`
+/// cannot be resolved.
 pub fn resolve_import_path(
     spec: &str,
     importer_dir: &Path,
@@ -219,8 +271,14 @@ pub fn resolve_import_path(
             return None;
         }
         project_root.join(format_thx(rest))
+    } else if let Some(rest) = spec.strip_prefix("std/") {
+        if rest.is_empty() {
+            return None;
+        }
+        let root = std_lib_root().ok()?;
+        root.join(format_thx(rest))
     } else {
-        // Named roots (`std/…`, `ffi`) not supported yet.
+        // `ffi` still deferred.
         return None;
     };
     Some(path)
@@ -249,15 +307,21 @@ fn resolve_specifier(
             return Err(Error::at("empty project import specifier", span));
         }
         project_root.join(format_thx(rest))
-    } else if spec.starts_with("std/") || spec == "ffi" || spec.starts_with("ffi/") {
+    } else if let Some(rest) = spec.strip_prefix("std/") {
+        if rest.is_empty() {
+            return Err(Error::at("empty std import specifier", span));
+        }
+        let root = std_lib_root().map_err(|e| Error::at(e.to_string(), span))?;
+        root.join(format_thx(rest))
+    } else if spec == "ffi" || spec.starts_with("ffi/") {
         return Err(Error::at(
-            format!("named root `{spec}` is not supported yet (R8: only ./ and ~/ local imports)"),
+            format!("named root `{spec}` is not supported yet (use std/…, ./…, or ~/…)"),
             span,
         ));
     } else {
         return Err(Error::at(
             format!(
-                "unknown import origin in `{spec}` — use `./…`, `~/…`, or a named root"
+                "unknown import origin in `{spec}` — use `./…`, `~/…`, or `std/…`"
             ),
             span,
         ));
