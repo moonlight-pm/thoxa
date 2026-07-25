@@ -66,7 +66,7 @@ pub fn run_repl() -> Result<i32> {
             }
         }
 
-        match run_chunk(&chunk, &mut decls, interactive) {
+        match run_chunk(&chunk, &mut decls, status) {
             Ok(st) => status = st,
             Err(e) => {
                 eprintln!("error: {e}");
