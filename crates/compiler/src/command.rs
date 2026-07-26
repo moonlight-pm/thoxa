@@ -131,37 +131,78 @@ fn line_parses_as_thoxa(line: &str) -> bool {
     let Ok(module) = Parser::new(tokens).parse_module() else {
         return false;
     };
-    // Word-like / path-like lines parse as a sequence of session exprs that are
-    // not real Thoxa statements:
+    // Word-like / path-like / flag-like lines parse as session exprs that are
+    // not intentional Thoxa statements:
     //   echo hello          → Name, Name
     //   echo "hi there"     → Name, String
     //   wc AGENTS.md        → Name, Field(AGENTS, md)   ← was mis-kept as Thoxa
     //   ls /tmp             → often Binary Div of names
+    //   ls -al              → Binary Sub (ls - al)      ← was mis-kept as Thoxa
+    //   ls --all            → Sub of Unary Neg
     // Real Thoxa has calls, assigns, most operators, keywords, etc.
+    // Pure literal arith (`1 - 2`) is kept as Thoxa.
     if module.items.is_empty() {
         return false;
     }
     let command_shaped = module.items.iter().all(|item| match item {
-        Item::SessionStmt(BlockItem::Expr(e)) => expr_is_command_atom(e),
+        Item::SessionStmt(BlockItem::Expr(e)) => {
+            expr_is_command_atom(e) && !expr_is_pure_literal_arith(e)
+        }
         _ => false,
     });
     !command_shaped
 }
 
-/// True for atoms that appear when a shell line is naively parsed as Thoxa.
+/// True for atoms / trees that appear when a shell line is naively parsed as Thoxa.
+///
+/// Includes flag-like trees: `ls -al` → `ls - al` (Sub), `ls --all` → Sub of Unary Neg.
+/// Pure literal arithmetic (`1 - 2`) is still an atom tree but filtered out in
+/// [`line_parses_as_thoxa`] so it stays real Thoxa.
 fn expr_is_command_atom(e: &crate::ast::Expr) -> bool {
-    use crate::ast::{BinaryOp, ExprKind};
+    use crate::ast::{BinaryOp, ExprKind, UnaryOp};
     match &e.kind {
         ExprKind::Name(_) | ExprKind::String(_) | ExprKind::Int(_) | ExprKind::Bool(_) => true,
         // `AGENTS.md`, `foo.bar.baz` — path-like, not intentional field reads at stmt level
         ExprKind::Field { base, .. } => expr_is_command_atom(base),
-        // `a/b`, `ls / tmp` style path fragments (Div only; `%` is Rem)
+        // Paths (`a/b`) and flags (`ls -al`, `cmd -a -b`, `ls --all`)
         ExprKind::Binary {
-            op: BinaryOp::Div,
+            op:
+                BinaryOp::Div
+                | BinaryOp::Sub
+                | BinaryOp::Add
+                | BinaryOp::Mul
+                | BinaryOp::Rem,
             left,
             right,
         } => expr_is_command_atom(left) && expr_is_command_atom(right),
-        // Unary minus on a number is still not a command argv shape we care about
+        // `--flag` right-hand side / leading `-word`
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            expr,
+        } => expr_is_command_atom(expr),
+        _ => false,
+    }
+}
+
+/// Only Int/Bool and arith/neg — keep as Thoxa (`1 - 2`), not `run(["1","-","2"])`.
+fn expr_is_pure_literal_arith(e: &crate::ast::Expr) -> bool {
+    use crate::ast::{BinaryOp, ExprKind, UnaryOp};
+    match &e.kind {
+        ExprKind::Int(_) | ExprKind::Bool(_) => true,
+        ExprKind::Binary {
+            op:
+                BinaryOp::Div
+                | BinaryOp::Sub
+                | BinaryOp::Add
+                | BinaryOp::Mul
+                | BinaryOp::Rem,
+            left,
+            right,
+        } => expr_is_pure_literal_arith(left) && expr_is_pure_literal_arith(right),
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            expr,
+        } => expr_is_pure_literal_arith(expr),
         _ => false,
     }
 }
@@ -336,5 +377,35 @@ mod tests {
         let src = desugar_session_source(r#"println(p.name)"#).unwrap();
         assert!(src.contains("println"));
         assert!(!src.contains("shell = shell.run"));
+    }
+
+    #[test]
+    fn desugar_flags_not_subtraction() {
+        // Was mis-parsed as `ls - al` / `ls - (-all)` and kept as broken Thoxa.
+        let src = desugar_session_source("ls -al\n").unwrap();
+        assert!(
+            src.contains(r#"shell = shell.run(["ls", "-al"])"#),
+            "got: {src}"
+        );
+        let src = desugar_session_source("ls --all\n").unwrap();
+        assert!(
+            src.contains(r#"shell = shell.run(["ls", "--all"])"#),
+            "got: {src}"
+        );
+        let src = desugar_session_source("ls -a -l\n").unwrap();
+        assert!(
+            src.contains(r#"shell = shell.run(["ls", "-a", "-l"])"#),
+            "got: {src}"
+        );
+    }
+
+    #[test]
+    fn keep_pure_literal_arith() {
+        let src = desugar_session_source("1 - 2\n").unwrap();
+        assert!(
+            !src.contains("shell = shell.run"),
+            "literal arith should stay Thoxa, got: {src}"
+        );
+        assert!(src.contains("1"), "got: {src}");
     }
 }

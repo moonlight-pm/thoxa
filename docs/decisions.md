@@ -21,7 +21,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D100 | Session PATH hook | Optional `fn path(parent: Array<String>) -> Array<String>` in rc/decls; host runs after rc and on decl change | `parent` = current process PATH split on `:`. Return components **replace** process PATH (join `:`); empty `[]` clears PATH. No merge unless body appends `parent`. Host captures pre-hook PATH as `THOXA_TOOLCHAIN_PATH` / `capture_toolchain_path` so `cc`/`ar` still resolve when session PATH is empty/minimal. Unit: `repl::tests`. |
+| D100 | Session PATH hook | Optional `fn path(parent: Array<String>) -> Array<String>` in rc/decls; host runs after rc and on decl change via **session step .so** (stdout capture), not a child binary | `parent` = current process PATH split on `:`. Return components **replace** process PATH (join `:`); empty `[]` clears PATH. No merge unless body appends `parent`. Host captures pre-hook PATH as `THOXA_TOOLCHAIN_PATH` / `capture_toolchain_path` so `cc`/`ar` still resolve when session PATH is empty/minimal. Unit: `repl::tests`. |
 
 ## 2026-07-25 — Parameter defaults + std color hex
 
@@ -38,11 +38,11 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D89 | Session value | `type Shell(status: Int64)` + methods (`echo`/`pwd`/`cd`/`run`/…) | Real Thoxa; status field (not bash `$?` core). Prelude: `session_prelude.thx` |
 | D90 | Session code placement | Decls stay module-level; top-level stmts → `Shell.step` body; synthetic `main` returns `step().status` | `Item::SessionStmt`; `session::prepare` |
 | D91 | In-function import/type | Not required; host lifts / top-level decls only | Deferred general nested modules |
-| D92 | Command sugar | Thoxa-first; bare word/string sequences desugar to `shell = shell.*` | `command.rs`; quotes from thoxash v3 |
-| D93 | REPL execution (v1) | Host loop: compile each stmt chunk as session script; **decls accumulate**; host-side `cd` + `\|` pipelines | Full in-process dlopen step ABI deferred; `ThoxaShellState` + `thoxa_pipe` in RT for next step |
+| D92 | Command sugar | Thoxa-first; bare word/string sequences desugar to `shell = shell.*` | `command.rs`; quotes from thoxash v3. Command-shaped parse trees include path Div, **flag Sub/Unary** (`ls -al`, `--all`); pure literal arith (`1 - 2`) stays Thoxa. |
+| D93 | REPL execution | Host loop: **decls accumulate**; per-chunk `cc -shared` → **dlopen** `thoxa_session_step(ThoxaShellState*)`; host-held status threaded into `Shell.step`; preamble object cached while decls stable; host `cd` / `\|` fast paths kept | Was v1 compile+exec child. Step seeds `Shell(status: status)` from receiver. Workspace root pinned so host `cd` does not break runtime paths. |
 | D94 | Script execution | Splice + synthetic `main` + normal executable | No dlopen |
 | D95 | extras/shell | Dogfood prototype of Shell API; product face is bare `thoxa` | `cargo make shell` → bare `thoxa` |
-| D96 | Session rc + prompt | Interactive REPL loads `$HOME/.config/thoxa/shell.thx` (missing = no-op). Decls accumulate; stmts run once. Optional `fn prompt() -> String` — host rebuilds prompt binary when decls change, **runs** it every primary prompt. Host sets `THOXA_STATUS`. Default `$ `; continuation `> ` fixed. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC` | Real Thoxa (not a second grammar). Piped REPL / session scripts do not load rc. Optional `fn path` → **D100**. |
+| D96 | Session rc + prompt | Interactive REPL loads `$HOME/.config/thoxa/shell.thx` (missing = no-op). Decls accumulate; stmts run once. Optional `fn prompt() -> String` — host rebuilds prompt **step .so** when decls change, **dlopen-calls** it every primary prompt (stdout captured). Host sets `THOXA_STATUS`. Default `$ `; continuation `> ` fixed. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC` | Real Thoxa (not a second grammar). Piped REPL / session scripts do not load rc. Optional `fn path` → **D100**. |
 | D97 | Product `std/` root | Import `"std/Module"` resolves under product std tree (`THOXA_STD` → `{THOXA_ROOT}/std` → workspace `std/` → next to `thoxa` binary). Modules: `Str`, `Path`, `Ansi`, `Env`, `Git`, `Prompt` (`defaultPrompt`). `ffi` still deferred | Partial unlock of D30 named roots for session prompts + shared helpers. Conformance: `stdlib`. |
 
 ## 2026-07-21 — Value match (string / int / bool + else)

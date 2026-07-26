@@ -3,7 +3,7 @@
 > **For agentic workers:** This is the design input for later `/execute-plan` or manual PR sessions. Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `docs/status.md` + `docs/decisions.md` + `AGENTS.md` when a PR finishes. Do **not** invent a second shell language.
 
 **Date:** 2026-07-24  
-**Status:** **Shipped (PR0–PR6)** with documented gaps (dlopen step ABI deferred; host `cd`/`|`). Decisions D88–D95.  
+**Status:** **Shipped (PR0–PR8 + D93 v2 dlopen step)**. Remaining: Thoxa-side pipes/redirs; `prompt`/`path` still separate exec. Decisions D88–D100.  
 **Baseline:** Native ladder + session scripts + command sugar + bare `thoxa` REPL.
 
 **Goal:** Make **Thoxa the session language**. Interactive and no-`main` scripts share one model: a live **`Shell`** value, user text desugared into real Thoxa, compiled, and executed as a method body on that value. Familiar command skin stays thin; programming is always Thoxa.

@@ -151,25 +151,38 @@ fn ensure_shell_status_param(t: &TypeDef) -> Result<()> {
     Ok(())
 }
 
-fn shell_status_zero() -> Expr {
+fn shell_with_status(status_expr: Expr) -> Expr {
     Expr {
         kind: ExprKind::Call {
             callee: "Shell".into(),
             args: vec![Arg::Named {
                 name: "status".into(),
                 name_span: Span::dummy(),
-                value: Expr {
-                    kind: ExprKind::Int(0),
-                    span: Span::dummy(),
-                },
+                value: status_expr,
             }],
         },
         span: Span::dummy(),
     }
 }
 
+fn shell_status_zero() -> Expr {
+    shell_with_status(Expr {
+        kind: ExprKind::Int(0),
+        span: Span::dummy(),
+    })
+}
+
+/// Receiver field `status` (for method bodies).
+fn self_status() -> Expr {
+    Expr {
+        kind: ExprKind::Name("status".into()),
+        span: Span::dummy(),
+    }
+}
+
 fn make_step_method(stmts: Vec<BlockItem>) -> Method {
-    // mut shell = Shell(status: 0)
+    // Seed from the receiver so REPL/host can pass prior status through.
+    // mut shell = Shell(status: status)
     // <user stmts — may assign shell = shell.echo(…)>
     // shell
     let mut items = vec![BlockItem::Let {
@@ -177,7 +190,7 @@ fn make_step_method(stmts: Vec<BlockItem>) -> Method {
         name_span: Span::dummy(),
         mutable: true,
         ty: None,
-        init: shell_status_zero(),
+        init: shell_with_status(self_status()),
     }];
     items.extend(stmts);
     Method {

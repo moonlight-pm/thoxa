@@ -9,7 +9,9 @@ use crate::cgen;
 use crate::error::{Error, Result};
 use crate::loader;
 use crate::mir;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
@@ -87,7 +89,14 @@ pub struct BuildArtifacts {
     pub bin_path: Option<PathBuf>,
 }
 
+/// Cached once: host `cd` must not re-resolve the tree from the new cwd (REPL).
+static WORKSPACE_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
 fn workspace_root() -> PathBuf {
+    WORKSPACE_ROOT.get_or_init(discover_workspace_root).clone()
+}
+
+fn discover_workspace_root() -> PathBuf {
     if let Ok(root) = std::env::var("THOXA_ROOT") {
         return PathBuf::from(root);
     }
@@ -103,6 +112,11 @@ fn workspace_root() -> PathBuf {
         }
     }
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// Force-resolve and cache the workspace root early (e.g. REPL start before `cd`).
+pub fn pin_workspace_root() {
+    let _ = workspace_root();
 }
 
 /// Root of all build products: `target/`.
@@ -179,8 +193,9 @@ pub fn build_runtime() -> Result<()> {
     let lib = out_dir.join("libthoxa_rt.a");
     let include = root.join("runtime/include");
 
+    // -fPIC so the archive can be linked into session step shared objects (D93).
     let status = host_tool("cc")
-        .args(["-std=c11", "-O2", "-c"])
+        .args(["-std=c11", "-O2", "-fPIC", "-c"])
         .arg(&src)
         .arg("-I")
         .arg(&include)
@@ -387,4 +402,153 @@ fn output_stem(opts: &BuildOptions) -> String {
                 .to_string()
         }
     })
+}
+
+// ── Session step shared libraries (D93 v2) ────────────────────────────────
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static SESSION_CACHE_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Cache for session REPL builds: preamble object reused while decls are stable.
+/// Each instance gets a unique id so parallel unit tests do not clobber objects.
+#[derive(Debug)]
+pub struct SessionBuildCache {
+    /// Stable per-cache-instance id (file name prefix).
+    id: u64,
+    decls_key: u64,
+    base_obj: Option<PathBuf>,
+    /// Monotonic counter so we never overwrite a still-mapped .so.
+    gen: u64,
+}
+
+impl Default for SessionBuildCache {
+    fn default() -> Self {
+        Self {
+            id: SESSION_CACHE_ID.fetch_add(1, Ordering::Relaxed),
+            decls_key: 0,
+            base_obj: None,
+            gen: 0,
+        }
+    }
+}
+
+/// Result of building a session step shared object.
+#[derive(Debug)]
+pub struct SessionStepLib {
+    pub so_path: PathBuf,
+}
+
+fn hash_decls(decls: &[String]) -> u64 {
+    let mut h = DefaultHasher::new();
+    for d in decls {
+        d.hash(&mut h);
+    }
+    h.finish()
+}
+
+/// Compile `decls + chunk` as a session script into a shared library exporting
+/// `thoxa_session_step`. When `decls` are unchanged, reuses a cached preamble
+/// object and only recompiles the `Shell.step` body.
+pub fn build_session_step(
+    decls: &[String],
+    chunk: &str,
+    cache: &mut SessionBuildCache,
+) -> Result<SessionStepLib> {
+    ensure_runtime()?;
+
+    let dir = thoxa_target_dir().join("repl");
+    fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
+
+    // Full source for MIR (session prepare needs stmts + decls together).
+    let mut src = String::new();
+    for d in decls {
+        src.push_str(d);
+        if !d.ends_with('\n') {
+            src.push('\n');
+        }
+    }
+    src.push_str(chunk);
+    if !chunk.ends_with('\n') {
+        src.push('\n');
+    }
+
+    let thx_path = dir.join(format!("chunk_{}.thx", cache.id));
+    fs::write(&thx_path, &src).map_err(|e| Error::new(e.to_string()))?;
+
+    let mut package = loader::load_package(&thx_path)?;
+    crate::session::prepare_package(&mut package)?;
+    let program = mir::lower_package(&package)?;
+
+    if !program.functions.iter().any(|f| f.name == "Shell__step") {
+        return Err(Error::new(
+            "session step: lowered program has no Shell.step (internal)",
+        ));
+    }
+
+    let decls_key = hash_decls(decls);
+    let base_obj = dir.join(format!("session_base_{}.o", cache.id));
+    let need_base = cache.base_obj.as_ref() != Some(&base_obj)
+        || cache.decls_key != decls_key
+        || !base_obj.is_file();
+
+    if need_base {
+        let base_c = cgen::emit_session_base(&program);
+        let base_c_path = dir.join(format!("session_base_{}.c", cache.id));
+        fs::write(&base_c_path, base_c).map_err(|e| Error::new(e.to_string()))?;
+        compile_c_object(&base_c_path, &base_obj)?;
+        cache.decls_key = decls_key;
+        cache.base_obj = Some(base_obj.clone());
+    }
+
+    let step_c = cgen::emit_session_step(&program);
+    let step_c_path = dir.join(format!("session_step_{}.c", cache.id));
+    fs::write(&step_c_path, step_c).map_err(|e| Error::new(e.to_string()))?;
+    let step_obj = dir.join(format!("session_step_{}.o", cache.id));
+    compile_c_object(&step_c_path, &step_obj)?;
+
+    cache.gen = cache.gen.wrapping_add(1);
+    let so_path = dir.join(format!("session_step_{}_{}.so", cache.id, cache.gen));
+    link_shared(&so_path, &[&step_obj, &base_obj])?;
+
+    Ok(SessionStepLib { so_path })
+}
+
+fn compile_c_object(c_path: &Path, obj_path: &Path) -> Result<()> {
+    let status = host_tool("cc")
+        .args(["-std=c11", "-O0", "-fPIC", "-c"])
+        .arg(c_path)
+        .arg("-I")
+        .arg(runtime_include_dir())
+        .arg("-o")
+        .arg(obj_path)
+        .status()
+        .map_err(|e| Error::new(format!("failed to spawn cc: {e}")))?;
+    if !status.success() {
+        return Err(Error::new(format!(
+            "cc failed compiling {}",
+            c_path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn link_shared(so_path: &Path, objs: &[&Path]) -> Result<()> {
+    let mut cmd = host_tool("cc");
+    cmd.args(["-std=c11", "-O0", "-shared", "-fPIC"]);
+    for o in objs {
+        cmd.arg(o);
+    }
+    cmd.arg(runtime_lib_path());
+    cmd.arg("-o").arg(so_path);
+    let status = cmd
+        .status()
+        .map_err(|e| Error::new(format!("failed to spawn cc (shared): {e}")))?;
+    if !status.success() {
+        return Err(Error::new(format!(
+            "cc failed linking shared {}",
+            so_path.display()
+        )));
+    }
+    Ok(())
 }

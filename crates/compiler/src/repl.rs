@@ -1,34 +1,67 @@
-//! Interactive session REPL (`thoxa` with no args) — plan PR4/PR5 + D96.
+//! Interactive session REPL (`thoxa` with no args) — plan PR4/PR5 + D93/D96.
 //!
-//! Each chunk is compiled as a session script (same path as `thoxa run` on a
-//! no-main file). Declaration lines accumulate and are prepended so later
-//! chunks see prior `let` / `type` / `fn` / `import` / `extern`.
+//! Each executable chunk is compiled to a small shared object exporting
+//! [`thoxa_session_step`](crate::driver::build_session_step) and run **in-process**
+//! via `dlopen` (D93 v2). Declaration lines accumulate and are prepended so later
+//! chunks see prior `let` / `type` / `fn` / `import` / `extern`. The preamble
+//! object is cached while decls are stable; only `Shell.step` is rebuilt per line.
 //!
-//! **cwd:** child processes cannot keep `cd` for the parent. The host applies
-//! `cd` itself when the chunk is a pure `cd` command (PR4 pragmatism until
-//! in-process dlopen steps land).
+//! **Shell status:** host-held `ThoxaShellState.status` is threaded into each step
+//! and written back (so pure-Thoxa status survives across chunks).
 //!
-//! **status:** last process exit code (session `shell.status`).
+//! **cwd:** in-process `Shell.cd` / `chdir` affects the host. A host fast-path for
+//! pure `cd` still skips compile for common use.
 //!
 //! **rc / prompt / path (D96, D100):** interactive REPL loads
 //! `~/.config/thoxa/shell.thx` once at start (decls accumulate; statements run
 //! once). If the session defines `fn prompt() -> String`, the host rebuilds a
-//! small prompt binary when decls change and **runs** it every primary prompt
-//! (live time/cwd/…). Host sets `THOXA_STATUS` so Thoxa can read last status
-//! via `getenv`.
+//! prompt **step .so** when decls change and **calls** it every primary prompt
+//! (stdout captured in-process). Host sets `THOXA_STATUS` so Thoxa can read last
+//! status via `getenv`.
 //!
 //! If the session defines `fn path(parent: Array<String>) -> Array<String>`,
-//! the host runs it after rc load and whenever decls change: `parent` is the
-//! current process `PATH` split on `:`; the returned components **replace**
-//! process `PATH` (joined with `:`). Chunk/prompt children inherit that env.
+//! the host runs it (same dlopen step path) after rc load and whenever decls
+//! change: `parent` is the current process `PATH` split on `:`; the returned
+//! components **replace** process `PATH` (joined with `:`).
 
 use crate::command::{desugar_command_line, desugar_session_source, split_words};
-use crate::driver::{self, BuildOptions};
+use crate::driver::{self, SessionBuildCache};
 use crate::error::{Error, Result};
+use std::ffi::{CStr, CString};
 use std::fs;
 use std::io::{self, BufRead, Write};
+use std::os::raw::{c_char, c_int, c_void};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+/// C ABI mirror of `ThoxaShellState` in `thoxa_rt.h`.
+#[repr(C)]
+struct ThoxaShellState {
+    status: i64,
+}
+
+type SessionStepFn = unsafe extern "C" fn(*mut ThoxaShellState) -> i64;
+
+#[link(name = "dl")]
+extern "C" {
+    fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    fn dlclose(handle: *mut c_void) -> c_int;
+    fn dlerror() -> *mut c_char;
+}
+
+extern "C" {
+    fn pipe(fds: *mut c_int) -> c_int;
+    fn dup(fd: c_int) -> c_int;
+    fn dup2(oldfd: c_int, newfd: c_int) -> c_int;
+    fn close(fd: c_int) -> c_int;
+    fn read(fd: c_int, buf: *mut c_void, count: usize) -> isize;
+    fn fflush(stream: *mut c_void) -> c_int;
+}
+
+// RTLD_NOW
+const RTLD_NOW: c_int = 2;
+const STDOUT_FILENO: c_int = 1;
 
 /// Run the interactive (or piped) session REPL. Returns final status.
 pub fn run_repl() -> Result<i32> {
@@ -36,13 +69,18 @@ pub fn run_repl() -> Result<i32> {
     let mut decls: Vec<String> = Vec::new();
     let mut status: i32 = 0;
     let mut prompt_state = PromptState::default();
+    let mut step_cache = SessionBuildCache::default();
+    // Keep last .so mapped until the next load so we can dlclose safely.
+    let mut loaded: Option<LoadedStep> = None;
+
+    // Pin paths before any host `cd` so runtime/std resolve stays stable.
+    driver::pin_workspace_root();
+    driver::capture_toolchain_path();
 
     if interactive {
         println!("thoxa session — Thoxa is the language; commands desugar to Shell");
         println!("type help, or exit / Ctrl-D to quit");
-        // Capture PATH for host `cc`/`ar` before rc `path()` can replace it.
-        driver::capture_toolchain_path();
-        match load_shell_rc(&mut decls) {
+        match load_shell_rc(&mut decls, &mut step_cache, &mut loaded) {
             Ok(st) => status = st,
             Err(e) => {
                 eprintln!("error: shell rc: {e}");
@@ -50,7 +88,7 @@ pub fn run_repl() -> Result<i32> {
             }
         }
         prompt_state.on_decls_changed(&decls);
-        if let Err(e) = apply_path_hook(&decls) {
+        if let Err(e) = apply_path_hook(&decls, &mut step_cache) {
             eprintln!("error: path: {e}");
         }
     }
@@ -61,7 +99,7 @@ pub fn run_repl() -> Result<i32> {
 
     loop {
         if interactive {
-            let prompt = primary_prompt(&decls, &mut prompt_state, status);
+            let prompt = primary_prompt(&decls, &mut prompt_state, status, &mut step_cache);
             write!(stdout, "{prompt}").ok();
             stdout.flush().ok();
         }
@@ -95,7 +133,13 @@ pub fn run_repl() -> Result<i32> {
             }
         }
 
-        match run_chunk(&chunk, &mut decls, status) {
+        match run_chunk(
+            &chunk,
+            &mut decls,
+            status,
+            &mut step_cache,
+            &mut loaded,
+        ) {
             Ok(ChunkOutcome {
                 status: st,
                 decls_changed,
@@ -103,7 +147,7 @@ pub fn run_repl() -> Result<i32> {
                 status = st;
                 if decls_changed {
                     prompt_state.on_decls_changed(&decls);
-                    if let Err(e) = apply_path_hook(&decls) {
+                    if let Err(e) = apply_path_hook(&decls, &mut step_cache) {
                         eprintln!("error: path: {e}");
                     }
                 }
@@ -115,10 +159,165 @@ pub fn run_repl() -> Result<i32> {
         }
     }
 
+    drop(loaded);
+
     if interactive {
         println!();
     }
     Ok(status)
+}
+
+struct LoadedStep {
+    handle: *mut c_void,
+    step: SessionStepFn,
+    path: PathBuf,
+}
+
+// dlopen handles are process-global; not Send/Sync in the type system, but the
+// REPL is single-threaded.
+unsafe impl Send for LoadedStep {}
+
+impl Drop for LoadedStep {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.handle.is_null() {
+                dlclose(self.handle);
+            }
+        }
+        // Best-effort cleanup of unique .so files.
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn load_and_call_step(
+    so_path: &Path,
+    prev_status: i32,
+    loaded: &mut Option<LoadedStep>,
+) -> Result<i32> {
+    let lib = open_step_lib(so_path)?;
+    let status = call_step_fn(lib.step, prev_status);
+    *loaded = Some(lib);
+    Ok(status)
+}
+
+fn open_step_lib(so_path: &Path) -> Result<LoadedStep> {
+    let c_path = CString::new(so_path.to_string_lossy().as_bytes())
+        .map_err(|_| Error::new("session step: path contains NUL"))?;
+    unsafe {
+        dlerror();
+        let handle = dlopen(c_path.as_ptr(), RTLD_NOW);
+        if handle.is_null() {
+            let err = dlerror_string();
+            return Err(Error::new(format!(
+                "dlopen {}: {err}",
+                so_path.display()
+            )));
+        }
+        let sym = CString::new("thoxa_session_step").unwrap();
+        dlerror();
+        let ptr = dlsym(handle, sym.as_ptr());
+        let err = dlerror();
+        if !err.is_null() || ptr.is_null() {
+            dlclose(handle);
+            let msg = if err.is_null() {
+                "symbol thoxa_session_step not found".into()
+            } else {
+                CStr::from_ptr(err).to_string_lossy().into_owned()
+            };
+            return Err(Error::new(format!("dlsym: {msg}")));
+        }
+        let step: SessionStepFn = std::mem::transmute(ptr);
+        Ok(LoadedStep {
+            handle,
+            step,
+            path: so_path.to_path_buf(),
+        })
+    }
+}
+
+fn call_step_fn(step: SessionStepFn, prev_status: i32) -> i32 {
+    let mut state = ThoxaShellState {
+        status: prev_status as i64,
+    };
+    unsafe { step(&mut state) as i32 }
+}
+
+fn dlerror_string() -> String {
+    unsafe {
+        let err = dlerror();
+        if err.is_null() {
+            "unknown dlerror".into()
+        } else {
+            CStr::from_ptr(err).to_string_lossy().into_owned()
+        }
+    }
+}
+
+/// Run `f` with stdout redirected to a pipe; return `(f's result, captured bytes)`.
+fn with_captured_stdout<T, F>(f: F) -> Result<(T, String)>
+where
+    F: FnOnce() -> Result<T>,
+{
+    // Flush Rust and C stdout before swapping FDs.
+    let _ = io::stdout().flush();
+    unsafe {
+        fflush(std::ptr::null_mut()); // fflush(NULL) flushes all C streams
+    }
+
+    let mut fds: [c_int; 2] = [0, 0];
+    if unsafe { pipe(fds.as_mut_ptr()) } != 0 {
+        return Err(Error::new("pipe failed for stdout capture"));
+    }
+    let (read_fd, write_fd) = (fds[0], fds[1]);
+
+    let saved = unsafe { dup(STDOUT_FILENO) };
+    if saved < 0 {
+        unsafe {
+            close(read_fd);
+            close(write_fd);
+        }
+        return Err(Error::new("dup(stdout) failed"));
+    }
+    if unsafe { dup2(write_fd, STDOUT_FILENO) } < 0 {
+        unsafe {
+            close(read_fd);
+            close(write_fd);
+            close(saved);
+        }
+        return Err(Error::new("dup2(pipe→stdout) failed"));
+    }
+    unsafe {
+        close(write_fd);
+    }
+
+    let run_result = f();
+
+    // Restore stdout before reading (writer side closed → EOF on read).
+    let _ = io::stdout().flush();
+    unsafe {
+        fflush(std::ptr::null_mut());
+        dup2(saved, STDOUT_FILENO);
+        close(saved);
+    }
+
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 4096];
+    loop {
+        let n = unsafe { read(read_fd, tmp.as_mut_ptr() as *mut c_void, tmp.len()) };
+        if n <= 0 {
+            break;
+        }
+        buf.extend_from_slice(&tmp[..n as usize]);
+    }
+    unsafe {
+        close(read_fd);
+    }
+
+    let captured = String::from_utf8_lossy(&buf).into_owned();
+    match run_result {
+        Ok(v) => Ok((v, captured)),
+        Err(e) => Err(e),
+    }
 }
 
 fn is_tty_stdin() -> bool {
@@ -187,7 +386,11 @@ fn env_truthy(name: &str) -> bool {
 
 /// Load `shell.thx`: accumulate declarations; run top-level statements once.
 /// Missing file is a silent no-op. Returns status from the one-shot stmt run (or 0).
-fn load_shell_rc(decls: &mut Vec<String>) -> Result<i32> {
+fn load_shell_rc(
+    decls: &mut Vec<String>,
+    cache: &mut SessionBuildCache,
+    loaded: &mut Option<LoadedStep>,
+) -> Result<i32> {
     let Some(path) = shell_rc_path() else {
         return Ok(0);
     };
@@ -196,12 +399,17 @@ fn load_shell_rc(decls: &mut Vec<String>) -> Result<i32> {
     }
     let src = fs::read_to_string(&path)
         .map_err(|e| Error::new(format!("{}: {e}", path.display())))?;
-    apply_rc_source(&src, decls)
+    apply_rc_source(&src, decls, cache, loaded)
 }
 
 /// Split desugared rc into decl forms vs statement forms; accumulate decls;
 /// execute statements once with those decls in scope.
-fn apply_rc_source(src: &str, decls: &mut Vec<String>) -> Result<i32> {
+fn apply_rc_source(
+    src: &str,
+    decls: &mut Vec<String>,
+    cache: &mut SessionBuildCache,
+    loaded: &mut Option<LoadedStep>,
+) -> Result<i32> {
     let desugared = desugar_session_source(src)?;
     let forms = split_top_level_forms(&desugared);
     let mut stmts: Vec<String> = Vec::new();
@@ -219,7 +427,7 @@ fn apply_rc_source(src: &str, decls: &mut Vec<String>) -> Result<i32> {
         return Ok(0);
     }
     let chunk = stmts.join("\n");
-    let out = run_chunk(&chunk, decls, 0)?;
+    let out = run_chunk(&chunk, decls, 0, cache, loaded)?;
     Ok(out.status)
 }
 
@@ -292,10 +500,10 @@ const DEFAULT_PROMPT: &str = "$ ";
 struct PromptState {
     /// Whether decls currently define `fn prompt`.
     has_prompt: bool,
-    /// Rebuild prompt binary before next use.
+    /// Rebuild prompt step .so before next use.
     dirty: bool,
-    /// Last successful prompt binary.
-    bin: Option<PathBuf>,
+    /// Last successful prompt library (kept mapped; re-called each line).
+    lib: Option<LoadedStep>,
     /// Avoid spamming the same rebuild error every line.
     last_error: Option<String>,
 }
@@ -305,8 +513,11 @@ impl PromptState {
         self.has_prompt = decls_define_prompt(decls);
         self.dirty = self.has_prompt;
         if !self.has_prompt {
-            self.bin = None;
+            self.lib = None;
             self.last_error = None;
+        } else {
+            // Drop old image so we rebuild against new decls.
+            self.lib = None;
         }
     }
 }
@@ -341,12 +552,17 @@ fn line_defines_fn_prompt(line: &str) -> bool {
             .is_some_and(|c| c.is_whitespace())
 }
 
-fn primary_prompt(decls: &[String], state: &mut PromptState, status: i32) -> String {
+fn primary_prompt(
+    decls: &[String],
+    state: &mut PromptState,
+    status: i32,
+    cache: &mut SessionBuildCache,
+) -> String {
     if !state.has_prompt {
         return DEFAULT_PROMPT.to_string();
     }
-    match ensure_prompt_bin(decls, state) {
-        Ok(bin) => match run_prompt_bin(&bin, status) {
+    match ensure_prompt_lib(decls, state, cache) {
+        Ok(()) => match run_prompt_lib(state, status) {
             Ok(s) => {
                 state.last_error = None;
                 if s.is_empty() {
@@ -375,62 +591,41 @@ fn primary_prompt(decls: &[String], state: &mut PromptState, status: i32) -> Str
     }
 }
 
-fn ensure_prompt_bin(decls: &[String], state: &mut PromptState) -> Result<PathBuf> {
+fn ensure_prompt_lib(
+    decls: &[String],
+    state: &mut PromptState,
+    cache: &mut SessionBuildCache,
+) -> Result<()> {
     if !state.dirty {
-        if let Some(ref bin) = state.bin {
-            if bin.is_file() {
-                return Ok(bin.clone());
-            }
+        if state.lib.is_some() {
+            return Ok(());
         }
     }
-    let bin = build_prompt_binary(decls)?;
-    state.bin = Some(bin.clone());
+    let lib = build_prompt_lib(decls, cache)?;
+    state.lib = Some(lib);
     state.dirty = false;
-    Ok(bin)
+    Ok(())
 }
 
-/// Build a session binary whose body is `println(prompt())` over `decls`.
-fn build_prompt_binary(decls: &[String]) -> Result<PathBuf> {
-    let mut src = String::new();
-    for d in decls {
-        src.push_str(d);
-        if !d.ends_with('\n') {
-            src.push('\n');
-        }
-    }
-    src.push_str("println(prompt())\n");
-
-    let dir = driver::thoxa_target_dir().join("repl");
-    fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
-    let path = dir.join("prompt.thx");
-    fs::write(&path, &src).map_err(|e| Error::new(e.to_string()))?;
-
-    let opts = BuildOptions {
-        source: path,
-        output_name: Some("repl_prompt".into()),
-        emit_c_only: false,
-    };
-    let art = driver::build(&opts)?;
-    art.bin_path
-        .ok_or_else(|| Error::new("prompt: no binary"))
+/// Session step .so whose body is `println(prompt())`.
+fn build_prompt_lib(decls: &[String], cache: &mut SessionBuildCache) -> Result<LoadedStep> {
+    driver::capture_toolchain_path();
+    let art = driver::build_session_step(decls, "println(prompt())\n", cache)?;
+    open_step_lib(&art.so_path)
 }
 
-fn run_prompt_bin(bin: &Path, status: i32) -> Result<String> {
-    let out = Command::new(bin)
-        .env("THOXA_STATUS", status.to_string())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .output()
-        .map_err(|e| Error::new(format!("prompt exec: {e}")))?;
-    if !out.status.success() {
-        return Err(Error::new(format!(
-            "prompt exited {}",
-            out.status.code().unwrap_or(1)
-        )));
-    }
-    let s = String::from_utf8_lossy(&out.stdout);
-    Ok(strip_one_trailing_newline(&s).to_string())
+fn run_prompt_lib(state: &mut PromptState, status: i32) -> Result<String> {
+    let step = state
+        .lib
+        .as_ref()
+        .ok_or_else(|| Error::new("prompt: library not loaded"))?
+        .step;
+    std::env::set_var("THOXA_STATUS", status.to_string());
+    let (_, out) = with_captured_stdout(|| {
+        let _st = call_step_fn(step, status);
+        Ok(())
+    })?;
+    Ok(strip_one_trailing_newline(&out).to_string())
 }
 
 fn strip_one_trailing_newline(s: &str) -> &str {
@@ -475,14 +670,14 @@ fn line_defines_fn_path(line: &str) -> bool {
 ///
 /// Captures the pre-hook PATH once for host tools (`cc` / `ar`) so an empty or
 /// minimal session PATH does not break compile-per-chunk.
-fn apply_path_hook(decls: &[String]) -> Result<()> {
+fn apply_path_hook(decls: &[String], cache: &mut SessionBuildCache) -> Result<()> {
     if !decls_define_path(decls) {
         return Ok(());
     }
     // Snapshot toolchain PATH before we overwrite session PATH.
     driver::capture_toolchain_path();
     let parent = current_path_components();
-    let components = run_path_hook(decls, &parent)?;
+    let components = run_path_hook(decls, &parent, cache)?;
     let joined = components.join(":");
     // Empty return → empty PATH (commands only via absolute paths).
     std::env::set_var("PATH", &joined);
@@ -496,25 +691,26 @@ fn current_path_components() -> Vec<String> {
     }
 }
 
-/// Build + run the path binary; return path components (one per stdout line).
-fn run_path_hook(decls: &[String], parent: &[String]) -> Result<Vec<String>> {
-    // Path binary build needs `cc`; capture toolchain PATH if not already.
+/// Build + run path via session step; return components (one per stdout line).
+fn run_path_hook(
+    decls: &[String],
+    parent: &[String],
+    cache: &mut SessionBuildCache,
+) -> Result<Vec<String>> {
     driver::capture_toolchain_path();
-    let bin = build_path_binary(decls, parent)?;
-    let out = Command::new(&bin)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .output()
-        .map_err(|e| Error::new(format!("path exec: {e}")))?;
-    if !out.status.success() {
-        return Err(Error::new(format!(
-            "path exited {}",
-            out.status.code().unwrap_or(1)
-        )));
-    }
-    let s = String::from_utf8_lossy(&out.stdout);
-    Ok(parse_path_hook_stdout(&s))
+    let chunk = path_hook_chunk(parent);
+    let art = driver::build_session_step(decls, &chunk, cache)?;
+    let lib = open_step_lib(&art.so_path)?;
+    let (_, out) = with_captured_stdout(|| {
+        let st = call_step_fn(lib.step, 0);
+        if st != 0 {
+            return Err(Error::new(format!("path step status {st}")));
+        }
+        Ok(())
+    })?;
+    // Drop lib after capture (unmaps .so).
+    drop(lib);
+    Ok(parse_path_hook_stdout(&out))
 }
 
 /// One component per non-empty line (trailing newline stripped per line).
@@ -525,48 +721,25 @@ fn parse_path_hook_stdout(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// Program binary (has `main`): call `path(parent: …)` and println each component.
-/// Uses `main` rather than a session script so `for`/`let` type ann work (session
-/// stmt bodies are still a thinner surface).
-fn build_path_binary(decls: &[String], parent: &[String]) -> Result<PathBuf> {
+/// Session statements: call `path(…)` and println each component.
+///
+/// Constraints (session top-level):
+/// - Module `let` has no type annotation — empty parent uses `sessionEmptyStrings()`.
+/// - Multi-line `for { … }` is desugared as a command (the `{` breaks lexing); keep the loop one line.
+/// - Avoid `let result = path(parent)` as a second global: Array-typed globals used as
+///   call args from another global init currently type as Void — call inside the `for`.
+fn path_hook_chunk(parent: &[String]) -> String {
     let mut src = String::new();
-    for d in decls {
-        src.push_str(d);
-        if !d.ends_with('\n') {
-            src.push('\n');
-        }
+    if parent.is_empty() {
+        // Prelude helper — typed empty Array<String> without module-level type ann.
+        src.push_str("let parent = sessionEmptyStrings()\n");
+    } else {
+        src.push_str("let parent = ");
+        src.push_str(&thoxa_string_array_lit(parent));
+        src.push('\n');
     }
-    // Parent may be empty — need an annotated empty Array<String>.
-    src.push_str("fn main() -> Int64 {\n");
-    src.push_str("    let parent: Array<String> = ");
-    src.push_str(&thoxa_string_array_lit(parent));
-    src.push('\n');
-    src.push_str("    let result = path(parent: parent)\n");
-    src.push_str("    for p in result {\n");
-    src.push_str("        println(p)\n");
-    src.push_str("    }\n");
-    src.push_str("    0\n");
-    src.push_str("}\n");
-
-    let dir = driver::thoxa_target_dir().join("repl");
-    fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
-    // Unique names: parallel unit tests must not clobber a shared path.thx / binary.
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let stem = format!("repl_path_{}_{}", std::process::id(), stamp);
-    let path = dir.join(format!("{stem}.thx"));
-    fs::write(&path, &src).map_err(|e| Error::new(e.to_string()))?;
-
-    let opts = BuildOptions {
-        source: path,
-        output_name: Some(stem),
-        emit_c_only: false,
-    };
-    let art = driver::build(&opts)?;
-    art.bin_path
-        .ok_or_else(|| Error::new("path: no binary"))
+    src.push_str("for p in path(parent) { println(p) }\n");
+    src
 }
 
 fn thoxa_string_array_lit(items: &[String]) -> String {
@@ -607,10 +780,16 @@ struct ChunkOutcome {
     decls_changed: bool,
 }
 
-fn run_chunk(chunk: &str, decls: &mut Vec<String>, prev_status: i32) -> Result<ChunkOutcome> {
+fn run_chunk(
+    chunk: &str,
+    decls: &mut Vec<String>,
+    prev_status: i32,
+    cache: &mut SessionBuildCache,
+    loaded: &mut Option<LoadedStep>,
+) -> Result<ChunkOutcome> {
     let trimmed = chunk.trim();
 
-    // Host-side `status` — session chunks always start Shell at 0; host tracks real status.
+    // Host-side `status` — print host-held shell status without compiling.
     if trimmed == "status" {
         println!("{prev_status}");
         return Ok(ChunkOutcome {
@@ -619,7 +798,7 @@ fn run_chunk(chunk: &str, decls: &mut Vec<String>, prev_status: i32) -> Result<C
         });
     }
 
-    // Host-side cd so directory persists across compile/exec children.
+    // Host-side cd (fast path; in-process Thoxa `cd` also works via dlopen step).
     if let Some(st) = try_host_cd(trimmed)? {
         return Ok(ChunkOutcome {
             status: st,
@@ -644,39 +823,12 @@ fn run_chunk(chunk: &str, decls: &mut Vec<String>, prev_status: i32) -> Result<C
         });
     }
 
-    // Build session source: decls + chunk
-    let mut src = String::new();
-    for d in decls.iter() {
-        src.push_str(d);
-        src.push('\n');
-    }
-    src.push_str(chunk);
-    src.push('\n');
-
-    let dir = driver::thoxa_target_dir().join("repl");
-    fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
-    let path = dir.join("chunk.thx");
-    fs::write(&path, &src).map_err(|e| Error::new(e.to_string()))?;
-
-    let opts = BuildOptions {
-        source: path,
-        output_name: Some("repl_chunk".into()),
-        emit_c_only: false,
-    };
-    // Build + run capturing nothing special — inherit stdout/stderr for prints.
-    // Use a subprocess so a panic in user code does not kill the REPL.
-    let art = driver::build(&opts)?;
-    let bin = art
-        .bin_path
-        .ok_or_else(|| Error::new("repl: no binary"))?;
-    let out = Command::new(&bin)
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .map_err(|e| Error::new(format!("repl exec: {e}")))?;
+    // D93 v2: compile step shared lib (cached preamble) → dlopen → call.
+    driver::capture_toolchain_path();
+    let lib = driver::build_session_step(decls, chunk, cache)?;
+    let status = load_and_call_step(&lib.so_path, prev_status, loaded)?;
     Ok(ChunkOutcome {
-        status: out.code().unwrap_or(1),
+        status,
         decls_changed: false,
     })
 }
@@ -846,14 +998,18 @@ println("from-rc")
         .unwrap();
 
         let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
         // Point THOXA_SHELL_RC via apply_rc_source directly (no env races).
         let src = fs::read_to_string(&rc).unwrap();
-        let st = apply_rc_source(&src, &mut decls).expect("rc");
+        let st = apply_rc_source(&src, &mut decls, &mut cache, &mut loaded).expect("rc");
         assert_eq!(st, 0);
         assert!(decls_define_prompt(&decls), "decls={decls:?}");
 
-        let bin = build_prompt_binary(&decls).expect("build prompt");
-        let out = run_prompt_bin(&bin, 42).expect("run prompt");
+        let mut pstate = PromptState::default();
+        pstate.on_decls_changed(&decls);
+        ensure_prompt_lib(&decls, &mut pstate, &mut cache).expect("build prompt");
+        let out = run_prompt_lib(&mut pstate, 42).expect("run prompt");
         assert_eq!(out, "CUSTOM$ ");
     }
 
@@ -871,8 +1027,11 @@ fn prompt() -> String {
             .to_string(),
         ];
         assert!(decls_define_prompt(&decls));
-        let bin = build_prompt_binary(&decls).expect("build");
-        let out = run_prompt_bin(&bin, 7).expect("run");
+        let mut cache = SessionBuildCache::default();
+        let mut pstate = PromptState::default();
+        pstate.on_decls_changed(&decls);
+        ensure_prompt_lib(&decls, &mut pstate, &mut cache).expect("build");
+        let out = run_prompt_lib(&mut pstate, 7).expect("run");
         assert_eq!(out, "s=7$ ");
     }
 
@@ -903,7 +1062,8 @@ fn path(parent: Array<String>) -> Array<String> {
         ];
         assert!(decls_define_path(&decls));
         let parent = vec!["/old/a".into(), "/old/b".into()];
-        let out = run_path_hook(&decls, &parent).expect("path hook");
+        let mut cache = SessionBuildCache::default();
+        let out = run_path_hook(&decls, &parent, &mut cache).expect("path hook");
         assert_eq!(out, vec!["/opt/custom", "/run/system"]);
     }
 
@@ -923,7 +1083,8 @@ fn path(parent: Array<String>) -> Array<String> {
             .to_string(),
         ];
         let parent = vec!["/a".into(), "/b".into()];
-        let out = run_path_hook(&decls, &parent).expect("path merge");
+        let mut cache = SessionBuildCache::default();
+        let out = run_path_hook(&decls, &parent, &mut cache).expect("path merge");
         assert_eq!(out, vec!["/first", "/a", "/b"]);
     }
 
@@ -944,17 +1105,18 @@ fn path(parent: Array<String>) -> Array<String> {
             .to_string(),
         ];
         let parent = vec!["/a".into(), "/b".into()];
-        let out = run_path_hook(&decls, &parent).expect("empty path");
+        let mut cache = SessionBuildCache::default();
+        let out = run_path_hook(&decls, &parent, &mut cache).expect("empty path");
         assert!(out.is_empty(), "expected no components, got {out:?}");
 
         // apply_path_hook must set process PATH to "" (not leave parent).
         // Keep a real toolchain PATH captured first so the hook build can spawn cc.
         let prev = std::env::var("PATH").ok();
-        apply_path_hook(&decls).expect("apply empty path");
+        apply_path_hook(&decls, &mut cache).expect("apply empty path");
         let after = std::env::var("PATH").unwrap_or_else(|_| "<unset>".into());
         assert_eq!(after, "", "PATH should be cleared, got {after:?}");
         // Host tools still resolve via THOXA_TOOLCHAIN_PATH / capture.
-        let still = run_path_hook(&decls, &parent).expect("rebuild after empty PATH");
+        let still = run_path_hook(&decls, &parent, &mut cache).expect("rebuild after empty PATH");
         assert!(still.is_empty());
         match prev {
             Some(p) => std::env::set_var("PATH", p),
@@ -974,7 +1136,8 @@ fn path(parent: Array<String>) -> Array<String> {
             .trim()
             .to_string(),
         ];
-        let out = run_path_hook(&decls, &["/x".into()]).expect("empty local");
+        let mut cache = SessionBuildCache::default();
+        let out = run_path_hook(&decls, &["/x".into()], &mut cache).expect("empty local");
         assert!(out.is_empty());
     }
 

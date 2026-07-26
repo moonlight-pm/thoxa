@@ -47,10 +47,17 @@ int32_t thoxa_errno(void);
 int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len);
 
 /*
- * Session / REPL helpers (plan PR3+).
- * `ThoxaShellState` is the stable C view of session status for future dlopen
- * step objects. Today the host mostly uses process exit codes; this struct is
- * the ABI placeholder.
+ * Session / REPL helpers (plan PR3+, D93 v2).
+ *
+ * Host-held shell state for in-process `step` shared objects.
+ * Layout is fixed: one Int64 status (matches `type Shell(status: Int64)` field
+ * packing for the status slot). Generated session libs export:
+ *
+ *   int64_t thoxa_session_step(ThoxaShellState *state);
+ *
+ * which reads `state->status`, runs `Shell.step`, writes back status, and
+ * returns it. Optional `void thoxa_session_init(void)` runs module-level inits
+ * (idempotent per loaded image).
  */
 typedef struct ThoxaShellState {
     int64_t status;
