@@ -39,7 +39,8 @@ Familiar command lines desugar to Thoxa on `Shell`:
 | `uname -a` | `shell = shell.run(["uname", "-a"])` |
 | `ls -al` / `--all` | Flags desugar as command words (not Thoxa subtraction) |
 | `echo hi \| cat` | `shell = shell.pipeline(…)` (OS pipes; last-stage status) |
-| `1 - 2` / `1 \| 2` | Stays pure Thoxa arithmetic / BitOr |
+| `cmd > f` / `>>` / `<` | `shell = shell.runIo(…)` (PATH command; whitespace around ops) |
+| `1 - 2` / `1 \| 2` / `1 > 0` | Stays pure Thoxa arithmetic / BitOr / comparison |
 
 Quotes follow the same word-split rules as the dogfood shell (double/single
 quotes, backslash escapes). There is **no** shell `if`/`for`/`fn` dialect —
@@ -92,13 +93,20 @@ fn path(parent: Array<String>) -> Array<String> {
 Return value **replaces** process PATH (joined with `:`). Host keeps toolchain
 resolution for `cc` / `ar` when PATH is emptied.
 
-### Pipelines
+### Pipelines and redirections
 
-Command sugar `a | b | c` desugars to `Shell.pipeline` (runtime OS pipes +
-`execvp` PATH search). Exit **status** is the last stage’s status (shell
-convention). Works in session scripts and anywhere the step path runs.
-Redirections (`>`, `<`) are not product surface yet. The REPL may still use a
-host `|` fast path for the same lines.
+| Sugar | Behavior |
+|-------|----------|
+| `a \| b \| c` | `Shell.pipeline` — OS pipes; status = last stage |
+| `cmd > file` | Truncate/write stdout via `Shell.runIo` |
+| `cmd >> file` | Append stdout |
+| `cmd < file` | stdin from file |
+| Combined `<` and `>` / `>>` | Supported on one command |
+
+Redir ops must be separate words (whitespace). Uses PATH commands (including
+`echo`), not the Thoxa `Shell.echo` builtin. No stderr redir (`2>`) yet; pipe
+stages do not yet carry per-stage redirs. The REPL may still use a host `|`
+fast path for pipelines.
 
 ## Session scripts
 

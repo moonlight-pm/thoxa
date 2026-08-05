@@ -47,6 +47,21 @@ int32_t thoxa_errno(void);
 int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len);
 
 /*
+ * Like thoxa_spawn_wait with optional file redirections (session `>` / `>>` / `<`).
+ * stdin_path / stdout_path: NULL or empty string → inherit that fd.
+ * stdout_append: 0 = O_TRUNC ( `>` ), non-zero = O_APPEND ( `>>` ).
+ * Open failures in the child yield exit 127 (same as exec failure).
+ */
+int64_t thoxa_spawn_wait_io(
+    const char *path,
+    const void *argv_blob,
+    int64_t argv_len,
+    const char *stdin_path,
+    const char *stdout_path,
+    int64_t stdout_append
+);
+
+/*
  * OS pipeline: stages separated by an empty NUL-terminated field (double NUL).
  * Within a stage, consecutive NUL-terminated words form argv (like spawn_wait).
  * Example for `echo hi | wc -c`:

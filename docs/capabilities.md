@@ -67,7 +67,8 @@ change. See [`progress-model.md`](progress-model.md).
 | session-dlopen | In-process step `.so` + preamble `.o` cache | shipped | `repl::` | D93 v2 | Host still owns some fast paths | yes |
 | session-rc | `~/.config/thoxa/shell.thx` + `prompt()` | shipped | `repl::` | D96 | Piped REPL does not load rc | yes |
 | session-path | `fn path(parent) -> Array<String>` | shipped | `repl::` | D100 | — | yes |
-| session-pipeline | Thoxa-side `\|` → `Shell.pipeline` + RT | shipped | `session_pipe`; `command::` | D101 | Redirs not yet; nested Array stages N/A (Bytes blob) | yes |
+| session-pipeline | Thoxa-side `\|` → `Shell.pipeline` + RT | shipped | `session_pipe`; `command::` | D101 | Nested Array stages N/A (Bytes blob) | yes |
+| session-redir | File `>` / `>>` / `<` → `Shell.runIo` | shipped | `session_redir`; `command::` | D102 | No `2>`; redir+pipe combo; ops need whitespace | yes |
 | session-host-pipe | Host OS `\|` fast path in REPL | partial | interactive smoke | PR6 | Scripts use Thoxa-side; host path still intercepts REPL `|` | partial |
 | session-prelude | Shell API in product prelude / `std` | partial | embedded prelude | D89, Phase 4 | Still compiler-embed `session_prelude.thx` | no |
 | session-host-builtins | Drop host `cd`/`status` for pure step | planned | — | session polish | Host fast paths remain | no |

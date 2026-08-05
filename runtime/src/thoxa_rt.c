@@ -2,9 +2,11 @@
 #include "thoxa_rt.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -809,7 +811,14 @@ ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a) {
 
 /* --- Process spawn (thoxash / dogfood) ---------------------------------- */
 
-int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len) {
+static int64_t thoxa_spawn_wait_impl(
+    const char *path,
+    const void *argv_blob,
+    int64_t argv_len,
+    const char *stdin_path,
+    const char *stdout_path,
+    int64_t stdout_append
+) {
     if (!path || path[0] == '\0') {
         errno = EINVAL;
         return -1;
@@ -849,6 +858,30 @@ int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_l
         return -1;
     }
     if (pid == 0) {
+        /* Optional file redirections before exec. */
+        if (stdin_path && stdin_path[0] != '\0') {
+            int fd = open(stdin_path, O_RDONLY);
+            if (fd < 0) {
+                _exit(127);
+            }
+            if (dup2(fd, STDIN_FILENO) < 0) {
+                _exit(127);
+            }
+            close(fd);
+        }
+        if (stdout_path && stdout_path[0] != '\0') {
+            int flags = O_WRONLY | O_CREAT;
+            flags |= (stdout_append != 0) ? O_APPEND : O_TRUNC;
+            int fd = open(stdout_path, flags, 0666);
+            if (fd < 0) {
+                _exit(127);
+            }
+            if (dup2(fd, STDOUT_FILENO) < 0) {
+                _exit(127);
+            }
+            close(fd);
+        }
+
         /* Child: build argv pointing into a private copy of the blob. */
         uint8_t *copy = (uint8_t *)malloc(len > 0 ? len : 1);
         char **argv = (char **)malloc((argc + 1) * sizeof(char *));
@@ -887,6 +920,23 @@ int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_l
         return 128 + (int64_t)WTERMSIG(status);
     }
     return -1;
+}
+
+int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len) {
+    return thoxa_spawn_wait_impl(path, argv_blob, argv_len, NULL, NULL, 0);
+}
+
+int64_t thoxa_spawn_wait_io(
+    const char *path,
+    const void *argv_blob,
+    int64_t argv_len,
+    const char *stdin_path,
+    const char *stdout_path,
+    int64_t stdout_append
+) {
+    return thoxa_spawn_wait_impl(
+        path, argv_blob, argv_len, stdin_path, stdout_path, stdout_append
+    );
 }
 
 int32_t thoxa_pipe(int32_t fds_out[2]) {

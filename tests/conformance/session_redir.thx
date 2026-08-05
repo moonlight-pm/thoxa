@@ -1,0 +1,6 @@
+## Session file redirections: `>` / `>>` / `<` → Shell.runIo (PATH commands).
+## Output path under /tmp so the suite does not leave tree artifacts.
+echo hello > /tmp/thoxa_session_redir_out.txt
+cat /tmp/thoxa_session_redir_out.txt
+echo world >> /tmp/thoxa_session_redir_out.txt
+cat < /tmp/thoxa_session_redir_out.txt

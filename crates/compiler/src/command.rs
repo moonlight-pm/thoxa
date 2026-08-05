@@ -110,6 +110,12 @@ fn desugar_line(line: &str) -> Result<String> {
         return Ok(format!("{indent}{}", desugar_pipeline(&stages)));
     }
 
+    // Redirs before Thoxa-first: `echo hi > f` parses as Gt and would be kept.
+    // Skip when the first word is an int literal so `1 > 0` stays Thoxa.
+    if let Some(spec) = parse_redirect_command(trimmed)? {
+        return Ok(format!("{indent}{}", desugar_redirect(&spec)));
+    }
+
     // Thoxa-first: if the line already parses as a module fragment, keep it.
     if line_parses_as_thoxa(trimmed) {
         return Ok(line.to_string());
@@ -228,6 +234,9 @@ pub fn desugar_command_line(line: &str) -> Result<Option<String>> {
     if let Some(stages) = split_pipeline_stages(line)? {
         return Ok(Some(desugar_pipeline(&stages)));
     }
+    if let Some(spec) = parse_redirect_command(line)? {
+        return Ok(Some(desugar_redirect(&spec)));
+    }
     let words = split_words(line)?;
     if words.is_empty() {
         return Ok(None);
@@ -247,6 +256,98 @@ pub fn desugar_command_line(line: &str) -> Result<Option<String>> {
         _ => format!("shell = shell.run({})", array_lit(&words)),
     };
     Ok(Some(thx))
+}
+
+/// Parsed single-command line with optional file redirections.
+struct RedirectSpec {
+    argv: Vec<String>,
+    stdin: Option<String>,
+    stdout: Option<String>,
+    append: bool,
+}
+
+/// `cmd > f`, `cmd >> f`, `cmd < f` — requires redir ops as separate words.
+/// Returns `None` when no redirs, or when first word is an int (`1 > 0` Thoxa).
+fn parse_redirect_command(line: &str) -> Result<Option<RedirectSpec>> {
+    let words = match split_words(line) {
+        Ok(w) => w,
+        Err(_) => return Ok(None),
+    };
+    if words.is_empty() {
+        return Ok(None);
+    }
+    let has_redir = words
+        .iter()
+        .any(|w| w == ">" || w == ">>" || w == "<");
+    if !has_redir {
+        return Ok(None);
+    }
+    // Protect pure numeric comparisons: `1 > 0`.
+    if words[0].parse::<i64>().is_ok() {
+        return Ok(None);
+    }
+
+    let mut argv: Vec<String> = Vec::new();
+    let mut stdin: Option<String> = None;
+    let mut stdout: Option<String> = None;
+    let mut append = false;
+    let mut i = 0usize;
+    while i < words.len() {
+        match words[i].as_str() {
+            ">" | ">>" => {
+                let is_append = words[i] == ">>";
+                i += 1;
+                if i >= words.len() {
+                    return Err(Error::new("missing path after redirection"));
+                }
+                let path = words[i].clone();
+                if path == ">" || path == ">>" || path == "<" {
+                    return Err(Error::new("missing path after redirection"));
+                }
+                stdout = Some(path);
+                append = is_append;
+                i += 1;
+            }
+            "<" => {
+                i += 1;
+                if i >= words.len() {
+                    return Err(Error::new("missing path after redirection"));
+                }
+                let path = words[i].clone();
+                if path == ">" || path == ">>" || path == "<" {
+                    return Err(Error::new("missing path after redirection"));
+                }
+                stdin = Some(path);
+                i += 1;
+            }
+            _ => {
+                argv.push(words[i].clone());
+                i += 1;
+            }
+        }
+    }
+    if argv.is_empty() {
+        return Err(Error::new("redirection without a command"));
+    }
+    Ok(Some(RedirectSpec {
+        argv,
+        stdin,
+        stdout,
+        append,
+    }))
+}
+
+fn desugar_redirect(spec: &RedirectSpec) -> String {
+    let stdin = spec.stdin.as_deref().unwrap_or("");
+    let stdout = spec.stdout.as_deref().unwrap_or("");
+    let append = if spec.append { "true" } else { "false" };
+    format!(
+        "shell = shell.runIo({}, \"{}\", \"{}\", {})",
+        array_lit(&spec.argv),
+        escape_thoxa_string(stdin),
+        escape_thoxa_string(stdout),
+        append
+    )
 }
 
 /// Quote-aware split on `|` into command stages. Returns `None` when the line
@@ -578,6 +679,44 @@ mod tests {
         assert!(
             !src.contains("shell = shell.pipeline"),
             "integer BitOr should stay Thoxa, got: {src}"
+        );
+    }
+
+    #[test]
+    fn desugar_redirect_stdout() {
+        let s = desugar_command_line("echo hi > /tmp/x").unwrap().unwrap();
+        assert!(
+            s.contains(r#"shell = shell.runIo(["echo", "hi"], "", "/tmp/x", false)"#),
+            "got: {s}"
+        );
+    }
+
+    #[test]
+    fn desugar_redirect_append_and_stdin() {
+        let s = desugar_command_line("cat < in.txt >> out.txt")
+            .unwrap()
+            .unwrap();
+        assert!(
+            s.contains(r#"shell = shell.runIo(["cat"], "in.txt", "out.txt", true)"#),
+            "got: {s}"
+        );
+    }
+
+    #[test]
+    fn desugar_session_redirect_line() {
+        let src = desugar_session_source("echo hello > /tmp/thoxa_redir\n").unwrap();
+        assert!(
+            src.contains("shell = shell.runIo("),
+            "got: {src}"
+        );
+    }
+
+    #[test]
+    fn keep_pure_int_gt() {
+        let src = desugar_session_source("1 > 0\n").unwrap();
+        assert!(
+            !src.contains("shell = shell.runIo"),
+            "integer comparison should stay Thoxa, got: {src}"
         );
     }
 }
