@@ -105,8 +105,7 @@ resolution for `cc` / `ar` when PATH is emptied.
 
 Redir ops must be separate words (whitespace). Uses PATH commands (including
 `echo`), not the Thoxa `Shell.echo` builtin. No stderr redir (`2>`) yet; pipe
-stages do not yet carry per-stage redirs. The REPL may still use a host `|`
-fast path for pipelines.
+stages do not yet carry per-stage redirs.
 
 ## Session scripts
 

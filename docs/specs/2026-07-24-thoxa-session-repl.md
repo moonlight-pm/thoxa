@@ -211,6 +211,7 @@ type Shell(
 | Command → AST desugar in compiler | ✅ | PR2; D92 |
 | Thoxa-side OS pipelines | ✅ | D101; `session_pipe` |
 | File redirs `>` / `>>` / `<` | ✅ | D102; `session_redir`; no `2>` yet |
+| Pure-step REPL (no host cd/status/\|) | ✅ | D103; `repl::pure_step_*` |
 
 ---
 
@@ -399,9 +400,9 @@ No `Shell` wrap. No command sugar unless we later opt in (default **off** for pr
 
 ## 9. Agent handoff notes
 
-- **Core shipped** (PR0–PR8 + D93 v2 + D101 pipes + D102 redirs). Living next
-  work: root `CURRENT.md` + `docs/capabilities.md` (polish: prelude absorption,
-  host fast-path reduction, optional tcc).
+- **Core shipped** (PR0–PR8 + D93 v2 + D101–D103). Living next work: root
+  `CURRENT.md` + `docs/capabilities.md` (polish: prelude absorption, optional
+  tcc).
 - Do not add shell `if`/`for`.
 - Prefer small diffs; update CURRENT + capabilities + decisions after each PR.
 - Oracle Python shell (if any) is reference-only — native design above wins.
