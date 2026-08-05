@@ -1,6 +1,9 @@
 # Thoxa — ideas (parking lot)
 
-Uncommitted language / product sketches. **Not decisions.** Sleep on them; promote to `docs/specs/` + a D-id in `docs/decisions.md` only when something is locked and (if needed) scheduled.
+Uncommitted language / product sketches. **Not decisions.** Sleep on them;
+promote to `docs/specs/` + a D-id in `docs/decisions.md` only when something is
+locked and (if needed) scheduled. Living priority never lives here — see root
+[`CURRENT.md`](../../CURRENT.md) and [`../capabilities.md`](../capabilities.md).
 
 | Idea | Status | Notes |
 |------|--------|--------|

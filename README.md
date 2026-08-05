@@ -1,17 +1,35 @@
 # Thoxa
 
-Native Thoxa: compile-to-C, hybrid value layout, simple RC heading toward Perceus.
+Native Thoxa: compile-to-C, hybrid value layout, simple RC heading toward
+Perceus. Interactive **session** face is bare `thoxa` (REPL + no-main scripts).
 
-> **Pre-alpha.** Syntax and semantics track the Python oracle at [`apocrypha/old/ThoxaPython/spec`](apocrypha/old/ThoxaPython/spec) only as features earn conformance tests here.
+> **Pre-alpha.** Syntax and semantics track the Python oracle at
+> [`apocrypha/old/ThoxaPython/spec`](apocrypha/old/ThoxaPython/spec) only as
+> features earn conformance tests here.
+
+## Start here
+
+| Doc | Purpose |
+|-----|---------|
+| [`AGENTS.md`](./AGENTS.md) | Agent / contributor workflow |
+| [`CURRENT.md`](./CURRENT.md) | **Living** priority + locks |
+| [`docs/capabilities.md`](./docs/capabilities.md) | As-built capability maturity |
+| [`docs/handbook/`](./docs/handbook/) | User manual (shipped only) |
+| [`docs/progress-model.md`](./docs/progress-model.md) | How focus / as-built / target / handbook fit |
+| [`docs/README.md`](./docs/README.md) | Full documentation map |
 
 ## Quickstart
 
 ```bash
-# Build runtime + compile and run the hello conformance program
+# Build runtime + run the conformance suite
 cargo make test
 
 # Run a Thoxa file
 cargo make run tests/conformance/hello.thx
+
+# Session REPL (product shell)
+cargo make shell
+# or: cargo run -p thoxa --
 
 # Emit C only (under target/thoxa/c/)
 cargo make emit-c tests/conformance/hello.thx
@@ -23,23 +41,25 @@ Compiler CLI (also available via `cargo run -p thoxa -- …`):
 cargo run -p thoxa -- run tests/conformance/hello.thx
 cargo run -p thoxa -- build tests/conformance/hello.thx -o hello
 cargo run -p thoxa -- emit-c tests/conformance/hello.thx
+cargo run -p thoxa -- check path.thx
+cargo run -p thoxa -- lsp
 ```
 
 ## Layout
 
-| Path | Role |
-|------|------|
-| `crates/compiler` | `thoxa` CLI + compiler library (+ planned `thoxa lsp`) |
-| `crates/make` | xtask (`cargo make …`) |
-| `runtime/` | C runtime sources (`thoxa_rt`) |
-| `tests/conformance/` | `.thx` + `.out` programs |
-| `extras/` | Non-product DX (tree-sitter, Zed) — planned |
-| `docs/specs/` | Design docs |
-| `docs/decisions.md` | Decision log |
+```text
+crates/compiler   thoxa CLI + compiler library (incl. session REPL + lsp)
+crates/make       xtask (cargo make …)
+runtime/          C runtime (thoxa_rt)
+std/              product standard library (std/… imports)
+tests/conformance definition of done (.thx + .out)
+docs/             canonical engineering + handbook
+CURRENT.md        living session handoff
+extras/           non-product DX (tree-sitter, Zed, dogfood shell)
+apocrypha/        history + Python oracle (not product)
+```
 
 ### Build products (`target/`)
-
-Everything generated lives under one tree:
 
 | Path | Role |
 |------|------|
@@ -53,10 +73,9 @@ Everything generated lives under one tree:
 
 ## Editor / C language server
 
-The runtime lives under `runtime/` with headers in `runtime/include/`. Editors using
-**clangd** need that include path (otherwise `thoxa_rt.h` is missing). On **NixOS**,
-clangd also will not see gcc’s system headers (`stdio.h`, `fputs`, `stdout`) unless
-those paths are provided — real `cc` works fine; only the language server is confused.
+The runtime lives under `runtime/` with headers in `runtime/include/`. Editors
+using **clangd** need that include path. On **NixOS**, clangd also needs host
+system include dirs — real `cc` works; only the language server is confused.
 
 ```bash
 cargo make runtime    # builds libthoxa_rt.a and writes compile_commands.json
@@ -71,16 +90,20 @@ Fallback: committed [`.clangd`](.clangd) with `-Iruntime/include`.
 
 ```bash
 cargo make zed            # sync grammar + language files + build thoxa for LSP
-cargo make zed --grammar  # grammar WASM only (after tree-sitter generate)
+cargo make zed --grammar  # grammar WASM only
 cargo make zed --all      # also rebuild the WASM extension shim
 ```
 
-See [`extras/README.md`](extras/README.md). After sync: restart the language server
-in Zed (grammar color changes may need a full quit/restart).
+See [`extras/README.md`](extras/README.md) and
+[`docs/handbook/editor.md`](docs/handbook/editor.md).
+
 ## Docs
 
-- [Status / next rung](docs/status.md) — living progress (agents: read first)
-- [Agent handoff](AGENTS.md) — session bootstrap for AI tools
-- [Native kernel design](docs/specs/2026-07-18-thoxa-native-kernel-design.md)
-- [Native editor + LSP plan](docs/specs/2026-07-20-native-editor-lsp-plan.md) — Zed + `thoxa lsp` (phase 1)
+- [CURRENT — what next](CURRENT.md)
+- [Capabilities](docs/capabilities.md)
+- [Handbook (user)](docs/handbook/)
+- [Progress model](docs/progress-model.md)
+- [Documentation map](docs/README.md)
 - [Decisions](docs/decisions.md)
+- [Architecture](docs/architecture.md)
+- [Roadmap](docs/roadmap.md)

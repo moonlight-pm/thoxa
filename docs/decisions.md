@@ -2,18 +2,20 @@
 
 Living log of load-bearing choices. Newest first within each section when updated.
 
-**Doc layout (keep it small until it hurts):**
+**Doc layout** (full model: [`progress-model.md`](progress-model.md); map: [`README.md`](README.md)):
 
 | Path | Role |
 |------|------|
-| `AGENTS.md` | **Session bootstrap** — auto-loaded by Grok every session; keep short |
-| `docs/status.md` | Living “where we are / next rung” — agents update after work |
+| `AGENTS.md` | Session bootstrap — keep short |
+| `CURRENT.md` | **Only** living focus handoff (priority + locks) |
+| `docs/capabilities.md` | As-built capability maturity + gaps |
 | `docs/decisions.md` | Locked choices + deferred analyses (this file) |
-| `docs/specs/` | Full design docs (architecture, rungs, systems) |
-| `docs/ideas/` | Parking lot for language/product sketches — **not** decisions; sleep on them |
-| `.grok/config.toml` | Project permission allows (fewer approval prompts) |
+| `docs/specs/` | Target freezes (desired shape; not changelogs) |
+| `docs/handbook/` | User manual — **shipped** behavior only |
+| `docs/ideas/` | Parking lot — **not** decisions |
+| `.grok/config.toml` | Project permission allows |
 
-No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and “where did we say X?” pain are real. Prefer prose + IDs here over premature graph tooling. **Serena-like code-intelligence MCPs are optional**; this repo’s handoff is file-based (`AGENTS.md` + `status.md`), not a separate memory server.
+No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and “where did we say X?” pain are real. Prefer prose + IDs here over premature graph tooling. Handoff is file-based (`AGENTS.md` + `CURRENT.md` + `capabilities.md`), not a separate memory server.
 
 ---
 

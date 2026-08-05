@@ -1,10 +1,14 @@
 # Post-R9 HTTP completion — remaining work plan
 
-> **For agentic workers:** This document is the design input for `/execute-plan` (or manual subagent runs). Implement **one PR at a time** unless the DAG allows parallel level-0 work. Conformance (`cargo make test`) is the definition of done for every PR. Update `docs/status.md` + `docs/decisions.md` + `AGENTS.md` when a PR finishes.
-
 **Date:** 2026-07-19  
-**Status:** Ready to execute  
-**Baseline:** R0–R9 + R9+ through dynamic Array, Buffer, file I/O (`readFile`), String `==`/`!=`, static Router (`handle(root, path) -> Bytes`). **22** conformance tests pass.
+**Status:** historical (plan complete)  
+**Implementation:** shipped  
+**Gaps:** none for this freeze (bounded multi-request static server + Main.thx path)  
+**As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
+
+> **Historical plan.** Bounded HTTP path shipped. Living priority:
+> [`../../CURRENT.md`](../../CURRENT.md). Progress updates:
+> capabilities + CURRENT (+ handbook when user-visible), not this file as a changelog.
 
 **Goal:** Close the gap from today’s subset to a **bounded multi-request static HTTP server** that matches the oracle `examples/http` *shape* (Net + Http + Io + Router + Main), without taking on deferred language megawork (M4, Perceus, effects, full stdlib roots).
 
@@ -128,7 +132,7 @@ PR9 Io polish (optional, parallel after PR2)
 
 ## 5. Global constraints (every implementer)
 
-1. Read `AGENTS.md` + `docs/status.md` first.
+1. Read `AGENTS.md` + `CURRENT.md` + `docs/capabilities.md` first.
 2. One PR = one focused diff; no drive-by refactors outside listed files.
 3. After substantive compiler/runtime changes: `cargo make test` must pass (all existing + new).
 4. Do **not** invent syntax without checking SPEC (`apocrypha/old/ThoxaPython/spec/SPEC.md`) or decisions.
@@ -152,7 +156,7 @@ PR9 Io polish (optional, parallel after PR2)
 | `tests/conformance/httplib/*` | Net, Http, Router |
 | `tests/conformance/iolib/*` | Io |
 | `tests/conformance/io_data/web/*` | Static fixtures (exists) |
-| `docs/status.md`, `docs/decisions.md`, `AGENTS.md` | Progress |
+| `CURRENT.md`, `docs/capabilities.md`, `docs/decisions.md`, `AGENTS.md` | Progress |
 
 ---
 
@@ -161,7 +165,7 @@ PR9 Io polish (optional, parallel after PR2)
 ### PR 1: Early `return` statement
 
 - **Description:** Parse and lower `return` / `return expr` inside functions and methods. Type-check against enclosing return type. Emit C `return`. Support `return` of Void (no value) and early exit from loops. Conformance: early returns in nested if/for/match.
-- **Files/components affected:** `crates/compiler/src/ast.rs`, `parser.rs`, `mir.rs`, `cgen.rs` (if needed), `tests/conformance/early_return.thx`, `early_return.out`, `docs/status.md`, `docs/decisions.md`
+- **Files/components affected:** `crates/compiler/src/ast.rs`, `parser.rs`, `mir.rs`, `cgen.rs` (if needed), `tests/conformance/early_return.thx`, `early_return.out`, `CURRENT.md`, `docs/capabilities.md`, `docs/decisions.md`
 - **Dependencies:** None
 - **Acceptance:**
   - [ ] `return 1` from mid-function changes result
@@ -252,7 +256,7 @@ PR9 Io polish (optional, parallel after PR2)
 ### PR 7: Bounded multi-request static server
 
 - **Description:** Conformance program that binds ephemeral port, connects N clients (or one client reconnecting N times), each GETs a path, server accept/serve/close per connection, then exits. Integrate Net + Http + Router. Deterministic stdout (status lines / paths only).
-- **Files/components affected:** `tests/conformance/http_server.thx`, `http_server.out`, possibly small helpers in `httplib/`, `docs/status.md` (mark HTTP ladder complete for this plan), `docs/decisions.md`, `AGENTS.md`
+- **Files/components affected:** `tests/conformance/http_server.thx`, `http_server.out`, possibly small helpers in `httplib/`, `CURRENT.md`, `docs/capabilities.md`, `docs/decisions.md`, `AGENTS.md`
 - **Dependencies:** PR 6, PR 1
 - **Acceptance:**
   - [ ] N≥2 sequential connections succeed
@@ -311,7 +315,7 @@ For `/execute-plan` linearization (also respects parallel levels):
 |----------|---------|--------|
 | Each | `cargo make test` | All previous + new fixtures PASS |
 | PR2, PR3, PR7 | ASan on new binary | No heap-use-after-free |
-| Final | `cargo make test` | Full suite green; status Next points past HTTP ladder |
+| Final | `cargo make test` | Full suite green; CURRENT points past HTTP ladder |
 
 ---
 
@@ -319,10 +323,10 @@ For `/execute-plan` linearization (also respects parallel levels):
 
 When PR 7 merges (or last executed critical PR):
 
-- `docs/status.md`: mark HTTP ladder complete for bounded server; Next = polish (Main.thx / Io / deferred language).
-- `docs/decisions.md`: D63–D68 (or as assigned).
-- `AGENTS.md`: refresh “Already known” bullet list.
-- Kernel design ladder table: optional ✅ note for post-R9 HTTP.
+- `CURRENT.md` + `docs/capabilities.md`: HTTP rows **shipped** (historical — already done).
+- `docs/decisions.md`: D63–D68 (as assigned).
+- Handbook / architecture only if user-visible or map changed.
+- Kernel design ladder table: post-R9 HTTP ✅.
 
 ---
 
@@ -361,10 +365,11 @@ Or manual: “Implement PR 1 from `docs/specs/2026-07-19-post-r9-http-completion
 
 **Bootstrap for every subagent:**
 
-1. Read `AGENTS.md`, `docs/status.md`, this plan’s **Global constraints** + target PR section.  
+1. Read `AGENTS.md`, `CURRENT.md`, `docs/capabilities.md`, this plan’s **Global constraints** + target PR section.  
 2. Implement only that PR’s files.  
 3. `cargo make test`.  
-4. Update status/decisions if the PR says so.  
+4. Update CURRENT / capabilities / decisions if the PR says so.  
 5. Stop.
 
-**Do not** re-walk the whole tree or re-derive the ladder; this plan is the queue.
+**Do not** re-walk the whole tree or re-derive the ladder; this plan is historical
+(HTTP path shipped). Living queue: root `CURRENT.md`.

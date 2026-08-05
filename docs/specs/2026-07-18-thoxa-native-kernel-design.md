@@ -1,8 +1,11 @@
 # Thoxa — Native Kernel Design
 
-- **Date:** 2026-07-18
-- **Status:** Approved
-- **Repo:** `Thoxa` (native product; Python oracle archived under `apocrypha/old/ThoxaPython`)
+**Date:** 2026-07-18  
+**Status:** historical (freeze; ladder complete)  
+**Implementation:** shipped  
+**Gaps:** Perceus, effects, full oracle SPEC — deferred (see roadmap / capabilities)  
+**As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)  
+**Repo:** `Thoxa` (native product; Python oracle archived under `apocrypha/old/ThoxaPython`)
 
 ## 1. Purpose
 

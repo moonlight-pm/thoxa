@@ -1,0 +1,36 @@
+# Thoxa handbook
+
+User-facing documentation for **native Thoxa as it works today**.
+
+This is the product manual: shipped behavior only. Engineering progress and
+roadmap live under [`../capabilities.md`](../capabilities.md),
+[`../roadmap.md`](../roadmap.md), and root
+[`../../CURRENT.md`](../../CURRENT.md).
+
+> **Pre-alpha.** Surface grows when conformance tests land. Oracle SPEC under
+> `apocrypha/old/ThoxaPython` is a reference, not a promise.
+
+## Contents
+
+| Page | Topic |
+|------|--------|
+| [CLI](cli.md) | Commands, build products, common workflows |
+| [Language](language.md) | Types, control flow, errors, modules (shipped subset) |
+| [Session](session.md) | Bare `thoxa` REPL, scripts, command sugar, rc |
+| [Standard library](std.md) | `std/…` modules |
+| [Editor](editor.md) | Zed + `thoxa lsp` (honest limits) |
+
+## Quickstart
+
+```bash
+cargo make test
+cargo make run tests/conformance/hello.thx
+cargo run -p thoxa --                 # session REPL
+cargo run -p thoxa -- run path.thx    # program or session script
+```
+
+## Rules of this handbook
+
+- Document **what works**.
+- Label **partial** surfaces with limits.
+- Do not present deferred features (Perceus, effects, full SPEC) as available.

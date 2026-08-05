@@ -1,12 +1,14 @@
 # Native editor support (Zed + `thoxa lsp`) — plan
 
-> **For agentic workers:** This document is the design input for a later `/execute-plan` (or manual) session. Implement **one PR at a time** unless the DAG allows parallel work. Gate: `cargo test -p thoxa` + `cargo make test` (conformance must stay green). Update `docs/status.md` + `docs/decisions.md` + `AGENTS.md` when a PR finishes.
->
-> **No Python.** Port ideas and feature shape from the oracle under `apocrypha/old/ThoxaPython/editor/` and `…/thoxa/lsp/`; implement everything in **Rust** against the **native** compiler frontend.
-
 **Date:** 2026-07-20  
-**Status:** Phase 1 complete (PR1–PR3). Phase 2 complete (PR5–PR7, D76–D79).  
-**Baseline:** HTTP critical path + `Main.thx` dir entry complete (D63–D70, D67–D68). Native pipeline: `.thx` → lexer → parser → AST → MIR (+ RC) → cgen → `cc` + `libthoxa_rt`. **No** editor tree, **no** `thoxa lsp`, **no** multi-diagnostic collection, **no** binding index.
+**Status:** target (freeze)  
+**Implementation:** partial  
+**Gaps:** MIR lower on shared resolver; multi-diag depth; typed-member nav; broader package intelligence; refs/rename remain single-file  
+**As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/editor.md`](../handbook/editor.md)
+
+> **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. **No Python.** Port ideas from the oracle under `apocrypha/old/ThoxaPython/editor/` and `…/thoxa/lsp/`; implement in **Rust** against the native frontend.
+
+**Baseline (as-built):** Phase 1 (PR1–PR3) + phase 2 navigation (PR5–PR7, D76–D79) shipped. HTTP path + `Main.thx` complete. Pipeline: `.thx` → lexer → parser → AST → MIR (+ RC) → cgen → `cc` + `libthoxa_rt`.
 
 **Goal:** Personal DX for editing `.thx` in **Zed**: thin Tree-sitter color + a real **`thoxa lsp`** that reuses the native compiler so diagnostics never drift. Phase 1 = useful (squiggles + color). Phase 2 = navigation (hover/def/refs/…) when we invest in a shared resolver.
 
@@ -291,7 +293,7 @@ Phase 2 is a **compiler architecture** investment (~2–4 weeks), not a thin LSP
 
 ## 8. Global constraints (every implementer)
 
-1. Read `AGENTS.md` + `docs/status.md` first; this plan is the “next” track when status points here.
+1. Read `AGENTS.md` + `CURRENT.md` + `docs/capabilities.md` first; this plan is active only when CURRENT points here.
 2. **No Python** in product or `extras/`. Oracle is read-only reference.
 3. One PR = focused diff; no drive-by MIR refactors outside the PR’s scope.
 4. After compiler changes: `cargo test -p thoxa` and `cargo make test` green.
@@ -316,7 +318,7 @@ Phase 2 is a **compiler architecture** investment (~2–4 weeks), not a thin LSP
 | `extras/tree-sitter-thoxa/*` | Grammar |
 | `extras/zed/*` | Dev extension |
 | `extras/README.md` | Install + smoke |
-| `docs/status.md`, `docs/decisions.md`, `AGENTS.md` | Progress |
+| `CURRENT.md`, `docs/capabilities.md`, `docs/decisions.md`, `AGENTS.md` | Progress |
 | `crates/compiler` unit tests | `lsp` convert/protocol/analysis (no conformance `.thx` required for pure LSP wiring) |
 
 Conformance `.thx` fixtures are **not** required for phase 1 LSP (language surface unchanged). Optional: a small integration test that runs `thoxa lsp` with a scripted initialize/didOpen exchange.
@@ -424,7 +426,7 @@ No new conformance ladder rungs required for phase 1 (language surface unchanged
 
 When starting the implementation session:
 
-1. Read `AGENTS.md`, `docs/status.md`, **this file**.
+1. Read `AGENTS.md`, `CURRENT.md`, `docs/capabilities.md`, **this file**.
 2. Confirm phase: default **phase 1 only** (PR1→PR2→PR3) unless user says “navigation” / “phase 2”.
 3. Do not re-walk apocrypha beyond the reference table in §0–1 when stuck on wire format.
 4. After each PR: update status Done/Last session; append decisions D71+ as locked; point **Next** at remaining PRs in this plan.

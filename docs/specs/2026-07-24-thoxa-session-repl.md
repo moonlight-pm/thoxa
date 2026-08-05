@@ -1,9 +1,14 @@
 # Thoxa session model — shell / REPL / no-main scripts
 
-> **For agentic workers:** This is the design input for later `/execute-plan` or manual PR sessions. Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `docs/status.md` + `docs/decisions.md` + `AGENTS.md` when a PR finishes. Do **not** invent a second shell language.
-
 **Date:** 2026-07-24  
-**Status:** **Shipped (PR0–PR8 + D93 v2 dlopen step)**. Remaining: Thoxa-side pipes/redirs; `prompt`/`path` still separate exec. Decisions D88–D100.  
+**Status:** target (freeze)  
+**Implementation:** partial  
+**Gaps:** Thoxa-side pipes/redirs (host `|` only); Shell prelude still compiler-embedded; host `cd`/`status` fast paths remain; optional faster REPL C (`tcc`)  
+**As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)
+
+> **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. Do **not** invent a second shell language.
+
+**Shipped core:** PR0–PR8 + D93 v2 dlopen step; `prompt()` / `path()` via session step `.so` (stdout capture, not child exec). Decisions D88–D100.  
 **Baseline:** Native ladder + session scripts + command sugar + bare `thoxa` REPL.
 
 **Goal:** Make **Thoxa the session language**. Interactive and no-`main` scripts share one model: a live **`Shell`** value, user text desugared into real Thoxa, compiled, and executed as a method body on that value. Familiar command skin stays thin; programming is always Thoxa.
@@ -197,13 +202,13 @@ type Shell(
 | Modules `./` `~/`, import/export | ✅ | D30–D35 |
 | `thoxa_spawn_wait` | ✅ | D86; argv as NUL-separated `Bytes` |
 | thoxash word split + quotes | ✅ | `extras/shell` v3+ |
-| Value `match` string/int/bool | ✅ | D87; used by thoxash dispatch |
+| Value `match` string/int/bool | ✅ | D87 |
 | Dogfood `type Shell(status)` + methods | ✅ | PR0 — `extras/shell` v4 |
-| Bare `thoxa` → REPL | ❌ | usage exit 2 |
-| No-main run-as-script | ❌ | `run` still requires `main` (PR1) |
-| dlopen session steps | ❌ | PR4 |
-| Prelude / std `Shell` type | ❌ | only dogfood in extras |
-| Command → AST desugar in compiler | ❌ | only hand-written in extras (PR2) |
+| Bare `thoxa` → REPL | ✅ | PR4+; product face |
+| No-main run-as-script | ✅ | PR1; D90/D94 |
+| dlopen session steps | ✅ | D93 v2 |
+| Prelude / std `Shell` type | partial | still compiler-embed `session_prelude.thx` |
+| Command → AST desugar in compiler | ✅ | PR2; D92 |
 
 ---
 
@@ -392,10 +397,11 @@ No `Shell` wrap. No command sugar unless we later opt in (default **off** for pr
 
 ## 9. Agent handoff notes
 
-- **Next implementable work:** **PR1** (session script detection + splice in compiler).
-- Do not implement bare-`thoxa` REPL before session scripts work.
+- **Core shipped** (PR0–PR8 + D93 v2). Living next work: root `CURRENT.md` +
+  `docs/capabilities.md` session rows (polish: Thoxa-side pipes/redirs, prelude
+  absorption, host fast-path reduction, optional tcc).
 - Do not add shell `if`/`for`.
-- Prefer small diffs; update status/decisions after each PR.
+- Prefer small diffs; update CURRENT + capabilities + decisions after each PR.
 - Oracle Python shell (if any) is reference-only — native design above wins.
 
 ---

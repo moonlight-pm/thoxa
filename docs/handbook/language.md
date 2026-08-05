@@ -1,0 +1,94 @@
+# Language (shipped subset)
+
+Native Thoxa is a small, growing language. This page lists **what the compiler
+implements with conformance**, not the full oracle SPEC.
+
+## Programs
+
+```thx
+fn main() -> Int64 {
+    println("hello")
+    0
+}
+```
+
+Directory packages may use `Main.thx` as the entry file.
+
+## Values and types (highlights)
+
+| Area | Shipped |
+|------|---------|
+| Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Bool`, `Void` |
+| Heap | `String` (interpolation), `Bytes`, growable `Buffer`, dynamic `Array<T>` |
+| User types | `type Name(fields) { methods }` — including heap fields |
+| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` |
+| Errors | `Trial<Ok,Err>` (`Pass`/`Fail`), `May<T>` (`Has`/`Not`), `?`, `match` |
+| Equality | String `==` / `!=`; usual scalar compares |
+
+**Reference counting:** simple single-threaded RC (dup on copy, drop at function
+end). Precise RC / Perceus is **not** shipped.
+
+## Control flow
+
+`if`, `while`, `loop`, `for` (ranges and collections), `break`, `continue`,
+early `return` / `return expr`.
+
+## Match
+
+- **Trial / May:** `Pass(x)` / `Fail(e)`, `Has(x)` / `Not`, discard `_`.
+- **Value match:** String / Int64 / Bool **literal** arms + required `else`.
+
+## Functions
+
+```thx
+fn add(a: Int64, b: Int64 = 0) -> Int64 {
+    a + b
+}
+```
+
+Parameter defaults (M3 subset) on non-`!` formals; methods and constructors are
+still all-required. Positional `!` and `extern` formals cannot default.
+
+## Modules
+
+```thx
+import { readFile } from "./Io"
+import * as Net from "~/Net"
+export fn helper() -> Int64 { 1 }
+```
+
+| Origin | Meaning |
+|--------|---------|
+| `./…` | Relative to current file |
+| `~/…` | Relative to **entry** file directory |
+| `std/…` | Product standard library |
+
+Module-level `let` / `mut` are supported. General in-function `import`/`type`
+is **not** a language feature (session host may lift decls).
+
+## Extern
+
+```thx
+extern fn puts(s!: String) -> Int32 from "c"
+extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
+```
+
+Marshals common scalars, `String`, `Bytes`, `Void`, `Address<T>`. String
+*returns* are copied via the runtime.
+
+## I/O and HTTP (library shape)
+
+- Free `readFile(path) -> Trial<Bytes,String>` and OpenMode constants (see
+  conformance `file_io` / `iolib`).
+- HTTP: `Request` / `Response` / `Header`, parse/write helpers, Router, bounded
+  static server (`http_server` conformance).
+
+## Not shipped (do not expect)
+
+- Full oracle SPEC surface
+- Algebraic effects
+- Named `ffi` import root
+- Shell dialect control flow as language syntax
+- Tree-walk interpreter product path
+
+Engineering detail and gaps: [`../capabilities.md`](../capabilities.md).

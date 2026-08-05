@@ -2,6 +2,9 @@
 
 Product standard library modules, imported with the **`std/…`** named root (D97).
 
+User handbook: [`docs/handbook/std.md`](../docs/handbook/std.md).  
+As-built rows: [`docs/capabilities.md`](../docs/capabilities.md) (`std-*`).
+
 ```thx
 import { defaultPrompt } from "std/Prompt"   ## session shell.thx
 import { startsWith, dropPrefix } from "std/Str"
