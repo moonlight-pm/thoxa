@@ -2,7 +2,8 @@
 //!
 //! When the **entry** module has no `fn main`, treat it as a session script:
 //! - Top-level [`Item::SessionStmt`]s become the body of `Shell.step`.
-//! - Default `Shell` + helpers come from `session_prelude.thx` when needed.
+//! - Default `Shell` + helpers come from product [`std/Shell.thx`](../../../../std/Shell.thx)
+//!   when needed (D104); on-disk std is preferred, with a compile-time embed fallback.
 //! - Synthetic `main` is `Shell(status: 0).step().status`.
 //!
 //! Command sugar ([`crate::command`]) rewrites lines **before** parse.
@@ -10,11 +11,14 @@
 use crate::ast::*;
 use crate::error::{Error, Result};
 use crate::lexer::Lexer;
-use crate::loader::{Package, SourceModule};
+use crate::loader::{self, Package, SourceModule};
 use crate::parser::Parser;
 use crate::span::Span;
+use std::fs;
 
-const SESSION_PRELUDE: &str = include_str!("session_prelude.thx");
+/// Compile-time fallback when `std/Shell.thx` cannot be resolved at runtime.
+/// Keep in sync with the product file under `std/Shell.thx` (D104).
+const SESSION_PRELUDE_EMBED: &str = include_str!("../../../std/Shell.thx");
 
 /// Rewrite the package entry for session mode when needed.
 pub fn prepare_package(package: &mut Package) -> Result<()> {
@@ -122,17 +126,31 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
 }
 
 fn inject_prelude(entry: &mut SourceModule) -> Result<()> {
-    let tokens = Lexer::new(SESSION_PRELUDE)
+    let src = session_shell_source()?;
+    let tokens = Lexer::new(&src)
         .tokenize()
-        .map_err(|e| Error::new(format!("session prelude lex: {e}")))?;
+        .map_err(|e| Error::new(format!("session Shell prelude lex: {e}")))?;
     let prelude = Parser::new(tokens)
         .parse_module()
-        .map_err(|e| Error::new(format!("session prelude parse: {e}")))?;
+        .map_err(|e| Error::new(format!("session Shell prelude parse: {e}")))?;
     // Insert prelude items before user items (externs/helpers/Shell first).
     let mut merged = prelude.items;
     merged.append(&mut entry.ast.items);
     entry.ast.items = merged;
     Ok(())
+}
+
+/// Load product `std/Shell.thx` from the std tree when available; else embedded copy.
+fn session_shell_source() -> Result<String> {
+    if let Ok(root) = loader::std_lib_root() {
+        let path = root.join("Shell.thx");
+        if path.is_file() {
+            return fs::read_to_string(&path).map_err(|e| {
+                Error::new(format!("read session Shell prelude {}: {e}", path.display()))
+            });
+        }
+    }
+    Ok(SESSION_PRELUDE_EMBED.to_string())
 }
 
 fn ensure_shell_status_param(t: &TypeDef) -> Result<()> {
@@ -290,6 +308,24 @@ mod tests {
             .expect("Shell");
         assert!(shell.methods.iter().any(|m| m.name == "step"));
         assert!(shell.methods.iter().any(|m| m.name == "echo"));
+        assert!(shell.methods.iter().any(|m| m.name == "runIo"));
+        assert!(shell.methods.iter().any(|m| m.name == "pipeline"));
+    }
+
+    #[test]
+    fn session_shell_source_loads_product_std() {
+        let src = session_shell_source().expect("shell source");
+        assert!(
+            src.contains("type Shell(status: Int64)"),
+            "expected Shell type in prelude"
+        );
+        // Prefer on-disk std when the workspace is discoverable.
+        if let Ok(root) = loader::std_lib_root() {
+            let path = root.join("Shell.thx");
+            assert!(path.is_file(), "missing {}", path.display());
+            let disk = fs::read_to_string(&path).expect("read Shell.thx");
+            assert_eq!(src, disk, "inject should prefer on-disk std/Shell.thx");
+        }
     }
 
     #[test]

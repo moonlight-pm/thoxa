@@ -15,6 +15,7 @@ import { branch } from "std/Git"
 
 | Module | Role |
 |--------|------|
+| `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `Str` | `startsWith`, `dropPrefix`, `trimNewline` |
 | `Path` | `dirname`, `basename`, `cwd`, `shortPath`, `cwdShort` |

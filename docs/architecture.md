@@ -27,7 +27,7 @@ shell is a long-lived Rust host that `dlopen`s per-chunk step libraries.
 | Frontend | `lexer`, `parser`, `ast`, `resolver` | Shared resolver used by LSP |
 | MIR | `mir.rs` | Simple single-threaded RC (dup/drop) |
 | Cgen | `cgen.rs` | Emits C under `target/thoxa/c/` |
-| Session | `session.rs`, `command.rs`, `session_prelude.thx` | Splice + command sugar + embedded Shell prelude |
+| Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
 | REPL host | `repl.rs` | Decl accumulate; `cc -shared` → dlopen step |
 | LSP | `lsp/` | stdio server; check overlays; navigation |
 
@@ -52,15 +52,15 @@ shell is a long-lived Rust host that `dlopen`s per-chunk step libraries.
 │  - read chunk, desugar, splice module   │
 │  - cgen → cc -shared → dlopen           │
 │  - thoxa_session_step(ThoxaShellState*) │
-│  - host fast paths: cd, |, status       │
+│  - pure step only for commands (D103)   │
 └─────────────────────────────────────────┘
 ```
 
 - **Scripts (no `main`):** splice + synthetic `main` → normal executable (no
   dlopen).
 - **Programs:** `fn main` or directory `Main.thx` — batch path unchanged.
-- **Prelude:** `session_prelude.thx` is still **compiler-embedded** (not yet a
-  product `std` module).
+- **Prelude:** product `std/Shell.thx` preferred at inject time; compile-time
+  `include_str` fallback of the same file when std is not discoverable (D104).
 
 ## Build products
 

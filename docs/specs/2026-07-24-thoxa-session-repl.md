@@ -3,12 +3,12 @@
 **Date:** 2026-07-24  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** Shell prelude still compiler-embedded; optional faster REPL C (`tcc`); no `2>` / redir-on-pipe-stages  
+**Gaps:** optional faster REPL C (`tcc`); no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first)  
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)
 
 > **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. Do **not** invent a second shell language.
 
-**Shipped core:** PR0–PR8 + D93 v2; `prompt()` / `path()`; pipelines (D101); redirs (D102); pure-step REPL (D103). Decisions D88–D103.  
+**Shipped core:** PR0–PR8 + D93 v2; `prompt()` / `path()`; pipelines (D101); redirs (D102); pure-step (D103); `std/Shell.thx` (D104). Decisions D88–D104.  
 **Baseline:** Native ladder + session scripts + command sugar + bare `thoxa` REPL.
 
 **Goal:** Make **Thoxa the session language**. Interactive and no-`main` scripts share one model: a live **`Shell`** value, user text desugared into real Thoxa, compiled, and executed as a method body on that value. Familiar command skin stays thin; programming is always Thoxa.
@@ -207,7 +207,7 @@ type Shell(
 | Bare `thoxa` → REPL | ✅ | PR4+; product face |
 | No-main run-as-script | ✅ | PR1; D90/D94 |
 | dlopen session steps | ✅ | D93 v2 |
-| Prelude / std `Shell` type | partial | still compiler-embed `session_prelude.thx` |
+| Prelude / std `Shell` type | ✅ | D104; `std/Shell.thx` + embed fallback |
 | Command → AST desugar in compiler | ✅ | PR2; D92 |
 | Thoxa-side OS pipelines | ✅ | D101; `session_pipe` |
 | File redirs `>` / `>>` / `<` | ✅ | D102; `session_redir`; no `2>` yet |
@@ -400,9 +400,8 @@ No `Shell` wrap. No command sugar unless we later opt in (default **off** for pr
 
 ## 9. Agent handoff notes
 
-- **Core shipped** (PR0–PR8 + D93 v2 + D101–D103). Living next work: root
-  `CURRENT.md` + `docs/capabilities.md` (polish: prelude absorption, optional
-  tcc).
+- **Core shipped** (PR0–PR8 + D93 v2 + D101–D104). Living next work: root
+  `CURRENT.md` + `docs/capabilities.md` (polish: optional tcc; std growth).
 - Do not add shell `if`/`for`.
 - Prefer small diffs; update CURRENT + capabilities + decisions after each PR.
 - Oracle Python shell (if any) is reference-only — native design above wins.

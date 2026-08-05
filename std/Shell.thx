@@ -1,5 +1,7 @@
-## Injected session Shell API (compiler prelude — not a user file).
-## Used when a session script needs the default Shell with builtins.
+## Product session Shell API (D89 / D104).
+## Session scripts inject this module's items when no user `type Shell` is present.
+## Lives under `std/Shell.thx` (product std tree); the compiler also embeds a
+## compile-time fallback copy for environments without a discoverable std root.
 
 extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
 extern fn sysChdir(path!: String) -> Int32 from "c" "chdir"

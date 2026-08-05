@@ -16,6 +16,7 @@ import { branch } from "std/Git"
 
 | Module | Role |
 |--------|------|
+| `Shell` | Session `type Shell` + builtins (`echo`/`cd`/`run`/`runIo`/`pipeline`/…); auto-injected for session scripts |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
 | `Str` | `startsWith`, `dropPrefix`, `trimNewline` |
 | `Path` | `dirname`, `basename`, `cwd`, `shortPath`, `cwdShort` |

@@ -24,7 +24,9 @@ carries at least:
 type Shell(status: Int64) { … methods … }
 ```
 
-Builtins and process helpers are ordinary methods (echo, pwd, cd, run, …).
+Builtins and process helpers are ordinary methods (echo, pwd, cd, run, runIo,
+pipeline, …). Default definition lives in product **`std/Shell.thx`** and is
+auto-injected when a session script has no user `type Shell`.
 **`status`** is the last outcome (0 = success). Process exit of a one-shot
 script is final `status`. There is no required bash-style `$?` core.
 
