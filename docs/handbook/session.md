@@ -53,8 +53,8 @@ programming is Thoxa.
 - Failed compiles print diagnostics and keep prior session state (status ≠ 0).
 - Continuation prompt `> ` for unfinished blocks; primary prompt defaults to
   `$ ` unless customized.
-- Host still provides fast paths for some operations (including `cd`, `|`,
-  `status` printing). Session **scripts** use the pure step path for pipes.
+- Executable lines (including `cd`, `status`, `|`, redirections) run as compiled
+  session steps — no separate host command shortcuts.
 
 ### rc file
 

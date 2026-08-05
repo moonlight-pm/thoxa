@@ -3,12 +3,12 @@
 **Date:** 2026-07-24  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** Shell prelude still compiler-embedded; host `cd`/`status`/`|` fast paths remain in REPL; optional faster REPL C (`tcc`); no `2>` / redir-on-pipe-stages  
+**Gaps:** Shell prelude still compiler-embedded; optional faster REPL C (`tcc`); no `2>` / redir-on-pipe-stages  
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)
 
 > **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. Do **not** invent a second shell language.
 
-**Shipped core:** PR0–PR8 + D93 v2 dlopen step; `prompt()` / `path()`; **pipelines** (D101) + **file redirs** (D102). Decisions D88–D102.  
+**Shipped core:** PR0–PR8 + D93 v2; `prompt()` / `path()`; pipelines (D101); redirs (D102); pure-step REPL (D103). Decisions D88–D103.  
 **Baseline:** Native ladder + session scripts + command sugar + bare `thoxa` REPL.
 
 **Goal:** Make **Thoxa the session language**. Interactive and no-`main` scripts share one model: a live **`Shell`** value, user text desugared into real Thoxa, compiled, and executed as a method body on that value. Familiar command skin stays thin; programming is always Thoxa.

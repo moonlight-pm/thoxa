@@ -9,8 +9,9 @@
 //! **Shell status:** host-held `ThoxaShellState.status` is threaded into each step
 //! and written back (so pure-Thoxa status survives across chunks).
 //!
-//! **cwd:** in-process `Shell.cd` / `chdir` affects the host. A host fast-path for
-//! pure `cd` still skips compile for common use.
+//! **cwd / status / pipes:** pure session step path only — `Shell.cd` / `showStatus` /
+//! `pipeline` (and command sugar) run via dlopen `thoxa_session_step`. Host no longer
+//! special-cases those lines (D103).
 //!
 //! **rc / prompt / path (D96, D100):** interactive REPL loads
 //! `~/.config/thoxa/shell.thx` once at start (decls accumulate; statements run
@@ -24,7 +25,7 @@
 //! change: `parent` is the current process `PATH` split on `:`; the returned
 //! components **replace** process `PATH` (joined with `:`).
 
-use crate::command::{desugar_command_line, desugar_session_source, split_words};
+use crate::command::desugar_session_source;
 use crate::driver::{self, SessionBuildCache};
 use crate::error::{Error, Result};
 use std::ffi::{CStr, CString};
@@ -32,7 +33,6 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::os::raw::{c_char, c_int, c_void};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 /// C ABI mirror of `ThoxaShellState` in `thoxa_rt.h`.
 #[repr(C)]
@@ -789,31 +789,6 @@ fn run_chunk(
 ) -> Result<ChunkOutcome> {
     let trimmed = chunk.trim();
 
-    // Host-side `status` — print host-held shell status without compiling.
-    if trimmed == "status" {
-        println!("{prev_status}");
-        return Ok(ChunkOutcome {
-            status: prev_status,
-            decls_changed: false,
-        });
-    }
-
-    // Host-side cd (fast path; in-process Thoxa `cd` also works via dlopen step).
-    if let Some(st) = try_host_cd(trimmed)? {
-        return Ok(ChunkOutcome {
-            status: st,
-            decls_changed: false,
-        });
-    }
-
-    // Host-side OS pipes: `cmd1 | cmd2 | …` (PR6). Compile path later.
-    if let Some(st) = try_host_pipeline(trimmed)? {
-        return Ok(ChunkOutcome {
-            status: st,
-            decls_changed: false,
-        });
-    }
-
     // Declaration-only chunk: accumulate, do not exec.
     if is_decl_chunk(trimmed) {
         decls.push(chunk.to_string());
@@ -823,7 +798,8 @@ fn run_chunk(
         });
     }
 
-    // D93 v2: compile step shared lib (cached preamble) → dlopen → call.
+    // D93 v2 / D103: all executable lines (status, cd, pipes, commands) go through
+    // the session step shared lib — no host command special-cases.
     driver::capture_toolchain_path();
     let lib = driver::build_session_step(decls, chunk, cache)?;
     let status = load_and_call_step(&lib.so_path, prev_status, loaded)?;
@@ -842,106 +818,6 @@ fn is_decl_chunk(trimmed: &str) -> bool {
         || first.starts_with("import ")
         || first.starts_with("let ")
         || first.starts_with("mut ")
-}
-
-fn try_host_cd(trimmed: &str) -> Result<Option<i32>> {
-    // Pure command-skin `cd` only (host chdir so cwd survives child execs).
-    if trimmed.contains('\n') {
-        return Ok(None);
-    }
-    let words = match split_words(trimmed) {
-        Ok(w) => w,
-        Err(_) => return Ok(None),
-    };
-    if words.first().map(|s| s.as_str()) != Some("cd") {
-        return Ok(None);
-    }
-    let path = if words.len() == 1 {
-        env_home()?
-    } else if words.len() == 2 {
-        words[1].clone()
-    } else {
-        eprintln!("cd: too many arguments");
-        return Ok(Some(1));
-    };
-    match std::env::set_current_dir(&path) {
-        Ok(()) => Ok(Some(0)),
-        Err(e) => {
-            eprintln!("cd: {path}: {e}");
-            Ok(Some(1))
-        }
-    }
-}
-
-fn env_home() -> Result<String> {
-    std::env::var("HOME").map_err(|_| Error::new("cd: HOME not set"))
-}
-
-/// `a | b | c` — OS pipeline in the host (same process group, inherit stdio ends).
-fn try_host_pipeline(trimmed: &str) -> Result<Option<i32>> {
-    if trimmed.contains('\n') || !trimmed.contains('|') {
-        return Ok(None);
-    }
-    // Do not steal Thoxa bitwise-or expressions at top level (rare in REPL).
-    if trimmed.contains("||") {
-        return Ok(None);
-    }
-    let parts: Vec<&str> = trimmed
-        .split('|')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
-    if parts.len() < 2 {
-        return Ok(None);
-    }
-    // Each stage must look like a command (word split succeeds).
-    let mut stages: Vec<Vec<String>> = Vec::new();
-    for p in &parts {
-        let words = match split_words(p) {
-            Ok(w) if !w.is_empty() => w,
-            _ => return Ok(None),
-        };
-        stages.push(words);
-    }
-
-    // Resolve first tokens via PATH for Command::new.
-    let mut children = Vec::new();
-    let mut prev_stdout: Option<std::process::ChildStdout> = None;
-    for (i, argv) in stages.iter().enumerate() {
-        let mut cmd = Command::new(&argv[0]);
-        if argv.len() > 1 {
-            cmd.args(&argv[1..]);
-        }
-        if let Some(out) = prev_stdout.take() {
-            cmd.stdin(Stdio::from(out));
-        } else {
-            cmd.stdin(Stdio::null());
-        }
-        if i + 1 < stages.len() {
-            cmd.stdout(Stdio::piped());
-        } else {
-            cmd.stdout(Stdio::inherit());
-        }
-        cmd.stderr(Stdio::inherit());
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| Error::new(format!("pipeline: {}: {e}", argv[0])))?;
-        prev_stdout = child.stdout.take();
-        children.push(child);
-    }
-    let mut status = 0;
-    for mut c in children {
-        let st = c
-            .wait()
-            .map_err(|e| Error::new(format!("pipeline wait: {e}")))?;
-        status = st.code().unwrap_or(1);
-    }
-    Ok(Some(status))
-}
-
-#[allow(dead_code)]
-fn _touch_desugar(line: &str) -> Result<Option<String>> {
-    desugar_command_line(line)
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────
@@ -980,6 +856,59 @@ echo hi
         assert_eq!(strip_one_trailing_newline("hi\r\n"), "hi");
         assert_eq!(strip_one_trailing_newline("hi"), "hi");
         assert_eq!(strip_one_trailing_newline("a\nb\n"), "a\nb");
+    }
+
+    #[test]
+    fn pure_step_status_and_pipeline() {
+        // D103: status / pipes are compiled steps, not host fast paths.
+        let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        driver::capture_toolchain_path();
+
+        // `/bin/false` — bare `false` is Thoxa Bool and stays non-command sugar.
+        let out = run_chunk("/bin/false", &mut decls, 0, &mut cache, &mut loaded)
+            .expect("/bin/false");
+        assert_eq!(out.status, 1);
+
+        // showStatus keeps host-threaded status (compile path, not host println).
+        let status_out =
+            run_chunk("status", &mut decls, out.status, &mut cache, &mut loaded).expect("status");
+        assert_eq!(status_out.status, 1);
+
+        let pipe = run_chunk(
+            "echo pure-step-pipe | cat",
+            &mut decls,
+            status_out.status,
+            &mut cache,
+            &mut loaded,
+        )
+        .expect("pipe");
+        assert_eq!(pipe.status, 0);
+    }
+
+    #[test]
+    fn pure_step_cd_changes_process_cwd() {
+        let dir = tempfile_dir("thoxa_cd_step");
+        let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        driver::capture_toolchain_path();
+
+        let prev = std::env::current_dir().expect("cwd");
+        let path = dir.to_string_lossy().into_owned();
+        let out = run_chunk(
+            &format!("cd {path}"),
+            &mut decls,
+            0,
+            &mut cache,
+            &mut loaded,
+        )
+        .expect("cd");
+        assert_eq!(out.status, 0);
+        let now = std::env::current_dir().expect("cwd after cd");
+        assert_eq!(now, dir);
+        std::env::set_current_dir(&prev).expect("restore cwd");
     }
 
     #[test]

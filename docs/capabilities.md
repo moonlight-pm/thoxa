@@ -69,9 +69,9 @@ change. See [`progress-model.md`](progress-model.md).
 | session-path | `fn path(parent) -> Array<String>` | shipped | `repl::` | D100 | — | yes |
 | session-pipeline | Thoxa-side `\|` → `Shell.pipeline` + RT | shipped | `session_pipe`; `command::` | D101 | Nested Array stages N/A (Bytes blob) | yes |
 | session-redir | File `>` / `>>` / `<` → `Shell.runIo` | shipped | `session_redir`; `command::` | D102 | No `2>`; redir+pipe combo; ops need whitespace | yes |
-| session-host-pipe | Host OS `\|` fast path in REPL | partial | interactive smoke | PR6 | Scripts use Thoxa-side; host path still intercepts REPL `|` | partial |
+| session-host-pipe | Host OS `\|` fast path in REPL | shipped (removed) | `repl::pure_step_*` | D103 | Replaced by Thoxa-side pipeline (D101) | yes |
 | session-prelude | Shell API in product prelude / `std` | partial | embedded prelude | D89, Phase 4 | Still compiler-embed `session_prelude.thx` | no |
-| session-host-builtins | Drop host `cd`/`status` for pure step | planned | — | session polish | Host fast paths remain | no |
+| session-host-builtins | Drop host `cd`/`status`/`\|` for pure step | shipped | `repl::pure_step_*` | D103 | All session commands via step .so | yes |
 | session-tcc | Faster REPL compile via tcc | planned | — | session polish | Still system `cc` | no |
 | extras-shell | Pure-Thoxa dogfood Shell | shipped | `cargo make run extras/shell` | D95 | **Not** product face | no |
 

@@ -19,12 +19,13 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
-## 2026-08-05 — Session pipes + file redirections
+## 2026-08-05 — Session pipes, redirs, pure-step host
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D101 | Session OS pipelines | Command sugar `a \| b` → `shell = shell.pipeline(blob)`; RT `thoxa_pipeline` (pipe/fork/execvp/wait); status = last stage | Blob: NUL-terminated argv words per stage, empty field (double-NUL) between stages. Helpers: `sessionEncodeArgv` + `sessionPipelineBytes`. Pure int BitOr (`1 \| 2`) stays Thoxa. REPL host `\|` fast path may remain. Conformance: `session_pipe`. |
+| D101 | Session OS pipelines | Command sugar `a \| b` → `shell = shell.pipeline(blob)`; RT `thoxa_pipeline` (pipe/fork/execvp/wait); status = last stage | Blob: NUL-terminated argv words per stage, empty field (double-NUL) between stages. Helpers: `sessionEncodeArgv` + `sessionPipelineBytes`. Pure int BitOr (`1 \| 2`) stays Thoxa. Conformance: `session_pipe`. |
 | D102 | Session file redirections | Command sugar `>` / `>>` / `<` → `shell = shell.runIo(argv, in, out, append)`; RT `thoxa_spawn_wait_io` | Empty path strings inherit. Redir ops as separate words. Pure int comparison (`1 > 0`) stays Thoxa. No `2>`; no redir on pipeline stages yet. Conformance: `session_redir`. |
+| D103 | REPL pure step only | Remove host fast paths for `status` / `cd` / `\|`; all executable chunks use dlopen `thoxa_session_step` | In-process `chdir` still updates host cwd. Unit: `repl::pure_step_*`. |
 
 ## 2026-07-25 — Session `path()` hook
 

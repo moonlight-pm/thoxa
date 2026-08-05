@@ -4,20 +4,20 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-05 (Thoxa-side pipes + redirs shipped; session polish continues)
+**As of:** 2026-08-05 (session pure-step host fast paths dropped; polish continues)
 
 ---
 
 ## Now
 
-**Kernel + HTTP + editor phase 1–2 + session core + pipes + file redirs are shipped.**
-Default work is remaining **session polish** and thin `std/` growth — not
-re-opening the ladder.
+**Kernel + HTTP + editor phase 1–2 + session core + pipes + redirs + pure-step
+REPL builtins are shipped.** Default work is remaining **session polish** and
+thin `std/` growth — not re-opening the ladder.
 
 ### Proceed order
 
-1. **Session polish** — prelude out of compiler embed; drop host `status`/`cd`/`|`
-   when pure step path is enough; optional faster REPL C (`tcc`).  
+1. **Session polish** — prelude out of compiler embed; optional faster REPL C
+   (`tcc`).  
    Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
 2. **Grow `std/`** — more Str/Path/Io helpers; `ffi` remains deferred.
 3. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
