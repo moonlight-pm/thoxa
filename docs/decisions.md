@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-05 — Thoxa-side session pipelines
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D101 | Session OS pipelines | Command sugar `a \| b` → `shell = shell.pipeline(blob)`; RT `thoxa_pipeline` (pipe/fork/execvp/wait); status = last stage | Blob: NUL-terminated argv words per stage, empty field (double-NUL) between stages. Helpers: `sessionEncodeArgv` + `sessionPipelineBytes`. Pure int BitOr (`1 \| 2`) stays Thoxa. Redirs deferred. REPL host `\|` fast path may remain. Conformance: `session_pipe`. |
+
 ## 2026-07-25 — Session `path()` hook
 
 | ID | Decision | Choice | Notes |
@@ -37,11 +43,11 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D88 | Session product shape | Bare `thoxa` / `thoxa repl` = session REPL; `thoxa path` runs program (`main`/`Main.thx`) or **session script** (no `main`); subcommands unchanged | Plan: `docs/specs/2026-07-24-thoxa-session-repl.md` |
-| D89 | Session value | `type Shell(status: Int64)` + methods (`echo`/`pwd`/`cd`/`run`/…) | Real Thoxa; status field (not bash `$?` core). Prelude: `session_prelude.thx` |
+| D89 | Session value | `type Shell(status: Int64)` + methods (`echo`/`pwd`/`cd`/`run`/`pipeline`/…) | Real Thoxa; status field (not bash `$?` core). Prelude: `session_prelude.thx` |
 | D90 | Session code placement | Decls stay module-level; top-level stmts → `Shell.step` body; synthetic `main` returns `step().status` | `Item::SessionStmt`; `session::prepare` |
 | D91 | In-function import/type | Not required; host lifts / top-level decls only | Deferred general nested modules |
-| D92 | Command sugar | Thoxa-first; bare word/string sequences desugar to `shell = shell.*` | `command.rs`; quotes from thoxash v3. Command-shaped parse trees include path Div, **flag Sub/Unary** (`ls -al`, `--all`); pure literal arith (`1 - 2`) stays Thoxa. |
-| D93 | REPL execution | Host loop: **decls accumulate**; per-chunk `cc -shared` → **dlopen** `thoxa_session_step(ThoxaShellState*)`; host-held status threaded into `Shell.step`; preamble object cached while decls stable; host `cd` / `\|` fast paths kept | Was v1 compile+exec child. Step seeds `Shell(status: status)` from receiver. Workspace root pinned so host `cd` does not break runtime paths. |
+| D92 | Command sugar | Thoxa-first; bare word/string sequences desugar to `shell = shell.*`; **pipelines before Thoxa-first** so `|` is not kept as BitOr | `command.rs`; quotes from thoxash v3. Command-shaped parse trees include path Div, **flag Sub/Unary** (`ls -al`, `--all`); pure literal arith (`1 - 2`) and pure int BitOr (`1 \| 2`) stay Thoxa. Pipes → **D101**. |
+| D93 | REPL execution | Host loop: **decls accumulate**; per-chunk `cc -shared` → **dlopen** `thoxa_session_step(ThoxaShellState*)`; host-held status threaded into `Shell.step`; preamble object cached while decls stable; host `cd` / `\|` / `status` fast paths kept | Was v1 compile+exec child. Step seeds `Shell(status: status)` from receiver. Workspace root pinned so host `cd` does not break runtime paths. Scripts use Thoxa-side pipeline (**D101**). |
 | D94 | Script execution | Splice + synthetic `main` + normal executable | No dlopen |
 | D95 | extras/shell | Dogfood prototype of Shell API; product face is bare `thoxa` | `cargo make shell` → bare `thoxa` |
 | D96 | Session rc + prompt | Interactive REPL loads `$HOME/.config/thoxa/shell.thx` (missing = no-op). Decls accumulate; stmts run once. Optional `fn prompt() -> String` — host rebuilds prompt **step .so** when decls change, **dlopen-calls** it every primary prompt (stdout captured). Host sets `THOXA_STATUS`. Default `$ `; continuation `> ` fixed. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC` | Real Thoxa (not a second grammar). Piped REPL / session scripts do not load rc. Optional `fn path` → **D100**. |

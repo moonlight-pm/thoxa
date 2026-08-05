@@ -98,19 +98,34 @@ fn desugar_line(line: &str) -> Result<String> {
     if is_decl_prefix(trimmed) {
         return Ok(line.to_string());
     }
+    let indent: String = line.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+
+    // Pipelines before Thoxa-first: `echo hi | cat` parses as BitOr and would
+    // otherwise be kept as broken/meaningless multi-stmt Thoxa. Pure integer
+    // bitwise-or (`1 | 2`) stays Thoxa.
+    if let Some(stages) = split_pipeline_stages(trimmed)? {
+        if stages_are_pure_int_literals(&stages) {
+            return Ok(line.to_string());
+        }
+        return Ok(format!("{indent}{}", desugar_pipeline(&stages)));
+    }
+
     // Thoxa-first: if the line already parses as a module fragment, keep it.
     if line_parses_as_thoxa(trimmed) {
         return Ok(line.to_string());
     }
     match desugar_command_line(trimmed) {
-        Ok(Some(thx)) => {
-            // Preserve leading indentation from the original line.
-            let indent: String = line.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
-            Ok(format!("{indent}{thx}"))
-        }
+        Ok(Some(thx)) => Ok(format!("{indent}{thx}")),
         Ok(None) => Ok(line.to_string()),
         Err(e) => Err(e),
     }
+}
+
+/// `1 | 2` stages — keep as Thoxa BitOr, not `run(["1"]) | run(["2"])`.
+fn stages_are_pure_int_literals(stages: &[Vec<String>]) -> bool {
+    stages.iter().all(|stage| {
+        stage.len() == 1 && stage[0].parse::<i64>().is_ok()
+    })
 }
 
 fn is_decl_prefix(t: &str) -> bool {
@@ -209,6 +224,10 @@ fn expr_is_pure_literal_arith(e: &crate::ast::Expr) -> bool {
 
 /// Returns `Some(thoxa_stmt)` when `line` is a command; `None` if empty words.
 pub fn desugar_command_line(line: &str) -> Result<Option<String>> {
+    // `a | b | c` → `shell = shell.pipeline(sessionPipelineBytes(…))`
+    if let Some(stages) = split_pipeline_stages(line)? {
+        return Ok(Some(desugar_pipeline(&stages)));
+    }
     let words = split_words(line)?;
     if words.is_empty() {
         return Ok(None);
@@ -228,6 +247,104 @@ pub fn desugar_command_line(line: &str) -> Result<Option<String>> {
         _ => format!("shell = shell.run({})", array_lit(&words)),
     };
     Ok(Some(thx))
+}
+
+/// Quote-aware split on `|` into command stages. Returns `None` when the line
+/// is not a multi-stage pipeline (`||` is not a pipe; single stage → None).
+fn split_pipeline_stages(line: &str) -> Result<Option<Vec<Vec<String>>>> {
+    let bytes = line.as_bytes();
+    let mut stage_ranges: Vec<(usize, usize)> = Vec::new();
+    let mut stage_start = 0usize;
+    let mut state = 0u8; // 0 normal, 1 double, 2 single
+    let mut escape = false;
+    let mut i = 0usize;
+    let mut saw_pipe = false;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if escape {
+            escape = false;
+            i += 1;
+            continue;
+        }
+        if state == 1 {
+            if c == b'\\' {
+                escape = true;
+            } else if c == b'"' {
+                state = 0;
+            }
+            i += 1;
+            continue;
+        }
+        if state == 2 {
+            if c == b'\'' {
+                state = 0;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'\\' => {
+                escape = true;
+                i += 1;
+            }
+            b'"' => {
+                state = 1;
+                i += 1;
+            }
+            b'\'' => {
+                state = 2;
+                i += 1;
+            }
+            b'|' => {
+                // `||` is not a pipeline separator (leave for Thoxa if ever).
+                if i + 1 < bytes.len() && bytes[i + 1] == b'|' {
+                    return Ok(None);
+                }
+                stage_ranges.push((stage_start, i));
+                stage_start = i + 1;
+                saw_pipe = true;
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    if state != 0 {
+        return Err(Error::new("unclosed quote in command line"));
+    }
+    if !saw_pipe {
+        return Ok(None);
+    }
+    stage_ranges.push((stage_start, bytes.len()));
+
+    let mut stages: Vec<Vec<String>> = Vec::new();
+    for (a, b) in stage_ranges {
+        let part = std::str::from_utf8(&bytes[a..b]).unwrap_or("").trim();
+        if part.is_empty() {
+            return Err(Error::new("empty pipeline stage"));
+        }
+        let words = split_words(part)?;
+        if words.is_empty() {
+            return Err(Error::new("empty pipeline stage"));
+        }
+        stages.push(words);
+    }
+    if stages.len() < 2 {
+        return Ok(None);
+    }
+    Ok(Some(stages))
+}
+
+fn desugar_pipeline(stages: &[Vec<String>]) -> String {
+    // Nested sessionPipelineBytes(sessionEncodeArgv([...]), …)
+    let mut expr = format!("sessionEncodeArgv({})", array_lit(&stages[0]));
+    for stage in &stages[1..] {
+        expr = format!(
+            "sessionPipelineBytes({}, sessionEncodeArgv({}))",
+            expr,
+            array_lit(stage)
+        );
+    }
+    format!("shell = shell.pipeline({expr})")
 }
 
 fn array_lit(parts: &[String]) -> String {
@@ -407,5 +524,60 @@ mod tests {
             "literal arith should stay Thoxa, got: {src}"
         );
         assert!(src.contains("1"), "got: {src}");
+    }
+
+    #[test]
+    fn desugar_pipeline_two_stages() {
+        let s = desugar_command_line("echo hi | cat").unwrap().unwrap();
+        assert!(
+            s.contains("shell = shell.pipeline(")
+                && s.contains(r#"sessionEncodeArgv(["echo", "hi"])"#)
+                && s.contains(r#"sessionEncodeArgv(["cat"])"#)
+                && s.contains("sessionPipelineBytes"),
+            "got: {s}"
+        );
+    }
+
+    #[test]
+    fn desugar_pipeline_three_stages() {
+        let s = desugar_command_line("echo a | cat | cat").unwrap().unwrap();
+        assert!(
+            s.contains("shell = shell.pipeline(") && s.matches("sessionEncodeArgv").count() == 3,
+            "got: {s}"
+        );
+    }
+
+    #[test]
+    fn pipeline_not_double_bar() {
+        // `||` must not be treated as a pipeline (leave line alone / non-pipe path).
+        let stages = split_pipeline_stages("true || false").unwrap();
+        assert!(stages.is_none());
+    }
+
+    #[test]
+    fn pipeline_respects_quotes() {
+        let s = desugar_command_line(r#"echo "a|b" | cat"#).unwrap().unwrap();
+        assert!(
+            s.contains(r#"sessionEncodeArgv(["echo", "a|b"])"#),
+            "got: {s}"
+        );
+    }
+
+    #[test]
+    fn desugar_session_pipeline_line() {
+        let src = desugar_session_source("echo hello | cat\n").unwrap();
+        assert!(
+            src.contains("shell = shell.pipeline("),
+            "got: {src}"
+        );
+    }
+
+    #[test]
+    fn keep_pure_int_bitor() {
+        let src = desugar_session_source("1 | 2\n").unwrap();
+        assert!(
+            !src.contains("shell = shell.pipeline"),
+            "integer BitOr should stay Thoxa, got: {src}"
+        );
     }
 }

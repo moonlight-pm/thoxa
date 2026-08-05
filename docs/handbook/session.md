@@ -38,7 +38,8 @@ Familiar command lines desugar to Thoxa on `Shell`:
 | `cd /tmp` | `shell = shell.cd(…)` |
 | `uname -a` | `shell = shell.run(["uname", "-a"])` |
 | `ls -al` / `--all` | Flags desugar as command words (not Thoxa subtraction) |
-| `1 - 2` | Stays pure Thoxa arithmetic |
+| `echo hi \| cat` | `shell = shell.pipeline(…)` (OS pipes; last-stage status) |
+| `1 - 2` / `1 \| 2` | Stays pure Thoxa arithmetic / BitOr |
 
 Quotes follow the same word-split rules as the dogfood shell (double/single
 quotes, backslash escapes). There is **no** shell `if`/`for`/`fn` dialect —
@@ -52,7 +53,7 @@ programming is Thoxa.
 - Continuation prompt `> ` for unfinished blocks; primary prompt defaults to
   `$ ` unless customized.
 - Host still provides fast paths for some operations (including `cd`, `|`,
-  `status` printing) while pure step execution matures.
+  `status` printing). Session **scripts** use the pure step path for pipes.
 
 ### rc file
 
@@ -93,8 +94,11 @@ resolution for `cc` / `ar` when PATH is emptied.
 
 ### Pipelines
 
-Simple host-side `|` works in the REPL. Full **Thoxa-side** pipes and
-redirections are not documented as complete product surface yet.
+Command sugar `a | b | c` desugars to `Shell.pipeline` (runtime OS pipes +
+`execvp` PATH search). Exit **status** is the last stage’s status (shell
+convention). Works in session scripts and anywhere the step path runs.
+Redirections (`>`, `<`) are not product surface yet. The REPL may still use a
+host `|` fast path for the same lines.
 
 ## Session scripts
 

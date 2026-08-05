@@ -3,12 +3,12 @@
 **Date:** 2026-07-24  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** Thoxa-side pipes/redirs (host `|` only); Shell prelude still compiler-embedded; host `cd`/`status` fast paths remain; optional faster REPL C (`tcc`)  
+**Gaps:** Redirs; Shell prelude still compiler-embedded; host `cd`/`status`/`|` fast paths remain in REPL; optional faster REPL C (`tcc`)  
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)
 
 > **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. Do **not** invent a second shell language.
 
-**Shipped core:** PR0–PR8 + D93 v2 dlopen step; `prompt()` / `path()` via session step `.so` (stdout capture, not child exec). Decisions D88–D100.  
+**Shipped core:** PR0–PR8 + D93 v2 dlopen step; `prompt()` / `path()` via session step `.so`; **Thoxa-side pipelines** (D101, `session_pipe`). Decisions D88–D101.  
 **Baseline:** Native ladder + session scripts + command sugar + bare `thoxa` REPL.
 
 **Goal:** Make **Thoxa the session language**. Interactive and no-`main` scripts share one model: a live **`Shell`** value, user text desugared into real Thoxa, compiled, and executed as a method body on that value. Familiar command skin stays thin; programming is always Thoxa.
@@ -209,6 +209,7 @@ type Shell(
 | dlopen session steps | ✅ | D93 v2 |
 | Prelude / std `Shell` type | partial | still compiler-embed `session_prelude.thx` |
 | Command → AST desugar in compiler | ✅ | PR2; D92 |
+| Thoxa-side OS pipelines | ✅ | D101; `session_pipe`; redirs still open |
 
 ---
 
@@ -397,8 +398,8 @@ No `Shell` wrap. No command sugar unless we later opt in (default **off** for pr
 
 ## 9. Agent handoff notes
 
-- **Core shipped** (PR0–PR8 + D93 v2). Living next work: root `CURRENT.md` +
-  `docs/capabilities.md` session rows (polish: Thoxa-side pipes/redirs, prelude
+- **Core shipped** (PR0–PR8 + D93 v2 + D101 pipelines). Living next work: root
+  `CURRENT.md` + `docs/capabilities.md` session rows (polish: redirs, prelude
   absorption, host fast-path reduction, optional tcc).
 - Do not add shell `if`/`for`.
 - Prefer small diffs; update CURRENT + capabilities + decisions after each PR.

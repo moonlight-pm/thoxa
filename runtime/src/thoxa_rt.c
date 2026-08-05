@@ -903,6 +903,251 @@ int32_t thoxa_pipe(int32_t fds_out[2]) {
     return 0;
 }
 
+/*
+ * Pipeline blob: stages separated by an empty field (double NUL). Within a
+ * stage, consecutive NUL-terminated words form argv. First word is the
+ * executable (PATH search via execvp). Status = last stage (shell convention).
+ */
+int64_t thoxa_pipeline(const void *stages_blob, int64_t stages_len) {
+    if (!stages_blob || stages_len < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    size_t len = (size_t)stages_len;
+    const uint8_t *blob = (const uint8_t *)stages_blob;
+
+    typedef struct {
+        size_t *offs;
+        size_t argc;
+    } StageOff;
+
+    StageOff *soff = NULL;
+    size_t nstages = 0;
+    size_t scap = 0;
+    size_t i = 0;
+
+    while (i < len) {
+        if (blob[i] == 0) {
+            i++;
+            continue;
+        }
+        size_t *offs = NULL;
+        size_t argc = 0;
+        size_t ocap = 0;
+        while (i < len) {
+            size_t start = i;
+            while (i < len && blob[i] != 0) {
+                i++;
+            }
+            size_t wlen = i - start;
+            if (wlen == 0) {
+                if (i < len) {
+                    i++;
+                }
+                break;
+            }
+            if (argc >= ocap) {
+                size_t nc = ocap == 0 ? 4 : ocap * 2;
+                size_t *no = (size_t *)realloc(offs, nc * sizeof(size_t));
+                if (!no) {
+                    free(offs);
+                    for (size_t s = 0; s < nstages; s++) {
+                        free(soff[s].offs);
+                    }
+                    free(soff);
+                    errno = ENOMEM;
+                    return -1;
+                }
+                offs = no;
+                ocap = nc;
+            }
+            offs[argc++] = start;
+            if (i < len) {
+                i++;
+            }
+        }
+        if (argc == 0) {
+            free(offs);
+            continue;
+        }
+        if (nstages >= scap) {
+            size_t nc = scap == 0 ? 4 : scap * 2;
+            StageOff *ns = (StageOff *)realloc(soff, nc * sizeof(StageOff));
+            if (!ns) {
+                free(offs);
+                for (size_t s = 0; s < nstages; s++) {
+                    free(soff[s].offs);
+                }
+                free(soff);
+                errno = ENOMEM;
+                return -1;
+            }
+            soff = ns;
+            scap = nc;
+        }
+        soff[nstages].offs = offs;
+        soff[nstages].argc = argc;
+        nstages++;
+    }
+
+    if (nstages == 0) {
+        free(soff);
+        errno = EINVAL;
+        return -1;
+    }
+
+    uint8_t *copy = (uint8_t *)malloc(len > 0 ? len : 1);
+    if (!copy) {
+        for (size_t s = 0; s < nstages; s++) {
+            free(soff[s].offs);
+        }
+        free(soff);
+        errno = ENOMEM;
+        return -1;
+    }
+    if (len > 0) {
+        memcpy(copy, blob, len);
+    }
+
+    char ***all_argv = (char ***)calloc(nstages, sizeof(char **));
+    pid_t *pids = (pid_t *)calloc(nstages, sizeof(pid_t));
+    if (!all_argv || !pids) {
+        free(copy);
+        free(all_argv);
+        free(pids);
+        for (size_t s = 0; s < nstages; s++) {
+            free(soff[s].offs);
+        }
+        free(soff);
+        errno = ENOMEM;
+        return -1;
+    }
+
+    for (size_t s = 0; s < nstages; s++) {
+        char **argv = (char **)malloc((soff[s].argc + 1) * sizeof(char *));
+        if (!argv) {
+            for (size_t t = 0; t < s; t++) {
+                free(all_argv[t]);
+            }
+            free(all_argv);
+            free(pids);
+            free(copy);
+            for (size_t u = 0; u < nstages; u++) {
+                free(soff[u].offs);
+            }
+            free(soff);
+            errno = ENOMEM;
+            return -1;
+        }
+        for (size_t a = 0; a < soff[s].argc; a++) {
+            argv[a] = (char *)(copy + soff[s].offs[a]);
+        }
+        argv[soff[s].argc] = NULL;
+        all_argv[s] = argv;
+        free(soff[s].offs);
+        soff[s].offs = NULL;
+    }
+    free(soff);
+
+    int prev_read = -1;
+    int fail = 0;
+    size_t spawned = 0;
+    for (size_t s = 0; s < nstages; s++) {
+        int pipefd[2] = {-1, -1};
+        int is_last = (s + 1 == nstages);
+        if (!is_last) {
+            if (pipe(pipefd) != 0) {
+                fail = 1;
+                break;
+            }
+        }
+        pid_t pid = fork();
+        if (pid < 0) {
+            if (pipefd[0] >= 0) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+            }
+            fail = 1;
+            break;
+        }
+        if (pid == 0) {
+            if (prev_read >= 0) {
+                if (dup2(prev_read, STDIN_FILENO) < 0) {
+                    _exit(127);
+                }
+            }
+            if (!is_last) {
+                if (dup2(pipefd[1], STDOUT_FILENO) < 0) {
+                    _exit(127);
+                }
+            }
+            if (prev_read >= 0) {
+                close(prev_read);
+            }
+            if (pipefd[0] >= 0) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+            }
+            execvp(all_argv[s][0], all_argv[s]);
+            _exit(127);
+        }
+        pids[s] = pid;
+        spawned = s + 1;
+        if (prev_read >= 0) {
+            close(prev_read);
+            prev_read = -1;
+        }
+        if (!is_last) {
+            close(pipefd[1]);
+            prev_read = pipefd[0];
+        }
+    }
+
+    if (prev_read >= 0) {
+        close(prev_read);
+    }
+
+    int64_t last_status = 1;
+    if (fail) {
+        for (size_t s = 0; s < spawned; s++) {
+            if (pids[s] > 0) {
+                int st = 0;
+                (void)waitpid(pids[s], &st, 0);
+            }
+        }
+        for (size_t s = 0; s < nstages; s++) {
+            free(all_argv[s]);
+        }
+        free(all_argv);
+        free(pids);
+        free(copy);
+        return -1;
+    }
+
+    for (size_t s = 0; s < nstages; s++) {
+        int st = 0;
+        if (waitpid(pids[s], &st, 0) < 0) {
+            last_status = -1;
+            continue;
+        }
+        if (WIFEXITED(st)) {
+            last_status = (int64_t)WEXITSTATUS(st);
+        } else if (WIFSIGNALED(st)) {
+            last_status = 128 + (int64_t)WTERMSIG(st);
+        } else {
+            last_status = -1;
+        }
+    }
+
+    for (size_t s = 0; s < nstages; s++) {
+        free(all_argv[s]);
+    }
+    free(all_argv);
+    free(pids);
+    free(copy);
+    return last_status;
+}
+
 /* --- Session prompt helpers (D96) --------------------------------------- */
 
 const char *thoxa_local_hms(void) {

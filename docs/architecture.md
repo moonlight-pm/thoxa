@@ -91,6 +91,8 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 - Heap today: `String`, `Bytes`, dynamic `Array`, `Buffer` — simple RC.
 - Extern from `"c"` (+ optional C symbol); cgen pulls headers when needed.
 - Spawn helper `thoxa_spawn_wait` used by session Shell / dogfood shell.
+- Pipeline helper `thoxa_pipeline` (multi-stage pipe/fork/execvp; last-stage
+  status) used by `Shell.pipeline` / command sugar `a | b`.
 - Phase A: **no** product tree-walk interpreter; **no** QBE backend.
 
 ## Related freezes

@@ -47,6 +47,18 @@ int32_t thoxa_errno(void);
 int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len);
 
 /*
+ * OS pipeline: stages separated by an empty NUL-terminated field (double NUL).
+ * Within a stage, consecutive NUL-terminated words form argv (like spawn_wait).
+ * Example for `echo hi | wc -c`:
+ *   "echo\0hi\0\0wc\0-c\0"
+ * First word of each stage is the executable (PATH search via execvp).
+ * First stage inherits stdin; last inherits stdout; intermediate stages are
+ * connected with pipe(2). stderr inherits for all. Returns last stage status
+ * (shell convention), or -1 on setup failure (errno set).
+ */
+int64_t thoxa_pipeline(const void *stages_blob, int64_t stages_len);
+
+/*
  * Session / REPL helpers (plan PR3+, D93 v2).
  *
  * Host-held shell state for in-process `step` shared objects.
@@ -63,7 +75,7 @@ typedef struct ThoxaShellState {
     int64_t status;
 } ThoxaShellState;
 
-/* pipe(2) wrapper — used by pipeline session APIs (PR6). Returns 0 or -1. */
+/* pipe(2) wrapper — low-level; prefer thoxa_pipeline for session pipelines. */
 int32_t thoxa_pipe(int32_t fds_out[2]);
 
 /* --- Heap header (RC) --------------------------------------------------- */
