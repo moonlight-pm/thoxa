@@ -23,7 +23,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D105 | REPL / session-step C backend | **In-process libtcc** (`TCC_OUTPUT_MEMORY`); happy path: no compiler spawn, no step `.so` | Vendored TinyCC (Linux only). Batch programs + `libthoxa_rt` stay system `cc`. Freeze: `docs/specs/2026-08-05-session-libtcc.md`. Supersedes D93’s *cc-shared+dlopen* as the **target** step backend; as-built remains dlopen until implementation. |
+| D105 | REPL / session-step C backend | **In-process libtcc** (`TCC_OUTPUT_MEMORY`); happy path: no compiler spawn, no step `.so` | Vendored TinyCC under `third_party/tinycc` (Linux x86_64). Batch + `libthoxa_rt` stay system `cc`. Escape: `THOXA_REPL_BACKEND=cc`. Freeze: `docs/specs/2026-08-05-session-libtcc.md`. Supersedes D93’s *cc-shared+dlopen* as the default step backend. |
 
 ## 2026-08-05 — Session pipes, redirs, pure-step, std Shell
 
@@ -56,7 +56,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D90 | Session code placement | Decls stay module-level; top-level stmts → `Shell.step` body; synthetic `main` returns `step().status` | `Item::SessionStmt`; `session::prepare` |
 | D91 | In-function import/type | Not required; host lifts / top-level decls only | Deferred general nested modules |
 | D92 | Command sugar | Thoxa-first; bare word/string sequences desugar to `shell = shell.*`; **pipes/redirs before Thoxa-first** so `|`/`>` are not kept as BitOr/Gt | `command.rs`; quotes from thoxash v3. Command-shaped parse trees include path Div, **flag Sub/Unary** (`ls -al`, `--all`); pure literal arith (`1 - 2`), pure int BitOr (`1 \| 2`), pure int Gt (`1 > 0`) stay Thoxa. Pipes → **D101**; redirs → **D102**. |
-| D93 | REPL execution | Host loop: **decls accumulate**; host-held status threaded into `Shell.step`; preamble cache while decls stable; entry remains `thoxa_session_step(ThoxaShellState*)` | **As-built:** `cc -shared` + **dlopen**. **Target step backend:** in-process libtcc (**D105**). Was v1 compile+exec child. Fast paths removed → **D103**. |
+| D93 | REPL execution | Host loop: **decls accumulate**; host-held status threaded into `Shell.step`; entry remains `thoxa_session_step(ThoxaShellState*)` | Step backend default → **D105** libtcc. Legacy `cc -shared`+dlopen via `THOXA_REPL_BACKEND=cc`. Was v1 compile+exec child. Fast paths removed → **D103**. |
 | D94 | Script execution | Splice + synthetic `main` + normal executable | No dlopen |
 | D95 | extras/shell | Dogfood prototype of Shell API; product face is bare `thoxa` | `cargo make shell` → bare `thoxa` |
 | D96 | Session rc + prompt | Interactive REPL loads `$HOME/.config/thoxa/shell.thx` (missing = no-op). Decls accumulate; stmts run once. Optional `fn prompt() -> String` — host rebuilds prompt **step .so** when decls change, **dlopen-calls** it every primary prompt (stdout captured). Host sets `THOXA_STATUS`. Default `$ `; continuation `> ` fixed. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC` | Real Thoxa (not a second grammar). Piped REPL / session scripts do not load rc. Optional `fn path` → **D100**. |

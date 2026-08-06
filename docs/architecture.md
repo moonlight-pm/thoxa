@@ -5,22 +5,23 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-05
+**As of:** 2026-08-05 (session-libtcc)
 
 ---
 
 ## One sentence
 
 Native Thoxa is a **Rust compiler that emits C**, linked with a **C runtime**
-(`thoxa_rt`). Programs and session steps share that pipeline; the interactive
-shell is a long-lived Rust host that (as-built) `dlopen`s per-chunk step
-libraries. **Target** REPL step backend: in-process libtcc (D105) — see freeze
-below; not as-built until code lands.
+(`thoxa_rt`). Programs use system `cc`; interactive session steps compile via
+**vendored libtcc** in-process (D105) and call `thoxa_session_step` without a
+step `.so` on the happy path.
 
 ## Pipeline
 
 ```text
-.thx → lexer → parser → AST → MIR (+ simple RC) → cgen → cc + libthoxa_rt
+.thx → lexer → parser → AST → MIR (+ simple RC) → cgen
+  → programs: cc + libthoxa_rt
+  → session steps: libtcc (memory) + libthoxa_rt.a  (D105)
 ```
 
 | Stage | Location | Notes |
@@ -28,18 +29,20 @@ below; not as-built until code lands.
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` / `emit-c` / `lsp` / bare REPL |
 | Frontend | `lexer`, `parser`, `ast`, `resolver` | Shared resolver used by LSP |
 | MIR | `mir.rs` | Simple single-threaded RC (dup/drop) |
-| Cgen | `cgen.rs` | Emits C under `target/thoxa/c/` |
+| Cgen | `cgen.rs` | Emits C under `target/thoxa/c/`; session combined TU for libtcc |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
-| REPL host | `repl.rs` | Decl accumulate; **as-built** `cc -shared` → dlopen step |
+| libtcc | `tcc.rs` + `build.rs` + `third_party/tinycc` | Vendored TinyCC; memory compile |
+| REPL host | `repl.rs` | Decl accumulate; libtcc step image (or `THOXA_REPL_BACKEND=cc`) |
 | LSP | `lsp/` | stdio server; check overlays; navigation |
 
 ## Crates and trees
 
 | Path | Role |
 |------|------|
-| `crates/compiler` | `thoxa` binary + compiler library |
+| `crates/compiler` | `thoxa` binary + compiler library (+ libtcc link) |
 | `crates/make` | xtask (`cargo make …`) |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
+| `third_party/tinycc` | Vendored TinyCC sources (session steps only) |
 | `std/` | Product standard library (`std/…` import root) |
 | `tests/conformance/` | `.thx` + `.out` gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
@@ -52,21 +55,23 @@ below; not as-built until code lands.
 │  thoxa (Rust host)                      │
 │  - host-held status / Shell state       │
 │  - read chunk, desugar, splice module   │
-│  - cgen → cc -shared → dlopen           │
+│  - cgen → libtcc memory → call step     │
 │  - thoxa_session_step(ThoxaShellState*) │
 │  - pure step only for commands (D103)   │
 └─────────────────────────────────────────┘
 ```
 
-- **Scripts (no `main`):** splice + synthetic `main` → normal executable (no
-  dlopen).
+- **Scripts (no `main`):** splice + synthetic `main` → system `cc` executable
+  (unchanged).
 - **Programs:** `fn main` or directory `Main.thx` — batch path unchanged.
 - **Prelude:** product `std/Shell.thx` preferred at inject time; compile-time
   `include_str` fallback of the same file when std is not discoverable (D104).
-- **Target (not as-built):** REPL steps compile via **vendored libtcc** in
-  memory (no step `.so`); freeze
+- **REPL steps:** vendored **libtcc** (`TCC_OUTPUT_MEMORY`); feed
+  `emit_session_combined` + `libthoxa_rt.a`; keep `TCCState` until superseded.
+  Escape: `THOXA_REPL_BACKEND=cc` → legacy `cc -shared` + dlopen. Freeze:
   [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
-  (D105). Batch programs and `libthoxa_rt` remain system `cc`.
+  (D105). Soft perf (debug, tight piped loops): ~**12–14 ms/step** libtcc vs
+  ~**100–110 ms/step** cc+dlopen (~7–9×); see freeze §8.1.
 
 ## Build products
 
@@ -76,6 +81,7 @@ Everything generated lives under one tree:
 |------|------|
 | `target/rust/` | Cargo (compiler + xtask binaries, deps) |
 | `target/c/` | C runtime objects + `libthoxa_rt.a` |
+| `target/c/tinycc/` | Installed libtcc + libtcc1 (from `build.rs`) |
 | `target/thoxa/c/` | Generated C from Thoxa sources |
 | `target/thoxa/bin/` | Linked Thoxa program binaries |
 | `target/thoxa/session/` (and related) | REPL step objects / shared libs (host-managed) |

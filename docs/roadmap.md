@@ -55,19 +55,19 @@ Freeze: [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-e
 
 **Status: partial** (core shipped; polish active)
 
-- No-main scripts, command sugar, bare `thoxa` REPL, dlopen steps (as-built),
-  rc/prompt/path, pipes/redirs, pure-step builtins, `std/Shell.thx`.
+- No-main scripts, command sugar, bare `thoxa` REPL, **libtcc** session steps
+  (D105), rc/prompt/path, pipes/redirs, pure-step builtins, `std/Shell.thx`.
 - Thin `std/` for prompts and helpers.
 
-**Remaining (active):** in-process **libtcc** session steps (D105); grow `std/`;
-residual redir polish (`2>`, redir-on-pipe).
+**Remaining (active):** grow `std/`; residual redir polish (`2>`, redir-on-pipe);
+optional libtcc base cache / license packaging.
 
 Freezes:
 
 - [`specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md)
   (session product)
 - [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
-  (step C backend target)
+  (step C backend — core shipped)
 
 ---
 

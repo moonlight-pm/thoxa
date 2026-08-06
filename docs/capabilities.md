@@ -64,15 +64,15 @@ change. See [`progress-model.md`](progress-model.md).
 | session-script | No-main scripts → `Shell.step` + synthetic main | shipped | `session_script`, `session_step` | D88–D90, D94 | — | yes |
 | command-sugar | Command skin + flag trees (`ls -al`) | shipped | `session_cmd`; `command::` | D92 | Shell control-flow sugar rejected | yes |
 | session-repl | Bare `thoxa` REPL, decl accumulate, multiline | shipped | `repl::` | D88, D93, D95 | Crude line editor only | yes |
-| session-dlopen | In-process step `.so` + preamble `.o` cache | shipped | `repl::` | D93 v2 | **As-built** step load; target replaces with libtcc (D105) | yes |
+| session-dlopen | Legacy step `.so` + preamble `.o` cache | shipped | `THOXA_REPL_BACKEND=cc` | D93 v2; D105.e | Escape hatch only; default is libtcc | yes |
 | session-rc | `~/.config/thoxa/shell.thx` + `prompt()` | shipped | `repl::` | D96 | Piped REPL does not load rc | yes |
 | session-path | `fn path(parent) -> Array<String>` | shipped | `repl::` | D100 | — | yes |
 | session-pipeline | Thoxa-side `\|` → `Shell.pipeline` + RT | shipped | `session_pipe`; `command::` | D101 | Nested Array stages N/A (Bytes blob) | yes |
 | session-redir | File `>` / `>>` / `<` → `Shell.runIo` | shipped | `session_redir`; `command::` | D102 | No `2>`; redir+pipe combo; ops need whitespace | yes |
 | session-host-pipe | Host OS `\|` fast path in REPL | shipped (removed) | `repl::pure_step_*` | D103 | Replaced by Thoxa-side pipeline (D101) | yes |
 | session-prelude | Shell API in product `std/Shell.thx` | shipped | `session::`; session scripts | D104 | Still auto-injected (not `import` by default); compile-time embed fallback | yes |
-| session-host-builtins | Drop host `cd`/`status`/`\|` for pure step | shipped | `repl::pure_step_*` | D103 | All session commands via step path | yes |
-| session-libtcc | In-process libtcc for REPL steps (no spawn / no step `.so`) | spec’d | — | D105; [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | No vendor tree yet; as-built still `cc`+dlopen | no |
+| session-host-builtins | Drop host `cd`/`status`/`\|` for pure step | shipped | `repl::pure_step_*` | D103 | All session commands via step image (libtcc / escape) | yes |
+| session-libtcc | In-process libtcc for REPL steps (no spawn / no step `.so`) | shipped | `tcc::`; `repl::pure_step_*` | D105; [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | Linux x86_64; ~7–9× vs cc on tight steps (freeze §8.1); license packaging deferred; optional base cache; `THOXA_REPL_BACKEND=cc` escape | no |
 | extras-shell | Pure-Thoxa dogfood Shell | shipped | `cargo make run extras/shell` | D95 | **Not** product face | no |
 
 ## Standard library

@@ -17,6 +17,8 @@ pub enum EntryPoint {
     SessionStep,
     /// Session preamble object: only `thoxa_session_init` (no main / no step entry).
     SessionBase,
+    /// Single TU for in-process libtcc (D105): `thoxa_session_init` + step entry.
+    SessionCombined,
 }
 
 /// Which function bodies to emit (prototypes are always emitted for all).
@@ -28,6 +30,8 @@ pub enum BodySet {
     SessionStepOnly,
     /// Everything except `Shell__step` and `main` (session preamble).
     SessionBaseOnly,
+    /// Session helpers + `Shell__step` (no `main`) — one TU for libtcc.
+    SessionNoMain,
 }
 
 pub fn emit_program(program: &Program) -> String {
@@ -42,6 +46,16 @@ pub fn emit_session_step(program: &Program) -> String {
 /// Emit C for a session preamble TU (helpers, globals, init; no step/main).
 pub fn emit_session_base(program: &Program) -> String {
     emit_program_with(program, EntryPoint::SessionBase, BodySet::SessionBaseOnly, true)
+}
+
+/// Emit one C TU with session init + step entry (libtcc memory path, D105).
+pub fn emit_session_combined(program: &Program) -> String {
+    emit_program_with(
+        program,
+        EntryPoint::SessionCombined,
+        BodySet::SessionNoMain,
+        true,
+    )
 }
 
 pub fn emit_program_with(
@@ -98,7 +112,9 @@ pub fn emit_program_with(
     // for static helper linkage (base and step may both need them).
     let mut user_arr_elems: Vec<String> = Vec::new();
     match bodies {
-        BodySet::All => collect_user_array_elems_program(program, &mut user_arr_elems),
+        BodySet::All | BodySet::SessionNoMain => {
+            collect_user_array_elems_program(program, &mut user_arr_elems)
+        }
         BodySet::SessionStepOnly | BodySet::SessionBaseOnly => {
             // Type layouts may carry Array<User> fields even without explicit ops.
             for t in &program.types {
@@ -132,7 +148,8 @@ pub fn emit_program_with(
     // Full programs and session base own the definitions. Session step TUs only
     // get `extern` so they can read user `let`s living in the preamble object.
     match bodies {
-        BodySet::All => {
+        BodySet::All | BodySet::SessionNoMain => {
+            // Single-TU session (libtcc) and full programs: own globals.
             for g in &program.globals {
                 emit_global(&mut out, g, /*is_static*/ true);
             }
@@ -166,7 +183,8 @@ pub fn emit_program_with(
             // Step lives in the other TU; omit — base must not reference step.
             continue;
         }
-        if bodies == BodySet::SessionBaseOnly && is_main_fn(f) {
+        if (bodies == BodySet::SessionBaseOnly || bodies == BodySet::SessionNoMain) && is_main_fn(f)
+        {
             continue;
         }
         emit_proto(&mut out, f);
@@ -218,29 +236,42 @@ pub fn emit_program_with(
             out.push_str("}\n");
         }
         EntryPoint::SessionBase => {
-            // Idempotent init for shared objects that may be re-entered.
-            out.push_str("void thoxa_session_init(void) {\n");
-            out.push_str("    static int thoxa_session_inited = 0;\n");
-            out.push_str("    if (thoxa_session_inited) return;\n");
-            out.push_str("    thoxa_session_inited = 1;\n");
-            if has_init {
-                out.push_str("    thoxa_module_init();\n");
-            }
-            out.push_str("}\n");
+            emit_session_init_fn(&mut out, has_init);
         }
         EntryPoint::SessionStep => {
             out.push_str("void thoxa_session_init(void);\n");
-            out.push_str("int64_t thoxa_session_step(ThoxaShellState *state) {\n");
-            out.push_str("    thoxa_session_init();\n");
-            out.push_str("    Thoxa_Shell shell;\n");
-            out.push_str("    shell.f_status = state->status;\n");
-            out.push_str("    shell = thoxa_m_Shell_step(shell);\n");
-            out.push_str("    state->status = shell.f_status;\n");
-            out.push_str("    return state->status;\n");
-            out.push_str("}\n");
+            emit_session_step_fn(&mut out);
+        }
+        EntryPoint::SessionCombined => {
+            emit_session_init_fn(&mut out, has_init);
+            out.push('\n');
+            emit_session_step_fn(&mut out);
         }
     }
     out
+}
+
+fn emit_session_init_fn(out: &mut String, has_init: bool) {
+    // Idempotent init for shared objects / re-entered memory images.
+    out.push_str("void thoxa_session_init(void) {\n");
+    out.push_str("    static int thoxa_session_inited = 0;\n");
+    out.push_str("    if (thoxa_session_inited) return;\n");
+    out.push_str("    thoxa_session_inited = 1;\n");
+    if has_init {
+        out.push_str("    thoxa_module_init();\n");
+    }
+    out.push_str("}\n");
+}
+
+fn emit_session_step_fn(out: &mut String) {
+    out.push_str("int64_t thoxa_session_step(ThoxaShellState *state) {\n");
+    out.push_str("    thoxa_session_init();\n");
+    out.push_str("    Thoxa_Shell shell;\n");
+    out.push_str("    shell.f_status = state->status;\n");
+    out.push_str("    shell = thoxa_m_Shell_step(shell);\n");
+    out.push_str("    state->status = shell.f_status;\n");
+    out.push_str("    return state->status;\n");
+    out.push_str("}\n");
 }
 
 fn is_session_step_fn(f: &Function) -> bool {
@@ -256,6 +287,7 @@ fn include_body(f: &Function, bodies: BodySet) -> bool {
         BodySet::All => true,
         BodySet::SessionStepOnly => is_session_step_fn(f),
         BodySet::SessionBaseOnly => !is_session_step_fn(f) && !is_main_fn(f),
+        BodySet::SessionNoMain => !is_main_fn(f),
     }
 }
 

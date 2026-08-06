@@ -15,6 +15,9 @@ pub mod resolver;
 pub mod session;
 pub mod span;
 
+#[cfg(thoxa_libtcc)]
+pub mod tcc;
+
 pub use driver::{build, emit_c, run, BuildOptions};
 pub use error::{Error, Result};
 pub use lsp::{check_source, CheckDiagnostic};

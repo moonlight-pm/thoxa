@@ -4,24 +4,20 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-05 (session-libtcc freeze; next implement PR0)
+**As of:** 2026-08-05 (session-libtcc shipped; next: std growth / residual polish)
 
 ---
 
 ## Now
 
-**Session product core is shipped** (scripts, sugar, REPL, pipes, redirs,
-pure-step, `std/Shell.thx`). Default next work is **in-process libtcc for REPL
-steps** (D105), then thin `std/` growth.
+**Session product core + in-process libtcc steps (D105) are shipped.** Default
+next work is thin `std/` growth and leftover polish — not reopening the ladder.
 
 ### Proceed order
 
-1. **Session libtcc (D105)** — vendored TinyCC; step path =
-   cgen → libtcc memory → call `thoxa_session_step` (no spawn, no step `.so`).  
-   Freeze:
-   [`docs/specs/2026-08-05-session-libtcc.md`](docs/specs/2026-08-05-session-libtcc.md).  
-   **Next slice:** PR0 (vendor + memory smoke), then PR1 (wire `build_session_step`).
-2. **Grow `std/`** — more Str/Path/Io helpers; `ffi` remains deferred.
+1. **Grow `std/`** — more Str/Path/Io helpers; `ffi` remains deferred.
+2. **Session residual** — optional libtcc base-object cache; TinyCC license
+   packaging notice; escape hatch `THOXA_REPL_BACKEND=cc` kept for bisect.
 3. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md).
@@ -33,11 +29,9 @@ steps** (D105), then thin `std/` growth.
 - Inventing shell dialect (`if`/`for`/full `$` forest)
 - Tree-walk product interpreter or QBE path (phase A)
 - Claiming full oracle SPEC coverage
-- Breadth language features ahead of libtcc / session polish unless human
-  redirects
+- Breadth language features ahead of std growth unless human redirects
 - Windows / non-Linux session backends
-- Blocking on third-party license packaging for TinyCC (deferred by product
-  axiom)
+- Blocking on third-party license packaging for TinyCC (deferred by D105.d)
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups.
@@ -56,10 +50,10 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Errors | `May` / `Trial` + `?` / `match`; no May↔Trial mix via `?` |
 | Session product face | Bare `thoxa` / `thoxa repl`; no-`main` = session script |
 | Session value | `type Shell(status: Int64)` + methods; real Thoxa; `std/Shell.thx` |
-| REPL step backend (**target**) | **libtcc in-process** memory compile (D105); no step `.so` happy path |
-| REPL step backend (**as-built**) | `cc -shared` + **dlopen** until D105 lands |
+| REPL step backend | **libtcc in-process** (`TCC_OUTPUT_MEMORY`) → call `thoxa_session_step` (D105); no step `.so` on happy path |
+| REPL step escape | `THOXA_REPL_BACKEND=cc` → legacy `cc -shared` + dlopen |
 | Batch / RT C | System **`cc`** (+ `ar` for runtime) unchanged |
-| Host platforms | **Linux** product track; Windows out of scope |
+| Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
 | `std/` root | Named `std/…` (D97); thin modules; `ffi` deferred |
@@ -89,11 +83,11 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 ```bash
 cargo make test
 cargo test -p thoxa --lib repl::
-cargo test -p thoxa --lib command::
+cargo test -p thoxa --lib tcc::
 printf 'echo hi\nls -al\nexit\n' | cargo run -p thoxa --
+THOXA_REPL_BACKEND=cc printf 'echo hi\nexit\n' | cargo run -p thoxa --
 cargo make shell --login
 cargo run -p thoxa -- tests/conformance/stdlib.thx
-cargo run -p thoxa -- tests/conformance/param_defaults.thx
 ```
 
 ---

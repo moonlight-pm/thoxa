@@ -3,14 +3,14 @@
 **Date:** 2026-07-24  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** step C backend still `cc`+dlopen (target **libtcc** — see sibling freeze); no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first)  
+**Gaps:** no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first); optional libtcc base cache / license packaging  
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)  
-**Step backend target:** [`2026-08-05-session-libtcc.md`](2026-08-05-session-libtcc.md) (D105)
+**Step backend:** [`2026-08-05-session-libtcc.md`](2026-08-05-session-libtcc.md) (D105, core shipped)
 
 > **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. Do **not** invent a second shell language.
 
-**Shipped core:** PR0–PR8 + D93 v2; `prompt()` / `path()`; pipelines (D101); redirs (D102); pure-step (D103); `std/Shell.thx` (D104). Decisions D88–D104.  
-**Open polish:** D105 libtcc (primary); residual redir/import polish secondary.  
+**Shipped core:** PR0–PR8 + D93 v2; `prompt()` / `path()`; pipelines (D101); redirs (D102); pure-step (D103); `std/Shell.thx` (D104); libtcc steps (D105). Decisions D88–D105.  
+**Open polish:** residual redir/import polish; libtcc packaging/cache.  
 **Baseline:** Native ladder + session scripts + command sugar + bare `thoxa` REPL.
 
 **Goal:** Make **Thoxa the session language**. Interactive and no-`main` scripts share one model: a live **`Shell`** value, user text desugared into real Thoxa, compiled, and executed as a method body on that value. Familiar command skin stays thin; programming is always Thoxa.

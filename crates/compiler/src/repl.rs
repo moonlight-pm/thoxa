@@ -1,54 +1,38 @@
-//! Interactive session REPL (`thoxa` with no args) — plan PR4/PR5 + D93/D96.
+//! Interactive session REPL (`thoxa` with no args) — plan PR4/PR5 + D93/D96/D105.
 //!
-//! Each executable chunk is compiled to a small shared object exporting
-//! [`thoxa_session_step`](crate::driver::build_session_step) and run **in-process**
-//! via `dlopen` (D93 v2). Declaration lines accumulate and are prepended so later
-//! chunks see prior `let` / `type` / `fn` / `import` / `extern`. The preamble
-//! object is cached while decls are stable; only `Shell.step` is rebuilt per line.
+//! Each executable chunk is compiled via
+//! [`build_session_step`](crate::driver::build_session_step) and run **in-process**.
+//! Default backend (D105): vendored **libtcc** memory output → call
+//! `thoxa_session_step` (no spawn, no step `.so`). Escape hatch:
+//! `THOXA_REPL_BACKEND=cc` restores `cc -shared` + dlopen. Declaration lines
+//! accumulate so later chunks see prior `let` / `type` / `fn` / `import` / `extern`.
 //!
-//! **Shell status:** host-held `ThoxaShellState.status` is threaded into each step
-//! and written back (so pure-Thoxa status survives across chunks).
+//! **Shell status:** host-held status is threaded into each step and written back
+//! (so pure-Thoxa status survives across chunks).
 //!
-//! **cwd / status / pipes:** pure session step path only — `Shell.cd` / `showStatus` /
-//! `pipeline` (and command sugar) run via dlopen `thoxa_session_step`. Host no longer
-//! special-cases those lines (D103).
+//! **cwd / status / pipes:** pure session step path only — `Shell.cd` /
+//! `showStatus` / `pipeline` (and command sugar) run via `thoxa_session_step`.
+//! Host no longer special-cases those lines (D103).
 //!
 //! **rc / prompt / path (D96, D100):** interactive REPL loads
 //! `~/.config/thoxa/shell.thx` once at start (decls accumulate; statements run
 //! once). If the session defines `fn prompt() -> String`, the host rebuilds a
-//! prompt **step .so** when decls change and **calls** it every primary prompt
+//! prompt step image when decls change and **calls** it every primary prompt
 //! (stdout captured in-process). Host sets `THOXA_STATUS` so Thoxa can read last
 //! status via `getenv`.
 //!
 //! If the session defines `fn path(parent: Array<String>) -> Array<String>`,
-//! the host runs it (same dlopen step path) after rc load and whenever decls
-//! change: `parent` is the current process `PATH` split on `:`; the returned
-//! components **replace** process `PATH` (joined with `:`).
+//! the host runs it (same step path) after rc load and whenever decls change:
+//! `parent` is the current process `PATH` split on `:`; the returned components
+//! **replace** process `PATH` (joined with `:`).
 
 use crate::command::desugar_session_source;
-use crate::driver::{self, SessionBuildCache};
+use crate::driver::{self, SessionBuildCache, SessionStepLib};
 use crate::error::{Error, Result};
-use std::ffi::{CStr, CString};
 use std::fs;
 use std::io::{self, BufRead, Write};
-use std::os::raw::{c_char, c_int, c_void};
-use std::path::{Path, PathBuf};
-
-/// C ABI mirror of `ThoxaShellState` in `thoxa_rt.h`.
-#[repr(C)]
-struct ThoxaShellState {
-    status: i64,
-}
-
-type SessionStepFn = unsafe extern "C" fn(*mut ThoxaShellState) -> i64;
-
-#[link(name = "dl")]
-extern "C" {
-    fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-    fn dlclose(handle: *mut c_void) -> c_int;
-    fn dlerror() -> *mut c_char;
-}
+use std::os::raw::{c_int, c_void};
+use std::path::PathBuf;
 
 extern "C" {
     fn pipe(fds: *mut c_int) -> c_int;
@@ -59,8 +43,6 @@ extern "C" {
     fn fflush(stream: *mut c_void) -> c_int;
 }
 
-// RTLD_NOW
-const RTLD_NOW: c_int = 2;
 const STDOUT_FILENO: c_int = 1;
 
 /// Run the interactive (or piped) session REPL. Returns final status.
@@ -70,8 +52,8 @@ pub fn run_repl() -> Result<i32> {
     let mut status: i32 = 0;
     let mut prompt_state = PromptState::default();
     let mut step_cache = SessionBuildCache::default();
-    // Keep last .so mapped until the next load so we can dlclose safely.
-    let mut loaded: Option<LoadedStep> = None;
+    // Keep last step image until the next load (libtcc state or dlopen).
+    let mut loaded: Option<SessionStepLib> = None;
 
     // Pin paths before any host `cd` so runtime/std resolve stays stable.
     driver::pin_workspace_root();
@@ -165,92 +147,6 @@ pub fn run_repl() -> Result<i32> {
         println!();
     }
     Ok(status)
-}
-
-struct LoadedStep {
-    handle: *mut c_void,
-    step: SessionStepFn,
-    path: PathBuf,
-}
-
-// dlopen handles are process-global; not Send/Sync in the type system, but the
-// REPL is single-threaded.
-unsafe impl Send for LoadedStep {}
-
-impl Drop for LoadedStep {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.handle.is_null() {
-                dlclose(self.handle);
-            }
-        }
-        // Best-effort cleanup of unique .so files.
-        let _ = fs::remove_file(&self.path);
-    }
-}
-
-fn load_and_call_step(
-    so_path: &Path,
-    prev_status: i32,
-    loaded: &mut Option<LoadedStep>,
-) -> Result<i32> {
-    let lib = open_step_lib(so_path)?;
-    let status = call_step_fn(lib.step, prev_status);
-    *loaded = Some(lib);
-    Ok(status)
-}
-
-fn open_step_lib(so_path: &Path) -> Result<LoadedStep> {
-    let c_path = CString::new(so_path.to_string_lossy().as_bytes())
-        .map_err(|_| Error::new("session step: path contains NUL"))?;
-    unsafe {
-        dlerror();
-        let handle = dlopen(c_path.as_ptr(), RTLD_NOW);
-        if handle.is_null() {
-            let err = dlerror_string();
-            return Err(Error::new(format!(
-                "dlopen {}: {err}",
-                so_path.display()
-            )));
-        }
-        let sym = CString::new("thoxa_session_step").unwrap();
-        dlerror();
-        let ptr = dlsym(handle, sym.as_ptr());
-        let err = dlerror();
-        if !err.is_null() || ptr.is_null() {
-            dlclose(handle);
-            let msg = if err.is_null() {
-                "symbol thoxa_session_step not found".into()
-            } else {
-                CStr::from_ptr(err).to_string_lossy().into_owned()
-            };
-            return Err(Error::new(format!("dlsym: {msg}")));
-        }
-        let step: SessionStepFn = std::mem::transmute(ptr);
-        Ok(LoadedStep {
-            handle,
-            step,
-            path: so_path.to_path_buf(),
-        })
-    }
-}
-
-fn call_step_fn(step: SessionStepFn, prev_status: i32) -> i32 {
-    let mut state = ThoxaShellState {
-        status: prev_status as i64,
-    };
-    unsafe { step(&mut state) as i32 }
-}
-
-fn dlerror_string() -> String {
-    unsafe {
-        let err = dlerror();
-        if err.is_null() {
-            "unknown dlerror".into()
-        } else {
-            CStr::from_ptr(err).to_string_lossy().into_owned()
-        }
-    }
 }
 
 /// Run `f` with stdout redirected to a pipe; return `(f's result, captured bytes)`.
@@ -389,7 +285,7 @@ fn env_truthy(name: &str) -> bool {
 fn load_shell_rc(
     decls: &mut Vec<String>,
     cache: &mut SessionBuildCache,
-    loaded: &mut Option<LoadedStep>,
+    loaded: &mut Option<SessionStepLib>,
 ) -> Result<i32> {
     let Some(path) = shell_rc_path() else {
         return Ok(0);
@@ -408,7 +304,7 @@ fn apply_rc_source(
     src: &str,
     decls: &mut Vec<String>,
     cache: &mut SessionBuildCache,
-    loaded: &mut Option<LoadedStep>,
+    loaded: &mut Option<SessionStepLib>,
 ) -> Result<i32> {
     let desugared = desugar_session_source(src)?;
     let forms = split_top_level_forms(&desugared);
@@ -500,10 +396,10 @@ const DEFAULT_PROMPT: &str = "$ ";
 struct PromptState {
     /// Whether decls currently define `fn prompt`.
     has_prompt: bool,
-    /// Rebuild prompt step .so before next use.
+    /// Rebuild prompt step image before next use.
     dirty: bool,
-    /// Last successful prompt library (kept mapped; re-called each line).
-    lib: Option<LoadedStep>,
+    /// Last successful prompt image (kept live; re-called each line).
+    lib: Option<SessionStepLib>,
     /// Avoid spamming the same rebuild error every line.
     last_error: Option<String>,
 }
@@ -607,22 +503,20 @@ fn ensure_prompt_lib(
     Ok(())
 }
 
-/// Session step .so whose body is `println(prompt())`.
-fn build_prompt_lib(decls: &[String], cache: &mut SessionBuildCache) -> Result<LoadedStep> {
+/// Session step image whose body is `println(prompt())`.
+fn build_prompt_lib(decls: &[String], cache: &mut SessionBuildCache) -> Result<SessionStepLib> {
     driver::capture_toolchain_path();
-    let art = driver::build_session_step(decls, "println(prompt())\n", cache)?;
-    open_step_lib(&art.so_path)
+    driver::build_session_step(decls, "println(prompt())\n", cache)
 }
 
 fn run_prompt_lib(state: &mut PromptState, status: i32) -> Result<String> {
-    let step = state
+    let lib = state
         .lib
         .as_ref()
-        .ok_or_else(|| Error::new("prompt: library not loaded"))?
-        .step;
+        .ok_or_else(|| Error::new("prompt: library not loaded"))?;
     std::env::set_var("THOXA_STATUS", status.to_string());
     let (_, out) = with_captured_stdout(|| {
-        let _st = call_step_fn(step, status);
+        let _st = lib.call(status);
         Ok(())
     })?;
     Ok(strip_one_trailing_newline(&out).to_string())
@@ -699,16 +593,15 @@ fn run_path_hook(
 ) -> Result<Vec<String>> {
     driver::capture_toolchain_path();
     let chunk = path_hook_chunk(parent);
-    let art = driver::build_session_step(decls, &chunk, cache)?;
-    let lib = open_step_lib(&art.so_path)?;
+    let lib = driver::build_session_step(decls, &chunk, cache)?;
     let (_, out) = with_captured_stdout(|| {
-        let st = call_step_fn(lib.step, 0);
+        let st = lib.call(0);
         if st != 0 {
             return Err(Error::new(format!("path step status {st}")));
         }
         Ok(())
     })?;
-    // Drop lib after capture (unmaps .so).
+    // Drop image after capture (frees libtcc state / unmaps .so).
     drop(lib);
     Ok(parse_path_hook_stdout(&out))
 }
@@ -785,7 +678,7 @@ fn run_chunk(
     decls: &mut Vec<String>,
     prev_status: i32,
     cache: &mut SessionBuildCache,
-    loaded: &mut Option<LoadedStep>,
+    loaded: &mut Option<SessionStepLib>,
 ) -> Result<ChunkOutcome> {
     let trimmed = chunk.trim();
 
@@ -798,11 +691,12 @@ fn run_chunk(
         });
     }
 
-    // D93 v2 / D103: all executable lines (status, cd, pipes, commands) go through
-    // the session step shared lib — no host command special-cases.
+    // D93/D103/D105: all executable lines go through the session step image —
+    // no host command special-cases.
     driver::capture_toolchain_path();
     let lib = driver::build_session_step(decls, chunk, cache)?;
-    let status = load_and_call_step(&lib.so_path, prev_status, loaded)?;
+    let status = lib.call(prev_status);
+    *loaded = Some(lib);
     Ok(ChunkOutcome {
         status,
         decls_changed: false,
@@ -876,8 +770,9 @@ echo hi
             run_chunk("status", &mut decls, out.status, &mut cache, &mut loaded).expect("status");
         assert_eq!(status_out.status, 1);
 
+        // Absolute paths: path_hook unit tests may clear process PATH in parallel.
         let pipe = run_chunk(
-            "echo pure-step-pipe | cat",
+            "echo pure-step-pipe | /bin/cat",
             &mut decls,
             status_out.status,
             &mut cache,

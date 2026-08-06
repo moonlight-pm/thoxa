@@ -1,10 +1,10 @@
 # Session step backend — in-process libtcc
 
 **Date:** 2026-08-05  
-**Status:** target (freeze)  
-**Implementation:** not started  
-**Gaps:** entire freeze — no vendored TinyCC, no memory compile path, REPL still
-`cc -shared` + `dlopen`  
+**Status:** shipped (core)  
+**Implementation:** PR0–PR2 landed; default libtcc for session steps  
+**Gaps:** optional base-object cache; TinyCC license packaging notice; escape
+hatch `THOXA_REPL_BACKEND=cc` still available (intentional)  
 **As-built:** [`../capabilities.md`](../capabilities.md) ·
 [`../architecture.md`](../architecture.md) · parent session freeze
 [`2026-07-24-thoxa-session-repl.md`](2026-07-24-thoxa-session-repl.md)
@@ -273,11 +273,30 @@ this freeze is accepted (same change as docs that point at it).
 | Gate | What |
 |------|------|
 | Every PR | `cargo test -p thoxa` + `cargo make test` |
-| PR0 | libtcc memory smoke unit |
+| PR0 | libtcc memory smoke unit (`tcc::memory_compile_returns_42`) |
 | PR1+ | `repl::pure_step_*`; manual `printf 'echo hi\nstatus\nexit\n' \| thoxa` |
-| PR2 | Existing prompt / path unit tests |
-| Perf (soft) | Tight loop of simple chunks faster than pre-libtcc baseline (document once) |
-| Negative | No step `.so` created under happy path (assert or doc smoke) |
+| PR2 | Existing prompt / path unit tests (same `build_session_step`) |
+| Perf (soft) | See §8.1 below |
+| Negative | No step `.so` under happy path (`target/thoxa/repl/*.so` absent after piped REPL) |
+
+### 8.1 Soft perf baseline (2026-08-05, documented once)
+
+Informal wall-clock on a Linux x86_64 host, **debug** `thoxa`, piped non-interactive
+REPL (N lines + `exit`), warm once then measure. Compare default libtcc vs
+`THOXA_REPL_BACKEND=cc`.
+
+| Workload | Backend | ≈ total | ≈ per step |
+|----------|---------|--------:|-----------:|
+| 20× `echo lineN` | libtcc | 280 ms | **14 ms** |
+| 20× `echo lineN` | cc+dlopen | 2.2 s | **109 ms** |
+| 50× `echo lineN` | libtcc | 590 ms | **12 ms** |
+| 50× `echo lineN` | cc+dlopen | 5.0 s | **101 ms** |
+| 20× `println(1+i)` | libtcc | 280 ms | **14 ms** |
+| 20× `println(1+i)` | cc+dlopen | 2.2 s | **107 ms** |
+
+**Roughly 7–9× faster** per step for these tight loops. Cost is still
+compile-per-chunk (frontend + cgen + C backend); OS `echo` vs pure Thoxa is
+nearly the same. Not a CI gate; release builds will shift absolute numbers.
 
 ---
 
@@ -295,8 +314,9 @@ this freeze is accepted (same change as docs that point at it).
 
 ## 10. Agent handoff
 
-- **Next implement slice:** PR0 (vendor + memory smoke), then PR1 (wire steps).  
+- **Core landed:** PR0 vendor + smoke; PR1 step path; prompt/path use same
+  `build_session_step` (PR2). Default backend is libtcc.  
+- **Optional residual:** base-object cache (PR4); license packaging; remove
+  escape hatch only when no longer needed for bisect.  
 - Do not re-litigate A1–A3 or reopen QBE / interpreter.  
-- Do not invent shell dialect.  
-- Prefer small diffs; update progress docs at each PR end  
-  ([`thoxa-progress-docs`](../../.grok/skills/thoxa-progress-docs/SKILL.md)).
+- Do not invent shell dialect.
