@@ -4,21 +4,23 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-05 (session Shell in `std/`; polish continues)
+**As of:** 2026-08-05 (session-libtcc freeze; next implement PR0)
 
 ---
 
 ## Now
 
-**Kernel + HTTP + editor phase 1–2 + session core (pipes, redirs, pure-step,
-`std/Shell.thx`) are shipped.** Default work is remaining **session polish** and
-thin `std/` growth — not re-opening the ladder.
+**Session product core is shipped** (scripts, sugar, REPL, pipes, redirs,
+pure-step, `std/Shell.thx`). Default next work is **in-process libtcc for REPL
+steps** (D105), then thin `std/` growth.
 
 ### Proceed order
 
-1. **Session polish** — optional faster REPL C (`tcc`); any leftover host/DX
-   nits.  
-   Plan: [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
+1. **Session libtcc (D105)** — vendored TinyCC; step path =
+   cgen → libtcc memory → call `thoxa_session_step` (no spawn, no step `.so`).  
+   Freeze:
+   [`docs/specs/2026-08-05-session-libtcc.md`](docs/specs/2026-08-05-session-libtcc.md).  
+   **Next slice:** PR0 (vendor + memory smoke), then PR1 (wire `build_session_step`).
 2. **Grow `std/`** — more Str/Path/Io helpers; `ffi` remains deferred.
 3. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:
@@ -31,7 +33,11 @@ thin `std/` growth — not re-opening the ladder.
 - Inventing shell dialect (`if`/`for`/full `$` forest)
 - Tree-walk product interpreter or QBE path (phase A)
 - Claiming full oracle SPEC coverage
-- Breadth language features ahead of session polish unless human redirects
+- Breadth language features ahead of libtcc / session polish unless human
+  redirects
+- Windows / non-Linux session backends
+- Blocking on third-party license packaging for TinyCC (deferred by product
+  axiom)
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups.
@@ -49,8 +55,11 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Value model | Hybrid A; simple single-threaded RC; Perceus later |
 | Errors | `May` / `Trial` + `?` / `match`; no May↔Trial mix via `?` |
 | Session product face | Bare `thoxa` / `thoxa repl`; no-`main` = session script |
-| Session value | `type Shell(status: Int64)` + methods; real Thoxa |
-| REPL execution | Host-held status + **dlopen** `thoxa_session_step`; preamble `.o` cache |
+| Session value | `type Shell(status: Int64)` + methods; real Thoxa; `std/Shell.thx` |
+| REPL step backend (**target**) | **libtcc in-process** memory compile (D105); no step `.so` happy path |
+| REPL step backend (**as-built**) | `cc -shared` + **dlopen** until D105 lands |
+| Batch / RT C | System **`cc`** (+ `ar` for runtime) unchanged |
+| Host platforms | **Linux** product track; Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
 | `std/` root | Named `std/…` (D97); thin modules; `ffi` deferred |

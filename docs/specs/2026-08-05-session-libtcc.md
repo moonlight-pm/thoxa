@@ -1,0 +1,302 @@
+# Session step backend — in-process libtcc
+
+**Date:** 2026-08-05  
+**Status:** target (freeze)  
+**Implementation:** not started  
+**Gaps:** entire freeze — no vendored TinyCC, no memory compile path, REPL still
+`cc -shared` + `dlopen`  
+**As-built:** [`../capabilities.md`](../capabilities.md) ·
+[`../architecture.md`](../architecture.md) · parent session freeze
+[`2026-07-24-thoxa-session-repl.md`](2026-07-24-thoxa-session-repl.md)
+
+> **For agentic workers:** Implement **one PR at a time**. Gate:
+> `cargo test -p thoxa` + `cargo make test` (session unit gates below). Update
+> `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` when a PR finishes.
+> Do **not** change batch program semantics or invent a second language runtime.
+
+**Parent:** session product model D88–D104.  
+**Locks this freeze:** D105 (draft → promote when first code lands or when this
+freeze is accepted as product intent — already accepted in CURRENT).
+
+---
+
+## 0. Product thesis
+
+Interactive session steps must stay **honest compile-to-C** (phase A: no
+tree-walk product interpreter, no QBE path). Latency of “type a line → see
+result” is dominated today by **spawning system `cc`** and **writing/loading
+step `.so` files**, not by Thoxa frontend cost alone.
+
+**Chosen backend for REPL / session-step execution:**
+
+> **cgen → libtcc in-process (`TCC_OUTPUT_MEMORY`) → relocate → call
+> `thoxa_session_step` — no compiler process spawn, no step `.so` on the happy
+> path.**
+
+Batch programs, `libthoxa_rt` builds, and session **scripts** that produce a
+normal executable keep system `cc` + normal link. This freeze is **session-host
+step compile only** (REPL chunks, and the same step path used for `prompt()` /
+`path()` hooks).
+
+**One sentence:**  
+Vendored **libtcc** is the product C backend for interactive session steps;
+system **`cc`** remains the product C backend for everything else.
+
+---
+
+## 1. Product axioms (scope constraints)
+
+These are **project locks for this freeze** (not temporary experiment knobs):
+
+| # | Axiom | Consequence |
+|---|--------|-------------|
+| A1 | **No Windows.** Windows is out of scope forever for this product track. | Vendor and build TinyCC for Linux host targets only (x86_64 first; aarch64 only if TinyCC is proven later). |
+| A2 | **Licensing is deferred.** Do not block implementation on LGPL distribution policy. | Static link of libtcc into `thoxa` is allowed for now; third-party notice cleanup is a later packaging slice. |
+| A3 | **In-process is the goal.** Prefer libtcc memory output over CLI `tcc` or system `cc`. | Happy path: zero compiler spawns, zero step `.so` files. |
+
+Optional system-`tcc` on PATH is **not** the product design. It may exist only
+as a temporary bisect escape hatch during implementation.
+
+---
+
+## 2. As-built baseline (do not re-implement)
+
+| Area | Status | Notes |
+|------|--------|-------|
+| Session scripts | shipped | Splice + synthetic `main` + system `cc` (D94) |
+| REPL pure step | shipped | All commands via step path (D103); no host `cd`/`status`/`\|` |
+| Step compile today | shipped | `build_session_step`: cgen → `cc -c` → `cc -shared` → `.so` |
+| Step load today | shipped | `dlopen` / `dlsym` `thoxa_session_step` (D93 v2) |
+| Preamble cache | shipped | Decls-stable base `.o` reused; step body recompiled |
+| `std/Shell.thx` | shipped | D104 |
+| Pipes / redirs | shipped | D101 / D102 |
+
+This freeze **replaces the C compile + load half** of the REPL step path. It
+does not reopen desugar, splice, Shell API, or status threading.
+
+---
+
+## 3. Chosen approach
+
+### 3.1 What we build
+
+| Component | Role |
+|-----------|------|
+| Vendored TinyCC sources | Pinned under `third_party/tinycc` (or equivalent) |
+| Build of `libtcc` (+ libtcc1) | Host Linux; produced into `target/` or linked by `crates/compiler` |
+| Session step compiler | Rust host API: C strings (and optional files) → relocated entry |
+| REPL / prompt / path | Call that API instead of `cc`+`dlopen` |
+
+### 3.2 Target lifecycle (happy path)
+
+```text
+chunk
+  → desugar / prepare / MIR / cgen          (unchanged)
+  → base_c + step_c strings (or base object + step_c)
+  → tcc_new()
+  → tcc_set_output_type(TCC_OUTPUT_MEMORY)
+  → include path: runtime/include
+  → resolve thoxa_rt (archive and/or host symbols)
+  → tcc_compile_string(base_c) / tcc_compile_string(step_c)
+  → tcc_relocate(TCC_RELOCATE_AUTO)
+  → fn = tcc_get_symbol("thoxa_session_step")
+  → status = fn(&ThoxaShellState{ status: prev })
+  → keep TCCState alive until superseded; then tcc_delete
+```
+
+**Non-goals for happy path:**
+
+- Spawning `cc` or `tcc` CLI for each chunk  
+- Emitting `session_step_*.so` for each chunk  
+- `dlopen` of step libraries  
+
+**Allowed during debug / bisect:**
+
+- Write `.c` under `target/thoxa/repl/` when `THOXA_REPL_KEEP_C=1` (or similar)  
+- Env override to force legacy `cc`+`dlopen` while implementing (`THOXA_REPL_BACKEND=cc`)
+
+### 3.3 Batch path (explicitly unchanged)
+
+| Mode | Backend |
+|------|---------|
+| `thoxa path.thx` with `main` / `Main.thx` | system `cc` + executable |
+| Session **script** one-shot (no `main`) | system `cc` + executable (D94) |
+| `libthoxa_rt.a` | system `cc` / `ar` as today |
+| Conformance gate | system `cc` (definition of done for language) |
+
+Scripts may later optionally share libtcc for curiosity; **not** required by
+this freeze. Default script path stays `cc`.
+
+### 3.4 Symbol resolution for `thoxa_rt`
+
+Generated step C calls into `thoxa_rt`. Preferred order of attempts in
+implementation:
+
+1. `tcc_add_file` / library path for `libthoxa_rt.a` (PIC as today).  
+2. Link `libthoxa_rt` into the `thoxa` host and resolve against the process.  
+3. Selective `tcc_add_symbol` for stragglers.
+
+Also provision **libtcc1** (TinyCC helper objects) per upstream requirements.
+
+### 3.5 Preamble / decls cache
+
+**Must keep** the existing idea: stable decls should not redo full frontend work
+unnecessarily.
+
+| Layer | Target |
+|-------|--------|
+| Decls key | Unchanged (`SessionBuildCache`) |
+| Base C | Re-cgen only when decls change |
+| Base feed to libtcc | Recompile base string with each step **or** cache a base object once libtcc proves object add works |
+| Step C | Always re-cgen for the chunk |
+
+First implementation may recompile base+step every chunk (libtcc is fast). Add
+base-object caching only if profiling demands it.
+
+### 3.6 Multiple live images
+
+Today: separate `.so` for step vs prompt. Target: **separate `TCCState`s** (or
+clear rebuild rules) so:
+
+- Primary step state for user chunks  
+- Prompt step state for `fn prompt()`  
+- Path step state for `fn path(...)`  
+
+Never `tcc_delete` a state while a function pointer from it might still run.
+Single-threaded REPL assumed (as today).
+
+### 3.7 Platform
+
+| Support | Policy |
+|---------|--------|
+| Linux x86_64 | **Required** for the freeze |
+| Linux aarch64 | Optional later; not blocking |
+| Windows / macOS | **Out of scope** (A1); no CI or design work |
+
+---
+
+## 4. Non-goals
+
+| Item | Why |
+|------|-----|
+| Replacing system `cc` for programs / runtime | Correctness and portability of the batch path |
+| Tree-walk interpreter | Phase A lock |
+| QBE / LLVM product path | Phase A lock |
+| CLI-only `tcc` as the product design | Spawns remain; weaker than libtcc memory |
+| Full JIT of MIR without C | Out of scope; cgen stays the IR→C surface |
+| Windows TinyCC builds | A1 |
+| Packaging / license polish | A2 — later |
+
+---
+
+## 5. Phased delivery
+
+Implement **one PR at a time**. Each phase leaves `cargo make test` green.
+
+### PR0 — Vendor + smoke libtcc
+
+**Goal:** TinyCC builds and links into the host; prove memory compile.
+
+- Pin sources under `third_party/tinycc` (or agreed path).  
+- Build `libtcc` (+ libtcc1) for host Linux (xtask / `build.rs` / `cargo make`).  
+- Link into `thoxa` (or a small internal crate).  
+- Unit smoke: compile `int f(void){return 42;}` in memory, call, assert.
+
+**Exit:** no session path change yet; bisectable vendor build.
+
+### PR1 — Session step via libtcc memory
+
+**Goal:** `build_session_step` happy path uses libtcc; no `.so` / no `cc` spawn.
+
+- Feed existing `emit_session_base` / `emit_session_step` C into libtcc.  
+- Resolve `thoxa_session_step` + `thoxa_rt`.  
+- Wire `repl::run_chunk` (and shared helpers) to the new backend.  
+- Keep `THOXA_REPL_BACKEND=cc` (name TBD) for legacy path during bake-in.
+
+**Exit:** `cargo test -p thoxa --lib pure_step` green on libtcc path;
+interactive `echo hi` works without step `.so`.
+
+### PR2 — Prompt + path hooks
+
+**Goal:** Same backend for D96 / D100 step images (stdout capture unchanged).
+
+**Exit:** rc prompt and `path()` unit tests green on libtcc.
+
+### PR3 — Default + cleanup
+
+**Goal:** libtcc is default; legacy `cc`+`dlopen` behind env or removed.
+
+- Remove or hard-gate dead dlopen step code if unused.  
+- Docs: capabilities → shipped; architecture as-built updated; handbook only
+  if user-visible behavior changes (usually “faster”, no surface change).  
+- Promote D105 notes to “shipped” wording in decisions.
+
+**Exit:** CURRENT no longer lists libtcc as Now unless residual gaps remain.
+
+### Optional PR4 — Performance cache
+
+Base-object or multi-string compile optimizations if still needed after PR1–3.
+
+---
+
+## 6. Key decisions
+
+| ID | Decision | Choice | Rationale |
+|----|----------|--------|-----------|
+| **D105** | REPL step C backend | **In-process libtcc** (`TCC_OUTPUT_MEMORY`); no step `.so` on happy path | Latency; A1/A2/A3 |
+| D105.a | Batch / RT C backend | System **`cc`** unchanged | Correctness gate; conformance |
+| D105.b | TinyCC distribution | **Vendored source**, built with product | No user install; reproducible |
+| D105.c | Host platforms | **Linux only** (x86_64 first) | A1 |
+| D105.d | License packaging | **Deferred** | A2 |
+| D105.e | Escape hatch | Temporary env for legacy `cc`+`dlopen` during migration | Bisect / safety |
+
+Promote D105 into [`../decisions.md`](../decisions.md) as a locked row when
+this freeze is accepted (same change as docs that point at it).
+
+---
+
+## 7. Risks and mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| `libthoxa_rt.a` + relocate fails | PIC objects; try host-linked RT + `tcc_add_symbol`; keep `cc` escape hatch |
+| libtcc rejects generated C | Keep cgen boring C11; fix cgen, don’t fork dialect |
+| Lifetime bugs (`tcc_delete` early) | Own state in host; delete only after supersede; no async |
+| Prompt vs step state collision | Separate `TCCState` per image role |
+| Debug stacks useless | `THOXA_REPL_KEEP_C=1` writes `.c` for inspection |
+| Vendor build flaky in CI | Pin commit; document host deps; fail closed to `cc` only while PR1 optional |
+
+---
+
+## 8. Verification
+
+| Gate | What |
+|------|------|
+| Every PR | `cargo test -p thoxa` + `cargo make test` |
+| PR0 | libtcc memory smoke unit |
+| PR1+ | `repl::pure_step_*`; manual `printf 'echo hi\nstatus\nexit\n' \| thoxa` |
+| PR2 | Existing prompt / path unit tests |
+| Perf (soft) | Tight loop of simple chunks faster than pre-libtcc baseline (document once) |
+| Negative | No step `.so` created under happy path (assert or doc smoke) |
+
+---
+
+## 9. Relationship to other docs
+
+| Doc | Role |
+|-----|------|
+| [`2026-07-24-thoxa-session-repl.md`](2026-07-24-thoxa-session-repl.md) | Parent session product freeze; this is the **step backend** sub-freeze |
+| [`../architecture.md`](../architecture.md) | As-built map — update when code lands, not when this freezes alone |
+| [`../capabilities.md`](../capabilities.md) | `session-libtcc` maturity |
+| Root [`CURRENT.md`](../../CURRENT.md) | Now line until shipped |
+| Handbook | **No** aspirational docs; update only if user-visible behavior changes at ship |
+
+---
+
+## 10. Agent handoff
+
+- **Next implement slice:** PR0 (vendor + memory smoke), then PR1 (wire steps).  
+- Do not re-litigate A1–A3 or reopen QBE / interpreter.  
+- Do not invent shell dialect.  
+- Prefer small diffs; update progress docs at each PR end  
+  ([`thoxa-progress-docs`](../../.grok/skills/thoxa-progress-docs/SKILL.md)).

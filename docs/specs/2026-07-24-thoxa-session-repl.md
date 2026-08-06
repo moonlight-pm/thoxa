@@ -3,12 +3,14 @@
 **Date:** 2026-07-24  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** optional faster REPL C (`tcc`); no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first)  
-**As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)
+**Gaps:** step C backend still `cc`+dlopen (target **libtcc** — see sibling freeze); no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first)  
+**As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)  
+**Step backend target:** [`2026-08-05-session-libtcc.md`](2026-08-05-session-libtcc.md) (D105)
 
 > **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. Do **not** invent a second shell language.
 
 **Shipped core:** PR0–PR8 + D93 v2; `prompt()` / `path()`; pipelines (D101); redirs (D102); pure-step (D103); `std/Shell.thx` (D104). Decisions D88–D104.  
+**Open polish:** D105 libtcc (primary); residual redir/import polish secondary.  
 **Baseline:** Native ladder + session scripts + command sugar + bare `thoxa` REPL.
 
 **Goal:** Make **Thoxa the session language**. Interactive and no-`main` scripts share one model: a live **`Shell`** value, user text desugared into real Thoxa, compiled, and executed as a method body on that value. Familiar command skin stays thin; programming is always Thoxa.
@@ -262,6 +264,8 @@ type Shell(
 - Optional `$?` → `status` sugar (only if still desired).
 - Simple `|` sugar → `pipeline` (RT pipe/dup2 as needed).
 - Faster rebuilds (cache preamble object; only recompile `step` body).
+- **Step C backend target:** in-process libtcc (D105) — sibling freeze
+  [`2026-08-05-session-libtcc.md`](2026-08-05-session-libtcc.md).
 
 **Exit:** multi-chunk `let` + use works; basic pipeline dogfood; still no bash language.
 
@@ -401,7 +405,9 @@ No `Shell` wrap. No command sugar unless we later opt in (default **off** for pr
 ## 9. Agent handoff notes
 
 - **Core shipped** (PR0–PR8 + D93 v2 + D101–D104). Living next work: root
-  `CURRENT.md` + `docs/capabilities.md` (polish: optional tcc; std growth).
+  `CURRENT.md` + **libtcc freeze**
+  [`2026-08-05-session-libtcc.md`](2026-08-05-session-libtcc.md) (D105), then
+  std growth.
 - Do not add shell `if`/`for`.
 - Prefer small diffs; update CURRENT + capabilities + decisions after each PR.
 - Oracle Python shell (if any) is reference-only — native design above wins.

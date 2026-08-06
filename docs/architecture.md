@@ -13,7 +13,9 @@ maturity lives in [`capabilities.md`](capabilities.md).
 
 Native Thoxa is a **Rust compiler that emits C**, linked with a **C runtime**
 (`thoxa_rt`). Programs and session steps share that pipeline; the interactive
-shell is a long-lived Rust host that `dlopen`s per-chunk step libraries.
+shell is a long-lived Rust host that (as-built) `dlopen`s per-chunk step
+libraries. **Target** REPL step backend: in-process libtcc (D105) — see freeze
+below; not as-built until code lands.
 
 ## Pipeline
 
@@ -28,7 +30,7 @@ shell is a long-lived Rust host that `dlopen`s per-chunk step libraries.
 | MIR | `mir.rs` | Simple single-threaded RC (dup/drop) |
 | Cgen | `cgen.rs` | Emits C under `target/thoxa/c/` |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
-| REPL host | `repl.rs` | Decl accumulate; `cc -shared` → dlopen step |
+| REPL host | `repl.rs` | Decl accumulate; **as-built** `cc -shared` → dlopen step |
 | LSP | `lsp/` | stdio server; check overlays; navigation |
 
 ## Crates and trees
@@ -61,6 +63,10 @@ shell is a long-lived Rust host that `dlopen`s per-chunk step libraries.
 - **Programs:** `fn main` or directory `Main.thx` — batch path unchanged.
 - **Prelude:** product `std/Shell.thx` preferred at inject time; compile-time
   `include_str` fallback of the same file when std is not discoverable (D104).
+- **Target (not as-built):** REPL steps compile via **vendored libtcc** in
+  memory (no step `.so`); freeze
+  [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
+  (D105). Batch programs and `libthoxa_rt` remain system `cc`.
 
 ## Build products
 
