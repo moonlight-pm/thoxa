@@ -23,7 +23,7 @@ change. See [`progress-model.md`](progress-model.md).
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
 | trial | `Trial` + `match` + `?` monomorphs | shipped | `trials`, `trials_mono` | D40–D45 | Nested May/Array payloads deferred | yes |
 | may | `May` / `Has` / `Not` + `?` | shipped | `mays` | D85 | No May↔Trial mix; no inferred fallible returns | yes |
-| value-match | Literals + or-patterns + bare bind/`else` | shipped | `match_value`, `match_or`, `match_bind` | D87, D108, D110 | No guards yet | yes |
+| value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |
 | string | String, interpolation, simple RC | shipped | `strings` | R4 | Perceus later | yes |

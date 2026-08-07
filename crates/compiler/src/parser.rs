@@ -1180,8 +1180,19 @@ impl Parser {
 
     fn parse_match_arm(&mut self) -> Result<MatchArm> {
         let pattern = self.parse_pattern()?;
+        // Optional `if guard` before the arm body (D111).
+        let guard = if self.at(TokenKind::If) {
+            self.bump();
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
         let body = self.parse_block()?;
-        Ok(MatchArm { pattern, body })
+        Ok(MatchArm {
+            pattern,
+            guard,
+            body,
+        })
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern> {

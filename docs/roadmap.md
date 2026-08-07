@@ -85,7 +85,7 @@ Freezes:
 - ~~Value-match or-patterns~~ (**D108** shipped)
 - ~~File type~~ (**D109** shipped)
 - ~~Value-match bare binds~~ (**D110** shipped)
-- Match guards
+- ~~Match guards~~ (**D111** shipped)
 - `"…" as Bytes` (only with deliberate D15 reopen)
 - File write/create when forced
 

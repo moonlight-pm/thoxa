@@ -305,6 +305,8 @@ pub enum Arg {
 #[derive(Debug, Clone)]
 pub struct MatchArm {
     pub pattern: Pattern,
+    /// Optional `if expr` after the pattern (D111). Value-match only for now.
+    pub guard: Option<Expr>,
     pub body: Block,
 }
 

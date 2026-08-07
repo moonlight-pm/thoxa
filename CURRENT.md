@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-06 (D106–D110 language; shell parked)
+**As of:** 2026-08-06 (D106–D111 language; shell parked)
 
 ---
 
@@ -12,17 +12,17 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **Session / shell is parked** (core + libtcc shipped). Default product work is
 **language kernel depth** — one capability gap at a time, with conformance.
-**Shipped:** D106–D110 (defaults, field write-back, match or/bind, File type).
+**Shipped:** D106–D111 (defaults, write-back, match or/bind/guards, File type).
 
 ### Proceed order
 
 1. **Language** — pick one open gap from the matrix (do not invent syntax without
    oracle / decisions check). Prefer small, conformance-backed slices.  
    Strong candidates (pick one):
-   - **Match guards** (`if` on arms) if still desired.
    - **`"…" as Bytes`** (D15 deferred to M4 conversions — only with deliberate
      reopen).
    - **File write/create** (`writeFile` / O_CREAT) when samples force it.
+   - Nested May/Array Trial payloads; first-class fixed `Array<T,N>`.
 2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md).

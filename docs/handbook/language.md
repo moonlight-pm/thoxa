@@ -37,8 +37,9 @@ early `return` / `return expr`.
 
 - **Trial / May:** `Pass(x)` / `Fail(e)`, `Has(x)` / `Not`, discard `_`.
 - **Value match:** String / Int64 / Bool **literal** arms, **or-patterns**
-  (`0 | 1 { … }`), and a final catch-all: `else` or a **bare bind**
-  (`n { … }` binds the scrutinee; bare `_` discards).
+  (`0 | 1 { … }`), optional **`if` guards** on those arms, and a final
+  catch-all: `else` or a **bare bind** (`n { … }` binds the scrutinee; bare
+  `_` discards).
 
 ## Functions
 

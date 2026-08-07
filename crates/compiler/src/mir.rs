@@ -4009,6 +4009,12 @@ fn lower_match_value(
                         *pspan,
                     ));
                 }
+                if arm.guard.is_some() {
+                    return Err(Error::at(
+                        "match guards are not allowed on catch-all arms (`else` or bare bind)",
+                        *pspan,
+                    ));
+                }
                 catch_arm = Some(arm);
             }
             Pattern::StringLit { span: pspan, .. }
@@ -4044,12 +4050,15 @@ fn lower_match_value(
         )
     })?;
 
-    // Duplicate literal detection across all leaf patterns (incl. or-patterns).
+    // Duplicate literal detection for unguarded arms only (guards may re-use lits — D111).
     {
         let mut seen_s: Vec<&str> = Vec::new();
         let mut seen_i: Vec<i64> = Vec::new();
         let mut seen_b: Vec<bool> = Vec::new();
         for arm in &lit_arms {
+            if arm.guard.is_some() {
+                continue;
+            }
             for leaf in value_pattern_leaves(&arm.pattern) {
                 match leaf {
                     Pattern::StringLit { value, span: ps } => {
@@ -4136,7 +4145,28 @@ fn lower_match_value(
 
     for arm in lit_arms.iter().rev() {
         // Eq setup lands on ctx.stmts; prefix it before the If.
-        let cond = lower_value_pattern_eq(ctx, &scrut_p, &scrut_ty, &arm.pattern, span)?;
+        let mut cond = lower_value_pattern_eq(ctx, &scrut_p, &scrut_ty, &arm.pattern, span)?;
+        // Optional `if guard` (D111): pattern match AND guard.
+        if let Some(gexpr) = &arm.guard {
+            let (gp, gty) = lower_expr(ctx, gexpr)?;
+            if gty != Ty::Bool {
+                return Err(Error::at(
+                    format!("match guard must be Bool, got {gty:?}"),
+                    gexpr.span,
+                ));
+            }
+            let and_p = ctx.fresh("mg");
+            ctx.assign(
+                and_p.clone(),
+                Ty::Bool,
+                RValue::Binary {
+                    op: BinaryOp::And,
+                    left: cond,
+                    right: gp,
+                },
+            );
+            cond = and_p;
+        }
         let mut pre = std::mem::take(&mut ctx.stmts);
 
         ctx.push_scope();
@@ -4330,6 +4360,12 @@ fn lower_match_trial(
     let mut pass_arm: Option<&MatchArm> = None;
     let mut fail_arm: Option<&MatchArm> = None;
     for arm in arms {
+        if arm.guard.is_some() {
+            return Err(Error::at(
+                "match guards are only supported on value-match arms",
+                span,
+            ));
+        }
         match &arm.pattern {
             Pattern::Variant {
                 name,
@@ -4512,6 +4548,12 @@ fn lower_match_may(
     let mut has_arm: Option<&MatchArm> = None;
     let mut not_arm: Option<&MatchArm> = None;
     for arm in arms {
+        if arm.guard.is_some() {
+            return Err(Error::at(
+                "match guards are only supported on value-match arms",
+                span,
+            ));
+        }
         match &arm.pattern {
             Pattern::Variant {
                 name,

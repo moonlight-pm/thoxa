@@ -19,10 +19,11 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
-## 2026-08-06 — Language: match binds/or, File, write-back, defaults
+## 2026-08-06 — Language: match guards/binds/or, File, write-back, defaults
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
+| D111 | Value-match guards | `pattern if bool_expr { … }` on literal/or arms; cond = pattern match **and** guard | Not on catch-all (`else`/bare bind). Not on Trial/May. Same lit may repeat when guards differ. Conformance: `match_guard`. Extends D87. |
 | D110 | Value-match bare bind | Final catch-all arm may be a bare name `n { … }` binding the scrutinee (instead of `else`) | `_` as bare pattern is discard catch-all (same as `else`). Not for Trial/May. Conformance: `match_bind`. Extends D87. |
 | D109 | File type (product Io) | `export type File(fd: Int64)` + `openFile` / `readAll` / `close` / `isOpen`; `readFile` reuses File | Lives in conformance `iolib/Io.thx` (same as free `readFile`). `fd` is Int64 (ctor-param field rules). Close write-backs `fd = -1` (**D107**). Conformance: `file_type`. |
 | D108 | Value-match or-patterns | `0 \| 1 \| 2 { … }` of string/int/bool literals; required `else` still | Lowers to `||` of equality tests. Not for Trial/May arms. Duplicate leaf lits rejected across arms. Conformance: `match_or`. Extends D87. |

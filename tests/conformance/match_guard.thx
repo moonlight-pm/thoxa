@@ -1,0 +1,23 @@
+## Value-match guards (D111): `lit if cond { … }` on literal/or arms only.
+fn main() -> Int64 {
+    match 0 {
+        0 if true { println("ok-zero") }
+        else { println("no") }
+    }
+    match 5 {
+        0 { println("no") }
+        5 if false { println("no-guard") }
+        5 if true { println("ok-five") }
+        else { println("fall") }
+    }
+    match 3 {
+        1 | 2 | 3 if true { println("or-guard") }
+        else { println("no") }
+    }
+    ## Guard failure falls through to else.
+    match 7 {
+        7 if false { println("skip") }
+        else { println("else-ok") }
+    }
+    0
+}
