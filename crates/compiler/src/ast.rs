@@ -328,6 +328,8 @@ pub enum Pattern {
     IntLit { value: i64, span: Span },
     /// Bool literal pattern: `true` / `false` (scrutinee must be Bool).
     BoolLit { value: bool, span: Span },
+    /// Or-pattern of value literals: `0 | 1 | 2 { … }` (D108). Only for value match.
+    Or { alts: Vec<Pattern>, span: Span },
     /// Catch-all `else { … }` — required for value matches (D87).
     Else { span: Span },
 }

@@ -816,6 +816,39 @@ impl<'a> Resolver<'a> {
             | Pattern::IntLit { .. }
             | Pattern::BoolLit { .. }
             | Pattern::Else { .. } => {}
+            // Value or-patterns (D108) — only literals; no binds.
+            Pattern::Or { alts, .. } => {
+                for alt in alts {
+                    match alt {
+                        Pattern::StringLit { .. }
+                        | Pattern::IntLit { .. }
+                        | Pattern::BoolLit { .. } => {}
+                        Pattern::Variant {
+                            name,
+                            bind,
+                            bind_span,
+                            span,
+                            ..
+                        } => {
+                            let name_end = span.start + name.len().min(span.end - span.start);
+                            let name_span = Span::new(span.start, name_end);
+                            self.add_ref(name_span, self.lookup(scope, name), RefCtx::Pattern);
+                            if let Some(bname) = bind {
+                                let id = self.new_binding(
+                                    bname,
+                                    BindingKind::Pattern,
+                                    Some(*bind_span),
+                                    false,
+                                    None,
+                                    false,
+                                );
+                                self.define(inner, bname, id);
+                            }
+                        }
+                        Pattern::Or { .. } | Pattern::Else { .. } => {}
+                    }
+                }
+            }
         }
         self.walk_block(&arm.body, inner);
     }

@@ -36,7 +36,8 @@ early `return` / `return expr`.
 ## Match
 
 - **Trial / May:** `Pass(x)` / `Fail(e)`, `Has(x)` / `Not`, discard `_`.
-- **Value match:** String / Int64 / Bool **literal** arms + required `else`.
+- **Value match:** String / Int64 / Bool **literal** arms, **or-patterns**
+  (`0 | 1 { … }`), and required `else`.
 
 ## Functions
 

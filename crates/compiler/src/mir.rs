@@ -4010,38 +4010,15 @@ fn lower_match_value(
             }
             Pattern::StringLit { span: pspan, .. }
             | Pattern::IntLit { span: pspan, .. }
-            | Pattern::BoolLit { span: pspan, .. } => {
+            | Pattern::BoolLit { span: pspan, .. }
+            | Pattern::Or { span: pspan, .. } => {
                 if else_arm.is_some() {
                     return Err(Error::at(
                         "match arms after `else` are unreachable",
                         *pspan,
                     ));
                 }
-                // Type-check pattern against scrutinee.
-                match (&arm.pattern, &scrut_ty) {
-                    (Pattern::StringLit { .. }, Ty::String)
-                    | (Pattern::IntLit { .. }, Ty::Int64)
-                    | (Pattern::BoolLit { .. }, Ty::Bool) => {}
-                    (Pattern::StringLit { span: ps, .. }, _) => {
-                        return Err(Error::at(
-                            format!("string pattern requires String scrutinee, got {scrut_ty:?}"),
-                            *ps,
-                        ));
-                    }
-                    (Pattern::IntLit { span: ps, .. }, _) => {
-                        return Err(Error::at(
-                            format!("integer pattern requires Int64 scrutinee, got {scrut_ty:?}"),
-                            *ps,
-                        ));
-                    }
-                    (Pattern::BoolLit { span: ps, .. }, _) => {
-                        return Err(Error::at(
-                            format!("bool pattern requires Bool scrutinee, got {scrut_ty:?}"),
-                            *ps,
-                        ));
-                    }
-                    _ => unreachable!(),
-                }
+                check_value_pattern_ty(&arm.pattern, &scrut_ty)?;
                 lit_arms.push(arm);
             }
             Pattern::Variant {
@@ -4064,41 +4041,43 @@ fn lower_match_value(
         )
     })?;
 
-    // Duplicate literal detection (first wins would hide bugs).
+    // Duplicate literal detection across all leaf patterns (incl. or-patterns).
     {
         let mut seen_s: Vec<&str> = Vec::new();
         let mut seen_i: Vec<i64> = Vec::new();
         let mut seen_b: Vec<bool> = Vec::new();
         for arm in &lit_arms {
-            match &arm.pattern {
-                Pattern::StringLit { value, span: ps } => {
-                    if seen_s.iter().any(|s| *s == value.as_str()) {
-                        return Err(Error::at(
-                            format!("duplicate match arm for \"{value}\""),
-                            *ps,
-                        ));
+            for leaf in value_pattern_leaves(&arm.pattern) {
+                match leaf {
+                    Pattern::StringLit { value, span: ps } => {
+                        if seen_s.iter().any(|s| *s == value.as_str()) {
+                            return Err(Error::at(
+                                format!("duplicate match arm for \"{value}\""),
+                                *ps,
+                            ));
+                        }
+                        seen_s.push(value.as_str());
                     }
-                    seen_s.push(value.as_str());
-                }
-                Pattern::IntLit { value, span: ps } => {
-                    if seen_i.contains(value) {
-                        return Err(Error::at(
-                            format!("duplicate match arm for {value}"),
-                            *ps,
-                        ));
+                    Pattern::IntLit { value, span: ps } => {
+                        if seen_i.contains(value) {
+                            return Err(Error::at(
+                                format!("duplicate match arm for {value}"),
+                                *ps,
+                            ));
+                        }
+                        seen_i.push(*value);
                     }
-                    seen_i.push(*value);
-                }
-                Pattern::BoolLit { value, span: ps } => {
-                    if seen_b.contains(value) {
-                        return Err(Error::at(
-                            format!("duplicate match arm for {value}"),
-                            *ps,
-                        ));
+                    Pattern::BoolLit { value, span: ps } => {
+                        if seen_b.contains(value) {
+                            return Err(Error::at(
+                                format!("duplicate match arm for {value}"),
+                                *ps,
+                            ));
+                        }
+                        seen_b.push(*value);
                     }
-                    seen_b.push(*value);
+                    _ => {}
                 }
-                _ => {}
             }
         }
     }
@@ -4159,7 +4138,75 @@ fn lower_match_value(
     match_result_place(ctx, out, result_ty)
 }
 
+fn check_value_pattern_ty(pattern: &Pattern, scrut_ty: &Ty) -> Result<()> {
+    match pattern {
+        Pattern::StringLit { .. } if matches!(scrut_ty, Ty::String) => Ok(()),
+        Pattern::IntLit { .. } if matches!(scrut_ty, Ty::Int64) => Ok(()),
+        Pattern::BoolLit { .. } if matches!(scrut_ty, Ty::Bool) => Ok(()),
+        Pattern::StringLit { span: ps, .. } => Err(Error::at(
+            format!("string pattern requires String scrutinee, got {scrut_ty:?}"),
+            *ps,
+        )),
+        Pattern::IntLit { span: ps, .. } => Err(Error::at(
+            format!("integer pattern requires Int64 scrutinee, got {scrut_ty:?}"),
+            *ps,
+        )),
+        Pattern::BoolLit { span: ps, .. } => Err(Error::at(
+            format!("bool pattern requires Bool scrutinee, got {scrut_ty:?}"),
+            *ps,
+        )),
+        Pattern::Or { alts, span } => {
+            if alts.is_empty() {
+                return Err(Error::at("empty or-pattern", *span));
+            }
+            for alt in alts {
+                if matches!(alt, Pattern::Variant { .. } | Pattern::Else { .. } | Pattern::Or { .. })
+                {
+                    return Err(Error::at(
+                        "or-pattern alternatives must be string, int, or bool literals",
+                        pattern_span_mir(alt),
+                    ));
+                }
+                check_value_pattern_ty(alt, scrut_ty)?;
+            }
+            Ok(())
+        }
+        Pattern::Variant { name, span, .. } => Err(Error::at(
+            format!(
+                "variant pattern `{name}` is not valid for {scrut_ty:?} match (use literals + else)"
+            ),
+            *span,
+        )),
+        Pattern::Else { span } => Err(Error::at("`else` is not a value pattern here", *span)),
+    }
+}
+
+fn value_pattern_leaves(pattern: &Pattern) -> Vec<&Pattern> {
+    match pattern {
+        Pattern::Or { alts, .. } => {
+            let mut out = Vec::new();
+            for a in alts {
+                out.extend(value_pattern_leaves(a));
+            }
+            out
+        }
+        other => vec![other],
+    }
+}
+
+fn pattern_span_mir(p: &Pattern) -> Span {
+    match p {
+        Pattern::Variant { span, .. }
+        | Pattern::StringLit { span, .. }
+        | Pattern::IntLit { span, .. }
+        | Pattern::BoolLit { span, .. }
+        | Pattern::Or { span, .. }
+        | Pattern::Else { span } => *span,
+    }
+}
+
 /// Emit `scrut == pattern_lit` → Bool place (string via `string_eq`).
+/// Or-patterns lower to a chain of `||` (D108).
 fn lower_value_pattern_eq(
     ctx: &mut LowerCtx,
     scrut_p: &Place,
@@ -4168,6 +4215,29 @@ fn lower_value_pattern_eq(
     span: Span,
 ) -> Result<Place> {
     match pattern {
+        Pattern::Or { alts, .. } => {
+            let mut acc: Option<Place> = None;
+            for alt in alts {
+                let eq = lower_value_pattern_eq(ctx, scrut_p, _scrut_ty, alt, span)?;
+                acc = Some(match acc {
+                    None => eq,
+                    Some(prev) => {
+                        let or_p = ctx.fresh("mor");
+                        ctx.assign(
+                            or_p.clone(),
+                            Ty::Bool,
+                            RValue::Binary {
+                                op: BinaryOp::Or,
+                                left: prev,
+                                right: eq,
+                            },
+                        );
+                        or_p
+                    }
+                });
+            }
+            acc.ok_or_else(|| Error::at("empty or-pattern", span))
+        }
         Pattern::StringLit { value, .. } => {
             let lit = ctx.fresh("mlit");
             ctx.assign(lit.clone(), Ty::String, RValue::StringLit(value.clone()));
@@ -4262,9 +4332,10 @@ fn lower_match_trial(
             Pattern::StringLit { span: pspan, .. }
             | Pattern::IntLit { span: pspan, .. }
             | Pattern::BoolLit { span: pspan, .. }
+            | Pattern::Or { span: pspan, .. }
             | Pattern::Else { span: pspan } => {
                 return Err(Error::at(
-                    "literal/`else` patterns are not valid for Trial match",
+                    "literal/`else`/or-patterns are not valid for Trial match",
                     *pspan,
                 ));
             }
@@ -4456,9 +4527,10 @@ fn lower_match_may(
             Pattern::StringLit { span: pspan, .. }
             | Pattern::IntLit { span: pspan, .. }
             | Pattern::BoolLit { span: pspan, .. }
+            | Pattern::Or { span: pspan, .. }
             | Pattern::Else { span: pspan } => {
                 return Err(Error::at(
-                    "literal/`else` patterns are not valid for May match",
+                    "literal/`else`/or-patterns are not valid for May match",
                     *pspan,
                 ));
             }

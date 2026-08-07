@@ -1,0 +1,29 @@
+## Value-match or-patterns (D108): `0 | 1 { … }` + required else.
+fn size(n!: Int64) -> String {
+    match n {
+        0 | 1 { "tiny" }
+        2 | 3 | 4 { "small" }
+        else { "big" }
+    }
+}
+
+fn cmd(s!: String) -> Int64 {
+    match s {
+        "exit" | "quit" { 0 }
+        "help" | "?" { 1 }
+        else { 9 }
+    }
+}
+
+fn main() -> Int64 {
+    println(size(0))
+    println(size(1))
+    println(size(3))
+    println(size(99))
+    println(cmd("exit"))
+    println(cmd("quit"))
+    println(cmd("help"))
+    println(cmd("?"))
+    println(cmd("run"))
+    0
+}

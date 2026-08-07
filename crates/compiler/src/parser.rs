@@ -1185,6 +1185,37 @@ impl Parser {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern> {
+        let first = self.parse_pattern_atom()?;
+        if !self.at(TokenKind::Pipe) {
+            return Ok(first);
+        }
+        if matches!(first, Pattern::Else { .. }) {
+            return Err(Error::at(
+                "`else` cannot appear in an or-pattern",
+                pattern_span(&first),
+            ));
+        }
+        let start = pattern_span(&first).start;
+        let mut alts = vec![first];
+        while self.at(TokenKind::Pipe) {
+            self.bump();
+            let next = self.parse_pattern_atom()?;
+            if matches!(next, Pattern::Else { .. }) {
+                return Err(Error::at(
+                    "`else` cannot appear in an or-pattern",
+                    pattern_span(&next),
+                ));
+            }
+            alts.push(next);
+        }
+        let end = pattern_span(alts.last().unwrap()).end;
+        Ok(Pattern::Or {
+            alts,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_pattern_atom(&mut self) -> Result<Pattern> {
         let span = self.peek_span();
         match &self.current().kind {
             TokenKind::Else => {
@@ -1343,6 +1374,17 @@ impl Parser {
         } else {
             self.tokens[self.pos - 1].span
         }
+    }
+}
+
+fn pattern_span(p: &Pattern) -> Span {
+    match p {
+        Pattern::Variant { span, .. }
+        | Pattern::StringLit { span, .. }
+        | Pattern::IntLit { span, .. }
+        | Pattern::BoolLit { span, .. }
+        | Pattern::Or { span, .. }
+        | Pattern::Else { span } => *span,
     }
 }
 

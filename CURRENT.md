@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-06 (D106 + D107 language; shell parked)
+**As of:** 2026-08-06 (D106–D108 language; shell parked)
 
 ---
 
@@ -12,16 +12,18 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **Session / shell is parked** (core + libtcc shipped). Default product work is
 **language kernel depth** — one capability gap at a time, with conformance.
-**Shipped:** method/ctor defaults (**D106**), method field write-back (**D107**).
+**Shipped:** method/ctor defaults (**D106**), method field write-back (**D107**),
+value-match or-patterns (**D108**).
 
 ### Proceed order
 
 1. **Language** — pick one open gap from the matrix (do not invent syntax without
    oracle / decisions check). Prefer small, conformance-backed slices.  
    Strong candidates (pick one):
-   - **Value-match depth** — bare binds / or-patterns / guards (D87 gaps).
-   - **`"…" as Bytes`** (bytes capability gap).
-   - **File type** (now unblocked by D107) — promote free `readFile` story when
+   - **Value-match bare binds / guards** (remaining D87 gaps).
+   - **`"…" as Bytes`** (D15 deferred to M4 conversions — only with deliberate
+     reopen).
+   - **File type** (unblocked by D107) — promote free `readFile` story when
      desired.
 2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:
