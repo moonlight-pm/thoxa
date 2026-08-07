@@ -19,8 +19,6 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 1. **Language** — pick one open gap from the matrix (do not invent syntax without
    oracle / decisions check). Prefer small, conformance-backed slices.  
    Strong candidates (pick one):
-   - **`"…" as Bytes`** (D15 deferred to M4 conversions — only with deliberate
-     reopen).
    - **File write/create** (`writeFile` / O_CREAT) when samples force it.
    - Nested May/Array Trial payloads; first-class fixed `Array<T,N>`.
 2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
@@ -45,6 +43,8 @@ in the same change (not a free-floating “grow std” sprint).
 - Claiming full oracle SPEC coverage
 - Windows / non-Linux session backends
 - Treating “expand std/” as its own priority line
+- **`"…" as Bytes`** or cast-as-encode for String→Bytes (use `Bytes.fromString`;
+  D15 **rejected**)
 
 Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 [`docs/capabilities.md`](docs/capabilities.md).
@@ -66,6 +66,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
 | `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; `ffi` deferred |
+| String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
 | Oracle | `apocrypha/old/ThoxaPython` reference only — not the product |

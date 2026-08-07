@@ -324,19 +324,18 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D14 | String → Bytes surface (now) | Keep `Bytes.fromString(s)` | Matches `apocrypha/old/ThoxaPython` SPEC §9.1; R5 ship shape |
-| D15 | `"…" as Bytes` | Deferred to conversions | Belongs with `as` / `can` / `is` ([M4] in SPEC §11), not a one-off |
+| D15 | `"…" as Bytes` | **Rejected** (not deferred) | Encode/copy is not a cast. Named `fromString` is the product surface forever for String→UTF-8 Bytes. Do not reintroduce as sugar under M4 either. |
 | D16 | Overloaded `Bytes.from(…)` | Reject (for now) | No ad-hoc overloading story; prefer explicit names if more factories appear |
 | D17 | Multi-byte / dynamic build | Prefer `Buffer` path later | `append` / `freeze` → `Bytes`; not `from([1,2,3])` as the main story |
 | D18 | Extra factories | Only when forced | e.g. `Bytes(n)` zero buffer for FFI (R6 pressure); maybe `fromArray` when arrays exist |
 
 ### Analysis (why)
 
-**`mut b = "abc" as Bytes`**
+**`mut b = "abc" as Bytes` — rejected**
 
-- Fits Thoxa’s conversion triad once it exists: explicit, no implicit coercion, same family as `n as String`.
-- String and Bytes are different kinds: immutable UTF-8 text vs fixed **mutable FFI buffer**. `as` should mean “encode/copy payload,” not “rebrand this string.”
-- Implementing a single `as` without the rest of M4 is a design leak (special case, no `can`/`is`, no conversion table).
-- Reverse path (`Bytes` → `String`) needs a policy for non-UTF-8; that is conversion work, not R5.
+- String→Bytes is **encode/copy** (UTF-8 text → raw buffer), not a cast or rebrand.
+- Rust-style “cast” is the wrong model; named construction (`fromString`) keeps encoding explicit.
+- A general `as` conversion system (if ever) still should not pretend text↔bytes is free or total both ways; Bytes→String needs UTF-8 policy.
 
 **`Bytes.from("abc")` with overloads (`from([1,2,3])`, …)**
 
@@ -349,10 +348,10 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 **Rule of thumb**
 
 - Domain construction from a specific source → **named static method** (`fromString`).
-- Cross-type encoding/reinterpretation between established types → **`as`**, when the conversion system lands.
 - Multiple input shapes → **multiple names**, not silent overload, until overloading is a deliberate language feature.
+- Do **not** use cast sugar for String→Bytes (**D15 rejected**).
 
-Revisit D15 when native work takes on [M4] conversions; revisit D17 with Buffer / growable-buffer design; revisit D18 when R6 FFI needs a sized empty buffer.
+Revisit D17 with Buffer / growable-buffer design; revisit D18 when more factories are forced.
 
 ---
 

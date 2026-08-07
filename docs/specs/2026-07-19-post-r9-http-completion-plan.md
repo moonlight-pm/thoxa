@@ -59,7 +59,7 @@ A program that:
 |------|----------------|
 | Algebraic effects / async | D2 |
 | Full Perceus RC precision | D8 |
-| M4 conversions (`as`/`can`/`is`) | D15 |
+| M4 conversions (`as`/`can`/`is`) | general conversions later; **not** `"…" as Bytes` (D15 rejected) |
 | Explicit `address()`, struct value-copy, `sizeof` | D23–D25 |
 | Named roots `std/` / full `ffi` package | D30–D32 (partial errno only if forced) |
 | Buffer consume-on-freeze | D51 |

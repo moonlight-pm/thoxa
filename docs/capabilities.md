@@ -28,7 +28,7 @@ change. See [`progress-model.md`](progress-model.md).
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |
 | string | String, interpolation, simple RC | shipped | `strings` | R4 | Perceus later | yes |
 | string-eq | String `==` / `!=` | shipped | `router` (uses) | D60 | — | yes |
-| bytes | Bytes API + slice + find→May | shipped | `bytes` | D14–D18, D36–D37, D46′/D85 | `"…" as Bytes` deferred | yes |
+| bytes | Bytes API + slice + find→May | shipped | `bytes` | D14–D18, D36–D37, D46′/D85 | String→Bytes is `fromString` only; **no** `"…" as Bytes` (D15 rejected) | yes |
 | buffer | Growable Buffer COW → freeze | shipped | `buffer` | D50–D52 | — | yes |
 | mut-assign | `mut` + assign + method field write-back | shipped | `bytes`, `method_field_writeback` | R5, D107 | — | yes |
 | control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops` | D47, D55 | — | yes |

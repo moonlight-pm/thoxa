@@ -86,7 +86,6 @@ Freezes:
 - ~~File type~~ (**D109** shipped)
 - ~~Value-match bare binds~~ (**D110** shipped)
 - ~~Match guards~~ (**D111** shipped)
-- `"…" as Bytes` (only with deliberate D15 reopen)
 - File write/create when forced
 
 **Horizon / deferred until CURRENT says so:**
