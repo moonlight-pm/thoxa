@@ -454,6 +454,8 @@ struct FnSig {
     extern_symbol: Option<String>,
     /// Mangled MIR/C function name (may differ from source name for non-entry modules).
     mangled: String,
+    /// Module where the function is defined — default exprs resolve here (D116).
+    def_mod: String,
 }
 
 #[derive(Clone)]
@@ -464,6 +466,8 @@ struct MethodSig {
     defaults: Vec<Option<Expr>>,
     ret: Ty,
     exported: bool,
+    /// Module of the enclosing type — default exprs resolve here (D116).
+    def_mod: String,
 }
 
 #[derive(Clone)]
@@ -476,12 +480,23 @@ struct FieldInfo {
     default: Option<Expr>,
 }
 
+/// Per-module free-name resolution maps (for default-arg scope — D116).
+#[derive(Clone, Default)]
+struct ModuleNameMaps {
+    name_to_type: HashMap<String, String>,
+    name_to_fn: HashMap<String, String>,
+    name_to_global: HashMap<String, GlobalInfo>,
+    namespaces: HashMap<String, String>,
+}
+
 #[derive(Clone)]
 struct TypeInfo {
     fields: Vec<FieldInfo>,
     methods: HashMap<String, MethodSig>,
     /// True when constructed with `TypeName()` zero-init (body fields, R7).
     zero_init: bool,
+    /// Defining module — ctor field defaults resolve here (D116).
+    def_mod: String,
 }
 
 /// Module-level value (let/mut).
@@ -509,6 +524,8 @@ struct LowerCtx {
     namespaces: HashMap<String, String>,
     /// module_id → (export name → mangled type / fn / global key)
     module_exports: HashMap<String, ModuleExports>,
+    /// Per-module name maps for default-arg resolution in the defining module (D116).
+    package_maps: HashMap<String, ModuleNameMaps>,
     fn_ret: Ty,
     /// Current module id being lowered.
     module_id: String,
@@ -537,6 +554,7 @@ impl LowerCtx {
         name_to_global: HashMap<String, GlobalInfo>,
         namespaces: HashMap<String, String>,
         module_exports: HashMap<String, ModuleExports>,
+        package_maps: HashMap<String, ModuleNameMaps>,
         fn_ret: Ty,
         module_id: String,
         is_entry: bool,
@@ -552,12 +570,37 @@ impl LowerCtx {
             name_to_global,
             namespaces,
             module_exports,
+            package_maps,
             fn_ret,
             module_id,
             is_entry,
             loop_depth: 0,
             drop_places: Vec::new(),
         }
+    }
+
+    /// Run `f` with free-name maps from `def_mod` (default-arg defining scope — D116).
+    fn with_def_mod_maps<R>(
+        &mut self,
+        def_mod: &str,
+        f: impl FnOnce(&mut LowerCtx) -> Result<R>,
+    ) -> Result<R> {
+        if def_mod == self.module_id || def_mod.is_empty() {
+            return f(self);
+        }
+        let Some(maps) = self.package_maps.get(def_mod).cloned() else {
+            return f(self);
+        };
+        let saved_ty = std::mem::replace(&mut self.name_to_type, maps.name_to_type);
+        let saved_fn = std::mem::replace(&mut self.name_to_fn, maps.name_to_fn);
+        let saved_g = std::mem::replace(&mut self.name_to_global, maps.name_to_global);
+        let saved_ns = std::mem::replace(&mut self.namespaces, maps.namespaces);
+        let result = f(self);
+        self.name_to_type = saved_ty;
+        self.name_to_fn = saved_fn;
+        self.name_to_global = saved_g;
+        self.namespaces = saved_ns;
+        result
     }
 
     fn push_scope(&mut self) {
@@ -769,6 +812,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     fields: Vec::new(),
                     methods: HashMap::new(),
                     zero_init: !td.fields.is_empty(),
+                    def_mod: m.id.clone(),
                 },
             );
             if td.exported {
@@ -928,6 +972,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     defaults,
                     ret,
                     exported: m.exported,
+                    def_mod: mod_id.clone(),
                 },
             );
         }
@@ -991,6 +1036,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                                 ret: ret.clone(),
                                 extern_symbol: Some(c_symbol.clone()),
                                 mangled: mangled.clone(),
+                                def_mod: m.id.clone(),
                             },
                         )
                         .is_some()
@@ -1051,6 +1097,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                                 ret,
                                 extern_symbol: None,
                                 mangled: mangled.clone(),
+                                def_mod: m.id.clone(),
                             },
                         )
                         .is_some()
@@ -1132,6 +1179,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 name_to_global.clone(),
                 namespaces.clone(),
                 module_exports.clone(),
+                HashMap::new(),
                 Ty::Void,
                 m.id.clone(),
                 m.is_entry,
@@ -1170,10 +1218,9 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     }
 
     // ---------- Phase 4: lower methods + free functions ----------
-    let mut functions = Vec::new();
-
-    for (mod_id, mangled_ty, td) in &type_defs {
-        let m = package.modules.iter().find(|x| x.id == *mod_id).unwrap();
+    // Build per-module name maps for default-arg defining-module scope (D116).
+    let mut package_maps: HashMap<String, ModuleNameMaps> = HashMap::new();
+    for m in &package.modules {
         let (name_to_type, name_to_fn, name_to_global, namespaces) = build_module_name_maps(
             m,
             &import_maps,
@@ -1182,6 +1229,22 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             &per_mod_types,
             &fns,
         )?;
+        package_maps.insert(
+            m.id.clone(),
+            ModuleNameMaps {
+                name_to_type,
+                name_to_fn,
+                name_to_global,
+                namespaces,
+            },
+        );
+    }
+
+    let mut functions = Vec::new();
+
+    for (mod_id, mangled_ty, td) in &type_defs {
+        let m = package.modules.iter().find(|x| x.id == *mod_id).unwrap();
+        let maps = package_maps.get(mod_id).unwrap();
         for method in &td.methods {
             functions.push(lower_method(
                 mangled_ty,
@@ -1189,11 +1252,12 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 method,
                 &fns,
                 &types_info,
-                &name_to_type,
-                &name_to_fn,
-                &name_to_global,
-                &namespaces,
+                &maps.name_to_type,
+                &maps.name_to_fn,
+                &maps.name_to_global,
+                &maps.namespaces,
                 &module_exports,
+                &package_maps,
                 mod_id,
                 m.is_entry,
             )?);
@@ -1201,26 +1265,19 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     }
 
     for (mod_id, mangled, f, is_entry) in &free_fns {
-        let m = package.modules.iter().find(|x| x.id == *mod_id).unwrap();
-        let (name_to_type, name_to_fn, name_to_global, namespaces) = build_module_name_maps(
-            m,
-            &import_maps,
-            &module_exports,
-            &all_globals,
-            &per_mod_types,
-            &fns,
-        )?;
+        let maps = package_maps.get(mod_id).unwrap();
         functions.push(lower_function(
             f,
             mangled,
             *is_entry,
             &fns,
             &types_info,
-            &name_to_type,
-            &name_to_fn,
-            &name_to_global,
-            &namespaces,
+            &maps.name_to_type,
+            &maps.name_to_fn,
+            &maps.name_to_global,
+            &maps.namespaces,
             &module_exports,
+            &package_maps,
             mod_id,
         )?);
     }
@@ -1501,6 +1558,7 @@ fn lower_function(
     name_to_global: &HashMap<String, GlobalInfo>,
     namespaces: &HashMap<String, String>,
     module_exports: &HashMap<String, ModuleExports>,
+    package_maps: &HashMap<String, ModuleNameMaps>,
     module_id: &str,
 ) -> Result<Function> {
     let is_main = is_entry && f.name == "main";
@@ -1519,6 +1577,7 @@ fn lower_function(
         name_to_global.clone(),
         namespaces.clone(),
         module_exports.clone(),
+        package_maps.clone(),
         ret_ty.clone(),
         module_id.to_string(),
         is_entry,
@@ -1558,6 +1617,7 @@ fn lower_method(
     name_to_global: &HashMap<String, GlobalInfo>,
     namespaces: &HashMap<String, String>,
     module_exports: &HashMap<String, ModuleExports>,
+    package_maps: &HashMap<String, ModuleNameMaps>,
     module_id: &str,
     is_entry: bool,
 ) -> Result<Function> {
@@ -1582,6 +1642,7 @@ fn lower_method(
         name_to_global.clone(),
         namespaces.clone(),
         module_exports.clone(),
+        package_maps.clone(),
         ret_ty.clone(),
         module_id.to_string(),
         is_entry,
@@ -3081,6 +3142,7 @@ fn lower_method_call(
                         &defaults,
                         args,
                         method_span,
+                        &info.def_mod,
                     )?;
                     ctx.assign(
                         p.clone(),
@@ -3109,6 +3171,7 @@ fn lower_method_call(
                     &sig.defaults,
                     args,
                     method_span,
+                    &sig.def_mod,
                 )?;
                 let callee = if let Some(sym) = &sig.extern_symbol {
                     Callee::Extern {
@@ -3193,6 +3256,7 @@ fn lower_method_call(
                 &sig.defaults,
                 args,
                 method_span,
+                &sig.def_mod,
             )?;
             let mut all_args = vec![recv_p];
             all_args.extend(arg_places);
@@ -3567,17 +3631,19 @@ fn resolve_call_args(
     args: &[Arg],
     span: Span,
 ) -> Result<Vec<Place>> {
-    resolve_call_args_with_defaults(ctx, formal, &[], args, span)
+    resolve_call_args_with_defaults(ctx, formal, &[], args, span, "")
 }
 
 /// Like [`resolve_call_args`], but `defaults[i]` fills formal `i` when omitted.
 /// `defaults` may be shorter than `formal` (missing entries mean no default).
+/// Default expressions resolve free names in `def_mod` (defining module — D116).
 fn resolve_call_args_with_defaults(
     ctx: &mut LowerCtx,
     formal: &[(String, Ty)],
     defaults: &[Option<Expr>],
     args: &[Arg],
     span: Span,
+    def_mod: &str,
 ) -> Result<Vec<Place>> {
     if args.is_empty() && formal.is_empty() {
         return Ok(Vec::new());
@@ -3630,7 +3696,9 @@ fn resolve_call_args_with_defaults(
         }
         for i in args.len()..formal.len() {
             let expr = default_at(i).expect("checked above");
-            let p = lower_arg_for_formal(ctx, expr, &formal[i].1, &formal[i].0, i)?;
+            let p = ctx.with_def_mod_maps(def_mod, |ctx| {
+                lower_arg_for_formal(ctx, expr, &formal[i].1, &formal[i].0, i)
+            })?;
             places.push(p);
         }
         return Ok(places);
@@ -3658,14 +3726,20 @@ fn resolve_call_args_with_defaults(
     }
     let mut places = Vec::new();
     for (i, (fname, fty)) in formal.iter().enumerate() {
-        let expr = if let Some(e) = by_name.remove(fname) {
-            e
+        let (expr, is_default) = if let Some(e) = by_name.remove(fname) {
+            (e, false)
         } else if let Some(d) = default_at(i) {
-            d
+            (d, true)
         } else {
             return Err(Error::at(format!("missing argument `{fname}`"), span));
         };
-        let p = lower_arg_for_formal(ctx, expr, fty, fname, i)?;
+        let p = if is_default {
+            ctx.with_def_mod_maps(def_mod, |ctx| {
+                lower_arg_for_formal(ctx, expr, fty, fname, i)
+            })?
+        } else {
+            lower_arg_for_formal(ctx, expr, fty, fname, i)?
+        };
         places.push(p);
     }
     if let Some((extra, _)) = by_name.iter().next() {
@@ -5284,8 +5358,14 @@ fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Res
                         .collect();
                     let defaults: Vec<Option<Expr>> =
                         info.fields.iter().map(|f| f.default.clone()).collect();
-                    let field_places =
-                        resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span)?;
+                    let field_places = resolve_call_args_with_defaults(
+                        ctx,
+                        &formal,
+                        &defaults,
+                        args,
+                        span,
+                        &info.def_mod,
+                    )?;
                     ctx.assign(
                         p.clone(),
                         ty.clone(),
@@ -5316,8 +5396,14 @@ fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Res
                 .get(&mangled)
                 .ok_or_else(|| Error::at(format!("unknown function `{other}`"), span))?
                 .clone();
-            let arg_places =
-                resolve_call_args_with_defaults(ctx, &sig.params, &sig.defaults, args, span)?;
+            let arg_places = resolve_call_args_with_defaults(
+                ctx,
+                &sig.params,
+                &sig.defaults,
+                args,
+                span,
+                &sig.def_mod,
+            )?;
             let callee = if let Some(sym) = &sig.extern_symbol {
                 Callee::Extern {
                     c_symbol: sym.clone(),
@@ -5486,6 +5572,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         name_to_global: ctx.name_to_global.clone(),
         namespaces: ctx.namespaces.clone(),
         module_exports: ctx.module_exports.clone(),
+        package_maps: ctx.package_maps.clone(),
         fn_ret: ctx.fn_ret.clone(),
         module_id: ctx.module_id.clone(),
         is_entry: ctx.is_entry,

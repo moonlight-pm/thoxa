@@ -126,13 +126,12 @@ export type File(fd: Int64) {
 }
 
 ## Open `path` with open(2) flags (default O_RDONLY).
-## When O_CREAT is set, uses `mode` (default 0644 = 420).
-## Mode default is a literal so call sites need not import `oMode644`
-## (default exprs resolve in the caller's scope today).
+## When O_CREAT is set, uses `mode` (default 0644 via `oMode644`).
+## Default free names resolve in this module (D116), so callers need not import them.
 export fn openFile(
     path!: String,
     flags: Int32 = oRdonly,
-    mode: Int32 = 420
+    mode: Int32 = oMode644
 ) -> Trial<File, String> {
     if flagsNeedMode(flags) {
         let raw = sysOpenMode(path, flags, mode)

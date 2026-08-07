@@ -36,7 +36,7 @@ change. See [`progress-model.md`](progress-model.md).
 | array-dyn | Dynamic `Array<T>` (incl. User) | shipped | `arrays`, `array_user`, `array_heap_elems` | D53–D55, D62, D65 | Fixed `Array<T,N>` still field-only | yes |
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array ctor fields | shipped | `string_fields` | D48–D49, D69 | — | yes |
-| param-defaults | Formal defaults M3 (+ methods/ctors) | shipped | `param_defaults` | D98, D106 | No `!`/`extern` defaults; non-default cannot follow defaulted | yes |
+| param-defaults | Formal defaults M3 (+ methods/ctors) | shipped | `param_defaults`, `defaults_mod` | D98, D106, D116 | No `!`/`extern` defaults; non-default cannot follow defaulted; free names in defaults use defining module | yes |
 | modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate` | D30–D35 | Nested import/type in functions deferred (D91) | yes |
 | pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |
 

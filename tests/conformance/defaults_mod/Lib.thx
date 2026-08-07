@@ -1,0 +1,17 @@
+## Defaults resolve free names in the defining module (D116).
+export let defaultTag = "from-lib"
+export let defaultN = 7
+
+export fn tag(prefix: String = defaultTag) -> String {
+    prefix
+}
+
+export fn add(n: Int64 = defaultN) -> Int64 {
+    n + 1
+}
+
+export type Box(label: String = defaultTag) {
+    export fn show(suffix: String = defaultTag) -> String {
+        "{label}:{suffix}"
+    }
+}

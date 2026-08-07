@@ -1,0 +1,16 @@
+## Cross-module parameter defaults (D116).
+import { tag, add, Box } from "./Lib"
+
+fn main() -> Int64 {
+    ## Caller does not import defaultTag / defaultN.
+    println(tag())
+    println(tag(prefix: "override"))
+    println(add())
+    println(add(n: 100))
+    let b = Box()
+    println(b.show())
+    println(b.show(suffix: "x"))
+    let c = Box(label: "custom")
+    println(c.show())
+    0
+}
