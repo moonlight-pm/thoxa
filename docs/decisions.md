@@ -19,10 +19,11 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
-## 2026-08-06 — Language: match or-patterns, method write-back, defaults
+## 2026-08-06 — Language: File type, match or-patterns, write-back, defaults
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
+| D109 | File type (product Io) | `export type File(fd: Int64)` + `openFile` / `readAll` / `close` / `isOpen`; `readFile` reuses File | Lives in conformance `iolib/Io.thx` (same as free `readFile`). `fd` is Int64 (ctor-param field rules). Close write-backs `fd = -1` (**D107**). Conformance: `file_type`. |
 | D108 | Value-match or-patterns | `0 \| 1 \| 2 { … }` of string/int/bool literals; required `else` still | Lowers to `||` of equality tests. Not for Trial/May arms. Duplicate leaf lits rejected across arms. Conformance: `match_or`. Extends D87. |
 | D107 | Method mut-field write-back | In methods, bare assign to a ctor-param field (or C-layout `mut` field) updates the **receiver** | C ABI: User method receivers are pointers (`Type *`). Name receivers pass the binding place (not a `needs_drop` temp). Heap FieldAssign drops old field + dups new. Unlocks File-type style `fd = …` in methods. Conformance: `method_field_writeback`. |
 | D106 | Defaults on methods and ctors | Same rules as free-function defaults (D98): `name: T = expr` on non-`!` formals; omit at call (named or trailing positional); lowered at **call site** | Constructor params: `type Box(label: String, n: Int64 = 0)`. Methods: `fn describe(prefix: String = "box")`. Ordering: no required formal after a defaulted one. `extern` / `!` still cannot default. Conformance: `param_defaults`. |
@@ -217,7 +218,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D56 | File surface | Free `readFile(path) -> Trial<Bytes, String>` | Subset of oracle `Io.thx`; whole-file via lseek size; **OpenMode constants shipped (D81)**; `File` type still deferred (method mut-field write-back) |
+| D56 | File surface | Free `readFile(path) -> Trial<Bytes, String>` | Subset of oracle `Io.thx`; whole-file via lseek size; **OpenMode constants shipped (D81)**; **File type → D109** |
 | D58 | File errors | Was simple `Fail("open"\|"read"\|"seek")` | **Superseded by D80** — path + strerror via RT errno + libc extern |
 | D59 | User zero-init | Constructor-param User with String/Bytes fields zero as NULL heap | Match out-places; **field-RC hardened in D64** |
 | D60 | String equality | `==` / `!=` via `thoxa_string_eq` (length + bytes) | Ordering compares not supported |

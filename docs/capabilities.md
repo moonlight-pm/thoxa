@@ -52,7 +52,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| file-io | `readFile` + OpenMode lets + errno Fail | shipped | `file_io` | D56, D80–D82 | File type still deferred; mut-field write-back shipped (D107) | yes |
+| file-io | `readFile` + OpenMode + **File type** | shipped | `file_io`, `file_type` | D56, D80–D82, D109 | No write/create yet; OpenMode still Int32 lets | yes |
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse` | D69, R9 | Net errno strings polish deferred | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70 | — | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | — | yes |

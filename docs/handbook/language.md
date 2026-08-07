@@ -100,8 +100,9 @@ Marshals common scalars, `String`, `Bytes`, `Void`, `Address<T>`. String
 
 ## I/O and HTTP (library shape)
 
-- Free `readFile(path) -> Trial<Bytes,String>` and OpenMode constants (see
-  conformance `file_io` / `iolib`).
+- Free `readFile(path) -> Trial<Bytes,String>` and OpenMode constants.
+- **`File` type:** `openFile` / `readAll` / `close` / `isOpen` (see
+  conformance `file_type` / `iolib/Io.thx`).
 - HTTP: `Request` / `Response` / `Header`, parse/write helpers, Router, bounded
   static server (`http_server` conformance).
 

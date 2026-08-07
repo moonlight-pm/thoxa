@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-06 (D106–D108 language; shell parked)
+**As of:** 2026-08-06 (D106–D109 language; shell parked)
 
 ---
 
@@ -12,8 +12,8 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **Session / shell is parked** (core + libtcc shipped). Default product work is
 **language kernel depth** — one capability gap at a time, with conformance.
-**Shipped:** method/ctor defaults (**D106**), method field write-back (**D107**),
-value-match or-patterns (**D108**).
+**Shipped:** D106 defaults, D107 field write-back, D108 match or-patterns,
+**D109 File type**.
 
 ### Proceed order
 
@@ -23,8 +23,7 @@ value-match or-patterns (**D108**).
    - **Value-match bare binds / guards** (remaining D87 gaps).
    - **`"…" as Bytes`** (D15 deferred to M4 conversions — only with deliberate
      reopen).
-   - **File type** (unblocked by D107) — promote free `readFile` story when
-     desired.
+   - **File write/create** (`writeFile` / O_CREAT) when samples force it.
 2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md).

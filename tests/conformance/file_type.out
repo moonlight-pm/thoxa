@@ -1,0 +1,8 @@
+oRdonly=0
+open-ok
+body=hello from file
+
+closed
+double-close-ok
+free=hello from file
+

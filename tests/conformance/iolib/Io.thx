@@ -1,8 +1,7 @@
 ## Io — file open/read/close (R9+ subset of oracle examples/http/Io.thx).
-## Free-function surface: whole-file `readFile` (File type deferred — method
-## mut-field write-back not yet in native). Open flags are Int32 constants
-## (ADT OpenMode waits on sum types). errno/strerror without a named `ffi` root:
-## `thoxa_errno` RT helper + libc `strerror` via `extern … from "c"`.
+## Free `readFile` plus `File` type with method mut-field write-back (D107).
+## Open flags are Int32 constants (ADT OpenMode waits on sum types).
+## errno/strerror: `thoxa_errno` RT helper + libc `strerror` via `extern … from "c"`.
 
 extern fn sysOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
 extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
@@ -26,33 +25,76 @@ fn fileErr(what!: String) -> String {
     "{what}: {sysStrerror(sysErrno())}"
 }
 
-## Read the entire contents of `path` as Bytes (open → size via lseek → read → close).
+## Open file handle. `fd` is Int64 for ctor-param field rules; written back to
+## -1 on successful close (D107).
+export type File(fd: Int64) {
+    export fn isOpen() -> Bool {
+        fd >= 0
+    }
+
+    ## Close the fd once; subsequent closes are no-ops. Uses field write-back.
+    export fn close() {
+        if fd >= 0 {
+            sysClose(fd)
+            fd = -1
+        }
+    }
+
+    ## Read remaining contents from the current offset (does not close).
+    export fn readAll() -> Trial<Bytes, String> {
+        if fd < 0 {
+            Fail("read: file is closed")
+        } else {
+            let pos = sysLseek(fd, 0, seekCur)
+            let end = sysLseek(fd, 0, seekEnd)
+            sysLseek(fd, pos, seekSet)
+            let size = end - pos
+            if size < 0 {
+                Fail(fileErr("seek"))
+            } else {
+                let buf = Bytes(size)
+                let n = sysRead(fd, buf, size)
+                if n < 0 {
+                    Fail(fileErr("read"))
+                } else {
+                    if n < size {
+                        Pass(buf.slice(0, n))
+                    } else {
+                        Pass(buf)
+                    }
+                }
+            }
+        }
+    }
+}
+
+## Open `path` with open(2) flags (default O_RDONLY).
+export fn openFile(path!: String, flags: Int32 = oRdonly) -> Trial<File, String> {
+    let fd = sysOpen(path, flags)
+    if fd < 0 {
+        Fail(fileErr("open {path}"))
+    } else {
+        ## Widen open(2) fd (Int32) to Int64 for File's ctor field.
+        Pass(File(fd: fd))
+    }
+}
+
+## Read the entire contents of `path` as Bytes (open → readAll → close).
 ## Fail messages: "open …: <strerror>" | "seek …" | "read …". Directories open on
 ## Linux then fail at read — callers that want index.html fallback treat any Fail
 ## the same (see Router).
 export fn readFile(path!: String) -> Trial<Bytes, String> {
-    let fd = sysOpen(path, oRdonly)
-    if fd < 0 {
-        Fail(fileErr("open {path}"))
-    } else {
-        let pos = sysLseek(fd, 0, seekCur)
-        let end = sysLseek(fd, 0, seekEnd)
-        sysLseek(fd, pos, seekSet)
-        let size = end - pos
-        if size < 0 {
-            sysClose(fd)
-            Fail(fileErr("seek {path}"))
-        } else {
-            let buf = Bytes(size)
-            let n = sysRead(fd, buf, size)
-            sysClose(fd)
-            if n < 0 {
-                Fail(fileErr("read {path}"))
-            } else {
-                if n < size {
-                    Pass(buf.slice(0, n))
-                } else {
-                    Pass(buf)
+    match openFile(path) {
+        Fail(e) { Fail(e) }
+        Pass(f) {
+            match f.readAll() {
+                Fail(e) {
+                    f.close()
+                    Fail(e)
+                }
+                Pass(body) {
+                    f.close()
+                    Pass(body)
                 }
             }
         }

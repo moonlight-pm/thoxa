@@ -83,9 +83,10 @@ Freezes:
 - ~~Method / ctor parameter defaults~~ (**D106** shipped)
 - ~~Method mut-field write-back~~ (**D107** shipped)
 - ~~Value-match or-patterns~~ (**D108** shipped)
+- ~~File type~~ (**D109** shipped)
 - Value-match bare binds / guards
 - `"…" as Bytes` (only with deliberate D15 reopen)
-- File type (unblocked by D107)
+- File write/create when forced
 
 **Horizon / deferred until CURRENT says so:**
 
