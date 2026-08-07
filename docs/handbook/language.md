@@ -20,7 +20,7 @@ Directory packages may use `Main.thx` as the entry file.
 |------|---------|
 | Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Bool`, `Void` |
 | Heap | `String` (interpolation), `Bytes`, growable `Buffer`, dynamic `Array<T>` |
-| User types | `type Name(fields) { methods }` — including heap fields |
+| User types | `type Name(fields) { methods }` — including heap fields; method field write-back |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` |
 | Errors | `Trial<Ok,Err>` (`Pass`/`Fail`), `May<T>` (`Has`/`Not`), `?`, `match` |
 | Equality | String `==` / `!=`; usual scalar compares |
@@ -50,6 +50,25 @@ Parameter defaults (M3 subset) on non-`!` formals for free functions, **methods*
 and **constructor params** (`type T(x: Int64 = 0)`). Defaults lower at the **call
 site**. Positional `!` and `extern` formals cannot default. A non-default formal
 may not follow a defaulted one.
+
+## Methods and field write-back
+
+Inside a method, bare names for constructor-param fields (and C-layout `mut`
+fields) are assignable. Assignment updates the **receiver** as well as the
+local field binding:
+
+```thx
+type Counter(n: Int64) {
+    export fn add(by: Int64) -> Int64 {
+        n = n + by
+        n
+    }
+}
+
+mut c = Counter(n: 10)
+println(c.add(by: 5))   ## 15
+println(c.n)            ## 15
+```
 
 ## Modules
 

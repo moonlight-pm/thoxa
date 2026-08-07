@@ -1,0 +1,53 @@
+## Method mut-field write-back (D107): bare field assign in methods updates receiver.
+type Counter(n: Int64) {
+    export fn inc() -> Counter {
+        n = n + 1
+        Counter(n: n)
+    }
+
+    export fn add(by: Int64) -> Int64 {
+        n = n + by
+        n
+    }
+
+    export fn set(v: Int64) {
+        n = v
+    }
+}
+
+type Holder(label: String) {
+    export fn rename(newName: String) {
+        label = newName
+    }
+
+    export fn text() -> String {
+        label
+    }
+}
+
+type Reg {
+    mut a: Int64
+    let frozen: Int64
+}
+
+fn main() -> Int64 {
+    mut c = Counter(n: 10)
+    println("{c.add(by: 5)}")
+    println("{c.n}")
+    c.set(v: 100)
+    println("{c.n}")
+    let d = c.inc()
+    println("{d.n}")
+    ## c was not mutated by inc (returns new); n still 100
+    println("{c.n}")
+
+    mut h = Holder(label: "old")
+    h.rename(newName: "new")
+    println(h.text())
+
+    mut r = Reg()
+    ## zero-init: mut field assign via method would need methods; use direct field
+    r.a = 7
+    println("{r.a}")
+    0
+}

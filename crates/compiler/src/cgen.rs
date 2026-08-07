@@ -268,7 +268,8 @@ fn emit_session_step_fn(out: &mut String) {
     out.push_str("    thoxa_session_init();\n");
     out.push_str("    Thoxa_Shell shell;\n");
     out.push_str("    shell.f_status = state->status;\n");
-    out.push_str("    shell = thoxa_m_Shell_step(shell);\n");
+    // D107: method receivers are pointers.
+    out.push_str("    shell = thoxa_m_Shell_step(&shell);\n");
     out.push_str("    state->status = shell.f_status;\n");
     out.push_str("    return state->status;\n");
     out.push_str("}\n");
@@ -344,7 +345,13 @@ fn emit_proto(out: &mut String, f: &Function) {
 fn emit_params(out: &mut String, f: &Function) {
     let mut first = true;
     if let Some((name, ty)) = &f.receiver {
-        let _ = write!(out, "{} {}", c_ty(ty), name);
+        // D107: User receivers are pointers so method field write-back mutates
+        // the caller's binding (not a by-value copy).
+        if matches!(ty, Ty::User(_)) {
+            let _ = write!(out, "{} *{}", c_ty(ty), name);
+        } else {
+            let _ = write!(out, "{} {}", c_ty(ty), name);
+        }
         first = false;
     }
     if f.params.is_empty() && f.receiver.is_none() {
@@ -561,14 +568,36 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                 ty,
                 value,
             } => {
-                let _ = writeln!(
-                    out,
-                    "{pad}{}.{} = ({}){};",
-                    base.name,
-                    field,
-                    c_ty(ty),
-                    value.name
-                );
+                let acc = recv_access(base);
+                // Heap field store: drop previous field ownership, then share
+                // `value` (MIR Dup keeps a live local when needed).
+                if is_heap_ty(ty) {
+                    let _ = writeln!(
+                        out,
+                        "{pad}thoxa_drop({}{}{});",
+                        base.name, acc, field
+                    );
+                    let _ = writeln!(
+                        out,
+                        "{pad}{}{}{} = ({}){};",
+                        base.name,
+                        acc,
+                        field,
+                        c_ty(ty),
+                        value.name
+                    );
+                    let _ = writeln!(out, "{pad}thoxa_dup({});", value.name);
+                } else {
+                    let _ = writeln!(
+                        out,
+                        "{pad}{}{}{} = ({}){};",
+                        base.name,
+                        acc,
+                        field,
+                        c_ty(ty),
+                        value.name
+                    );
+                }
             }
             Stmt::IndexAssign {
                 base,
@@ -577,10 +606,12 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                 ty,
                 value,
             } => {
+                let acc = recv_access(base);
                 let _ = writeln!(
                     out,
-                    "{pad}{}.{}[{}] = ({}){};",
+                    "{pad}{}{}{}[{}] = ({}){};",
                     base.name,
+                    acc,
                     field,
                     index.name,
                     c_ty(ty),
@@ -808,7 +839,12 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     if i > 0 {
                         out.push_str(", ");
                     }
-                    out.push_str(&a.name);
+                    // First arg is the User receiver — pass address (D107).
+                    if i == 0 {
+                        let _ = write!(out, "&{}", a.name);
+                    } else {
+                        out.push_str(&a.name);
+                    }
                 }
                 out.push(')');
             }
@@ -891,10 +927,23 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             let _ = write!(out, "({}){{0}}", c_type_name(type_name));
         }
         RValue::Field { base, field } => {
-            let _ = write!(out, "{}.{}", base.name, field);
+            let _ = write!(
+                out,
+                "{}{}{}",
+                base.name,
+                recv_access(base),
+                field
+            );
         }
         RValue::Index { base, field, index } => {
-            let _ = write!(out, "{}.{}[{}]", base.name, field, index.name);
+            let _ = write!(
+                out,
+                "{}{}{}[{}]",
+                base.name,
+                recv_access(base),
+                field,
+                index.name
+            );
         }
         RValue::ArrayLit { elems, elem_ty } => {
             emit_array_lit(out, elems, elem_ty);
@@ -1527,6 +1576,15 @@ fn c_free_fn_name(thoxa_name: &str) -> String {
 
 fn c_method_name(type_name: &str, method: &str) -> String {
     format!("thoxa_m_{type_name}_{method}")
+}
+
+/// Method receiver `_self` is a pointer (D107); all other struct places use `.`.
+fn recv_access(base: &crate::mir::Place) -> &'static str {
+    if base.name == "_self" {
+        "->"
+    } else {
+        "."
+    }
 }
 
 fn c_fn_name(f: &Function) -> String {

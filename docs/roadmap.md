@@ -81,15 +81,15 @@ Freezes:
 **Near-term (capability gaps, not megawork):**
 
 - ~~Method / ctor parameter defaults~~ (**D106** shipped)
-- Method mut-field write-back (unlocks File-type later)
+- ~~Method mut-field write-back~~ (**D107** shipped)
 - Value-match depth (binds / or-patterns / guards)
 - `"…" as Bytes`
+- File type (unblocked by D107)
 
 **Horizon / deferred until CURRENT says so:**
 
 - Perceus / precise RC
 - Sum types / richer ADTs (where oracle forces)
-- Full File type
 - Named `ffi` root
 - Algebraic effects (only when forced)
 

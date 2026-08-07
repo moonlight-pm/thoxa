@@ -435,6 +435,9 @@ struct Binding {
     mutable: bool,
     /// C place name (local `v_x` or module global `g_Mod_x`).
     place: Place,
+    /// Method field write-back (D107): reassignment also stores through the
+    /// receiver (`_self.field = …`). `field` is the sanitized C field name.
+    writeback: Option<(Place, String)>,
 }
 
 #[derive(Clone)]
@@ -562,10 +565,26 @@ impl LowerCtx {
     }
 
     fn define(&mut self, name: &str, ty: Ty, mutable: bool, place: Place) {
-        self.env
-            .last_mut()
-            .unwrap()
-            .insert(name.to_string(), Binding { ty, mutable, place });
+        self.define_full(name, ty, mutable, place, None);
+    }
+
+    fn define_full(
+        &mut self,
+        name: &str,
+        ty: Ty,
+        mutable: bool,
+        place: Place,
+        writeback: Option<(Place, String)>,
+    ) {
+        self.env.last_mut().unwrap().insert(
+            name.to_string(),
+            Binding {
+                ty,
+                mutable,
+                place,
+                writeback,
+            },
+        );
     }
 
     fn lookup(&self, name: &str) -> Option<Binding> {
@@ -580,6 +599,7 @@ impl LowerCtx {
                 ty: g.ty.clone(),
                 mutable: g.mutable,
                 place: g.place.clone(),
+                writeback: None,
             });
         }
         None
@@ -631,6 +651,7 @@ impl LowerCtx {
     }
 
     /// Reassign a mut binding; drops the old heap value if any.
+    /// Method field locals (D107) also FieldAssign through the receiver.
     fn reassign_name(&mut self, name: &str, name_span: Span, value: &Expr) -> Result<()> {
         let binding = self
             .lookup(name)
@@ -659,7 +680,16 @@ impl LowerCtx {
             });
         }
         // Dup so the RHS temp and the binding both own (end-of-fn drops both).
-        self.assign(bound, ty, RValue::Use(place));
+        self.assign(bound.clone(), ty.clone(), RValue::Use(place));
+        // Write through receiver for method field bindings.
+        if let Some((base, field)) = binding.writeback {
+            self.stmts.push(Stmt::FieldAssign {
+                base,
+                field,
+                ty: binding.ty.clone(),
+                value: bound,
+            });
+        }
         Ok(())
     }
 }
@@ -1556,7 +1586,13 @@ fn lower_method(
     // Bind fields as bare names from receiver (no `self` in Thoxa).
     // Heap fields must Dup: the local is dropped at method end while `_self` is a
     // param (not dropped here). Without Dup, drop(field) would free the caller's ref.
+    //
+    // D107 write-back: ctor-param fields and C-layout `mut` fields are mutable
+    // locals; reassignment also stores through `_self`.
     let info = types.get(mangled_type).unwrap();
+    let recv = Place {
+        name: recv_place.clone(),
+    };
     for f in &info.fields {
         if matches!(f.ty, Ty::FixedArray { .. }) {
             continue;
@@ -1568,9 +1604,7 @@ fn lower_method(
             p.clone(),
             f.ty.clone(),
             RValue::Field {
-                base: Place {
-                    name: recv_place.clone(),
-                },
+                base: recv.clone(),
                 field: sanitize_field(&f.name),
             },
         );
@@ -1580,7 +1614,19 @@ fn lower_method(
                 ty: f.ty.clone(),
             });
         }
-        ctx.define(&f.name, f.ty.clone(), false, p);
+        // Ctor-param types (!zero_init): fields are writable in methods.
+        // C-layout (zero_init): only `mut` body fields.
+        let writable = if info.zero_init {
+            f.mutable
+        } else {
+            true
+        };
+        let writeback = if writable {
+            Some((recv.clone(), sanitize_field(&f.name)))
+        } else {
+            None
+        };
+        ctx.define_full(&f.name, f.ty.clone(), writable, p, writeback);
     }
     for p in &m.params {
         let ty = resolve_ty(&p.ty, types, name_to_type)?;
@@ -3097,7 +3143,21 @@ fn lower_method_call(
         }
     }
 
-    let (recv_p, recv_ty) = lower_expr(ctx, receiver)?;
+    // User method receivers: use the binding place when the receiver is a name so
+    // D107 field write-back mutates the caller's object (not a needs_drop temp copy).
+    let (recv_p, recv_ty) = if let ExprKind::Name(n) = &receiver.kind {
+        if let Some(b) = ctx.lookup(n) {
+            if matches!(&b.ty, Ty::User(_)) {
+                (b.place.clone(), b.ty.clone())
+            } else {
+                lower_expr(ctx, receiver)?
+            }
+        } else {
+            lower_expr(ctx, receiver)?
+        }
+    } else {
+        lower_expr(ctx, receiver)?
+    };
     match &recv_ty {
         Ty::Bytes => lower_bytes_method(ctx, recv_p, method, args, method_span),
         Ty::Buffer => lower_buffer_method(ctx, recv_p, method, args, method_span, false),

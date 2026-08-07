@@ -30,7 +30,7 @@ change. See [`progress-model.md`](progress-model.md).
 | string-eq | String `==` / `!=` | shipped | `router` (uses) | D60 | — | yes |
 | bytes | Bytes API + slice + find→May | shipped | `bytes` | D14–D18, D36–D37, D46′/D85 | `"…" as Bytes` deferred | yes |
 | buffer | Growable Buffer COW → freeze | shipped | `buffer` | D50–D52 | — | yes |
-| mut-assign | `mut` + assign | shipped | `bytes` | R5 | Method mut-field write-back limited | partial |
+| mut-assign | `mut` + assign + method field write-back | shipped | `bytes`, `method_field_writeback` | R5, D107 | — | yes |
 | control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops` | D47, D55 | — | yes |
 | early-return | `return` / `return expr` | shipped | `early_return` | D63 | — | yes |
 | array-dyn | Dynamic `Array<T>` (incl. User) | shipped | `arrays`, `array_user`, `array_heap_elems` | D53–D55, D62, D65 | Fixed `Array<T,N>` still field-only | yes |
@@ -52,7 +52,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| file-io | `readFile` + OpenMode lets + errno Fail | shipped | `file_io` | D56, D80–D82 | File type / method mut-field write-back deferred | yes |
+| file-io | `readFile` + OpenMode lets + errno Fail | shipped | `file_io` | D56, D80–D82 | File type still deferred; mut-field write-back shipped (D107) | yes |
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse` | D69, R9 | Net errno strings polish deferred | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70 | — | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | — | yes |

@@ -19,10 +19,11 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
-## 2026-08-06 — Method / constructor parameter defaults
+## 2026-08-06 — Method field write-back + param defaults
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
+| D107 | Method mut-field write-back | In methods, bare assign to a ctor-param field (or C-layout `mut` field) updates the **receiver** | C ABI: User method receivers are pointers (`Type *`). Name receivers pass the binding place (not a `needs_drop` temp). Heap FieldAssign drops old field + dups new. Unlocks File-type style `fd = …` in methods. Conformance: `method_field_writeback`. |
 | D106 | Defaults on methods and ctors | Same rules as free-function defaults (D98): `name: T = expr` on non-`!` formals; omit at call (named or trailing positional); lowered at **call site** | Constructor params: `type Box(label: String, n: Int64 = 0)`. Methods: `fn describe(prefix: String = "box")`. Ordering: no required formal after a defaulted one. `extern` / `!` still cannot default. Conformance: `param_defaults`. |
 
 ## 2026-08-05 — Session libtcc step backend (target)

@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-06 (D106 method/ctor defaults; shell parked; language focus)
+**As of:** 2026-08-06 (D106 + D107 language; shell parked)
 
 ---
 
@@ -12,26 +12,26 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **Session / shell is parked** (core + libtcc shipped). Default product work is
 **language kernel depth** — one capability gap at a time, with conformance.
-**Shipped this turn:** method/ctor parameter defaults (**D106**).
+**Shipped:** method/ctor defaults (**D106**), method field write-back (**D107**).
 
 ### Proceed order
 
 1. **Language** — pick one open gap from the matrix (do not invent syntax without
    oracle / decisions check). Prefer small, conformance-backed slices.  
    Strong candidates (pick one):
-   - **Method mut-field write-back** (`mut` field store through methods; unlocks
-     File-type stories later) — capabilities: `mut-assign` / `file-io` gaps.
    - **Value-match depth** — bare binds / or-patterns / guards (D87 gaps).
    - **`"…" as Bytes`** (bytes capability gap).
+   - **File type** (now unblocked by D107) — promote free `readFile` story when
+     desired.
 2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md).
 3. **Parked: session residual** — redir polish (`2>`, redir-on-pipe), Shell
    import-first, crude line editor — resume only if CURRENT says so. Freeze:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-4. **Deferred megawork** — M4, Perceus, effects, full File type, named `ffi`
-   root, Net errno strings, TinyCC license packaging, libtcc base-object cache —
-   not default until CURRENT says so.
+4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, Net errno
+   strings, TinyCC license packaging, libtcc base-object cache — not default
+   until CURRENT says so.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups; **opportunistic `std/` helpers** proven by a real sample
