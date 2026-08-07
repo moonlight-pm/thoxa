@@ -89,6 +89,7 @@ Freezes:
 - ~~File write/create~~ (**D112** shipped)
 - ~~Nested Array/May Trial payloads~~ (**D113** shipped)
 - ~~Nested Trial as payload~~ (**D114** shipped)
+- ~~File seek/position~~ (**D115** shipped)
 
 **Horizon / deferred until CURRENT says so:**
 

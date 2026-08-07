@@ -1,4 +1,4 @@
-## Io — file open/read/write/close (R9+ / D109 / D112).
+## Io — file open/read/write/seek/close (R9+ / D109 / D112 / D115).
 ## Free `readFile` / `writeFile` plus `File` type with method field write-back.
 ## Open flags are Int32 constants (ADT OpenMode waits on sum types).
 ## errno/strerror: `thoxa_errno` RT helper + libc `strerror` via `extern … from "c"`.
@@ -24,9 +24,9 @@ export let oAppend = 1024
 export let oMode644 = 420
 
 ## lseek(2) whence values (Linux).
-let seekSet = 0
-let seekCur = 1
-let seekEnd = 2
+export let seekSet = 0
+export let seekCur = 1
+export let seekEnd = 2
 
 ## "context: reason" from the current errno, for a Fail payload.
 fn fileErr(what!: String) -> String {
@@ -91,6 +91,35 @@ export type File(fd: Int64) {
                 Fail(fileErr("write"))
             } else {
                 Pass(n)
+            }
+        }
+    }
+
+    ## Reposition the file offset (lseek). Returns the resulting offset.
+    ## `whence` is `seekSet` / `seekCur` / `seekEnd` (default `seekSet`).
+    export fn seek(offset: Int64, whence: Int32 = seekSet) -> Trial<Int64, String> {
+        if fd < 0 {
+            Fail("seek: file is closed")
+        } else {
+            let pos = sysLseek(fd, offset, whence)
+            if pos < 0 {
+                Fail(fileErr("seek"))
+            } else {
+                Pass(pos)
+            }
+        }
+    }
+
+    ## Current file offset (lseek SEEK_CUR, 0).
+    export fn position() -> Trial<Int64, String> {
+        if fd < 0 {
+            Fail("seek: file is closed")
+        } else {
+            let pos = sysLseek(fd, 0, seekCur)
+            if pos < 0 {
+                Fail(fileErr("seek"))
+            } else {
+                Pass(pos)
             }
         }
     }

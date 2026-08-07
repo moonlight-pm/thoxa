@@ -104,8 +104,9 @@ Marshals common scalars, `String`, `Bytes`, `Void`, `Address<T>`. String
 
 - Free `readFile` / `writeFile` / `appendFile` (`Trial<…, String>`) and
   OpenMode constants (`oRdonly`, `oWronly`, `oCreat`, `oTrunc`, `oAppend`, …).
-- **`File` type:** `openFile` / `readAll` / `write` / `close` / `isOpen` (see
-  conformance `file_type`, `file_write` / `iolib/Io.thx`).
+- **`File` type:** `openFile` / `readAll` / `write` / `seek` / `position` /
+  `close` / `isOpen` (see conformance `file_type`, `file_write`, `file_seek` /
+  `iolib/Io.thx`).
 - HTTP: `Request` / `Response` / `Header`, parse/write helpers, Router, bounded
   static server (`http_server` conformance).
 

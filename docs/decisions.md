@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-07 — File seek/position
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D115 | File seek / position | `File.seek(offset, whence = seekSet)` and `File.position()` → `Trial<Int64, String>`; export `seekSet`/`seekCur`/`seekEnd` | Same `iolib/Io.thx`. Closed file → Fail. Conformance: `file_seek`. |
+
 ## 2026-08-07 — Nested Trial as payload
 
 | ID | Decision | Choice | Notes |

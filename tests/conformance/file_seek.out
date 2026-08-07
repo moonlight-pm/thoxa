@@ -1,0 +1,12 @@
+wrote=10
+pos0=0
+seek3=3
+from3=defghij
+at-end=10
+end-2=8
+tail=ij
+cur+2=3
+closed-seek=seek: file is closed
+closed-pos=seek: file is closed
+full=abcdefghij
+whence=0|1|2

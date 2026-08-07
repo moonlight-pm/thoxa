@@ -1,0 +1,67 @@
+## File seek / position (D115).
+import {
+    openFile, writeFile, readFile, seekSet, seekCur, seekEnd, oRdwr
+} from "./iolib/Io"
+
+fn main() -> Int64 {
+    let path = "/tmp/thoxa_file_seek_conformance.txt"
+    match writeFile(path, Bytes.fromString("abcdefghij")) {
+        Fail(e) { println("write-fail={e}") }
+        Pass(n) { println("wrote={n}") }
+    }
+    match openFile(path, oRdwr) {
+        Fail(e) { println("open-fail={e}") }
+        Pass(f) {
+            match f.position() {
+                Pass(p) { println("pos0={p}") }
+                Fail(e) { println("pos0-fail={e}") }
+            }
+            match f.seek(3, seekSet) {
+                Pass(p) { println("seek3={p}") }
+                Fail(e) { println("seek3-fail={e}") }
+            }
+            match f.readAll() {
+                Pass(b) { println("from3={b.toString()}") }
+                Fail(e) { println("read-fail={e}") }
+            }
+            ## After readAll, offset is at end.
+            match f.position() {
+                Pass(p) { println("at-end={p}") }
+                Fail(e) { println("at-end-fail={e}") }
+            }
+            match f.seek(-2, seekEnd) {
+                Pass(p) { println("end-2={p}") }
+                Fail(e) { println("end-2-fail={e}") }
+            }
+            match f.readAll() {
+                Pass(b) { println("tail={b.toString()}") }
+                Fail(e) { println("tail-fail={e}") }
+            }
+            match f.seek(1, seekSet) {
+                Pass(_) {
+                    match f.seek(2, seekCur) {
+                        Pass(p) { println("cur+2={p}") }
+                        Fail(e) { println("cur-fail={e}") }
+                    }
+                }
+                Fail(e) { println("seek1-fail={e}") }
+            }
+            f.close()
+            match f.seek(0, seekSet) {
+                Pass(p) { println("closed-seek={p}") }
+                Fail(e) { println("closed-seek={e}") }
+            }
+            match f.position() {
+                Pass(p) { println("closed-pos={p}") }
+                Fail(e) { println("closed-pos={e}") }
+            }
+        }
+    }
+    ## Fixture still intact for free read.
+    match readFile(path) {
+        Pass(b) { println("full={b.toString()}") }
+        Fail(e) { println("full-fail={e}") }
+    }
+    println("whence={seekSet}|{seekCur}|{seekEnd}")
+    0
+}
