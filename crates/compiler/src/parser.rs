@@ -8,11 +8,17 @@ use crate::span::Span;
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    /// Synthetic `>` closers left after splitting a `>>` (Shr) in type args (D113).
+    extra_rangles: usize,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            extra_rangles: 0,
+        }
     }
 
     pub fn parse_module(&mut self) -> Result<Module> {
@@ -412,7 +418,7 @@ impl Parser {
         let mut args = Vec::new();
         let end = if self.at(TokenKind::LAngle) {
             self.bump();
-            if !self.at(TokenKind::RAngle) {
+            if !self.at_rangle() {
                 loop {
                     args.push(self.parse_type_arg()?);
                     if self.at(TokenKind::Comma) {
@@ -422,7 +428,8 @@ impl Parser {
                     break;
                 }
             }
-            self.expect_kind(&TokenKind::RAngle)?;
+            self.expect_rangle()?;
+            // After a synthetic `>` from `>>`, prev token may still be Shr — fine for spans.
             self.prev_span().end
         } else {
             start_span.end
@@ -432,6 +439,32 @@ impl Parser {
             args,
             span: Span::new(start_span.start, end),
         })
+    }
+
+    /// `>` or the first half of `>>` (lexer emits Shr for nested generics like `May<Array<T>>`).
+    fn at_rangle(&self) -> bool {
+        self.extra_rangles > 0 || self.at(TokenKind::RAngle) || self.at(TokenKind::Shr)
+    }
+
+    fn expect_rangle(&mut self) -> Result<()> {
+        if self.extra_rangles > 0 {
+            self.extra_rangles -= 1;
+            return Ok(());
+        }
+        if self.at(TokenKind::RAngle) {
+            self.bump();
+            Ok(())
+        } else if self.at(TokenKind::Shr) {
+            // Consume one `>` from `>>`; leave one synthetic closer for the outer type.
+            self.bump();
+            self.extra_rangles += 1;
+            Ok(())
+        } else {
+            Err(Error::at(
+                format!("expected `>`, found {:?}", self.current().kind),
+                self.peek_span(),
+            ))
+        }
     }
 
     fn parse_type_arg(&mut self) -> Result<TypeArg> {
@@ -1645,6 +1678,37 @@ mod tests {
                 assert_eq!(f.params.len(), 1);
                 assert_eq!(f.return_type.as_ref().unwrap().name, "Trial");
                 assert_eq!(f.return_type.as_ref().unwrap().args.len(), 2);
+            }
+            _ => panic!("expected function"),
+        }
+    }
+
+    #[test]
+    fn parse_nested_type_args_double_rangle() {
+        // Lexer glues `>>` as Shr; type parser must split for nested generics.
+        let module = parse(
+            r#"
+            fn g() -> May<Array<Int64>> {
+                Has([1, 2])
+            }
+            fn h() -> Trial<May<Int64>, String> {
+                Pass(Has(1))
+            }
+            "#,
+        );
+        assert_eq!(module.items.len(), 2);
+        match &module.items[0] {
+            Item::Function(f) => {
+                let rt = f.return_type.as_ref().unwrap();
+                assert_eq!(rt.name, "May");
+                assert_eq!(rt.args.len(), 1);
+                match &rt.args[0] {
+                    TypeArg::Type(inner) => {
+                        assert_eq!(inner.name, "Array");
+                        assert_eq!(inner.args.len(), 1);
+                    }
+                    _ => panic!("expected type arg"),
+                }
             }
             _ => panic!("expected function"),
         }

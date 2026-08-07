@@ -1,0 +1,94 @@
+## Nested Trial/May payloads: Array and May as ok/err (D113).
+## Also exercises `>>` type-arg close (`May<Array<Int64>>`).
+
+fn arrOk() -> Trial<Array<Int64>, String> {
+    Pass([10, 20, 30])
+}
+
+fn arrFail() -> Trial<Array<Int64>, String> {
+    Fail("no-arr")
+}
+
+fn mayOk() -> Trial<May<Int64>, String> {
+    Pass(Has(7))
+}
+
+fn mayNot() -> Trial<May<Int64>, String> {
+    Pass(Not())
+}
+
+fn mayFail() -> Trial<May<Int64>, String> {
+    Fail("no-may")
+}
+
+fn mayArr() -> May<Array<Int64>> {
+    Has([1, 2])
+}
+
+fn mayArrEmpty() -> May<Array<Int64>> {
+    Not()
+}
+
+fn chainArr(n!: Int64) -> Trial<Array<Int64>, String> {
+    let a = arrOk()?
+    if n < 0 {
+        Fail("neg")
+    } else {
+        Pass(a)
+    }
+}
+
+fn main() -> Int64 {
+    match arrOk() {
+        Pass(a) { println("arr-count={a.count} first={a[0]}") }
+        Fail(e) { println("arr-fail={e}") }
+    }
+    match arrFail() {
+        Pass(a) { println("unexpected={a.count}") }
+        Fail(e) { println("arr-err={e}") }
+    }
+    match mayOk() {
+        Pass(m) {
+            match m {
+                Has(v) { println("may-has={v}") }
+                Not { println("may-not") }
+            }
+        }
+        Fail(e) { println("may-fail={e}") }
+    }
+    match mayNot() {
+        Pass(m) {
+            match m {
+                Has(v) { println("may-has={v}") }
+                Not { println("may-not") }
+            }
+        }
+        Fail(e) { println("may-fail={e}") }
+    }
+    match mayFail() {
+        Pass(m) {
+            match m {
+                Has(v) { println("may-has={v}") }
+                Not { println("may-not") }
+            }
+        }
+        Fail(e) { println("may-fail={e}") }
+    }
+    match mayArr() {
+        Has(a) { println("ma-count={a.count}") }
+        Not { println("ma-not") }
+    }
+    match mayArrEmpty() {
+        Has(a) { println("mae={a.count}") }
+        Not { println("mae-not") }
+    }
+    match chainArr(1) {
+        Pass(a) { println("chain={a.count}") }
+        Fail(e) { println("chain-fail={e}") }
+    }
+    match chainArr(-1) {
+        Pass(a) { println("chain2={a.count}") }
+        Fail(e) { println("chain-fail={e}") }
+    }
+    0
+}

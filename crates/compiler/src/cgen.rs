@@ -92,16 +92,18 @@ pub fn emit_program_with(
         emit_typedef(&mut out, t);
     }
 
-    // Monomorphized Trial / May typedefs used by this program.
+    // Monomorphized May then Trial typedefs (May may appear as Trial payload — D113).
+    let mut may_tys: Vec<Ty> = Vec::new();
+    collect_may_tys_program(program, &mut may_tys);
+    // Nested May-in-May: emit deeper inners first.
+    may_tys.sort_by_key(may_nest_depth);
+    for ty in &may_tys {
+        emit_may_typedef(&mut out, ty);
+    }
     let mut trial_tys: Vec<Ty> = Vec::new();
     collect_trial_tys_program(program, &mut trial_tys);
     for ty in &trial_tys {
         emit_trial_typedef(&mut out, ty);
-    }
-    let mut may_tys: Vec<Ty> = Vec::new();
-    collect_may_tys_program(program, &mut may_tys);
-    for ty in &may_tys {
-        emit_may_typedef(&mut out, ty);
     }
     if !trial_tys.is_empty() || !may_tys.is_empty() {
         out.push('\n');
@@ -445,29 +447,13 @@ fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
             let _ = writeln!(out, "    {} {} = {{0}};", c_ty(ty), name);
         }
         Ty::Trial { ok, err } => {
-            // tag=0 (Pass), heap sides NULL, scalars 0 — drop is a no-op until assigned.
+            // tag=0 (Pass), heap sides NULL, scalars/compounds zero — drop no-op until assigned.
             let _ = write!(out, "    {} {} = {{ .tag = 0", c_ty(ty), name);
             if *ok.as_ref() != Ty::Void {
-                if is_heap_ty(ok) {
-                    out.push_str(", .ok = NULL");
-                } else if matches!(ok.as_ref(), Ty::Bool) {
-                    out.push_str(", .ok = false");
-                } else if matches!(ok.as_ref(), Ty::User(_)) {
-                    let _ = write!(out, ", .ok = ({}){{0}}", c_ty(ok));
-                } else {
-                    out.push_str(", .ok = 0");
-                }
+                emit_zero_field(out, "ok", ok);
             }
             if *err.as_ref() != Ty::Void {
-                if is_heap_ty(err) {
-                    out.push_str(", .err = NULL");
-                } else if matches!(err.as_ref(), Ty::Bool) {
-                    out.push_str(", .err = false");
-                } else if matches!(err.as_ref(), Ty::User(_)) {
-                    let _ = write!(out, ", .err = ({}){{0}}", c_ty(err));
-                } else {
-                    out.push_str(", .err = 0");
-                }
+                emit_zero_field(out, "err", err);
             }
             out.push_str(" };\n");
         }
@@ -475,15 +461,7 @@ fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
             // tag=1 (Not), value zeroed — drop is a no-op until assigned Has.
             let _ = write!(out, "    {} {} = {{ .tag = 1", c_ty(ty), name);
             if *inner.as_ref() != Ty::Void {
-                if is_heap_ty(inner) {
-                    out.push_str(", .value = NULL");
-                } else if matches!(inner.as_ref(), Ty::Bool) {
-                    out.push_str(", .value = false");
-                } else if matches!(inner.as_ref(), Ty::User(_)) {
-                    let _ = write!(out, ", .value = ({}){{0}}", c_ty(inner));
-                } else {
-                    out.push_str(", .value = 0");
-                }
+                emit_zero_field(out, "value", inner);
             }
             out.push_str(" };\n");
         }
@@ -1137,7 +1115,31 @@ fn ty_mangle(ty: &Ty) -> String {
         Ty::Bytes => "Bytes".into(),
         Ty::Buffer => "Buffer".into(),
         Ty::User(n) => n.replace('-', "_"),
+        Ty::Array { elem } => format!("Array_{}", ty_mangle(elem)),
+        Ty::May { inner } => format!("May_{}", ty_mangle(inner)),
+        Ty::Trial { ok, err } => format!("Trial_{}_{}", ty_mangle(ok), ty_mangle(err)),
         other => format!("{other:?}").replace(['<', '>', ' ', ','], "_"),
+    }
+}
+
+/// Nesting depth of `May` wrappers (for typedef emit order).
+fn may_nest_depth(ty: &Ty) -> usize {
+    match ty {
+        Ty::May { inner } => 1 + may_nest_depth(inner),
+        _ => 0,
+    }
+}
+
+/// Zero a field in a compound-literal / local initializer (scalars, heap, User, May).
+fn emit_zero_field(out: &mut String, field: &str, ty: &Ty) {
+    if is_heap_ty(ty) {
+        let _ = write!(out, ", .{field} = NULL");
+    } else if matches!(ty, Ty::Bool) {
+        let _ = write!(out, ", .{field} = false");
+    } else if matches!(ty, Ty::User(_) | Ty::May { .. } | Ty::Trial { .. }) {
+        let _ = write!(out, ", .{field} = ({}){{0}}", c_ty(ty));
+    } else {
+        let _ = write!(out, ", .{field} = 0");
     }
 }
 
@@ -1172,41 +1174,15 @@ fn emit_trial_make(out: &mut String, tag: &TrialTag, payload: &crate::mir::Place
                 let _ = write!(out, ", .ok = {}", payload.name);
             }
             if *err.as_ref() != Ty::Void {
-                if is_heap_ty(err) {
-                    out.push_str(", .err = NULL");
-                } else if matches!(err.as_ref(), Ty::Bool) {
-                    out.push_str(", .err = false");
-                } else if matches!(err.as_ref(), Ty::User(_)) {
-                    let _ = write!(out, ", .err = ({}){{0}}", c_ty(err));
-                } else {
-                    out.push_str(", .err = 0");
-                }
+                emit_zero_field(out, "err", err);
             }
             out.push_str(" }");
-            // Heap ok payload: extra ref owned by the Trial (temp also dropped).
-            // Emitted as statement after assign — see assign path. Dup in MIR for Use;
-            // for TrialMake we emit trailing dup via a statement in MIR... handled below in post?
-            // We dup in emit by wrapping: ({ ...; thoxa_dup; t; }) — use GNU statement expr, or
-            // rely on MIR. Prefer MIR: after TrialMake assign, if heap ok, Dup the trial? No —
-            // cgen emits compound literal sharing pointer; MIR should Dup payload after.
-            // Actually emit: ( (name){...} ) and if heap, the assign in MIR for Pass already
-            // has the payload place still live; we need Dup on the trial's ok field after.
-            // Simplest: if ok is heap, compound literal + runtime will share; MIR inserts
-            // Dup on payload place before TrialMake so RC is 2, then drop payload → 1 in trial.
-            // Wait — Dup on payload before make: RC=2, make shares pointer, drop payload RC=1. OK.
+            // Heap ok: MIR dups payload before TrialMake so RC is correct after drop.
         }
         TrialTag::Fail => {
             let _ = write!(out, "({name}){{ .tag = 1");
             if *ok.as_ref() != Ty::Void {
-                if is_heap_ty(ok) {
-                    out.push_str(", .ok = NULL");
-                } else if matches!(ok.as_ref(), Ty::Bool) {
-                    out.push_str(", .ok = false");
-                } else if matches!(ok.as_ref(), Ty::User(_)) {
-                    let _ = write!(out, ", .ok = ({}){{0}}", c_ty(ok));
-                } else {
-                    out.push_str(", .ok = 0");
-                }
+                emit_zero_field(out, "ok", ok);
             }
             if *err.as_ref() != Ty::Void {
                 let _ = write!(out, ", .err = {}", payload.name);
@@ -1246,15 +1222,7 @@ fn emit_may_make(out: &mut String, tag: &MayTag, payload: &crate::mir::Place, ma
         MayTag::Not => {
             let _ = write!(out, "({name}){{ .tag = 1");
             if *inner.as_ref() != Ty::Void {
-                if is_heap_ty(inner) {
-                    out.push_str(", .value = NULL");
-                } else if matches!(inner.as_ref(), Ty::Bool) {
-                    out.push_str(", .value = false");
-                } else if matches!(inner.as_ref(), Ty::User(_)) {
-                    let _ = write!(out, ", .value = ({}){{0}}", c_ty(inner));
-                } else {
-                    out.push_str(", .value = 0");
-                }
+                emit_zero_field(out, "value", inner);
             }
             out.push_str(" }");
             let _ = payload; // ignored for Not
@@ -1504,11 +1472,19 @@ fn collect_trial_tys_stmts(stmts: &[Stmt], out: &mut Vec<Ty>) {
     }
 }
 
+/// Collect `Trial<…>` monomorphs only (walks nested May/Array containers).
 fn push_trial_ty(ty: &Ty, out: &mut Vec<Ty>) {
-    if let Ty::Trial { .. } = ty {
-        if !out.iter().any(|t| t == ty) {
-            out.push(ty.clone());
+    match ty {
+        Ty::Trial { ok, err } => {
+            if !out.iter().any(|t| t == ty) {
+                out.push(ty.clone());
+            }
+            push_trial_ty(ok, out);
+            push_trial_ty(err, out);
         }
+        Ty::May { inner } => push_trial_ty(inner, out),
+        Ty::Array { elem } => push_trial_ty(elem, out),
+        _ => {}
     }
 }
 
@@ -1554,11 +1530,21 @@ fn collect_may_tys_stmts(stmts: &[Stmt], out: &mut Vec<Ty>) {
     }
 }
 
+/// Collect `May<…>` monomorphs only (walks nested Trial/Array containers — D113).
 fn push_may_ty(ty: &Ty, out: &mut Vec<Ty>) {
-    if let Ty::May { .. } = ty {
-        if !out.iter().any(|t| t == ty) {
-            out.push(ty.clone());
+    match ty {
+        Ty::May { inner } => {
+            push_may_ty(inner, out);
+            if !out.iter().any(|t| t == ty) {
+                out.push(ty.clone());
+            }
         }
+        Ty::Trial { ok, err } => {
+            push_may_ty(ok, out);
+            push_may_ty(err, out);
+        }
+        Ty::Array { elem } => push_may_ty(elem, out),
+        _ => {}
     }
 }
 

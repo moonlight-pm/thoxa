@@ -87,6 +87,7 @@ Freezes:
 - ~~Value-match bare binds~~ (**D110** shipped)
 - ~~Match guards~~ (**D111** shipped)
 - ~~File write/create~~ (**D112** shipped)
+- ~~Nested Array/May Trial payloads~~ (**D113** shipped)
 
 **Horizon / deferred until CURRENT says so:**
 

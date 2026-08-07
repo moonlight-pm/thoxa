@@ -22,7 +22,7 @@ Directory packages may use `Main.thx` as the entry file.
 | Heap | `String` (interpolation), `Bytes`, growable `Buffer`, dynamic `Array<T>` |
 | User types | `type Name(fields) { methods }` — including heap fields; method field write-back |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` |
-| Errors | `Trial<Ok,Err>` (`Pass`/`Fail`), `May<T>` (`Has`/`Not`), `?`, `match` |
+| Errors | `Trial<Ok,Err>` / `May<T>` with `?` / `match`; ok/err may be Array or May (not nested Trial) |
 | Equality | String `==` / `!=`; usual scalar compares |
 
 **Reference counting:** simple single-threaded RC (dup on copy, drop at function

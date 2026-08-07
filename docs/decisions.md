@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-07 — Nested Trial/May payloads
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D113 | Nested Trial/May payloads | Allow **dynamic `Array<T>`** and **`May<U>`** as Trial ok/err and May inner types | Nested **`Trial` as payload still deferred**. Lexer `>>` in type args is split into two `>` closers. cgen emits May monomorphs before Trial; nested May typedefs by depth. `Not()` outside `-> May` defaults to `May<Int64>` (so `Pass(Not())` works when ok is that monomorph). Conformance: `trials_nested`. |
+
 ## 2026-08-07 — File write/create
 
 | ID | Decision | Choice | Notes |
@@ -95,7 +101,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D85 | `May<T>` builtin | Parallel to Trial: `Has(x)` / `Not()`; monomorph C struct `tag` + optional `value`; match `Has(v)` / `Not`; `?` unwraps Has or returns Not from `-> May<…>` | Payload set same as Trial ok (Void/ints/Bool/String/Bytes/User). **No** inferred fallible returns, May↔Trial `?` mixing, or nested May/Array payloads. `Not` pattern is nullary (no parens); construct with `Not()`. |
+| D85 | `May<T>` builtin | Parallel to Trial: `Has(x)` / `Not()`; monomorph C struct `tag` + optional `value`; match `Has(v)` / `Not`; `?` unwraps Has or returns Not from `-> May<…>` | Payload set same as Trial ok; **nested Array/May → D113**. **No** inferred fallible returns or May↔Trial `?` mixing. `Not` pattern is nullary (no parens); construct with `Not()`. |
 | D46′ | `Bytes.find` | `find(needle[, from]) -> May<Int64>` | **Supersedes D46** (`-1` sentinel). Runtime still returns -1; MIR wraps to `Has(i)` / `Not`. Empty needle → `Has(from)` (in range); missing → `Not`. Conformance: `mays`, `bytes`; Http call sites match. |
 
 ## 2026-07-20 — Optional empty type body
@@ -262,7 +268,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D40 | Trial representation | `Ty::Trial { ok, err }` monomorphized C structs | Fields: `tag` + optional `ok`/`err` (omitted when Void) |
-| D41 | Trial payloads | Void, ints, Bool, String, Bytes, User | Nested Trial / Array / Address not yet |
+| D41 | Trial payloads | Void, ints, Bool, String, Bytes, User | **Array + May nested → D113**; Nested Trial / Address still deferred |
 | D42 | Pass/Fail typing | Prefer enclosing `-> Trial<…>` annotation | Legacy unannotated Pass/Fail(Int) → `Trial<Int64,Int64>` |
 | D43 | `?` across monomorphs | Same `E`; rewrap `Fail(e)` into outer `Trial<Ok',E>` | Allows `createSocket()?` inside `-> Trial<Void,String>` |
 | D44 | Trial RC | Dup live heap side on copy; drop live side on drop | Zero-init trial locals so branch-skipped drops are safe |

@@ -376,20 +376,23 @@ fn may_inner(ty: &Ty) -> Option<&Ty> {
 }
 
 /// Types allowed as Trial ok/err or May payloads.
+/// Nested `Array` / `May` allowed (D113). Nested `Trial` still deferred.
 fn is_trial_payload_ty(ty: &Ty) -> bool {
-    matches!(
-        ty,
+    match ty {
         Ty::Void
-            | Ty::Int32
-            | Ty::Int64
-            | Ty::UInt32
-            | Ty::UInt64
-            | Ty::Byte
-            | Ty::Bool
-            | Ty::String
-            | Ty::Bytes
-            | Ty::User(_)
-    )
+        | Ty::Int32
+        | Ty::Int64
+        | Ty::UInt32
+        | Ty::UInt64
+        | Ty::Byte
+        | Ty::Bool
+        | Ty::String
+        | Ty::Bytes
+        | Ty::User(_) => true,
+        Ty::Array { elem } => is_array_elem_ty(elem),
+        Ty::May { inner } => is_trial_payload_ty(inner),
+        _ => false,
+    }
 }
 
 fn is_int(ty: &Ty) -> bool {
@@ -5174,11 +5177,11 @@ fn lower_not(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)
     let ty = if let Ty::May { .. } = &ctx.fn_ret {
         ctx.fn_ret.clone()
     } else {
-        // Bare Not() without May return — default May<Int64> (find-shaped); prefer annotation.
-        return Err(Error::at(
-            "`Not()` requires an enclosing `-> May<…>` (or annotate the function)",
-            span,
-        ));
+        // Bare Not() outside `-> May<…>` (e.g. `Pass(Not())` with Trial ok = May):
+        // default May<Int64> like Has(int) inference; monomorph must match via coerce.
+        Ty::May {
+            inner: Box::new(Ty::Int64),
+        }
     };
     let dummy = ctx.fresh("notp");
     // Dummy payload zero for compound literal (ignored when tag=Not).
