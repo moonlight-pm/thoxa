@@ -1,0 +1,8 @@
+wrote=12
+body=hello write
+
+appended=5
+body2=hello write
+more
+
+flags=1|64|512

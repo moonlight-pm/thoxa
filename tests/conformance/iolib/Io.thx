@@ -1,19 +1,27 @@
-## Io — file open/read/close (R9+ subset of oracle examples/http/Io.thx).
-## Free `readFile` plus `File` type with method mut-field write-back (D107).
+## Io — file open/read/write/close (R9+ / D109 / D112).
+## Free `readFile` / `writeFile` plus `File` type with method field write-back.
 ## Open flags are Int32 constants (ADT OpenMode waits on sum types).
 ## errno/strerror: `thoxa_errno` RT helper + libc `strerror` via `extern … from "c"`.
 
 extern fn sysOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
+extern fn sysOpenMode(path!: String, flags!: Int32, mode!: Int32) -> Int32 from "c" "open"
 extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
+extern fn sysWrite(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "write"
 extern fn sysLseek(fd!: Int32, offset!: Int64, whence!: Int32) -> Int64 from "c" "lseek"
 extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
 extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
 extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
 
-## open(2) access modes (Linux / POSIX). Combinable O_CREAT/O_TRUNC later.
+## open(2) access modes (Linux / POSIX).
 export let oRdonly = 0
 export let oWronly = 1
 export let oRdwr = 2
+## Creation / truncation / append (Linux x86_64 values).
+export let oCreat = 64
+export let oTrunc = 512
+export let oAppend = 1024
+## Default mode for O_CREAT: 0644.
+export let oMode644 = 420
 
 ## lseek(2) whence values (Linux).
 let seekSet = 0
@@ -23,6 +31,11 @@ let seekEnd = 2
 ## "context: reason" from the current errno, for a Fail payload.
 fn fileErr(what!: String) -> String {
     "{what}: {sysStrerror(sysErrno())}"
+}
+
+## True when `flags` includes O_CREAT (needs 3-arg open + mode).
+fn flagsNeedMode(flags!: Int32) -> Bool {
+    (flags & oCreat) != 0
 }
 
 ## Open file handle. `fd` is Int64 for ctor-param field rules; written back to
@@ -66,23 +79,52 @@ export type File(fd: Int64) {
             }
         }
     }
+
+    ## Write all of `data` from the current offset (does not close).
+    ## Returns bytes written on success.
+    export fn write(data: Bytes) -> Trial<Int64, String> {
+        if fd < 0 {
+            Fail("write: file is closed")
+        } else {
+            let n = sysWrite(fd, data, data.count)
+            if n < 0 {
+                Fail(fileErr("write"))
+            } else {
+                Pass(n)
+            }
+        }
+    }
 }
 
 ## Open `path` with open(2) flags (default O_RDONLY).
-export fn openFile(path!: String, flags: Int32 = oRdonly) -> Trial<File, String> {
-    let fd = sysOpen(path, flags)
-    if fd < 0 {
-        Fail(fileErr("open {path}"))
+## When O_CREAT is set, uses `mode` (default 0644 = 420).
+## Mode default is a literal so call sites need not import `oMode644`
+## (default exprs resolve in the caller's scope today).
+export fn openFile(
+    path!: String,
+    flags: Int32 = oRdonly,
+    mode: Int32 = 420
+) -> Trial<File, String> {
+    if flagsNeedMode(flags) {
+        let raw = sysOpenMode(path, flags, mode)
+        if raw < 0 {
+            Fail(fileErr("open {path}"))
+        } else {
+            ## Widen open(2) fd (Int32) → Int64 via File ctor arg coerce (D21).
+            Pass(File(fd: raw))
+        }
     } else {
-        ## Widen open(2) fd (Int32) to Int64 for File's ctor field.
-        Pass(File(fd: fd))
+        let raw = sysOpen(path, flags)
+        if raw < 0 {
+            Fail(fileErr("open {path}"))
+        } else {
+            ## Widen open(2) fd (Int32) → Int64 via File ctor arg coerce (D21).
+            Pass(File(fd: raw))
+        }
     }
 }
 
 ## Read the entire contents of `path` as Bytes (open → readAll → close).
-## Fail messages: "open …: <strerror>" | "seek …" | "read …". Directories open on
-## Linux then fail at read — callers that want index.html fallback treat any Fail
-## the same (see Router).
 export fn readFile(path!: String) -> Trial<Bytes, String> {
     match openFile(path) {
         Fail(e) { Fail(e) }
@@ -95,6 +137,47 @@ export fn readFile(path!: String) -> Trial<Bytes, String> {
                 Pass(body) {
                     f.close()
                     Pass(body)
+                }
+            }
+        }
+    }
+}
+
+## Create/truncate `path` and write all of `data` (O_WRONLY|O_CREAT|O_TRUNC).
+## Returns bytes written. Closes the file on both success and failure after open.
+export fn writeFile(path!: String, data!: Bytes) -> Trial<Int64, String> {
+    let flags = oWronly | oCreat | oTrunc
+    match openFile(path, flags) {
+        Fail(e) { Fail(e) }
+        Pass(f) {
+            match f.write(data) {
+                Fail(e) {
+                    f.close()
+                    Fail(e)
+                }
+                Pass(n) {
+                    f.close()
+                    Pass(n)
+                }
+            }
+        }
+    }
+}
+
+## Append all of `data` to `path` (creates if missing).
+export fn appendFile(path!: String, data!: Bytes) -> Trial<Int64, String> {
+    let flags = oWronly | oCreat | oAppend
+    match openFile(path, flags) {
+        Fail(e) { Fail(e) }
+        Pass(f) {
+            match f.write(data) {
+                Fail(e) {
+                    f.close()
+                    Fail(e)
+                }
+                Pass(n) {
+                    f.close()
+                    Pass(n)
                 }
             }
         }

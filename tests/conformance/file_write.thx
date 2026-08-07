@@ -1,0 +1,42 @@
+## File write/create (D112): writeFile, appendFile, File.write.
+import { writeFile, appendFile, readFile, oCreat, oWronly, oTrunc } from "./iolib/Io"
+
+fn main() -> Int64 {
+    let path = "/tmp/thoxa_file_write_conformance.txt"
+    let body = Bytes.fromString("hello write\n")
+    match writeFile(path, body) {
+        Fail(e) {
+            println("write-fail={e}")
+        }
+        Pass(n) {
+            println("wrote={n}")
+        }
+    }
+    match readFile(path) {
+        Fail(e) {
+            println("read-fail={e}")
+        }
+        Pass(b) {
+            println("body={b.toString()}")
+        }
+    }
+    match appendFile(path, Bytes.fromString("more\n")) {
+        Fail(e) {
+            println("append-fail={e}")
+        }
+        Pass(n) {
+            println("appended={n}")
+        }
+    }
+    match readFile(path) {
+        Fail(e) {
+            println("read2-fail={e}")
+        }
+        Pass(b) {
+            println("body2={b.toString()}")
+        }
+    }
+    ## Flags are exported for callers that compose open modes.
+    println("flags={oWronly}|{oCreat}|{oTrunc}")
+    0
+}
