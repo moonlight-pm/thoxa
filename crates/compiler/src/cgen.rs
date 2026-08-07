@@ -470,6 +470,10 @@ fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
             }
             out.push_str(" };\n");
         }
+        Ty::FixedArray { elem, len } => {
+            // First-class fixed Array<T,N> local (D117): C array, zero-init.
+            let _ = writeln!(out, "    {} {}[{len}] = {{0}};", c_ty(elem), name);
+        }
         _ => {
             let _ = writeln!(out, "    {} {};", c_ty(ty), name);
         }
@@ -487,6 +491,7 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
             Stmt::FieldAssign { .. }
             | Stmt::IndexAssign { .. }
             | Stmt::DynIndexAssign { .. }
+            | Stmt::FixedIndexAssign { .. }
             | Stmt::Eval(_) => {}
             Stmt::If {
                 then_body,
@@ -539,6 +544,22 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                         place.name,
                         array_user_elem_dup_fn(type_name)
                     );
+                } else if let RValue::FixedArrayLit {
+                    elems,
+                    elem_ty,
+                    len: _,
+                } = value
+                {
+                    // C arrays are not assignable; init element-wise (D117).
+                    for (i, e) in elems.iter().enumerate() {
+                        let _ = writeln!(
+                            out,
+                            "{pad}{}[{i}] = ({}){};",
+                            place.name,
+                            c_ty(elem_ty),
+                            e.name
+                        );
+                    }
                 } else {
                     let _ = write!(out, "{pad}{} = ", place.name);
                     emit_rvalue(out, value, types);
@@ -596,6 +617,21 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                     base.name,
                     acc,
                     field,
+                    index.name,
+                    c_ty(ty),
+                    value.name
+                );
+            }
+            Stmt::FixedIndexAssign {
+                base,
+                index,
+                ty,
+                value,
+            } => {
+                let _ = writeln!(
+                    out,
+                    "{pad}{}[{}] = ({}){};",
+                    base.name,
                     index.name,
                     c_ty(ty),
                     value.name
@@ -927,6 +963,23 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                 field,
                 index.name
             );
+        }
+        RValue::FixedIndex { base, index } => {
+            let _ = write!(out, "{}[{}]", base.name, index.name);
+        }
+        RValue::FixedArrayLit {
+            elems,
+            elem_ty,
+            len,
+        } => {
+            let _ = write!(out, "({})[{len}]{{", c_ty(elem_ty));
+            for (i, e) in elems.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(&e.name);
+            }
+            out.push('}');
         }
         RValue::ArrayLit { elems, elem_ty } => {
             emit_array_lit(out, elems, elem_ty);

@@ -93,6 +93,13 @@ pub enum Stmt {
         elem_ty: Ty,
         value: Place,
     },
+    /// `name[index] = value` (first-class fixed Array<T,N> local — D117).
+    FixedIndexAssign {
+        base: Place,
+        index: Place,
+        ty: Ty,
+        value: Place,
+    },
     Eval(RValue),
     If {
         cond: Place,
@@ -190,6 +197,17 @@ pub enum RValue {
         base: Place,
         field: String,
         index: Place,
+    },
+    /// `name[index]` — first-class fixed Array<T,N> local element load (D117).
+    FixedIndex {
+        base: Place,
+        index: Place,
+    },
+    /// Fixed Array<T,N> local initializer from element places (D117).
+    FixedArrayLit {
+        elems: Vec<Place>,
+        elem_ty: Ty,
+        len: u64,
     },
     /// Dynamic Array literal from element places (homogeneous).
     ArrayLit {
@@ -1879,6 +1897,53 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                     }
                 }
 
+                // Annotated fixed Array<T,N> from array literal (D117).
+                if let Some(ann) = ann {
+                    let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
+                    if let Ty::FixedArray { elem, len } = &expect {
+                        if let ExprKind::ArrayLit(elems) = &init.kind {
+                            if elems.len() as u64 != *len {
+                                return Err(Error::at(
+                                    format!(
+                                        "fixed Array length mismatch: expected {len}, found {}",
+                                        elems.len()
+                                    ),
+                                    init.span,
+                                ));
+                            }
+                            if !is_abi_scalar(elem) {
+                                return Err(Error::at(
+                                    format!(
+                                        "fixed Array element must be an ABI scalar, got {elem:?}"
+                                    ),
+                                    *name_span,
+                                ));
+                            }
+                            let mut places = Vec::new();
+                            for e in elems {
+                                let (p, ty) = lower_expr(ctx, e)?;
+                                let p = coerce_to_field(ctx, p, &ty, elem, e.span)?;
+                                places.push(p);
+                            }
+                            // Bind directly (C arrays are not assignable via `Use` copy).
+                            let bound = Place {
+                                name: sanitize_name(name),
+                            };
+                            ctx.assign(
+                                bound.clone(),
+                                expect.clone(),
+                                RValue::FixedArrayLit {
+                                    elems: places,
+                                    elem_ty: elem.as_ref().clone(),
+                                    len: *len,
+                                },
+                            );
+                            ctx.define(name, expect, *mutable, bound);
+                            continue;
+                        }
+                    }
+                }
+
                 let (place, ty) = lower_expr(ctx, init)?;
                 let (place, ty) = if let Some(ann) = ann {
                     let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
@@ -2070,38 +2135,70 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
                     *name_span,
                 ));
             }
-            let elem_ty = match &binding.ty {
-                Ty::Array { elem } => elem.as_ref().clone(),
-                other => {
-                    return Err(Error::at(
-                        format!("index assign on non-Array type {other:?}"),
-                        *name_span,
-                    ));
+            match &binding.ty {
+                Ty::Array { elem } => {
+                    let elem_ty = elem.as_ref().clone();
+                    let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+                    if !is_int(&idx_ty) {
+                        return Err(Error::at("array index must be an integer", index.span));
+                    }
+                    let idx_p = if idx_ty == Ty::Int64 {
+                        idx_p
+                    } else {
+                        coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+                    };
+                    let (v, vty) = lower_expr(ctx, value)?;
+                    if vty != elem_ty {
+                        return Err(Error::at(
+                            format!(
+                                "array element type mismatch: expected {elem_ty:?}, found {vty:?}"
+                            ),
+                            value.span,
+                        ));
+                    }
+                    ctx.stmts.push(Stmt::DynIndexAssign {
+                        base: binding.place,
+                        index: idx_p,
+                        elem_ty,
+                        value: v,
+                    });
+                    Ok(())
                 }
-            };
-            let (idx_p, idx_ty) = lower_expr(ctx, index)?;
-            if !is_int(&idx_ty) {
-                return Err(Error::at("array index must be an integer", index.span));
+                Ty::FixedArray { elem, len } => {
+                    let elem_ty = elem.as_ref().clone();
+                    let len = *len;
+                    let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+                    if !is_int(&idx_ty) {
+                        return Err(Error::at("array index must be an integer", index.span));
+                    }
+                    let idx_p = if idx_ty == Ty::Int64 {
+                        idx_p
+                    } else {
+                        coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+                    };
+                    if let ExprKind::Int(n) = &index.kind {
+                        if *n < 0 || (*n as u64) >= len {
+                            return Err(Error::at(
+                                format!("index {n} out of bounds for Array of length {len}"),
+                                index.span,
+                            ));
+                        }
+                    }
+                    let (v, vty) = lower_expr(ctx, value)?;
+                    let v = coerce_to_field(ctx, v, &vty, &elem_ty, value.span)?;
+                    ctx.stmts.push(Stmt::FixedIndexAssign {
+                        base: binding.place,
+                        index: idx_p,
+                        ty: elem_ty,
+                        value: v,
+                    });
+                    Ok(())
+                }
+                other => Err(Error::at(
+                    format!("index assign on non-Array type {other:?}"),
+                    *name_span,
+                )),
             }
-            let idx_p = if idx_ty == Ty::Int64 {
-                idx_p
-            } else {
-                coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
-            };
-            let (v, vty) = lower_expr(ctx, value)?;
-            if vty != elem_ty {
-                return Err(Error::at(
-                    format!("array element type mismatch: expected {elem_ty:?}, found {vty:?}"),
-                    value.span,
-                ));
-            }
-            ctx.stmts.push(Stmt::DynIndexAssign {
-                base: binding.place,
-                index: idx_p,
-                elem_ty,
-                value: v,
-            });
-            Ok(())
         }
     }
 }
@@ -3008,8 +3105,39 @@ fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Res
         }
     }
 
-    // Dynamic Array: `arr[i]`
+    // Local Array / fixed Array: `arr[i]`
     let (base_p, base_ty) = lower_expr(ctx, base)?;
+    if let Ty::FixedArray { elem, len } = &base_ty {
+        let elem_ty = elem.as_ref().clone();
+        let len = *len;
+        let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+        if !is_int(&idx_ty) {
+            return Err(Error::at("array index must be an integer", index.span));
+        }
+        let idx_p = if idx_ty == Ty::Int64 {
+            idx_p
+        } else {
+            coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+        };
+        if let ExprKind::Int(n) = &index.kind {
+            if *n < 0 || (*n as u64) >= len {
+                return Err(Error::at(
+                    format!("index {n} out of bounds for Array of length {len}"),
+                    index.span,
+                ));
+            }
+        }
+        let p = ctx.fresh("fidx");
+        ctx.assign(
+            p.clone(),
+            elem_ty.clone(),
+            RValue::FixedIndex {
+                base: base_p,
+                index: idx_p,
+            },
+        );
+        return Ok((p, elem_ty));
+    }
     let elem_ty = match &base_ty {
         Ty::Array { elem } => elem.as_ref().clone(),
         other => {

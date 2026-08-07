@@ -21,7 +21,7 @@ Directory packages may use `Main.thx` as the entry file.
 | Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Bool`, `Void` |
 | Heap | `String` (interpolation), `Bytes`, growable `Buffer`, dynamic `Array<T>` |
 | User types | `type Name(fields) { methods }` — including heap fields; method field write-back |
-| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` |
+| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` (fields **and** locals) |
 | Errors | `Trial<Ok,Err>` / `May<T>` with `?` / `match`; ok/err may be Array, May, or nested Trial |
 | Equality | String `==` / `!=`; usual scalar compares |
 

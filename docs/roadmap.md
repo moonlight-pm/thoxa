@@ -91,6 +91,7 @@ Freezes:
 - ~~Nested Trial as payload~~ (**D114** shipped)
 - ~~File seek/position~~ (**D115** shipped)
 - ~~Default-arg defining-module scope~~ (**D116** shipped)
+- ~~First-class fixed Array locals~~ (**D117** shipped)
 
 **Horizon / deferred until CURRENT says so:**
 

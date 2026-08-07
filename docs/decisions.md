@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-07 — Fixed Array locals
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D117 | First-class fixed `Array<T,N>` locals | Locals with `Array<T,N>` annotation + array lit of length N; element get/set; ABI scalar elems only | Extends field-only **D27**. Whole-array assign still forbidden (C arrays). Lit elems coerce to `T` (e.g. Int64 → Byte). Conformance: `fixed_array_local`. |
+
 ## 2026-08-07 — Default-arg defining-module scope
 
 | ID | Decision | Choice | Notes |
@@ -328,7 +334,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | D24 | Body-field types | `type T { [mut\|let] f: Ty }` with ABI scalars / `Array<T,N>` | Separate from R3 constructor-param types |
 | D25 | Construction | `T()` zero-inits C-layout types | No field args; R3 still uses named constructor args |
 | D26 | `Address<T>` | Extern params only; implicit `&` on mut User places | Explicit `address()`, storing Address deferred |
-| D27 | Fixed arrays | Field-only `Array<T, N>`; element get/set via `[i]` | No whole-array bind/slice |
+| D27 | Fixed arrays | Field-only `Array<T, N>`; element get/set via `[i]` | Locals → **D117**. No whole-array assign/slice |
 | D28 | New scalar widths | UInt32, Byte (=UInt8); bitwise on integers in Int64 then truncate on field store | Hex `0x…` literals |
 | D29 | Struct value-copy / `sizeof` | Deferred | Oracle LF-B §9; kilo re-reads via tcgetattr |
 
