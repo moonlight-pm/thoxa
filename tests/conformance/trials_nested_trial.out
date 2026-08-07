@@ -1,0 +1,6 @@
+ok=42
+inner-fail=inner-err
+outer-fail=outer-err
+may-ok=42
+may-not
+chain=42

@@ -1,0 +1,92 @@
+## Nested Trial as Trial/May payload (D114).
+
+fn innerOk() -> Trial<Int64, String> {
+    Pass(42)
+}
+
+fn innerFail() -> Trial<Int64, String> {
+    Fail("inner-err")
+}
+
+fn wrapOk() -> Trial<Trial<Int64, String>, String> {
+    Pass(innerOk())
+}
+
+fn wrapInnerFail() -> Trial<Trial<Int64, String>, String> {
+    Pass(innerFail())
+}
+
+fn wrapOuterFail() -> Trial<Trial<Int64, String>, String> {
+    Fail("outer-err")
+}
+
+fn wrapMay() -> May<Trial<Int64, String>> {
+    Has(innerOk())
+}
+
+fn wrapMayNot() -> May<Trial<Int64, String>> {
+    Not()
+}
+
+fn chain() -> Trial<Trial<Int64, String>, String> {
+    let t = wrapOk()?
+    Pass(t)
+}
+
+fn main() -> Int64 {
+    match wrapOk() {
+        Pass(t) {
+            match t {
+                Pass(v) { println("ok={v}") }
+                Fail(e) { println("inner-fail={e}") }
+            }
+        }
+        Fail(e) { println("outer-fail={e}") }
+    }
+    match wrapInnerFail() {
+        Pass(t) {
+            match t {
+                Pass(v) { println("ok={v}") }
+                Fail(e) { println("inner-fail={e}") }
+            }
+        }
+        Fail(e) { println("outer-fail={e}") }
+    }
+    match wrapOuterFail() {
+        Pass(t) {
+            match t {
+                Pass(v) { println("ok={v}") }
+                Fail(e) { println("inner-fail={e}") }
+            }
+        }
+        Fail(e) { println("outer-fail={e}") }
+    }
+    match wrapMay() {
+        Has(t) {
+            match t {
+                Pass(v) { println("may-ok={v}") }
+                Fail(e) { println("may-inner={e}") }
+            }
+        }
+        Not { println("may-not") }
+    }
+    match wrapMayNot() {
+        Has(t) {
+            match t {
+                Pass(v) { println("may-ok={v}") }
+                Fail(e) { println("may-inner={e}") }
+            }
+        }
+        Not { println("may-not") }
+    }
+    match chain() {
+        Pass(t) {
+            match t {
+                Pass(v) { println("chain={v}") }
+                Fail(e) { println("chain-inner={e}") }
+            }
+        }
+        Fail(e) { println("chain-outer={e}") }
+    }
+    0
+}

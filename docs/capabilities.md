@@ -21,8 +21,8 @@ change. See [`progress-model.md`](progress-model.md).
 |----|------------|--------|------|--------------|------|----------|
 | driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | none for v0 | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
-| trial | `Trial` + `match` + `?` monomorphs | shipped | `trials`, `trials_mono`, `trials_nested` | D40–D45, D113 | Nested **Trial** as payload deferred; Address not a payload | yes |
-| may | `May` / `Has` / `Not` + `?` | shipped | `mays`, `trials_nested` | D85, D113 | No May↔Trial `?` mix; no inferred fallible returns; nested Array/May ok | yes |
+| trial | `Trial` + `match` + `?` monomorphs | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial` | D40–D45, D113–D114 | Address not a payload | yes |
+| may | `May` / `Has` / `Not` + `?` | shipped | `mays`, `trials_nested`, `trials_nested_trial` | D85, D113–D114 | No May↔Trial `?` mix; no inferred fallible returns; nested Array/May/Trial ok | yes |
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |

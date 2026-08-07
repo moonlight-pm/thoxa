@@ -376,7 +376,7 @@ fn may_inner(ty: &Ty) -> Option<&Ty> {
 }
 
 /// Types allowed as Trial ok/err or May payloads.
-/// Nested `Array` / `May` allowed (D113). Nested `Trial` still deferred.
+/// Nested `Array` / `May` (D113) and nested `Trial` (D114) allowed.
 fn is_trial_payload_ty(ty: &Ty) -> bool {
     match ty {
         Ty::Void
@@ -391,6 +391,7 @@ fn is_trial_payload_ty(ty: &Ty) -> bool {
         | Ty::User(_) => true,
         Ty::Array { elem } => is_array_elem_ty(elem),
         Ty::May { inner } => is_trial_payload_ty(inner),
+        Ty::Trial { ok, err } => is_trial_payload_ty(ok) && is_trial_payload_ty(err),
         _ => false,
     }
 }

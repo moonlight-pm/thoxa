@@ -19,11 +19,17 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-07 — Nested Trial as payload
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D114 | Nested Trial as payload | Allow **`Trial<…>`** as Trial ok/err and May inner types | Completes D113. cgen interleaves May/Trial monomorph typedefs by nest depth (`May<Trial>` and `Trial<May>` both work). Address still not a payload. Conformance: `trials_nested_trial`. |
+
 ## 2026-08-07 — Nested Trial/May payloads
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D113 | Nested Trial/May payloads | Allow **dynamic `Array<T>`** and **`May<U>`** as Trial ok/err and May inner types | Nested **`Trial` as payload still deferred**. Lexer `>>` in type args is split into two `>` closers. cgen emits May monomorphs before Trial; nested May typedefs by depth. `Not()` outside `-> May` defaults to `May<Int64>` (so `Pass(Not())` works when ok is that monomorph). Conformance: `trials_nested`. |
+| D113 | Nested Array/May payloads | Allow **dynamic `Array<T>`** and **`May<U>`** as Trial ok/err and May inner types | Nested **Trial → D114**. Lexer `>>` in type args is split into two `>` closers. cgen monomorph typedefs by nest depth. `Not()` outside `-> May` defaults to `May<Int64>` (so `Pass(Not())` works when ok is that monomorph). Conformance: `trials_nested`. |
 
 ## 2026-08-07 — File write/create
 
@@ -268,7 +274,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D40 | Trial representation | `Ty::Trial { ok, err }` monomorphized C structs | Fields: `tag` + optional `ok`/`err` (omitted when Void) |
-| D41 | Trial payloads | Void, ints, Bool, String, Bytes, User | **Array + May nested → D113**; Nested Trial / Address still deferred |
+| D41 | Trial payloads | Void, ints, Bool, String, Bytes, User | **Array + May → D113**; **nested Trial → D114**; Address still deferred |
 | D42 | Pass/Fail typing | Prefer enclosing `-> Trial<…>` annotation | Legacy unannotated Pass/Fail(Int) → `Trial<Int64,Int64>` |
 | D43 | `?` across monomorphs | Same `E`; rewrap `Fail(e)` into outer `Trial<Ok',E>` | Allows `createSocket()?` inside `-> Trial<Void,String>` |
 | D44 | Trial RC | Dup live heap side on copy; drop live side on drop | Zero-init trial locals so branch-skipped drops are safe |

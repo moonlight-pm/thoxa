@@ -88,6 +88,7 @@ Freezes:
 - ~~Match guards~~ (**D111** shipped)
 - ~~File write/create~~ (**D112** shipped)
 - ~~Nested Array/May Trial payloads~~ (**D113** shipped)
+- ~~Nested Trial as payload~~ (**D114** shipped)
 
 **Horizon / deferred until CURRENT says so:**
 

@@ -92,20 +92,25 @@ pub fn emit_program_with(
         emit_typedef(&mut out, t);
     }
 
-    // Monomorphized May then Trial typedefs (May may appear as Trial payload — D113).
+    // Monomorphized May/Trial typedefs. Interleave by nest depth so
+    // May<Trial<…>> and Trial<May<…>> both see payload types first (D113/D114).
     let mut may_tys: Vec<Ty> = Vec::new();
     collect_may_tys_program(program, &mut may_tys);
-    // Nested May-in-May: emit deeper inners first.
-    may_tys.sort_by_key(may_nest_depth);
-    for ty in &may_tys {
-        emit_may_typedef(&mut out, ty);
-    }
     let mut trial_tys: Vec<Ty> = Vec::new();
     collect_trial_tys_program(program, &mut trial_tys);
-    for ty in &trial_tys {
-        emit_trial_typedef(&mut out, ty);
+    let mut monos: Vec<Ty> = Vec::new();
+    monos.extend(may_tys.iter().cloned());
+    monos.extend(trial_tys.iter().cloned());
+    monos.sort_by_key(mono_nest_depth);
+    // Stable secondary: keep unique order after sort (may/trial already unique).
+    for ty in &monos {
+        match ty {
+            Ty::May { .. } => emit_may_typedef(&mut out, ty),
+            Ty::Trial { .. } => emit_trial_typedef(&mut out, ty),
+            _ => {}
+        }
     }
-    if !trial_tys.is_empty() || !may_tys.is_empty() {
+    if !monos.is_empty() {
         out.push('\n');
     }
 
@@ -1122,10 +1127,12 @@ fn ty_mangle(ty: &Ty) -> String {
     }
 }
 
-/// Nesting depth of `May` wrappers (for typedef emit order).
-fn may_nest_depth(ty: &Ty) -> usize {
+/// Nest depth of May/Trial wrappers (for interleaved typedef emit order).
+fn mono_nest_depth(ty: &Ty) -> usize {
     match ty {
-        Ty::May { inner } => 1 + may_nest_depth(inner),
+        Ty::May { inner } => 1 + mono_nest_depth(inner),
+        Ty::Trial { ok, err } => 1 + mono_nest_depth(ok).max(mono_nest_depth(err)),
+        Ty::Array { elem } => mono_nest_depth(elem),
         _ => 0,
     }
 }
@@ -1472,15 +1479,16 @@ fn collect_trial_tys_stmts(stmts: &[Stmt], out: &mut Vec<Ty>) {
     }
 }
 
-/// Collect `Trial<…>` monomorphs only (walks nested May/Array containers).
+/// Collect `Trial<…>` monomorphs only (walks nested May/Array/Trial containers).
 fn push_trial_ty(ty: &Ty, out: &mut Vec<Ty>) {
     match ty {
         Ty::Trial { ok, err } => {
+            // Inner monomorphs first so typedef order is safe even without sort.
+            push_trial_ty(ok, out);
+            push_trial_ty(err, out);
             if !out.iter().any(|t| t == ty) {
                 out.push(ty.clone());
             }
-            push_trial_ty(ok, out);
-            push_trial_ty(err, out);
         }
         Ty::May { inner } => push_trial_ty(inner, out),
         Ty::Array { elem } => push_trial_ty(elem, out),
