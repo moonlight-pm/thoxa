@@ -4,37 +4,47 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-05 (session-libtcc shipped; next: std growth / residual polish)
+**As of:** 2026-08-06 (D106 method/ctor defaults; shell parked; language focus)
 
 ---
 
 ## Now
 
-**Session product core + in-process libtcc steps (D105) are shipped.** Default
-next work is thin `std/` growth and leftover polish — not reopening the ladder.
+**Session / shell is parked** (core + libtcc shipped). Default product work is
+**language kernel depth** — one capability gap at a time, with conformance.
+**Shipped this turn:** method/ctor parameter defaults (**D106**).
 
 ### Proceed order
 
-1. **Grow `std/`** — more Str/Path/Io helpers; `ffi` remains deferred.
-2. **Session residual** — optional libtcc base-object cache; TinyCC license
-   packaging notice; escape hatch `THOXA_REPL_BACKEND=cc` kept for bisect.
-3. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
+1. **Language** — pick one open gap from the matrix (do not invent syntax without
+   oracle / decisions check). Prefer small, conformance-backed slices.  
+   Strong candidates (pick one):
+   - **Method mut-field write-back** (`mut` field store through methods; unlocks
+     File-type stories later) — capabilities: `mut-assign` / `file-io` gaps.
+   - **Value-match depth** — bare binds / or-patterns / guards (D87 gaps).
+   - **`"…" as Bytes`** (bytes capability gap).
+2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md).
-4. **Deferred megawork** — M4, Perceus, effects, File type / method mut-field
-   write-back, Net errno strings — not default until CURRENT says so.
+3. **Parked: session residual** — redir polish (`2>`, redir-on-pipe), Shell
+   import-first, crude line editor — resume only if CURRENT says so. Freeze:
+   [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
+4. **Deferred megawork** — M4, Perceus, effects, full File type, named `ffi`
+   root, Net errno strings, TinyCC license packaging, libtcc base-object cache —
+   not default until CURRENT says so.
+
+**Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
+conformance green-ups; **opportunistic `std/` helpers** proven by a real sample
+in the same change (not a free-floating “grow std” sprint).
 
 **Explicit holds:**
 
 - Inventing shell dialect (`if`/`for`/full `$` forest)
+- Session residual polish as default work (parked)
 - Tree-walk product interpreter or QBE path (phase A)
 - Claiming full oracle SPEC coverage
-- Breadth language features ahead of std growth unless human redirects
 - Windows / non-Linux session backends
-- Blocking on third-party license packaging for TinyCC (deferred by D105.d)
-
-**Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
-conformance green-ups.
+- Treating “expand std/” as its own priority line
 
 Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 [`docs/capabilities.md`](docs/capabilities.md).
@@ -50,13 +60,12 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Errors | `May` / `Trial` + `?` / `match`; no May↔Trial mix via `?` |
 | Session product face | Bare `thoxa` / `thoxa repl`; no-`main` = session script |
 | Session value | `type Shell(status: Int64)` + methods; real Thoxa; `std/Shell.thx` |
-| REPL step backend | **libtcc in-process** (`TCC_OUTPUT_MEMORY`) → call `thoxa_session_step` (D105); no step `.so` on happy path |
-| REPL step escape | `THOXA_REPL_BACKEND=cc` → legacy `cc -shared` + dlopen |
+| REPL step backend | **libtcc in-process only** (`TCC_OUTPUT_MEMORY`) → call `thoxa_session_step` (D105); no step `.so` |
 | Batch / RT C | System **`cc`** (+ `ar` for runtime) unchanged |
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
-| `std/` root | Named `std/…` (D97); thin modules; `ffi` deferred |
+| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; `ffi` deferred |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
 | Oracle | `apocrypha/old/ThoxaPython` reference only — not the product |
@@ -82,12 +91,10 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 
 ```bash
 cargo make test
-cargo test -p thoxa --lib repl::
-cargo test -p thoxa --lib tcc::
-printf 'echo hi\nls -al\nexit\n' | cargo run -p thoxa --
-THOXA_REPL_BACKEND=cc printf 'echo hi\nexit\n' | cargo run -p thoxa --
-cargo make shell --login
-cargo run -p thoxa -- tests/conformance/stdlib.thx
+cargo test -p thoxa --lib
+cargo run -p thoxa -- tests/conformance/param_defaults.thx
+cargo run -p thoxa -- tests/conformance/user_rc.thx
+printf 'echo hi\nexit\n' | cargo run -p thoxa --
 ```
 
 ---

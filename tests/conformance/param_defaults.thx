@@ -1,10 +1,27 @@
-## Named parameters with defaults (SPEC §4.1 / M3 subset).
+## Named parameters with defaults (SPEC §4.1 / M3 + D106 method/ctor).
 fn greet(name: String, greeting: String = "Hello") -> String {
     "{greeting}, {name}"
+}
+
+type Box(label: String, n: Int64 = 0) {
+    export fn describe(prefix: String = "box") -> String {
+        "{prefix}:{label}:{n}"
+    }
+
+    export fn bump(by: Int64 = 1) -> Int64 {
+        n + by
+    }
 }
 
 fn main() -> Int64 {
     println(greet(name: "Ada"))
     println(greet(name: "Bo", greeting: "Hi"))
+    let a = Box(label: "x")
+    println(a.describe())
+    println(a.describe(prefix: "item"))
+    println("{a.bump()}")
+    println("{a.bump(by: 10)}")
+    let b = Box(label: "y", n: 7)
+    println(b.describe())
     0
 }

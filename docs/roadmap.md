@@ -53,35 +53,45 @@ Freeze: [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-e
 
 ## Phase C — Session language (shell / REPL)
 
-**Status: partial** (core shipped; polish active)
+**Status: partial** (core shipped; **polish parked**)
 
 - No-main scripts, command sugar, bare `thoxa` REPL, **libtcc** session steps
   (D105), rc/prompt/path, pipes/redirs, pure-step builtins, `std/Shell.thx`.
-- Thin `std/` for prompts and helpers.
+- Thin `std/` for prompts and helpers (sample-driven only).
 
-**Remaining (active):** grow `std/`; residual redir polish (`2>`, redir-on-pipe);
-optional libtcc base cache / license packaging.
+**Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first;
+crude line editor. Resume only when CURRENT says so.
+
+**Later polish (not active):** libtcc base-object cache; TinyCC license packaging
+notice — libtcc freeze §11.
 
 Freezes:
 
 - [`specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md)
   (session product)
 - [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
-  (step C backend — core shipped)
+  (step C backend — shipped)
 
 ---
 
 ## Phase D — Deeper language / runtime
 
-**Status: planned**
+**Status: active** (see root `CURRENT.md`)
+
+**Near-term (capability gaps, not megawork):**
+
+- ~~Method / ctor parameter defaults~~ (**D106** shipped)
+- Method mut-field write-back (unlocks File-type later)
+- Value-match depth (binds / or-patterns / guards)
+- `"…" as Bytes`
+
+**Horizon / deferred until CURRENT says so:**
 
 - Perceus / precise RC
 - Sum types / richer ADTs (where oracle forces)
-- File type + method mut-field write-back
+- Full File type
 - Named `ffi` root
 - Algebraic effects (only when forced)
-
-**Do not start by default** — only when CURRENT promotes a slice.
 
 ---
 

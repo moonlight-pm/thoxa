@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-05
+**As of:** 2026-08-06
 
 ---
 
@@ -36,7 +36,7 @@ change. See [`progress-model.md`](progress-model.md).
 | array-dyn | Dynamic `Array<T>` (incl. User) | shipped | `arrays`, `array_user`, `array_heap_elems` | D53–D55, D62, D65 | Fixed `Array<T,N>` still field-only | yes |
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array ctor fields | shipped | `string_fields` | D48–D49, D69 | — | yes |
-| param-defaults | Formal defaults M3 subset | shipped | `param_defaults` | D98 | Methods/ctors still all-required; no `!`/`extern` defaults | yes |
+| param-defaults | Formal defaults M3 (+ methods/ctors) | shipped | `param_defaults` | D98, D106 | No `!`/`extern` defaults; non-default cannot follow defaulted | yes |
 | modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate` | D30–D35 | Nested import/type in functions deferred (D91) | yes |
 | pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |
 
@@ -64,15 +64,15 @@ change. See [`progress-model.md`](progress-model.md).
 | session-script | No-main scripts → `Shell.step` + synthetic main | shipped | `session_script`, `session_step` | D88–D90, D94 | — | yes |
 | command-sugar | Command skin + flag trees (`ls -al`) | shipped | `session_cmd`; `command::` | D92 | Shell control-flow sugar rejected | yes |
 | session-repl | Bare `thoxa` REPL, decl accumulate, multiline | shipped | `repl::` | D88, D93, D95 | Crude line editor only | yes |
-| session-dlopen | Legacy step `.so` + preamble `.o` cache | shipped | `THOXA_REPL_BACKEND=cc` | D93 v2; D105.e | Escape hatch only; default is libtcc | yes |
+| session-dlopen | Legacy step `.so` + `cc -shared` | removed | — | D93 v2; D105 | Superseded by libtcc-only steps (escape hatch deleted) | no |
 | session-rc | `~/.config/thoxa/shell.thx` + `prompt()` | shipped | `repl::` | D96 | Piped REPL does not load rc | yes |
 | session-path | `fn path(parent) -> Array<String>` | shipped | `repl::` | D100 | — | yes |
 | session-pipeline | Thoxa-side `\|` → `Shell.pipeline` + RT | shipped | `session_pipe`; `command::` | D101 | Nested Array stages N/A (Bytes blob) | yes |
 | session-redir | File `>` / `>>` / `<` → `Shell.runIo` | shipped | `session_redir`; `command::` | D102 | No `2>`; redir+pipe combo; ops need whitespace | yes |
 | session-host-pipe | Host OS `\|` fast path in REPL | shipped (removed) | `repl::pure_step_*` | D103 | Replaced by Thoxa-side pipeline (D101) | yes |
 | session-prelude | Shell API in product `std/Shell.thx` | shipped | `session::`; session scripts | D104 | Still auto-injected (not `import` by default); compile-time embed fallback | yes |
-| session-host-builtins | Drop host `cd`/`status`/`\|` for pure step | shipped | `repl::pure_step_*` | D103 | All session commands via step image (libtcc / escape) | yes |
-| session-libtcc | In-process libtcc for REPL steps (no spawn / no step `.so`) | shipped | `tcc::`; `repl::pure_step_*` | D105; [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | Linux x86_64; ~7–9× vs cc on tight steps (freeze §8.1); license packaging deferred; optional base cache; `THOXA_REPL_BACKEND=cc` escape | no |
+| session-host-builtins | Drop host `cd`/`status`/`\|` for pure step | shipped | `repl::pure_step_*` | D103 | All session commands via step image (libtcc) | yes |
+| session-libtcc | In-process libtcc for REPL steps (no spawn / no step `.so`) | shipped | `tcc::`; `repl::pure_step_*` | D105; [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | Linux x86_64 only; later polish (base cache / license notice) not CURRENT | no |
 | extras-shell | Pure-Thoxa dogfood Shell | shipped | `cargo make run extras/shell` | D95 | **Not** product face | no |
 
 ## Standard library
@@ -80,13 +80,13 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | std-root | Named `std/…` resolution | shipped | `stdlib` | D97 | — | yes |
-| std-str | Str helpers | partial | `stdlib` | D97 | Thin; grow as needed | yes |
-| std-path | Path helpers | partial | `stdlib` | D97 | Thin | yes |
+| std-str | Str helpers | partial | `stdlib` | D97 | Thin; extend only when a sample needs it | yes |
+| std-path | Path helpers | partial | `stdlib` | D97 | Thin; sample-driven | yes |
 | std-ansi | 16 colors + hex SGR | shipped | `stdlib` | D99 | — | yes |
-| std-env | getenv / host identity helpers | partial | `stdlib` | D97 | Thin | yes |
-| std-git | branch helpers | partial | `stdlib` | D97 | Thin | yes |
+| std-env | getenv / host identity helpers | partial | `stdlib` | D97 | Thin; sample-driven | yes |
+| std-git | branch helpers | partial | `stdlib` | D97 | Thin; sample-driven | yes |
 | std-prompt | `defaultPrompt` | shipped | `stdlib` | D97, D99 | — | yes |
-| std-io | Richer Io modules in `std/` | planned | — | CURRENT | Free `readFile` / iolib tests only | no |
+| std-io | Richer Io in `std/` | idea | — | sample-driven | Free `readFile` / iolib tests only; not a CURRENT todo | no |
 
 ## Editor / LSP
 

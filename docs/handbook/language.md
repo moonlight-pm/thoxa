@@ -46,8 +46,10 @@ fn add(a: Int64, b: Int64 = 0) -> Int64 {
 }
 ```
 
-Parameter defaults (M3 subset) on non-`!` formals; methods and constructors are
-still all-required. Positional `!` and `extern` formals cannot default.
+Parameter defaults (M3 subset) on non-`!` formals for free functions, **methods**,
+and **constructor params** (`type T(x: Int64 = 0)`). Defaults lower at the **call
+site**. Positional `!` and `extern` formals cannot default. A non-default formal
+may not follow a defaulted one.
 
 ## Modules
 

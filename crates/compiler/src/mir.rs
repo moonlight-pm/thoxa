@@ -453,6 +453,8 @@ struct FnSig {
 struct MethodSig {
     /// Method params (not including receiver).
     params: Vec<(String, Ty)>,
+    /// Parallel to `params`: default expression when the call omits this argument (D98/D106).
+    defaults: Vec<Option<Expr>>,
     ret: Ty,
     exported: bool,
 }
@@ -463,6 +465,8 @@ struct FieldInfo {
     ty: Ty,
     /// `mut` field (required for field assign / Address coercion of whole struct uses place mut).
     mutable: bool,
+    /// Constructor-param default (`type T(x: Int64 = 0)`); ignored for body fields.
+    default: Option<Expr>,
 }
 
 #[derive(Clone)]
@@ -799,10 +803,12 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     name: f.name.clone(),
                     ty,
                     mutable: f.mutable,
+                    default: None,
                 });
             }
         } else {
             zero_init = false;
+            let mut seen_default = false;
             for p in &td.params {
                 let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
                 // R3+ : scalars + heap String/Bytes; Array<T> for Request/Response headers (D69).
@@ -817,10 +823,22 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         p.ty.span,
                     ));
                 }
+                if p.default.is_some() {
+                    seen_default = true;
+                } else if seen_default {
+                    return Err(Error::at(
+                        format!(
+                            "constructor parameter `{}` without a default follows a defaulted parameter",
+                            p.name
+                        ),
+                        p.name_span,
+                    ));
+                }
                 fields.push(FieldInfo {
                     name: p.name.clone(),
                     ty,
                     mutable: false,
+                    default: p.default.clone(),
                 });
             }
         }
@@ -848,15 +866,32 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 Some(t) => resolve_ty(t, &types_info, &name_map)?,
                 None => Ty::Void,
             };
-            let params = m
-                .params
-                .iter()
-                .map(|p| Ok((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?)))
-                .collect::<Result<Vec<_>>>()?;
+            let mut params = Vec::new();
+            let mut defaults = Vec::new();
+            for p in &m.params {
+                params.push((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?));
+                defaults.push(p.default.clone());
+            }
+            // Same ordering rule as free functions (D98/D106).
+            let mut seen_default = false;
+            for (i, d) in defaults.iter().enumerate() {
+                if d.is_some() {
+                    seen_default = true;
+                } else if seen_default {
+                    return Err(Error::at(
+                        format!(
+                            "parameter `{}` without a default follows a defaulted parameter",
+                            params[i].0
+                        ),
+                        m.params[i].name_span,
+                    ));
+                }
+            }
             types_info.get_mut(mangled).unwrap().methods.insert(
                 m.name.clone(),
                 MethodSig {
                     params,
+                    defaults,
                     ret,
                     exported: m.exported,
                 },
@@ -2988,7 +3023,15 @@ fn lower_method_call(
                         .iter()
                         .map(|f| (f.name.clone(), f.ty.clone()))
                         .collect();
-                    let field_places = resolve_call_args(ctx, &formal, args, method_span)?;
+                    let defaults: Vec<Option<Expr>> =
+                        info.fields.iter().map(|f| f.default.clone()).collect();
+                    let field_places = resolve_call_args_with_defaults(
+                        ctx,
+                        &formal,
+                        &defaults,
+                        args,
+                        method_span,
+                    )?;
                     ctx.assign(
                         p.clone(),
                         ty.clone(),
@@ -3010,7 +3053,13 @@ fn lower_method_call(
             // Free function
             if let Some(mangled_fn) = exp.fns.get(method) {
                 let sig = ctx.fns.get(mangled_fn).unwrap().clone();
-                let arg_places = resolve_call_args(ctx, &sig.params, args, method_span)?;
+                let arg_places = resolve_call_args_with_defaults(
+                    ctx,
+                    &sig.params,
+                    &sig.defaults,
+                    args,
+                    method_span,
+                )?;
                 let callee = if let Some(sym) = &sig.extern_symbol {
                     Callee::Extern {
                         c_symbol: sym.clone(),
@@ -3074,7 +3123,13 @@ fn lower_method_call(
                     method_span,
                 ));
             }
-            let arg_places = resolve_call_args(ctx, &sig.params, args, method_span)?;
+            let arg_places = resolve_call_args_with_defaults(
+                ctx,
+                &sig.params,
+                &sig.defaults,
+                args,
+                method_span,
+            )?;
             let mut all_args = vec![recv_p];
             all_args.extend(arg_places);
             emit_call_result(
@@ -5013,7 +5068,10 @@ fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Res
                         .iter()
                         .map(|f| (f.name.clone(), f.ty.clone()))
                         .collect();
-                    let field_places = resolve_call_args(ctx, &formal, args, span)?;
+                    let defaults: Vec<Option<Expr>> =
+                        info.fields.iter().map(|f| f.default.clone()).collect();
+                    let field_places =
+                        resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span)?;
                     ctx.assign(
                         p.clone(),
                         ty.clone(),

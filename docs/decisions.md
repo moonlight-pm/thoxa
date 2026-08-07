@@ -19,11 +19,17 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-06 — Method / constructor parameter defaults
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D106 | Defaults on methods and ctors | Same rules as free-function defaults (D98): `name: T = expr` on non-`!` formals; omit at call (named or trailing positional); lowered at **call site** | Constructor params: `type Box(label: String, n: Int64 = 0)`. Methods: `fn describe(prefix: String = "box")`. Ordering: no required formal after a defaulted one. `extern` / `!` still cannot default. Conformance: `param_defaults`. |
+
 ## 2026-08-05 — Session libtcc step backend (target)
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D105 | REPL / session-step C backend | **In-process libtcc** (`TCC_OUTPUT_MEMORY`); happy path: no compiler spawn, no step `.so` | Vendored TinyCC under `third_party/tinycc` (Linux x86_64). Batch + `libthoxa_rt` stay system `cc`. Escape: `THOXA_REPL_BACKEND=cc`. Freeze: `docs/specs/2026-08-05-session-libtcc.md`. Supersedes D93’s *cc-shared+dlopen* as the default step backend. |
+| D105 | REPL / session-step C backend | **In-process libtcc only** (`TCC_OUTPUT_MEMORY`); no compiler spawn, no step `.so` | Vendored TinyCC under `third_party/tinycc` (Linux x86_64). Batch + `libthoxa_rt` stay system `cc`. Legacy `cc`+dlopen escape **removed**. Freeze: `docs/specs/2026-08-05-session-libtcc.md`. |
 
 ## 2026-08-05 — Session pipes, redirs, pure-step, std Shell
 
@@ -44,7 +50,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D98 | Parameter defaults (M3 subset) | `name: T = expr` on non-`!` formals; omit at call (named or trailing positional); defaults lowered at **call site** | Positional `!` and `extern` cannot default. Non-default formals may not follow a defaulted one. Methods/ctors still all-required. Conformance: `param_defaults`. |
+| D98 | Parameter defaults (M3 subset) | `name: T = expr` on non-`!` formals; omit at call (named or trailing positional); defaults lowered at **call site** | Positional `!` and `extern` cannot default. Non-default formals may not follow a defaulted one. Free functions at ship; methods/ctors → **D106**. Conformance: `param_defaults`. |
 | D99 | Hex color → SGR | `std/Ansi.parseRgba` / `fgHex` / `bgHex`; primary `#RRGGBB`, also `#RRGGBBAA` (optional `#`); alpha optional, ignored for SGR (`a=255` if omitted) | Invalid hex → black SGR. `defaultPrompt(signature: String = "#3B9DC2")` uses `fgHex` for user@host. |
 
 ## 2026-07-24 — Session / REPL (Thoxa is the session language)
@@ -56,11 +62,11 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D90 | Session code placement | Decls stay module-level; top-level stmts → `Shell.step` body; synthetic `main` returns `step().status` | `Item::SessionStmt`; `session::prepare` |
 | D91 | In-function import/type | Not required; host lifts / top-level decls only | Deferred general nested modules |
 | D92 | Command sugar | Thoxa-first; bare word/string sequences desugar to `shell = shell.*`; **pipes/redirs before Thoxa-first** so `|`/`>` are not kept as BitOr/Gt | `command.rs`; quotes from thoxash v3. Command-shaped parse trees include path Div, **flag Sub/Unary** (`ls -al`, `--all`); pure literal arith (`1 - 2`), pure int BitOr (`1 \| 2`), pure int Gt (`1 > 0`) stay Thoxa. Pipes → **D101**; redirs → **D102**. |
-| D93 | REPL execution | Host loop: **decls accumulate**; host-held status threaded into `Shell.step`; entry remains `thoxa_session_step(ThoxaShellState*)` | Step backend default → **D105** libtcc. Legacy `cc -shared`+dlopen via `THOXA_REPL_BACKEND=cc`. Was v1 compile+exec child. Fast paths removed → **D103**. |
+| D93 | REPL execution | Host loop: **decls accumulate**; host-held status threaded into `Shell.step`; entry remains `thoxa_session_step(ThoxaShellState*)` | Step backend → **D105** libtcc only. Was v1 compile+exec child; was cc+dlopen. Fast paths removed → **D103**. |
 | D94 | Script execution | Splice + synthetic `main` + normal executable | No dlopen |
 | D95 | extras/shell | Dogfood prototype of Shell API; product face is bare `thoxa` | `cargo make shell` → bare `thoxa` |
 | D96 | Session rc + prompt | Interactive REPL loads `$HOME/.config/thoxa/shell.thx` (missing = no-op). Decls accumulate; stmts run once. Optional `fn prompt() -> String` — host rebuilds prompt **step .so** when decls change, **dlopen-calls** it every primary prompt (stdout captured). Host sets `THOXA_STATUS`. Default `$ `; continuation `> ` fixed. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC` | Real Thoxa (not a second grammar). Piped REPL / session scripts do not load rc. Optional `fn path` → **D100**. |
-| D97 | Product `std/` root | Import `"std/Module"` resolves under product std tree (`THOXA_STD` → `{THOXA_ROOT}/std` → workspace `std/` → next to `thoxa` binary). Modules: `Shell`, `Str`, `Path`, `Ansi`, `Env`, `Git`, `Prompt` (`defaultPrompt`). `ffi` still deferred | Partial unlock of D30 named roots for session prompts + shared helpers. Conformance: `stdlib`. Session Shell → **D104**. |
+| D97 | Product `std/` root | Import `"std/Module"` resolves under product std tree (`THOXA_STD` → `{THOXA_ROOT}/std` → workspace `std/` → next to `thoxa` binary). Modules: `Shell`, `Str`, `Path`, `Ansi`, `Env`, `Git`, `Prompt` (`defaultPrompt`). `ffi` still deferred. **Growth is sample-driven** — not a standalone “expand std” todo | Partial unlock of D30 named roots for session prompts + shared helpers. Conformance: `stdlib`. Session Shell → **D104**. |
 
 ## 2026-07-21 — Value match (string / int / bool + else)
 
