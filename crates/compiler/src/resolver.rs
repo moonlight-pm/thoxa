@@ -816,13 +816,28 @@ impl<'a> Resolver<'a> {
             | Pattern::IntLit { .. }
             | Pattern::BoolLit { .. }
             | Pattern::Else { .. } => {}
+            // Value bare bind (D110): introduce pattern binding for arm body.
+            Pattern::Bind { name, span } => {
+                let id = self.new_binding(
+                    name,
+                    BindingKind::Pattern,
+                    Some(*span),
+                    false,
+                    None,
+                    false,
+                );
+                self.define(inner, name, id);
+            }
             // Value or-patterns (D108) — only literals; no binds.
             Pattern::Or { alts, .. } => {
                 for alt in alts {
                     match alt {
                         Pattern::StringLit { .. }
                         | Pattern::IntLit { .. }
-                        | Pattern::BoolLit { .. } => {}
+                        | Pattern::BoolLit { .. }
+                        | Pattern::Bind { .. }
+                        | Pattern::Else { .. }
+                        | Pattern::Or { .. } => {}
                         Pattern::Variant {
                             name,
                             bind,
@@ -845,7 +860,6 @@ impl<'a> Resolver<'a> {
                                 self.define(inner, bname, id);
                             }
                         }
-                        Pattern::Or { .. } | Pattern::Else { .. } => {}
                     }
                 }
             }

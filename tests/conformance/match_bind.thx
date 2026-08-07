@@ -1,0 +1,29 @@
+## Value-match bare bind catch-all (D110): `n { … }` binds the scrutinee.
+fn label(n!: Int64) -> String {
+    match n {
+        0 { "zero" }
+        1 { "one" }
+        n { "n={n}" }
+    }
+}
+
+fn echo(cmd!: String) -> String {
+    match cmd {
+        "help" { "HELP" }
+        s { "got:{s}" }
+    }
+}
+
+fn main() -> Int64 {
+    println(label(0))
+    println(label(1))
+    println(label(42))
+    println(echo("help"))
+    println(echo("run"))
+    ## `_` is still a discard catch-all (same as else).
+    match 9 {
+        0 { println("nope") }
+        _ { println("uscore") }
+    }
+    0
+}

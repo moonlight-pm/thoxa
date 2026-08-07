@@ -84,7 +84,8 @@ Freezes:
 - ~~Method mut-field write-back~~ (**D107** shipped)
 - ~~Value-match or-patterns~~ (**D108** shipped)
 - ~~File type~~ (**D109** shipped)
-- Value-match bare binds / guards
+- ~~Value-match bare binds~~ (**D110** shipped)
+- Match guards
 - `"…" as Bytes` (only with deliberate D15 reopen)
 - File write/create when forced
 

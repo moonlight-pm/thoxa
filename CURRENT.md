@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-06 (D106–D109 language; shell parked)
+**As of:** 2026-08-06 (D106–D110 language; shell parked)
 
 ---
 
@@ -12,15 +12,14 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **Session / shell is parked** (core + libtcc shipped). Default product work is
 **language kernel depth** — one capability gap at a time, with conformance.
-**Shipped:** D106 defaults, D107 field write-back, D108 match or-patterns,
-**D109 File type**.
+**Shipped:** D106–D110 (defaults, field write-back, match or/bind, File type).
 
 ### Proceed order
 
 1. **Language** — pick one open gap from the matrix (do not invent syntax without
    oracle / decisions check). Prefer small, conformance-backed slices.  
    Strong candidates (pick one):
-   - **Value-match bare binds / guards** (remaining D87 gaps).
+   - **Match guards** (`if` on arms) if still desired.
    - **`"…" as Bytes`** (D15 deferred to M4 conversions — only with deliberate
      reopen).
    - **File write/create** (`writeFile` / O_CREAT) when samples force it.

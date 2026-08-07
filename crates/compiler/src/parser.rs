@@ -1255,12 +1255,25 @@ impl Parser {
             TokenKind::Ident(_) => {
                 let (name, name_span) = self.expect_ident()?;
                 // Nullary `Not` (May): no parentheses. Payload variants require `(bind)`.
+                // Bare name with following `{` is a value-match bind pattern (D110),
+                // not a nullary variant — match arms always parse pattern then block.
                 if !self.at(TokenKind::LParen) {
-                    return Ok(Pattern::Variant {
+                    // `Not` remains a nullary variant for May match.
+                    if name == "Not" || name == "Pass" || name == "Fail" || name == "Has" {
+                        return Ok(Pattern::Variant {
+                            name,
+                            bind: None,
+                            bind_span: name_span,
+                            has_payload: false,
+                            span: name_span,
+                        });
+                    }
+                    // Value-match bare bind (D110). `_` is discard catch-all without binding.
+                    if name == "_" {
+                        return Ok(Pattern::Else { span: name_span });
+                    }
+                    return Ok(Pattern::Bind {
                         name,
-                        bind: None,
-                        bind_span: name_span,
-                        has_payload: false,
                         span: name_span,
                     });
                 }
@@ -1384,6 +1397,7 @@ fn pattern_span(p: &Pattern) -> Span {
         | Pattern::IntLit { span, .. }
         | Pattern::BoolLit { span, .. }
         | Pattern::Or { span, .. }
+        | Pattern::Bind { span, .. }
         | Pattern::Else { span } => *span,
     }
 }

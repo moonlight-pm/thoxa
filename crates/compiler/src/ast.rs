@@ -330,7 +330,9 @@ pub enum Pattern {
     BoolLit { value: bool, span: Span },
     /// Or-pattern of value literals: `0 | 1 | 2 { … }` (D108). Only for value match.
     Or { alts: Vec<Pattern>, span: Span },
-    /// Catch-all `else { … }` — required for value matches (D87).
+    /// Bare name bind: `n { … }` binds the scrutinee (D110). Value-match catch-all.
+    Bind { name: String, span: Span },
+    /// Catch-all `else { … }` — required for value matches unless a Bind arm ends the match (D87/D110).
     Else { span: Span },
 }
 

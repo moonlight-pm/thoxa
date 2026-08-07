@@ -3998,23 +3998,26 @@ fn lower_match_value(
     span: Span,
 ) -> Result<(Place, Ty)> {
     let mut lit_arms: Vec<&MatchArm> = Vec::new();
-    let mut else_arm: Option<&MatchArm> = None;
+    let mut catch_arm: Option<&MatchArm> = None; // else or bare bind (D110)
 
     for arm in arms {
         match &arm.pattern {
-            Pattern::Else { span: pspan } => {
-                if else_arm.is_some() {
-                    return Err(Error::at("duplicate `else` arm in match", *pspan));
+            Pattern::Else { span: pspan } | Pattern::Bind { span: pspan, .. } => {
+                if catch_arm.is_some() {
+                    return Err(Error::at(
+                        "value match already has a catch-all arm (`else` or bare bind)",
+                        *pspan,
+                    ));
                 }
-                else_arm = Some(arm);
+                catch_arm = Some(arm);
             }
             Pattern::StringLit { span: pspan, .. }
             | Pattern::IntLit { span: pspan, .. }
             | Pattern::BoolLit { span: pspan, .. }
             | Pattern::Or { span: pspan, .. } => {
-                if else_arm.is_some() {
+                if catch_arm.is_some() {
                     return Err(Error::at(
-                        "match arms after `else` are unreachable",
+                        "match arms after catch-all are unreachable",
                         *pspan,
                     ));
                 }
@@ -4026,7 +4029,7 @@ fn lower_match_value(
             } => {
                 return Err(Error::at(
                     format!(
-                        "variant pattern `{name}` is not valid for {scrut_ty:?} match (use literals + else)"
+                        "variant pattern `{name}` is not valid for {scrut_ty:?} match (use literals + else or a bare bind)"
                     ),
                     *pspan,
                 ));
@@ -4034,9 +4037,9 @@ fn lower_match_value(
         }
     }
 
-    let else_arm = else_arm.ok_or_else(|| {
+    let catch_arm = catch_arm.ok_or_else(|| {
         Error::at(
-            "value match requires a final `else` arm",
+            "value match requires a final `else` arm or bare name bind",
             span,
         )
     })?;
@@ -4084,8 +4087,15 @@ fn lower_match_value(
 
     // Unify arm body types.
     let mut result_ty: Option<Ty> = None;
-    for arm in lit_arms.iter().chain(std::iter::once(&else_arm)) {
+    for arm in lit_arms.iter().chain(std::iter::once(&catch_arm)) {
         ctx.push_scope();
+        if let Pattern::Bind { name, .. } = &arm.pattern {
+            // Scrutinee binding for type inference of the arm body.
+            let p = Place {
+                name: sanitize_name(name),
+            };
+            ctx.define(name, scrut_ty.clone(), false, p);
+        }
         let ty = infer_block_ty(ctx, &arm.body)?;
         ctx.pop_scope();
         result_ty = Some(match result_ty {
@@ -4101,14 +4111,28 @@ fn lower_match_value(
         Some(ctx.fresh("m"))
     };
 
-    // Build cascade from the inside out: else body, then each lit arm wrapping it.
+    // Build cascade from the inside out: catch-all body, then each lit arm wrapping it.
     let outer = std::mem::take(&mut ctx.stmts);
 
     ctx.push_scope();
-    let else_val = lower_block_into(ctx, &else_arm.body, &result_ty)?;
+    if let Pattern::Bind { name, .. } = &catch_arm.pattern {
+        let p = Place {
+            name: sanitize_name(name),
+        };
+        // Bind to scrutinee; Dup heap so arm can drop without freeing caller.
+        ctx.assign(p.clone(), scrut_ty.clone(), RValue::Use(scrut_p.clone()));
+        if needs_drop(&scrut_ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: p.clone(),
+                ty: scrut_ty.clone(),
+            });
+        }
+        ctx.define(name, scrut_ty.clone(), false, p);
+    }
+    let catch_val = lower_block_into(ctx, &catch_arm.body, &result_ty)?;
     ctx.pop_scope();
     let mut nest = std::mem::take(&mut ctx.stmts);
-    assign_match_result(&mut nest, &out, else_val, &result_ty);
+    assign_match_result(&mut nest, &out, catch_val, &result_ty);
 
     for arm in lit_arms.iter().rev() {
         // Eq setup lands on ctx.stmts; prefix it before the If.
@@ -4160,8 +4184,13 @@ fn check_value_pattern_ty(pattern: &Pattern, scrut_ty: &Ty) -> Result<()> {
                 return Err(Error::at("empty or-pattern", *span));
             }
             for alt in alts {
-                if matches!(alt, Pattern::Variant { .. } | Pattern::Else { .. } | Pattern::Or { .. })
-                {
+                if matches!(
+                    alt,
+                    Pattern::Variant { .. }
+                        | Pattern::Else { .. }
+                        | Pattern::Or { .. }
+                        | Pattern::Bind { .. }
+                ) {
                     return Err(Error::at(
                         "or-pattern alternatives must be string, int, or bool literals",
                         pattern_span_mir(alt),
@@ -4173,8 +4202,12 @@ fn check_value_pattern_ty(pattern: &Pattern, scrut_ty: &Ty) -> Result<()> {
         }
         Pattern::Variant { name, span, .. } => Err(Error::at(
             format!(
-                "variant pattern `{name}` is not valid for {scrut_ty:?} match (use literals + else)"
+                "variant pattern `{name}` is not valid for {scrut_ty:?} match (use literals + else or a bare bind)"
             ),
+            *span,
+        )),
+        Pattern::Bind { span, .. } => Err(Error::at(
+            "bare bind is only valid as a catch-all value-match arm",
             *span,
         )),
         Pattern::Else { span } => Err(Error::at("`else` is not a value pattern here", *span)),
@@ -4201,6 +4234,7 @@ fn pattern_span_mir(p: &Pattern) -> Span {
         | Pattern::IntLit { span, .. }
         | Pattern::BoolLit { span, .. }
         | Pattern::Or { span, .. }
+        | Pattern::Bind { span, .. }
         | Pattern::Else { span } => *span,
     }
 }
@@ -4333,9 +4367,10 @@ fn lower_match_trial(
             | Pattern::IntLit { span: pspan, .. }
             | Pattern::BoolLit { span: pspan, .. }
             | Pattern::Or { span: pspan, .. }
+            | Pattern::Bind { span: pspan, .. }
             | Pattern::Else { span: pspan } => {
                 return Err(Error::at(
-                    "literal/`else`/or-patterns are not valid for Trial match",
+                    "literal/`else`/or/bind patterns are not valid for Trial match",
                     *pspan,
                 ));
             }
@@ -4528,9 +4563,10 @@ fn lower_match_may(
             | Pattern::IntLit { span: pspan, .. }
             | Pattern::BoolLit { span: pspan, .. }
             | Pattern::Or { span: pspan, .. }
+            | Pattern::Bind { span: pspan, .. }
             | Pattern::Else { span: pspan } => {
                 return Err(Error::at(
-                    "literal/`else`/or-patterns are not valid for May match",
+                    "literal/`else`/or/bind patterns are not valid for May match",
                     *pspan,
                 ));
             }

@@ -19,10 +19,11 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
-## 2026-08-06 — Language: File type, match or-patterns, write-back, defaults
+## 2026-08-06 — Language: match binds/or, File, write-back, defaults
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
+| D110 | Value-match bare bind | Final catch-all arm may be a bare name `n { … }` binding the scrutinee (instead of `else`) | `_` as bare pattern is discard catch-all (same as `else`). Not for Trial/May. Conformance: `match_bind`. Extends D87. |
 | D109 | File type (product Io) | `export type File(fd: Int64)` + `openFile` / `readAll` / `close` / `isOpen`; `readFile` reuses File | Lives in conformance `iolib/Io.thx` (same as free `readFile`). `fd` is Int64 (ctor-param field rules). Close write-backs `fd = -1` (**D107**). Conformance: `file_type`. |
 | D108 | Value-match or-patterns | `0 \| 1 \| 2 { … }` of string/int/bool literals; required `else` still | Lowers to `||` of equality tests. Not for Trial/May arms. Duplicate leaf lits rejected across arms. Conformance: `match_or`. Extends D87. |
 | D107 | Method mut-field write-back | In methods, bare assign to a ctor-param field (or C-layout `mut` field) updates the **receiver** | C ABI: User method receivers are pointers (`Type *`). Name receivers pass the binding place (not a `needs_drop` temp). Heap FieldAssign drops old field + dups new. Unlocks File-type style `fd = …` in methods. Conformance: `method_field_writeback`. |
