@@ -2,10 +2,9 @@
 //!
 //! Each executable chunk is compiled via
 //! [`build_session_step`](crate::driver::build_session_step) and run **in-process**.
-//! Default backend (D105): vendored **libtcc** memory output → call
-//! `thoxa_session_step` (no spawn, no step `.so`). Escape hatch:
-//! `THOXA_REPL_BACKEND=cc` restores `cc -shared` + dlopen. Declaration lines
-//! accumulate so later chunks see prior `let` / `type` / `fn` / `import` / `extern`.
+//! Backend (D105): vendored **libtcc** memory output → call `thoxa_session_step`
+//! (no compiler spawn, no step `.so`). Declaration lines accumulate so later
+//! chunks see prior `let` / `type` / `fn` / `import` / `extern`.
 //!
 //! **Shell status:** host-held status is threaded into each step and written back
 //! (so pure-Thoxa status survives across chunks).
@@ -52,7 +51,7 @@ pub fn run_repl() -> Result<i32> {
     let mut status: i32 = 0;
     let mut prompt_state = PromptState::default();
     let mut step_cache = SessionBuildCache::default();
-    // Keep last step image until the next load (libtcc state or dlopen).
+    // Keep last step image until the next load (libtcc state owns symbols).
     let mut loaded: Option<SessionStepLib> = None;
 
     // Pin paths before any host `cd` so runtime/std resolve stays stable.

@@ -26,4 +26,10 @@ import { branch } from "std/Git"
 
 **Resolution:** `THOXA_STD` → `{THOXA_ROOT}/std` → workspace `std/` → next to the `thoxa` binary.
 
-This is a **thin** first cut for session prompts and shared helpers — not a full prelude. `ffi` remains deferred.
+This is a **thin** library for session prompts and shared helpers — not a full
+prelude. **`ffi` remains deferred.**
+
+**Growth rule:** do not schedule “expand std/” as its own todo. When working
+samples, dogfood scripts, or session rc and a helper clearly belongs in
+product `std/`, add it there (with conformance) in the same change. Speculative
+stdlib bulk is out.

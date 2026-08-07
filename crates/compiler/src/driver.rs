@@ -9,9 +9,7 @@ use crate::cgen;
 use crate::error::{Error, Result};
 use crate::loader;
 use crate::mir;
-use std::collections::hash_map::DefaultHasher;
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
@@ -404,29 +402,22 @@ fn output_stem(opts: &BuildOptions) -> String {
     })
 }
 
-// ── Session step (D93 v2 as-built; D105 libtcc target) ───────────────────
+// ── Session step (D105: libtcc only) ─────────────────────────────────────
 
-use std::os::raw::{c_char, c_int, c_void};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static SESSION_CACHE_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Env override: `cc` forces legacy `cc -shared` + dlopen (bisect / D105.e).
-pub const REPL_BACKEND_ENV: &str = "THOXA_REPL_BACKEND";
-
 /// Env: write generated session C under `target/thoxa/repl/` for inspection.
 pub const REPL_KEEP_C_ENV: &str = "THOXA_REPL_KEEP_C";
 
-/// Cache for session REPL builds: preamble object reused while decls are stable
-/// (legacy cc path). Each instance gets a unique id so parallel unit tests do
-/// not clobber objects.
+/// Cache for session REPL builds. Instance id keeps parallel tests from
+/// clobbering debug C dumps; `gen` names keep-C outputs.
 #[derive(Debug)]
 pub struct SessionBuildCache {
     /// Stable per-cache-instance id (file name prefix).
     id: u64,
-    decls_key: u64,
-    base_obj: Option<PathBuf>,
-    /// Monotonic counter so we never overwrite a still-mapped .so.
+    /// Monotonic counter for optional keep-C dumps.
     gen: u64,
 }
 
@@ -434,8 +425,6 @@ impl Default for SessionBuildCache {
     fn default() -> Self {
         Self {
             id: SESSION_CACHE_ID.fetch_add(1, Ordering::Relaxed),
-            decls_key: 0,
-            base_obj: None,
             gen: 0,
         }
     }
@@ -449,121 +438,31 @@ struct ThoxaShellState {
 
 type SessionStepFn = unsafe extern "C" fn(*mut ThoxaShellState) -> i64;
 
-/// Built session step ready to call. Owns the image (libtcc state or dlopen).
+/// Built session step ready to call. Owns the libtcc image (D105).
 pub struct SessionStepLib {
-    backend: SessionStepBackend,
-}
-
-enum SessionStepBackend {
+    /// Must outlive `step`.
     #[cfg(thoxa_libtcc)]
-    Libtcc {
-        /// Must outlive `step`.
-        _tcc: crate::tcc::State,
-        step: SessionStepFn,
-    },
-    Dlopen {
-        handle: *mut c_void,
-        step: SessionStepFn,
-        path: PathBuf,
-    },
+    _tcc: crate::tcc::State,
+    step: SessionStepFn,
 }
 
-// REPL is single-threaded; handles/state are process-local.
+// REPL is single-threaded; state is process-local.
 unsafe impl Send for SessionStepLib {}
-
-impl Drop for SessionStepLib {
-    fn drop(&mut self) {
-        match &mut self.backend {
-            #[cfg(thoxa_libtcc)]
-            SessionStepBackend::Libtcc { .. } => {}
-            SessionStepBackend::Dlopen { handle, path, .. } => {
-                if !handle.is_null() {
-                    unsafe {
-                        dlclose(*handle);
-                    }
-                    *handle = std::ptr::null_mut();
-                }
-                let _ = fs::remove_file(path);
-            }
-        }
-    }
-}
 
 impl SessionStepLib {
     /// Invoke `thoxa_session_step` with host-held status; returns new status.
     pub fn call(&self, prev_status: i32) -> i32 {
-        let step = match &self.backend {
-            #[cfg(thoxa_libtcc)]
-            SessionStepBackend::Libtcc { step, .. } => *step,
-            SessionStepBackend::Dlopen { step, .. } => *step,
-        };
         let mut state = ThoxaShellState {
             status: prev_status as i64,
         };
-        unsafe { step(&mut state) as i32 }
+        unsafe { (self.step)(&mut state) as i32 }
     }
-
-    /// True when this image used libtcc memory (no step `.so`).
-    pub fn is_libtcc(&self) -> bool {
-        match &self.backend {
-            #[cfg(thoxa_libtcc)]
-            SessionStepBackend::Libtcc { .. } => true,
-            SessionStepBackend::Dlopen { .. } => false,
-            #[cfg(not(thoxa_libtcc))]
-            _ => false,
-        }
-    }
-}
-
-/// Which C backend to use for session steps.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionBackend {
-    /// In-process libtcc (D105 default when built).
-    Libtcc,
-    /// Legacy `cc -shared` + dlopen.
-    Cc,
-}
-
-/// Resolve backend: `THOXA_REPL_BACKEND=cc` forces legacy; else libtcc when available.
-pub fn session_backend() -> SessionBackend {
-    if let Ok(v) = std::env::var(REPL_BACKEND_ENV) {
-        let v = v.to_ascii_lowercase();
-        if v == "cc" || v == "system" || v == "dlopen" {
-            return SessionBackend::Cc;
-        }
-        if v == "libtcc" || v == "tcc" {
-            #[cfg(thoxa_libtcc)]
-            {
-                return SessionBackend::Libtcc;
-            }
-            #[cfg(not(thoxa_libtcc))]
-            {
-                return SessionBackend::Cc;
-            }
-        }
-    }
-    #[cfg(thoxa_libtcc)]
-    {
-        SessionBackend::Libtcc
-    }
-    #[cfg(not(thoxa_libtcc))]
-    {
-        SessionBackend::Cc
-    }
-}
-
-fn hash_decls(decls: &[String]) -> u64 {
-    let mut h = DefaultHasher::new();
-    for d in decls {
-        d.hash(&mut h);
-    }
-    h.finish()
 }
 
 /// Compile `decls + chunk` as a session script exporting `thoxa_session_step`.
 ///
-/// Default (D105): libtcc in-memory — no compiler spawn, no step `.so`.
-/// Escape hatch: `THOXA_REPL_BACKEND=cc` → preamble `.o` cache + shared lib.
+/// D105: libtcc in-memory — no compiler spawn, no step `.so`. Requires the
+/// vendored TinyCC build (`thoxa_libtcc`, Linux x86_64).
 pub fn build_session_step(
     decls: &[String],
     chunk: &str,
@@ -600,10 +499,7 @@ pub fn build_session_step(
         ));
     }
 
-    match session_backend() {
-        SessionBackend::Libtcc => build_session_step_libtcc(&program, cache, &dir),
-        SessionBackend::Cc => build_session_step_cc(&program, decls, cache, &dir),
-    }
+    build_session_step_libtcc(&program, cache, &dir)
 }
 
 #[cfg(thoxa_libtcc)]
@@ -629,9 +525,7 @@ fn build_session_step_libtcc(
     })?;
     let sym = tcc.symbol("thoxa_session_step")?;
     let step: SessionStepFn = unsafe { std::mem::transmute(sym) };
-    Ok(SessionStepLib {
-        backend: SessionStepBackend::Libtcc { _tcc: tcc, step },
-    })
+    Ok(SessionStepLib { _tcc: tcc, step })
 }
 
 #[cfg(not(thoxa_libtcc))]
@@ -641,41 +535,8 @@ fn build_session_step_libtcc(
     _dir: &Path,
 ) -> Result<SessionStepLib> {
     Err(Error::new(
-        "libtcc session backend not built for this target (use THOXA_REPL_BACKEND=cc)",
+        "session steps require vendored libtcc (Linux x86_64 product track; D105)",
     ))
-}
-
-fn build_session_step_cc(
-    program: &crate::mir::Program,
-    decls: &[String],
-    cache: &mut SessionBuildCache,
-    dir: &Path,
-) -> Result<SessionStepLib> {
-    let decls_key = hash_decls(decls);
-    let base_obj = dir.join(format!("session_base_{}.o", cache.id));
-    let need_base = cache.base_obj.as_ref() != Some(&base_obj)
-        || cache.decls_key != decls_key
-        || !base_obj.is_file();
-
-    if need_base {
-        let base_c = cgen::emit_session_base(program);
-        let base_c_path = dir.join(format!("session_base_{}.c", cache.id));
-        fs::write(&base_c_path, base_c).map_err(|e| Error::new(e.to_string()))?;
-        compile_c_object(&base_c_path, &base_obj)?;
-        cache.decls_key = decls_key;
-        cache.base_obj = Some(base_obj.clone());
-    }
-
-    let step_c = cgen::emit_session_step(program);
-    let step_c_path = dir.join(format!("session_step_{}.c", cache.id));
-    fs::write(&step_c_path, step_c).map_err(|e| Error::new(e.to_string()))?;
-    let step_obj = dir.join(format!("session_step_{}.o", cache.id));
-    compile_c_object(&step_c_path, &step_obj)?;
-
-    cache.gen = cache.gen.wrapping_add(1);
-    let so_path = dir.join(format!("session_step_{}_{}.so", cache.id, cache.gen));
-    link_shared(&so_path, &[&step_obj, &base_obj])?;
-    open_step_so(&so_path)
 }
 
 fn keep_session_c() -> bool {
@@ -683,103 +544,4 @@ fn keep_session_c() -> bool {
         std::env::var(REPL_KEEP_C_ENV).as_deref(),
         Ok("1") | Ok("true") | Ok("yes")
     )
-}
-
-#[link(name = "dl")]
-extern "C" {
-    fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-    fn dlclose(handle: *mut c_void) -> c_int;
-    fn dlerror() -> *mut c_char;
-}
-
-const RTLD_NOW: c_int = 2;
-
-fn open_step_so(so_path: &Path) -> Result<SessionStepLib> {
-    use std::ffi::{CStr, CString};
-    let c_path = CString::new(so_path.to_string_lossy().as_bytes())
-        .map_err(|_| Error::new("session step: path contains NUL"))?;
-    unsafe {
-        dlerror();
-        let handle = dlopen(c_path.as_ptr(), RTLD_NOW);
-        if handle.is_null() {
-            let err = dlerror_string();
-            return Err(Error::new(format!(
-                "dlopen {}: {err}",
-                so_path.display()
-            )));
-        }
-        let sym = CString::new("thoxa_session_step").unwrap();
-        dlerror();
-        let ptr = dlsym(handle, sym.as_ptr());
-        let err = dlerror();
-        if !err.is_null() || ptr.is_null() {
-            dlclose(handle);
-            let msg = if err.is_null() {
-                "symbol thoxa_session_step not found".into()
-            } else {
-                CStr::from_ptr(err).to_string_lossy().into_owned()
-            };
-            return Err(Error::new(format!("dlsym: {msg}")));
-        }
-        let step: SessionStepFn = std::mem::transmute(ptr);
-        Ok(SessionStepLib {
-            backend: SessionStepBackend::Dlopen {
-                handle,
-                step,
-                path: so_path.to_path_buf(),
-            },
-        })
-    }
-}
-
-fn dlerror_string() -> String {
-    use std::ffi::CStr;
-    unsafe {
-        let err = dlerror();
-        if err.is_null() {
-            "unknown dlerror".into()
-        } else {
-            CStr::from_ptr(err).to_string_lossy().into_owned()
-        }
-    }
-}
-
-fn compile_c_object(c_path: &Path, obj_path: &Path) -> Result<()> {
-    let status = host_tool("cc")
-        .args(["-std=c11", "-O0", "-fPIC", "-c"])
-        .arg(c_path)
-        .arg("-I")
-        .arg(runtime_include_dir())
-        .arg("-o")
-        .arg(obj_path)
-        .status()
-        .map_err(|e| Error::new(format!("failed to spawn cc: {e}")))?;
-    if !status.success() {
-        return Err(Error::new(format!(
-            "cc failed compiling {}",
-            c_path.display()
-        )));
-    }
-    Ok(())
-}
-
-fn link_shared(so_path: &Path, objs: &[&Path]) -> Result<()> {
-    let mut cmd = host_tool("cc");
-    cmd.args(["-std=c11", "-O0", "-shared", "-fPIC"]);
-    for o in objs {
-        cmd.arg(o);
-    }
-    cmd.arg(runtime_lib_path());
-    cmd.arg("-o").arg(so_path);
-    let status = cmd
-        .status()
-        .map_err(|e| Error::new(format!("failed to spawn cc (shared): {e}")))?;
-    if !status.success() {
-        return Err(Error::new(format!(
-            "cc failed linking shared {}",
-            so_path.display()
-        )));
-    }
-    Ok(())
 }

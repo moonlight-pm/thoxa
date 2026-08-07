@@ -32,7 +32,7 @@ step `.so` on the happy path.
 | Cgen | `cgen.rs` | Emits C under `target/thoxa/c/`; session combined TU for libtcc |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
 | libtcc | `tcc.rs` + `build.rs` + `third_party/tinycc` | Vendored TinyCC; memory compile |
-| REPL host | `repl.rs` | Decl accumulate; libtcc step image (or `THOXA_REPL_BACKEND=cc`) |
+| REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
 | LSP | `lsp/` | stdio server; check overlays; navigation |
 
 ## Crates and trees
@@ -66,12 +66,12 @@ step `.so` on the happy path.
 - **Programs:** `fn main` or directory `Main.thx` — batch path unchanged.
 - **Prelude:** product `std/Shell.thx` preferred at inject time; compile-time
   `include_str` fallback of the same file when std is not discoverable (D104).
-- **REPL steps:** vendored **libtcc** (`TCC_OUTPUT_MEMORY`); feed
+- **REPL steps:** vendored **libtcc only** (`TCC_OUTPUT_MEMORY`); feed
   `emit_session_combined` + `libthoxa_rt.a`; keep `TCCState` until superseded.
-  Escape: `THOXA_REPL_BACKEND=cc` → legacy `cc -shared` + dlopen. Freeze:
-  [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
-  (D105). Soft perf (debug, tight piped loops): ~**12–14 ms/step** libtcc vs
-  ~**100–110 ms/step** cc+dlopen (~7–9×); see freeze §8.1.
+  No step `.so` / no session `cc` spawn. Optional debug: `THOXA_REPL_KEEP_C=1`.
+  Freeze: [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
+  (D105). Soft perf (debug, tight piped loops): ~**12–14 ms/step** (see freeze
+  §8.1 for historical vs-cc numbers).
 
 ## Build products
 
@@ -84,7 +84,7 @@ Everything generated lives under one tree:
 | `target/c/tinycc/` | Installed libtcc + libtcc1 (from `build.rs`) |
 | `target/thoxa/c/` | Generated C from Thoxa sources |
 | `target/thoxa/bin/` | Linked Thoxa program binaries |
-| `target/thoxa/session/` (and related) | REPL step objects / shared libs (host-managed) |
+| `target/thoxa/repl/` | Optional session keep-C dumps; no step `.so` on libtcc path |
 
 Prefer `cargo make …` over ad-hoc scripts. `cargo make clean` removes `target/c`
 and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.

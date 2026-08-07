@@ -40,4 +40,7 @@ prelude. Named **`ffi`** root is deferred. File I/O for programs often lives in
 conformance helpers (`iolib`) / free `readFile` rather than a large `std/Io`
 yet.
 
+New helpers land when real samples need them — not via a free-floating
+“expand the stdlib” backlog.
+
 Source tree: [`../../std/`](../../std/).

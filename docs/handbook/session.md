@@ -56,7 +56,7 @@ programming is Thoxa.
 - Continuation prompt `> ` for unfinished blocks; primary prompt defaults to
   `$ ` unless customized.
 - Executable lines (including `cd`, `status`, `|`, redirections) run as compiled
-  session steps — no separate host command shortcuts.
+  session steps (in-process libtcc) — no separate host command shortcuts.
 
 ### rc file
 
