@@ -38,6 +38,7 @@ home-ok
 git-empty-ok
 git-miss-ok
 git-suf-ok
+git-repo-ok
 fg-ok
 sgr0-ok
 cyan-ok

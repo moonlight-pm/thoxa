@@ -2,7 +2,7 @@
 import { startsWith, endsWith, isEmpty, repeat, contains, indexOf, dropPrefix, dropSuffix, trimNewline, trim, toLowerAscii, toUpperAscii } from "std/Str"
 import { dirname, basename, join, isAbsolute, isRelative, normalize, extension, stem, withExtension, shortPath } from "std/Path"
 import { hasEnv, getenvOr, home } from "std/Env"
-import { branchName, branchSuffix } from "std/Git"
+import { branchName, branchSuffix, isRepo } from "std/Git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 
 fn main() -> Int64 {
@@ -108,6 +108,11 @@ fn main() -> Int64 {
         println("git-suf-ok")
     } else {
         println("git-suf-bad")
+    }
+    if isRepo("/no/such/thoxa/repo/zzzz") {
+        println("git-repo-bad")
+    } else {
+        println("git-repo-ok")
     }
     ## fg/sgr0 must be non-empty SGR sequences (byte 27 present via length).
     let c = fg(1, 2, 3)

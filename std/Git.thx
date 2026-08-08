@@ -62,6 +62,38 @@ export fn branchName(startDir!: String) -> String {
     }
 }
 
+## True when `dir` or an ancestor has a readable `.git/HEAD` (any content).
+export fn isRepo(startDir!: String) -> Bool {
+    if startDir == "" {
+        false
+    } else {
+        mut dir = startDir
+        mut found = false
+        mut steps = 0
+        loop {
+            if steps > 64 {
+                break
+            }
+            let headPath = "{dir}/.git/HEAD"
+            let raw = readFileLimited(headPath, 16)
+            if raw != "" {
+                found = true
+                break
+            }
+            if dir == "/" {
+                break
+            }
+            let parent = dirname(dir)
+            if parent == dir {
+                break
+            }
+            dir = parent
+            steps = steps + 1
+        }
+        found
+    }
+}
+
 ## Branch name for `dir` with a leading space when present (zsh-style prompt).
 ## Detached HEAD / missing repo → `""`. On a branch → `" <name>"`.
 export fn branchSuffix(startDir!: String) -> String {
