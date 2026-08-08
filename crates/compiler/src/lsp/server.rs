@@ -456,73 +456,85 @@ impl Server {
             changes.push((uri.to_string(), local_edits));
         }
 
-        // Open-buffer multi-file: renaming an export also renames selective-import
-        // local names + uses in other open docs (mirrors multi-file refs).
+        // Multi-file: rename export → selective-import local names in open
+        // buffers and same-directory disk modules (mirrors find-refs).
         if binding.exported
             && binding.owner.is_none()
             && binding.kind != BindingKind::Import
             && binding.def_span.is_some()
         {
             let my_path = PathBuf::from(convert::check_filename(uri));
-            for (other_uri, other_text) in &self.docs {
-                if other_uri == uri {
-                    continue;
-                }
-                let other_path = convert::check_filename(other_uri);
-                let other_idx = match catch_unwind(AssertUnwindSafe(|| {
-                    build_index(other_text, &other_path)
-                })) {
-                    Ok(i) => i,
-                    Err(_) => continue,
-                };
-                if !other_idx.ok {
-                    continue;
-                }
-                for b in other_idx.resolution.bindings.values() {
-                    if b.kind != BindingKind::Import {
-                        continue;
-                    }
-                    let Some(origin) = b.import_origin.as_ref() else {
-                        continue;
-                    };
-                    if origin.is_namespace {
-                        continue;
-                    }
-                    let export_name = origin
-                        .original
-                        .clone()
-                        .unwrap_or_else(|| b.name.clone());
-                    if export_name != binding.name {
-                        continue;
-                    }
-                    let Some(resolved) =
-                        crossmodule::resolve_import_file(&origin.spec, Path::new(&other_path))
-                    else {
-                        continue;
-                    };
-                    if !crossmodule::paths_equal_public(&resolved, &my_path) {
-                        continue;
-                    }
-                    // Rename the local import binding name + its uses (not the
-                    // string inside `from "./…"`).
-                    let spans = index::rename_spans(&other_idx, b);
-                    let edits: Vec<Value> = spans
-                        .into_iter()
-                        .map(|s| {
-                            convert::text_edit(span::span_to_range(other_text, s), new_name)
-                        })
-                        .collect();
-                    if !edits.is_empty() {
-                        changes.push((other_uri.clone(), edits));
-                    }
-                }
-            }
+            changes.extend(self.export_client_renames(&binding.name, &my_path, uri, new_name));
         }
 
         if changes.is_empty() {
             return Value::Null;
         }
         convert::workspace_edit_changes(changes)
+    }
+
+    fn export_client_renames(
+        &self,
+        export_name: &str,
+        my_path: &Path,
+        skip_uri: &str,
+        new_name: &str,
+    ) -> Vec<(String, Vec<Value>)> {
+        let mut changes = Vec::new();
+        let mut seen_paths: HashSet<String> = HashSet::new();
+
+        for (other_uri, other_text) in &self.docs {
+            if other_uri == skip_uri {
+                continue;
+            }
+            let other_path = convert::check_filename(other_uri);
+            seen_paths.insert(other_path.clone());
+            if let Some(edits) = import_rename_edits(
+                other_uri,
+                other_text,
+                Path::new(&other_path),
+                my_path,
+                export_name,
+                new_name,
+            ) {
+                changes.push((other_uri.clone(), edits));
+            }
+        }
+
+        if let Some(dir) = my_path.parent() {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for ent in entries.flatten() {
+                    let p = ent.path();
+                    if p.extension().and_then(|e| e.to_str()) != Some("thx") {
+                        continue;
+                    }
+                    if crossmodule::paths_equal_public(&p, my_path) {
+                        continue;
+                    }
+                    let path_s = p.to_string_lossy().into_owned();
+                    if seen_paths.contains(&path_s) {
+                        continue;
+                    }
+                    let already_open = self.docs.keys().any(|u| {
+                        let op = convert::check_filename(u);
+                        crossmodule::paths_equal_public(Path::new(&op), &p)
+                    });
+                    if already_open {
+                        continue;
+                    }
+                    let Ok(text) = fs::read_to_string(&p) else {
+                        continue;
+                    };
+                    let uri = convert::path_to_uri(&path_s);
+                    if let Some(edits) =
+                        import_rename_edits(&uri, &text, &p, my_path, export_name, new_name)
+                    {
+                        changes.push((uri, edits));
+                    }
+                }
+            }
+        }
+        changes
     }
 
     fn did_open<W: Write>(&mut self, params: &Value, writer: &mut W) -> io::Result<()> {
@@ -665,6 +677,58 @@ fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
 
 /// Collect import binding + uses in `other` when it selective-imports `export_name`
 /// from a module that resolves to `export_path`.
+fn import_rename_edits(
+    other_uri: &str,
+    other_text: &str,
+    other_path: &Path,
+    export_path: &Path,
+    export_name: &str,
+    new_name: &str,
+) -> Option<Vec<Value>> {
+    let other_idx = catch_unwind(AssertUnwindSafe(|| {
+        build_index(other_text, &other_path.to_string_lossy())
+    }))
+    .ok()?;
+    if !other_idx.ok {
+        return None;
+    }
+    let mut edits = Vec::new();
+    for b in other_idx.resolution.bindings.values() {
+        if b.kind != BindingKind::Import {
+            continue;
+        }
+        let Some(origin) = b.import_origin.as_ref() else {
+            continue;
+        };
+        if origin.is_namespace {
+            continue;
+        }
+        let name = origin
+            .original
+            .clone()
+            .unwrap_or_else(|| b.name.clone());
+        if name != export_name {
+            continue;
+        }
+        let resolved = crossmodule::resolve_import_file(&origin.spec, other_path)?;
+        if !crossmodule::paths_equal_public(&resolved, export_path) {
+            continue;
+        }
+        let _ = other_uri;
+        for s in index::rename_spans(&other_idx, b) {
+            edits.push(convert::text_edit(
+                span::span_to_range(other_text, s),
+                new_name,
+            ));
+        }
+    }
+    if edits.is_empty() {
+        None
+    } else {
+        Some(edits)
+    }
+}
+
 fn import_uses_of_export(
     other_uri: &str,
     other_text: &str,
@@ -1306,6 +1370,68 @@ fn main() -> Int64 {
         for e in main_edits {
             assert_eq!(e["newText"], "result");
         }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn multi_file_rename_same_dir_on_disk() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa_lsp_diskren_{}_{}",
+            std::process::id(),
+            ns
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("Helper.thx");
+        let helper_src = "export fn answer() -> Int64 { 42 }\n";
+        fs::write(&helper, helper_src).unwrap();
+        let main = dir.join("Main.thx");
+        let main_src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        fs::write(&main, main_src).unwrap();
+        let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
+        let def_byte = helper_src.find("answer").unwrap();
+        let p = span::byte_to_position(helper_src, def_byte);
+
+        let msgs = exchange(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": helper_uri,
+                        "languageId": "thoxa",
+                        "version": 1,
+                        "text": helper_src
+                    }
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/rename",
+                "params": {
+                    "textDocument": { "uri": helper_uri },
+                    "position": { "line": p.line, "character": p.character },
+                    "newName": "result"
+                }
+            }),
+        ]);
+
+        let ren = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let changes = ren["result"]["changes"]
+            .as_object()
+            .expect("workspace edit changes");
+        assert!(
+            changes.keys().any(|k| k.ends_with("Main.thx")),
+            "expected Main.thx on disk in rename: {changes:?}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

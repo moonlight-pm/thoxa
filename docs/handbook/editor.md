@@ -26,7 +26,7 @@ language server (grammar color changes may need a full quit/restart).
 | Go-to-def / hover on methods | Linked when receiver has a type hint (annotation, `Type(...)` init, or **method-return chain** like `p.moved().x`) |
 | Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk |
 | References | Local file + open buffers + **same-directory `.thx` on disk** that selective-import the export |
-| Rename | Local + **open buffers** selective-import renames when renaming an export |
+| Rename | Local + open buffers + **same-directory `.thx` on disk** selective-import renames when renaming an export |
 | Document symbols | Outline |
 | Open buffers | Overlay wins over disk for package check |
 
