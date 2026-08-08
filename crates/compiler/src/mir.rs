@@ -1002,346 +1002,106 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     )?;
 
     // Fill type fields with resolved types (concrete AST defs only).
+    // Independent type-shape errors are collected for LSP multi-diag.
+    let mut type_reg_errors: Vec<Error> = Vec::new();
     for (mod_id, mangled, td) in &type_defs {
         let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
-        let mut fields: Vec<FieldInfo> = Vec::new();
-        let zero_init;
-        let mut sum_info: Option<SumInfo> = None;
-
-        // Union alias: `type Dir = Up | Down` (D118).
-        if let Some(members) = &td.union_members {
-            if !td.params.is_empty() || !td.fields.is_empty() || !td.methods.is_empty() {
-                return Err(Error::at(
-                    "union type cannot have constructor params, body fields, or methods",
-                    td.name_span,
-                ));
-            }
-            zero_init = false;
-            let mut variants = Vec::new();
-            let mut seen_names = HashSet::new();
-            let mut residual_tag: Option<u32> = None;
-            let mut extract_tag: Option<u32> = None;
-            for mem in members {
-                // Whole-arm marks (`Done!`, `Quit?`) and type-arg marks (`Hold<Int64!>`,
-                // `Fail<String?>`) both count toward residual/extract tags (D118).
-                let arg_extract = type_expr_has_arg_mark(mem, TypeMark::Extract);
-                let arg_residual = type_expr_has_arg_mark(mem, TypeMark::Residual);
-                let whole_extract = matches!(mem.mark, Some(TypeMark::Extract));
-                let whole_residual = matches!(mem.mark, Some(TypeMark::Residual));
-                let mark = mem.mark.or(if arg_extract {
-                    Some(TypeMark::Extract)
-                } else if arg_residual {
-                    Some(TypeMark::Residual)
-                } else {
-                    None
-                });
-                // Type-arg `!` → unwrap sole field; whole-arm `!` alone → yield arm type.
-                let unwrap_payload = arg_extract;
-
-                if (whole_residual || arg_residual) && residual_tag.is_some() {
-                    return Err(Error::at(
-                        "union may have at most one residual mark (`?`)",
-                        mem.span,
-                    ));
-                }
-                if (whole_extract || arg_extract) && extract_tag.is_some() {
-                    return Err(Error::at(
-                        "union may have at most one extract mark (`!`)",
-                        mem.span,
-                    ));
-                }
-
-                // Pure literal arm: `0 | 1 | "x" | true` (D118).
-                if let Some(lit) = &mem.lit {
-                    let vname = match lit {
-                        TypeLit::Int(n) => n.to_string(),
-                        TypeLit::Bool(b) => b.to_string(),
-                        TypeLit::String(s) => format!("\"{s}\""),
-                    };
-                    if !seen_names.insert(vname.clone()) {
-                        return Err(Error::at(
-                            format!("duplicate union member `{vname}`"),
-                            mem.span,
-                        ));
-                    }
-                    let tag = variants.len() as u32;
-                    if whole_residual || arg_residual {
-                        residual_tag = Some(tag);
-                    }
-                    if whole_extract || arg_extract {
-                        extract_tag = Some(tag);
-                    }
-                    variants.push(SumVariant {
-                        tag,
-                        name: vname,
-                        ty: Ty::Void,
-                        lit: Some(lit.clone()),
-                        mark,
-                        unwrap_payload: false,
-                    });
-                    continue;
-                }
-                let ty = resolve_ty(mem, &types_info, &name_map)?;
-                let Ty::User(ref member_name) = ty else {
-                    return Err(Error::at(
-                        format!("union member must be a named type or literal, got {ty:?}"),
-                        mem.span,
-                    ));
-                };
-                // Flatten nested union aliases: `Outer = Inner | C` → members of Inner + C
-                // (D118; transparent composition). Nested marks on the sum itself are rejected.
-                if let Some(minfo) = types_info.get(member_name) {
-                    if let Some(inner_sum) = &minfo.sum {
-                        if whole_extract || whole_residual || arg_extract || arg_residual {
-                            return Err(Error::at(
-                                format!(
-                                    "cannot place extract marks on nested union member `{member_name}` (mark atoms instead)"
-                                ),
-                                mem.span,
-                            ));
-                        }
-                        if inner_sum.residual_tag.is_some() || inner_sum.extract_tag.is_some() {
-                            return Err(Error::at(
-                                format!(
-                                    "nested union `{member_name}` has residual/extract marks; flatten marks onto the outer union"
-                                ),
-                                mem.span,
-                            ));
-                        }
-                        for iv in &inner_sum.variants {
-                            let vname = iv.name.clone();
-                            if !seen_names.insert(vname.clone()) {
-                                return Err(Error::at(
-                                    format!(
-                                        "duplicate union member `{vname}` (from nested `{member_name}`)"
-                                    ),
-                                    mem.span,
-                                ));
-                            }
-                            let nested_tag = variants.len() as u32;
-                            variants.push(SumVariant {
-                                tag: nested_tag,
-                                name: vname,
-                                ty: iv.ty.clone(),
-                                lit: iv.lit.clone(),
-                                mark: None,
-                                unwrap_payload: iv.unwrap_payload,
-                            });
-                        }
-                        continue;
-                    }
-                }
-                // Prefer source name from type expr for patterns.
-                let vname = if mem.name.is_empty() {
-                    member_name.clone()
-                } else {
-                    mem.name.clone()
-                };
-                if !seen_names.insert(vname.clone()) {
-                    return Err(Error::at(
-                        format!("duplicate union member `{vname}`"),
-                        mem.span,
-                    ));
-                }
-                // Product arm: scalar / String / Bytes fields only.
-                if let Some(minfo) = types_info.get(member_name) {
-                    for f in &minfo.fields {
-                        if !matches!(
-                            f.ty,
-                            Ty::Int64
-                                | Ty::Int32
-                                | Ty::UInt32
-                                | Ty::UInt64
-                                | Ty::Byte
-                                | Ty::Bool
-                                | Ty::Void
-                                | Ty::String
-                                | Ty::Bytes
-                        ) {
-                            return Err(Error::at(
-                                format!(
-                                    "union member `{vname}` field `{}` must be a scalar or String/Bytes for now (got {:?})",
-                                    f.name, f.ty
-                                ),
-                                mem.span,
-                            ));
-                        }
-                    }
-                    if unwrap_payload {
-                        if minfo.fields.len() != 1 {
-                            return Err(Error::at(
-                                format!(
-                                    "type-arg extract mark (`!`) on `{vname}` requires a single-field product"
-                                ),
-                                mem.span,
-                            ));
-                        }
-                    }
-                } else if unwrap_payload {
-                    return Err(Error::at(
-                        format!("type-arg extract mark (`!`) requires a product type, got `{vname}`"),
-                        mem.span,
-                    ));
-                }
-                let tag = variants.len() as u32;
-                if whole_residual || arg_residual {
-                    residual_tag = Some(tag);
-                }
-                if whole_extract || arg_extract {
-                    extract_tag = Some(tag);
-                }
-                variants.push(SumVariant {
-                    tag,
-                    name: vname,
-                    ty,
-                    lit: None,
-                    mark,
-                    unwrap_payload,
-                });
-            }
-            sum_info = Some(SumInfo {
-                variants,
-                residual_tag,
-                extract_tag,
+        match resolve_type_def_shape(td, &types_info, &name_map) {
+            Ok((fields, zero_init, sum_info)) => {
+            let info = types_info.get_mut(mangled).unwrap();
+            info.fields = fields.clone();
+            info.zero_init = zero_init;
+            info.sum = sum_info.clone();
+            let sum_layout = sum_info.as_ref().map(|s| {
+                s.variants
+                    .iter()
+                    .map(|v| SumVariantLayout {
+                        tag: v.tag,
+                        name: v.name.clone(),
+                        payload_ty: v.ty.clone(),
+                    })
+                    .collect()
             });
-        } else if !td.fields.is_empty() {
-            zero_init = true;
-            for f in &td.fields {
-                let ty = resolve_ty(&f.ty, &types_info, &name_map)?;
-                if !is_abi_field_ty(&ty) {
-                    return Err(Error::at(
-                        format!(
-                            "C-layout field `{}` must be an ABI scalar or Array<T, N>, got {ty:?}",
-                            f.name
-                        ),
-                        f.ty.span,
-                    ));
+            // Pure-literal unions: narrow scalar storage (D118 §6).
+            let sum_scalar = sum_info.as_ref().and_then(|s| {
+                if s.variants.is_empty() || !s.variants.iter().all(|v| v.lit.is_some()) {
+                    return None;
                 }
-                if fields.iter().any(|x| x.name == f.name) {
-                    return Err(Error::at(
-                        format!("duplicate field `{}`", f.name),
-                        f.name_span,
-                    ));
-                }
-                fields.push(FieldInfo {
-                    name: f.name.clone(),
-                    ty,
-                    mutable: f.mutable,
-                    default: None,
-                });
+                Some(pure_lit_scalar_ty(s.variants.len()))
+            });
+            type_layouts.push(TypeLayout {
+                name: mangled.clone(),
+                fields: fields
+                    .iter()
+                    .map(|f| FieldLayout {
+                        name: f.name.clone(),
+                        c_name: sanitize_field(&f.name),
+                        ty: f.ty.clone(),
+                    })
+                    .collect(),
+                sum: sum_layout,
+                sum_scalar,
+            });
             }
-        } else {
-            zero_init = false;
-            let mut seen_default = false;
-            for p in &td.params {
-                let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
-                // R3+ : scalars + heap String/Bytes; Array<T> for Request/Response headers (D69).
-                // Nested User as a direct field still deferred; Array of User is fine (D65).
-                let ok = matches!(
-                    ty,
-                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
-                );
-                if !ok {
-                    return Err(Error::at(
-                        "constructor-param fields must be Int64, Bool, String, Bytes, or Array",
-                        p.ty.span,
-                    ));
-                }
-                if p.default.is_some() {
-                    seen_default = true;
-                } else if seen_default {
-                    return Err(Error::at(
-                        format!(
-                            "constructor parameter `{}` without a default follows a defaulted parameter",
-                            p.name
-                        ),
-                        p.name_span,
-                    ));
-                }
-                fields.push(FieldInfo {
-                    name: p.name.clone(),
-                    ty,
-                    mutable: false,
-                    default: p.default.clone(),
-                });
-            }
+            Err(e) => type_reg_errors.push(e),
         }
-        let info = types_info.get_mut(mangled).unwrap();
-        info.fields = fields.clone();
-        info.zero_init = zero_init;
-        info.sum = sum_info.clone();
-        let sum_layout = sum_info.as_ref().map(|s| {
-            s.variants
-                .iter()
-                .map(|v| SumVariantLayout {
-                    tag: v.tag,
-                    name: v.name.clone(),
-                    payload_ty: v.ty.clone(),
-                })
-                .collect()
-        });
-        // Pure-literal unions: narrow scalar storage (D118 §6).
-        let sum_scalar = sum_info.as_ref().and_then(|s| {
-            if s.variants.is_empty() || !s.variants.iter().all(|v| v.lit.is_some()) {
-                return None;
-            }
-            Some(pure_lit_scalar_ty(s.variants.len()))
-        });
-        type_layouts.push(TypeLayout {
-            name: mangled.clone(),
-            fields: fields
-                .iter()
-                .map(|f| FieldLayout {
-                    name: f.name.clone(),
-                    c_name: sanitize_field(&f.name),
-                    ty: f.ty.clone(),
-                })
-                .collect(),
-            sum: sum_layout,
-            sum_scalar,
-        });
+    }
+    if !type_reg_errors.is_empty() {
+        return Err(errors_to_multi(type_reg_errors));
     }
 
-    // Methods
+    // Methods (signature type-reg; collect independent failures).
+    let mut method_reg_errors: Vec<Error> = Vec::new();
     for (mod_id, mangled, td) in &type_defs {
         let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
         for m in &td.methods {
-            let ret = match m.return_type.as_ref() {
-                Some(t) => resolve_ty(t, &types_info, &name_map)?,
-                None => Ty::Void,
-            };
-            let mut params = Vec::new();
-            let mut defaults = Vec::new();
-            for p in &m.params {
-                params.push((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?));
-                defaults.push(p.default.clone());
-            }
-            // Same ordering rule as free functions (D98/D106).
-            let mut seen_default = false;
-            for (i, d) in defaults.iter().enumerate() {
-                if d.is_some() {
-                    seen_default = true;
-                } else if seen_default {
-                    return Err(Error::at(
-                        format!(
-                            "parameter `{}` without a default follows a defaulted parameter",
-                            params[i].0
-                        ),
-                        m.params[i].name_span,
-                    ));
+            match (|| -> Result<MethodSig> {
+                let ret = match m.return_type.as_ref() {
+                    Some(t) => resolve_ty(t, &types_info, &name_map)?,
+                    None => Ty::Void,
+                };
+                let mut params = Vec::new();
+                let mut defaults = Vec::new();
+                for p in &m.params {
+                    params.push((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?));
+                    defaults.push(p.default.clone());
                 }
-            }
-            types_info.get_mut(mangled).unwrap().methods.insert(
-                m.name.clone(),
-                MethodSig {
+                // Same ordering rule as free functions (D98/D106).
+                let mut seen_default = false;
+                for (i, d) in defaults.iter().enumerate() {
+                    if d.is_some() {
+                        seen_default = true;
+                    } else if seen_default {
+                        return Err(Error::at(
+                            format!(
+                                "parameter `{}` without a default follows a defaulted parameter",
+                                params[i].0
+                            ),
+                            m.params[i].name_span,
+                        ));
+                    }
+                }
+                Ok(MethodSig {
                     params,
                     defaults,
                     ret,
                     exported: m.exported,
                     def_mod: mod_id.clone(),
-                },
-            );
+                })
+            })() {
+                Ok(sig) => {
+                    types_info
+                        .get_mut(mangled)
+                        .unwrap()
+                        .methods
+                        .insert(m.name.clone(), sig);
+                }
+                Err(e) => method_reg_errors.push(e),
+            }
         }
+    }
+    if !method_reg_errors.is_empty() {
+        return Err(errors_to_multi(method_reg_errors));
     }
 
     // ---------- Phase 2: functions + externs ----------
@@ -1701,15 +1461,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
 
     if !body_errors.is_empty() {
         // Build/run still report the first error; LSP expands `more` via check_source.
-        let mut it = body_errors.into_iter();
-        let first = it.next().unwrap();
-        let more = it
-            .map(|e| crate::error::AdditionalDiagnostic {
-                message: e.message,
-                span: e.span,
-            })
-            .collect();
-        return Err(first.with_more(more));
+        return Err(errors_to_multi(body_errors));
     }
 
     // Synthetic unions from unannotated if lub (D119).
@@ -1724,6 +1476,290 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         init: init_stmts,
         functions,
     })
+}
+
+
+/// Resolve concrete type fields / union shape (type-reg phase).
+fn resolve_type_def_shape(
+    td: &TypeDef,
+    types_info: &HashMap<String, TypeInfo>,
+    name_map: &HashMap<String, String>,
+) -> Result<(Vec<FieldInfo>, bool, Option<SumInfo>)> {
+        let mut fields: Vec<FieldInfo> = Vec::new();
+        let zero_init;
+        let mut sum_info: Option<SumInfo> = None;
+
+        // Union alias: `type Dir = Up | Down` (D118).
+        if let Some(members) = &td.union_members {
+            if !td.params.is_empty() || !td.fields.is_empty() || !td.methods.is_empty() {
+                return Err(Error::at(
+                    "union type cannot have constructor params, body fields, or methods",
+                    td.name_span,
+                ));
+            }
+            zero_init = false;
+            let mut variants = Vec::new();
+            let mut seen_names = HashSet::new();
+            let mut residual_tag: Option<u32> = None;
+            let mut extract_tag: Option<u32> = None;
+            for mem in members {
+                // Whole-arm marks (`Done!`, `Quit?`) and type-arg marks (`Hold<Int64!>`,
+                // `Fail<String?>`) both count toward residual/extract tags (D118).
+                let arg_extract = type_expr_has_arg_mark(mem, TypeMark::Extract);
+                let arg_residual = type_expr_has_arg_mark(mem, TypeMark::Residual);
+                let whole_extract = matches!(mem.mark, Some(TypeMark::Extract));
+                let whole_residual = matches!(mem.mark, Some(TypeMark::Residual));
+                let mark = mem.mark.or(if arg_extract {
+                    Some(TypeMark::Extract)
+                } else if arg_residual {
+                    Some(TypeMark::Residual)
+                } else {
+                    None
+                });
+                // Type-arg `!` → unwrap sole field; whole-arm `!` alone → yield arm type.
+                let unwrap_payload = arg_extract;
+
+                if (whole_residual || arg_residual) && residual_tag.is_some() {
+                    return Err(Error::at(
+                        "union may have at most one residual mark (`?`)",
+                        mem.span,
+                    ));
+                }
+                if (whole_extract || arg_extract) && extract_tag.is_some() {
+                    return Err(Error::at(
+                        "union may have at most one extract mark (`!`)",
+                        mem.span,
+                    ));
+                }
+
+                // Pure literal arm: `0 | 1 | "x" | true` (D118).
+                if let Some(lit) = &mem.lit {
+                    let vname = match lit {
+                        TypeLit::Int(n) => n.to_string(),
+                        TypeLit::Bool(b) => b.to_string(),
+                        TypeLit::String(s) => format!("\"{s}\""),
+                    };
+                    if !seen_names.insert(vname.clone()) {
+                        return Err(Error::at(
+                            format!("duplicate union member `{vname}`"),
+                            mem.span,
+                        ));
+                    }
+                    let tag = variants.len() as u32;
+                    if whole_residual || arg_residual {
+                        residual_tag = Some(tag);
+                    }
+                    if whole_extract || arg_extract {
+                        extract_tag = Some(tag);
+                    }
+                    variants.push(SumVariant {
+                        tag,
+                        name: vname,
+                        ty: Ty::Void,
+                        lit: Some(lit.clone()),
+                        mark,
+                        unwrap_payload: false,
+                    });
+                    continue;
+                }
+                let ty = resolve_ty(mem, &types_info, &name_map)?;
+                let Ty::User(ref member_name) = ty else {
+                    return Err(Error::at(
+                        format!("union member must be a named type or literal, got {ty:?}"),
+                        mem.span,
+                    ));
+                };
+                // Flatten nested union aliases: `Outer = Inner | C` → members of Inner + C
+                // (D118; transparent composition). Nested marks on the sum itself are rejected.
+                if let Some(minfo) = types_info.get(member_name) {
+                    if let Some(inner_sum) = &minfo.sum {
+                        if whole_extract || whole_residual || arg_extract || arg_residual {
+                            return Err(Error::at(
+                                format!(
+                                    "cannot place extract marks on nested union member `{member_name}` (mark atoms instead)"
+                                ),
+                                mem.span,
+                            ));
+                        }
+                        if inner_sum.residual_tag.is_some() || inner_sum.extract_tag.is_some() {
+                            return Err(Error::at(
+                                format!(
+                                    "nested union `{member_name}` has residual/extract marks; flatten marks onto the outer union"
+                                ),
+                                mem.span,
+                            ));
+                        }
+                        for iv in &inner_sum.variants {
+                            let vname = iv.name.clone();
+                            if !seen_names.insert(vname.clone()) {
+                                return Err(Error::at(
+                                    format!(
+                                        "duplicate union member `{vname}` (from nested `{member_name}`)"
+                                    ),
+                                    mem.span,
+                                ));
+                            }
+                            let nested_tag = variants.len() as u32;
+                            variants.push(SumVariant {
+                                tag: nested_tag,
+                                name: vname,
+                                ty: iv.ty.clone(),
+                                lit: iv.lit.clone(),
+                                mark: None,
+                                unwrap_payload: iv.unwrap_payload,
+                            });
+                        }
+                        continue;
+                    }
+                }
+                // Prefer source name from type expr for patterns.
+                let vname = if mem.name.is_empty() {
+                    member_name.clone()
+                } else {
+                    mem.name.clone()
+                };
+                if !seen_names.insert(vname.clone()) {
+                    return Err(Error::at(
+                        format!("duplicate union member `{vname}`"),
+                        mem.span,
+                    ));
+                }
+                // Product arm: scalar / String / Bytes fields only.
+                if let Some(minfo) = types_info.get(member_name) {
+                    for f in &minfo.fields {
+                        if !matches!(
+                            f.ty,
+                            Ty::Int64
+                                | Ty::Int32
+                                | Ty::UInt32
+                                | Ty::UInt64
+                                | Ty::Byte
+                                | Ty::Bool
+                                | Ty::Void
+                                | Ty::String
+                                | Ty::Bytes
+                        ) {
+                            return Err(Error::at(
+                                format!(
+                                    "union member `{vname}` field `{}` must be a scalar or String/Bytes for now (got {:?})",
+                                    f.name, f.ty
+                                ),
+                                mem.span,
+                            ));
+                        }
+                    }
+                    if unwrap_payload {
+                        if minfo.fields.len() != 1 {
+                            return Err(Error::at(
+                                format!(
+                                    "type-arg extract mark (`!`) on `{vname}` requires a single-field product"
+                                ),
+                                mem.span,
+                            ));
+                        }
+                    }
+                } else if unwrap_payload {
+                    return Err(Error::at(
+                        format!("type-arg extract mark (`!`) requires a product type, got `{vname}`"),
+                        mem.span,
+                    ));
+                }
+                let tag = variants.len() as u32;
+                if whole_residual || arg_residual {
+                    residual_tag = Some(tag);
+                }
+                if whole_extract || arg_extract {
+                    extract_tag = Some(tag);
+                }
+                variants.push(SumVariant {
+                    tag,
+                    name: vname,
+                    ty,
+                    lit: None,
+                    mark,
+                    unwrap_payload,
+                });
+            }
+            sum_info = Some(SumInfo {
+                variants,
+                residual_tag,
+                extract_tag,
+            });
+        } else if !td.fields.is_empty() {
+            zero_init = true;
+            for f in &td.fields {
+                let ty = resolve_ty(&f.ty, &types_info, &name_map)?;
+                if !is_abi_field_ty(&ty) {
+                    return Err(Error::at(
+                        format!(
+                            "C-layout field `{}` must be an ABI scalar or Array<T, N>, got {ty:?}",
+                            f.name
+                        ),
+                        f.ty.span,
+                    ));
+                }
+                if fields.iter().any(|x| x.name == f.name) {
+                    return Err(Error::at(
+                        format!("duplicate field `{}`", f.name),
+                        f.name_span,
+                    ));
+                }
+                fields.push(FieldInfo {
+                    name: f.name.clone(),
+                    ty,
+                    mutable: f.mutable,
+                    default: None,
+                });
+            }
+        } else {
+            zero_init = false;
+            let mut seen_default = false;
+            for p in &td.params {
+                let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
+                // R3+ : scalars + heap String/Bytes; Array<T> for Request/Response headers (D69).
+                // Nested User as a direct field still deferred; Array of User is fine (D65).
+                let ok = matches!(
+                    ty,
+                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
+                );
+                if !ok {
+                    return Err(Error::at(
+                        "constructor-param fields must be Int64, Bool, String, Bytes, or Array",
+                        p.ty.span,
+                    ));
+                }
+                if p.default.is_some() {
+                    seen_default = true;
+                } else if seen_default {
+                    return Err(Error::at(
+                        format!(
+                            "constructor parameter `{}` without a default follows a defaulted parameter",
+                            p.name
+                        ),
+                        p.name_span,
+                    ));
+                }
+                fields.push(FieldInfo {
+                    name: p.name.clone(),
+                    ty,
+                    mutable: false,
+                    default: p.default.clone(),
+                });
+            }
+        }
+        Ok((fields, zero_init, sum_info))
+}
+
+fn errors_to_multi(errors: Vec<Error>) -> Error {
+    let mut it = errors.into_iter();
+    let first = it.next().expect("errors_to_multi nonempty");
+    let more = it
+        .map(|e| crate::error::AdditionalDiagnostic {
+            message: e.message,
+            span: e.span,
+        })
+        .collect();
+    first.with_more(more)
 }
 
 fn mangle_type(mod_id: &str, name: &str, is_entry: bool) -> String {

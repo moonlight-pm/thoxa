@@ -82,6 +82,15 @@ pub struct ImportOrigin {
     pub is_namespace: bool,
 }
 
+/// Structural type for typed-member navigation (head + type-arg heads).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NavTy {
+    /// Head type name (`Box` in `Box<Point>`).
+    pub head: String,
+    /// Type-argument head names in order (`["Point"]` for `Box<Point>`).
+    pub args: Vec<String>,
+}
+
 /// One definition site (or external/builtin with no in-file span).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding {
@@ -95,8 +104,10 @@ pub struct Binding {
     pub owner: Option<String>,
     /// Populated for [`BindingKind::Import`] bindings.
     pub import_origin: Option<ImportOrigin>,
-    /// Simple value type name when known (annotation or type-ctor init) for member nav.
+    /// Value type head when known (annotation, ctor, fn return, …) for member nav.
     pub ty_hint: Option<String>,
+    /// Type-argument heads for generic nav (`Box<Point>` → `["Point"]`).
+    pub ty_args: Vec<String>,
 }
 
 /// One name occurrence in source.
@@ -304,6 +315,7 @@ impl<'a> Resolver<'a> {
                 owner,
                 import_origin,
                 ty_hint: None,
+                ty_args: Vec::new(),
             },
         );
         if module_level {
@@ -312,23 +324,40 @@ impl<'a> Resolver<'a> {
         id
     }
 
-    fn set_ty_hint(&mut self, id: u32, hint: Option<String>) {
-        if let Some(h) = hint {
+    fn set_nav_ty(&mut self, id: u32, nav: Option<NavTy>) {
+        if let Some(n) = nav {
             if let Some(b) = self.res.bindings.get_mut(&id) {
-                b.ty_hint = Some(h);
+                b.ty_hint = Some(n.head);
+                b.ty_args = n.args;
             }
         }
     }
 
-    /// Head type name for member linking (nav). Includes generics: `Box<Int64>` →
-    /// `"Box"` so methods on the generic product still resolve. Literal types and
-    /// empty names yield `None`. Type-parameter returns (`T`) remain residual.
-    fn simple_type_name(te: &TypeExpr) -> Option<String> {
-        if te.lit.is_none() && !te.name.is_empty() {
-            Some(te.name.clone())
-        } else {
-            None
+    fn binding_nav_ty(b: &Binding) -> Option<NavTy> {
+        let head = b.ty_hint.clone()?;
+        Some(NavTy {
+            head,
+            args: b.ty_args.clone(),
+        })
+    }
+
+    /// Head + type-arg heads for nav. `Box<Point>` → head `Box`, args `["Point"]`.
+    fn nav_ty_from_type_expr(te: &TypeExpr) -> Option<NavTy> {
+        if te.lit.is_some() || te.name.is_empty() {
+            return None;
         }
+        let mut args = Vec::new();
+        for a in &te.args {
+            if let TypeArg::Type(inner) = a {
+                if let Some(n) = Self::nav_ty_from_type_expr(inner) {
+                    args.push(n.head);
+                }
+            }
+        }
+        Some(NavTy {
+            head: te.name.clone(),
+            args,
+        })
     }
 
     /// Product field types in declaration order (params then body fields).
@@ -350,55 +379,106 @@ impl<'a> Resolver<'a> {
         None
     }
 
-    fn ty_hint_from_init(&self, init: &Expr, scope: usize) -> Option<String> {
+    fn type_def_type_params(&self, type_name: &str) -> Vec<String> {
+        for item in &self.module.items {
+            if let Item::Type(td) = item {
+                if td.name == type_name {
+                    return td.type_params.clone();
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    /// Substitute type-param heads using receiver type arguments.
+    fn apply_type_param_subst(nav: &NavTy, type_params: &[String], recv_args: &[String]) -> NavTy {
+        if let Some(i) = type_params.iter().position(|p| p == &nav.head) {
+            if let Some(concrete) = recv_args.get(i) {
+                return NavTy {
+                    head: concrete.clone(),
+                    args: Vec::new(),
+                };
+            }
+        }
+        let mut args = Vec::new();
+        for a in &nav.args {
+            let sub = Self::apply_type_param_subst(
+                &NavTy {
+                    head: a.clone(),
+                    args: Vec::new(),
+                },
+                type_params,
+                recv_args,
+            );
+            args.push(sub.head);
+        }
+        NavTy {
+            head: nav.head.clone(),
+            args,
+        }
+    }
+
+    fn member_nav_ty(&self, owner: &NavTy, member: &str) -> Option<NavTy> {
+        let mid = self.member_id(&owner.head, member)?;
+        let mb = self.res.bindings.get(&mid)?;
+        let raw = Self::binding_nav_ty(mb)?;
+        let tparams = self.type_def_type_params(&owner.head);
+        Some(Self::apply_type_param_subst(&raw, &tparams, &owner.args))
+    }
+
+    fn ty_hint_from_init(&self, init: &Expr, scope: usize) -> Option<NavTy> {
         match &init.kind {
-            ExprKind::Call { callee, .. } => self.call_result_ty_hint(callee, scope),
+            ExprKind::Call { callee, .. } => self.call_result_nav_ty(callee, scope),
             // `let q = p.moved()` — method return type as value hint.
-            ExprKind::MethodCall { .. } => self.receiver_ty_hint(init, scope),
+            ExprKind::MethodCall { .. } => self.receiver_nav_ty(init, scope),
             // `let q = p` — copy known value hint.
             ExprKind::Name(n) => {
                 let id = self.lookup(scope, n)?;
-                self.res.bindings.get(&id)?.ty_hint.clone()
+                Self::binding_nav_ty(self.res.bindings.get(&id)?)
             }
             _ => None,
         }
     }
 
-    /// Result type of a bare call for member linking: type ctor name, or
-    /// free/extern function return type (`ty_hint` on the callee binding).
-    fn call_result_ty_hint(&self, callee: &str, scope: usize) -> Option<String> {
+    /// Result type of a bare call for member linking: type ctor, or free/extern return.
+    fn call_result_nav_ty(&self, callee: &str, scope: usize) -> Option<NavTy> {
         let id = self.lookup(scope, callee)?;
         let b = self.res.bindings.get(&id)?;
         match b.kind {
-            BindingKind::Type => Some(b.name.clone()),
-            BindingKind::Fn | BindingKind::Extern => b.ty_hint.clone(),
+            BindingKind::Type => Some(NavTy {
+                head: b.name.clone(),
+                args: Vec::new(),
+            }),
+            BindingKind::Fn | BindingKind::Extern => Self::binding_nav_ty(b),
+            _ => None,
+        }
+    }
+
+    fn receiver_nav_ty(&self, expr: &Expr, scope: usize) -> Option<NavTy> {
+        match &expr.kind {
+            ExprKind::Name(n) => {
+                let id = self.lookup(scope, n)?;
+                Self::binding_nav_ty(self.res.bindings.get(&id)?)
+            }
+            ExprKind::Call { callee, .. } => self.call_result_nav_ty(callee, scope),
+            // `p.moved().x` / `b.get().x` — method return after type-param subst.
+            ExprKind::MethodCall {
+                receiver, method, ..
+            } => {
+                let recv = self.receiver_nav_ty(receiver, scope)?;
+                self.member_nav_ty(&recv, method)
+            }
+            // `p.pos.x` — field type after type-param subst.
+            ExprKind::Field { base, name, .. } => {
+                let recv = self.receiver_nav_ty(base, scope)?;
+                self.member_nav_ty(&recv, name)
+            }
             _ => None,
         }
     }
 
     fn receiver_ty_hint(&self, expr: &Expr, scope: usize) -> Option<String> {
-        match &expr.kind {
-            ExprKind::Name(n) => {
-                let id = self.lookup(scope, n)?;
-                self.res.bindings.get(&id)?.ty_hint.clone()
-            }
-            ExprKind::Call { callee, .. } => self.call_result_ty_hint(callee, scope),
-            // `p.moved().x` — return type of linked method is the next receiver type.
-            ExprKind::MethodCall {
-                receiver, method, ..
-            } => {
-                let recv_ty = self.receiver_ty_hint(receiver, scope)?;
-                let mid = self.member_id(&recv_ty, method)?;
-                self.res.bindings.get(&mid)?.ty_hint.clone()
-            }
-            // `p.pos.x` if pos is a field with type hint (field bindings may carry ty_hint).
-            ExprKind::Field { base, name, .. } => {
-                let recv_ty = self.receiver_ty_hint(base, scope)?;
-                let fid = self.member_id(&recv_ty, name)?;
-                self.res.bindings.get(&fid)?.ty_hint.clone()
-            }
-            _ => None,
-        }
+        self.receiver_nav_ty(expr, scope).map(|n| n.head)
     }
 
     fn member_id(&self, type_name: &str, member: &str) -> Option<u32> {
@@ -428,7 +508,7 @@ impl<'a> Resolver<'a> {
                     );
                     // Return type feeds typed-member nav: `let p = make()` / `make().x`.
                     if let Some(ret) = &f.return_type {
-                        self.set_ty_hint(id, Self::simple_type_name(ret));
+                        self.set_nav_ty(id, Self::nav_ty_from_type_expr(ret));
                     }
                     self.define(root, &f.name, id);
                 }
@@ -442,7 +522,7 @@ impl<'a> Resolver<'a> {
                         true,
                     );
                     if let Some(ret) = &e.return_type {
-                        self.set_ty_hint(id, Self::simple_type_name(ret));
+                        self.set_nav_ty(id, Self::nav_ty_from_type_expr(ret));
                     }
                     self.define(root, &e.name, id);
                 }
@@ -530,12 +610,12 @@ impl<'a> Resolver<'a> {
         for p in &td.params {
             let id =
                 self.member_binding(&td.name, &p.name, BindingKind::Field, p.name_span, false);
-            self.set_ty_hint(id, Self::simple_type_name(&p.ty));
+            self.set_nav_ty(id, Self::nav_ty_from_type_expr(&p.ty));
         }
         for f in &td.fields {
             let id =
                 self.member_binding(&td.name, &f.name, BindingKind::Field, f.name_span, false);
-            self.set_ty_hint(id, Self::simple_type_name(&f.ty));
+            self.set_nav_ty(id, Self::nav_ty_from_type_expr(&f.ty));
         }
         for m in &td.methods {
             let id = self.member_binding(
@@ -545,9 +625,9 @@ impl<'a> Resolver<'a> {
                 m.name_span,
                 m.exported,
             );
-            // Method bindings store return type as ty_hint for chain nav.
+            // Method return (may be type param `T`) for chain nav after subst.
             if let Some(ret) = &m.return_type {
-                self.set_ty_hint(id, Self::simple_type_name(ret));
+                self.set_nav_ty(id, Self::nav_ty_from_type_expr(ret));
             }
         }
     }
@@ -649,7 +729,7 @@ impl<'a> Resolver<'a> {
                 None,
                 false,
             );
-            self.set_ty_hint(id, Self::simple_type_name(&p.ty));
+            self.set_nav_ty(id, Self::nav_ty_from_type_expr(&p.ty));
             self.define(scope, &p.name, id);
         }
     }
@@ -683,11 +763,11 @@ impl<'a> Resolver<'a> {
                     BindingKind::Let
                 };
                 let id = self.new_binding(name, kind, Some(*name_span), false, None, false);
-                let hint = ty
+                let nav = ty
                     .as_ref()
-                    .and_then(Self::simple_type_name)
+                    .and_then(Self::nav_ty_from_type_expr)
                     .or_else(|| self.ty_hint_from_init(init, scope));
-                self.set_ty_hint(id, hint);
+                self.set_nav_ty(id, nav);
                 self.define(scope, name, id);
             }
             BlockItem::Assign { target, value } => {
@@ -1004,7 +1084,7 @@ impl<'a> Resolver<'a> {
             );
             if let Some(fields) = field_tys.as_ref() {
                 if i < fields.len() {
-                    self.set_ty_hint(id, Self::simple_type_name(&fields[i]));
+                    self.set_nav_ty(id, Self::nav_ty_from_type_expr(&fields[i]));
                 }
             }
             self.define(scope, bname, id);
@@ -1236,6 +1316,33 @@ fn main() -> Int64 {
         assert_eq!(b.kind, BindingKind::Method);
         assert_eq!(b.name, "get");
         assert_eq!(b.owner.as_deref(), Some("Box"));
+    }
+
+    #[test]
+    fn typed_member_via_type_param_return() {
+        // `get() -> T` with `Box<Point>` receiver → chain `.x` on Point.
+        let src = "\
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+type Box<T>(value: T) {
+  export fn get() -> T { value }
+}
+fn make() -> Box<Point> { Box(value: Point(x: 1)) }
+fn main() -> Int64 {
+  let b = make()
+  b.get().len()
+  0
+}
+";
+        let res = resolve_ok(src);
+        let len_call = src.find("b.get().len()").unwrap() + "b.get().".len();
+        let p = byte_to_position(src, len_call);
+        let r = res.ref_at(src, p.line, p.character).expect("get().len");
+        let b = res.binding_of(Some(r)).expect("method via type-param return");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "len");
+        assert_eq!(b.owner.as_deref(), Some("Point"));
     }
 
     #[test]

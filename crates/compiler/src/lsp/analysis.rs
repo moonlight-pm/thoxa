@@ -591,6 +591,31 @@ fn main() -> Int64 { 0 }
     }
 
     #[test]
+    fn multi_diag_collects_independent_type_reg_errors() {
+        // Two concrete types with independent unknown field types.
+        let src = r#"
+type Alpha(x: NoSuchAlpha)
+type Beta(y: NoSuchBeta)
+fn main() -> Int64 { 0 }
+"#;
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.len() >= 2,
+            "expected type-reg multi-diag, got {}: {diags:?}",
+            diags.len()
+        );
+        let joined = diags
+            .iter()
+            .map(|d| d.message.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            joined.contains("NoSuchAlpha") && joined.contains("NoSuchBeta"),
+            "{joined}"
+        );
+    }
+
+    #[test]
     fn union_match_lists_missing_arms() {
         let src = r#"
 type A

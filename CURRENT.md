@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-08 (typed-member polish; session deferred)
+**As of:** 2026-08-08 (type-param nav + type-reg multi-diag; session deferred)
 
 ---
 
@@ -14,12 +14,13 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** (editor LSP
 partial, sum polish if forced) over free redesign or expand-std sprints.
 
-**Shipped recently:** typed-member **generic head** + **match payload** hints;
-fn/extern return; package-tree LSP. Session residual deferred.
+**Shipped recently:** typed-member **type-param subst** (`get() -> T` chains);
+multi-diag for **type-reg** (+ method sigs); package-tree LSP. Session residual
+deferred.
 
-**In progress / next:** editor freeze residual (type-param returns, multi-diag
-lex/parse/type-reg, MIR-on-resolver when forced); language matrix only when a
-concrete freeze gap; sample-driven std when forced.
+**In progress / next:** editor residual (untyped inits, lex/parse multi-diag,
+MIR-on-resolver when forced); language matrix when a concrete freeze gap;
+sample-driven std when forced.
 
 ### Proceed order
 
