@@ -1,0 +1,47 @@
+## Transparent union aliases + expect on if (D119).
+type Done(n: Int64)
+type Quit
+type Outcome = Done | Quit
+type Result = Done | Quit
+## Result ≡ Outcome ≡ Done | Quit (member-set equality)
+
+fn step(ok: Bool) -> Outcome {
+    ## Branches inject into return expect type
+    if ok { Done(n: 3) } else { Quit() }
+}
+
+fn label(o!: Outcome) -> String {
+    match o {
+        Done(n) { "done={n}" }
+        Quit { "quit" }
+    }
+}
+
+fn asResult(o!: Outcome) -> Result {
+    ## Transparent: Outcome assignable to Result
+    o
+}
+
+fn main() -> Int64 {
+    let a: Outcome = step(true)
+    println(label(a))
+    let b: Outcome = step(false)
+    println(label(b))
+
+    ## Annotated if: expect injects each arm
+    let c: Outcome = if true { Done(n: 9) } else { Quit() }
+    println(label(c))
+    let d: Outcome = if false { Done(n: 1) } else { Quit() }
+    println(label(d))
+
+    ## Alias-to-alias (transparent remap)
+    let r: Result = asResult(a)
+    match r {
+        Done(n) { println("result={n}") }
+        Quit { println("result-quit") }
+    }
+
+    ## Call-site inject still works
+    println(label(Done(n: 7)))
+    0
+}

@@ -1974,28 +1974,35 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
             if let Ty::Array { elem } = expect {
                 lower_empty_array_typed(ctx, elem.as_ref(), tail.span)?
             } else {
-                lower_expr(ctx, tail)?
+                lower_expr_expect(ctx, tail, Some(expect))?
             }
         } else {
-            lower_expr(ctx, tail)?
+            let exp = if *expect != Ty::Void {
+                Some(expect)
+            } else {
+                None
+            };
+            lower_expr_expect(ctx, tail, exp)?
         };
         let place = if *expect != Ty::Void && &ty != expect {
-            if let Some(inj) = try_sum_inject(ctx, place, &ty, expect, tail.span)? {
-                inj
-            } else if let Some(lit) = expr_as_type_lit(tail) {
-                if let Some(inj) = try_sum_inject_lit(ctx, &lit, expect, tail.span)? {
-                    inj
-                } else {
+            match try_sum_coerce(
+                ctx,
+                place.clone(),
+                &ty,
+                expect,
+                expr_as_type_lit(tail).as_ref(),
+                tail.span,
+            )? {
+                Some(p) => p,
+                None if is_int(&ty) && is_int(expect) => {
+                    coerce_place(ctx, place, &ty, expect, tail.span)?
+                }
+                None => {
                     return Err(Error::at(
                         format!("expected {expect:?}, found {ty:?}"),
                         tail.span,
                     ));
                 }
-            } else {
-                return Err(Error::at(
-                    format!("expected {expect:?}, found {ty:?}"),
-                    tail.span,
-                ));
             }
         } else {
             place
@@ -2145,20 +2152,24 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                     }
                 }
 
-                let (place, ty) = lower_expr(ctx, init)?;
                 let (place, ty) = if let Some(ann) = ann {
                     let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
-                    if ty != expect {
-                        if let Some(inj) =
-                            try_sum_inject(ctx, place.clone(), &ty, &expect, *name_span)?
-                        {
-                            (inj, expect)
-                        } else if let Some(lit) = expr_as_type_lit(init) {
-                            if let Some(inj) =
-                                try_sum_inject_lit(ctx, &lit, &expect, *name_span)?
-                            {
-                                (inj, expect)
-                            } else {
+                    let (place, ty) = lower_expr_expect(ctx, init, Some(&expect))?;
+                    if &ty != &expect {
+                        match try_sum_coerce(
+                            ctx,
+                            place.clone(),
+                            &ty,
+                            &expect,
+                            expr_as_type_lit(init).as_ref(),
+                            *name_span,
+                        )? {
+                            Some(p) => (p, expect),
+                            None if is_int(&ty) && is_int(&expect) => {
+                                let p = coerce_place(ctx, place, &ty, &expect, *name_span)?;
+                                (p, expect)
+                            }
+                            None => {
                                 return Err(Error::at(
                                     format!(
                                         "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
@@ -2166,23 +2177,18 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                                     *name_span,
                                 ));
                             }
-                        } else {
-                            return Err(Error::at(
-                                format!(
-                                    "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
-                                ),
-                                *name_span,
-                            ));
                         }
                     } else {
                         (place, expect)
                     }
-                } else if matches!(&ty, Ty::Array { elem } if matches!(elem.as_ref(), Ty::Void)) {
-                    return Err(Error::at(
-                        "empty array `[]` requires a type annotation (e.g. `Array<Int64>`)",
-                        init.span,
-                    ));
                 } else {
+                    let (place, ty) = lower_expr(ctx, init)?;
+                    if matches!(&ty, Ty::Array { elem } if matches!(elem.as_ref(), Ty::Void)) {
+                        return Err(Error::at(
+                            "empty array `[]` requires a type annotation (e.g. `Array<Int64>`)",
+                            init.span,
+                        ));
+                    }
                     (place, ty)
                 };
                 ctx.bind_name(name, ty, *mutable, place);
@@ -2444,6 +2450,30 @@ fn coerce_to_field(
 }
 
 fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
+    lower_expr_expect(ctx, expr, None)
+}
+
+fn lower_expr_expect(
+    ctx: &mut LowerCtx,
+    expr: &Expr,
+    expect: Option<&Ty>,
+) -> Result<(Place, Ty)> {
+    // Thread expect into `if` so branches can inject into an annotated union (D119).
+    if let ExprKind::If {
+        cond,
+        then_branch,
+        else_branch,
+    } = &expr.kind
+    {
+        return lower_if(
+            ctx,
+            cond,
+            then_branch,
+            else_branch.as_ref(),
+            expr.span,
+            expect,
+        );
+    }
     match &expr.kind {
         ExprKind::Int(n) => {
             let p = ctx.fresh("i");
@@ -2550,11 +2580,7 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
             method_span,
             args,
         } => lower_method_call(ctx, receiver, method, *method_span, args),
-        ExprKind::If {
-            cond,
-            then_branch,
-            else_branch,
-        } => lower_if(ctx, cond, then_branch, else_branch.as_ref(), expr.span),
+        ExprKind::If { .. } => unreachable!("If handled in lower_expr_expect"),
         ExprKind::While { cond, body } => lower_while(ctx, cond, body, expr.span),
         ExprKind::Loop { body } => lower_loop(ctx, body, expr.span),
         ExprKind::For {
@@ -4141,25 +4167,20 @@ fn lower_arg_for_formal(
         }
     }
 
-    let (p, ty) = lower_expr(ctx, expr)?;
+    let (p, ty) = lower_expr_expect(ctx, expr, Some(formal_ty))?;
     if &ty == formal_ty {
         Ok(p)
     } else if is_int(&ty) && is_int(formal_ty) {
         coerce_place(ctx, p, &ty, formal_ty, expr.span)
-    } else if let Some(inj) = try_sum_inject(ctx, p.clone(), &ty, formal_ty, expr.span)? {
-        Ok(inj)
-    } else if let Some(lit) = expr_as_type_lit(expr) {
-        if let Some(inj) = try_sum_inject_lit(ctx, &lit, formal_ty, expr.span)? {
-            Ok(inj)
-        } else {
-            Err(Error::at(
-                format!(
-                    "argument {} (`{formal_name}`): expected {formal_ty:?}, found {ty:?}",
-                    index + 1
-                ),
-                expr.span,
-            ))
-        }
+    } else if let Some(p) = try_sum_coerce(
+        ctx,
+        p,
+        &ty,
+        formal_ty,
+        expr_as_type_lit(expr).as_ref(),
+        expr.span,
+    )? {
+        Ok(p)
     } else {
         Err(Error::at(
             format!(
@@ -4590,6 +4611,210 @@ fn lower_try_may(
         ));
     }
     Ok((payload, inner_ty))
+}
+
+/// Stable key for a union arm (D119 member-set equality).
+fn sum_variant_key(v: &SumVariant) -> String {
+    if let Some(lit) = &v.lit {
+        match lit {
+            TypeLit::Int(n) => format!("lit:i:{n}"),
+            TypeLit::Bool(b) => format!("lit:b:{b}"),
+            TypeLit::String(s) => format!("lit:s:{s}"),
+        }
+    } else if let Ty::User(n) = &v.ty {
+        format!("ty:{n}")
+    } else {
+        format!("other:{:?}", v.ty)
+    }
+}
+
+fn sum_member_set(sum: &SumInfo) -> HashSet<String> {
+    sum.variants.iter().map(sum_variant_key).collect()
+}
+
+fn member_sets_eq(a: &SumInfo, b: &SumInfo) -> bool {
+    sum_member_set(a) == sum_member_set(b)
+}
+
+fn sum_info_of<'a>(types: &'a HashMap<String, TypeInfo>, ty: &Ty) -> Option<&'a SumInfo> {
+    match ty {
+        Ty::User(n) => types.get(n).and_then(|i| i.sum.as_ref()),
+        _ => None,
+    }
+}
+
+/// Type equality including transparent union aliases (D119).
+fn ty_eq(types: &HashMap<String, TypeInfo>, a: &Ty, b: &Ty) -> bool {
+    if a == b {
+        return true;
+    }
+    match (a, b) {
+        (Ty::User(_), Ty::User(_)) => match (sum_info_of(types, a), sum_info_of(types, b)) {
+            (Some(sa), Some(sb)) => member_sets_eq(sa, sb),
+            _ => false,
+        },
+        (Ty::May { inner: ai }, Ty::May { inner: bi }) => ty_eq(types, ai, bi),
+        (Ty::Trial { ok: ao, err: ae }, Ty::Trial { ok: bo, err: be }) => {
+            ty_eq(types, ao, bo) && ty_eq(types, ae, be)
+        }
+        (Ty::Array { elem: ae }, Ty::Array { elem: be }) => ty_eq(types, ae, be),
+        (
+            Ty::FixedArray {
+                elem: ae,
+                len: al,
+            },
+            Ty::FixedArray {
+                elem: be,
+                len: bl,
+            },
+        ) => al == bl && ty_eq(types, ae, be),
+        (Ty::Address(ae), Ty::Address(be)) => ty_eq(types, ae, be),
+        _ => false,
+    }
+}
+
+/// Whether `from` can be coerced to `to` (equality, inject, or transparent remap).
+fn can_coerce_ty(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool {
+    if ty_eq(types, from, to) {
+        return true;
+    }
+    let (Ty::User(from_n), Ty::User(to_n)) = (from, to) else {
+        return false;
+    };
+    let Some(sum) = types.get(to_n).and_then(|i| i.sum.as_ref()) else {
+        return false;
+    };
+    // Atom inject into union.
+    sum.variants.iter().any(|v| match &v.ty {
+        Ty::User(n) => n == from_n,
+        _ => false,
+    })
+}
+
+/// Remap a sum value to another union with the same member set (D119).
+fn emit_sum_remap(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from_n: &str,
+    to_n: &str,
+    from_sum: &SumInfo,
+    to_sum: &SumInfo,
+) -> Result<Place> {
+    let mut to_by_key: HashMap<String, (u32, Ty)> = HashMap::new();
+    for v in &to_sum.variants {
+        to_by_key.insert(sum_variant_key(v), (v.tag, v.ty.clone()));
+    }
+
+    let out_ty = Ty::User(to_n.to_string());
+    let out = ctx.fresh("srm");
+    init_place(ctx, &out, &out_ty)?;
+
+    let tag_p = ctx.fresh("srt");
+    ctx.assign(tag_p.clone(), Ty::Int64, RValue::SumTag(place.clone()));
+
+    let mut acc: Vec<Stmt> = Vec::new();
+    for fv in from_sum.variants.iter().rev() {
+        let key = sum_variant_key(fv);
+        let Some(&(to_tag, ref to_payload_ty)) = to_by_key.get(&key) else {
+            return Err(Error::new(format!(
+                "internal: cannot remap union member `{key}` from `{from_n}` to `{to_n}`"
+            )));
+        };
+        let to_payload_ty = to_payload_ty.clone();
+
+        let outer = std::mem::take(&mut ctx.stmts);
+        let payload = if fv.ty != Ty::Void {
+            let pp = ctx.fresh("srp");
+            ctx.assign(
+                pp.clone(),
+                fv.ty.clone(),
+                RValue::SumPayload {
+                    base: place.clone(),
+                    tag: fv.tag,
+                    payload_ty: fv.ty.clone(),
+                },
+            );
+            pp
+        } else {
+            let dummy = ctx.fresh("srz");
+            ctx.assign(dummy.clone(), Ty::Int64, RValue::Int(0));
+            dummy
+        };
+        let injected = ctx.fresh("sri");
+        ctx.assign(
+            injected.clone(),
+            out_ty.clone(),
+            RValue::SumInject {
+                sum_type: to_n.to_string(),
+                tag: to_tag,
+                payload,
+                payload_ty: to_payload_ty,
+            },
+        );
+        ctx.stmts.push(Stmt::Assign {
+            place: out.clone(),
+            ty: out_ty.clone(),
+            value: RValue::Use(injected),
+        });
+        let body = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = outer;
+
+        let expected = ctx.fresh("sre");
+        ctx.assign(expected.clone(), Ty::Int64, RValue::Int(fv.tag as i64));
+        let cond = ctx.fresh("src");
+        ctx.assign(
+            cond.clone(),
+            Ty::Bool,
+            RValue::Binary {
+                op: BinaryOp::Eq,
+                left: tag_p.clone(),
+                right: expected,
+            },
+        );
+        acc = vec![Stmt::If {
+            cond,
+            then_body: body,
+            else_body: acc,
+        }];
+    }
+    ctx.stmts.extend(acc);
+    Ok(out)
+}
+
+/// Coerce `place: from` to `to` when possible (inject / transparent remap / lit inject).
+fn try_sum_coerce(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    to: &Ty,
+    lit: Option<&TypeLit>,
+    span: Span,
+) -> Result<Option<Place>> {
+    if from == to {
+        return Ok(Some(place));
+    }
+    // Transparent aliases: same member set, possibly different tags/names (D119).
+    if let (Ty::User(from_n), Ty::User(to_n)) = (from, to) {
+        if let (Some(fs), Some(ts)) = (
+            ctx.types.get(from_n).and_then(|i| i.sum.clone()),
+            ctx.types.get(to_n).and_then(|i| i.sum.clone()),
+        ) {
+            if member_sets_eq(&fs, &ts) {
+                return Ok(Some(emit_sum_remap(
+                    ctx, place, from_n, to_n, &fs, &ts,
+                )?));
+            }
+        }
+    }
+    if let Some(inj) = try_sum_inject(ctx, place, from, to, span)? {
+        return Ok(Some(inj));
+    }
+    if let Some(lit) = lit {
+        if let Some(inj) = try_sum_inject_lit(ctx, lit, to, span)? {
+            return Ok(Some(inj));
+        }
+    }
+    Ok(None)
 }
 
 /// If `from` is a member of union type `to`, inject into a sum value (D118).
@@ -6495,6 +6720,7 @@ fn lower_if(
     then_branch: &Block,
     else_branch: Option<&Block>,
     span: Span,
+    expect: Option<&Ty>,
 ) -> Result<(Place, Ty)> {
     let (cond_p, cond_ty) = lower_expr(ctx, cond)?;
     if cond_ty != Ty::Bool {
@@ -6508,16 +6734,20 @@ fn lower_if(
         Ty::Void
     };
 
-    let result_ty = match (&then_ty, &else_ty) {
-        (Ty::Void, Ty::Void) => Ty::Void,
-        (a, Ty::Void) if else_branch.is_none() => a.clone(),
-        (a, b) if a == b => a.clone(),
-        (a, b) => {
-            return Err(Error::at(
-                format!("if branches have different types ({a:?} vs {b:?})"),
-                span,
-            ));
+    // Expect-type inject (D119 §2.7): `-> Outcome` / `let x: Outcome = if …`.
+    let result_ty = if let Some(exp) = expect {
+        if *exp != Ty::Void
+            && can_coerce_ty(&ctx.types, &then_ty, exp)
+            && (else_branch.is_none()
+                || can_coerce_ty(&ctx.types, &else_ty, exp)
+                || else_ty == Ty::Void)
+        {
+            exp.clone()
+        } else {
+            unify_if_branch_tys(&then_ty, &else_ty, else_branch.is_none(), span)?
         }
+    } else {
+        unify_if_branch_tys(&then_ty, &else_ty, else_branch.is_none(), span)?
     };
 
     let out = if result_ty == Ty::Void {
@@ -6591,15 +6821,54 @@ fn lower_if(
     }
 }
 
+fn unify_if_branch_tys(
+    then_ty: &Ty,
+    else_ty: &Ty,
+    else_absent: bool,
+    span: Span,
+) -> Result<Ty> {
+    match (then_ty, else_ty) {
+        (Ty::Void, Ty::Void) => Ok(Ty::Void),
+        (a, Ty::Void) if else_absent => Ok(a.clone()),
+        (a, b) if a == b => Ok(a.clone()),
+        (a, b) => Err(Error::at(
+            format!(
+                "if branches have different types ({a:?} vs {b:?}); annotate with a union type"
+            ),
+            span,
+        )),
+    }
+}
+
 fn lower_block_into(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Option<Place>> {
     lower_block_items(ctx, &block.items)?;
     if let Some(tail) = &block.tail {
-        let (place, ty) = lower_expr(ctx, tail)?;
+        let exp = if *expect != Ty::Void {
+            Some(expect)
+        } else {
+            None
+        };
+        let (place, ty) = lower_expr_expect(ctx, tail, exp)?;
         if *expect != Ty::Void && &ty != expect {
-            return Err(Error::at(
-                format!("expected {expect:?}, found {ty:?}"),
+            match try_sum_coerce(
+                ctx,
+                place.clone(),
+                &ty,
+                expect,
+                expr_as_type_lit(tail).as_ref(),
                 tail.span,
-            ));
+            )? {
+                Some(p) => return Ok(Some(p)),
+                None if is_int(&ty) && is_int(expect) => {
+                    return Ok(Some(coerce_place(ctx, place, &ty, expect, tail.span)?));
+                }
+                None => {
+                    return Err(Error::at(
+                        format!("expected {expect:?}, found {ty:?}"),
+                        tail.span,
+                    ));
+                }
+            }
         }
         Ok(Some(place))
     } else if *expect == Ty::Void {
