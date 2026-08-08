@@ -102,11 +102,25 @@ export fn isRepo(startDir!: String) -> Bool {
 ## True when `.git/HEAD` is readable and not a `ref: refs/heads/…` branch line
 ## (detached SHA, or other non-branch content). Missing repo → false.
 export fn isDetached(startDir!: String) -> Bool {
-    if startDir == "" {
+    let raw = headLine(startDir)
+    if raw == "" {
         false
     } else {
+        if startsWith(raw, "ref: refs/heads/") {
+            false
+        } else {
+            true
+        }
+    }
+}
+
+## Trimmed first line of `.git/HEAD` walking parents, or `""` if none.
+export fn headLine(startDir!: String) -> String {
+    if startDir == "" {
+        ""
+    } else {
         mut dir = startDir
-        mut out = false
+        mut out = ""
         mut steps = 0
         loop {
             if steps > 64 {
@@ -115,11 +129,7 @@ export fn isDetached(startDir!: String) -> Bool {
             let headPath = "{dir}/.git/HEAD"
             let raw = trimNewline(readFileLimited(headPath, 256))
             if raw != "" {
-                if startsWith(raw, "ref: refs/heads/") {
-                    out = false
-                } else {
-                    out = true
-                }
+                out = raw
                 break
             }
             if dir == "/" {

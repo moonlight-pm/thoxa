@@ -17,12 +17,15 @@ import { branch } from "std/Git"
 | Module | Role |
 |--------|------|
 | `Shell` | Session `type Shell` + builtins (`echo`/`cd`/`run`/`runIo`/`pipeline`/…); auto-injected for session scripts |
+| `Fallible` | Ambient May/Trial surface (compiler inject; no import) |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
-| `Str` | `startsWith`, `dropPrefix`, `trimNewline` |
-| `Path` | `dirname`, `basename`, `cwd`, `shortPath`, `cwdShort` |
+| `Str` | search/slice/replace/`split`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |
+| `Path` | dirname/basename/join/`joinAll`/`parts`/slash helpers/extension/`cwd`/`shortPath`/… |
 | `Ansi` | truecolor `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` (`#RRGGBB` or `#RRGGBBAA`) |
-| `Env` | `getenv`, `localHms`, `hostname`, `userName` |
-| `Git` | `branch` / `branchSuffix` via `.git/HEAD` |
+| `Env` | `getenv`/`hasEnv`/`home`/`tmpdir`/`shell`/`pathVar`/`pwd`/`localHms`/`hostname`/`userName` |
+| `Git` | `branchName`/`isRepo`/`repoRoot`/`isDetached`/`headLine`/… via `.git/HEAD` |
+
+Full shipped surface: [`docs/handbook/std.md`](../docs/handbook/std.md).
 
 **Resolution:** `THOXA_STD` → `{THOXA_ROOT}/std` → workspace `std/` → next to the `thoxa` binary.
 

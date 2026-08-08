@@ -681,3 +681,77 @@ export fn startsWithIgnoreCaseAscii(s!: String, prefix!: String) -> Bool {
 export fn endsWithIgnoreCaseAscii(s!: String, suffix!: String) -> Bool {
     endsWith(toLowerAscii(s), toLowerAscii(suffix))
 }
+
+## ASCII case-insensitive `contains`.
+export fn containsIgnoreCaseAscii(s!: String, needle!: String) -> Bool {
+    contains(toLowerAscii(s), toLowerAscii(needle))
+}
+
+## Drop `prefix` only when `s` starts with it (else return `s` unchanged).
+export fn removePrefix(s!: String, prefix!: String) -> String {
+    if startsWith(s, prefix) {
+        dropPrefix(s, prefix)
+    } else {
+        s
+    }
+}
+
+## Drop `suffix` only when `s` ends with it (else return `s` unchanged).
+export fn removeSuffix(s!: String, suffix!: String) -> String {
+    if endsWith(s, suffix) {
+        dropSuffix(s, suffix)
+    } else {
+        s
+    }
+}
+
+## First `max` bytes of `s` (`max <= 0` → `""`; `max >= length` → `s`).
+export fn truncate(s!: String, max!: Int64) -> String {
+    if max <= 0 {
+        ""
+    } else {
+        let b = Bytes.fromString(s)
+        if b.count <= max {
+            s
+        } else {
+            b.slice(0, max).toString()
+        }
+    }
+}
+
+## Reverse byte order (not Unicode-aware).
+export fn reverse(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    if b.count == 0 {
+        ""
+    } else {
+        mut out = Bytes(b.count)
+        mut i = 0
+        loop {
+            if i >= b.count {
+                break
+            }
+            out.set(i, b.get(b.count - 1 - i))
+            i = i + 1
+        }
+        out.toString()
+    }
+}
+
+## True when every byte is ASCII (`0..127`). Empty → true.
+export fn isAscii(s!: String) -> Bool {
+    let b = Bytes.fromString(s)
+    mut ok = true
+    mut i = 0
+    loop {
+        if i >= b.count {
+            break
+        }
+        if b.get(i) > 127 {
+            ok = false
+            break
+        }
+        i = i + 1
+    }
+    ok
+}

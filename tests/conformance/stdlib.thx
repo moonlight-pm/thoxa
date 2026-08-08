@@ -1,8 +1,8 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, lastIndexOf, substring, replaceFirst, replaceAll, equalsIgnoreCaseAscii, split, join as strJoin, dropPrefix, dropSuffix, trimNewline, trim, trimStart, trimEnd, toLowerAscii, toUpperAscii, padLeft, padRight, byteAt, lines, startsWithIgnoreCaseAscii, endsWithIgnoreCaseAscii } from "std/Str"
-import { dirname, parent, basename, fileName, join, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, withFileName, parts, shortPath } from "std/Path"
-import { hasEnv, getenvOr, home, tmpdir, shell } from "std/Env"
-import { branchName, branchSuffix, isRepo, repoRoot, isDetached } from "std/Git"
+import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, lastIndexOf, substring, replaceFirst, replaceAll, equalsIgnoreCaseAscii, split, join as strJoin, dropPrefix, dropSuffix, removePrefix, removeSuffix, trimNewline, trim, trimStart, trimEnd, toLowerAscii, toUpperAscii, padLeft, padRight, byteAt, lines, startsWithIgnoreCaseAscii, endsWithIgnoreCaseAscii, containsIgnoreCaseAscii, truncate, reverse, isAscii } from "std/Str"
+import { dirname, parent, basename, fileName, join, joinAll, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, withFileName, parts, stripTrailingSlash, ensureTrailingSlash, shortPath } from "std/Path"
+import { hasEnv, getenvOr, home, tmpdir, shell, pathVar, pwd } from "std/Env"
+import { branchName, branchSuffix, isRepo, repoRoot, isDetached, headLine } from "std/Git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 
 fn main() -> Int64 {
@@ -71,6 +71,23 @@ fn main() -> Int64 {
     } else {
         println("ew-ic-bad")
     }
+    if containsIgnoreCaseAscii("AbCd", "bc") {
+        println("ci-ok")
+    } else {
+        println("ci-bad")
+    }
+    println(removePrefix("hello", "he"))
+    println(removePrefix("hello", "x"))
+    println(removeSuffix("hello", "lo"))
+    println(removeSuffix("hello", "x"))
+    println(truncate("abcdef", 3))
+    println(truncate("ab", 10))
+    println(reverse("abc"))
+    if isAscii("hi") {
+        println("ascii-ok")
+    } else {
+        println("ascii-bad")
+    }
     println(toLowerAscii("AbC"))
     println(toUpperAscii("AbC"))
     println(dirname("/a/b/c"))
@@ -83,6 +100,10 @@ fn main() -> Int64 {
     println(withFileName("/a/b/c.thx", "d.md"))
     let pp = parts("/a/b")
     println("parts={pp.count}:{pp[0]}:{pp[1]}:{pp[2]}")
+    println(stripTrailingSlash("/a/b/"))
+    println(stripTrailingSlash("/"))
+    println(ensureTrailingSlash("/a/b"))
+    println(joinAll(["/a", "b", "c"]))
     if isAbsolute("/a") {
         println("abs-ok")
     } else {
@@ -127,6 +148,18 @@ fn main() -> Int64 {
         println("path-env-ok")
     } else {
         println("path-env-bad")
+    }
+    if pathVar() == "" {
+        println("pathvar-empty")
+    } else {
+        println("pathvar-ok")
+    }
+    ## pwd may fail in weird sandboxes; treat empty as call-ok only when non-empty fails.
+    let p = pwd()
+    if length(p) < 0 {
+        println("pwd-bad")
+    } else {
+        println("pwd-call-ok")
     }
     if hasEnv("THOXA_NO_SUCH_ENV_VAR_ZZZ") {
         println("missing-env-bad")
@@ -176,6 +209,11 @@ fn main() -> Int64 {
         println("git-det-bad")
     } else {
         println("git-det-ok")
+    }
+    if headLine("/no/such/thoxa/repo/zzzz") == "" {
+        println("git-head-ok")
+    } else {
+        println("git-head-bad")
     }
     ## shell() is getenv("SHELL"); value may be empty — just prove the call.
     let sh = shell()

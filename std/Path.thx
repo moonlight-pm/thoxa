@@ -219,6 +219,48 @@ export fn parts(path!: String) -> Array<String> {
     split(path, "/")
 }
 
+## Remove one trailing `/` when present (root `"/"` stays `"/"`).
+export fn stripTrailingSlash(path!: String) -> String {
+    let b = Bytes.fromString(path)
+    if b.count <= 1 {
+        path
+    } else {
+        if b.get(b.count - 1) == 47 {
+            b.slice(0, b.count - 1).toString()
+        } else {
+            path
+        }
+    }
+}
+
+## Ensure a trailing `/` (empty → `"/"`; already has → unchanged).
+export fn ensureTrailingSlash(path!: String) -> String {
+    if path == "" {
+        "/"
+    } else {
+        let b = Bytes.fromString(path)
+        if b.get(b.count - 1) == 47 {
+            path
+        } else {
+            "{path}/"
+        }
+    }
+}
+
+## Join path components left-to-right with `join` rules.
+export fn joinAll(parts!: Array<String>) -> String {
+    mut out = ""
+    mut i = 0
+    loop {
+        if i >= parts.count {
+            break
+        }
+        out = join(out, parts[i])
+        i = i + 1
+    }
+    out
+}
+
 ## True when path is not absolute (POSIX).
 export fn isRelative(path!: String) -> Bool {
     if isAbsolute(path) {

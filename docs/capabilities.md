@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-08 (std helpers + package-tree LSP)
+**As of:** 2026-08-08 (std wave: remove/truncate/joinAll/pwd/headLine; package-tree LSP)
 
 ---
 
@@ -82,11 +82,11 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | std-root | Named `std/…` resolution | shipped | `stdlib` | D97 | — | yes |
-| std-str | Str helpers | partial | `stdlib` | D97 | +`trimStart`/`trimEnd`/`lines`/`byteAt`/`join`/ignore-case prefix; still sample-driven thin | yes |
-| std-path | Path helpers | partial | `stdlib` | D97 | +`withFileName`/`parts`; sample-driven | yes |
+| std-str | Str helpers | partial | `stdlib` | D97 | +remove/truncate/reverse/isAscii/ignore-case contains; still sample-driven thin | yes |
+| std-path | Path helpers | partial | `stdlib` | D97 | +`joinAll`/`stripTrailingSlash`/`ensureTrailingSlash`; sample-driven | yes |
 | std-ansi | 16 colors + hex SGR | shipped | `stdlib` | D99 | — | yes |
-| std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`home`/`tmpdir`/`shell`; sample-driven | yes |
-| std-git | branch helpers | partial | `stdlib` | D97 | +`isRepo`/`repoRoot`/`isDetached`; sample-driven | yes |
+| std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`pathVar`/`pwd`/`shell`; sample-driven | yes |
+| std-git | branch helpers | partial | `stdlib` | D97 | +`headLine`/`isDetached`/`repoRoot`; sample-driven | yes |
 | std-prompt | `defaultPrompt` | shipped | `stdlib` | D97, D99 | — | yes |
 | std-io | Richer Io in `std/` | idea | — | sample-driven | Free `readFile` / iolib tests only; not a CURRENT todo | no |
 
