@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const METHOD_NOT_FOUND: i64 = -32601;
 const INTERNAL_ERROR: i64 = -32603;
@@ -207,7 +207,12 @@ impl Server {
             .as_bool()
             .unwrap_or(true);
         let idx = self.doc_index(uri);
-        let Some(binding) = idx.binding_at(line, character) else {
+        let ref_ = idx.resolution.ref_at(&idx.text, line, character);
+        let binding = idx
+            .resolution
+            .binding_of(ref_)
+            .or_else(|| idx.resolution.binding_at(&idx.text, line, character));
+        let Some(binding) = binding else {
             return json!([]);
         };
         let mut locs = Vec::new();
@@ -231,6 +236,83 @@ impl Server {
             }
             locs.push(convert::location(uri, &idx.text, r.span));
         }
+
+        // Import: include defining-module declaration (open buffer preferred).
+        if binding.kind == BindingKind::Import {
+            if let Some(remote) = resolve_remote(&idx, ref_, Some(binding), &self.docs) {
+                if let Some(span) = remote.def_span {
+                    let remote_uri = convert::path_to_uri(&remote.path.to_string_lossy());
+                    locs.push(convert::location(&remote_uri, &remote.text, span));
+                }
+            }
+        }
+
+        // Export: among *open* documents, collect uses of selective imports that
+        // resolve back to this file's export (multi-file refs, open-buffer scope).
+        if binding.exported
+            && binding.owner.is_none()
+            && binding.kind != BindingKind::Import
+            && binding.def_span.is_some()
+        {
+            let my_path = PathBuf::from(convert::check_filename(uri));
+            for (other_uri, other_text) in &self.docs {
+                if other_uri == uri {
+                    continue;
+                }
+                let other_path = convert::check_filename(other_uri);
+                let other_idx = match catch_unwind(AssertUnwindSafe(|| {
+                    build_index(other_text, &other_path)
+                })) {
+                    Ok(i) => i,
+                    Err(_) => continue,
+                };
+                if !other_idx.ok {
+                    continue;
+                }
+                for b in other_idx.resolution.bindings.values() {
+                    if b.kind != BindingKind::Import {
+                        continue;
+                    }
+                    let Some(origin) = b.import_origin.as_ref() else {
+                        continue;
+                    };
+                    if origin.is_namespace {
+                        continue;
+                    }
+                    let export_name = origin
+                        .original
+                        .clone()
+                        .unwrap_or_else(|| b.name.clone());
+                    if export_name != binding.name {
+                        continue;
+                    }
+                    let Some(resolved) = crossmodule::resolve_import_file(
+                        &origin.spec,
+                        Path::new(&other_path),
+                    ) else {
+                        continue;
+                    };
+                    if !crossmodule::paths_equal_public(&resolved, &my_path) {
+                        continue;
+                    }
+                    // Import binding site (local name) + uses.
+                    if include_decl {
+                        if let Some(span) = b.def_span {
+                            locs.push(convert::location(other_uri, other_text, span));
+                        }
+                    }
+                    for r in other_idx.resolution.refs_to(b.id) {
+                        if let Some(slice) = other_text.get(r.span.start..r.span.end) {
+                            if slice != b.name {
+                                continue;
+                            }
+                        }
+                        locs.push(convert::location(other_uri, other_text, r.span));
+                    }
+                }
+            }
+        }
+
         Value::Array(locs)
     }
 
@@ -935,6 +1017,96 @@ fn main() -> Int64 {
         let md = hover["result"]["contents"]["value"].as_str().unwrap();
         assert!(md.contains("answer"), "{md}");
         assert!(md.contains("the answer") || md.contains("Int64"), "{md}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn multi_file_refs_among_open_buffers() {
+        use std::fs;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa_lsp_refs_{}_{}",
+            std::process::id(),
+            ns
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("Helper.thx");
+        let helper_src = "export fn answer() -> Int64 { 42 }\n";
+        fs::write(&helper, helper_src).unwrap();
+        let main = dir.join("Main.thx");
+        let main_src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        fs::write(&main, main_src).unwrap();
+        let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
+        let main_uri = convert::path_to_uri(&main.to_string_lossy());
+        // Cursor on export name in Helper.
+        let def_byte = helper_src.find("answer").unwrap();
+        let p = span::byte_to_position(helper_src, def_byte);
+
+        let msgs = exchange(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": helper_uri,
+                        "languageId": "thoxa",
+                        "version": 1,
+                        "text": helper_src
+                    }
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": main_uri,
+                        "languageId": "thoxa",
+                        "version": 1,
+                        "text": main_src
+                    }
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/references",
+                "params": {
+                    "textDocument": { "uri": helper_uri },
+                    "position": { "line": p.line, "character": p.character },
+                    "context": { "includeDeclaration": true }
+                }
+            }),
+        ]);
+
+        let refs = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let arr = refs["result"].as_array().expect("refs array");
+        // At least: Helper def + Main import/use sites.
+        assert!(
+            arr.len() >= 2,
+            "expected multi-file refs, got {}: {arr:?}",
+            arr.len()
+        );
+        let uris: Vec<&str> = arr
+            .iter()
+            .filter_map(|l| l["uri"].as_str())
+            .collect();
+        assert!(
+            uris.iter().any(|u| u.ends_with("Helper.thx")),
+            "{uris:?}"
+        );
+        assert!(
+            uris.iter().any(|u| u.ends_with("Main.thx")),
+            "{uris:?}"
+        );
+
         let _ = fs::remove_dir_all(&dir);
     }
 

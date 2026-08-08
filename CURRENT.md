@@ -14,11 +14,11 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Default product work is **language / I/O / std gaps** from
 the capability matrix, one slice at a time with conformance.
 
-**Shipped recently:** typed-member LSP nav; Str endsWith/dropSuffix;
-**Path.join**. Session residual deferred.
+**Shipped recently:** Path.join; **open-buffer multi-file LSP refs**. Session
+residual deferred.
 
-**In progress / next:** non-session gaps — e.g. multi-file refs/rename among
-open buffers, modules D91, more sample-driven std.
+**In progress / next:** non-session gaps — multi-file rename, modules D91,
+sample-driven std.
 
 ### Proceed order
 

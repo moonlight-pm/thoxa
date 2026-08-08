@@ -416,12 +416,22 @@ fn module_leading_doc(text: &str) -> String {
 }
 
 fn resolve_spec(spec: &str, current_path: &Path) -> Option<PathBuf> {
+    resolve_import_file(spec, current_path)
+}
+
+/// Resolve an import specifier relative to the importing file (for nav / multi-file refs).
+pub fn resolve_import_file(spec: &str, current_path: &Path) -> Option<PathBuf> {
     let importer_dir = current_path.parent().unwrap_or_else(|| Path::new("."));
     // `~/` root = entry file's directory (same as D31/D68 for single open file).
     let project_root = importer_dir;
     let path = loader::resolve_import_path(spec, importer_dir, project_root)?;
     // Soft-canonicalize when possible.
     fs::canonicalize(&path).ok().or(Some(path))
+}
+
+/// Best-effort path equality for open-buffer multi-file refs.
+pub fn paths_equal_public(a: &Path, b: &Path) -> bool {
+    paths_equal(a, b)
 }
 
 fn module_text(path: &Path, docs: &HashMap<String, String>) -> Option<String> {

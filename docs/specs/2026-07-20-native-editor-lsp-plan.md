@@ -3,7 +3,8 @@
 **Date:** 2026-07-20  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** MIR lower on shared resolver; broader package intelligence; refs/rename remain single-file; typed-member incomplete for chains / no-hint receivers  
+**Gaps:** MIR lower on shared resolver; broader package intelligence; rename single-file; multi-file refs only among open buffers; typed-member incomplete for chains / no-hint receivers  
+
 
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/editor.md`](../handbook/editor.md)
 

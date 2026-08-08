@@ -96,7 +96,7 @@ change. See [`progress-model.md`](progress-model.md).
 |----|------------|--------|------|--------------|------|----------|
 | check-source | Typecheck API + overlays | shipped | unit / LSP | D71–D79 | — | yes |
 | lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1 | Multi-diag for independent function/method body errors; lex/parse/type-reg still first-error | yes |
-| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member link for annotated/ctor receivers; refs/rename still single-file | partial |
+| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member link; **open-buffer multi-file refs** for exports; rename still single-file | partial |
 | lsp-xmodule | Cross-module jump (`./` `~/`) | partial | unit | D78 | Named roots jump polish; open buffer wins | partial |
 | tree-sitter-zed | Grammar + Zed extension extras | shipped | `cargo make zed` | editor plan | Not full IDE | yes |
 | mir-on-resolver | MIR lower on shared resolver | planned | — | editor plan | Not started | no |
