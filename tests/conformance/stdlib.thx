@@ -1,5 +1,5 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { startsWith, endsWith, isEmpty, repeat, contains, indexOf, dropPrefix, dropSuffix, trimNewline, trim } from "std/Str"
+import { startsWith, endsWith, isEmpty, repeat, contains, indexOf, dropPrefix, dropSuffix, trimNewline, trim, toLowerAscii, toUpperAscii } from "std/Str"
 import { dirname, basename, join, isAbsolute, normalize, extension, stem, shortPath } from "std/Path"
 import { hasEnv, getenvOr } from "std/Env"
 import { branchName, branchSuffix } from "std/Git"
@@ -39,6 +39,8 @@ fn main() -> Int64 {
     println(dropSuffix("hello", "lo"))
     println(trimNewline("line\n"))
     println(trim("  hi\t\n"))
+    println(toLowerAscii("AbC"))
+    println(toUpperAscii("AbC"))
     println(dirname("/a/b/c"))
     println(basename("/a/b/c"))
     println(join("/a/b", "c"))

@@ -224,6 +224,54 @@ fn isAsciiSpace(c!: Int64) -> Bool {
     }
 }
 
+## ASCII A–Z → a–z; other bytes unchanged.
+export fn toLowerAscii(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    mut out = Bytes(b.count)
+    mut i = 0
+    loop {
+        if i >= b.count {
+            break
+        }
+        let c = b.get(i)
+        if c >= 65 {
+            if c <= 90 {
+                out.set(i, c + 32)
+            } else {
+                out.set(i, c)
+            }
+        } else {
+            out.set(i, c)
+        }
+        i = i + 1
+    }
+    out.toString()
+}
+
+## ASCII a–z → A–Z; other bytes unchanged.
+export fn toUpperAscii(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    mut out = Bytes(b.count)
+    mut i = 0
+    loop {
+        if i >= b.count {
+            break
+        }
+        let c = b.get(i)
+        if c >= 97 {
+            if c <= 122 {
+                out.set(i, c - 32)
+            } else {
+                out.set(i, c)
+            }
+        } else {
+            out.set(i, c)
+        }
+        i = i + 1
+    }
+    out.toString()
+}
+
 ## Trim ASCII space / tab / CR / LF from both ends.
 export fn trim(s!: String) -> String {
     let b = Bytes.fromString(s)
