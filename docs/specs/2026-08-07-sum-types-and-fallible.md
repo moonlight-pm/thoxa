@@ -2,11 +2,11 @@
 
 **Date:** 2026-08-07  
 **Status:** target (accepted product intent; **partially implemented**)  
-**Implementation:** ladder §10 steps 1–5 + type-arg `!` + heap payloads —
-unions, residual `?`, W2, **D119**, `Hold<Int64!>` / `Hold!`, String/Bytes sum
-arms (gates: `sums_*` incl. `sums_heap`, `sums_extract_mark`)  
-**Gaps:** nested unions; pure-lit narrow scalar; generic type defs
-(`type Has<T>`); May/Trial prelude; residual type-arg rewrap (see §10)
+**Implementation:** ladder §10 steps 1–5 + type-arg `!` + heap + nested flatten —
+unions, residual `?`, W2, **D119**, String/Bytes arms, nested alias expansion
+(gates: `sums_*` incl. `sums_heap`, `sums_nested`, `sums_extract_mark`)  
+**Gaps:** pure-lit narrow scalar; generic type defs (`type Has<T>`); May/Trial
+prelude; residual type-arg rewrap (see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  
@@ -383,3 +383,5 @@ This freeze is **accepted product intent** when:
 | 2026-08-08 | Member-set equality + expect on `if` / alias remap (`sums_alias`) |
 | 2026-08-08 | Unannotated if set-union lub via synthetic `$union$…` (`sums_if_lub`) |
 | 2026-08-08 | Monomorphic type-arg extract `Hold<Int64!>` vs whole-arm `Hold!` (`sums_extract_mark`) |
+| 2026-08-08 | Heap String/Bytes payloads in sum members + tag-aware sum RC (`sums_heap`) |
+| 2026-08-08 | Nested union aliases flatten; subset inject into outer (`sums_nested`) |

@@ -1,0 +1,27 @@
+## Nested union aliases flatten (D118).
+type A
+type B
+type Inner = A | B
+type C
+type Outer = Inner | C
+
+fn label(o!: Outer) -> String {
+    match o {
+        A { "a" }
+        B { "b" }
+        C { "c" }
+    }
+}
+
+fn main() -> Int64 {
+    println(label(A()))
+    println(label(B()))
+    println(label(C()))
+    ## Inject nested sum value into outer (subset remap)
+    let i: Inner = A()
+    let o: Outer = i
+    println(label(o))
+    let i2: Inner = B()
+    println(label(i2))
+    0
+}

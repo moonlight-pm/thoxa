@@ -971,8 +971,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             let mut seen_names = HashSet::new();
             let mut residual_tag: Option<u32> = None;
             let mut extract_tag: Option<u32> = None;
-            for (i, mem) in members.iter().enumerate() {
-                let tag = i as u32;
+            for mem in members {
                 // Whole-arm marks (`Done!`, `Quit?`) and type-arg marks (`Hold<Int64!>`,
                 // `Fail<String?>`) both count toward residual/extract tags (D118).
                 let arg_extract = type_expr_has_arg_mark(mem, TypeMark::Extract);
@@ -989,24 +988,19 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 // Type-arg `!` → unwrap sole field; whole-arm `!` alone → yield arm type.
                 let unwrap_payload = arg_extract;
 
-                if whole_residual || arg_residual {
-                    if residual_tag.is_some() {
-                        return Err(Error::at(
-                            "union may have at most one residual mark (`?`)",
-                            mem.span,
-                        ));
-                    }
-                    residual_tag = Some(tag);
+                if (whole_residual || arg_residual) && residual_tag.is_some() {
+                    return Err(Error::at(
+                        "union may have at most one residual mark (`?`)",
+                        mem.span,
+                    ));
                 }
-                if whole_extract || arg_extract {
-                    if extract_tag.is_some() {
-                        return Err(Error::at(
-                            "union may have at most one extract mark (`!`)",
-                            mem.span,
-                        ));
-                    }
-                    extract_tag = Some(tag);
+                if (whole_extract || arg_extract) && extract_tag.is_some() {
+                    return Err(Error::at(
+                        "union may have at most one extract mark (`!`)",
+                        mem.span,
+                    ));
                 }
+
                 // Pure literal arm: `0 | 1 | "x" | true` (D118).
                 if let Some(lit) = &mem.lit {
                     let vname = match lit {
@@ -1019,6 +1013,13 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                             format!("duplicate union member `{vname}`"),
                             mem.span,
                         ));
+                    }
+                    let tag = variants.len() as u32;
+                    if whole_residual || arg_residual {
+                        residual_tag = Some(tag);
+                    }
+                    if whole_extract || arg_extract {
+                        extract_tag = Some(tag);
                     }
                     variants.push(SumVariant {
                         tag,
@@ -1037,6 +1038,49 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         mem.span,
                     ));
                 };
+                // Flatten nested union aliases: `Outer = Inner | C` → members of Inner + C
+                // (D118; transparent composition). Nested marks on the sum itself are rejected.
+                if let Some(minfo) = types_info.get(member_name) {
+                    if let Some(inner_sum) = &minfo.sum {
+                        if whole_extract || whole_residual || arg_extract || arg_residual {
+                            return Err(Error::at(
+                                format!(
+                                    "cannot place extract marks on nested union member `{member_name}` (mark atoms instead)"
+                                ),
+                                mem.span,
+                            ));
+                        }
+                        if inner_sum.residual_tag.is_some() || inner_sum.extract_tag.is_some() {
+                            return Err(Error::at(
+                                format!(
+                                    "nested union `{member_name}` has residual/extract marks; flatten marks onto the outer union"
+                                ),
+                                mem.span,
+                            ));
+                        }
+                        for iv in &inner_sum.variants {
+                            let vname = iv.name.clone();
+                            if !seen_names.insert(vname.clone()) {
+                                return Err(Error::at(
+                                    format!(
+                                        "duplicate union member `{vname}` (from nested `{member_name}`)"
+                                    ),
+                                    mem.span,
+                                ));
+                            }
+                            let nested_tag = variants.len() as u32;
+                            variants.push(SumVariant {
+                                tag: nested_tag,
+                                name: vname,
+                                ty: iv.ty.clone(),
+                                lit: iv.lit.clone(),
+                                mark: None,
+                                unwrap_payload: iv.unwrap_payload,
+                            });
+                        }
+                        continue;
+                    }
+                }
                 // Prefer source name from type expr for patterns.
                 let vname = if mem.name.is_empty() {
                     member_name.clone()
@@ -1049,15 +1093,8 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         mem.span,
                     ));
                 }
-                // Member must be a product type (not another sum) for v1.
+                // Product arm: scalar / String / Bytes fields only.
                 if let Some(minfo) = types_info.get(member_name) {
-                    if minfo.sum.is_some() {
-                        return Err(Error::at(
-                            format!("nested union member `{vname}` not yet supported"),
-                            mem.span,
-                        ));
-                    }
-                    // Sum payload fields: scalars + String/Bytes (heap RC via sum emit_rc).
                     for f in &minfo.fields {
                         if !matches!(
                             f.ty,
@@ -1095,6 +1132,13 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         format!("type-arg extract mark (`!`) requires a product type, got `{vname}`"),
                         mem.span,
                     ));
+                }
+                let tag = variants.len() as u32;
+                if whole_residual || arg_residual {
+                    residual_tag = Some(tag);
+                }
+                if whole_extract || arg_extract {
+                    extract_tag = Some(tag);
                 }
                 variants.push(SumVariant {
                     tag,
@@ -4862,14 +4906,24 @@ fn can_coerce_ty(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool 
     let (Ty::User(from_n), Ty::User(to_n)) = (from, to) else {
         return false;
     };
-    let Some(sum) = types.get(to_n).and_then(|i| i.sum.as_ref()) else {
+    let Some(to_sum) = types.get(to_n).and_then(|i| i.sum.as_ref()) else {
         return false;
     };
     // Atom inject into union.
-    sum.variants.iter().any(|v| match &v.ty {
+    if to_sum.variants.iter().any(|v| match &v.ty {
         Ty::User(n) => n == from_n,
         _ => false,
-    })
+    }) {
+        return true;
+    }
+    // Nested / smaller sum inject into larger (after flatten, members are atoms).
+    if let Some(from_sum) = types.get(from_n).and_then(|i| i.sum.as_ref()) {
+        let to_set = sum_member_set(to_sum);
+        return sum_member_set(from_sum)
+            .iter()
+            .all(|k| to_set.contains(k));
+    }
+    false
 }
 
 /// Remap a sum value to another union with the same member set (D119).
@@ -4979,13 +5033,15 @@ fn try_sum_coerce(
     if from == to {
         return Ok(Some(place));
     }
-    // Transparent aliases: same member set, possibly different tags/names (D119).
+    // Transparent aliases / nested flatten: remap when from members ⊆ to (D119).
     if let (Ty::User(from_n), Ty::User(to_n)) = (from, to) {
         if let (Some(fs), Some(ts)) = (
             ctx.types.get(from_n).and_then(|i| i.sum.clone()),
             ctx.types.get(to_n).and_then(|i| i.sum.clone()),
         ) {
-            if member_sets_eq(&fs, &ts) {
+            let to_set = sum_member_set(&ts);
+            let from_set = sum_member_set(&fs);
+            if !from_set.is_empty() && from_set.iter().all(|k| to_set.contains(k)) {
                 return Ok(Some(emit_sum_remap(
                     ctx, place, from_n, to_n, &fs, &ts,
                 )?));

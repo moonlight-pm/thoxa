@@ -15,8 +15,8 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 **Shipped:** D106–D117; **D118 partial** (user unions).
 
 **In progress:** sum types (D118–D119) — unions, residual `?`, type-arg `!`,
-heap String/Bytes payloads, identity/if lub (`sums_*`). **Next:** nested
-unions; pure-lit narrow scalar; May/Trial prelude (needs generic type defs).
+heap payloads, nested flatten, identity/if (`sums_*`). **Next:** pure-lit
+narrow scalar; May/Trial prelude (needs generic type defs).
 Freeze: [`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
 
 ### Proceed order
