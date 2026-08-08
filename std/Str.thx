@@ -45,6 +45,50 @@ export fn endsWith(s!: String, suffix!: String) -> Bool {
     }
 }
 
+export fn isEmpty(s!: String) -> Bool {
+    Bytes.fromString(s).count == 0
+}
+
+## True if `needle` appears anywhere in `s` (byte-oriented).
+export fn contains(s!: String, needle!: String) -> Bool {
+    let a = Bytes.fromString(s)
+    let b = Bytes.fromString(needle)
+    if b.count == 0 {
+        true
+    } else {
+        if b.count > a.count {
+            false
+        } else {
+            mut found = false
+            mut i = 0
+            let last = a.count - b.count
+            loop {
+                if i > last {
+                    break
+                }
+                mut j = 0
+                mut ok = true
+                loop {
+                    if j >= b.count {
+                        break
+                    }
+                    if a.get(i + j) != b.get(j) {
+                        ok = false
+                        break
+                    }
+                    j = j + 1
+                }
+                if ok {
+                    found = true
+                    break
+                }
+                i = i + 1
+            }
+            found
+        }
+    }
+}
+
 export fn dropPrefix(s!: String, prefix!: String) -> String {
     let a = Bytes.fromString(s)
     let n = Bytes.fromString(prefix).count
