@@ -99,7 +99,7 @@ export fn normalize(path!: String) -> String {
             }
             let c = b.get(i)
             if c == 47 {
-                if !prevSlash {
+                if prevSlash == false {
                     out.set(o, 47)
                     o = o + 1
                     prevSlash = true
