@@ -54,6 +54,9 @@ pub struct TypeLayout {
     pub fields: Vec<FieldLayout>,
     /// D118: when set, this type is a union alias (tagged sum).
     pub sum: Option<Vec<SumVariantLayout>>,
+    /// Pure-literal-only unions: C type is this narrow scalar (tag as value), not a struct.
+    /// Byte-up: Byte / UInt16 / UInt32 / UInt64 by arm count (D118 §6).
+    pub sum_scalar: Option<Ty>,
 }
 
 #[derive(Debug, Clone)]
@@ -226,8 +229,11 @@ pub enum RValue {
         payload: Place,
         payload_ty: Ty,
     },
-    /// Read `.tag` from a union place.
-    SumTag(Place),
+    /// Read tag from a union place (`sum_type` selects scalar vs struct layout).
+    SumTag {
+        place: Place,
+        sum_type: String,
+    },
     /// Extract payload for `tag` from a union place into a typed temporary.
     SumPayload {
         base: Place,
@@ -1220,7 +1226,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         info.fields = fields.clone();
         info.zero_init = zero_init;
         info.sum = sum_info.clone();
-        let sum_layout = sum_info.map(|s| {
+        let sum_layout = sum_info.as_ref().map(|s| {
             s.variants
                 .iter()
                 .map(|v| SumVariantLayout {
@@ -1229,6 +1235,13 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     payload_ty: v.ty.clone(),
                 })
                 .collect()
+        });
+        // Pure-literal unions: narrow scalar storage (D118 §6).
+        let sum_scalar = sum_info.as_ref().and_then(|s| {
+            if s.variants.is_empty() || !s.variants.iter().all(|v| v.lit.is_some()) {
+                return None;
+            }
+            Some(pure_lit_scalar_ty(s.variants.len()))
         });
         type_layouts.push(TypeLayout {
             name: mangled.clone(),
@@ -1241,6 +1254,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 })
                 .collect(),
             sum: sum_layout,
+            sum_scalar,
         });
     }
 
@@ -4519,8 +4533,21 @@ fn lower_try_sum(
     // Success extract type.
     let success_ty = sum_success_extract_ty(ctx, &sum, span)?;
 
+    let sum_type_name = match &scrut_ty {
+        Ty::User(n) => n.clone(),
+        _ => {
+            return Err(Error::at("internal: sum try on non-User", span));
+        }
+    };
     let tag = ctx.fresh("stag");
-    ctx.assign(tag.clone(), Ty::Int64, RValue::SumTag(scrut_p.clone()));
+    ctx.assign(
+        tag.clone(),
+        Ty::Int64,
+        RValue::SumTag {
+            place: scrut_p.clone(),
+            sum_type: sum_type_name,
+        },
+    );
     let expected = ctx.fresh("sre");
     ctx.assign(
         expected.clone(),
@@ -4831,6 +4858,16 @@ fn lower_try_may(
     Ok((payload, inner_ty))
 }
 
+/// Narrowest unsigned scalar that can hold `n` distinct tags (Byte-up chain).
+/// (`Ty` has no UInt16 — mid-range uses UInt32.)
+fn pure_lit_scalar_ty(n_arms: usize) -> Ty {
+    match n_arms {
+        0..=256 => Ty::Byte,
+        257..=65536 => Ty::UInt32,
+        _ => Ty::UInt64,
+    }
+}
+
 /// Stable key for a union arm (D119 member-set equality).
 /// Keys must be C-identifier-safe when embedded in synthetic type names.
 fn sum_variant_key(v: &SumVariant) -> String {
@@ -4945,7 +4982,14 @@ fn emit_sum_remap(
     init_place(ctx, &out, &out_ty)?;
 
     let tag_p = ctx.fresh("srt");
-    ctx.assign(tag_p.clone(), Ty::Int64, RValue::SumTag(place.clone()));
+    ctx.assign(
+        tag_p.clone(),
+        Ty::Int64,
+        RValue::SumTag {
+            place: place.clone(),
+            sum_type: from_n.to_string(),
+        },
+    );
 
     let mut acc: Vec<Stmt> = Vec::new();
     for fv in from_sum.variants.iter().rev() {
@@ -5266,7 +5310,14 @@ fn lower_match_sum(
         .ok_or_else(|| Error::at("internal: missing sum info", span))?;
 
     let tag_p = ctx.fresh("stag");
-    ctx.assign(tag_p.clone(), Ty::Int64, RValue::SumTag(scrut_p.clone()));
+    ctx.assign(
+        tag_p.clone(),
+        Ty::Int64,
+        RValue::SumTag {
+            place: scrut_p.clone(),
+            sum_type: sum_name.clone(),
+        },
+    );
 
     let result_place = ctx.fresh("mres");
     let mut result_ty: Option<Ty> = None;
@@ -6418,7 +6469,23 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                 .get(name)
                 .ok_or_else(|| Error::new(format!("unknown type `{name}`")))?
                 .clone();
+            // Pure-literal sum: scalar zero (tag 0), not a struct compound (D118 §6).
+            if let Some(sum) = &info.sum {
+                if !sum.variants.is_empty() && sum.variants.iter().all(|v| v.lit.is_some()) {
+                    ctx.assign(place.clone(), ty.clone(), RValue::Int(0));
+                    return Ok(());
+                }
+            }
             if info.zero_init {
+                ctx.assign(
+                    place.clone(),
+                    ty.clone(),
+                    RValue::StructZero {
+                        type_name: name.clone(),
+                    },
+                );
+            } else if info.sum.is_some() {
+                // Tagged sum: zero all bits (tag 0, NULL heap payloads).
                 ctx.assign(
                     place.clone(),
                     ty.clone(),
@@ -7289,6 +7356,7 @@ fn ensure_synthetic_sum(
         name: syn_name.clone(),
         fields: Vec::new(),
         sum: Some(layout_vars),
+        sum_scalar: None,
     };
 
     ctx.types.insert(syn_name.clone(), info.clone());

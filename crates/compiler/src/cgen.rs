@@ -333,7 +333,18 @@ fn emit_global_extern(out: &mut String, g: &GlobalVar) {
 
 fn emit_typedef(out: &mut String, t: &TypeLayout) {
     if let Some(variants) = &t.sum {
-        // Tagged sum (D118). Literal / nullary arms use tag only (no void fields in C).
+        // Pure-literal-only: narrow scalar (Byte-up), tag stored as the value (D118 §6).
+        if let Some(scalar) = &t.sum_scalar {
+            let _ = writeln!(
+                out,
+                "typedef {} {}; /* pure-lit union, {} arm(s) */\n",
+                c_ty(scalar),
+                c_type_name(&t.name),
+                variants.len()
+            );
+            return;
+        }
+        // Tagged sum (D118). Named/nullary arms: tag + optional payload union.
         let _ = writeln!(out, "typedef struct {{");
         out.push_str("    int32_t tag;\n");
         let payload_vars: Vec<_> = variants
@@ -462,6 +473,15 @@ fn is_heap_ty(ty: &Ty) -> bool {
     matches!(ty, Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. })
 }
 
+/// Pure-literal union stored as a narrow scalar (not a tagged struct).
+fn is_sum_scalar(types: &[TypeLayout], sum_type: &str) -> bool {
+    types
+        .iter()
+        .find(|t| t.name == sum_type)
+        .and_then(|t| t.sum_scalar.as_ref())
+        .is_some()
+}
+
 /// Same policy as MIR `needs_drop` — User always walks fields (may be no-op).
 fn needs_drop_ty(ty: &Ty) -> bool {
     match ty {
@@ -479,7 +499,7 @@ fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
             let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
         }
         Ty::User(_) => {
-            // Zero so field drops of unassigned / branch-skipped locals are safe (NULL heap ptrs).
+            // Zero: struct `{0}` or scalar `0` both work for pure-lit typedefs.
             let _ = writeln!(out, "    {} {} = {{0}};", c_ty(ty), name);
         }
         Ty::Trial { ok, err } => {
@@ -1002,15 +1022,25 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             payload_ty,
         } => {
             let name = c_type_name(sum_type);
-            // Compound literal: tag + payload in union arm.
-            let _ = write!(out, "({name}){{ .tag = {tag}");
-            if *payload_ty != Ty::Void {
-                let _ = write!(out, ", .u.v{tag} = {}", payload.name);
+            if is_sum_scalar(types, sum_type) {
+                // Pure-lit scalar: value is the tag index (D118 §6).
+                let _ = write!(out, "({name}){tag}");
+            } else {
+                // Compound literal: tag + payload in union arm.
+                let _ = write!(out, "({name}){{ .tag = {tag}");
+                if *payload_ty != Ty::Void {
+                    let _ = write!(out, ", .u.v{tag} = {}", payload.name);
+                }
+                out.push_str(" }");
             }
-            out.push_str(" }");
+            let _ = payload;
         }
-        RValue::SumTag(p) => {
-            let _ = write!(out, "{}.tag", p.name);
+        RValue::SumTag { place, sum_type } => {
+            if is_sum_scalar(types, sum_type) {
+                let _ = write!(out, "(int64_t)({})", place.name);
+            } else {
+                let _ = write!(out, "(int64_t)({}.tag)", place.name);
+            }
         }
         RValue::SumPayload {
             base,

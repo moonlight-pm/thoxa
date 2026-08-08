@@ -2,11 +2,11 @@
 
 **Date:** 2026-08-07  
 **Status:** target (accepted product intent; **partially implemented**)  
-**Implementation:** ladder §10 steps 1–5 + type-arg `!` + heap + nested flatten —
-unions, residual `?`, W2, **D119**, String/Bytes arms, nested alias expansion
-(gates: `sums_*` incl. `sums_heap`, `sums_nested`, `sums_extract_mark`)  
-**Gaps:** pure-lit narrow scalar; generic type defs (`type Has<T>`); May/Trial
-prelude; residual type-arg rewrap (see §10)
+**Implementation:** ladder §10 steps 1–5 + type-arg `!` + heap + nested + pure-lit
+scalar — unions, residual `?`, W2, **D119**, String/Bytes, nested flatten,
+pure-lit as Byte-up scalar typedef (gates: `sums_*`)  
+**Gaps:** generic type defs (`type Has<T>`); May/Trial prelude; residual
+type-arg rewrap (see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  
