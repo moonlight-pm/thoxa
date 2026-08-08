@@ -1,13 +1,14 @@
 # Sum types, unions, and general fallibility (`?` / `!`)
 
 **Date:** 2026-08-07  
-**Status:** target (accepted product intent; **implemented** — polish remains)  
+**Status:** target (accepted product intent; **implemented** for v0)  
 **Implementation:** ladder §10 + **May/Trial prelude cutover** — ambient
 `Has`/`Not`/`May`/`Pass`/`Fail`/`Trial` as generic unions; monomorphs; methods
 on generic products; residual `?` rewrap; exhaustiveness names missing arms /
-rejects post-`else` arms; OpenMode sample (`file_openmode`); **no** builtin
-`Ty::May`/`Ty::Trial`. Gates green under `cargo make test`.  
-**Gaps:** none for v0 (union match guards **D120** shipped: `sums_match_guard`)
+rejects post-`else` arms; OpenMode sample (`file_openmode`); union match guards
+(**D120**, `sums_match_guard`); **no** builtin `Ty::May`/`Ty::Trial`. Gates green
+under `cargo make test`.  
+**Gaps:** none for v0
 
 **As-built:** [`../capabilities.md`](../capabilities.md) · focus
 [`../../CURRENT.md`](../../CURRENT.md)  

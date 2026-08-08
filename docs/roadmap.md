@@ -41,12 +41,13 @@ HTTP plan (historical): [`specs/2026-07-19-post-r9-http-completion-plan.md`](spe
 
 **Status: partial** (phase 1–2 shipped)
 
-- Tree-sitter + Zed extras; `thoxa lsp` diagnostics.
-- Navigation: hover, definition, references, outline, rename; cross-module jump.
+- Tree-sitter + Zed extras; `thoxa lsp` diagnostics (multi-diag on bodies,
+  type-reg, lex, mid-block parse).
+- Navigation: hover, definition, references, outline, rename; cross-module jump;
+  package-tree disk refs/rename; **`workspace/symbol`** package search.
 
 **Remaining:** MIR on shared resolver (**deferred architecture**); rare typed-member
-untyped-expr edges; multi-root workspace folders if forced. Package-tree
-refs/rename + **`workspace/symbol`** shipped.
+untyped-expr edges; multi-root workspace folders if forced.
 
 Freeze: [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md)
 

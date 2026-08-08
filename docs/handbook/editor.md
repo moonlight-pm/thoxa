@@ -36,7 +36,8 @@ Library buffers without `main` typecheck as libraries (no false “requires main
 ## Limits (partial)
 
 - Typed member navigation still misses some **untyped** expressions (no recoverable type).
-- Package-tree refs/rename are capped (nearest `Main.thx` / `.git` root; not an unbounded home walk).
+- Package-tree refs/rename and **workspace symbols** use the same root walk
+  (nearest `Main.thx` / `.git`; capped — not an unbounded home walk / multi-root).
 - Parse recovery covers top-level items and mid-block statements (not full mid-expression recovery).
 - MIR lower still uses its own env (shared-resolver migration is deferred architecture, not day-to-day polish).
 - **No Python** in the product editor path.

@@ -33,7 +33,7 @@ step `.so` on the happy path.
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
 | libtcc | `tcc.rs` + `build.rs` + `third_party/tinycc` | Vendored TinyCC; memory compile |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
-| LSP | `lsp/` | stdio server; check overlays; navigation |
+| LSP | `lsp/` | stdio server; check overlays; nav (incl. package-tree refs/rename, `workspace/symbol`); multi-diag |
 
 ## Crates and trees
 
