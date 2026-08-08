@@ -1033,6 +1033,51 @@ fn main() -> Int64 {
     }
 
     #[test]
+    fn method_member_via_function_return() {
+        // `let p = make()` where make() -> Point links p.len to Point.len.
+        let uri = "file:///tmp/member_fn.thx";
+        let text = "\
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+fn make() -> Point { Point(x: 1) }
+fn main() -> Int64 {
+  let p = make()
+  p.len()
+}
+";
+        let call_byte = text.rfind("len").unwrap();
+        let p = span::byte_to_position(text, call_byte);
+        let msgs = exchange(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": uri,
+                        "languageId": "thoxa",
+                        "version": 1,
+                        "text": text
+                    }
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/definition",
+                "params": {
+                    "textDocument": { "uri": uri },
+                    "position": { "line": p.line, "character": p.character }
+                }
+            }),
+        ]);
+        let def = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        assert_eq!(def["result"]["uri"], uri, "{def}");
+        assert_eq!(def["result"]["range"]["start"]["line"], 1, "{def}");
+    }
+
+    #[test]
     fn rename_helper() {
         let uri = "file:///tmp/ren.thx";
         let text = "fn helper() -> Int64 { 1 }\nfn main() -> Int64 { helper() }\n";

@@ -4,22 +4,22 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-08 (std helpers continue; session deferred)
+**As of:** 2026-08-08 (typed-member fn-return; session deferred)
 
 ---
 
 ## Now
 
 **Session / shell is deferred** — do not resume residual session polish unless
-this file says so. Default product work is **language / I/O / std gaps** from
-the capability matrix, one slice at a time with conformance.
+this file says so. Prefer **finishing started frozen surfaces** (editor LSP
+partial, sum polish if forced) over free redesign or expand-std sprints.
 
-**Shipped recently:** thin **std/** (`removePrefix`/`truncate`/`reverse`/
-`joinAll`/`pathVar`/`pwd`/`headLine`/…); package-tree LSP. Session residual
-deferred.
+**Shipped recently:** typed-member nav via **function/extern return types**
+(+ copy-let hints); package-tree LSP; thin std waves. Session residual deferred.
 
-**In progress / next:** non-session gaps — modules D91, sample-driven std when
-forced, editor residual only when DX forces it.
+**In progress / next:** editor freeze residual (typed-member **generic-return**,
+multi-diag depth, MIR-on-resolver when forced); language matrix only when a
+concrete freeze gap; sample-driven std when forced.
 
 ### Proceed order
 

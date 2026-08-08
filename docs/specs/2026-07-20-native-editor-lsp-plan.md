@@ -3,7 +3,7 @@
 **Date:** 2026-07-20  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** MIR lower on shared resolver; broader package intelligence; multi-file refs/rename package-tree disk (`Main.thx`/`.git` root, capped walk — not arbitrary home-tree); typed-member incomplete for no-hint / generic-return receivers  
+**Gaps:** MIR lower on shared resolver; broader package intelligence; package-tree disk refs/rename (capped); typed-member residual for **generic-return** / untyped inits (fn/extern return + method chains shipped)  
 
 
 

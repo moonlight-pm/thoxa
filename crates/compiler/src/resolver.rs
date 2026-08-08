@@ -331,17 +331,26 @@ impl<'a> Resolver<'a> {
 
     fn ty_hint_from_init(&self, init: &Expr, scope: usize) -> Option<String> {
         match &init.kind {
-            ExprKind::Call { callee, .. } => {
-                let id = self.lookup(scope, callee)?;
-                let b = self.res.bindings.get(&id)?;
-                if b.kind == BindingKind::Type {
-                    Some(b.name.clone())
-                } else {
-                    None
-                }
-            }
+            ExprKind::Call { callee, .. } => self.call_result_ty_hint(callee, scope),
             // `let q = p.moved()` — method return type as value hint.
             ExprKind::MethodCall { .. } => self.receiver_ty_hint(init, scope),
+            // `let q = p` — copy known value hint.
+            ExprKind::Name(n) => {
+                let id = self.lookup(scope, n)?;
+                self.res.bindings.get(&id)?.ty_hint.clone()
+            }
+            _ => None,
+        }
+    }
+
+    /// Result type of a bare call for member linking: type ctor name, or
+    /// free/extern function return type (`ty_hint` on the callee binding).
+    fn call_result_ty_hint(&self, callee: &str, scope: usize) -> Option<String> {
+        let id = self.lookup(scope, callee)?;
+        let b = self.res.bindings.get(&id)?;
+        match b.kind {
+            BindingKind::Type => Some(b.name.clone()),
+            BindingKind::Fn | BindingKind::Extern => b.ty_hint.clone(),
             _ => None,
         }
     }
@@ -352,15 +361,7 @@ impl<'a> Resolver<'a> {
                 let id = self.lookup(scope, n)?;
                 self.res.bindings.get(&id)?.ty_hint.clone()
             }
-            ExprKind::Call { callee, .. } => {
-                let id = self.lookup(scope, callee)?;
-                let b = self.res.bindings.get(&id)?;
-                if b.kind == BindingKind::Type {
-                    Some(b.name.clone())
-                } else {
-                    None
-                }
-            }
+            ExprKind::Call { callee, .. } => self.call_result_ty_hint(callee, scope),
             // `p.moved().x` — return type of linked method is the next receiver type.
             ExprKind::MethodCall {
                 receiver, method, ..
@@ -404,6 +405,10 @@ impl<'a> Resolver<'a> {
                         None,
                         true,
                     );
+                    // Return type feeds typed-member nav: `let p = make()` / `make().x`.
+                    if let Some(ret) = &f.return_type {
+                        self.set_ty_hint(id, Self::simple_type_name(ret));
+                    }
                     self.define(root, &f.name, id);
                 }
                 Item::Extern(e) => {
@@ -415,6 +420,9 @@ impl<'a> Resolver<'a> {
                         None,
                         true,
                     );
+                    if let Some(ret) = &e.return_type {
+                        self.set_ty_hint(id, Self::simple_type_name(ret));
+                    }
                     self.define(root, &e.name, id);
                 }
                 Item::Type(td) => {
@@ -1131,6 +1139,47 @@ fn main() -> Int64 {
         let b = res.binding_of(Some(r)).expect("field");
         assert_eq!(b.kind, BindingKind::Field);
         assert_eq!(b.owner.as_deref(), Some("Point"));
+    }
+
+    #[test]
+    fn typed_member_via_function_return() {
+        // Free fn return type → let binding / direct call receiver.
+        let src = "\
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+fn make() -> Point { Point(x: 3) }
+fn main() -> Int64 {
+  let p = make()
+  p.len()
+  make().x
+  let q = p
+  q.x
+}
+";
+        let res = resolve_ok(src);
+        let len_call = src.find("p.len()").unwrap() + 2;
+        let p = byte_to_position(src, len_call);
+        let r = res.ref_at(src, p.line, p.character).expect("p.len");
+        let b = res.binding_of(Some(r)).expect("method via fn return");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "len");
+        assert_eq!(b.owner.as_deref(), Some("Point"));
+
+        let call_x = src.find("make().x").unwrap() + "make().".len();
+        let p = byte_to_position(src, call_x);
+        let r = res.ref_at(src, p.line, p.character).expect("make().x");
+        let b = res.binding_of(Some(r)).expect("field via direct call");
+        assert_eq!(b.kind, BindingKind::Field);
+        assert_eq!(b.name, "x");
+        assert_eq!(b.owner.as_deref(), Some("Point"));
+
+        let q_x = src.find("q.x").unwrap() + 2;
+        let p = byte_to_position(src, q_x);
+        let r = res.ref_at(src, p.line, p.character).expect("q.x");
+        let b = res.binding_of(Some(r)).expect("copy hint");
+        assert_eq!(b.kind, BindingKind::Field);
+        assert_eq!(b.name, "x");
     }
 
     #[test]
