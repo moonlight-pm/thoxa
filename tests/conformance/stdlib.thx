@@ -1,5 +1,5 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { startsWith, endsWith, isEmpty, contains, indexOf, dropPrefix, dropSuffix, trimNewline } from "std/Str"
+import { startsWith, endsWith, isEmpty, repeat, contains, indexOf, dropPrefix, dropSuffix, trimNewline } from "std/Str"
 import { dirname, basename, join, isAbsolute, normalize, extension, stem, shortPath } from "std/Path"
 import { hasEnv } from "std/Env"
 import { branchName, branchSuffix } from "std/Git"
@@ -21,6 +21,8 @@ fn main() -> Int64 {
     } else {
         println("empty-bad")
     }
+    println(repeat("ab", 3))
+    println(repeat("x", 0))
     if contains("hello", "ell") {
         println("contains-ok")
     } else {

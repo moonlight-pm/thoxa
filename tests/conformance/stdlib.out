@@ -1,6 +1,8 @@
 starts-ok
 ends-ok
 empty-ok
+ababab
+
 contains-ok
 contains-miss-ok
 idx=2

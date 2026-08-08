@@ -14,7 +14,7 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Default product work is **language / I/O / std gaps** from
 the capability matrix, one slice at a time with conformance.
 
-**Shipped recently:** typed-member chains; Str.indexOf; **Path.normalize**. Session
+**Shipped recently:** Path.normalize; typed-member chains; **Str.repeat**. Session
 residual deferred.
 
 **In progress / next:** non-session gaps — modules D91, workspace-disk refs,

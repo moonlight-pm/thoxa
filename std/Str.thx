@@ -49,6 +49,24 @@ export fn isEmpty(s!: String) -> Bool {
     Bytes.fromString(s).count == 0
 }
 
+## Concatenate `s` with itself `n` times (`n <= 0` → `""`).
+export fn repeat(s!: String, n!: Int64) -> String {
+    if n <= 0 {
+        ""
+    } else {
+        mut out = ""
+        mut i = 0
+        loop {
+            if i >= n {
+                break
+            }
+            out = "{out}{s}"
+            i = i + 1
+        }
+        out
+    }
+}
+
 ## True if `needle` appears anywhere in `s` (byte-oriented).
 export fn contains(s!: String, needle!: String) -> Bool {
     let a = Bytes.fromString(s)
