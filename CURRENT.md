@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-08 (editor residuals closed; session deferred)
+**As of:** 2026-08-08 (union match guards D120; session deferred)
 
 ---
 
@@ -14,13 +14,12 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** editor residuals closed for v0 polish — mid-block parse
-multi-diag, match/global typed-member inits, Error::multi flatten; package-tree
-refs; type-param nav. **MIR-on-resolver** stays **deferred architecture** (not
-day-to-day). Session residual deferred.
+**Shipped recently:** **union match guards (D120)** on sum freeze polish;
+editor residuals closed for v0; package-tree LSP. **MIR-on-resolver** deferred
+architecture. Session residual deferred.
 
-**In progress / next:** language / I/O matrix gaps when concrete; sample-driven
-std when forced; MIR-on-resolver only if CURRENT schedules architecture work.
+**In progress / next:** remaining frozen gaps (editor package intelligence /
+rare untyped nav; language matrix when concrete); sample-driven std when forced.
 
 ### Proceed order
 

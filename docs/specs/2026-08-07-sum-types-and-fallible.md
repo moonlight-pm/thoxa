@@ -7,7 +7,7 @@
 on generic products; residual `?` rewrap; exhaustiveness names missing arms /
 rejects post-`else` arms; OpenMode sample (`file_openmode`); **no** builtin
 `Ty::May`/`Ty::Trial`. Gates green under `cargo make test`.  
-**Gaps:** none for v0 (optional further match polish only)
+**Gaps:** none for v0 (union match guards **D120** shipped: `sums_match_guard`)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) · focus
 [`../../CURRENT.md`](../../CURRENT.md)  

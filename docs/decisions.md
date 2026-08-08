@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-08 — Union match guards
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D120 | Union-match guards | `Ctor if bool` / `Ctor(x) if bool` on tagged/literal union arms; binds visible to the guard | Not on catch-all (`else` / bare whole-sum bind). Guarded arms do **not** exhaust a tag (same tag may repeat). Guard fail falls through to later arms. Applies to user unions and ambient May/Trial. Conformance: `sums_match_guard`. Extends D111 + D118. |
+
 ## 2026-08-08 — Union identity (nominal atoms · transparent aliases)
 
 | ID | Decision | Choice | Notes |

@@ -1,0 +1,30 @@
+## Union-match guards (D120): `Ctor if cond` / `Ctor(x) if cond`.
+type Zero
+type Pos(n: Int64)
+type Neg(n: Int64)
+type Sign = Zero | Pos | Neg
+
+fn label(s!: Sign) -> String {
+    match s {
+        Zero { "zero" }
+        Pos(n) if n > 10 { "big-pos" }
+        Pos(n) if n > 0 { "pos" }
+        Pos(_) { "pos-other" }
+        Neg(n) if n < 0 { "neg" }
+        else { "??" }
+    }
+}
+
+fn main() -> Int64 {
+    println(label(Zero()))
+    println(label(Pos(n: 3)))
+    println(label(Pos(n: 20)))
+    println(label(Neg(n: 0 - 4)))
+    ## Guard fail falls through to later arm / else.
+    let z: Sign = Pos(n: 0)
+    match z {
+        Pos(n) if n > 0 { println("skip") }
+        else { println("else-ok") }
+    }
+    0
+}

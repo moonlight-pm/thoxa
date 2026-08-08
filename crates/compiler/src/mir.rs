@@ -6431,21 +6431,20 @@ fn lower_match_sum(
     // True after a catch-all (`else` or whole-sum bind); further arms are unreachable.
     let mut catch_all_done = false;
 
-    // Forward pass: build list of (cond_setup, cond_place, then_body) or else_body.
+    // Forward pass: tag arms may carry `if guard` (D120). Guarded arms do not
+    // exhaust a tag; bind setup + guard run only after the tag matches.
     struct ArmCode {
-        /// None = else/bind arm
+        /// None = else / catch-all bind
         tag: Option<u32>,
+        /// Payload binds (and nothing else); empty for nullary/literal.
+        prefix: Vec<Stmt>,
+        /// `Some` → require Bool after prefix; fail falls through to next arm.
+        guard: Option<Place>,
         body: Vec<Stmt>,
     }
     let mut codes: Vec<ArmCode> = Vec::new();
 
     for arm in arms {
-        if arm.guard.is_some() {
-            return Err(Error::at(
-                "guards on union match arms are not yet supported",
-                span,
-            ));
-        }
         if catch_all_done {
             return Err(Error::at(
                 "unreachable match arm after `else` or catch-all binding",
@@ -6454,6 +6453,12 @@ fn lower_match_sum(
         }
         match &arm.pattern {
             Pattern::Else { .. } => {
+                if arm.guard.is_some() {
+                    return Err(Error::at(
+                        "match guards are not allowed on catch-all arms (`else` or bare bind)",
+                        span,
+                    ));
+                }
                 has_else = true;
                 catch_all_done = true;
                 let outer = std::mem::take(&mut ctx.stmts);
@@ -6475,7 +6480,12 @@ fn lower_match_sum(
                     &mut body,
                     span,
                 )?;
-                codes.push(ArmCode { tag: None, body });
+                codes.push(ArmCode {
+                    tag: None,
+                    prefix: Vec::new(),
+                    guard: None,
+                    body,
+                });
             }
             Pattern::Bind { name, span: bspan } => {
                 // Bare `Up` is a nullary variant if it names a union member (D118);
@@ -6495,36 +6505,34 @@ fn lower_match_sum(
                             *bspan,
                         ));
                     }
-                    if !covered.insert(variant.tag) {
+                    let guarded = arm.guard.is_some();
+                    if !guarded && !covered.insert(variant.tag) {
                         return Err(Error::at(
                             format!("duplicate match arm for `{name}`"),
                             *bspan,
                         ));
                     }
-                    let outer = std::mem::take(&mut ctx.stmts);
-                    lower_block_items(ctx, &arm.body.items)?;
-                    let arm_val = match &arm.body.tail {
-                        Some(t) => {
-                            let (p, ty) = lower_expr(ctx, t)?;
-                            Some((p, ty))
-                        }
-                        None => None,
-                    };
-                    let mut body = std::mem::take(&mut ctx.stmts);
-                    ctx.stmts = outer;
-                    finish_match_arm_ty(
+                    let (prefix, guard, body) = lower_union_arm_body(
                         ctx,
+                        arm,
                         &result_place,
                         &mut result_ty,
-                        arm_val,
-                        &mut body,
                         span,
+                        Vec::new(),
                     )?;
                     codes.push(ArmCode {
                         tag: Some(variant.tag),
+                        prefix,
+                        guard,
                         body,
                     });
                 } else {
+                    if arm.guard.is_some() {
+                        return Err(Error::at(
+                            "match guards are not allowed on catch-all arms (`else` or bare bind)",
+                            *bspan,
+                        ));
+                    }
                     has_else = true;
                     catch_all_done = true;
                     let outer = std::mem::take(&mut ctx.stmts);
@@ -6553,7 +6561,12 @@ fn lower_match_sum(
                         &mut body,
                         *bspan,
                     )?;
-                    codes.push(ArmCode { tag: None, body });
+                    codes.push(ArmCode {
+                        tag: None,
+                        prefix: Vec::new(),
+                        guard: None,
+                        body,
+                    });
                 }
             }
             Pattern::Variant {
@@ -6573,7 +6586,8 @@ fn lower_match_sum(
                         )
                     })?
                     .clone();
-                if !covered.insert(variant.tag) {
+                let guarded = arm.guard.is_some();
+                if !guarded && !covered.insert(variant.tag) {
                     return Err(Error::at(
                         format!("duplicate match arm for `{name}`"),
                         *pspan,
@@ -6652,26 +6666,23 @@ fn lower_match_sum(
                         }
                     }
                 }
-                lower_block_items(ctx, &arm.body.items)?;
-                let arm_val = match &arm.body.tail {
-                    Some(t) => {
-                        let (p, ty) = lower_expr(ctx, t)?;
-                        Some((p, ty))
-                    }
-                    None => None,
+                let prefix = std::mem::take(&mut ctx.stmts);
+                let (prefix, guard, body) = {
+                    let (p2, g, b) = lower_union_arm_body(
+                        ctx,
+                        arm,
+                        &result_place,
+                        &mut result_ty,
+                        span,
+                        prefix,
+                    )?;
+                    (p2, g, b)
                 };
-                let mut body = std::mem::take(&mut ctx.stmts);
                 ctx.stmts = outer;
-                finish_match_arm_ty(
-                    ctx,
-                    &result_place,
-                    &mut result_ty,
-                    arm_val,
-                    &mut body,
-                    span,
-                )?;
                 codes.push(ArmCode {
                     tag: Some(variant.tag),
+                    prefix,
+                    guard,
                     body,
                 });
             }
@@ -6694,30 +6705,22 @@ fn lower_match_sum(
                         Error::at("literal is not a member of this union", pspan)
                     })?
                     .clone();
-                if !covered.insert(variant.tag) {
+                let guarded = arm.guard.is_some();
+                if !guarded && !covered.insert(variant.tag) {
                     return Err(Error::at("duplicate match arm for literal", pspan));
                 }
-                let outer = std::mem::take(&mut ctx.stmts);
-                lower_block_items(ctx, &arm.body.items)?;
-                let arm_val = match &arm.body.tail {
-                    Some(t) => {
-                        let (p, ty) = lower_expr(ctx, t)?;
-                        Some((p, ty))
-                    }
-                    None => None,
-                };
-                let mut body = std::mem::take(&mut ctx.stmts);
-                ctx.stmts = outer;
-                finish_match_arm_ty(
+                let (prefix, guard, body) = lower_union_arm_body(
                     ctx,
+                    arm,
                     &result_place,
                     &mut result_ty,
-                    arm_val,
-                    &mut body,
                     span,
+                    Vec::new(),
                 )?;
                 codes.push(ArmCode {
                     tag: Some(variant.tag),
+                    prefix,
+                    guard,
                     body,
                 });
             }
@@ -6748,7 +6751,7 @@ fn lower_match_sum(
         ));
     }
 
-    // Nest ifs from the end.
+    // Nest ifs from the end. Guarded arms fall through to later arms on guard fail.
     let mut acc: Vec<Stmt> = Vec::new();
     for code in codes.into_iter().rev() {
         match code.tag {
@@ -6758,9 +6761,9 @@ fn lower_match_sum(
             Some(tag) => {
                 let expected = ctx.fresh("ste");
                 ctx.assign(expected.clone(), Ty::Int64, RValue::Int(tag as i64));
-                let cond = ctx.fresh("sc");
+                let tag_cond = ctx.fresh("sc");
                 ctx.assign(
-                    cond.clone(),
+                    tag_cond.clone(),
                     Ty::Bool,
                     RValue::Binary {
                         op: BinaryOp::Eq,
@@ -6768,9 +6771,22 @@ fn lower_match_sum(
                         right: expected,
                     },
                 );
+                let then_body = if let Some(g) = code.guard {
+                    let mut tb = code.prefix;
+                    tb.push(Stmt::If {
+                        cond: g,
+                        then_body: code.body,
+                        else_body: acc.clone(),
+                    });
+                    tb
+                } else {
+                    let mut tb = code.prefix;
+                    tb.extend(code.body);
+                    tb
+                };
                 acc = vec![Stmt::If {
-                    cond,
-                    then_body: code.body,
+                    cond: tag_cond,
+                    then_body,
                     else_body: acc,
                 }];
             }
@@ -6781,6 +6797,44 @@ fn lower_match_sum(
     // Result place is declared zeroed with other locals; arms assign into it.
     let ty = result_ty.unwrap_or(Ty::Void);
     Ok((result_place, ty))
+}
+
+/// Lower a tagged union arm body: optional `if guard` after binds, then arm body.
+/// `prefix` holds payload bind setup (may be empty). Returns (prefix+guard_setup, guard, body).
+fn lower_union_arm_body(
+    ctx: &mut LowerCtx,
+    arm: &MatchArm,
+    result_place: &Place,
+    result_ty: &mut Option<Ty>,
+    span: Span,
+    mut prefix: Vec<Stmt>,
+) -> Result<(Vec<Stmt>, Option<Place>, Vec<Stmt>)> {
+    let outer = std::mem::take(&mut ctx.stmts);
+    let guard = if let Some(gexpr) = &arm.guard {
+        let (gp, gty) = lower_expr(ctx, gexpr)?;
+        if gty != Ty::Bool {
+            return Err(Error::at(
+                format!("match guard must be Bool, got {gty:?}"),
+                gexpr.span,
+            ));
+        }
+        prefix.extend(std::mem::take(&mut ctx.stmts));
+        Some(gp)
+    } else {
+        None
+    };
+    lower_block_items(ctx, &arm.body.items)?;
+    let arm_val = match &arm.body.tail {
+        Some(t) => {
+            let (p, ty) = lower_expr(ctx, t)?;
+            Some((p, ty))
+        }
+        None => None,
+    };
+    let mut body = std::mem::take(&mut ctx.stmts);
+    ctx.stmts = outer;
+    finish_match_arm_ty(ctx, result_place, result_ty, arm_val, &mut body, span)?;
+    Ok((prefix, guard, body))
 }
 
 /// Value match: literal arms + required final `else` (D87).

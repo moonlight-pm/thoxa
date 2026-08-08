@@ -56,7 +56,9 @@ early `return` / `return expr`. Branch values may inject into an expected union
 ## Match
 
 - **Trial / May / user unions:** constructor arms (`Pass(x)` / `Fail(e)`,
-  `Has(x)` / `Not`, custom tags), discard `_`.
+  `Has(x)` / `Not`, custom tags), discard `_`, optional **`if` guards**
+  (`Pos(n) if n > 0 { … }` — binds visible to the guard; guarded arms do not
+  exhaust a tag).
 - **Value match:** String / Int64 / Bool **literal** arms, **or-patterns**
   (`0 | 1 { … }`), optional **`if` guards** on those arms, and a final
   catch-all: `else` or a **bare bind** (`n { … }` binds the scrutinee; bare
