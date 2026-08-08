@@ -1437,8 +1437,10 @@ fn recv_access(base: &crate::mir::Place) -> &'static str {
 }
 
 fn c_fn_name(f: &Function) -> String {
-    if let Some((ty, method)) = f.name.split_once("__") {
-        if f.receiver.is_some() {
+    // Method names are `{type}__{method}`; monomorph types may contain `__`
+    // (`Box__Int64__get`), so split from the right.
+    if f.receiver.is_some() {
+        if let Some((ty, method)) = f.name.rsplit_once("__") {
             return c_method_name(ty, method);
         }
     }

@@ -499,8 +499,20 @@ struct GenericDef {
 
 #[derive(Clone)]
 enum GenericKind {
-    Product { params: Vec<ast::Param> },
+    Product {
+        params: Vec<ast::Param>,
+        methods: Vec<Method>,
+    },
     Union { members: Vec<TypeExpr> },
+}
+
+/// Monomorphized method to lower after type mono materialization.
+#[derive(Clone)]
+struct MonoMethodJob {
+    mono_type: String,
+    method: Method,
+    subst: HashMap<String, Ty>,
+    def_mod: String,
 }
 
 #[derive(Clone)]
@@ -904,6 +916,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 } else {
                     GenericKind::Product {
                         params: td.params.clone(),
+                        methods: td.methods.clone(),
                     }
                 };
                 generics.insert(
@@ -979,12 +992,14 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     // Seed common fallible monomorphs first so nested apps (Trial<May<…>>) resolve.
     seed_fallible_monos(&mut types_info, &mut type_layouts, &generics, &per_mod_types)?;
     // Then materialize every GenericApp found in the package (including nested).
+    let mut mono_method_jobs: Vec<MonoMethodJob> = Vec::new();
     monomorphize_package(
         package,
         &mut types_info,
         &mut type_layouts,
         &generics,
         &per_mod_types,
+        &mut mono_method_jobs,
     )?;
 
     // Fill type fields with resolved types (concrete AST defs only).
@@ -1602,7 +1617,6 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         for method in &td.methods {
             functions.push(lower_method(
                 mangled_ty,
-                td,
                 method,
                 &fns,
                 &types_info,
@@ -1617,6 +1631,32 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 &synthetics,
             )?);
         }
+    }
+
+    // Monomorphized methods on generic products.
+    for job in &mono_method_jobs {
+        let m = package
+            .modules
+            .iter()
+            .find(|x| x.id == job.def_mod)
+            .unwrap();
+        let maps = package_maps.get(&job.def_mod).unwrap();
+        let method = subst_method(&job.method, &job.subst);
+        functions.push(lower_method(
+            &job.mono_type,
+            &method,
+            &fns,
+            &types_info,
+            &maps.name_to_type,
+            &maps.name_to_fn,
+            &maps.name_to_global,
+            &maps.namespaces,
+            &module_exports,
+            &package_maps,
+            &job.def_mod,
+            m.is_entry,
+            &synthetics,
+        )?);
     }
 
     for (mod_id, mangled, f, is_entry) in &free_fns {
@@ -2064,7 +2104,8 @@ fn seed_fallible_monos(
             }
         }
     }
-    monomorphize_pending(pending, types, layouts, generics)?;
+    let mut ignore_methods = Vec::new();
+    monomorphize_pending(pending, types, layouts, generics, &mut ignore_methods)?;
     Ok(())
 }
 
@@ -2073,6 +2114,7 @@ fn monomorphize_pending(
     types: &mut HashMap<String, TypeInfo>,
     layouts: &mut Vec<TypeLayout>,
     generics: &HashMap<String, GenericDef>,
+    mono_methods: &mut Vec<MonoMethodJob>,
 ) -> Result<()> {
     let mut guard = 0;
     while !pending.is_empty() {
@@ -2106,9 +2148,19 @@ fn monomorphize_pending(
             subst.insert(p.clone(), ty.clone());
         }
         match &gdef.kind {
-            GenericKind::Product { params } => {
+            GenericKind::Product { params, methods } => {
                 instantiate_product_mono(
-                    mono, gdef, params, &subst, types, layouts, &name_map, generics, &mut pending,
+                    mono,
+                    gdef,
+                    params,
+                    methods,
+                    &subst,
+                    types,
+                    layouts,
+                    &name_map,
+                    generics,
+                    &mut pending,
+                    mono_methods,
                     span,
                 )?;
             }
@@ -2130,6 +2182,7 @@ fn monomorphize_package(
     layouts: &mut Vec<TypeLayout>,
     generics: &HashMap<String, GenericDef>,
     per_mod_types: &HashMap<String, HashMap<String, String>>,
+    mono_methods: &mut Vec<MonoMethodJob>,
 ) -> Result<()> {
     if generics.is_empty() {
         return Ok(());
@@ -2177,7 +2230,7 @@ fn monomorphize_package(
         }
     }
 
-    monomorphize_pending(pending, types, layouts, generics)
+    monomorphize_pending(pending, types, layouts, generics, mono_methods)
 }
 
 fn is_builtin_generic(name: &str) -> bool {
@@ -2317,16 +2370,16 @@ fn instantiate_product_mono(
     mono: String,
     gdef: &GenericDef,
     params: &[ast::Param],
+    methods: &[Method],
     subst: &HashMap<String, Ty>,
     types: &mut HashMap<String, TypeInfo>,
     layouts: &mut Vec<TypeLayout>,
     name_map: &HashMap<String, String>,
     generics: &HashMap<String, GenericDef>,
     pending: &mut Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
+    mono_methods: &mut Vec<MonoMethodJob>,
     span: Span,
 ) -> Result<()> {
-    let _ = generics;
-    let _ = pending;
     let mut fields = Vec::new();
     for p in params {
         let te = subst_type_expr(&p.ty, subst);
@@ -2374,13 +2427,8 @@ fn instantiate_product_mono(
             default: p.default.clone(),
         });
     }
-    let info = TypeInfo {
-        fields: fields.clone(),
-        methods: HashMap::new(),
-        zero_init: false,
-        def_mod: gdef.def_mod.clone(),
-        sum: None,
-    };
+
+    // Insert type first so method returns of `Self` monomorph (e.g. `Box<T>`) resolve.
     let layout = TypeLayout {
         name: mono.clone(),
         fields: fields
@@ -2394,9 +2442,138 @@ fn instantiate_product_mono(
         sum: None,
         sum_scalar: None,
     };
-    types.insert(mono.clone(), info);
+    types.insert(
+        mono.clone(),
+        TypeInfo {
+            fields: fields.clone(),
+            methods: HashMap::new(),
+            zero_init: false,
+            def_mod: gdef.def_mod.clone(),
+            sum: None,
+        },
+    );
     layouts.push(layout);
+
+    // Enqueue monomorphs referenced by method signatures (after type-param subst).
+    for m in methods {
+        for te in method_sig_type_exprs(m) {
+            let te = subst_type_expr(te, subst);
+            enqueue_type_app_mono(&te, types, name_map, generics, pending, span);
+        }
+    }
+
+    let mut method_sigs = HashMap::new();
+    for m in methods {
+        let ret = match m.return_type.as_ref() {
+            Some(t) => resolve_ty(&subst_type_expr(t, subst), types, name_map)?,
+            None => Ty::Void,
+        };
+        let mut mparams = Vec::new();
+        let mut defaults = Vec::new();
+        for p in &m.params {
+            mparams.push((
+                p.name.clone(),
+                resolve_ty(&subst_type_expr(&p.ty, subst), types, name_map)?,
+            ));
+            defaults.push(p.default.clone());
+        }
+        let mut seen_default = false;
+        for (i, d) in defaults.iter().enumerate() {
+            if d.is_some() {
+                seen_default = true;
+            } else if seen_default {
+                return Err(Error::at(
+                    format!(
+                        "parameter `{}` without a default follows a defaulted parameter",
+                        mparams[i].0
+                    ),
+                    m.params[i].name_span,
+                ));
+            }
+        }
+        method_sigs.insert(
+            m.name.clone(),
+            MethodSig {
+                params: mparams,
+                defaults,
+                ret,
+                exported: m.exported,
+                def_mod: gdef.def_mod.clone(),
+            },
+        );
+        mono_methods.push(MonoMethodJob {
+            mono_type: mono.clone(),
+            method: m.clone(),
+            subst: subst.clone(),
+            def_mod: gdef.def_mod.clone(),
+        });
+    }
+
+    types.get_mut(&mono).unwrap().methods = method_sigs;
     Ok(())
+}
+
+fn method_sig_type_exprs(m: &Method) -> Vec<&TypeExpr> {
+    let mut out = Vec::new();
+    for p in &m.params {
+        out.push(&p.ty);
+    }
+    if let Some(r) = &m.return_type {
+        out.push(r);
+    }
+    out
+}
+
+fn enqueue_type_app_mono(
+    te: &TypeExpr,
+    types: &HashMap<String, TypeInfo>,
+    name_map: &HashMap<String, String>,
+    generics: &HashMap<String, GenericDef>,
+    pending: &mut Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
+    span: Span,
+) {
+    if te.args.is_empty() || is_builtin_generic(&te.name) {
+        // Still walk nested args when present.
+    } else {
+        let base = name_map
+            .get(&te.name)
+            .cloned()
+            .unwrap_or_else(|| te.name.clone());
+        if generics.contains_key(&base) {
+            let mut arg_tys = Vec::new();
+            let mut ok = true;
+            for a in &te.args {
+                match a {
+                    TypeArg::Type(inner) => {
+                        let mut bare = inner.clone();
+                        bare.mark = None;
+                        match resolve_ty(&bare, types, name_map) {
+                            Ok(ty) => arg_tys.push(ty),
+                            Err(_) => {
+                                ok = false;
+                                break;
+                            }
+                        }
+                    }
+                    TypeArg::Int { .. } => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if ok && arg_tys.len() == te.args.len() {
+                let mono = mono_type_name(&base, &arg_tys);
+                if !types.contains_key(&mono) {
+                    pending.push((base, arg_tys, name_map.clone(), span));
+                }
+            }
+        }
+    }
+    for a in &te.args {
+        if let TypeArg::Type(inner) = a {
+            enqueue_type_app_mono(inner, types, name_map, generics, pending, span);
+        }
+    }
 }
 
 fn instantiate_union_mono(
@@ -2743,9 +2920,235 @@ fn lower_function(
     })
 }
 
+fn subst_method(m: &Method, subst: &HashMap<String, Ty>) -> Method {
+    Method {
+        exported: m.exported,
+        name: m.name.clone(),
+        name_span: m.name_span,
+        params: m
+            .params
+            .iter()
+            .map(|p| ast::Param {
+                name: p.name.clone(),
+                name_span: p.name_span,
+                positional: p.positional,
+                ty: subst_type_expr(&p.ty, subst),
+                default: p.default.as_ref().map(|e| subst_expr(e, subst)),
+            })
+            .collect(),
+        return_type: m
+            .return_type
+            .as_ref()
+            .map(|t| subst_type_expr(t, subst)),
+        body: subst_block(&m.body, subst),
+    }
+}
+
+fn subst_block(block: &Block, subst: &HashMap<String, Ty>) -> Block {
+    Block {
+        items: block
+            .items
+            .iter()
+            .map(|it| subst_block_item(it, subst))
+            .collect(),
+        tail: block.tail.as_ref().map(|e| Box::new(subst_expr(e, subst))),
+        span: block.span,
+    }
+}
+
+fn subst_block_item(it: &BlockItem, subst: &HashMap<String, Ty>) -> BlockItem {
+    match it {
+        BlockItem::Let {
+            name,
+            name_span,
+            mutable,
+            ty,
+            init,
+        } => BlockItem::Let {
+            name: name.clone(),
+            name_span: *name_span,
+            mutable: *mutable,
+            ty: ty.as_ref().map(|t| subst_type_expr(t, subst)),
+            init: subst_expr(init, subst),
+        },
+        BlockItem::Assign { target, value } => BlockItem::Assign {
+            target: subst_assign_target(target, subst),
+            value: subst_expr(value, subst),
+        },
+        BlockItem::Expr(e) => BlockItem::Expr(subst_expr(e, subst)),
+    }
+}
+
+fn subst_assign_target(t: &AssignTarget, subst: &HashMap<String, Ty>) -> AssignTarget {
+    match t {
+        AssignTarget::Name { name, name_span } => AssignTarget::Name {
+            name: name.clone(),
+            name_span: *name_span,
+        },
+        AssignTarget::Field {
+            base,
+            base_span,
+            field,
+            field_span,
+        } => AssignTarget::Field {
+            base: base.clone(),
+            base_span: *base_span,
+            field: field.clone(),
+            field_span: *field_span,
+        },
+        AssignTarget::Index {
+            base,
+            base_span,
+            field,
+            field_span,
+            index,
+        } => AssignTarget::Index {
+            base: base.clone(),
+            base_span: *base_span,
+            field: field.clone(),
+            field_span: *field_span,
+            index: subst_expr(index, subst),
+        },
+        AssignTarget::DynIndex {
+            name,
+            name_span,
+            index,
+        } => AssignTarget::DynIndex {
+            name: name.clone(),
+            name_span: *name_span,
+            index: subst_expr(index, subst),
+        },
+    }
+}
+
+fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
+    let kind = match &e.kind {
+        ExprKind::Int(n) => ExprKind::Int(*n),
+        ExprKind::Bool(b) => ExprKind::Bool(*b),
+        ExprKind::String(s) => ExprKind::String(s.clone()),
+        ExprKind::Interpolate(parts) => ExprKind::Interpolate(
+            parts
+                .iter()
+                .map(|p| match p {
+                    InterpPart::Lit(s) => InterpPart::Lit(s.clone()),
+                    InterpPart::Expr(ex) => InterpPart::Expr(subst_expr(ex, subst)),
+                })
+                .collect(),
+        ),
+        ExprKind::Name(n) => ExprKind::Name(n.clone()),
+        ExprKind::Unary { op, expr } => ExprKind::Unary {
+            op: *op,
+            expr: Box::new(subst_expr(expr, subst)),
+        },
+        ExprKind::Binary { op, left, right } => ExprKind::Binary {
+            op: *op,
+            left: Box::new(subst_expr(left, subst)),
+            right: Box::new(subst_expr(right, subst)),
+        },
+        ExprKind::Call { callee, args } => ExprKind::Call {
+            callee: callee.clone(),
+            args: args.iter().map(|a| subst_arg(a, subst)).collect(),
+        },
+        ExprKind::Field {
+            base,
+            name,
+            name_span,
+        } => ExprKind::Field {
+            base: Box::new(subst_expr(base, subst)),
+            name: name.clone(),
+            name_span: *name_span,
+        },
+        ExprKind::MethodCall {
+            receiver,
+            method,
+            method_span,
+            args,
+        } => ExprKind::MethodCall {
+            receiver: Box::new(subst_expr(receiver, subst)),
+            method: method.clone(),
+            method_span: *method_span,
+            args: args.iter().map(|a| subst_arg(a, subst)).collect(),
+        },
+        ExprKind::Index { base, index } => ExprKind::Index {
+            base: Box::new(subst_expr(base, subst)),
+            index: Box::new(subst_expr(index, subst)),
+        },
+        ExprKind::ArrayLit(elems) => {
+            ExprKind::ArrayLit(elems.iter().map(|x| subst_expr(x, subst)).collect())
+        }
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => ExprKind::If {
+            cond: Box::new(subst_expr(cond, subst)),
+            then_branch: subst_block(then_branch, subst),
+            else_branch: else_branch.as_ref().map(|b| subst_block(b, subst)),
+        },
+        ExprKind::While { cond, body } => ExprKind::While {
+            cond: Box::new(subst_expr(cond, subst)),
+            body: subst_block(body, subst),
+        },
+        ExprKind::Loop { body } => ExprKind::Loop {
+            body: subst_block(body, subst),
+        },
+        ExprKind::For {
+            name,
+            name_span,
+            start,
+            end,
+            inclusive,
+            body,
+        } => ExprKind::For {
+            name: name.clone(),
+            name_span: *name_span,
+            start: Box::new(subst_expr(start, subst)),
+            end: end.as_ref().map(|x| Box::new(subst_expr(x, subst))),
+            inclusive: *inclusive,
+            body: subst_block(body, subst),
+        },
+        ExprKind::Break => ExprKind::Break,
+        ExprKind::Continue => ExprKind::Continue,
+        ExprKind::Return { value } => ExprKind::Return {
+            value: value.as_ref().map(|x| Box::new(subst_expr(x, subst))),
+        },
+        ExprKind::Block(b) => ExprKind::Block(subst_block(b, subst)),
+        ExprKind::Try(inner) => ExprKind::Try(Box::new(subst_expr(inner, subst))),
+        ExprKind::Match { scrutinee, arms } => ExprKind::Match {
+            scrutinee: Box::new(subst_expr(scrutinee, subst)),
+            arms: arms
+                .iter()
+                .map(|a| MatchArm {
+                    pattern: a.pattern.clone(),
+                    guard: a.guard.as_ref().map(|g| subst_expr(g, subst)),
+                    body: subst_block(&a.body, subst),
+                })
+                .collect(),
+        },
+    };
+    Expr {
+        kind,
+        span: e.span,
+    }
+}
+
+fn subst_arg(a: &Arg, subst: &HashMap<String, Ty>) -> Arg {
+    match a {
+        Arg::Pos(e) => Arg::Pos(subst_expr(e, subst)),
+        Arg::Named {
+            name,
+            name_span,
+            value,
+        } => Arg::Named {
+            name: name.clone(),
+            name_span: *name_span,
+            value: subst_expr(value, subst),
+        },
+    }
+}
+
 fn lower_method(
     mangled_type: &str,
-    _td: &TypeDef,
     m: &Method,
     fns: &HashMap<String, FnSig>,
     types: &HashMap<String, TypeInfo>,

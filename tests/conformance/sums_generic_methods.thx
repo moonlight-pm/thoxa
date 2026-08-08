@@ -1,0 +1,27 @@
+## Methods on generic products — monomorphized with the type.
+type Box<T>(value: T) {
+    export fn get() -> T {
+        value
+    }
+}
+
+type Counter<T>(value: T) {
+    export fn get() -> T {
+        value
+    }
+    export fn add(d: T) -> Counter<T> {
+        Counter(value: value + d)
+    }
+}
+
+fn main() -> Int64 {
+    let a: Box<Int64> = Box(value: 10)
+    println(a.get())
+    let s: Box<String> = Box(value: "hi")
+    println(s.get())
+    let c: Counter<Int64> = Counter(value: 7)
+    println(c.get())
+    let d = c.add(d: 3)
+    println(d.get())
+    0
+}

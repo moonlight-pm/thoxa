@@ -314,12 +314,7 @@ impl Parser {
                 name_span,
             ));
         }
-        if !type_params.is_empty() && !methods.is_empty() {
-            return Err(Error::at(
-                "generic types cannot declare methods yet",
-                name_span,
-            ));
-        }
+        // Methods on generic products are monomorphized with the type (D118 polish).
 
         Ok(TypeDef {
             exported,

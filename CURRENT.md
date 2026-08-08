@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-08 (D106–D119; dead `Ty::May`/`Trial` removed)
+**As of:** 2026-08-08 (D106–D119; sum-types shipped incl. generic methods)
 
 ---
 
@@ -12,17 +12,18 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **Session / shell is parked** (core + libtcc shipped). Default product work is
 **language kernel depth** — one capability gap at a time, with conformance.
-**Shipped:** D106–D119; **D118** user unions + generics + **May/Trial prelude**
-cutover; builtin `Ty::May`/`Ty::Trial` MIR/cgen paths removed (unions only).
+**Shipped:** D106–D119; **D118** user unions + generics + methods + **May/Trial
+prelude**; builtin `Ty::May`/`Ty::Trial` removed. Sum/fallible ladder done for
+v0 (polish-only: exhaustiveness quality, OpenMode samples).
 
-**In progress:** sum/fallible polish — **generic methods** next; residual
-type-arg rewrap edge cases only if forced.
-Freeze: [`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
+**In progress:** pick next language gap from capabilities (not sum redesign);
+session residual / editor only if CURRENT reprioritizes.
+Freeze (sum, complete for v0):
+[`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
 
 ### Proceed order
 
-1. **Language** — generic methods on sum/generic types (sum-types gap), or next
-   CURRENT gap; not a free redesign.  
+1. **Language** — next capability gap from the matrix; not a free redesign.  
    Also: session residual / editor only if CURRENT reprioritizes.
 2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:

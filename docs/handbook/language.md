@@ -21,7 +21,7 @@ Directory packages may use `Main.thx` as the entry file.
 | Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Bool`, `Void` |
 | Heap | `String` (interpolation), `Bytes`, growable `Buffer`, dynamic `Array<T>` |
 | User types | `type Name(fields) { methods }` — including heap fields; method field write-back |
-| Generics | `type Box<T>(value: T)`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
+| Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
 | Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?` |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` (fields **and** locals) |
 | Errors | Ambient prelude `May<T>` / `Trial<Ok,Err>` with `?` / `match` (ok/err may nest) |

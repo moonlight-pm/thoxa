@@ -93,11 +93,10 @@ Freezes:
 - ~~Default-arg defining-module scope~~ (**D116** shipped)
 - ~~First-class fixed Array locals~~ (**D117** shipped)
 
-- ~~Sum types + general fallibility (D118–D119)~~ — user unions, generics,
-  pure-lit scalar, **May/Trial prelude cutover**, dead `Ty::May`/`Trial`
-  removed (freeze
-  [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md);
-  polish: generic methods)
+- ~~Sum types + general fallibility (D118–D119)~~ — user unions, generics +
+  methods, pure-lit scalar, **May/Trial prelude cutover**, dead
+  `Ty::May`/`Trial` removed (freeze
+  [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md))
 
 **Horizon / deferred until CURRENT says so:**
 
