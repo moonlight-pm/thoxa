@@ -15,12 +15,11 @@ this file says so. Default product work is **language / I/O / std gaps** from
 the capability matrix, one slice at a time with conformance.
 
 **Shipped recently:** D106–D119 sum/fallible ladder (incl. generic methods);
-exhaustiveness quality; OpenMode as nullary union + `file_openmode`.
+exhaustiveness quality; OpenMode union; Net errno/strerror Fail messages.
 
 **In progress / next:** non-session gaps of choice — e.g. **array-fixed**
-(whole-array assign), **modules** D91, **param-defaults** edges, **net-http**
-errno strings, thin **std/** when a sample needs it, or **lsp** depth when DX
-forces it.
+(whole-array assign), **modules** D91, **param-defaults** edges, thin
+**std/** when a sample needs it, or **lsp** depth when DX forces it.
 
 ### Proceed order
 

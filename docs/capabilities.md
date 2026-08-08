@@ -55,7 +55,7 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | file-io | `readFile` / `writeFile` / `appendFile` + OpenMode + **File** (seek/position) | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode` | D56, D80–D82, D109, D112, D115 | OpenMode nullary union + `openModeBits`; Int32 flag lets for creat/trunc/append | yes |
-| net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse` | D69, R9 | Net errno strings polish deferred | yes |
+| net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err` | D69, R9 | Fail messages use errno/strerror (`netErr`); parse/write wire as before | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70 | — | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | — | yes |
 

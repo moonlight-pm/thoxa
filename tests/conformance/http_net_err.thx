@@ -1,0 +1,31 @@
+## Net Fail messages include strerror (errno polish, Io-style D80).
+import { createSocket } from "./httplib/Net"
+
+fn main() -> Int64 {
+    match createSocket() {
+        Fail(e) {
+            println("create-fail={e}")
+        }
+        Pass(s) {
+            s.close()
+            ## Operations on a closed fd should Fail with "…: Bad file descriptor".
+            match s.bind(0) {
+                Pass(_) {
+                    println("unexpected-bind-ok")
+                }
+                Fail(e) {
+                    println("closed-bind={e}")
+                }
+            }
+            match s.listen(1) {
+                Pass(_) {
+                    println("unexpected-listen-ok")
+                }
+                Fail(e) {
+                    println("closed-listen={e}")
+                }
+            }
+        }
+    }
+    0
+}
