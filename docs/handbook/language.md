@@ -70,12 +70,11 @@ fn add(a: Int64, b: Int64 = 0) -> Int64 {
 }
 ```
 
-Parameter defaults (M3 subset) on non-`!` formals for free functions, **methods**,
-and **constructor params** (`type T(x: Int64 = 0)`). Defaults are filled at the
-**call site**, but free names inside default expressions resolve in the
-**defining** module (so importers need not re-export constants used only as
-defaults). Positional `!` and `extern` formals cannot default. A non-default
-formal may not follow a defaulted one.
+Parameter defaults (M3 subset) on free functions, **methods**, **constructor
+params**, and **`!` formals** (including `extern` — defaults expand at the
+call site before the C call). Free names inside default expressions resolve
+in the **defining** module (so importers need not re-export constants used
+only as defaults). A non-default formal may not follow a defaulted one.
 
 ## Methods and field write-back
 

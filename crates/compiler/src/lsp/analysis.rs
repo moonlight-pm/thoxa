@@ -24,7 +24,7 @@ pub struct SemanticToken {
     pub modifiers: u32,
 }
 
-/// One diagnostic ready for LSP publish (phase 1: at most one per check).
+/// One diagnostic ready for LSP publish.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckDiagnostic {
     pub message: String,
@@ -38,8 +38,10 @@ pub struct CheckDiagnostic {
 
 /// Lex, parse, and type-check `text` without codegen.
 ///
-/// Returns an empty vec on success, or a single diagnostic on the first error
-/// (matches the compiler's first-error model; API is `Vec` for multi-diag later).
+/// Returns an empty vec on success, or one-or-more diagnostics. Independent
+/// function/method body errors are collected together; earlier pipeline
+/// failures (lex/parse/types) remain first-error only. Build/run still report
+/// the primary error only.
 ///
 /// **Entry vs library:**
 /// - Buffer defines `fn main` → program check (`require_main`).
@@ -67,7 +69,7 @@ pub fn check_source_with_overlays(
 ) -> Vec<CheckDiagnostic> {
     match check_source_inner(filename, text, overlays) {
         Ok(()) => Vec::new(),
-        Err(e) => vec![error_to_diagnostic(filename, text, e)],
+        Err(e) => errors_to_diagnostics(filename, text, e),
     }
 }
 
@@ -244,15 +246,39 @@ fn first_import_span(module: &Module) -> Option<Span> {
     })
 }
 
-fn error_to_diagnostic(filename: &str, text: &str, e: Error) -> CheckDiagnostic {
-    let span = e.span.unwrap_or_else(Span::dummy);
-    let range = if e.span.is_some() {
+fn errors_to_diagnostics(filename: &str, text: &str, e: Error) -> Vec<CheckDiagnostic> {
+    let mut out = Vec::with_capacity(1 + e.more.len());
+    out.push(error_parts_to_diagnostic(
+        filename,
+        text,
+        e.message,
+        e.span,
+    ));
+    for extra in e.more {
+        out.push(error_parts_to_diagnostic(
+            filename,
+            text,
+            extra.message,
+            extra.span,
+        ));
+    }
+    out
+}
+
+fn error_parts_to_diagnostic(
+    filename: &str,
+    text: &str,
+    message: String,
+    span_opt: Option<Span>,
+) -> CheckDiagnostic {
+    let span = span_opt.unwrap_or_else(Span::dummy);
+    let range = if span_opt.is_some() {
         span::span_to_range(text, span)
     } else {
         Range::default()
     };
     CheckDiagnostic {
-        message: e.message,
+        message,
         range,
         span,
         filename: filename.to_string(),
@@ -507,6 +533,32 @@ mod tests {
                 || diags[0].message.contains("main"),
             "{}",
             diags[0].message
+        );
+    }
+
+    #[test]
+    fn multi_diag_collects_independent_function_bodies() {
+        // Two free functions with independent type errors → both diagnostics.
+        let src = r#"
+fn a() -> Int64 {
+    if 1 { 0 }
+    0
+}
+fn b() -> Int64 {
+    if 2 { 0 }
+    0
+}
+fn main() -> Int64 { 0 }
+"#;
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.len() >= 2,
+            "expected multi-diag, got {}: {diags:?}",
+            diags.len()
+        );
+        assert!(
+            diags.iter().all(|d| d.message.contains("Bool")),
+            "{diags:?}"
         );
     }
 

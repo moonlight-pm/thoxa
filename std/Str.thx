@@ -22,6 +22,29 @@ export fn startsWith(s!: String, prefix!: String) -> Bool {
     }
 }
 
+export fn endsWith(s!: String, suffix!: String) -> Bool {
+    let a = Bytes.fromString(s)
+    let b = Bytes.fromString(suffix)
+    if b.count > a.count {
+        false
+    } else {
+        let base = a.count - b.count
+        mut ok = true
+        mut i = 0
+        loop {
+            if i >= b.count {
+                break
+            }
+            if a.get(base + i) != b.get(i) {
+                ok = false
+                break
+            }
+            i = i + 1
+        }
+        ok
+    }
+}
+
 export fn dropPrefix(s!: String, prefix!: String) -> String {
     let a = Bytes.fromString(s)
     let n = Bytes.fromString(prefix).count

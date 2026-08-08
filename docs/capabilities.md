@@ -38,7 +38,7 @@ change. See [`progress-model.md`](progress-model.md).
 | array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | Whole-array assign/bind (element copy); ABI scalar elems only | yes |
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array ctor fields | shipped | `string_fields` | D48–D49, D69 | — | yes |
-| param-defaults | Formal defaults M3 (+ methods/ctors) | shipped | `param_defaults`, `defaults_mod` | D98, D106, D116 | No `!`/`extern` defaults; non-default cannot follow defaulted; free names in defaults use defining module | yes |
+| param-defaults | Formal defaults M3 (+ methods/ctors/`!`/extern) | shipped | `param_defaults`, `defaults_mod`, `param_bang_defaults` | D98, D106, D116 | `!` and extern formals may default (call-site fill); non-default cannot follow defaulted; free names use defining module | yes |
 | modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate` | D30–D35 | Nested import/type in functions deferred (D91) | yes |
 | pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |
 
@@ -82,7 +82,7 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | std-root | Named `std/…` resolution | shipped | `stdlib` | D97 | — | yes |
-| std-str | Str helpers | partial | `stdlib` | D97 | Thin; extend only when a sample needs it | yes |
+| std-str | Str helpers | partial | `stdlib` | D97 | `startsWith`/`endsWith`/`dropPrefix`/`trimNewline`; still thin / sample-driven | yes |
 | std-path | Path helpers | partial | `stdlib` | D97 | Thin; sample-driven | yes |
 | std-ansi | 16 colors + hex SGR | shipped | `stdlib` | D99 | — | yes |
 | std-env | getenv / host identity helpers | partial | `stdlib` | D97 | Thin; sample-driven | yes |
@@ -95,7 +95,7 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | check-source | Typecheck API + overlays | shipped | unit / LSP | D71–D79 | — | yes |
-| lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1 | Multi-diag collection limited | yes |
+| lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1 | Multi-diag for independent function/method body errors; lex/parse/type-reg still first-error | yes |
 | lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member nav incomplete; refs/rename single-file | partial |
 | lsp-xmodule | Cross-module jump (`./` `~/`) | partial | unit | D78 | Named roots jump polish; open buffer wins | partial |
 | tree-sitter-zed | Grammar + Zed extension extras | shipped | `cargo make zed` | editor plan | Not full IDE | yes |

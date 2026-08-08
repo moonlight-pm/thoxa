@@ -1,0 +1,27 @@
+## Positional `!` formals may carry defaults (call-site fill).
+## Free functions, methods, ctors, and extern C wrappers.
+
+extern fn sysAbs(x!: Int32) -> Int32 from "c" "abs"
+
+fn scale(x!: Int64, factor!: Int64 = 2) -> Int64 {
+    x * factor
+}
+
+type Point(x: Int64, y: Int64 = 0) {
+    export fn moved(dx!: Int64 = 1, dy!: Int64 = 0) -> Point {
+        Point(x: x + dx, y: y + dy)
+    }
+}
+
+fn main() -> Int64 {
+    println(scale(10))
+    println(scale(10, 3))
+    let p = Point(x: 5)
+    let q = p.moved()
+    println("{q.x},{q.y}")
+    let r = p.moved(dx: 2, dy: 3)
+    println("{r.x},{r.y}")
+    ## extern still gets all args after defaults expand (no default on this call).
+    println(sysAbs(-7))
+    0
+}

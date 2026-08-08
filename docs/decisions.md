@@ -76,7 +76,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D109 | File type (product Io) | `export type File(fd: Int64)` + `openFile` / `readAll` / `close` / `isOpen`; `readFile` reuses File | Lives in conformance `iolib/Io.thx` (same as free `readFile`). `fd` is Int64 (ctor-param field rules). Close write-backs `fd = -1` (**D107**). Conformance: `file_type`. **Write surface → D112**. |
 | D108 | Value-match or-patterns | `0 \| 1 \| 2 { … }` of string/int/bool literals; required `else` still | Lowers to `||` of equality tests. Not for Trial/May arms. Duplicate leaf lits rejected across arms. Conformance: `match_or`. Extends D87. |
 | D107 | Method mut-field write-back | In methods, bare assign to a ctor-param field (or C-layout `mut` field) updates the **receiver** | C ABI: User method receivers are pointers (`Type *`). Name receivers pass the binding place (not a `needs_drop` temp). Heap FieldAssign drops old field + dups new. Unlocks File-type style `fd = …` in methods. Conformance: `method_field_writeback`. |
-| D106 | Defaults on methods and ctors | Same rules as free-function defaults (D98): `name: T = expr` on non-`!` formals; omit at call (named or trailing positional); lowered at **call site** | Constructor params: `type Box(label: String, n: Int64 = 0)`. Methods: `fn describe(prefix: String = "box")`. Ordering: no required formal after a defaulted one. `extern` / `!` still cannot default. **Name scope of defaults → D116**. Conformance: `param_defaults`. |
+| D106 | Defaults on methods and ctors | Same rules as free-function defaults (D98): `name: T = expr`; omit at call; lowered at **call site** | Constructor params and methods. Ordering: no required formal after a defaulted one. **`!` / extern defaults allowed** (call-site fill; C still receives all args). **Name scope → D116**. Gates: `param_defaults`, `param_bang_defaults`. |
 
 ## 2026-08-05 — Session libtcc step backend (target)
 
@@ -103,7 +103,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D98 | Parameter defaults (M3 subset) | `name: T = expr` on non-`!` formals; omit at call (named or trailing positional); defaults lowered at **call site** | Positional `!` and `extern` cannot default. Non-default formals may not follow a defaulted one. Free functions at ship; methods/ctors → **D106**; free-name scope → **D116**. Conformance: `param_defaults`. |
+| D98 | Parameter defaults (M3 subset) | `name: T = expr`; omit at call (named or trailing positional); defaults lowered at **call site** | Originally non-`!` only; **now includes `!` and `extern`** (expand before C call). Non-default formals may not follow a defaulted one. Methods/ctors → **D106**; free-name scope → **D116**. Gates: `param_defaults`, `param_bang_defaults`. |
 | D99 | Hex color → SGR | `std/Ansi.parseRgba` / `fgHex` / `bgHex`; primary `#RRGGBB`, also `#RRGGBBAA` (optional `#`); alpha optional, ignored for SGR (`a=255` if omitted) | Invalid hex → black SGR. `defaultPrompt(signature: String = "#3B9DC2")` uses `fgHex` for user@host. |
 
 ## 2026-07-24 — Session / REPL (Thoxa is the session language)

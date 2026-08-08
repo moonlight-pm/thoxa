@@ -9,6 +9,16 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Error {
     pub message: String,
     pub span: Option<Span>,
+    /// Additional independent diagnostics (e.g. other function body errors).
+    /// Primary is `message`/`span`; each entry is a full follow-on message.
+    pub more: Vec<AdditionalDiagnostic>,
+}
+
+/// Secondary diagnostic collected during multi-body lower (LSP multi-diag).
+#[derive(Debug, Clone)]
+pub struct AdditionalDiagnostic {
+    pub message: String,
+    pub span: Option<Span>,
 }
 
 impl Error {
@@ -16,6 +26,7 @@ impl Error {
         Self {
             message: message.into(),
             span: None,
+            more: Vec::new(),
         }
     }
 
@@ -23,7 +34,13 @@ impl Error {
         Self {
             message: message.into(),
             span: Some(span),
+            more: Vec::new(),
         }
+    }
+
+    pub fn with_more(mut self, more: Vec<AdditionalDiagnostic>) -> Self {
+        self.more = more;
+        self
     }
 }
 

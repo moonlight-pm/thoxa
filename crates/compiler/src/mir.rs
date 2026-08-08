@@ -1375,13 +1375,8 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         ));
                     }
                     let mut params = Vec::new();
+                    let mut defaults = Vec::new();
                     for p in &e.params {
-                        if p.default.is_some() {
-                            return Err(Error::at(
-                                "extern fn parameters cannot have defaults",
-                                p.name_span,
-                            ));
-                        }
                         let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
                         if matches!(ty, Ty::Void) || !is_ffi_ty(&ty) {
                             return Err(Error::at(
@@ -1390,6 +1385,22 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                             ));
                         }
                         params.push((p.name.clone(), ty));
+                        defaults.push(p.default.clone());
+                    }
+                    // Same ordering rule as free functions (call-site defaults).
+                    let mut seen_default = false;
+                    for (i, d) in defaults.iter().enumerate() {
+                        if d.is_some() {
+                            seen_default = true;
+                        } else if seen_default {
+                            return Err(Error::at(
+                                format!(
+                                    "parameter `{}` without a default follows a defaulted parameter",
+                                    params[i].0
+                                ),
+                                e.params[i].name_span,
+                            ));
+                        }
                     }
                     let c_symbol = e.c_symbol.clone().unwrap_or_else(|| e.name.clone());
                     let mangled = mangle_fn(&m.id, &e.name, m.is_entry);
@@ -1398,7 +1409,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                             mangled.clone(),
                             FnSig {
                                 params: params.clone(),
-                                defaults: vec![None; params.len()],
+                                defaults,
                                 ret: ret.clone(),
                                 extern_symbol: Some(c_symbol.clone()),
                                 mangled: mangled.clone(),
@@ -1609,12 +1620,14 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     }
 
     let mut functions = Vec::new();
+    // Collect independent body-lower errors so LSP can show more than one (E7+).
+    let mut body_errors: Vec<Error> = Vec::new();
 
     for (mod_id, mangled_ty, td) in &type_defs {
         let m = package.modules.iter().find(|x| x.id == *mod_id).unwrap();
         let maps = package_maps.get(mod_id).unwrap();
         for method in &td.methods {
-            functions.push(lower_method(
+            match lower_method(
                 mangled_ty,
                 method,
                 &fns,
@@ -1628,7 +1641,10 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 mod_id,
                 m.is_entry,
                 &synthetics,
-            )?);
+            ) {
+                Ok(f) => functions.push(f),
+                Err(e) => body_errors.push(e),
+            }
         }
     }
 
@@ -1641,7 +1657,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             .unwrap();
         let maps = package_maps.get(&job.def_mod).unwrap();
         let method = subst_method(&job.method, &job.subst);
-        functions.push(lower_method(
+        match lower_method(
             &job.mono_type,
             &method,
             &fns,
@@ -1655,12 +1671,15 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             &job.def_mod,
             m.is_entry,
             &synthetics,
-        )?);
+        ) {
+            Ok(f) => functions.push(f),
+            Err(e) => body_errors.push(e),
+        }
     }
 
     for (mod_id, mangled, f, is_entry) in &free_fns {
         let maps = package_maps.get(mod_id).unwrap();
-        functions.push(lower_function(
+        match lower_function(
             f,
             mangled,
             *is_entry,
@@ -1674,7 +1693,23 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             &package_maps,
             mod_id,
             &synthetics,
-        )?);
+        ) {
+            Ok(fun) => functions.push(fun),
+            Err(e) => body_errors.push(e),
+        }
+    }
+
+    if !body_errors.is_empty() {
+        // Build/run still report the first error; LSP expands `more` via check_source.
+        let mut it = body_errors.into_iter();
+        let first = it.next().unwrap();
+        let more = it
+            .map(|e| crate::error::AdditionalDiagnostic {
+                message: e.message,
+                span: e.span,
+            })
+            .collect();
+        return Err(first.with_more(more));
     }
 
     // Synthetic unions from unannotated if lub (D119).

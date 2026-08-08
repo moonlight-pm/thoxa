@@ -477,13 +477,9 @@ impl Parser {
         };
         self.expect_kind(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
+        // Defaults allowed on `!` formals too (filled at call site; C extern still
+        // receives every argument after defaults expand).
         let default = if self.at(TokenKind::Eq) {
-            if positional {
-                return Err(Error::at(
-                    "positional parameters (`!`) cannot have defaults",
-                    name_span,
-                ));
-            }
             self.bump();
             Some(self.parse_expr()?)
         } else {
