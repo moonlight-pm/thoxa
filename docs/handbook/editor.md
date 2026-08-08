@@ -24,6 +24,7 @@ language server (grammar color changes may need a full quit/restart).
 | Hover | Signature + contiguous `##` docs |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
 | Go-to-def / hover on methods | Linked when receiver has a type hint (annotation or `Type(...)` init) |
+| Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk |
 | References | Local file + **open buffers** that selective-import the export; import uses also list defining module |
 | Rename | Local + **open buffers** selective-import renames when renaming an export |
 | Document symbols | Outline |

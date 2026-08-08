@@ -1088,6 +1088,56 @@ fn main() -> Int64 {
     }
 
     #[test]
+    fn std_named_root_definition() {
+        // Named root `std/…` go-to-def (lsp-xmodule polish).
+        use std::fs;
+        let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("workspace root");
+        let main = workspace.join("tests/conformance/_lsp_std_nav.thx");
+        // Ephemeral file under workspace so relative paths / std resolve.
+        let text = "import { isEmpty } from \"std/Str\"\nfn main() -> Int64 { if isEmpty(\"\") { 1 } else { 0 } }\n";
+        fs::write(&main, text).unwrap();
+        let main_uri = convert::path_to_uri(&main.to_string_lossy());
+        let call = text.rfind("isEmpty").unwrap();
+        let p = span::byte_to_position(text, call);
+
+        let msgs = exchange(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": main_uri,
+                        "languageId": "thoxa",
+                        "version": 1,
+                        "text": text
+                    }
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/definition",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "position": { "line": p.line, "character": p.character }
+                }
+            }),
+        ]);
+
+        let _ = fs::remove_file(&main);
+        let def = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let def_uri = def["result"]["uri"].as_str().unwrap_or("");
+        assert!(
+            def_uri.ends_with("Str.thx") || def_uri.contains("/std/Str"),
+            "expected jump into std/Str, got {def_uri} full={def}"
+        );
+    }
+
+    #[test]
     fn multi_file_rename_among_open_buffers() {
         use std::fs;
         use std::time::{SystemTime, UNIX_EPOCH};
