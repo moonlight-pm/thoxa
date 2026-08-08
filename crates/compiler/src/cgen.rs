@@ -333,19 +333,16 @@ fn emit_global_extern(out: &mut String, g: &GlobalVar) {
 
 fn emit_typedef(out: &mut String, t: &TypeLayout) {
     if let Some(variants) = &t.sum {
-        // Tagged sum (D118).
+        // Tagged sum (D118). Literal / nullary arms use tag only (no void fields in C).
         let _ = writeln!(out, "typedef struct {{");
         out.push_str("    int32_t tag;\n");
-        let any_payload = variants.iter().any(|v| v.payload_ty != Ty::Void
-            && !matches!(&v.payload_ty, Ty::User(n) if {
-                // empty product still has a C struct type
-                let _ = n;
-                false
-            }));
-        // Always emit union of member types (empty products are padded structs).
-        if !variants.is_empty() {
+        let payload_vars: Vec<_> = variants
+            .iter()
+            .filter(|v| v.payload_ty != Ty::Void)
+            .collect();
+        if !payload_vars.is_empty() {
             out.push_str("    union {\n");
-            for v in variants {
+            for v in payload_vars {
                 let _ = writeln!(
                     out,
                     "        {} v{};",
@@ -355,7 +352,6 @@ fn emit_typedef(out: &mut String, t: &TypeLayout) {
             }
             out.push_str("    } u;\n");
         }
-        let _ = any_payload;
         let _ = writeln!(out, "}} {};\n", c_type_name(&t.name));
         return;
     }

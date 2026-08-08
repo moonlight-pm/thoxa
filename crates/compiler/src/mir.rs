@@ -3,7 +3,7 @@
 
 use crate::ast::{
     self, Arg, AssignTarget, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item,
-    MatchArm, Method, Pattern, TypeArg, TypeDef, TypeExpr, UnaryOp,
+    MatchArm, Method, Pattern, TypeArg, TypeDef, TypeExpr, TypeLit, UnaryOp,
 };
 use crate::error::{Error, Result};
 use crate::loader::{self, BoundImport, Package, SourceModule};
@@ -555,10 +555,12 @@ struct SumInfo {
 #[derive(Clone)]
 struct SumVariant {
     tag: u32,
-    /// Source name for patterns and diagnostics.
+    /// Source name for patterns and diagnostics (`Up`, `0`, `"x"`).
     name: String,
-    /// Member type (typically `User` of a nominal ctor type).
+    /// Member type (`User` for nominal; `Void` for pure literal arms).
     ty: Ty,
+    /// Literal arm (`0 | 1`) — D118 pure-literal / mixed unions.
+    lit: Option<TypeLit>,
 }
 
 /// Module-level value (let/mut).
@@ -935,22 +937,37 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             let mut variants = Vec::new();
             let mut seen_names = HashSet::new();
             for (i, mem) in members.iter().enumerate() {
-                if mem.lit.is_some() {
-                    return Err(Error::at(
-                        "literal union members not yet implemented (named types only for now)",
-                        mem.span,
-                    ));
-                }
                 if mem.mark.is_some() {
                     return Err(Error::at(
                         "type extract marks (`!`/`?`) not yet implemented on union members",
                         mem.span,
                     ));
                 }
+                // Pure literal arm: `0 | 1 | "x" | true` (D118).
+                if let Some(lit) = &mem.lit {
+                    let vname = match lit {
+                        TypeLit::Int(n) => n.to_string(),
+                        TypeLit::Bool(b) => b.to_string(),
+                        TypeLit::String(s) => format!("\"{s}\""),
+                    };
+                    if !seen_names.insert(vname.clone()) {
+                        return Err(Error::at(
+                            format!("duplicate union member `{vname}`"),
+                            mem.span,
+                        ));
+                    }
+                    variants.push(SumVariant {
+                        tag: i as u32,
+                        name: vname,
+                        ty: Ty::Void,
+                        lit: Some(lit.clone()),
+                    });
+                    continue;
+                }
                 let ty = resolve_ty(mem, &types_info, &name_map)?;
                 let Ty::User(ref member_name) = ty else {
                     return Err(Error::at(
-                        format!("union member must be a named type, got {ty:?}"),
+                        format!("union member must be a named type or literal, got {ty:?}"),
                         mem.span,
                     ));
                 };
@@ -1000,6 +1017,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     tag: i as u32,
                     name: vname,
                     ty,
+                    lit: None,
                 });
             }
             sum_info = Some(SumInfo { variants });
@@ -1935,6 +1953,15 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
         let place = if *expect != Ty::Void && &ty != expect {
             if let Some(inj) = try_sum_inject(ctx, place, &ty, expect, tail.span)? {
                 inj
+            } else if let Some(lit) = expr_as_type_lit(tail) {
+                if let Some(inj) = try_sum_inject_lit(ctx, &lit, expect, tail.span)? {
+                    inj
+                } else {
+                    return Err(Error::at(
+                        format!("expected {expect:?}, found {ty:?}"),
+                        tail.span,
+                    ));
+                }
             } else {
                 return Err(Error::at(
                     format!("expected {expect:?}, found {ty:?}"),
@@ -2097,6 +2124,19 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                             try_sum_inject(ctx, place.clone(), &ty, &expect, *name_span)?
                         {
                             (inj, expect)
+                        } else if let Some(lit) = expr_as_type_lit(init) {
+                            if let Some(inj) =
+                                try_sum_inject_lit(ctx, &lit, &expect, *name_span)?
+                            {
+                                (inj, expect)
+                            } else {
+                                return Err(Error::at(
+                                    format!(
+                                        "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
+                                    ),
+                                    *name_span,
+                                ));
+                            }
                         } else {
                             return Err(Error::at(
                                 format!(
@@ -4079,6 +4119,18 @@ fn lower_arg_for_formal(
         coerce_place(ctx, p, &ty, formal_ty, expr.span)
     } else if let Some(inj) = try_sum_inject(ctx, p.clone(), &ty, formal_ty, expr.span)? {
         Ok(inj)
+    } else if let Some(lit) = expr_as_type_lit(expr) {
+        if let Some(inj) = try_sum_inject_lit(ctx, &lit, formal_ty, expr.span)? {
+            Ok(inj)
+        } else {
+            Err(Error::at(
+                format!(
+                    "argument {} (`{formal_name}`): expected {formal_ty:?}, found {ty:?}",
+                    index + 1
+                ),
+                expr.span,
+            ))
+        }
     } else {
         Err(Error::at(
             format!(
@@ -4346,6 +4398,53 @@ fn try_sum_inject(
         },
     );
     Ok(Some(p))
+}
+
+/// Inject a literal expression into a pure-literal (or lit-arm) union (D118).
+fn try_sum_inject_lit(
+    ctx: &mut LowerCtx,
+    lit: &TypeLit,
+    to: &Ty,
+    span: Span,
+) -> Result<Option<Place>> {
+    let Ty::User(to_n) = to else {
+        return Ok(None);
+    };
+    let Some(info) = ctx.types.get(to_n) else {
+        return Ok(None);
+    };
+    let Some(sum) = info.sum.as_ref() else {
+        return Ok(None);
+    };
+    let Some(v) = sum.variants.iter().find(|v| v.lit.as_ref() == Some(lit)) else {
+        return Ok(None);
+    };
+    let tag = v.tag;
+    // Dummy payload for void lit arms.
+    let dummy = ctx.fresh("slit");
+    ctx.assign(dummy.clone(), Ty::Int64, RValue::Int(0));
+    let p = ctx.fresh("sum");
+    ctx.assign(
+        p.clone(),
+        to.clone(),
+        RValue::SumInject {
+            sum_type: to_n.clone(),
+            tag,
+            payload: dummy,
+            payload_ty: Ty::Void,
+        },
+    );
+    let _ = span;
+    Ok(Some(p))
+}
+
+fn expr_as_type_lit(expr: &Expr) -> Option<TypeLit> {
+    match &expr.kind {
+        ExprKind::Int(n) => Some(TypeLit::Int(*n)),
+        ExprKind::Bool(b) => Some(TypeLit::Bool(*b)),
+        ExprKind::String(s) => Some(TypeLit::String(s.clone())),
+        _ => None,
+    }
 }
 
 fn lower_match(
@@ -4668,6 +4767,52 @@ fn lower_match_sum(
                         }
                     }
                 }
+                lower_block_items(ctx, &arm.body.items)?;
+                let arm_val = match &arm.body.tail {
+                    Some(t) => {
+                        let (p, ty) = lower_expr(ctx, t)?;
+                        Some((p, ty))
+                    }
+                    None => None,
+                };
+                let mut body = std::mem::take(&mut ctx.stmts);
+                ctx.stmts = outer;
+                finish_match_arm_ty(
+                    ctx,
+                    &result_place,
+                    &mut result_ty,
+                    arm_val,
+                    &mut body,
+                    span,
+                )?;
+                codes.push(ArmCode {
+                    tag: Some(variant.tag),
+                    body,
+                });
+            }
+            Pattern::IntLit { .. }
+            | Pattern::BoolLit { .. }
+            | Pattern::StringLit { .. } => {
+                let (lit, pspan) = match &arm.pattern {
+                    Pattern::IntLit { value, span } => (TypeLit::Int(*value), *span),
+                    Pattern::BoolLit { value, span } => (TypeLit::Bool(*value), *span),
+                    Pattern::StringLit { value, span } => {
+                        (TypeLit::String(value.clone()), *span)
+                    }
+                    _ => unreachable!(),
+                };
+                let variant = sum
+                    .variants
+                    .iter()
+                    .find(|v| v.lit.as_ref() == Some(&lit))
+                    .ok_or_else(|| {
+                        Error::at("literal is not a member of this union", pspan)
+                    })?
+                    .clone();
+                if !covered.insert(variant.tag) {
+                    return Err(Error::at("duplicate match arm for literal", pspan));
+                }
+                let outer = std::mem::take(&mut ctx.stmts);
                 lower_block_items(ctx, &arm.body.items)?;
                 let arm_val = match &arm.body.tail {
                     Some(t) => {

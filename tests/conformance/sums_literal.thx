@@ -1,0 +1,30 @@
+## Pure-literal union members (D118).
+type Flag = 0 | 1
+type Mode = "r" | "w"
+type Toggle = true | false
+
+fn flagName(f!: Flag) -> String {
+    match f {
+        0 { "off" }
+        1 { "on" }
+    }
+}
+
+fn main() -> Int64 {
+    let a: Flag = 0
+    let b: Flag = 1
+    println(flagName(a))
+    println(flagName(b))
+    println(flagName(0))
+    let m: Mode = "r"
+    match m {
+        "r" { println("read") }
+        "w" { println("write") }
+    }
+    let t: Toggle = true
+    match t {
+        true { println("yes") }
+        false { println("no") }
+    }
+    0
+}

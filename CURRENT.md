@@ -14,10 +14,9 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 **language kernel depth** — one capability gap at a time, with conformance.
 **Shipped:** D106–D117; **D118 partial** (user unions).
 
-**In progress:** sum types (D118) — nullary + multi-field scalar product
-members; inject; match (`sums_nullary`, `sums_payload`, `sums_product`).
-**Next:** pure-literal union members; type `!`/`?` marks; general `?`;
-May/Trial prelude cutover.
+**In progress:** sum types (D118) — nullary + multi-field scalar products +
+pure-literal members; inject; match (`sums_*`).
+**Next:** type `!`/`?` marks; general `?`; May/Trial prelude cutover.
 Freeze: [`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
 
 ### Proceed order

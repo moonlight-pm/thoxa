@@ -2,11 +2,12 @@
 
 **Date:** 2026-08-07  
 **Status:** target (accepted product intent; **partially implemented**)  
-**Implementation:** ladder §10 steps 1–2 partial — nullary + multi-field scalar
-product members; inject; exhaustive constructor match  
-(`sums_nullary`, `sums_payload`, `sums_product`)  
-**Gaps:** literal union members; type `!`/`?` marks; general value `?`;
-May/Trial prelude cutover; heap payloads; nested unions (see §10)
+**Implementation:** ladder §10 steps 1–3 partial — nullary + multi-field scalar
+products + pure-literal members; inject; match  
+(`sums_nullary`, `sums_payload`, `sums_product`, `sums_literal`)  
+**Gaps:** pure-lit still tagged (not yet Byte-up scalar-only layout); type
+`!`/`?` marks; general value `?`; May/Trial prelude cutover; heap payloads;
+nested unions (see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  
@@ -325,3 +326,4 @@ This freeze is **accepted product intent** when:
 | 2026-08-07 | Initial freeze from design brainstorm (TS oracle, marks, layout, prelude fallibility) |
 | 2026-08-07 | Partial impl: nullary + one-field scalar unions, inject, match (`sums_nullary`, `sums_payload`) |
 | 2026-08-07 | Multi-field product patterns (`sums_product`); pattern binds are a field-order list |
+| 2026-08-07 | Pure-literal union members (`0 \| 1`, `"r" \| "w"`, bools); inject + lit patterns (`sums_literal`) |
