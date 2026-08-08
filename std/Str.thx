@@ -203,3 +203,59 @@ export fn trimNewline(s!: String) -> String {
         }
     }
 }
+
+fn isAsciiSpace(c!: Int64) -> Bool {
+    if c == 32 {
+        true
+    } else {
+        if c == 9 {
+            true
+        } else {
+            if c == 10 {
+                true
+            } else {
+                if c == 13 {
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+## Trim ASCII space / tab / CR / LF from both ends.
+export fn trim(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    if b.count == 0 {
+        ""
+    } else {
+        mut start = 0
+        loop {
+            if start >= b.count {
+                break
+            }
+            if isAsciiSpace(b.get(start)) {
+                start = start + 1
+            } else {
+                break
+            }
+        }
+        mut end = b.count
+        loop {
+            if end <= start {
+                break
+            }
+            if isAsciiSpace(b.get(end - 1)) {
+                end = end - 1
+            } else {
+                break
+            }
+        }
+        if start >= end {
+            ""
+        } else {
+            b.slice(start, end).toString()
+        }
+    }
+}
