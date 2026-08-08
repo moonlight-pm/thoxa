@@ -8,8 +8,17 @@ use crate::ast::{
 use crate::error::{Error, Result};
 use crate::loader::{self, BoundImport, Package, SourceModule};
 use crate::span::Span;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::rc::Rc;
+
+/// Synthetic union types inferred for unannotated `if` lub (D119).
+#[derive(Default)]
+struct SyntheticRegistry {
+    /// mangled name → (type info, layout)
+    entries: HashMap<String, (TypeInfo, TypeLayout)>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Program {
@@ -606,6 +615,8 @@ struct LowerCtx {
     /// Heap / Trial-with-heap places from `Assign` so far (for drops on early `return` / `?`).
     /// Same policy as end-of-fn `collect_drop_places` — **not** params (caller-owned).
     drop_places: Vec<(String, Ty)>,
+    /// Shared synthetic union types for unannotated if lub (D119).
+    synthetics: Rc<RefCell<SyntheticRegistry>>,
 }
 
 #[derive(Clone, Default)]
@@ -629,7 +640,13 @@ impl LowerCtx {
         fn_ret: Ty,
         module_id: String,
         is_entry: bool,
+        synthetics: Rc<RefCell<SyntheticRegistry>>,
     ) -> Self {
+        let mut types = types;
+        // Seed with synthetics created by earlier functions in this package.
+        for (name, (info, _)) in synthetics.borrow().entries.iter() {
+            types.entry(name.clone()).or_insert_with(|| info.clone());
+        }
         Self {
             stmts: Vec::new(),
             temps: 0,
@@ -647,6 +664,7 @@ impl LowerCtx {
             is_entry,
             loop_depth: 0,
             drop_places: Vec::new(),
+            synthetics,
         }
     }
 
@@ -1361,6 +1379,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     // Infer global types by lowering inits in order (module dep order).
     let mut program_globals: Vec<GlobalVar> = Vec::new();
     let mut init_stmts: Vec<Stmt> = Vec::new();
+    let synthetics = Rc::new(RefCell::new(SyntheticRegistry::default()));
 
     for m in &package.modules {
         let (name_to_type, name_to_fn, name_to_global, namespaces) = build_module_name_maps(
@@ -1387,6 +1406,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 Ty::Void,
                 m.id.clone(),
                 m.is_entry,
+                Rc::clone(&synthetics),
             );
             let (place, ty) = lower_expr(&mut ctx, &g.init)?;
             // Move init value into global place.
@@ -1464,6 +1484,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 &package_maps,
                 mod_id,
                 m.is_entry,
+                &synthetics,
             )?);
         }
     }
@@ -1483,7 +1504,13 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             &module_exports,
             &package_maps,
             mod_id,
+            &synthetics,
         )?);
+    }
+
+    // Synthetic unions from unannotated if lub (D119).
+    for (_, (_, layout)) in synthetics.borrow().entries.iter() {
+        type_layouts.push(layout.clone());
     }
 
     Ok(Program {
@@ -1764,6 +1791,7 @@ fn lower_function(
     module_exports: &HashMap<String, ModuleExports>,
     package_maps: &HashMap<String, ModuleNameMaps>,
     module_id: &str,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
 ) -> Result<Function> {
     let is_main = is_entry && f.name == "main";
     let ret_ty = resolve_return_ty(f, is_entry, types, name_to_type)?;
@@ -1785,6 +1813,7 @@ fn lower_function(
         ret_ty.clone(),
         module_id.to_string(),
         is_entry,
+        Rc::clone(synthetics),
     );
     for p in &f.params {
         let ty = resolve_ty(&p.ty, types, name_to_type)?;
@@ -1824,6 +1853,7 @@ fn lower_method(
     package_maps: &HashMap<String, ModuleNameMaps>,
     module_id: &str,
     is_entry: bool,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
 ) -> Result<Function> {
     let ret_ty = match m.return_type.as_ref() {
         Some(t) => resolve_ty(t, types, name_to_type)?,
@@ -1850,6 +1880,7 @@ fn lower_method(
         ret_ty.clone(),
         module_id.to_string(),
         is_entry,
+        Rc::clone(synthetics),
     );
 
     // Bind fields as bare names from receiver (no `self` in Thoxa).
@@ -4614,17 +4645,24 @@ fn lower_try_may(
 }
 
 /// Stable key for a union arm (D119 member-set equality).
+/// Keys must be C-identifier-safe when embedded in synthetic type names.
 fn sum_variant_key(v: &SumVariant) -> String {
     if let Some(lit) = &v.lit {
         match lit {
-            TypeLit::Int(n) => format!("lit:i:{n}"),
-            TypeLit::Bool(b) => format!("lit:b:{b}"),
-            TypeLit::String(s) => format!("lit:s:{s}"),
+            TypeLit::Int(n) => format!("liti_{n}"),
+            TypeLit::Bool(b) => format!("litb_{b}"),
+            TypeLit::String(s) => {
+                let safe: String = s
+                    .chars()
+                    .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                    .collect();
+                format!("lits_{safe}")
+            }
         }
     } else if let Ty::User(n) = &v.ty {
-        format!("ty:{n}")
+        format!("ty_{n}")
     } else {
-        format!("other:{:?}", v.ty)
+        format!("other_{}", format!("{:?}", v.ty).replace(|c: char| !c.is_ascii_alphanumeric(), "_"))
     }
 }
 
@@ -6744,10 +6782,10 @@ fn lower_if(
         {
             exp.clone()
         } else {
-            unify_if_branch_tys(&then_ty, &else_ty, else_branch.is_none(), span)?
+            unify_if_branch_tys(ctx, &then_ty, &else_ty, else_branch.is_none(), span)?
         }
     } else {
-        unify_if_branch_tys(&then_ty, &else_ty, else_branch.is_none(), span)?
+        unify_if_branch_tys(ctx, &then_ty, &else_ty, else_branch.is_none(), span)?
     };
 
     let out = if result_ty == Ty::Void {
@@ -6822,6 +6860,7 @@ fn lower_if(
 }
 
 fn unify_if_branch_tys(
+    ctx: &mut LowerCtx,
     then_ty: &Ty,
     else_ty: &Ty,
     else_absent: bool,
@@ -6831,13 +6870,225 @@ fn unify_if_branch_tys(
         (Ty::Void, Ty::Void) => Ok(Ty::Void),
         (a, Ty::Void) if else_absent => Ok(a.clone()),
         (a, b) if a == b => Ok(a.clone()),
-        (a, b) => Err(Error::at(
-            format!(
-                "if branches have different types ({a:?} vs {b:?}); annotate with a union type"
-            ),
-            span,
-        )),
+        (a, b) if ty_eq(&ctx.types, a, b) => {
+            // Transparent aliases: prefer the then-branch name as the result type.
+            Ok(a.clone())
+        }
+        (a, b) if can_coerce_ty(&ctx.types, a, b) => Ok(b.clone()),
+        (a, b) if can_coerce_ty(&ctx.types, b, a) => Ok(a.clone()),
+        (a, b) => {
+            // Unannotated lub: synthetic member-set union of true types (D119).
+            if let Some(u) = try_lub_union(ctx, a, b, span)? {
+                return Ok(u);
+            }
+            Err(Error::at(
+                format!(
+                    "if branches have different types ({a:?} vs {b:?}); annotate with a union type"
+                ),
+                span,
+            ))
+        }
     }
+}
+
+/// Collect atom / lit members of a type for set-union lub (expand sums).
+fn collect_union_members(
+    types: &HashMap<String, TypeInfo>,
+    ty: &Ty,
+) -> Option<Vec<(String, Ty, Option<TypeLit>)>> {
+    match ty {
+        Ty::User(n) => {
+            let info = types.get(n)?;
+            if let Some(sum) = &info.sum {
+                let mut out = Vec::new();
+                for v in &sum.variants {
+                    out.push((v.name.clone(), v.ty.clone(), v.lit.clone()));
+                }
+                Some(out)
+            } else {
+                // Nominal atom (product / empty type).
+                Some(vec![(n.clone(), ty.clone(), None)])
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Reverse local type map: mangled → source name (for synthetic union arm labels).
+fn source_name_of(ctx: &LowerCtx, mangled: &str) -> String {
+    for (src, m) in &ctx.name_to_type {
+        if m == mangled {
+            return src.clone();
+        }
+    }
+    mangled.to_string()
+}
+
+/// Ensure a synthetic sum type for the given members exists; return its Ty.
+fn ensure_synthetic_sum(
+    ctx: &mut LowerCtx,
+    members: Vec<(String, Ty, Option<TypeLit>)>,
+    span: Span,
+) -> Result<Ty> {
+    // Canonical name from sorted keys (order-independent).
+    let mut keyed: Vec<(String, String, Ty, Option<TypeLit>)> = members
+        .into_iter()
+        .map(|(name, ty, lit)| {
+            // Same scheme as `sum_variant_key` (C-safe).
+            let key = if let Some(ref l) = lit {
+                match l {
+                    TypeLit::Int(n) => format!("liti_{n}"),
+                    TypeLit::Bool(b) => format!("litb_{b}"),
+                    TypeLit::String(s) => {
+                        let safe: String = s
+                            .chars()
+                            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                            .collect();
+                        format!("lits_{safe}")
+                    }
+                }
+            } else if let Ty::User(n) = &ty {
+                format!("ty_{n}")
+            } else {
+                format!(
+                    "other_{}",
+                    format!("{ty:?}").replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+                )
+            };
+            (key, name, ty, lit)
+        })
+        .collect();
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    keyed.dedup_by(|a, b| a.0 == b.0);
+
+    if keyed.len() < 2 {
+        return Err(Error::at(
+            "internal: synthetic union needs at least two members",
+            span,
+        ));
+    }
+
+    let syn_name = format!(
+        "$union${}",
+        keyed
+            .iter()
+            .map(|(k, _, _, _)| k.as_str())
+            .collect::<Vec<_>>()
+            .join("$")
+    );
+
+    if ctx.types.contains_key(&syn_name) {
+        return Ok(Ty::User(syn_name));
+    }
+
+    // Validate members are injectible atoms (same rules as declared unions).
+    for (_, vname, ty, lit) in &keyed {
+        if lit.is_some() {
+            continue;
+        }
+        let Ty::User(member_name) = ty else {
+            return Err(Error::at(
+                format!("cannot form union member from {ty:?}"),
+                span,
+            ));
+        };
+        if let Some(minfo) = ctx.types.get(member_name) {
+            if minfo.sum.is_some() {
+                return Err(Error::at(
+                    format!("nested union member `{vname}` not yet supported"),
+                    span,
+                ));
+            }
+            for f in &minfo.fields {
+                if !matches!(
+                    f.ty,
+                    Ty::Int64
+                        | Ty::Int32
+                        | Ty::UInt32
+                        | Ty::UInt64
+                        | Ty::Byte
+                        | Ty::Bool
+                        | Ty::Void
+                ) {
+                    return Err(Error::at(
+                        format!(
+                            "union member `{vname}` field `{}` must be a scalar for now",
+                            f.name
+                        ),
+                        span,
+                    ));
+                }
+            }
+        }
+    }
+
+    let mut variants = Vec::new();
+    let mut layout_vars = Vec::new();
+    for (i, (_, name, ty, lit)) in keyed.iter().enumerate() {
+        let tag = i as u32;
+        let payload_ty = if lit.is_some() {
+            Ty::Void
+        } else {
+            ty.clone()
+        };
+        // Prefer source atom name for patterns when User.
+        let vname = if lit.is_some() {
+            name.clone()
+        } else if let Ty::User(n) = ty {
+            source_name_of(ctx, n)
+        } else {
+            name.clone()
+        };
+        variants.push(SumVariant {
+            tag,
+            name: vname.clone(),
+            ty: payload_ty.clone(),
+            lit: lit.clone(),
+            mark: None,
+        });
+        layout_vars.push(SumVariantLayout {
+            tag,
+            name: vname,
+            payload_ty,
+        });
+    }
+
+    let sum = SumInfo {
+        variants,
+        residual_tag: None,
+        extract_tag: None,
+    };
+    let info = TypeInfo {
+        fields: Vec::new(),
+        methods: HashMap::new(),
+        zero_init: false,
+        def_mod: ctx.module_id.clone(),
+        sum: Some(sum),
+    };
+    let layout = TypeLayout {
+        name: syn_name.clone(),
+        fields: Vec::new(),
+        sum: Some(layout_vars),
+    };
+
+    ctx.types.insert(syn_name.clone(), info.clone());
+    ctx.synthetics
+        .borrow_mut()
+        .entries
+        .insert(syn_name.clone(), (info, layout));
+
+    Ok(Ty::User(syn_name))
+}
+
+fn try_lub_union(ctx: &mut LowerCtx, a: &Ty, b: &Ty, span: Span) -> Result<Option<Ty>> {
+    let Some(mut ma) = collect_union_members(&ctx.types, a) else {
+        return Ok(None);
+    };
+    let Some(mb) = collect_union_members(&ctx.types, b) else {
+        return Ok(None);
+    };
+    ma.extend(mb);
+    Ok(Some(ensure_synthetic_sum(ctx, ma, span)?))
 }
 
 fn lower_block_into(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Option<Place>> {
@@ -6896,6 +7147,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         is_entry: ctx.is_entry,
         loop_depth: ctx.loop_depth,
         drop_places: ctx.drop_places.clone(),
+        synthetics: Rc::clone(&ctx.synthetics),
     };
     if block.tail.is_none() {
         return Ok(Ty::Void);

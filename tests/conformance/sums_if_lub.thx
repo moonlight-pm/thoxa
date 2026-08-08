@@ -1,0 +1,35 @@
+## Unannotated if lub → member-set union (D119).
+type Done(n: Int64)
+type Quit
+type Outcome = Done | Quit
+
+fn label(o!: Outcome) -> String {
+    match o {
+        Done(n) { "done={n}" }
+        Quit { "quit" }
+    }
+}
+
+fn main() -> Int64 {
+    ## Unannotated let: infer Done | Quit
+    let x = if true { Done(n: 3) } else { Quit() }
+    println(label(x))
+    let y = if false { Done(n: 1) } else { Quit() }
+    println(label(y))
+
+    ## Match scrutinee is unannotated if
+    match if true { Done(n: 8) } else { Quit() } {
+        Done(n) { println("m={n}") }
+        Quit { println("m-quit") }
+    }
+    match if false { Done(n: 9) } else { Quit() } {
+        Done(n) { println("m={n}") }
+        Quit { println("m-quit") }
+    }
+
+    ## One arm already a union value: lub prefers / coerces into it
+    let base: Outcome = Quit()
+    let z = if false { Done(n: 2) } else { base }
+    println(label(z))
+    0
+}

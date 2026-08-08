@@ -23,7 +23,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D119 | Union identity | **Nominal atoms** (`type Foo` / products always unique by decl) + **transparent union aliases** (`type Outcome = Done \| Quit` ≡ member set `Done \| Quit`) | Equality by **member set** (order irrelevant). Inference yields the set; does **not** search for a matching alias name. True type stays the atom; assignability into a union is membership. Optional opaque/newtype wrapper later. Extends D118. **Partial code:** member-set eq + alias remap + expect on `if` (`sums_alias`); unannotated if-lub still open. Freeze §2.3: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
+| D119 | Union identity | **Nominal atoms** (`type Foo` / products always unique by decl) + **transparent union aliases** (`type Outcome = Done \| Quit` ≡ member set `Done \| Quit`) | Equality by **member set** (order irrelevant). Inference yields the set; does **not** search for a matching alias name. True type stays the atom; assignability into a union is membership. Optional opaque/newtype wrapper later. Extends D118. **Shipped:** member-set eq + alias remap + expect on `if` + unannotated if lub (`sums_alias`, `sums_if_lub`). Freeze §2.3: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
 
 ## 2026-08-07 — Sum types / fallibility (target freeze)
 
