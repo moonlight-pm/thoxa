@@ -4588,8 +4588,7 @@ fn lower_match_sum(
             }
             Pattern::Variant {
                 name,
-                bind,
-                has_payload,
+                binds,
                 span: pspan,
                 ..
             } => {
@@ -4619,16 +4618,27 @@ fn lower_match_sum(
                     _ => Vec::new(),
                 };
                 let outer = std::mem::take(&mut ctx.stmts);
-                if *has_payload {
+                if binds.is_empty() {
+                    if !member_fields.is_empty() {
+                        return Err(Error::at(
+                            format!("`{name}` has a payload; use `{name}(…)` pattern"),
+                            *pspan,
+                        ));
+                    }
+                } else {
                     if member_fields.is_empty() {
                         return Err(Error::at(
                             format!("`{name}` has no payload; use bare `{name}` pattern"),
                             *pspan,
                         ));
                     }
-                    if member_fields.len() != 1 {
+                    if binds.len() != member_fields.len() {
                         return Err(Error::at(
-                            "union payload patterns support one field for now",
+                            format!(
+                                "`{name}` pattern expects {} field(s), found {}",
+                                member_fields.len(),
+                                binds.len()
+                            ),
                             *pspan,
                         ));
                     }
@@ -4642,24 +4652,21 @@ fn lower_match_sum(
                             payload_ty: variant.ty.clone(),
                         },
                     );
-                    if let Some(bname) = bind {
-                        let fty = member_fields[0].ty.clone();
-                        let fp = ctx.fresh("sf");
-                        ctx.assign(
-                            fp.clone(),
-                            fty.clone(),
-                            RValue::Field {
-                                base: payload,
-                                field: sanitize_field(&member_fields[0].name),
-                            },
-                        );
-                        ctx.define(bname, fty, false, fp);
+                    for (i, bopt) in binds.iter().enumerate() {
+                        if let Some(bname) = bopt {
+                            let fty = member_fields[i].ty.clone();
+                            let fp = ctx.fresh("sf");
+                            ctx.assign(
+                                fp.clone(),
+                                fty.clone(),
+                                RValue::Field {
+                                    base: payload.clone(),
+                                    field: sanitize_field(&member_fields[i].name),
+                                },
+                            );
+                            ctx.define(bname, fty, false, fp);
+                        }
                     }
-                } else if !member_fields.is_empty() {
-                    return Err(Error::at(
-                        format!("`{name}` has a payload; use `{name}(x)` pattern"),
-                        *pspan,
-                    ));
                 }
                 lower_block_items(ctx, &arm.body.items)?;
                 let arm_val = match &arm.body.tail {
@@ -5117,11 +5124,11 @@ fn lower_match_trial(
         match &arm.pattern {
             Pattern::Variant {
                 name,
-                has_payload,
+                binds,
                 span: pspan,
                 ..
             } if name == "Pass" || name == "Fail" => {
-                if !has_payload {
+                if binds.len() != 1 {
                     return Err(Error::at(
                         format!("`{name}` pattern requires a binding `(name)` or `(_)`"),
                         *pspan,
@@ -5170,11 +5177,11 @@ fn lower_match_trial(
     let err_ty = err_ty.clone();
 
     let pass_bind = match &pass_arm.pattern {
-        Pattern::Variant { bind, .. } => bind.clone(),
+        Pattern::Variant { binds, .. } => binds.first().cloned().flatten(),
         _ => None,
     };
     let fail_bind = match &fail_arm.pattern {
-        Pattern::Variant { bind, .. } => bind.clone(),
+        Pattern::Variant { binds, .. } => binds.first().cloned().flatten(),
         _ => None,
     };
 
@@ -5305,11 +5312,11 @@ fn lower_match_may(
         match &arm.pattern {
             Pattern::Variant {
                 name,
-                has_payload,
+                binds,
                 span: pspan,
                 ..
             } if name == "Has" => {
-                if !has_payload {
+                if binds.len() != 1 {
                     return Err(Error::at(
                         "`Has` pattern requires a binding `(name)` or `(_)`",
                         *pspan,
@@ -5322,19 +5329,15 @@ fn lower_match_may(
             }
             Pattern::Variant {
                 name,
-                has_payload,
-                bind,
+                binds,
                 span: pspan,
                 ..
             } if name == "Not" => {
-                if *has_payload {
+                if !binds.is_empty() {
                     return Err(Error::at(
                         "`Not` pattern takes no binding (write `Not { … }`)",
                         *pspan,
                     ));
-                }
-                if bind.is_some() {
-                    return Err(Error::at("`Not` pattern takes no binding", *pspan));
                 }
                 if not_arm.is_some() {
                     return Err(Error::at("duplicate Not arm", span));
@@ -5370,7 +5373,7 @@ fn lower_match_may(
         .clone();
 
     let has_bind = match &has_arm.pattern {
-        Pattern::Variant { bind, .. } => bind.clone(),
+        Pattern::Variant { binds, .. } => binds.first().cloned().flatten(),
         _ => None,
     };
 

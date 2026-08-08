@@ -790,16 +790,15 @@ impl<'a> Resolver<'a> {
         match &arm.pattern {
             Pattern::Variant {
                 name,
-                bind,
+                binds,
                 bind_span,
                 span,
-                has_payload: _,
             } => {
-                // Pass / Fail / Has / Not as constructors (builtins).
+                // Pass / Fail / Has / Not / union constructors.
                 let name_end = span.start + name.len().min(span.end - span.start);
                 let name_span = Span::new(span.start, name_end);
                 self.add_ref(name_span, self.lookup(scope, name), RefCtx::Pattern);
-                if let Some(bname) = bind {
+                for bname in binds.iter().flatten() {
                     let id = self.new_binding(
                         bname,
                         BindingKind::Pattern,
@@ -840,15 +839,14 @@ impl<'a> Resolver<'a> {
                         | Pattern::Or { .. } => {}
                         Pattern::Variant {
                             name,
-                            bind,
+                            binds,
                             bind_span,
                             span,
-                            ..
                         } => {
                             let name_end = span.start + name.len().min(span.end - span.start);
                             let name_span = Span::new(span.start, name_end);
                             self.add_ref(name_span, self.lookup(scope, name), RefCtx::Pattern);
-                            if let Some(bname) = bind {
+                            for bname in binds.iter().flatten() {
                                 let id = self.new_binding(
                                     bname,
                                     BindingKind::Pattern,

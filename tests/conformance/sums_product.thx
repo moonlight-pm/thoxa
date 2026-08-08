@@ -1,0 +1,23 @@
+## Multi-field product union members (D118).
+type Circle(radius: Int64)
+type Rect(w: Int64, h: Int64)
+type Shape = Circle | Rect
+
+fn area(s!: Shape) -> Int64 {
+    match s {
+        Circle(r) { r * r }
+        Rect(w, h) { w * h }
+    }
+}
+
+fn main() -> Int64 {
+    let c: Shape = Circle(radius: 3)
+    let r: Shape = Rect(w: 4, h: 5)
+    println(area(c))
+    println(area(r))
+    match r {
+        Circle(r) { println("c={r}") }
+        Rect(w, h) { println("rect={w}x{h}") }
+    }
+    0
+}

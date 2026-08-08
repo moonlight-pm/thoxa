@@ -338,16 +338,14 @@ pub struct MatchArm {
 
 #[derive(Debug, Clone)]
 pub enum Pattern {
-    /// `Pass(name)` / `Fail(name)` / `Has(name)` — `bind` is `None` for discard `_` (D66).
-    /// Nullary `Not` has `bind: None` and no parentheses (`has_payload: false`).
+    /// `Pass(name)` / `Fail(name)` / `Has(name)` / `Rect(w, h)` — payload binds in field order.
+    /// Empty `binds` = nullary (`Not`, `Up`). Entry `None` = discard `_` (D66).
     /// Body `_` is not special — ordinary name lookup (no pattern binding is introduced).
     Variant {
         name: String,
-        /// Bound name, or `None` for `_` discard / nullary patterns.
-        bind: Option<String>,
+        /// One entry per constructor field; empty = nullary pattern.
+        binds: Vec<Option<String>>,
         bind_span: Span,
-        /// `false` for nullary `Not` (no `(…)`); `true` for `Pass`/`Fail`/`Has(…)`.
-        has_payload: bool,
         span: Span,
     },
     /// String literal pattern: `"exit" { … }` (scrutinee must be String).

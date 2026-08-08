@@ -1406,9 +1406,8 @@ impl Parser {
                     if name == "Not" || name == "Pass" || name == "Fail" || name == "Has" {
                         return Ok(Pattern::Variant {
                             name,
-                            bind: None,
+                            binds: Vec::new(),
                             bind_span: name_span,
-                            has_payload: false,
                             span: name_span,
                         });
                     }
@@ -1422,20 +1421,33 @@ impl Parser {
                     });
                 }
                 self.bump();
-                let (bind_raw, bind_span) = self.expect_ident()?;
-                // Pattern `_` is discard only here (D66). Body `_` is ordinary lookup elsewhere.
-                let bind = if bind_raw == "_" {
-                    None
-                } else {
-                    Some(bind_raw)
-                };
+                let mut binds = Vec::new();
+                let mut bind_span = name_span;
+                if !self.at(TokenKind::RParen) {
+                    loop {
+                        let (bind_raw, bspan) = self.expect_ident()?;
+                        if binds.is_empty() {
+                            bind_span = bspan;
+                        }
+                        // Pattern `_` is discard only here (D66).
+                        binds.push(if bind_raw == "_" {
+                            None
+                        } else {
+                            Some(bind_raw)
+                        });
+                        if self.at(TokenKind::Comma) {
+                            self.bump();
+                            continue;
+                        }
+                        break;
+                    }
+                }
                 self.expect_kind(&TokenKind::RParen)?;
                 let end = self.prev_span().end;
                 Ok(Pattern::Variant {
                     name,
-                    bind,
+                    binds,
                     bind_span,
-                    has_payload: true,
                     span: Span::new(name_span.start, end),
                 })
             }
