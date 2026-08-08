@@ -226,11 +226,19 @@ pub fn text_edit(range: Range, new_text: &str) -> Value {
 }
 
 pub fn workspace_edit(uri: &str, edits: Vec<Value>) -> Value {
-    json!({
-        "changes": {
-            uri: edits,
+    workspace_edit_changes(vec![(uri.to_string(), edits)])
+}
+
+/// WorkspaceEdit with edits across multiple document URIs.
+pub fn workspace_edit_changes(changes: Vec<(String, Vec<Value>)>) -> Value {
+    let mut map = serde_json::Map::new();
+    for (uri, edits) in changes {
+        if edits.is_empty() {
+            continue;
         }
-    })
+        map.insert(uri, Value::Array(edits));
+    }
+    json!({ "changes": Value::Object(map) })
 }
 
 /// Extract 0-based line/character from LSP Position params.
