@@ -14,8 +14,8 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Default product work is **language / I/O / std gaps** from
 the capability matrix, one slice at a time with conformance.
 
-**Shipped recently:** Str.repeat; Env.getenvOr; **same-dir disk multi-file refs**.
-Session residual deferred.
+**Shipped recently:** thin **std/** growth (Str/Path/Env/Git); same-dir disk
+refs/rename. Session residual deferred.
 
 **In progress / next:** non-session gaps — modules D91, full workspace walk,
 sample-driven std when forced.

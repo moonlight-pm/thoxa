@@ -49,6 +49,11 @@ export fn isEmpty(s!: String) -> Bool {
     Bytes.fromString(s).count == 0
 }
 
+## Byte length of `s`.
+export fn length(s!: String) -> Int64 {
+    Bytes.fromString(s).count
+}
+
 ## Concatenate `s` with itself `n` times (`n <= 0` → `""`).
 export fn repeat(s!: String, n!: Int64) -> String {
     if n <= 0 {
@@ -104,6 +109,93 @@ export fn contains(s!: String, needle!: String) -> Bool {
             }
             found
         }
+    }
+}
+
+## Count non-overlapping occurrences of `needle` (`""` → 0).
+export fn count(s!: String, needle!: String) -> Int64 {
+    let nlen = Bytes.fromString(needle).count
+    if nlen == 0 {
+        0
+    } else {
+        mut total = 0
+        mut rest = s
+        loop {
+            let i = indexOf(rest, needle)
+            if i < 0 {
+                break
+            }
+            total = total + 1
+            let r = Bytes.fromString(rest)
+            let next = i + nlen
+            if next >= r.count {
+                break
+            }
+            rest = r.slice(next, r.count).toString()
+        }
+        total
+    }
+}
+
+## Pad on the left with `pad` (defaults to space) until at least `width` bytes.
+export fn padLeft(s!: String, width!: Int64, pad!: String = " ") -> String {
+    let cur = length(s)
+    if cur >= width {
+        s
+    } else {
+        let need = width - cur
+        let unit = if pad == "" {
+            " "
+        } else {
+            pad
+        }
+        let u = length(unit)
+        mut out = ""
+        mut left = need
+        loop {
+            if left <= 0 {
+                break
+            }
+            if left >= u {
+                out = "{out}{unit}"
+                left = left - u
+            } else {
+                out = "{out}{Bytes.fromString(unit).slice(0, left).toString()}"
+                left = 0
+            }
+        }
+        "{out}{s}"
+    }
+}
+
+## Pad on the right with `pad` until at least `width` bytes.
+export fn padRight(s!: String, width!: Int64, pad!: String = " ") -> String {
+    let cur = length(s)
+    if cur >= width {
+        s
+    } else {
+        let need = width - cur
+        let unit = if pad == "" {
+            " "
+        } else {
+            pad
+        }
+        let u = length(unit)
+        mut out = s
+        mut left = need
+        loop {
+            if left <= 0 {
+                break
+            }
+            if left >= u {
+                out = "{out}{unit}"
+                left = left - u
+            } else {
+                out = "{out}{Bytes.fromString(unit).slice(0, left).toString()}"
+                left = 0
+            }
+        }
+        out
     }
 }
 

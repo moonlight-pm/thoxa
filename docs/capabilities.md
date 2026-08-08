@@ -82,8 +82,8 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | std-root | Named `std/…` resolution | shipped | `stdlib` | D97 | — | yes |
-| std-str | Str helpers | partial | `stdlib` | D97 | +`trim`/`toLowerAscii`/`toUpperAscii`; sample-driven | yes |
-| std-path | Path helpers | partial | `stdlib` | D97 | +`withExtension`/`isRelative`; sample-driven | yes |
+| std-str | Str helpers | partial | `stdlib` | D97 | Growing thin API (`length`/`count`/`pad*`/`trim`/case/…); sample-driven | yes |
+| std-path | Path helpers | partial | `stdlib` | D97 | +`withExtension`/`isRelative`/`parent`; sample-driven | yes |
 | std-ansi | 16 colors + hex SGR | shipped | `stdlib` | D99 | — | yes |
 | std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`home`; sample-driven | yes |
 | std-git | branch helpers | partial | `stdlib` | D97 | +`isRepo`; sample-driven | yes |

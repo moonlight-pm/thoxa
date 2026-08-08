@@ -1,6 +1,6 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { startsWith, endsWith, isEmpty, repeat, contains, indexOf, dropPrefix, dropSuffix, trimNewline, trim, toLowerAscii, toUpperAscii } from "std/Str"
-import { dirname, basename, join, isAbsolute, isRelative, normalize, extension, stem, withExtension, shortPath } from "std/Path"
+import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, dropPrefix, dropSuffix, trimNewline, trim, toLowerAscii, toUpperAscii, padLeft, padRight } from "std/Str"
+import { dirname, parent, basename, join, isAbsolute, isRelative, normalize, extension, stem, withExtension, shortPath } from "std/Path"
 import { hasEnv, getenvOr, home } from "std/Env"
 import { branchName, branchSuffix, isRepo } from "std/Git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
@@ -35,6 +35,10 @@ fn main() -> Int64 {
     }
     println("idx={indexOf(\"hello\", \"ll\")}")
     println("idx-miss={indexOf(\"hello\", \"zz\")}")
+    println("cnt={count(\"ababab\", \"ab\")}")
+    println("len={length(\"hi\")}")
+    println(padLeft("7", 3, "0"))
+    println(padRight("x", 3, "."))
     println(dropPrefix("hello", "he"))
     println(dropSuffix("hello", "lo"))
     println(trimNewline("line\n"))
@@ -42,6 +46,7 @@ fn main() -> Int64 {
     println(toLowerAscii("AbC"))
     println(toUpperAscii("AbC"))
     println(dirname("/a/b/c"))
+    println(parent("/a/b/c"))
     println(basename("/a/b/c"))
     println(join("/a/b", "c"))
     println(join("/a/b/", "c"))

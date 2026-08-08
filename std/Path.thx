@@ -38,6 +38,11 @@ export fn dirname(path!: String) -> String {
     }
 }
 
+## Alias of `dirname` (parent directory path).
+export fn parent(path!: String) -> String {
+    dirname(path)
+}
+
 export fn basename(path!: String) -> String {
     let i = lastSlash(path)
     if i < 0 {

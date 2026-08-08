@@ -18,8 +18,8 @@ import { branch } from "std/Git"
 | `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts |
 | `Fallible` | Surface source for ambient `May` / `Trial` / `Has` / `Not` / `Pass` / `Fail` (compiler injects; no `import` needed) |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
-| `Str` | `startsWith`/`endsWith`/`isEmpty`/`repeat`/`contains`/`indexOf`/`dropPrefix`/`dropSuffix`/`trimNewline`/`trim`/`toLowerAscii`/`toUpperAscii` |
-| `Path` | `dirname`/`basename`/`join`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`stem`/`withExtension`/`cwd`/`shortPath`/`cwdShort` |
+| `Str` | prefix/suffix, `isEmpty`/`length`/`repeat`/`contains`/`count`/`indexOf`, pad/trim/case, drop/trim helpers |
+| `Path` | `dirname`/`parent`/`basename`/`join`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`stem`/`withExtension`/`cwd`/`shortPath`/`cwdShort` |
 | `Ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
 | `Env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `localHms`, `hostname`, `userName` |
 | `Git` | `branchName` / `branchSuffix` / `branch` / `branchHere` / `isRepo` via `.git/HEAD` |

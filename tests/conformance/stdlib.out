@@ -7,12 +7,17 @@ contains-ok
 contains-miss-ok
 idx=2
 idx-miss=-1
+cnt=3
+len=2
+007
+x..
 llo
 hel
 line
 hi
 abc
 ABC
+/a/b
 /a/b
 c
 /a/b/c
