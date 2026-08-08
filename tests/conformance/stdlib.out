@@ -21,6 +21,14 @@ llo
 hel
 line
 hi
+hi
+hi
+byte=66
+byte-oob=-1
+lines=3:a:b:c
+x-y-z
+sw-ic-ok
+ew-ic-ok
 abc
 ABC
 /a/b
@@ -30,6 +38,8 @@ c
 /a/b/c
 /a/b/c
 /abs
+/a/b/d.md
+parts=3::a:b
 abs-ok
 rel-ok
 /a/b/c
@@ -55,6 +65,8 @@ git-miss-ok
 git-suf-ok
 git-repo-ok
 git-root-ok
+git-det-ok
+shell-call-ok
 fg-ok
 sgr0-ok
 cyan-ok

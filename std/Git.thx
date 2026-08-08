@@ -99,6 +99,43 @@ export fn isRepo(startDir!: String) -> Bool {
     repoRoot(startDir) != ""
 }
 
+## True when `.git/HEAD` is readable and not a `ref: refs/heads/…` branch line
+## (detached SHA, or other non-branch content). Missing repo → false.
+export fn isDetached(startDir!: String) -> Bool {
+    if startDir == "" {
+        false
+    } else {
+        mut dir = startDir
+        mut out = false
+        mut steps = 0
+        loop {
+            if steps > 64 {
+                break
+            }
+            let headPath = "{dir}/.git/HEAD"
+            let raw = trimNewline(readFileLimited(headPath, 256))
+            if raw != "" {
+                if startsWith(raw, "ref: refs/heads/") {
+                    out = false
+                } else {
+                    out = true
+                }
+                break
+            }
+            if dir == "/" {
+                break
+            }
+            let parent = dirname(dir)
+            if parent == dir {
+                break
+            }
+            dir = parent
+            steps = steps + 1
+        }
+        out
+    }
+}
+
 ## Branch name for `dir` with a leading space when present (zsh-style prompt).
 ## Detached HEAD / missing repo → `""`. On a branch → `" <name>"`.
 export fn branchSuffix(startDir!: String) -> String {

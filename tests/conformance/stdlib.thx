@@ -1,8 +1,8 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, lastIndexOf, substring, replaceFirst, replaceAll, equalsIgnoreCaseAscii, split, dropPrefix, dropSuffix, trimNewline, trim, toLowerAscii, toUpperAscii, padLeft, padRight } from "std/Str"
-import { dirname, parent, basename, fileName, join, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, shortPath } from "std/Path"
-import { hasEnv, getenvOr, home, tmpdir } from "std/Env"
-import { branchName, branchSuffix, isRepo, repoRoot } from "std/Git"
+import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, lastIndexOf, substring, replaceFirst, replaceAll, equalsIgnoreCaseAscii, split, join as strJoin, dropPrefix, dropSuffix, trimNewline, trim, trimStart, trimEnd, toLowerAscii, toUpperAscii, padLeft, padRight, byteAt, lines, startsWithIgnoreCaseAscii, endsWithIgnoreCaseAscii } from "std/Str"
+import { dirname, parent, basename, fileName, join, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, withFileName, parts, shortPath } from "std/Path"
+import { hasEnv, getenvOr, home, tmpdir, shell } from "std/Env"
+import { branchName, branchSuffix, isRepo, repoRoot, isDetached } from "std/Git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 
 fn main() -> Int64 {
@@ -54,6 +54,23 @@ fn main() -> Int64 {
     println(dropSuffix("hello", "lo"))
     println(trimNewline("line\n"))
     println(trim("  hi\t\n"))
+    println(trimStart("  hi"))
+    println(trimEnd("hi  "))
+    println("byte={byteAt(\"ABC\", 1)}")
+    println("byte-oob={byteAt(\"A\", 3)}")
+    let ls = lines("a\nb\r\nc")
+    println("lines={ls.count}:{ls[0]}:{ls[1]}:{ls[2]}")
+    println(strJoin(["x", "y", "z"], "-"))
+    if startsWithIgnoreCaseAscii("Hello", "he") {
+        println("sw-ic-ok")
+    } else {
+        println("sw-ic-bad")
+    }
+    if endsWithIgnoreCaseAscii("Hello", "LO") {
+        println("ew-ic-ok")
+    } else {
+        println("ew-ic-bad")
+    }
     println(toLowerAscii("AbC"))
     println(toUpperAscii("AbC"))
     println(dirname("/a/b/c"))
@@ -63,6 +80,9 @@ fn main() -> Int64 {
     println(join("/a/b", "c"))
     println(join("/a/b/", "c"))
     println(join("/a", "/abs"))
+    println(withFileName("/a/b/c.thx", "d.md"))
+    let pp = parts("/a/b")
+    println("parts={pp.count}:{pp[0]}:{pp[1]}:{pp[2]}")
     if isAbsolute("/a") {
         println("abs-ok")
     } else {
@@ -151,6 +171,18 @@ fn main() -> Int64 {
         println("git-root-ok")
     } else {
         println("git-root-bad")
+    }
+    if isDetached("/no/such/thoxa/repo/zzzz") {
+        println("git-det-bad")
+    } else {
+        println("git-det-ok")
+    }
+    ## shell() is getenv("SHELL"); value may be empty — just prove the call.
+    let sh = shell()
+    if length(sh) < 0 {
+        println("shell-bad")
+    } else {
+        println("shell-call-ok")
     }
     ## fg/sgr0 must be non-empty SGR sequences (byte 27 present via length).
     let c = fg(1, 2, 3)

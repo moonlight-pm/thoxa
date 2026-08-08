@@ -1,7 +1,7 @@
 ## std/Path — path string helpers (POSIX `/` separators).
 
-import { startsWith, dropPrefix } from "./Str"
-## (dropPrefix used by withExtension)
+import { startsWith, dropPrefix, split } from "./Str"
+## (dropPrefix used by withExtension; split by parts)
 
 extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
 extern fn sysGetenv(name!: String) -> String from "c" "getenv"
@@ -197,6 +197,26 @@ export fn withExtension(path!: String, ext!: String) -> String {
             "{dir}/{base}"
         }
     }
+}
+
+## Replace the basename, keeping the directory.
+export fn withFileName(path!: String, name!: String) -> String {
+    let dir = dirname(path)
+    if dir == "." {
+        name
+    } else {
+        if dir == "/" {
+            "/{name}"
+        } else {
+            "{dir}/{name}"
+        }
+    }
+}
+
+## Path components split on `/`. Leading `/` yields a leading empty string;
+## trailing `/` yields a trailing empty string; `""` → `[""]`.
+export fn parts(path!: String) -> Array<String> {
+    split(path, "/")
 }
 
 ## True when path is not absolute (POSIX).
