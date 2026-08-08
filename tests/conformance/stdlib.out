@@ -3,6 +3,8 @@ ends-ok
 empty-ok
 contains-ok
 contains-miss-ok
+idx=2
+idx-miss=-1
 llo
 hel
 line

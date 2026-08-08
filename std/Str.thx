@@ -89,6 +89,46 @@ export fn contains(s!: String, needle!: String) -> Bool {
     }
 }
 
+## First index of `needle` in `s`, or `-1` if missing (byte-oriented).
+export fn indexOf(s!: String, needle!: String) -> Int64 {
+    let a = Bytes.fromString(s)
+    let b = Bytes.fromString(needle)
+    if b.count == 0 {
+        0
+    } else {
+        if b.count > a.count {
+            0 - 1
+        } else {
+            mut found = 0 - 1
+            mut i = 0
+            let last = a.count - b.count
+            loop {
+                if i > last {
+                    break
+                }
+                mut j = 0
+                mut ok = true
+                loop {
+                    if j >= b.count {
+                        break
+                    }
+                    if a.get(i + j) != b.get(j) {
+                        ok = false
+                        break
+                    }
+                    j = j + 1
+                }
+                if ok {
+                    found = i
+                    break
+                }
+                i = i + 1
+            }
+            found
+        }
+    }
+}
+
 export fn dropPrefix(s!: String, prefix!: String) -> String {
     let a = Bytes.fromString(s)
     let n = Bytes.fromString(prefix).count

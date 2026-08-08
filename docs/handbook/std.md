@@ -18,7 +18,7 @@ import { branch } from "std/Git"
 | `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts |
 | `Fallible` | Surface source for ambient `May` / `Trial` / `Has` / `Not` / `Pass` / `Fail` (compiler injects; no `import` needed) |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
-| `Str` | `startsWith`, `endsWith`, `isEmpty`, `contains`, `dropPrefix`, `dropSuffix`, `trimNewline` |
+| `Str` | `startsWith`, `endsWith`, `isEmpty`, `contains`, `indexOf`, `dropPrefix`, `dropSuffix`, `trimNewline` |
 | `Path` | `dirname`, `basename`, `join`, `isAbsolute`, `extension`, `stem`, `cwd`, `shortPath`, `cwdShort` |
 | `Ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
 | `Env` | `getenv`, `hasEnv`, `localHms`, `hostname`, `userName` |
