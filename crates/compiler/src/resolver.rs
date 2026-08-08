@@ -340,6 +340,8 @@ impl<'a> Resolver<'a> {
                     None
                 }
             }
+            // `let q = p.moved()` — method return type as value hint.
+            ExprKind::MethodCall { .. } => self.receiver_ty_hint(init, scope),
             _ => None,
         }
     }
@@ -358,6 +360,20 @@ impl<'a> Resolver<'a> {
                 } else {
                     None
                 }
+            }
+            // `p.moved().x` — return type of linked method is the next receiver type.
+            ExprKind::MethodCall {
+                receiver, method, ..
+            } => {
+                let recv_ty = self.receiver_ty_hint(receiver, scope)?;
+                let mid = self.member_id(&recv_ty, method)?;
+                self.res.bindings.get(&mid)?.ty_hint.clone()
+            }
+            // `p.pos.x` if pos is a field with type hint (field bindings may carry ty_hint).
+            ExprKind::Field { base, name, .. } => {
+                let recv_ty = self.receiver_ty_hint(base, scope)?;
+                let fid = self.member_id(&recv_ty, name)?;
+                self.res.bindings.get(&fid)?.ty_hint.clone()
             }
             _ => None,
         }
@@ -483,19 +499,27 @@ impl<'a> Resolver<'a> {
 
     fn declare_members(&mut self, td: &ast::TypeDef) {
         for p in &td.params {
-            self.member_binding(&td.name, &p.name, BindingKind::Field, p.name_span, false);
+            let id =
+                self.member_binding(&td.name, &p.name, BindingKind::Field, p.name_span, false);
+            self.set_ty_hint(id, Self::simple_type_name(&p.ty));
         }
         for f in &td.fields {
-            self.member_binding(&td.name, &f.name, BindingKind::Field, f.name_span, false);
+            let id =
+                self.member_binding(&td.name, &f.name, BindingKind::Field, f.name_span, false);
+            self.set_ty_hint(id, Self::simple_type_name(&f.ty));
         }
         for m in &td.methods {
-            self.member_binding(
+            let id = self.member_binding(
                 &td.name,
                 &m.name,
                 BindingKind::Method,
                 m.name_span,
                 m.exported,
             );
+            // Method bindings store return type as ty_hint for chain nav.
+            if let Some(ret) = &m.return_type {
+                self.set_ty_hint(id, Self::simple_type_name(ret));
+            }
         }
     }
 
@@ -1056,12 +1080,14 @@ mod tests {
         let src = "\
 type Point(x: Int64) {
   export fn len() -> Int64 { x }
+  export fn moved() -> Point { Point(x: x + 1) }
 }
 fn main() -> Int64 {
-  let p = Point(1)
+  let p = Point(x: 1)
   p.len()
   let q: Point = p
   q.x
+  p.moved().x
 }
 ";
         let res = resolve_ok(src);
@@ -1075,7 +1101,7 @@ fn main() -> Int64 {
         assert!(members.iter().any(|m| m.name == "x" && m.kind == BindingKind::Field));
         assert!(members.iter().any(|m| m.name == "len" && m.kind == BindingKind::Method));
         // method call linked via ctor ty_hint
-        let len_call = src.rfind("len").unwrap();
+        let len_call = src.find("p.len()").unwrap() + 2;
         let p = byte_to_position(src, len_call);
         let r = res.ref_at(src, p.line, p.character).expect("len ref");
         assert_eq!(r.ctx, RefCtx::Member);
@@ -1084,12 +1110,20 @@ fn main() -> Int64 {
         assert_eq!(b.name, "len");
         assert_eq!(b.owner.as_deref(), Some("Point"));
         // field access on annotated binding
-        let x_use_main = src.rfind("q.x").unwrap() + 2;
+        let x_use_main = src.find("q.x").unwrap() + 2;
         let p = byte_to_position(src, x_use_main);
         let r = res.ref_at(src, p.line, p.character).expect("q.x ref");
         let b = res.binding_of(Some(r)).expect("field linked");
         assert_eq!(b.kind, BindingKind::Field);
         assert_eq!(b.name, "x");
+        // chain: p.moved().x — trailing field linked via method return ty_hint
+        let chain_x = src.rfind(".x").unwrap() + 1;
+        let p = byte_to_position(src, chain_x);
+        let r = res.ref_at(src, p.line, p.character).expect("chain .x");
+        let b = res.binding_of(Some(r)).expect("chain field");
+        assert_eq!(b.kind, BindingKind::Field);
+        assert_eq!(b.name, "x");
+        assert_eq!(b.owner.as_deref(), Some("Point"));
         // field use in method body binds to field
         let x_use = src.find("{ x }").unwrap() + 2;
         let p = byte_to_position(src, x_use);

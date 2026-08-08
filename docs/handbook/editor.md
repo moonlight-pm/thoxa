@@ -23,7 +23,7 @@ language server (grammar color changes may need a full quit/restart).
 | Syntax color | Tree-sitter Thoxa grammar |
 | Hover | Signature + contiguous `##` docs |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
-| Go-to-def / hover on methods | Linked when receiver has a type hint (annotation or `Type(...)` init) |
+| Go-to-def / hover on methods | Linked when receiver has a type hint (annotation, `Type(...)` init, or **method-return chain** like `p.moved().x`) |
 | Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk |
 | References | Local file + **open buffers** that selective-import the export; import uses also list defining module |
 | Rename | Local + **open buffers** selective-import renames when renaming an export |

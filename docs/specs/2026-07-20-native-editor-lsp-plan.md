@@ -3,7 +3,8 @@
 **Date:** 2026-07-20  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** MIR lower on shared resolver; broader package intelligence; multi-file refs/rename only among open buffers (not full workspace disk scan); typed-member incomplete for chains / no-hint receivers  
+**Gaps:** MIR lower on shared resolver; broader package intelligence; multi-file refs/rename only among open buffers (not full workspace disk scan); typed-member incomplete for no-hint / generic-return receivers  
+
 
 
 
