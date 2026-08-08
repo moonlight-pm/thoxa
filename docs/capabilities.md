@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-08 (union match guards D120; editor residuals closed)
+**As of:** 2026-08-08 (workspace/symbol package intelligence)
 
 ---
 
@@ -96,7 +96,8 @@ change. See [`progress-model.md`](progress-model.md).
 |----|------------|--------|------|--------------|------|----------|
 | check-source | Typecheck API + overlays | shipped | unit / LSP | D71–D79 | — | yes |
 | lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1 | Multi-diag: bodies, type-reg, lex, parse (top-level + **mid-block** + type-body recovery; nested multi flattened) | yes |
-| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member: ctor/method/fn/type-param/generic, copy-let, match payload, if/block/**match/global** inits; residual rare untyped exprs; package-tree disk refs/rename | partial |
+| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; residual rare untyped exprs | partial |
+| lsp-workspace | `workspace/symbol` package search | shipped | unit | editor plan | Open buffers + package-tree disk (Main.thx/`.git` root); query substring; cap 100 | yes |
 | lsp-xmodule | Cross-module jump (`./` `~/` / `std/`) | partial | unit | D78 | `std/` go-to-def covered; open buffer wins over disk | partial |
 | tree-sitter-zed | Grammar + Zed extension extras | shipped | `cargo make zed` | editor plan | Not full IDE | yes |
 | mir-on-resolver | MIR lower on shared resolver | planned | — | editor plan | **Deferred architecture** (PR5 resolver ships for LSP; MIR still own env — not polish residual) | no |

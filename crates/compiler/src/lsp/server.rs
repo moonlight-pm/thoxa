@@ -9,7 +9,7 @@ use crate::lsp::crossmodule::{self, resolve_remote};
 use crate::lsp::index::{self, build_index, DocumentIndex};
 use crate::lsp::protocol::{read_message, write_message};
 use crate::resolver::BindingKind;
-use crate::span;
+use crate::span::{self, Span};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -101,6 +101,7 @@ impl Server {
                 Some("textDocument/references") => self.references(&params),
                 Some("textDocument/hover") => self.hover(&params),
                 Some("textDocument/documentSymbol") => self.document_symbol(&params),
+                Some("workspace/symbol") => self.workspace_symbol(&params),
                 Some("textDocument/prepareRename") => self.prepare_rename(&params),
                 Some("textDocument/rename") => self.rename(&params),
                 Some(other) => {
@@ -152,6 +153,7 @@ impl Server {
                 "declarationProvider": true,
                 "referencesProvider": true,
                 "documentSymbolProvider": true,
+                "workspaceSymbolProvider": true,
                 "hoverProvider": true,
                 "renameProvider": { "prepareProvider": true },
             },
@@ -394,6 +396,52 @@ impl Server {
                 children,
             ));
         }
+        Value::Array(out)
+    }
+
+    /// Package-wide symbol search: open buffers + package-tree disk `.thx`.
+    fn workspace_symbol(&self, params: &Value) -> Value {
+        let query = params["query"].as_str().unwrap_or("").to_lowercase();
+        let mut out: Vec<Value> = Vec::new();
+        let mut seen_paths: HashSet<String> = HashSet::new();
+
+        // Open buffers first (may be unsaved).
+        for (uri, text) in &self.docs {
+            let path = convert::check_filename(uri);
+            seen_paths.insert(path.clone());
+            collect_workspace_symbols(uri, text, &path, &query, &mut out);
+            if out.len() >= WORKSPACE_SYMBOL_LIMIT {
+                return Value::Array(out);
+            }
+        }
+
+        // Package-tree disk modules under each open file's package walk root.
+        for uri in self.docs.keys() {
+            let path = PathBuf::from(convert::check_filename(uri));
+            for p in package_disk_thx_files(&path) {
+                let path_s = p.to_string_lossy().into_owned();
+                if seen_paths.contains(&path_s) {
+                    continue;
+                }
+                let already = self.docs.keys().any(|u| {
+                    let op = convert::check_filename(u);
+                    crossmodule::paths_equal_public(Path::new(&op), &p)
+                });
+                if already {
+                    continue;
+                }
+                seen_paths.insert(path_s.clone());
+                let Ok(text) = fs::read_to_string(&p) else {
+                    continue;
+                };
+                let file_uri = convert::path_to_uri(&path_s);
+                collect_workspace_symbols(&file_uri, &text, &path_s, &query, &mut out);
+                if out.len() >= WORKSPACE_SYMBOL_LIMIT {
+                    return Value::Array(out);
+                }
+            }
+        }
+
         Value::Array(out)
     }
 
@@ -661,6 +709,123 @@ fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
 
 /// Cap on disk `.thx` files visited for multi-file refs/rename (avoid home-tree scans).
 const PACKAGE_DISK_THX_LIMIT: usize = 256;
+
+/// Cap on workspace/symbol results.
+const WORKSPACE_SYMBOL_LIMIT: usize = 100;
+
+/// Collect module-level (and type member) symbols matching `query` (case-insensitive
+/// substring; empty query matches all). Appends to `out` up to [`WORKSPACE_SYMBOL_LIMIT`].
+fn collect_workspace_symbols(
+    uri: &str,
+    text: &str,
+    path: &str,
+    query: &str,
+    out: &mut Vec<Value>,
+) {
+    if out.len() >= WORKSPACE_SYMBOL_LIMIT {
+        return;
+    }
+    let idx = match catch_unwind(AssertUnwindSafe(|| build_index(text, path))) {
+        Ok(i) => i,
+        Err(_) => return,
+    };
+    if !idx.ok {
+        return;
+    }
+    let container = Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    for b in idx.resolution.module_definitions() {
+        if out.len() >= WORKSPACE_SYMBOL_LIMIT {
+            return;
+        }
+        // Prefer real product symbols: skip pure import re-exports as container-less noise.
+        if !matches!(
+            b.kind,
+            BindingKind::Fn
+                | BindingKind::Extern
+                | BindingKind::Type
+                | BindingKind::Let
+                | BindingKind::Mut
+        ) {
+            continue;
+        }
+        let Some(sel) = b.def_span else { continue };
+        if !query.is_empty() && !b.name.to_lowercase().contains(query) {
+            // Still check type members below.
+            if b.kind == BindingKind::Type {
+                for m in idx.resolution.members_of(&b.name) {
+                    if out.len() >= WORKSPACE_SYMBOL_LIMIT {
+                        return;
+                    }
+                    if !query.is_empty() && !m.name.to_lowercase().contains(query) {
+                        continue;
+                    }
+                    let Some(ms) = m.def_span else { continue };
+                    out.push(workspace_symbol_info(
+                        &m.name,
+                        m.kind,
+                        uri,
+                        text,
+                        ms,
+                        &b.name,
+                    ));
+                }
+            }
+            continue;
+        }
+        out.push(workspace_symbol_info(
+            &b.name,
+            b.kind,
+            uri,
+            text,
+            sel,
+            &container,
+        ));
+        if b.kind == BindingKind::Type {
+            for m in idx.resolution.members_of(&b.name) {
+                if out.len() >= WORKSPACE_SYMBOL_LIMIT {
+                    return;
+                }
+                if !query.is_empty() && !m.name.to_lowercase().contains(query) {
+                    continue;
+                }
+                let Some(ms) = m.def_span else { continue };
+                out.push(workspace_symbol_info(
+                    &m.name,
+                    m.kind,
+                    uri,
+                    text,
+                    ms,
+                    &b.name,
+                ));
+            }
+        }
+    }
+}
+
+fn workspace_symbol_info(
+    name: &str,
+    kind: BindingKind,
+    uri: &str,
+    text: &str,
+    def_span: Span,
+    container: &str,
+) -> Value {
+    let range = span::span_to_range(text, def_span);
+    json!({
+        "name": name,
+        "kind": convert::symbol_kind(kind),
+        "location": {
+            "uri": uri,
+            "range": convert::range_to_json(range),
+        },
+        "containerName": container,
+    })
+}
 
 /// Nearest package-ish root above `export_path`: ancestor with `Main.thx` or `.git`,
 /// else the export's parent directory (same-dir fallback).
@@ -1236,11 +1401,97 @@ fn main() -> Int64 {
         let msgs = exchange(&[json!({
             "jsonrpc": "2.0",
             "id": 9,
-            "method": "workspace/symbol",
+            "method": "workspace/didChangeConfiguration",
             "params": {}
         })]);
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0]["error"]["code"], METHOD_NOT_FOUND);
+    }
+
+    #[test]
+    fn workspace_symbol_open_buffer_and_disk() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa_lsp_wsym_{}_{}",
+            std::process::id(),
+            ns
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let lib = dir.join("lib");
+        fs::create_dir_all(&lib).unwrap();
+        let helper = lib.join("Helper.thx");
+        fs::write(
+            &helper,
+            "export fn answer() -> Int64 { 42 }\nexport type Point(x: Int64)\n",
+        )
+        .unwrap();
+        let main = dir.join("Main.thx");
+        let main_src =
+            "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
+        fs::write(&main, main_src).unwrap();
+        let main_uri = convert::path_to_uri(&main.to_string_lossy());
+
+        // Only Main open — Helper is on disk under package tree.
+        let msgs = exchange(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": main_uri,
+                        "languageId": "thoxa",
+                        "version": 1,
+                        "text": main_src
+                    }
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "workspace/symbol",
+                "params": { "query": "ans" }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "workspace/symbol",
+                "params": { "query": "Point" }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "workspace/symbol",
+                "params": { "query": "main" }
+            }),
+        ]);
+
+        let ans = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let arr = ans["result"].as_array().expect("symbol array");
+        assert!(
+            arr.iter().any(|s| s["name"] == "answer"),
+            "expected answer from disk Helper: {arr:?}"
+        );
+
+        let pt = msgs.iter().find(|m| m.get("id") == Some(&json!(3))).unwrap();
+        let arr = pt["result"].as_array().expect("Point symbols");
+        assert!(
+            arr.iter().any(|s| s["name"] == "Point"),
+            "expected Point type: {arr:?}"
+        );
+
+        let mn = msgs.iter().find(|m| m.get("id") == Some(&json!(4))).unwrap();
+        let arr = mn["result"].as_array().expect("main symbols");
+        assert!(
+            arr.iter().any(|s| s["name"] == "main"),
+            "expected main from open buffer: {arr:?}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

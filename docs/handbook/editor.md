@@ -28,6 +28,7 @@ language server (grammar color changes may need a full quit/restart).
 | References | Local file + open buffers + **package-tree `.thx` on disk** (under nearest `Main.thx` / `.git` root; same-dir fallback) that selective-import the export |
 | Rename | Local + open buffers + **package-tree disk** selective-import renames when renaming an export |
 | Document symbols | Outline |
+| Workspace symbols | `workspace/symbol` — search open buffers + package-tree `.thx` (same root walk as multi-file refs) |
 | Open buffers | Overlay wins over disk for package check |
 
 Library buffers without `main` typecheck as libraries (no false “requires main”).

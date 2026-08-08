@@ -45,8 +45,8 @@ HTTP plan (historical): [`specs/2026-07-19-post-r9-http-completion-plan.md`](spe
 - Navigation: hover, definition, references, outline, rename; cross-module jump.
 
 **Remaining:** MIR on shared resolver (**deferred architecture**); rare typed-member
-untyped-expr edges; broader package intelligence beyond package-tree refs/rename.
-Phase 2 nav multi-diag polish treated as done for v0.
+untyped-expr edges; multi-root workspace folders if forced. Package-tree
+refs/rename + **`workspace/symbol`** shipped.
 
 Freeze: [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md)
 

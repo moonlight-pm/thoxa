@@ -3,7 +3,7 @@
 **Date:** 2026-07-20  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** MIR lower on shared resolver (**deferred architecture**, not phase-2 polish); broader package intelligence; package-tree disk refs/rename (capped). Nav multi-diag + typed-member stack shipped for v0 polish (rare untyped exprs remain).  
+**Gaps:** MIR lower on shared resolver (**deferred architecture**, not phase-2 polish); package-tree walk still capped (not arbitrary home-tree / multi-root folders). **Shipped:** nav multi-diag, typed-member stack, package-tree refs/rename, **`workspace/symbol`** package search.  
 
 
 
