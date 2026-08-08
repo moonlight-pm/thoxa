@@ -1,7 +1,7 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
 import { startsWith, endsWith, isEmpty, repeat, contains, indexOf, dropPrefix, dropSuffix, trimNewline } from "std/Str"
 import { dirname, basename, join, isAbsolute, normalize, extension, stem, shortPath } from "std/Path"
-import { hasEnv } from "std/Env"
+import { hasEnv, getenvOr } from "std/Env"
 import { branchName, branchSuffix } from "std/Git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 
@@ -71,6 +71,7 @@ fn main() -> Int64 {
     } else {
         println("missing-env-ok")
     }
+    println(getenvOr("THOXA_NO_SUCH_ENV_VAR_ZZZ", "fallback"))
     ## Deterministic Git helpers (no real repo required).
     if branchName("") == "" {
         println("git-empty-ok")

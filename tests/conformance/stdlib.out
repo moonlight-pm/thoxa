@@ -26,6 +26,7 @@ foo
 foo/bar
 path-env-ok
 missing-env-ok
+fallback
 git-empty-ok
 git-miss-ok
 git-suf-ok
