@@ -105,5 +105,6 @@ printf 'echo hi\nexit\n' | cargo run -p thoxa --
 
 - “Next item” / “next rung” → first open item under **Now**, one slice.  
 - Do not re-walk the tree or re-derive the ladder at session start.  
-- Do not commit unless the user asks.  
+- **After each finished checklist / product slice:** update progress docs,
+  then **commit and push** (user standing order).  
 - Prefer small diffs; don’t drive-by-refactor unrelated surfaces.  
