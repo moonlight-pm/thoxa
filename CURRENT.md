@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-08 (D106–D119; sum ladder in progress)
+**As of:** 2026-08-08 (D106–D119; sum/fallible ladder largely shipped)
 
 ---
 
@@ -12,18 +12,16 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **Session / shell is parked** (core + libtcc shipped). Default product work is
 **language kernel depth** — one capability gap at a time, with conformance.
-**Shipped:** D106–D117; **D118 partial** (user unions).
+**Shipped:** D106–D119; **D118** user unions + generics + **May/Trial prelude**
+cutover (conformance full green).
 
-**In progress:** sum types (D118–D119) + **May/Trial prelude cutover** —
-ambient `Has`/`Not`/`May`/`Pass`/`Fail`/`Trial` as generic unions; core
-gates green (`mays`, `trials*`, `sums_*`, file I/O). **Next:** fix residual
-RC crashes in `http*` / nested heap+Trial paths; then handbook.
+**In progress:** sum/fallible polish — dead `Ty::May`/`Trial` cgen cleanup;
+generic methods; residual type-arg rewrap edge cases only if forced.
 Freeze: [`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
 
 ### Proceed order
 
-1. **Language** — continue **sum/fallible ladder** (freeze above) one step at a
-   time; full May/Trial cutover when prelude step ships.  
+1. **Language** — sum/fallible polish or next CURRENT gap; not a free redesign.  
    Also: session residual / editor only if CURRENT reprioritizes.
 2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:

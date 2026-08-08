@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-05 (session-libtcc)
+**As of:** 2026-08-08 (sum types + May/Trial prelude)
 
 ---
 
@@ -28,8 +28,8 @@ step `.so` on the happy path.
 |-------|----------|--------|
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` / `emit-c` / `lsp` / bare REPL |
 | Frontend | `lexer`, `parser`, `ast`, `resolver` | Shared resolver used by LSP |
-| MIR | `mir.rs` | Simple single-threaded RC (dup/drop) |
-| Cgen | `cgen.rs` | Emits C under `target/thoxa/c/`; session combined TU for libtcc |
+| MIR | `mir.rs` | RC; generic monomorphs; ambient Fallible prelude inject (D118) |
+| Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
 | libtcc | `tcc.rs` + `build.rs` + `third_party/tinycc` | Vendored TinyCC; memory compile |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
@@ -43,10 +43,15 @@ step `.so` on the happy path.
 | `crates/make` | xtask (`cargo make …`) |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `third_party/tinycc` | Vendored TinyCC sources (session steps only) |
-| `std/` | Product standard library (`std/…` import root) |
+| `std/` | Product std (`Shell.thx`, `Fallible.thx` surface, …) |
 | `tests/conformance/` | `.thx` + `.out` gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
 | `apocrypha/` | Historical + Python oracle |
+
+**Ambient Fallible:** `Has` / `Not` / `May` / `Pass` / `Fail` / `Trial` are
+injected into every package at lower time (source of truth also in
+`std/Fallible.thx`). They lower as ordinary generic unions, not separate
+`Ty::May` / `Ty::Trial` layouts.
 
 ## Session execution (as-built)
 

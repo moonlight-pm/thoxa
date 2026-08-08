@@ -29,7 +29,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D118 | Sum types + general `?` | TS-leaning unions; arm marks `!`/`?`; May/Trial as prelude generics | **Mostly shipped:** unions + marks + generics + ambient `May`/`Trial` prelude cutover. Gates: `sums_*`, `mays`, `trials*`. **Gaps:** http* RC. **Identity → D119.** Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
+| D118 | Sum types + general `?` | TS-leaning unions; arm marks `!`/`?`; May/Trial as prelude generics | **Shipped:** unions + marks + generics + ambient `May`/`Trial` prelude cutover; cross-module residual rewrap. Gates: `sums_*`, `mays`, `trials*`, `http_*`. **Identity → D119.** Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
 
 ## 2026-08-07 — Fixed Array locals
 
@@ -137,7 +137,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D85 | `May<T>` builtin | Parallel to Trial: `Has(x)` / `Not()`; monomorph C struct `tag` + optional `value`; match `Has(v)` / `Not`; `?` unwraps Has or returns Not from `-> May<…>` | Payload set same as Trial ok; **nested Array/May → D113**. **No** inferred fallible returns or May↔Trial `?` mixing. `Not` pattern is nullary (no parens); construct with `Not()`. |
+| D85 | `May<T>` | Surface `Has(x)` / `Not()`; match / `?` | **Refined by D118:** ambient prelude union `May<T> = Has<T!> \| Not?` (not a separate builtin layout). Nested Array/May → D113. No May↔Trial `?` mixing. |
 | D46′ | `Bytes.find` | `find(needle[, from]) -> May<Int64>` | **Supersedes D46** (`-1` sentinel). Runtime still returns -1; MIR wraps to `Has(i)` / `Not`. Empty needle → `Has(from)` (in range); missing → `Not`. Conformance: `mays`, `bytes`; Http call sites match. |
 
 ## 2026-07-20 — Optional empty type body
@@ -303,11 +303,11 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D40 | Trial representation | `Ty::Trial { ok, err }` monomorphized C structs | Fields: `tag` + optional `ok`/`err` (omitted when Void) |
+| D40 | Trial representation | Was `Ty::Trial` monomorph C structs | **Refined by D118:** ambient prelude `Trial<P,F> = Pass<P!> \| Fail<F?>` (tagged user union monomorphs) |
 | D41 | Trial payloads | Void, ints, Bool, String, Bytes, User | **Array + May → D113**; **nested Trial → D114**; Address still deferred |
-| D42 | Pass/Fail typing | Prefer enclosing `-> Trial<…>` annotation | Legacy unannotated Pass/Fail(Int) → `Trial<Int64,Int64>` |
-| D43 | `?` across monomorphs | Same `E`; rewrap `Fail(e)` into outer `Trial<Ok',E>` | Allows `createSocket()?` inside `-> Trial<Void,String>` |
-| D44 | Trial RC | Dup live heap side on copy; drop live side on drop | Zero-init trial locals so branch-skipped drops are safe |
+| D42 | Pass/Fail typing | Prefer enclosing `-> Trial<…>` annotation | Unannotated Pass/Fail(Int) still infers `Trial<Int64,Int64>` when that mono exists |
+| D43 | `?` across monomorphs | Same residual payload; rewrap into outer Trial/May | Cross-module Fail monomorphs rebuild by arm name (D118) |
+| D44 | Trial RC | Dup live heap side on copy; drop live side on drop | Sum-aware `emit_rc`; `assign_no_drop` for sum-payload temps |
 | D45 | Wire conformance | One-shot listen/connect/accept/recv/send | Ephemeral port via `getsockname`; no infinite accept loop |
 | D46 | `Bytes.find` | Was Int64 / `-1` if missing | **Superseded by D46′ / D85** — now `May<Int64>` |
 
@@ -409,7 +409,7 @@ Revisit D17 with Buffer / growable-buffer design; revisit D18 when more factorie
 |----|----------|--------|-------|
 | D1 | Growth model | Example ladder toward HTTP | Small kernel first |
 | D2 | Algebraic effects | Deferred | Revisit with async; may later interact with general `?` (D118) |
-| D3 | Error model | `May`/`Trial` + force-to-deal | Not effect-`exn`. **Target refinement (D118):** May/Trial as prelude unions + general `?` via type marks — freeze `2026-08-07-sum-types-and-fallible` |
+| D3 | Error model | `May`/`Trial` + force-to-deal | Not effect-`exn`. **D118 shipped:** May/Trial as ambient prelude unions + general `?` via type marks — freeze `2026-08-07-sum-types-and-fallible` |
 | D4 | Value model | Hybrid (A) | Unboxed scalars; inline small sums; RC heap; C-layout FFI structs |
 | D5 | Phase A backend | Compile-to-C | No QBE yet |
 | D6 | Compiler host | Rust under `crates/compiler` | |

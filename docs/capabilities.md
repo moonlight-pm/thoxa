@@ -21,9 +21,9 @@ change. See [`progress-model.md`](progress-model.md).
 |----|------------|--------|------|--------------|------|----------|
 | driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | none for v0 | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
-| trial | `Trial` + `match` + `?` as prelude unions | partial | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial` | D40–D45, D113–D114, D118 | **Prelude cutover:** `Pass`/`Fail`/`Trial` are ambient generics (not Ty::Trial). **Gaps:** RC crashes in some `http*` paths with nested heap | yes |
-| may | `May` / `Has` / `Not` + `?` as prelude unions | partial | `mays`, `trials_nested`, `trials_nested_trial` | D85, D113–D114, D118 | **Prelude cutover:** ambient `Has`/`Not`/`May` generics. Nested ok. **Gaps:** same http* RC residual | yes |
-| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | partial | `sums_*`, `sums_generic` | D118–D119; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Full ladder through generics + May/Trial as prelude unions. **Gaps:** http* RC; handbook update; remove dead Ty::May/Trial cgen | no |
+| trial | `Trial` + `match` + `?` as prelude unions | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118 | Ambient `Pass`/`Fail`/`Trial` generics; cross-module residual rewrap | yes |
+| may | `May` / `Has` / `Not` + `?` as prelude unions | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118 | Ambient `Has`/`Not`/`May` generics; nested ok | yes |
+| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | partial | `sums_*`, `sums_generic` | D118–D119; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Ladder through generics + May/Trial prelude. **Gaps:** generic methods; remove dead Ty::May/Trial cgen paths | yes |
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |

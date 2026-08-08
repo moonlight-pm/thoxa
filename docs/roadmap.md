@@ -93,12 +93,14 @@ Freezes:
 - ~~Default-arg defining-module scope~~ (**D116** shipped)
 - ~~First-class fixed Array locals~~ (**D117** shipped)
 
+- ~~Sum types + general fallibility (D118–D119)~~ — user unions, generics,
+  pure-lit scalar, **May/Trial prelude cutover** shipped (freeze
+  [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md);
+  polish: generic methods, dead builtin cgen paths)
+
 **Horizon / deferred until CURRENT says so:**
 
 - Perceus / precise RC
-- **Sum types + general fallibility** — freeze accepted:
-  [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md)
-  (implement when CURRENT schedules ladder steps)
 - Named `ffi` root
 - Algebraic effects (only when forced; may later interact with `?`)
 

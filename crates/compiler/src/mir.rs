@@ -2983,6 +2983,7 @@ fn insert_function_drops(
     }
 }
 
+#[allow(dead_code)] // kept for diagnostics / possible end-of-fn collect restore
 fn collect_drop_places(stmts: &[Stmt], out: &mut Vec<(String, Ty)>) {
     for s in stmts {
         match s {
@@ -5444,54 +5445,31 @@ fn lower_try_sum(
     let outer = std::mem::take(&mut ctx.stmts);
     // then: residual → return (same type or rewrap into fn_ret)
     let mut then_body = Vec::new();
-    let mut drops = Vec::new();
-    for (n, ty) in &ctx.drop_places {
-        if n != &scrut_p.name {
-            drops.push(Stmt::Drop {
-                place: Place { name: n.clone() },
-                ty: ty.clone(),
-            });
-        }
-    }
-    then_body.extend(drops);
     if same_ret {
-        then_body.push(Stmt::Return {
-            value: Some(scrut_p.clone()),
-        });
+        // Move scrut out as the return value; drop other locals first.
+        append_return_with_drops(
+            &mut then_body,
+            &ctx.drop_places,
+            Some(scrut_p.clone()),
+            &scrut_ty,
+        );
     } else {
         // Rewrap residual arm into enclosing Trial/May monomorph (historical Trial ?).
+        // Cross-module monomorphs of Fail/Not may differ by name; match residual by arm
+        // name and rebuild the target residual product from extracted field(s).
         let saved = std::mem::take(&mut ctx.stmts);
         ctx.stmts = then_body;
-        let payload = if residual_arm.ty != Ty::Void {
-            let pp = ctx.fresh("rpay");
-            ctx.assign_no_drop(
-                pp.clone(),
-                residual_arm.ty.clone(),
-                RValue::SumPayload {
-                    base: scrut_p.clone(),
-                    tag: residual_tag,
-                    payload_ty: residual_arm.ty.clone(),
-                },
-            );
-            if needs_drop(&residual_arm.ty) {
-                ctx.stmts.push(Stmt::Dup {
-                    place: pp.clone(),
-                    ty: residual_arm.ty.clone(),
-                });
-            }
-            pp
-        } else {
-            let dummy = ctx.fresh("rvoid");
-            ctx.assign(dummy.clone(), Ty::Int64, RValue::Int(0));
-            dummy
-        };
-        let (inj, _) =
-            inject_into_union(ctx, payload, &residual_arm.ty, &fn_ret, span)?;
+        let inj = rewrap_residual_into(
+            ctx,
+            &scrut_p,
+            residual_tag,
+            &residual_arm,
+            &fn_ret,
+            span,
+        )?;
         then_body = std::mem::take(&mut ctx.stmts);
         ctx.stmts = saved;
-        then_body.push(Stmt::Return {
-            value: Some(inj),
-        });
+        append_return_with_drops(&mut then_body, &ctx.drop_places, Some(inj), &fn_ret);
     }
 
     // else: extract success
@@ -7728,6 +7706,118 @@ fn inject_into_union(
         format!("cannot inject {from:?} into {union:?}"),
         span,
     ))
+}
+
+/// Rewrap a residual arm into another residual-marked union (possibly different module mono).
+fn rewrap_residual_into(
+    ctx: &mut LowerCtx,
+    scrut_p: &Place,
+    residual_tag: u32,
+    residual_arm: &SumVariant,
+    fn_ret: &Ty,
+    span: Span,
+) -> Result<Place> {
+    let target_arm_ty = union_arm_payload(&ctx.types, fn_ret, &residual_arm.name).ok_or_else(|| {
+        Error::at(
+            format!(
+                "`?` residual arm `{}` is not present on enclosing return type {fn_ret:?}",
+                residual_arm.name
+            ),
+            span,
+        )
+    })?;
+
+    // Nullary residual (Not).
+    if residual_arm.ty == Ty::Void || matches!(&target_arm_ty, Ty::User(n) if ctx.types.get(n).map(|i| i.fields.is_empty()).unwrap_or(false)) {
+        let Ty::User(tname) = &target_arm_ty else {
+            return Err(Error::at("internal: residual target not a product", span));
+        };
+        let (atom, aty) = construct_product(ctx, tname, &[], span)?;
+        let (inj, _) = inject_into_union(ctx, atom, &aty, fn_ret, span)?;
+        return Ok(inj);
+    }
+
+    // Product residual (Fail(error), …): extract fields, rebuild target mono product.
+    let src_prod = ctx.fresh("rpay");
+    ctx.assign_no_drop(
+        src_prod.clone(),
+        residual_arm.ty.clone(),
+        RValue::SumPayload {
+            base: scrut_p.clone(),
+            tag: residual_tag,
+            payload_ty: residual_arm.ty.clone(),
+        },
+    );
+
+    // Fast path: same product type monomorph.
+    if residual_arm.ty == target_arm_ty {
+        let (inj, _) = inject_into_union(ctx, src_prod, &residual_arm.ty, fn_ret, span)?;
+        return Ok(inj);
+    }
+
+    let Ty::User(src_n) = &residual_arm.ty else {
+        return Err(Error::at("internal: residual product not User", span));
+    };
+    let Ty::User(dst_n) = &target_arm_ty else {
+        return Err(Error::at("internal: residual target not User", span));
+    };
+    let src_info = ctx.types.get(src_n).cloned().ok_or_else(|| {
+        Error::at(format!("unknown residual type `{src_n}`"), span)
+    })?;
+    let dst_info = ctx.types.get(dst_n).cloned().ok_or_else(|| {
+        Error::at(format!("unknown residual target `{dst_n}`"), span)
+    })?;
+    if src_info.fields.len() != dst_info.fields.len() {
+        return Err(Error::at(
+            format!(
+                "cannot rewrap residual `{}`: field count mismatch",
+                residual_arm.name
+            ),
+            span,
+        ));
+    }
+    let mut field_places = Vec::new();
+    for (sf, df) in src_info.fields.iter().zip(dst_info.fields.iter()) {
+        if sf.ty != df.ty {
+            return Err(Error::at(
+                format!(
+                    "cannot rewrap residual `{}`: field `{}` type mismatch",
+                    residual_arm.name, sf.name
+                ),
+                span,
+            ));
+        }
+        if sf.ty == Ty::Void {
+            continue;
+        }
+        let fp = ctx.fresh("rf");
+        ctx.assign(
+            fp.clone(),
+            sf.ty.clone(),
+            RValue::Field {
+                base: src_prod.clone(),
+                field: sanitize_field(&sf.name),
+            },
+        );
+        if needs_drop(&sf.ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: fp.clone(),
+                ty: sf.ty.clone(),
+            });
+        }
+        field_places.push(fp);
+    }
+    let rebuilt = ctx.fresh("rprod");
+    ctx.assign_no_drop(
+        rebuilt.clone(),
+        target_arm_ty.clone(),
+        RValue::StructLit {
+            type_name: dst_n.clone(),
+            fields: field_places,
+        },
+    );
+    let (inj, _) = inject_into_union(ctx, rebuilt, &target_arm_ty, fn_ret, span)?;
+    Ok(inj)
 }
 
 fn lower_pass_fail(

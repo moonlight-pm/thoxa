@@ -21,9 +21,28 @@ Directory packages may use `Main.thx` as the entry file.
 | Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Bool`, `Void` |
 | Heap | `String` (interpolation), `Bytes`, growable `Buffer`, dynamic `Array<T>` |
 | User types | `type Name(fields) { methods }` — including heap fields; method field write-back |
+| Generics | `type Box<T>(value: T)`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
+| Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?` |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` (fields **and** locals) |
-| Errors | `Trial<Ok,Err>` / `May<T>` with `?` / `match`; ok/err may be Array, May, or nested Trial |
+| Errors | Ambient prelude `May<T>` / `Trial<Ok,Err>` with `?` / `match` (ok/err may nest) |
 | Equality | String `==` / `!=`; usual scalar compares |
+
+**Fallibility (ambient — no import):** same surface as always, now ordinary
+generic unions (`std/Fallible.thx` / compiler inject):
+
+```thx
+type Has<T>(value: T)
+type Not
+type May<T> = Has<T!> | Not?
+
+type Pass<T>(value: T)
+type Fail<E>(error: E)
+type Trial<P, F> = Pass<P!> | Fail<F?>
+```
+
+`?` unwraps the success extract or early-returns the residual (rewraps across
+compatible Trial monomorphs, including across modules). User unions with a
+residual mark use the same `?` operator.
 
 **Reference counting:** simple single-threaded RC (dup on copy, drop at function
 end). Precise RC / Perceus is **not** shipped.
@@ -31,11 +50,13 @@ end). Precise RC / Perceus is **not** shipped.
 ## Control flow
 
 `if`, `while`, `loop`, `for` (ranges and collections), `break`, `continue`,
-early `return` / `return expr`.
+early `return` / `return expr`. Branch values may inject into an expected union
+(`-> Outcome` / `let x: U = if …`).
 
 ## Match
 
-- **Trial / May:** `Pass(x)` / `Fail(e)`, `Has(x)` / `Not`, discard `_`.
+- **Trial / May / user unions:** constructor arms (`Pass(x)` / `Fail(e)`,
+  `Has(x)` / `Not`, custom tags), discard `_`.
 - **Value match:** String / Int64 / Bool **literal** arms, **or-patterns**
   (`0 | 1 { … }`), optional **`if` guards** on those arms, and a final
   catch-all: `else` or a **bare bind** (`n { … }` binds the scrutinee; bare

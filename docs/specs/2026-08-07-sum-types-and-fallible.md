@@ -1,12 +1,12 @@
 # Sum types, unions, and general fallibility (`?` / `!`)
 
 **Date:** 2026-08-07  
-**Status:** target (accepted product intent; **mostly implemented**)  
+**Status:** target (accepted product intent; **implemented** — polish remains)  
 **Implementation:** ladder §10 + **May/Trial prelude cutover** — ambient
 `Has`/`Not`/`May`/`Pass`/`Fail`/`Trial` as generic unions; monomorphs; residual
-`?` rewrap across Trial monomorphs (gates: `sums_*`, `mays`, `trials*`)  
-**Gaps:** RC crashes in `http_parse` / `http_server` / `http_wire` with nested
-heap; dead Ty::May/Trial cgen paths; handbook; generic methods (see §10)
+`?` rewrap (incl. cross-module Fail monomorphs). Gates green under
+`cargo make test` (`sums_*`, `mays`, `trials*`, `http_*`, file I/O).  
+**Gaps:** dead Ty::May/Trial cgen paths; generic methods (see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  
@@ -387,4 +387,4 @@ This freeze is **accepted product intent** when:
 | 2026-08-08 | Nested union aliases flatten; subset inject into outer (`sums_nested`) |
 | 2026-08-08 | Pure-literal unions as narrow scalar (Byte-up typedef; `sums_literal`) |
 | 2026-08-08 | Generic products/unions + monomorphization (`sums_generic`) |
-| 2026-08-08 | May/Trial prelude cutover (ambient Fallible generics; core gates green) |
+| 2026-08-08 | May/Trial prelude cutover (ambient Fallible generics; full conformance green) |

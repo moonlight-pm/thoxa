@@ -16,6 +16,7 @@ import { branch } from "std/Git"
 | Module | Role |
 |--------|------|
 | `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts |
+| `Fallible` | Surface source for ambient `May` / `Trial` / `Has` / `Not` / `Pass` / `Fail` (compiler injects; no `import` needed) |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `Str` | `startsWith`, `dropPrefix`, `trimNewline` |
 | `Path` | `dirname`, `basename`, `cwd`, `shortPath`, `cwdShort` |
@@ -35,9 +36,10 @@ hex → black SGR.
 
 ## Limits
 
-This is a **thin** library for session prompts and shared helpers — not a full
-prelude. Named **`ffi`** root is deferred. File I/O for programs often lives in
-conformance helpers (`iolib`) / free `readFile` rather than a large `std/Io`
+This is a **thin** library for session prompts and shared helpers. Fallibility
+types are ambient (no import). Named **`ffi`** root is deferred. File I/O for
+programs often lives in conformance helpers (`iolib`) / free `readFile` rather
+than a large `std/Io`
 yet.
 
 New helpers land when real samples need them — not via a free-floating
