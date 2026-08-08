@@ -574,7 +574,7 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
     let pad = "    ".repeat(indent);
     for s in stmts {
         match s {
-            Stmt::Assign { place, value, .. } => {
+            Stmt::Assign { place, ty, value, .. } => {
                 // User ArrayGet writes through out-param (not an expression).
                 // Drop any prior field ownership in `place` before overwrite (D65
                 // defensive: MIR usually Drop's or uses a zeroed fresh place).
@@ -616,6 +616,17 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                             e.name
                         );
                     }
+                } else if let (Ty::FixedArray { elem, len }, RValue::Use(src)) = (ty, value) {
+                    // Whole fixed-array copy (locals / temps): element loop, no C array assign.
+                    let _ = writeln!(out, "{pad}for (uint64_t _fa = 0; _fa < {len}; _fa++) {{");
+                    let _ = writeln!(
+                        out,
+                        "{pad}    {}[_fa] = ({}){}[_fa];",
+                        place.name,
+                        c_ty(elem.as_ref()),
+                        src.name
+                    );
+                    let _ = writeln!(out, "{pad}}}");
                 } else {
                     let _ = write!(out, "{pad}{} = ", place.name);
                     emit_rvalue(out, value, types);
@@ -629,6 +640,21 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                 value,
             } => {
                 let acc = recv_access(base);
+                if let Ty::FixedArray { elem, len } = ty {
+                    // Whole fixed-array field store (C arrays not assignable).
+                    let _ = writeln!(out, "{pad}for (uint64_t _fa = 0; _fa < {len}; _fa++) {{");
+                    let _ = writeln!(
+                        out,
+                        "{pad}    {}{}{}[_fa] = ({}){}[_fa];",
+                        base.name,
+                        acc,
+                        field,
+                        c_ty(elem.as_ref()),
+                        value.name
+                    );
+                    let _ = writeln!(out, "{pad}}}");
+                    continue;
+                }
                 // Heap field store: drop previous field ownership, then share
                 // `value` (MIR Dup keeps a live local when needed).
                 if is_heap_ty(ty) {

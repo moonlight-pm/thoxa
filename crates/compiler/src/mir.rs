@@ -756,24 +756,23 @@ impl LowerCtx {
                 name_span,
             ));
         }
-        let (place, ty) = lower_expr(self, value)?;
-        if ty != binding.ty {
+        let expect = binding.ty.clone();
+        let (place, ty) = lower_expr_expect(self, value, Some(&expect))?;
+        if ty != expect {
             return Err(Error::at(
-                format!(
-                    "cannot reassign `{name}`: expected {:?}, found {:?}",
-                    binding.ty, ty
-                ),
+                format!("cannot reassign `{name}`: expected {expect:?}, found {ty:?}"),
                 value.span,
             ));
         }
         let bound = binding.place.clone();
-        if needs_drop(&binding.ty) {
+        if needs_drop(&expect) {
             self.stmts.push(Stmt::Drop {
                 place: bound.clone(),
-                ty: binding.ty.clone(),
+                ty: expect.clone(),
             });
         }
         // Dup so the RHS temp and the binding both own (end-of-fn drops both).
+        // FixedArray: cgen copies element-wise on `Use` (C arrays are not assignable).
         self.assign(bound.clone(), ty.clone(), RValue::Use(place));
         // Write through receiver for method field bindings.
         if let Some((base, field)) = binding.writeback {
@@ -3594,14 +3593,9 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
                     *field_span,
                 ));
             }
-            if matches!(finfo.ty, Ty::FixedArray { .. }) {
-                return Err(Error::at(
-                    "cannot assign whole fixed array field (assign elements with [i])",
-                    *field_span,
-                ));
-            }
+            // Whole fixed-array field assign is allowed (element-wise copy in cgen).
             let field_ty = finfo.ty.clone();
-            let (v, vty) = lower_expr(ctx, value)?;
+            let (v, vty) = lower_expr_expect(ctx, value, Some(&field_ty))?;
             let v = coerce_to_field(ctx, v, &vty, &field_ty, value.span)?;
             ctx.stmts.push(Stmt::FieldAssign {
                 base: binding.place,
@@ -3818,6 +3812,12 @@ fn lower_expr_expect(
             expr.span,
             expect,
         );
+    }
+    // Fixed Array<T,N> from array literal when expected type is known (let/assign).
+    if let Some(Ty::FixedArray { elem, len }) = expect {
+        if let ExprKind::ArrayLit(elems) = &expr.kind {
+            return lower_fixed_array_lit(ctx, elems, elem.as_ref(), *len, expr.span);
+        }
     }
     match &expr.kind {
         ExprKind::Int(n) => {
@@ -4312,6 +4312,51 @@ fn lower_for_array(
     Ok(void_place(ctx))
 }
 
+fn lower_fixed_array_lit(
+    ctx: &mut LowerCtx,
+    elems: &[Expr],
+    elem: &Ty,
+    len: u64,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    if elems.len() as u64 != len {
+        return Err(Error::at(
+            format!(
+                "fixed Array length mismatch: expected {len}, found {}",
+                elems.len()
+            ),
+            span,
+        ));
+    }
+    if !is_abi_scalar(elem) {
+        return Err(Error::at(
+            format!("fixed Array element must be an ABI scalar, got {elem:?}"),
+            span,
+        ));
+    }
+    let mut places = Vec::new();
+    for e in elems {
+        let (p, ty) = lower_expr(ctx, e)?;
+        let p = coerce_to_field(ctx, p, &ty, elem, e.span)?;
+        places.push(p);
+    }
+    let arr_ty = Ty::FixedArray {
+        elem: Box::new(elem.clone()),
+        len,
+    };
+    let p = ctx.fresh("falit");
+    ctx.assign(
+        p.clone(),
+        arr_ty.clone(),
+        RValue::FixedArrayLit {
+            elems: places,
+            elem_ty: elem.clone(),
+            len,
+        },
+    );
+    Ok((p, arr_ty))
+}
+
 fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Place, Ty)> {
     if elems.is_empty() {
         // Untyped empty — bind site must supply Array<T> annotation.
@@ -4570,11 +4615,36 @@ fn lower_field(
                 .ok_or_else(|| {
                     Error::at(format!("no field `{name}` on `{type_name}`"), name_span)
                 })?;
-            if matches!(field_ty, Ty::FixedArray { .. }) {
-                return Err(Error::at(
-                    format!("fixed array field `{name}` must be indexed (e.g. `.{name}[i]`)"),
-                    name_span,
-                ));
+            // Whole fixed-array field load: copy into a local (C arrays not first-class).
+            if let Ty::FixedArray { elem, len } = &field_ty {
+                let mut places = Vec::new();
+                let field_c = sanitize_field(name);
+                for i in 0..*len {
+                    let ip = ctx.fresh("fai");
+                    ctx.assign(ip.clone(), Ty::Int64, RValue::Int(i as i64));
+                    let ep = ctx.fresh("fae");
+                    ctx.assign(
+                        ep.clone(),
+                        elem.as_ref().clone(),
+                        RValue::Index {
+                            base: base_p.clone(),
+                            field: field_c.clone(),
+                            index: ip,
+                        },
+                    );
+                    places.push(ep);
+                }
+                let p = ctx.fresh("fa");
+                ctx.assign(
+                    p.clone(),
+                    field_ty.clone(),
+                    RValue::FixedArrayLit {
+                        elems: places,
+                        elem_ty: elem.as_ref().clone(),
+                        len: *len,
+                    },
+                );
+                return Ok((p, field_ty));
             }
             let p = ctx.fresh("fld");
             ctx.assign(

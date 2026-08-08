@@ -14,12 +14,11 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Default product work is **language / I/O / std gaps** from
 the capability matrix, one slice at a time with conformance.
 
-**Shipped recently:** D106–D119 sum/fallible ladder (incl. generic methods);
-exhaustiveness quality; OpenMode union; Net errno/strerror Fail messages.
+**Shipped recently:** sum/fallible ladder; OpenMode; Net errno; **fixed-array
+whole assign**. Session/shell residual deferred.
 
-**In progress / next:** non-session gaps of choice — e.g. **array-fixed**
-(whole-array assign), **modules** D91, **param-defaults** edges, thin
-**std/** when a sample needs it, or **lsp** depth when DX forces it.
+**In progress / next:** non-session gaps — e.g. **modules** D91, **param-defaults**
+edges, thin **std/** when a sample needs it, or **lsp** depth when DX forces it.
 
 ### Proceed order
 

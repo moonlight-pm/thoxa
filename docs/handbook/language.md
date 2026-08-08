@@ -23,7 +23,7 @@ Directory packages may use `Main.thx` as the entry file.
 | User types | `type Name(fields) { methods }` — including heap fields; method field write-back |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
 | Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?` |
-| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` (fields **and** locals) |
+| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
 | Errors | Ambient prelude `May<T>` / `Trial<Ok,Err>` with `?` / `match` (ok/err may nest) |
 | Equality | String `==` / `!=`; usual scalar compares |
 

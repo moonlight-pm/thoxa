@@ -35,7 +35,7 @@ change. See [`progress-model.md`](progress-model.md).
 | control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops` | D47, D55 | — | yes |
 | early-return | `return` / `return expr` | shipped | `early_return` | D63 | — | yes |
 | array-dyn | Dynamic `Array<T>` (incl. User) | shipped | `arrays`, `array_user`, `array_heap_elems` | D53–D55, D62, D65 | — | yes |
-| array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local` | D27, D117 | No whole-array assign/bind without lit; ABI scalar elems only | yes |
+| array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | Whole-array assign/bind (element copy); ABI scalar elems only | yes |
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array ctor fields | shipped | `string_fields` | D48–D49, D69 | — | yes |
 | param-defaults | Formal defaults M3 (+ methods/ctors) | shipped | `param_defaults`, `defaults_mod` | D98, D106, D116 | No `!`/`extern` defaults; non-default cannot follow defaulted; free names in defaults use defining module | yes |
