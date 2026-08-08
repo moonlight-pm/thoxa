@@ -23,6 +23,7 @@ language server (grammar color changes may need a full quit/restart).
 | Syntax color | Tree-sitter Thoxa grammar |
 | Hover | Signature + contiguous `##` docs |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
+| Go-to-def / hover on methods | Linked when receiver has a type hint (annotation or `Type(...)` init) |
 | References / rename | **Single-file** today |
 | Document symbols | Outline |
 | Open buffers | Overlay wins over disk for package check |

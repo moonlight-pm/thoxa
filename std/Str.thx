@@ -55,6 +55,20 @@ export fn dropPrefix(s!: String, prefix!: String) -> String {
     }
 }
 
+export fn dropSuffix(s!: String, suffix!: String) -> String {
+    let a = Bytes.fromString(s)
+    let n = Bytes.fromString(suffix).count
+    if n >= a.count {
+        ""
+    } else {
+        if endsWith(s, suffix) {
+            a.slice(0, a.count - n).toString()
+        } else {
+            s
+        }
+    }
+}
+
 export fn trimNewline(s!: String) -> String {
     let b = Bytes.fromString(s)
     if b.count == 0 {

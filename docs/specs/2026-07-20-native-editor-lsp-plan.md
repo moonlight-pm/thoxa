@@ -3,7 +3,8 @@
 **Date:** 2026-07-20  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** MIR lower on shared resolver; multi-diag depth; typed-member nav; broader package intelligence; refs/rename remain single-file  
+**Gaps:** MIR lower on shared resolver; broader package intelligence; refs/rename remain single-file; typed-member incomplete for chains / no-hint receivers  
+
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/editor.md`](../handbook/editor.md)
 
 > **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. **No Python.** Port ideas from the oracle under `apocrypha/old/ThoxaPython/editor/` and `…/thoxa/lsp/`; implement in **Rust** against the native frontend.

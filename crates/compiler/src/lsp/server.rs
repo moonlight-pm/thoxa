@@ -636,6 +636,51 @@ mod tests {
     }
 
     #[test]
+    fn method_member_definition() {
+        // Typed-member nav: go-to-def on `p.len` jumps to the method on Point.
+        let uri = "file:///tmp/member.thx";
+        let text = "\
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+fn main() -> Int64 {
+  let p = Point(x: 1)
+  p.len()
+}
+";
+        let call_byte = text.rfind("len").unwrap();
+        let p = span::byte_to_position(text, call_byte);
+        let msgs = exchange(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": uri,
+                        "languageId": "thoxa",
+                        "version": 1,
+                        "text": text
+                    }
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/definition",
+                "params": {
+                    "textDocument": { "uri": uri },
+                    "position": { "line": p.line, "character": p.character }
+                }
+            }),
+        ]);
+        let def = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        assert_eq!(def["result"]["uri"], uri, "{def}");
+        // Method def is on the first `len` line (line 1 in 0-based).
+        assert_eq!(def["result"]["range"]["start"]["line"], 1, "{def}");
+    }
+
+    #[test]
     fn rename_helper() {
         let uri = "file:///tmp/ren.thx";
         let text = "fn helper() -> Int64 { 1 }\nfn main() -> Int64 { helper() }\n";

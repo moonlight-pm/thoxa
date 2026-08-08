@@ -4,9 +4,9 @@
 //! occurrences ([`Reference`]). Resolution is **type-independent** so both MIR
 //! lower (future) and the LSP can consume one scope implementation.
 //!
-//! Member access (`.field` / `.method`) is emitted as a *pending* reference
-//! (`binding_id = None`, ctx `Member`); a later pass links it when the receiver
-//! type is provable.
+//! Member access (`.field` / `.method`) uses ctx `Member`. When the receiver has
+//! a simple type hint (param/let annotation or type-ctor init), the reference is
+//! linked to the field/method binding for go-to-definition / hover / refs.
 //!
 //! Phase 2 PR5: resolver + unit tests. MIR still uses its own env for lower;
 //! LSP navigation (PR6) queries this table. Lower migration is deferred until
@@ -95,6 +95,8 @@ pub struct Binding {
     pub owner: Option<String>,
     /// Populated for [`BindingKind::Import`] bindings.
     pub import_origin: Option<ImportOrigin>,
+    /// Simple value type name when known (annotation or type-ctor init) for member nav.
+    pub ty_hint: Option<String>,
 }
 
 /// One name occurrence in source.
@@ -301,12 +303,71 @@ impl<'a> Resolver<'a> {
                 exported,
                 owner,
                 import_origin,
+                ty_hint: None,
             },
         );
         if module_level {
             self.res.module_binding_ids.push(id);
         }
         id
+    }
+
+    fn set_ty_hint(&mut self, id: u32, hint: Option<String>) {
+        if let Some(h) = hint {
+            if let Some(b) = self.res.bindings.get_mut(&id) {
+                b.ty_hint = Some(h);
+            }
+        }
+    }
+
+    /// Type name for member linking: annotation or type-constructor call.
+    fn simple_type_name(te: &TypeExpr) -> Option<String> {
+        if te.args.is_empty() && te.lit.is_none() && !te.name.is_empty() {
+            Some(te.name.clone())
+        } else {
+            None
+        }
+    }
+
+    fn ty_hint_from_init(&self, init: &Expr, scope: usize) -> Option<String> {
+        match &init.kind {
+            ExprKind::Call { callee, .. } => {
+                let id = self.lookup(scope, callee)?;
+                let b = self.res.bindings.get(&id)?;
+                if b.kind == BindingKind::Type {
+                    Some(b.name.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn receiver_ty_hint(&self, expr: &Expr, scope: usize) -> Option<String> {
+        match &expr.kind {
+            ExprKind::Name(n) => {
+                let id = self.lookup(scope, n)?;
+                self.res.bindings.get(&id)?.ty_hint.clone()
+            }
+            ExprKind::Call { callee, .. } => {
+                let id = self.lookup(scope, callee)?;
+                let b = self.res.bindings.get(&id)?;
+                if b.kind == BindingKind::Type {
+                    Some(b.name.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn member_id(&self, type_name: &str, member: &str) -> Option<u32> {
+        self.res
+            .member_index
+            .get(&(type_name.to_string(), member.to_string()))
+            .copied()
     }
 
     fn seed_module(&mut self) {
@@ -535,6 +596,7 @@ impl<'a> Resolver<'a> {
                 None,
                 false,
             );
+            self.set_ty_hint(id, Self::simple_type_name(&p.ty));
             self.define(scope, &p.name, id);
         }
     }
@@ -568,6 +630,11 @@ impl<'a> Resolver<'a> {
                     BindingKind::Let
                 };
                 let id = self.new_binding(name, kind, Some(*name_span), false, None, false);
+                let hint = ty
+                    .as_ref()
+                    .and_then(Self::simple_type_name)
+                    .or_else(|| self.ty_hint_from_init(init, scope));
+                self.set_ty_hint(id, hint);
                 self.define(scope, name, id);
             }
             BlockItem::Assign { target, value } => {
@@ -586,21 +653,31 @@ impl<'a> Resolver<'a> {
             AssignTarget::Field {
                 base,
                 base_span,
+                field,
                 field_span,
                 ..
             } => {
                 self.add_ref(*base_span, self.lookup(scope, base), RefCtx::Value);
-                self.add_ref(*field_span, None, RefCtx::Member);
+                let mid = self
+                    .lookup(scope, base)
+                    .and_then(|id| self.res.bindings.get(&id)?.ty_hint.clone())
+                    .and_then(|ty| self.member_id(&ty, field));
+                self.add_ref(*field_span, mid, RefCtx::Member);
             }
             AssignTarget::Index {
                 base,
                 base_span,
+                field,
                 field_span,
                 index,
                 ..
             } => {
                 self.add_ref(*base_span, self.lookup(scope, base), RefCtx::Value);
-                self.add_ref(*field_span, None, RefCtx::Member);
+                let mid = self
+                    .lookup(scope, base)
+                    .and_then(|id| self.res.bindings.get(&id)?.ty_hint.clone())
+                    .and_then(|ty| self.member_id(&ty, field));
+                self.add_ref(*field_span, mid, RefCtx::Member);
                 self.walk_expr(index, scope);
             }
             AssignTarget::DynIndex {
@@ -642,20 +719,26 @@ impl<'a> Resolver<'a> {
             }
             ExprKind::Field {
                 base,
+                name,
                 name_span,
-                ..
             } => {
                 self.walk_expr(base, scope);
-                self.add_ref(*name_span, None, RefCtx::Member);
+                let mid = self
+                    .receiver_ty_hint(base, scope)
+                    .and_then(|ty| self.member_id(&ty, name));
+                self.add_ref(*name_span, mid, RefCtx::Member);
             }
             ExprKind::MethodCall {
                 receiver,
+                method,
                 method_span,
                 args,
-                ..
             } => {
                 self.walk_expr(receiver, scope);
-                self.add_ref(*method_span, None, RefCtx::Member);
+                let mid = self
+                    .receiver_ty_hint(receiver, scope)
+                    .and_then(|ty| self.member_id(&ty, method));
+                self.add_ref(*method_span, mid, RefCtx::Member);
                 self.walk_args(args, scope, None);
             }
             ExprKind::Index { base, index } => {
@@ -969,7 +1052,7 @@ mod tests {
     }
 
     #[test]
-    fn user_type_and_method_pending() {
+    fn user_type_and_method_linked() {
         let src = "\
 type Point(x: Int64) {
   export fn len() -> Int64 { x }
@@ -977,6 +1060,8 @@ type Point(x: Int64) {
 fn main() -> Int64 {
   let p = Point(1)
   p.len()
+  let q: Point = p
+  q.x
 }
 ";
         let res = resolve_ok(src);
@@ -989,12 +1074,22 @@ fn main() -> Int64 {
         let members = res.members_of("Point");
         assert!(members.iter().any(|m| m.name == "x" && m.kind == BindingKind::Field));
         assert!(members.iter().any(|m| m.name == "len" && m.kind == BindingKind::Method));
-        // method call is pending member (`.len` use, not `fn len` definition)
+        // method call linked via ctor ty_hint
         let len_call = src.rfind("len").unwrap();
         let p = byte_to_position(src, len_call);
         let r = res.ref_at(src, p.line, p.character).expect("len ref");
         assert_eq!(r.ctx, RefCtx::Member);
-        assert!(r.binding_id.is_none(), "pending until type-driven link");
+        let b = res.binding_of(Some(r)).expect("method linked via ty_hint");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "len");
+        assert_eq!(b.owner.as_deref(), Some("Point"));
+        // field access on annotated binding
+        let x_use_main = src.rfind("q.x").unwrap() + 2;
+        let p = byte_to_position(src, x_use_main);
+        let r = res.ref_at(src, p.line, p.character).expect("q.x ref");
+        let b = res.binding_of(Some(r)).expect("field linked");
+        assert_eq!(b.kind, BindingKind::Field);
+        assert_eq!(b.name, "x");
         // field use in method body binds to field
         let x_use = src.find("{ x }").unwrap() + 2;
         let p = byte_to_position(src, x_use);

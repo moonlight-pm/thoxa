@@ -1,5 +1,5 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { startsWith, endsWith, dropPrefix, trimNewline } from "std/Str"
+import { startsWith, endsWith, dropPrefix, dropSuffix, trimNewline } from "std/Str"
 import { dirname, basename, shortPath } from "std/Path"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 
@@ -15,6 +15,7 @@ fn main() -> Int64 {
         println("ends-bad")
     }
     println(dropPrefix("hello", "he"))
+    println(dropSuffix("hello", "lo"))
     println(trimNewline("line\n"))
     println(dirname("/a/b/c"))
     println(basename("/a/b/c"))
