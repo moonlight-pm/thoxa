@@ -82,11 +82,11 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | std-root | Named `std/…` resolution | shipped | `stdlib` | D97 | — | yes |
-| std-str | Str helpers | partial | `stdlib` | D97 | Growing thin API (`length`/`count`/`pad*`/`trim`/case/…); sample-driven | yes |
-| std-path | Path helpers | partial | `stdlib` | D97 | +`withExtension`/`isRelative`/`parent`; sample-driven | yes |
+| std-str | Str helpers | partial | `stdlib` | D97 | search/slice/replace/`split`/pad/trim/case; still sample-driven thin | yes |
+| std-path | Path helpers | partial | `stdlib` | D97 | +`fileName`/`hasExtension`/`parent`/`withExtension`/`isRelative`/…; sample-driven | yes |
 | std-ansi | 16 colors + hex SGR | shipped | `stdlib` | D99 | — | yes |
-| std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`home`; sample-driven | yes |
-| std-git | branch helpers | partial | `stdlib` | D97 | +`isRepo`; sample-driven | yes |
+| std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`home`/`tmpdir`; sample-driven | yes |
+| std-git | branch helpers | partial | `stdlib` | D97 | +`isRepo`/`repoRoot`; sample-driven | yes |
 | std-prompt | `defaultPrompt` | shipped | `stdlib` | D97, D99 | — | yes |
 | std-io | Richer Io in `std/` | idea | — | sample-driven | Free `readFile` / iolib tests only; not a CURRENT todo | no |
 

@@ -54,6 +54,30 @@ export fn length(s!: String) -> Int64 {
     Bytes.fromString(s).count
 }
 
+## Substring from `start` (inclusive) to `end` (exclusive), clamped to bounds.
+export fn substring(s!: String, start!: Int64, end!: Int64) -> String {
+    let b = Bytes.fromString(s)
+    mut a = start
+    mut z = end
+    if a < 0 {
+        a = 0
+    }
+    if z < 0 {
+        z = 0
+    }
+    if a > b.count {
+        a = b.count
+    }
+    if z > b.count {
+        z = b.count
+    }
+    if a >= z {
+        ""
+    } else {
+        b.slice(a, z).toString()
+    }
+}
+
 ## Concatenate `s` with itself `n` times (`n <= 0` → `""`).
 export fn repeat(s!: String, n!: Int64) -> String {
     if n <= 0 {
@@ -236,6 +260,140 @@ export fn indexOf(s!: String, needle!: String) -> Int64 {
             }
             found
         }
+    }
+}
+
+## Last index of `needle` in `s`, or `-1` if missing.
+export fn lastIndexOf(s!: String, needle!: String) -> Int64 {
+    let a = Bytes.fromString(s)
+    let b = Bytes.fromString(needle)
+    if b.count == 0 {
+        a.count
+    } else {
+        if b.count > a.count {
+            0 - 1
+        } else {
+            mut found = 0 - 1
+            mut i = a.count - b.count
+            loop {
+                if i < 0 {
+                    break
+                }
+                mut j = 0
+                mut ok = true
+                loop {
+                    if j >= b.count {
+                        break
+                    }
+                    if a.get(i + j) != b.get(j) {
+                        ok = false
+                        break
+                    }
+                    j = j + 1
+                }
+                if ok {
+                    found = i
+                    break
+                }
+                i = i - 1
+            }
+            found
+        }
+    }
+}
+
+## Replace the first occurrence of `old` with `new` (no-op if missing / empty `old`).
+export fn replaceFirst(s!: String, old!: String, new!: String) -> String {
+    if old == "" {
+        s
+    } else {
+        let i = indexOf(s, old)
+        if i < 0 {
+            s
+        } else {
+            let b = Bytes.fromString(s)
+            let olen = Bytes.fromString(old).count
+            let left = if i == 0 {
+                ""
+            } else {
+                b.slice(0, i).toString()
+            }
+            let rightStart = i + olen
+            let right = if rightStart >= b.count {
+                ""
+            } else {
+                b.slice(rightStart, b.count).toString()
+            }
+            "{left}{new}{right}"
+        }
+    }
+}
+
+## Replace all non-overlapping occurrences of `old` with `new`.
+export fn replaceAll(s!: String, old!: String, new!: String) -> String {
+    if old == "" {
+        s
+    } else {
+        mut out = ""
+        mut rest = s
+        let olen = Bytes.fromString(old).count
+        loop {
+            let i = indexOf(rest, old)
+            if i < 0 {
+                out = "{out}{rest}"
+                break
+            }
+            let b = Bytes.fromString(rest)
+            let left = if i == 0 {
+                ""
+            } else {
+                b.slice(0, i).toString()
+            }
+            out = "{out}{left}{new}"
+            let next = i + olen
+            if next >= b.count {
+                break
+            }
+            rest = b.slice(next, b.count).toString()
+        }
+        out
+    }
+}
+
+## ASCII case-insensitive equality.
+export fn equalsIgnoreCaseAscii(a!: String, b!: String) -> Bool {
+    toLowerAscii(a) == toLowerAscii(b)
+}
+
+## Split on `sep`. Empty `sep` yields a one-element array `[s]`.
+export fn split(s!: String, sep!: String) -> Array<String> {
+    if sep == "" {
+        [s]
+    } else {
+        mut parts: Array<String> = []
+        mut rest = s
+        let slen = Bytes.fromString(sep).count
+        loop {
+            let i = indexOf(rest, sep)
+            if i < 0 {
+                parts = parts.append(rest)
+                break
+            }
+            let b = Bytes.fromString(rest)
+            let piece = if i == 0 {
+                ""
+            } else {
+                b.slice(0, i).toString()
+            }
+            parts = parts.append(piece)
+            let next = i + slen
+            if next >= b.count {
+                parts = parts.append("")
+                break
+            }
+            rest = b.slice(next, b.count).toString()
+        }
+        parts
     }
 }
 

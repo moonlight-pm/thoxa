@@ -7,8 +7,14 @@ contains-ok
 contains-miss-ok
 idx=2
 idx-miss=-1
+last=2
 cnt=3
 len=2
+ell
+b-aa
+b-b
+eq-ic-ok
+split=3:a:c
 007
 x..
 llo
@@ -20,6 +26,7 @@ ABC
 /a/b
 /a/b
 c
+c
 /a/b/c
 /a/b/c
 /abs
@@ -29,6 +36,8 @@ rel-ok
 x/y
 thx
 
+has-ext-ok
+has-ext-miss-ok
 foo
 .git
 a/b/foo.md
@@ -40,10 +49,12 @@ path-env-ok
 missing-env-ok
 fallback
 home-ok
+tmpdir-ok
 git-empty-ok
 git-miss-ok
 git-suf-ok
 git-repo-ok
+git-root-ok
 fg-ok
 sgr0-ok
 cyan-ok

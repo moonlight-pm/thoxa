@@ -62,13 +62,13 @@ export fn branchName(startDir!: String) -> String {
     }
 }
 
-## True when `dir` or an ancestor has a readable `.git/HEAD` (any content).
-export fn isRepo(startDir!: String) -> Bool {
+## Directory containing `.git/HEAD` for `startDir`, or `""` if none.
+export fn repoRoot(startDir!: String) -> String {
     if startDir == "" {
-        false
+        ""
     } else {
         mut dir = startDir
-        mut found = false
+        mut out = ""
         mut steps = 0
         loop {
             if steps > 64 {
@@ -77,7 +77,7 @@ export fn isRepo(startDir!: String) -> Bool {
             let headPath = "{dir}/.git/HEAD"
             let raw = readFileLimited(headPath, 16)
             if raw != "" {
-                found = true
+                out = dir
                 break
             }
             if dir == "/" {
@@ -90,8 +90,13 @@ export fn isRepo(startDir!: String) -> Bool {
             dir = parent
             steps = steps + 1
         }
-        found
+        out
     }
+}
+
+## True when `dir` or an ancestor has a readable `.git/HEAD` (any content).
+export fn isRepo(startDir!: String) -> Bool {
+    repoRoot(startDir) != ""
 }
 
 ## Branch name for `dir` with a leading space when present (zsh-style prompt).

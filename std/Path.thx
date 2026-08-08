@@ -57,6 +57,11 @@ export fn basename(path!: String) -> String {
     }
 }
 
+## Alias of `basename`.
+export fn fileName(path!: String) -> String {
+    basename(path)
+}
+
 ## Join two path fragments with `/`. Empty sides collapse; absolute `right`
 ## replaces `left`; a trailing slash on `left` is not doubled.
 export fn join(left!: String, right!: String) -> String {
@@ -146,6 +151,11 @@ export fn extension(path!: String) -> String {
     } else {
         b.slice(dot + 1, b.count).toString()
     }
+}
+
+## True when `extension(path)` is non-empty.
+export fn hasExtension(path!: String) -> Bool {
+    extension(path) != ""
 }
 
 ## Basename without a non-leading extension (`.git` stays `.git`).

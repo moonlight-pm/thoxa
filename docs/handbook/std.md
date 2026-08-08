@@ -18,11 +18,11 @@ import { branch } from "std/Git"
 | `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts |
 | `Fallible` | Surface source for ambient `May` / `Trial` / `Has` / `Not` / `Pass` / `Fail` (compiler injects; no `import` needed) |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
-| `Str` | prefix/suffix, `isEmpty`/`length`/`repeat`/`contains`/`count`/`indexOf`, pad/trim/case, drop/trim helpers |
-| `Path` | `dirname`/`parent`/`basename`/`join`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`stem`/`withExtension`/`cwd`/`shortPath`/`cwdShort` |
+| `Str` | match/search (`contains`/`indexOf`/`lastIndexOf`/`count`), slice (`substring`), replace, `split`, pad/trim/case, prefix/suffix |
+| `Path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`cwd`/`shortPath`/`cwdShort` |
 | `Ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
-| `Env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `localHms`, `hostname`, `userName` |
-| `Git` | `branchName` / `branchSuffix` / `branch` / `branchHere` / `isRepo` via `.git/HEAD` |
+| `Env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `localHms`, `hostname`, `userName` |
+| `Git` | `branchName` / `branchSuffix` / `branch` / `branchHere` / `isRepo` / `repoRoot` via `.git/HEAD` |
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
 hex → black SGR.
