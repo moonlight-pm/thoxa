@@ -26,6 +26,10 @@ thx
 
 foo
 .git
+a/b/foo.md
+plain.thx
+relative-ok
+relative-abs-ok
 foo/bar
 path-env-ok
 missing-env-ok

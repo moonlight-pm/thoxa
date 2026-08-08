@@ -1,6 +1,7 @@
 ## std/Path — path string helpers (POSIX `/` separators).
 
 import { startsWith, dropPrefix } from "./Str"
+## (dropPrefix used by withExtension)
 
 extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
 extern fn sysGetenv(name!: String) -> String from "c" "getenv"
@@ -156,6 +157,39 @@ export fn stem(path!: String) -> String {
         } else {
             b.slice(0, cut).toString()
         }
+    }
+}
+
+## Replace or add basename extension. `ext` without a leading `.` is fine.
+export fn withExtension(path!: String, ext!: String) -> String {
+    let dir = dirname(path)
+    let st = stem(path)
+    mut e = ext
+    if startsWith(ext, ".") {
+        e = dropPrefix(ext, ".")
+    }
+    let base = if e == "" {
+        st
+    } else {
+        "{st}.{e}"
+    }
+    if dir == "." {
+        base
+    } else {
+        if dir == "/" {
+            "/{base}"
+        } else {
+            "{dir}/{base}"
+        }
+    }
+}
+
+## True when path is not absolute (POSIX).
+export fn isRelative(path!: String) -> Bool {
+    if isAbsolute(path) {
+        false
+    } else {
+        true
     }
 }
 

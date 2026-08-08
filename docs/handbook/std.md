@@ -19,7 +19,7 @@ import { branch } from "std/Git"
 | `Fallible` | Surface source for ambient `May` / `Trial` / `Has` / `Not` / `Pass` / `Fail` (compiler injects; no `import` needed) |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `Str` | `startsWith`/`endsWith`/`isEmpty`/`repeat`/`contains`/`indexOf`/`dropPrefix`/`dropSuffix`/`trimNewline`/`trim`/`toLowerAscii`/`toUpperAscii` |
-| `Path` | `dirname`, `basename`, `join`, `isAbsolute`, `normalize`, `extension`, `stem`, `cwd`, `shortPath`, `cwdShort` |
+| `Path` | `dirname`/`basename`/`join`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`stem`/`withExtension`/`cwd`/`shortPath`/`cwdShort` |
 | `Ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
 | `Env` | `getenv`, `hasEnv`, `getenvOr`, `localHms`, `hostname`, `userName` |
 | `Git` | `branchName` / `branchSuffix` / `branch` / `branchHere` via `.git/HEAD` |
