@@ -2,13 +2,12 @@
 
 **Date:** 2026-08-07  
 **Status:** target (accepted product intent; **partially implemented**)  
-**Implementation:** ladder §10 steps 1–5 — unions + residual arm `?` + value `?`
-(W2) + **D119** member-set equality, expect on `if`, unannotated if lub
-(gates: `sums_nullary`, `sums_payload`, `sums_product`, `sums_literal`,
-`sums_try`, `sums_alias`, `sums_if_lub`)  
-**Gaps:** type-arg marks (`Pass<P!>`); pure-lit narrow scalar layout; May/Trial
-prelude cutover; heap payloads; nested unions; fn return-type inference
-(see §10)
+**Implementation:** ladder §10 steps 1–5 + monomorphic type-arg `!` — unions +
+residual `?` + value `?` (W2) + **D119** + `Hold<Int64!>` vs `Hold!`
+(gates: `sums_*`, `sums_try`, `sums_alias`, `sums_if_lub`, `sums_extract_mark`)  
+**Gaps:** generic type defs (`type Has<T>`) for true `Pass<P!>`; May/Trial
+prelude cutover; pure-lit narrow scalar; heap payloads; nested unions;
+residual type-arg rewrap (see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  
@@ -384,3 +383,4 @@ This freeze is **accepted product intent** when:
 | 2026-08-08 | **Nominal atoms · transparent union aliases** locked (§2.3); infer set union, no alias search |
 | 2026-08-08 | Member-set equality + expect on `if` / alias remap (`sums_alias`) |
 | 2026-08-08 | Unannotated if set-union lub via synthetic `$union$…` (`sums_if_lub`) |
+| 2026-08-08 | Monomorphic type-arg extract `Hold<Int64!>` vs whole-arm `Hold!` (`sums_extract_mark`) |

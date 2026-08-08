@@ -577,6 +577,9 @@ struct SumVariant {
     /// Type-level mark on this arm (`!` / `?`); tags also stored on SumInfo.
     #[allow(dead_code)]
     mark: Option<TypeMark>,
+    /// Type-arg extract mark (`Hold<Int64!>`): success `?` unwraps the sole field (D118).
+    /// Whole-arm mark (`Hold!`) sets extract_tag but leaves this false.
+    unwrap_payload: bool,
 }
 
 /// Module-level value (let/mut).
@@ -965,8 +968,23 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             let mut extract_tag: Option<u32> = None;
             for (i, mem) in members.iter().enumerate() {
                 let tag = i as u32;
-                let mark = mem.mark;
-                if matches!(mark, Some(TypeMark::Residual)) {
+                // Whole-arm marks (`Done!`, `Quit?`) and type-arg marks (`Hold<Int64!>`,
+                // `Fail<String?>`) both count toward residual/extract tags (D118).
+                let arg_extract = type_expr_has_arg_mark(mem, TypeMark::Extract);
+                let arg_residual = type_expr_has_arg_mark(mem, TypeMark::Residual);
+                let whole_extract = matches!(mem.mark, Some(TypeMark::Extract));
+                let whole_residual = matches!(mem.mark, Some(TypeMark::Residual));
+                let mark = mem.mark.or(if arg_extract {
+                    Some(TypeMark::Extract)
+                } else if arg_residual {
+                    Some(TypeMark::Residual)
+                } else {
+                    None
+                });
+                // Type-arg `!` → unwrap sole field; whole-arm `!` alone → yield arm type.
+                let unwrap_payload = arg_extract;
+
+                if whole_residual || arg_residual {
                     if residual_tag.is_some() {
                         return Err(Error::at(
                             "union may have at most one residual mark (`?`)",
@@ -975,7 +993,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     }
                     residual_tag = Some(tag);
                 }
-                if matches!(mark, Some(TypeMark::Extract)) {
+                if whole_extract || arg_extract {
                     if extract_tag.is_some() {
                         return Err(Error::at(
                             "union may have at most one extract mark (`!`)",
@@ -1003,6 +1021,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         ty: Ty::Void,
                         lit: Some(lit.clone()),
                         mark,
+                        unwrap_payload: false,
                     });
                     continue;
                 }
@@ -1054,6 +1073,21 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                             ));
                         }
                     }
+                    if unwrap_payload {
+                        if minfo.fields.len() != 1 {
+                            return Err(Error::at(
+                                format!(
+                                    "type-arg extract mark (`!`) on `{vname}` requires a single-field product"
+                                ),
+                                mem.span,
+                            ));
+                        }
+                    }
+                } else if unwrap_payload {
+                    return Err(Error::at(
+                        format!("type-arg extract mark (`!`) requires a product type, got `{vname}`"),
+                        mem.span,
+                    ));
                 }
                 variants.push(SumVariant {
                     tag,
@@ -1061,6 +1095,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     ty,
                     lit: None,
                     mark,
+                    unwrap_payload,
                 });
             }
             sum_info = Some(SumInfo {
@@ -1770,12 +1805,72 @@ fn resolve_ty(
                 Err(Error::at(format!("unknown type `{name}`"), t.span))
             }
         }
-        (other, args) if !args.is_empty() => Err(Error::at(
-            format!("unsupported generic type `{other}`"),
-            t.span,
-        )),
+        // Monomorphic product "application" for type-arg marks: `Hold<Int64!>` ≡ `Hold`
+        // when the single type arg matches the sole field type (D118 extract marks).
+        (name, args) if !args.is_empty() => {
+            let mangled = name_map
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| name.to_string());
+            let key = if types.contains_key(&mangled) {
+                mangled
+            } else if types.contains_key(name) {
+                name.to_string()
+            } else {
+                return Err(Error::at(format!("unknown type `{name}`"), t.span));
+            };
+            let info = types.get(&key).unwrap();
+            if info.sum.is_some() {
+                return Err(Error::at(
+                    format!("type application on union `{name}` is not supported"),
+                    t.span,
+                ));
+            }
+            if info.fields.len() != args.len() {
+                return Err(Error::at(
+                    format!(
+                        "type `{name}` has {} field(s), but {} type argument(s) were given",
+                        info.fields.len(),
+                        args.len()
+                    ),
+                    t.span,
+                ));
+            }
+            for (i, arg) in args.iter().enumerate() {
+                let TypeArg::Type(arg_te) = arg else {
+                    return Err(Error::at(
+                        "product type application expects type arguments (not const ints)",
+                        t.span,
+                    ));
+                };
+                let arg_ty = resolve_ty(arg_te, types, name_map)?;
+                if arg_ty != info.fields[i].ty {
+                    return Err(Error::at(
+                        format!(
+                            "type argument {} for `{name}`: expected {:?}, found {arg_ty:?}",
+                            i + 1,
+                            info.fields[i].ty
+                        ),
+                        arg_te.span,
+                    ));
+                }
+            }
+            Ok(Ty::User(key))
+        }
         (other, _) => Err(Error::at(format!("unknown type `{other}`"), t.span)),
     }
+}
+
+/// True when any nested type-arg carries `mark` (`Hold<Int64!>` / `Fail<E?>`).
+fn type_expr_has_arg_mark(t: &TypeExpr, mark: TypeMark) -> bool {
+    for arg in &t.args {
+        if let TypeArg::Type(inner) = arg {
+            if inner.mark == Some(mark) || type_expr_has_arg_mark(inner, mark) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn lower_function(
@@ -4439,8 +4534,11 @@ fn sum_success_extract_ty(ctx: &LowerCtx, sum: &SumInfo, span: Span) -> Result<T
             .iter()
             .find(|v| v.tag == et)
             .ok_or_else(|| Error::at("internal: bad extract tag", span))?;
-        // Whole-arm extract (`Done!`): yield the arm type.
-        // One-field product: still whole arm unless marked on type arg (future).
+        // Type-arg extract (`Hold<Int64!>`): unwrap sole field → Int64.
+        // Whole-arm extract (`Hold!`): yield the arm type Hold.
+        if v.unwrap_payload {
+            return sum_variant_payload_ty(ctx, v, span);
+        }
         return Ok(v.ty.clone());
     }
     // W2: no `!` mark — single non-residual arm; one-field → field type; nullary → Void.
@@ -4476,6 +4574,31 @@ fn sum_success_extract_ty(ctx: &LowerCtx, sum: &SumInfo, span: Span) -> Result<T
     }
 }
 
+/// Sole field type of a product arm (for type-arg / W2 unwrap).
+fn sum_variant_payload_ty(ctx: &LowerCtx, v: &SumVariant, span: Span) -> Result<Ty> {
+    match &v.ty {
+        Ty::User(n) => {
+            let fields = ctx
+                .types
+                .get(n)
+                .map(|i| i.fields.as_slice())
+                .unwrap_or(&[]);
+            if fields.len() == 1 {
+                Ok(fields[0].ty.clone())
+            } else if fields.is_empty() {
+                Ok(Ty::Void)
+            } else {
+                Err(Error::at(
+                    "type-arg extract requires a single-field product arm",
+                    span,
+                ))
+            }
+        }
+        Ty::Void => Ok(Ty::Void),
+        other => Ok(other.clone()),
+    }
+}
+
 fn emit_sum_success_extract(
     ctx: &mut LowerCtx,
     scrut_p: &Place,
@@ -4483,20 +4606,21 @@ fn emit_sum_success_extract(
     success_ty: &Ty,
     span: Span,
 ) -> Result<Place> {
-    let (tag, arm_ty) = if let Some(et) = sum.extract_tag {
+    let (tag, arm_ty, unwrap) = if let Some(et) = sum.extract_tag {
         let v = sum
             .variants
             .iter()
             .find(|v| v.tag == et)
             .ok_or_else(|| Error::at("internal: bad extract tag", span))?;
-        (v.tag, v.ty.clone())
+        (v.tag, v.ty.clone(), v.unwrap_payload)
     } else {
         let v = sum
             .variants
             .iter()
             .find(|v| Some(v.tag) != sum.residual_tag)
             .ok_or_else(|| Error::at("internal: no success arm", span))?;
-        (v.tag, v.ty.clone())
+        // W2 auto-unwrap when success_ty is the field type.
+        (v.tag, v.ty.clone(), true)
     };
 
     if arm_ty == Ty::Void || success_ty == &Ty::Void {
@@ -4516,26 +4640,28 @@ fn emit_sum_success_extract(
         },
     );
 
-    // Unwrap single field when success_ty is the field type.
-    if let Ty::User(n) = &arm_ty {
-        let field_name = ctx.types.get(n).and_then(|info| {
-            if info.fields.len() == 1 && info.fields[0].ty == *success_ty {
-                Some(info.fields[0].name.clone())
-            } else {
-                None
+    // Unwrap sole field when type-arg `!` / W2 demands the payload type.
+    if unwrap {
+        if let Ty::User(n) = &arm_ty {
+            let field_name = ctx.types.get(n).and_then(|info| {
+                if info.fields.len() == 1 && info.fields[0].ty == *success_ty {
+                    Some(info.fields[0].name.clone())
+                } else {
+                    None
+                }
+            });
+            if let Some(fname) = field_name {
+                let fp = ctx.fresh("sf");
+                ctx.assign(
+                    fp.clone(),
+                    success_ty.clone(),
+                    RValue::Field {
+                        base: payload,
+                        field: sanitize_field(&fname),
+                    },
+                );
+                return Ok(fp);
             }
-        });
-        if let Some(fname) = field_name {
-            let fp = ctx.fresh("sf");
-            ctx.assign(
-                fp.clone(),
-                success_ty.clone(),
-                RValue::Field {
-                    base: payload,
-                    field: sanitize_field(&fname),
-                },
-            );
-            return Ok(fp);
         }
     }
     let _ = span;
@@ -7045,6 +7171,7 @@ fn ensure_synthetic_sum(
             ty: payload_ty.clone(),
             lit: lit.clone(),
             mark: None,
+            unwrap_payload: false,
         });
         layout_vars.push(SumVariantLayout {
             tag,

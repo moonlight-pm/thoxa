@@ -1,0 +1,42 @@
+## Type-arg `!` vs whole-arm `!` extract marks (D118).
+type Hold(n: Int64)
+type Empty
+
+## Type-arg extract: Hold<Int64!> → unwrap Int64 on `?`
+type Slot = Hold<Int64!> | Empty?
+
+## Whole-arm extract: Hold! → yield Hold on `?`
+type Wrapped = Hold! | Empty?
+
+fn chain(s!: Slot) -> Slot {
+    let n = s?
+    let x: Slot = Hold(n: n + 1)
+    x
+}
+
+fn wrap(s!: Wrapped) -> Wrapped {
+    let h = s?
+    ## h is Hold; rebuild via inject
+    let x: Wrapped = h
+    x
+}
+
+fn main() -> Int64 {
+    match chain(Hold(n: 5)) {
+        Hold(n) { println("slot={n}") }
+        Empty { println("empty") }
+    }
+    match chain(Empty()) {
+        Hold(n) { println("slot={n}") }
+        Empty { println("empty") }
+    }
+    match wrap(Hold(n: 9)) {
+        Hold(n) { println("wrap={n}") }
+        Empty { println("empty") }
+    }
+    match wrap(Empty()) {
+        Hold(n) { println("wrap={n}") }
+        Empty { println("empty") }
+    }
+    0
+}
