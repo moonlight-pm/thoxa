@@ -249,7 +249,7 @@ impl Server {
         }
 
         // Export: clients that selective-import this export (open buffers first,
-        // then same-directory `.thx` on disk — not a full workspace walk).
+        // then package-tree `.thx` on disk under Main.thx / .git root).
         if binding.exported
             && binding.owner.is_none()
             && binding.kind != BindingKind::Import
@@ -295,43 +295,35 @@ impl Server {
             ));
         }
 
-        // Same-directory disk scan for `.thx` not already open.
-        if let Some(dir) = my_path.parent() {
-            if let Ok(entries) = fs::read_dir(dir) {
-                for ent in entries.flatten() {
-                    let p = ent.path();
-                    if p.extension().and_then(|e| e.to_str()) != Some("thx") {
-                        continue;
-                    }
-                    if crossmodule::paths_equal_public(&p, my_path) {
-                        continue;
-                    }
-                    let path_s = p.to_string_lossy().into_owned();
-                    if seen_paths.contains(&path_s) {
-                        continue;
-                    }
-                    // Also skip if an open buffer is this file under another URI form.
-                    let already_open = self.docs.keys().any(|u| {
-                        let op = convert::check_filename(u);
-                        crossmodule::paths_equal_public(Path::new(&op), &p)
-                    });
-                    if already_open {
-                        continue;
-                    }
-                    let Ok(text) = fs::read_to_string(&p) else {
-                        continue;
-                    };
-                    let uri = convert::path_to_uri(&path_s);
-                    locs.extend(import_uses_of_export(
-                        &uri,
-                        &text,
-                        &p,
-                        my_path,
-                        export_name,
-                        include_decl,
-                    ));
-                }
+        // Package-tree disk scan for `.thx` not already open.
+        for p in package_disk_thx_files(my_path) {
+            if crossmodule::paths_equal_public(&p, my_path) {
+                continue;
             }
+            let path_s = p.to_string_lossy().into_owned();
+            if seen_paths.contains(&path_s) {
+                continue;
+            }
+            // Also skip if an open buffer is this file under another URI form.
+            let already_open = self.docs.keys().any(|u| {
+                let op = convert::check_filename(u);
+                crossmodule::paths_equal_public(Path::new(&op), &p)
+            });
+            if already_open {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&p) else {
+                continue;
+            };
+            let uri = convert::path_to_uri(&path_s);
+            locs.extend(import_uses_of_export(
+                &uri,
+                &text,
+                &p,
+                my_path,
+                export_name,
+                include_decl,
+            ));
         }
 
         locs
@@ -457,7 +449,7 @@ impl Server {
         }
 
         // Multi-file: rename export → selective-import local names in open
-        // buffers and same-directory disk modules (mirrors find-refs).
+        // buffers and package-tree disk modules (mirrors find-refs).
         if binding.exported
             && binding.owner.is_none()
             && binding.kind != BindingKind::Import
@@ -501,37 +493,29 @@ impl Server {
             }
         }
 
-        if let Some(dir) = my_path.parent() {
-            if let Ok(entries) = fs::read_dir(dir) {
-                for ent in entries.flatten() {
-                    let p = ent.path();
-                    if p.extension().and_then(|e| e.to_str()) != Some("thx") {
-                        continue;
-                    }
-                    if crossmodule::paths_equal_public(&p, my_path) {
-                        continue;
-                    }
-                    let path_s = p.to_string_lossy().into_owned();
-                    if seen_paths.contains(&path_s) {
-                        continue;
-                    }
-                    let already_open = self.docs.keys().any(|u| {
-                        let op = convert::check_filename(u);
-                        crossmodule::paths_equal_public(Path::new(&op), &p)
-                    });
-                    if already_open {
-                        continue;
-                    }
-                    let Ok(text) = fs::read_to_string(&p) else {
-                        continue;
-                    };
-                    let uri = convert::path_to_uri(&path_s);
-                    if let Some(edits) =
-                        import_rename_edits(&uri, &text, &p, my_path, export_name, new_name)
-                    {
-                        changes.push((uri, edits));
-                    }
-                }
+        for p in package_disk_thx_files(my_path) {
+            if crossmodule::paths_equal_public(&p, my_path) {
+                continue;
+            }
+            let path_s = p.to_string_lossy().into_owned();
+            if seen_paths.contains(&path_s) {
+                continue;
+            }
+            let already_open = self.docs.keys().any(|u| {
+                let op = convert::check_filename(u);
+                crossmodule::paths_equal_public(Path::new(&op), &p)
+            });
+            if already_open {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&p) else {
+                continue;
+            };
+            let uri = convert::path_to_uri(&path_s);
+            if let Some(edits) =
+                import_rename_edits(&uri, &text, &p, my_path, export_name, new_name)
+            {
+                changes.push((uri, edits));
             }
         }
         changes
@@ -673,6 +657,79 @@ fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
     } else {
         "unknown panic".into()
     }
+}
+
+/// Cap on disk `.thx` files visited for multi-file refs/rename (avoid home-tree scans).
+const PACKAGE_DISK_THX_LIMIT: usize = 256;
+
+/// Nearest package-ish root above `export_path`: ancestor with `Main.thx` or `.git`,
+/// else the export's parent directory (same-dir fallback).
+fn package_walk_root(export_path: &Path) -> Option<PathBuf> {
+    let start = export_path.parent()?.to_path_buf();
+    let mut dir = start.clone();
+    for _ in 0..24 {
+        if dir.join("Main.thx").is_file() || dir.join(".git").exists() {
+            return Some(dir);
+        }
+        match dir.parent() {
+            Some(p) if p != dir => dir = p.to_path_buf(),
+            _ => break,
+        }
+    }
+    Some(start)
+}
+
+fn skip_walk_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "target"
+            | ".git"
+            | "node_modules"
+            | "third_party"
+            | "apocrypha"
+            | ".grok"
+            | ".cache"
+            | "vendor"
+    ) || name.starts_with('.')
+}
+
+/// Recursive `.thx` files under the package walk root for `export_path`.
+fn package_disk_thx_files(export_path: &Path) -> Vec<PathBuf> {
+    let Some(root) = package_walk_root(export_path) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(dir) = stack.pop() {
+        if out.len() >= PACKAGE_DISK_THX_LIMIT {
+            break;
+        }
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            if out.len() >= PACKAGE_DISK_THX_LIMIT {
+                break;
+            }
+            let p = ent.path();
+            let Ok(ft) = ent.file_type() else {
+                continue;
+            };
+            if ft.is_dir() {
+                let name = ent.file_name();
+                let name = name.to_string_lossy();
+                if skip_walk_dir(&name) {
+                    continue;
+                }
+                stack.push(p);
+            } else if ft.is_file() {
+                if p.extension().and_then(|e| e.to_str()) == Some("thx") {
+                    out.push(p);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Collect import binding + uses in `other` when it selective-imports `export_name`
@@ -1497,6 +1554,137 @@ fn main() -> Int64 {
         assert!(
             uris.iter().any(|u| u.ends_with("Main.thx")),
             "expected disk Main.thx among refs: {uris:?}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn multi_file_refs_package_tree_on_disk() {
+        // Export in a subdir; Main at package root imports via `./lib/Helper`.
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa_lsp_pkgrefts_{}_{}",
+            std::process::id(),
+            ns
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let lib = dir.join("lib");
+        fs::create_dir_all(&lib).unwrap();
+        let helper = lib.join("Helper.thx");
+        let helper_src = "export fn answer() -> Int64 { 42 }\n";
+        fs::write(&helper, helper_src).unwrap();
+        let main = dir.join("Main.thx");
+        let main_src =
+            "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
+        fs::write(&main, main_src).unwrap();
+        let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
+        let def_byte = helper_src.find("answer").unwrap();
+        let p = span::byte_to_position(helper_src, def_byte);
+
+        let msgs = exchange(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": helper_uri,
+                        "languageId": "thoxa",
+                        "version": 1,
+                        "text": helper_src
+                    }
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/references",
+                "params": {
+                    "textDocument": { "uri": helper_uri },
+                    "position": { "line": p.line, "character": p.character },
+                    "context": { "includeDeclaration": true }
+                }
+            }),
+        ]);
+
+        let refs = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let arr = refs["result"].as_array().expect("refs array");
+        let uris: Vec<&str> = arr
+            .iter()
+            .filter_map(|l| l["uri"].as_str())
+            .collect();
+        assert!(
+            uris.iter().any(|u| u.ends_with("Main.thx")),
+            "expected package-root Main.thx among refs: {uris:?}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn multi_file_rename_package_tree_on_disk() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa_lsp_pkgren_{}_{}",
+            std::process::id(),
+            ns
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let lib = dir.join("lib");
+        fs::create_dir_all(&lib).unwrap();
+        let helper = lib.join("Helper.thx");
+        let helper_src = "export fn answer() -> Int64 { 42 }\n";
+        fs::write(&helper, helper_src).unwrap();
+        let main = dir.join("Main.thx");
+        let main_src =
+            "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
+        fs::write(&main, main_src).unwrap();
+        let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
+        let def_byte = helper_src.find("answer").unwrap();
+        let p = span::byte_to_position(helper_src, def_byte);
+
+        let msgs = exchange(&[
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": helper_uri,
+                        "languageId": "thoxa",
+                        "version": 1,
+                        "text": helper_src
+                    }
+                }
+            }),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/rename",
+                "params": {
+                    "textDocument": { "uri": helper_uri },
+                    "position": { "line": p.line, "character": p.character },
+                    "newName": "result"
+                }
+            }),
+        ]);
+
+        let ren = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let changes = ren["result"]["changes"]
+            .as_object()
+            .expect("workspace edit changes");
+        assert!(
+            changes.keys().any(|k| k.ends_with("Main.thx")),
+            "expected Main.thx on disk in package rename: {changes:?}"
         );
 
         let _ = fs::remove_dir_all(&dir);

@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-08 (sum polish done; session deferred)
+**As of:** 2026-08-08 (package-tree LSP refs/rename; session deferred)
 
 ---
 
@@ -14,11 +14,12 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Default product work is **language / I/O / std gaps** from
 the capability matrix, one slice at a time with conformance.
 
-**Shipped recently:** thin **std/** growth wave (substring/replace/split,
-Path.fileName, Env.tmpdir, Git.repoRoot, …). Session residual deferred.
+**Shipped recently:** LSP multi-file refs/rename over **package-tree disk**
+(nearest `Main.thx` / `.git` root, recursive `.thx`, open buffers still win);
+prior thin **std/** growth wave. Session residual deferred.
 
-**In progress / next:** non-session gaps — modules D91, full workspace walk,
-sample-driven std when forced.
+**In progress / next:** non-session gaps — modules D91, sample-driven std when
+forced, editor residual only when DX forces it.
 
 ### Proceed order
 

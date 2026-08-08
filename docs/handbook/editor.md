@@ -25,8 +25,8 @@ language server (grammar color changes may need a full quit/restart).
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
 | Go-to-def / hover on methods | Linked when receiver has a type hint (annotation, `Type(...)` init, or **method-return chain** like `p.moved().x`) |
 | Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk |
-| References | Local file + open buffers + **same-directory `.thx` on disk** that selective-import the export |
-| Rename | Local + open buffers + **same-directory `.thx` on disk** selective-import renames when renaming an export |
+| References | Local file + open buffers + **package-tree `.thx` on disk** (under nearest `Main.thx` / `.git` root; same-dir fallback) that selective-import the export |
+| Rename | Local + open buffers + **package-tree disk** selective-import renames when renaming an export |
 | Document symbols | Outline |
 | Open buffers | Overlay wins over disk for package check |
 
@@ -34,8 +34,8 @@ Library buffers without `main` typecheck as libraries (no false “requires main
 
 ## Limits (partial)
 
-- Typed member navigation is incomplete.
-- Cross-module jump for named roots (`std/`) is limited.
+- Typed member navigation is incomplete for no-hint / generic-return receivers.
+- Package-tree refs/rename are capped (nearest `Main.thx` / `.git` root; not an unbounded home walk).
 - Multi-diagnostic depth and MIR-on-shared-resolver are not full product yet.
 - **No Python** in the product editor path.
 
