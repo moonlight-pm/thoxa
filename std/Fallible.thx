@@ -1,0 +1,10 @@
+## Prelude fallibility (D118): May / Trial as ordinary generic unions.
+## Ambient — injected into every program; do not import.
+
+type Has<T>(value: T)
+type Not
+type May<T> = Has<T!> | Not?
+
+type Pass<T>(value: T)
+type Fail<E>(error: E)
+type Trial<P, F> = Pass<P!> | Fail<F?>

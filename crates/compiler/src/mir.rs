@@ -437,6 +437,7 @@ fn may_inner(ty: &Ty) -> Option<&Ty> {
 
 /// Types allowed as Trial ok/err or May payloads.
 /// Nested `Array` / `May` (D113) and nested `Trial` (D114) allowed.
+#[allow(dead_code)]
 fn is_trial_payload_ty(ty: &Ty) -> bool {
     match ty {
         Ty::Void
@@ -900,8 +901,47 @@ pub fn lower_package(package: &Package) -> Result<Program> {
     lower_package_with(package, LowerOptions::default())
 }
 
+/// Ambient fallibility prelude (D118): May/Trial as generic unions.
+const FALLIBLE_PRELUDE: &str = r#"
+type Has<T>(value: T)
+type Not
+type May<T> = Has<T!> | Not?
+
+type Pass<T>(value: T)
+type Fail<E>(error: E)
+type Trial<P, F> = Pass<P!> | Fail<F?>
+"#;
+
+/// Parse ambient Fallible types once and prepend to each module that lacks them.
+fn package_with_fallible_prelude(package: &Package) -> Result<Package> {
+    let tokens = crate::lexer::Lexer::new(FALLIBLE_PRELUDE)
+        .tokenize()
+        .map_err(|e| Error::new(format!("fallible prelude lex: {e}")))?;
+    let prelude = crate::parser::Parser::new(tokens)
+        .parse_module()
+        .map_err(|e| Error::new(format!("fallible prelude parse: {e}")))?;
+    let mut modules = package.modules.clone();
+    for m in &mut modules {
+        let has_may = m.ast.items.iter().any(|it| {
+            matches!(it, Item::Type(td) if td.name == "May" || td.name == "Has")
+        });
+        if has_may {
+            continue;
+        }
+        let mut items = prelude.items.clone();
+        items.append(&mut m.ast.items);
+        m.ast.items = items;
+    }
+    Ok(Package {
+        project_root: package.project_root.clone(),
+        modules,
+    })
+}
+
 /// Lower a multi-file package with explicit options.
 pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Program> {
+    let package = package_with_fallible_prelude(package)?;
+    let package = &package;
     let import_maps = loader::build_import_maps(package)?;
 
     // ---------- Phase 1: register types (mangled names) ----------
@@ -1022,7 +1062,9 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         per_mod_types.insert(m.id.clone(), map);
     }
 
-    // Eager monomorphization: materialize every GenericApp found in the package.
+    // Seed common fallible monomorphs first so nested apps (Trial<May<…>>) resolve.
+    seed_fallible_monos(&mut types_info, &mut type_layouts, &generics, &per_mod_types)?;
+    // Then materialize every GenericApp found in the package (including nested).
     monomorphize_package(
         package,
         &mut types_info,
@@ -1840,40 +1882,7 @@ fn resolve_ty(
         ("String", []) => Ok(Ty::String),
         ("Bytes", []) => Ok(Ty::Bytes),
         ("Buffer", []) => Ok(Ty::Buffer),
-        ("Trial", [TypeArg::Type(a), TypeArg::Type(b)]) => {
-            let ok = resolve_ty(a, types, name_map)?;
-            let err = resolve_ty(b, types, name_map)?;
-            if !is_trial_payload_ty(&ok) {
-                return Err(Error::at(
-                    format!("Trial ok type is not supported: {ok:?}"),
-                    t.span,
-                ));
-            }
-            if !is_trial_payload_ty(&err) {
-                return Err(Error::at(
-                    format!("Trial err type is not supported: {err:?}"),
-                    t.span,
-                ));
-            }
-            Ok(Ty::Trial {
-                ok: Box::new(ok),
-                err: Box::new(err),
-            })
-        }
-        ("Trial", _) => Err(Error::at("Trial expects two type arguments", t.span)),
-        ("May", [TypeArg::Type(a)]) => {
-            let inner = resolve_ty(a, types, name_map)?;
-            if !is_trial_payload_ty(&inner) {
-                return Err(Error::at(
-                    format!("May payload type is not supported: {inner:?}"),
-                    t.span,
-                ));
-            }
-            Ok(Ty::May {
-                inner: Box::new(inner),
-            })
-        }
-        ("May", _) => Err(Error::at("May expects one type argument", t.span)),
+        // May / Trial are prelude generic unions (D118 cutover) — resolved via monomorphs.
         ("Array", [TypeArg::Type(elem)]) => {
             let et = resolve_ty(elem, types, name_map)?;
             if !is_array_elem_ty(&et) {
@@ -2108,6 +2117,100 @@ fn resolve_ctor_mono(
     ))
 }
 
+/// Ensure May/Trial monomorphs used by inference and Bytes.find exist.
+fn seed_fallible_monos(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+    per_mod_types: &HashMap<String, HashMap<String, String>>,
+) -> Result<()> {
+    // Seed every module's May/Trial (prelude is injected into each).
+    let span = Span::new(0, 0);
+    let inners = [Ty::Int64, Ty::String, Ty::Bool, Ty::Bytes, Ty::Void];
+    let mut pending = Vec::new();
+    for name_map in per_mod_types.values() {
+        if let Some(may_base) = name_map.get("May") {
+            for inn in &inners {
+                pending.push((
+                    may_base.clone(),
+                    vec![inn.clone()],
+                    name_map.clone(),
+                    span,
+                ));
+            }
+        }
+        if let Some(trial_base) = name_map.get("Trial") {
+            for ok in &inners {
+                for err in &inners {
+                    pending.push((
+                        trial_base.clone(),
+                        vec![ok.clone(), err.clone()],
+                        name_map.clone(),
+                        span,
+                    ));
+                }
+            }
+        }
+    }
+    monomorphize_pending(pending, types, layouts, generics)?;
+    Ok(())
+}
+
+fn monomorphize_pending(
+    mut pending: Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+) -> Result<()> {
+    let mut guard = 0;
+    while !pending.is_empty() {
+        guard += 1;
+        if guard > 10_000 {
+            return Err(Error::new(
+                "internal: monomorphization did not converge (too many iterations)",
+            ));
+        }
+        let (base, arg_tys, name_map, span) = pending.remove(0);
+        let mono = mono_type_name(&base, &arg_tys);
+        if types.contains_key(&mono) {
+            continue;
+        }
+        let Some(gdef) = generics.get(&base) else {
+            continue;
+        };
+        if gdef.type_params.len() != arg_tys.len() {
+            return Err(Error::at(
+                format!(
+                    "type `{}` expects {} type argument(s), found {}",
+                    gdef.source_name,
+                    gdef.type_params.len(),
+                    arg_tys.len()
+                ),
+                span,
+            ));
+        }
+        let mut subst: HashMap<String, Ty> = HashMap::new();
+        for (p, ty) in gdef.type_params.iter().zip(arg_tys.iter()) {
+            subst.insert(p.clone(), ty.clone());
+        }
+        match &gdef.kind {
+            GenericKind::Product { params } => {
+                instantiate_product_mono(
+                    mono, gdef, params, &subst, types, layouts, &name_map, generics, &mut pending,
+                    span,
+                )?;
+            }
+            GenericKind::Union { members } => {
+                instantiate_union_mono(
+                    mono, gdef, members, &subst, types, layouts, &name_map, generics, &mut pending,
+                    span,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Materialize monomorphs for every generic application in the package.
 fn monomorphize_package(
     package: &Package,
@@ -2162,61 +2265,14 @@ fn monomorphize_package(
         }
     }
 
-    // Process until fixed point (nested mono apps inside templates).
-    let mut guard = 0;
-    while !pending.is_empty() {
-        guard += 1;
-        if guard > 10_000 {
-            return Err(Error::new(
-                "internal: monomorphization did not converge (too many iterations)",
-            ));
-        }
-        let (base, arg_tys, name_map, span) = pending.remove(0);
-        let mono = mono_type_name(&base, &arg_tys);
-        if types.contains_key(&mono) {
-            continue;
-        }
-        let gdef = generics.get(&base).ok_or_else(|| {
-            Error::at(format!("internal: missing generic `{base}`"), span)
-        })?;
-        if gdef.type_params.len() != arg_tys.len() {
-            return Err(Error::at(
-                format!(
-                    "type `{}` expects {} type argument(s), found {}",
-                    gdef.source_name,
-                    gdef.type_params.len(),
-                    arg_tys.len()
-                ),
-                span,
-            ));
-        }
-        let mut subst: HashMap<String, Ty> = HashMap::new();
-        for (p, ty) in gdef.type_params.iter().zip(arg_tys.iter()) {
-            subst.insert(p.clone(), ty.clone());
-        }
-        // Extend name_map with type params → concrete (via synthetic resolve).
-        match &gdef.kind {
-            GenericKind::Product { params } => {
-                instantiate_product_mono(
-                    mono, gdef, params, &subst, types, layouts, &name_map, generics, &mut pending,
-                    span,
-                )?;
-            }
-            GenericKind::Union { members } => {
-                instantiate_union_mono(
-                    mono, gdef, members, &subst, types, layouts, &name_map, generics, &mut pending,
-                    span,
-                )?;
-            }
-        }
-    }
-    Ok(())
+    monomorphize_pending(pending, types, layouts, generics)
 }
 
 fn is_builtin_generic(name: &str) -> bool {
+    // May/Trial are user generics from the fallible prelude (not builtins).
     matches!(
         name,
-        "May" | "Trial" | "Array" | "Address" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte"
+        "Array" | "Address" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte"
             | "UInt8" | "Bool" | "String" | "Bytes" | "Buffer" | "Void"
     )
 }
@@ -2390,14 +2446,21 @@ fn instantiate_product_mono(
             }
         }
         let ty = resolve_ty(&te, types, name_map)?;
+        // Allow User (File, nested May/Trial, …) and Void (Trial ok = Void).
         let ok = matches!(
             ty,
-            Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
+            Ty::Int64
+                | Ty::Bool
+                | Ty::String
+                | Ty::Bytes
+                | Ty::Array { .. }
+                | Ty::User(_)
+                | Ty::Void
         );
         if !ok {
             return Err(Error::at(
                 format!(
-                    "generic product field `{}` must be Int64, Bool, String, Bytes, or Array (got {ty:?})",
+                    "generic product field `{}` must be Int64, Bool, String, Bytes, Array, User, or Void (got {ty:?})",
                     p.name
                 ),
                 p.ty.span,
@@ -2617,10 +2680,12 @@ fn instantiate_union_mono(
                         | Ty::Void
                         | Ty::String
                         | Ty::Bytes
+                        | Ty::User(_)
+                        | Ty::Array { .. }
                 ) {
                     return Err(Error::at(
                         format!(
-                            "union member `{vname}` field `{}` must be scalar or String/Bytes",
+                            "union member `{vname}` field `{}` must be scalar, String/Bytes, User, or Array",
                             f.name
                         ),
                         te.span,
@@ -2764,7 +2829,7 @@ fn lower_function(
     }
 
     let ret = lower_block_value(&mut ctx, &f.body, &ret_ty)?;
-    insert_function_drops(&mut ctx.stmts, &ret, &ret_ty);
+    insert_function_drops(&mut ctx.stmts, &ret, &ret_ty, &ctx.drop_places);
 
     Ok(Function {
         name: mangled.to_string(),
@@ -2876,7 +2941,7 @@ fn lower_method(
     }
 
     let ret = lower_block_value(&mut ctx, &m.body, &ret_ty)?;
-    insert_function_drops(&mut ctx.stmts, &ret, &ret_ty);
+    insert_function_drops(&mut ctx.stmts, &ret, &ret_ty, &ctx.drop_places);
 
     Ok(Function {
         name: format!("{mangled_type}__{}", m.name),
@@ -2889,10 +2954,16 @@ fn lower_method(
     })
 }
 
-/// Drop every heap / Trial-with-heap local at function end except the returned place (moved out).
-fn insert_function_drops(stmts: &mut Vec<Stmt>, ret: &Option<Place>, ret_ty: &Ty) {
-    let mut places: Vec<(String, Ty)> = Vec::new();
-    collect_drop_places(stmts, &mut places);
+/// Drop every noted heap local at function end except the returned place (moved out).
+/// Uses `drop_places` (from `assign` / `note_drop_place`), not every Assign — so
+/// `assign_no_drop` sum-payload intermediates are not double-freed (D118 prelude).
+fn insert_function_drops(
+    stmts: &mut Vec<Stmt>,
+    ret: &Option<Place>,
+    ret_ty: &Ty,
+    drop_places: &[(String, Ty)],
+) {
+    let places: Vec<(String, Ty)> = drop_places.to_vec();
     let skip = if needs_drop(ret_ty) || is_trial(ret_ty) || is_may(ret_ty) {
         ret.as_ref().map(|p| p.name.clone())
     } else {
@@ -4883,10 +4954,8 @@ fn lower_bytes_method(
                     args: all,
                 },
             );
-            // Wrap runtime -1 / index into May<Int64>.
-            let may_ty = Ty::May {
-                inner: Box::new(Ty::Int64),
-            };
+            // Wrap runtime -1 / index into prelude May<Int64>.
+            let may_ty = prelude_mono(ctx, "May", &[Ty::Int64], span)?;
             let out = ctx.fresh("findm");
             init_place(ctx, &out, &may_ty)?;
             let zero = ctx.fresh("fz");
@@ -4902,30 +4971,49 @@ fn lower_bytes_method(
                 },
             );
             let outer = std::mem::take(&mut ctx.stmts);
-            let mut then_body = Vec::new();
-            let dummy = Place {
-                name: format!("_notp{}", ctx.temps),
+            let not_m = match union_arm_payload(&ctx.types, &may_ty, "Not") {
+                Some(Ty::User(n)) => n,
+                _ => {
+                    return Err(Error::at("internal: May missing Not arm", span));
+                }
             };
-            ctx.temps += 1;
-            then_body.push(Stmt::Assign {
-                place: out.clone(),
-                ty: may_ty.clone(),
-                value: RValue::MayMake {
-                    tag: MayTag::Not,
-                    payload: dummy,
-                    may_ty: may_ty.clone(),
-                },
-            });
+            let has_m = match union_arm_payload(&ctx.types, &may_ty, "Has") {
+                Some(Ty::User(n)) => n,
+                _ => {
+                    return Err(Error::at("internal: May missing Has arm", span));
+                }
+            };
+            // then: Not arm
+            let mut then_body = Vec::new();
+            {
+                let saved = std::mem::take(&mut ctx.stmts);
+                ctx.stmts = then_body;
+                let (not_p, not_ty) = construct_product(ctx, &not_m, &[], span)?;
+                let (inj, _) = inject_into_union(ctx, not_p, &not_ty, &may_ty, span)?;
+                ctx.assign(out.clone(), may_ty.clone(), RValue::Use(inj));
+                then_body = std::mem::take(&mut ctx.stmts);
+                ctx.stmts = saved;
+            }
+            // else: Has(idx)
             let mut else_body = Vec::new();
-            else_body.push(Stmt::Assign {
-                place: out.clone(),
-                ty: may_ty.clone(),
-                value: RValue::MayMake {
-                    tag: MayTag::Has,
-                    payload: idx,
-                    may_ty: may_ty.clone(),
-                },
-            });
+            {
+                let saved = std::mem::take(&mut ctx.stmts);
+                ctx.stmts = else_body;
+                let hp = ctx.fresh("has");
+                let hty = Ty::User(has_m.clone());
+                ctx.assign(
+                    hp.clone(),
+                    hty.clone(),
+                    RValue::StructLit {
+                        type_name: has_m,
+                        fields: vec![idx],
+                    },
+                );
+                let (inj, _) = inject_into_union(ctx, hp, &hty, &may_ty, span)?;
+                ctx.assign(out.clone(), may_ty.clone(), RValue::Use(inj));
+                else_body = std::mem::take(&mut ctx.stmts);
+                ctx.stmts = saved;
+            }
             ctx.stmts = outer;
             ctx.stmts.push(Stmt::If {
                 cond: missing,
@@ -5163,13 +5251,14 @@ fn lower_arg_for_formal(
 
 fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)> {
     let (scrut_p, scrut_ty) = lower_expr(ctx, inner)?;
-    if is_may(&scrut_ty) {
-        return lower_try_may(ctx, scrut_p, scrut_ty, span);
-    }
+    // Prelude May/Trial are residual-marked unions.
     if let Ty::User(ref n) = &scrut_ty {
         if let Some(sum) = ctx.types.get(n).and_then(|i| i.sum.clone()) {
             return lower_try_sum(ctx, scrut_p, scrut_ty, sum, span);
         }
+    }
+    if is_may(&scrut_ty) {
+        return lower_try_may(ctx, scrut_p, scrut_ty, span);
     }
     let Some((ok_ty, err_ty)) = trial_parts(&scrut_ty) else {
         return Err(Error::at(
@@ -5301,9 +5390,11 @@ fn lower_try_sum(
         )
     })?;
     let fn_ret = ctx.fn_ret.clone();
-    if fn_ret != scrut_ty {
+    let same_ret = fn_ret == scrut_ty;
+    let rewrap = !same_ret && is_residual_union(&ctx.types, &fn_ret);
+    if !same_ret && !rewrap {
         return Err(Error::at(
-            "`?` on a union requires the enclosing function to return the same union type",
+            "`?` on a union requires the enclosing function to return the same union type (or a residual-compatible Trial/May)",
             span,
         ));
     }
@@ -5317,6 +5408,13 @@ fn lower_try_sum(
             return Err(Error::at("internal: sum try on non-User", span));
         }
     };
+    let residual_arm = sum
+        .variants
+        .iter()
+        .find(|v| v.tag == residual_tag)
+        .cloned()
+        .ok_or_else(|| Error::at("internal: bad residual tag", span))?;
+
     let tag = ctx.fresh("stag");
     ctx.assign(
         tag.clone(),
@@ -5344,9 +5442,8 @@ fn lower_try_sum(
     );
 
     let outer = std::mem::take(&mut ctx.stmts);
-    // then: residual → return scrut (whole sum value)
+    // then: residual → return (same type or rewrap into fn_ret)
     let mut then_body = Vec::new();
-    // drops before return
     let mut drops = Vec::new();
     for (n, ty) in &ctx.drop_places {
         if n != &scrut_p.name {
@@ -5357,9 +5454,45 @@ fn lower_try_sum(
         }
     }
     then_body.extend(drops);
-    then_body.push(Stmt::Return {
-        value: Some(scrut_p.clone()),
-    });
+    if same_ret {
+        then_body.push(Stmt::Return {
+            value: Some(scrut_p.clone()),
+        });
+    } else {
+        // Rewrap residual arm into enclosing Trial/May monomorph (historical Trial ?).
+        let saved = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = then_body;
+        let payload = if residual_arm.ty != Ty::Void {
+            let pp = ctx.fresh("rpay");
+            ctx.assign_no_drop(
+                pp.clone(),
+                residual_arm.ty.clone(),
+                RValue::SumPayload {
+                    base: scrut_p.clone(),
+                    tag: residual_tag,
+                    payload_ty: residual_arm.ty.clone(),
+                },
+            );
+            if needs_drop(&residual_arm.ty) {
+                ctx.stmts.push(Stmt::Dup {
+                    place: pp.clone(),
+                    ty: residual_arm.ty.clone(),
+                });
+            }
+            pp
+        } else {
+            let dummy = ctx.fresh("rvoid");
+            ctx.assign(dummy.clone(), Ty::Int64, RValue::Int(0));
+            dummy
+        };
+        let (inj, _) =
+            inject_into_union(ctx, payload, &residual_arm.ty, &fn_ret, span)?;
+        then_body = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = saved;
+        then_body.push(Stmt::Return {
+            value: Some(inj),
+        });
+    }
 
     // else: extract success
     let mut else_body = Vec::new();
@@ -5367,9 +5500,15 @@ fn lower_try_sum(
     // Temporarily use else_body via ctx.stmts
     ctx.stmts = std::mem::take(&mut else_body);
     let ok_p = emit_sum_success_extract(ctx, &scrut_p, &sum, &success_ty, span)?;
+    // Void has no C local type — store as Int64 dummy like historical Trial Void.
+    let place_ty = if success_ty == Ty::Void {
+        Ty::Int64
+    } else {
+        success_ty.clone()
+    };
     ctx.assign(
         success_place.clone(),
-        success_ty.clone(),
+        place_ty,
         RValue::Use(ok_p),
     );
     else_body = std::mem::take(&mut ctx.stmts);
@@ -5499,9 +5638,17 @@ fn emit_sum_success_extract(
 
     // Unwrap sole field when type-arg `!` / W2 demands the payload type.
     if unwrap {
+        if success_ty == &Ty::Void {
+            let p = ctx.fresh("svoid");
+            ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
+            return Ok(p);
+        }
         if let Ty::User(n) = &arm_ty {
             let field_name = ctx.types.get(n).and_then(|info| {
-                if info.fields.len() == 1 && info.fields[0].ty == *success_ty {
+                if info.fields.len() == 1
+                    && info.fields[0].ty == *success_ty
+                    && info.fields[0].ty != Ty::Void
+                {
                     Some(info.fields[0].name.clone())
                 } else {
                     None
@@ -5906,7 +6053,7 @@ fn try_sum_inject(
     };
     let tag = v.tag;
     let payload_ty = v.ty.clone();
-    // Heap-bearing product: Dup so inject's shallow copy and the source both own (D118).
+    // Heap-bearing payload: Dup so inject's shallow copy and the source both own.
     if needs_drop(&payload_ty) {
         ctx.stmts.push(Stmt::Dup {
             place: place.clone(),
@@ -5985,24 +6132,7 @@ fn lower_match(
     }
 
     let (scrut_p, scrut_ty) = lower_expr(ctx, scrutinee)?;
-    if is_may(&scrut_ty) {
-        if arms.len() != 2 {
-            return Err(Error::at(
-                "May match requires exactly two arms (Has / Not)",
-                span,
-            ));
-        }
-        return lower_match_may(ctx, scrut_p, scrut_ty, arms, span);
-    }
-    if is_trial(&scrut_ty) {
-        if arms.len() != 2 {
-            return Err(Error::at(
-                "Trial match requires exactly two arms (Pass / Fail)",
-                span,
-            ));
-        }
-        return lower_match_trial(ctx, scrut_p, scrut_ty, arms, span);
-    }
+    // Prelude May/Trial are residual-marked user unions — use general sum match.
     if matches!(scrut_ty, Ty::String | Ty::Int64 | Ty::Bool) {
         return lower_match_value(ctx, scrut_p, scrut_ty, arms, span);
     }
@@ -6010,6 +6140,13 @@ fn lower_match(
         if ctx.types.get(n).and_then(|i| i.sum.as_ref()).is_some() {
             return lower_match_sum(ctx, scrut_p, scrut_ty, arms, span);
         }
+    }
+    // Legacy builtin Ty::May / Ty::Trial (should be unused after prelude cutover).
+    if is_may(&scrut_ty) {
+        return lower_match_may(ctx, scrut_p, scrut_ty, arms, span);
+    }
+    if is_trial(&scrut_ty) {
+        return lower_match_trial(ctx, scrut_p, scrut_ty, arms, span);
     }
     Err(Error::at(
         "match supports Trial, May, String, Int64, Bool, or union types",
@@ -6290,22 +6427,28 @@ fn lower_match_sum(
                         if let Some(bname) = bopt {
                             let fty = member_fields[i].ty.clone();
                             let fp = ctx.fresh("sf");
-                            ctx.assign(
-                                fp.clone(),
-                                fty.clone(),
-                                RValue::Field {
-                                    base: payload.clone(),
-                                    field: sanitize_field(&member_fields[i].name),
-                                },
-                            );
-                            // Field load aliases the payload; own a separate ref when heap.
-                            if needs_drop(&fty) {
-                                ctx.stmts.push(Stmt::Dup {
-                                    place: fp.clone(),
-                                    ty: fty.clone(),
-                                });
+                            if fty == Ty::Void {
+                                // Void field has no C storage (Pass(Void)).
+                                ctx.assign(fp.clone(), Ty::Int64, RValue::Int(0));
+                                ctx.define(bname, Ty::Void, false, fp);
+                            } else {
+                                ctx.assign(
+                                    fp.clone(),
+                                    fty.clone(),
+                                    RValue::Field {
+                                        base: payload.clone(),
+                                        field: sanitize_field(&member_fields[i].name),
+                                    },
+                                );
+                                // Field load aliases the payload; own a separate ref when heap.
+                                if needs_drop(&fty) {
+                                    ctx.stmts.push(Stmt::Dup {
+                                        place: fp.clone(),
+                                        ty: fty.clone(),
+                                    });
+                                }
+                                ctx.define(bname, fty, false, fp);
                             }
-                            ctx.define(bname, fty, false, fp);
                         }
                     }
                 }
@@ -7445,211 +7588,252 @@ fn lower_binary(
     }
 }
 
+/// Resolve prelude monomorph `Base__Arg…` if present in the type map.
+fn prelude_mono(ctx: &LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Result<Ty> {
+    let base = ctx
+        .name_to_type
+        .get(base_src)
+        .cloned()
+        .unwrap_or_else(|| base_src.to_string());
+    let mono = mono_type_name(&base, args);
+    if !ctx.types.contains_key(&mono) {
+        return Err(Error::at(
+            format!(
+                "prelude type `{base_src}` monomorph `{mono}` missing — add a type annotation using `{base_src}<…>`"
+            ),
+            span,
+        ));
+    }
+    Ok(Ty::User(mono))
+}
+
+fn is_residual_union(types: &HashMap<String, TypeInfo>, ty: &Ty) -> bool {
+    match ty {
+        Ty::User(n) => types
+            .get(n)
+            .and_then(|i| i.sum.as_ref())
+            .and_then(|s| s.residual_tag)
+            .is_some(),
+        _ => false,
+    }
+}
+
+/// Find payload type of a named arm in a union (e.g. `Has` in `May__Int64`).
+fn union_arm_payload(types: &HashMap<String, TypeInfo>, union: &Ty, arm: &str) -> Option<Ty> {
+    let Ty::User(n) = union else {
+        return None;
+    };
+    let sum = types.get(n)?.sum.as_ref()?;
+    sum.variants.iter().find(|v| v.name == arm).map(|v| v.ty.clone())
+}
+
+/// Construct a monomorphized product type by mangled name.
+fn construct_product(
+    ctx: &mut LowerCtx,
+    mangled: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let info = ctx
+        .types
+        .get(mangled)
+        .ok_or_else(|| Error::at(format!("unknown type `{mangled}`"), span))?
+        .clone();
+    let p = ctx.fresh("obj");
+    let ty = Ty::User(mangled.to_string());
+    // Void-only product (Pass(Void)): treat as nullary in C.
+    let real_fields: Vec<_> = info
+        .fields
+        .iter()
+        .filter(|f| f.ty != Ty::Void)
+        .cloned()
+        .collect();
+    if info.zero_init {
+        if !args.is_empty() {
+            return Err(Error::at("zero-init constructor takes no arguments", span));
+        }
+        ctx.assign(
+            p.clone(),
+            ty.clone(),
+            RValue::StructZero {
+                type_name: mangled.to_string(),
+            },
+        );
+    } else if real_fields.is_empty() {
+        // Nullary product (Not) or Void-only (Pass(Void)).
+        // Accept 0 args, or 1 Void arg for Pass(Void).
+        if args.len() > 1 {
+            return Err(Error::at("nullary type takes no arguments", span));
+        }
+        if args.len() == 1 {
+            // Evaluate Void arg for side effects / type check.
+            let _ = lower_arg_for_formal(ctx, match &args[0] {
+                Arg::Pos(e) => e,
+                Arg::Named { value, .. } => value,
+            }, &Ty::Void, "value", 0)?;
+        }
+        ctx.assign(
+            p.clone(),
+            ty.clone(),
+            RValue::StructLit {
+                type_name: mangled.to_string(),
+                fields: vec![],
+            },
+        );
+    } else {
+        let formal: Vec<(String, Ty)> = real_fields
+            .iter()
+            .map(|f| (f.name.clone(), f.ty.clone()))
+            .collect();
+        let defaults: Vec<Option<Expr>> =
+            real_fields.iter().map(|f| f.default.clone()).collect();
+        // If source fields include Void, formals are only non-Void; call sites use
+        // non-Void args only (Pass(box) not Pass(Void, box)).
+        let field_places = resolve_call_args_with_defaults(
+            ctx,
+            &formal,
+            &defaults,
+            args,
+            span,
+            &info.def_mod,
+        )?;
+        // Shallow product; inject_into_union Dups before the sum takes ownership.
+        // Use assign_no_drop so end-of-fn drops don't free the product twice.
+        ctx.assign_no_drop(
+            p.clone(),
+            ty.clone(),
+            RValue::StructLit {
+                type_name: mangled.to_string(),
+                fields: field_places,
+            },
+        );
+    }
+    Ok((p, ty))
+}
+
+fn inject_into_union(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    union: &Ty,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    if from == union {
+        return Ok((place, union.clone()));
+    }
+    if let Some(p) = try_sum_coerce(ctx, place, from, union, None, span)? {
+        return Ok((p, union.clone()));
+    }
+    Err(Error::at(
+        format!("cannot inject {from:?} into {union:?}"),
+        span,
+    ))
+}
+
 fn lower_pass_fail(
     ctx: &mut LowerCtx,
     callee: &str,
     args: &[Arg],
     span: Span,
+    expect: Option<&Ty>,
 ) -> Result<(Place, Ty)> {
     if args.len() != 1 {
         return Err(Error::at(format!("`{callee}` expects 1 argument"), span));
     }
-    let expr = match &args[0] {
-        Arg::Pos(e) => e,
-        Arg::Named { value, .. } => value,
-    };
-    let (payload_raw, pty) = lower_expr(ctx, expr)?;
-
-    // Prefer the enclosing function's Trial return type when present.
-    if let Ty::Trial { ok, err } = ctx.fn_ret.clone() {
-        let expected = if callee == "Pass" {
-            ok.as_ref().clone()
+    let trial_ty = if let Some(exp) = expect {
+        if is_residual_union(&ctx.types, exp) {
+            exp.clone()
         } else {
-            err.as_ref().clone()
-        };
-        let payload = coerce_payload(ctx, payload_raw, &pty, &expected, span)?;
-        // Droppable payload (String/Bytes/User): bump so Trial and the temp both own
-        // (temp dropped at fn end). User Dup field-walks heap members once via emit_rc.
-        if needs_drop(&expected) {
-            ctx.stmts.push(Stmt::Dup {
-                place: payload.clone(),
-                ty: expected.clone(),
-            });
+            return Err(Error::at(
+                format!("`{callee}` expected a Trial type, found {exp:?}"),
+                span,
+            ));
         }
-        let tag = if callee == "Pass" {
-            TrialTag::Pass
-        } else {
-            TrialTag::Fail
-        };
-        let p = ctx.fresh("tr");
-        let ty = ctx.fn_ret.clone();
-        ctx.assign(
-            p.clone(),
-            ty.clone(),
-            RValue::TrialMake {
-                tag,
-                payload,
-                trial_ty: ty.clone(),
-            },
-        );
-        return Ok((p, ty));
-    }
-
-    // Infer: Pass/Fail(Int) → Trial<Int64, Int64>; Fail(String) alone not enough.
-    let payload = if pty == Ty::Int64 {
-        payload_raw
-    } else if is_int(&pty) {
-        coerce_place(ctx, payload_raw, &pty, &Ty::Int64, span)?
-    } else if pty == Ty::String && callee == "Fail" {
-        return Err(Error::at(
-            "`Fail(String)` requires an enclosing `-> Trial<…, String>` (or annotate the function)",
-            span,
-        ));
-    } else if pty == Ty::Void && callee == "Pass" {
-        return Err(Error::at(
-            "`Pass(Void)` requires an enclosing `-> Trial<Void, …>`",
-            span,
-        ));
+    } else if is_residual_union(&ctx.types, &ctx.fn_ret) {
+        ctx.fn_ret.clone()
     } else {
-        return Err(Error::at(
-            format!("`{callee}` payload type {pty:?} needs an annotated Trial return type"),
+        // Infer Trial<Int64, Int64> — monomorph must already exist from type annotations.
+        prelude_mono(ctx, "Trial", &[Ty::Int64, Ty::Int64], span)?
+    };
+    let arm_ty = union_arm_payload(&ctx.types, &trial_ty, callee).ok_or_else(|| {
+        Error::at(
+            format!("`{callee}` is not an arm of {trial_ty:?}"),
             span,
-        ));
+        )
+    })?;
+    let Ty::User(arm_name) = arm_ty else {
+        return Err(Error::at(format!("internal: `{callee}` arm is not a product"), span));
     };
-    let tag = if callee == "Pass" {
-        TrialTag::Pass
-    } else {
-        TrialTag::Fail
-    };
-    let ty = Ty::Trial {
-        ok: Box::new(Ty::Int64),
-        err: Box::new(Ty::Int64),
-    };
-    let p = ctx.fresh("tr");
-    ctx.assign(
-        p.clone(),
-        ty.clone(),
-        RValue::TrialMake {
-            tag,
-            payload,
-            trial_ty: ty.clone(),
-        },
-    );
-    Ok((p, ty))
+    let (atom, aty) = construct_product(ctx, &arm_name, args, span)?;
+    inject_into_union(ctx, atom, &aty, &trial_ty, span)
 }
 
-/// Coerce a Pass/Fail payload into the formal ok/err type.
-fn coerce_payload(
+fn lower_has(
     ctx: &mut LowerCtx,
-    place: Place,
-    from: &Ty,
-    to: &Ty,
+    args: &[Arg],
     span: Span,
-) -> Result<Place> {
-    if from == to {
-        return Ok(place);
-    }
-    if is_int(from) && is_int(to) {
-        return coerce_place(ctx, place, from, to, span);
-    }
-    if *to == Ty::Void && *from == Ty::Void {
-        return Ok(place);
-    }
-    Err(Error::at(
-        format!("Trial payload: expected {to:?}, found {from:?}"),
-        span,
-    ))
-}
-
-fn lower_has(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    expect: Option<&Ty>,
+) -> Result<(Place, Ty)> {
     if args.len() != 1 {
         return Err(Error::at("`Has` expects 1 argument", span));
     }
-    let expr = match &args[0] {
-        Arg::Pos(e) => e,
-        Arg::Named { value, .. } => value,
-    };
-    let (payload_raw, pty) = lower_expr(ctx, expr)?;
-
-    if let Ty::May { inner } = ctx.fn_ret.clone() {
-        let expected = inner.as_ref().clone();
-        let payload = coerce_payload(ctx, payload_raw, &pty, &expected, span)?;
-        if needs_drop(&expected) {
-            ctx.stmts.push(Stmt::Dup {
-                place: payload.clone(),
-                ty: expected.clone(),
-            });
+    let may_ty = if let Some(exp) = expect {
+        if is_residual_union(&ctx.types, exp) {
+            exp.clone()
+        } else {
+            return Err(Error::at(
+                format!("`Has` expected a May type, found {exp:?}"),
+                span,
+            ));
         }
-        let p = ctx.fresh("may");
-        let ty = ctx.fn_ret.clone();
-        ctx.assign(
-            p.clone(),
-            ty.clone(),
-            RValue::MayMake {
-                tag: MayTag::Has,
-                payload,
-                may_ty: ty.clone(),
-            },
-        );
-        return Ok((p, ty));
-    }
-
-    // Infer Has(Int) → May<Int64>.
-    let payload = if pty == Ty::Int64 {
-        payload_raw
-    } else if is_int(&pty) {
-        coerce_place(ctx, payload_raw, &pty, &Ty::Int64, span)?
+    } else if is_residual_union(&ctx.types, &ctx.fn_ret) {
+        ctx.fn_ret.clone()
     } else {
-        return Err(Error::at(
-            format!("`Has` payload type {pty:?} needs an annotated May return type"),
-            span,
-        ));
+        // Infer May<Int64> when no annotation (historical Has(int) default).
+        prelude_mono(ctx, "May", &[Ty::Int64], span)?
     };
-    let ty = Ty::May {
-        inner: Box::new(Ty::Int64),
+    let arm_ty = union_arm_payload(&ctx.types, &may_ty, "Has").ok_or_else(|| {
+        Error::at(format!("`Has` is not an arm of {may_ty:?}"), span)
+    })?;
+    let Ty::User(arm_name) = arm_ty else {
+        return Err(Error::at("internal: Has arm is not a product", span));
     };
-    let p = ctx.fresh("may");
-    ctx.assign(
-        p.clone(),
-        ty.clone(),
-        RValue::MayMake {
-            tag: MayTag::Has,
-            payload,
-            may_ty: ty.clone(),
-        },
-    );
-    Ok((p, ty))
+    let (atom, aty) = construct_product(ctx, &arm_name, args, span)?;
+    inject_into_union(ctx, atom, &aty, &may_ty, span)
 }
 
-fn lower_not(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+fn lower_not(
+    ctx: &mut LowerCtx,
+    args: &[Arg],
+    span: Span,
+    expect: Option<&Ty>,
+) -> Result<(Place, Ty)> {
     if !args.is_empty() {
         return Err(Error::at("`Not()` takes no arguments", span));
     }
-    let ty = if let Ty::May { .. } = &ctx.fn_ret {
+    let may_ty = if let Some(exp) = expect {
+        if is_residual_union(&ctx.types, exp) {
+            exp.clone()
+        } else {
+            return Err(Error::at(
+                format!("`Not()` expected a May type, found {exp:?}"),
+                span,
+            ));
+        }
+    } else if is_residual_union(&ctx.types, &ctx.fn_ret) {
         ctx.fn_ret.clone()
     } else {
-        // Bare Not() outside `-> May<…>` (e.g. `Pass(Not())` with Trial ok = May):
-        // default May<Int64> like Has(int) inference; monomorph must match via coerce.
-        Ty::May {
-            inner: Box::new(Ty::Int64),
-        }
+        prelude_mono(ctx, "May", &[Ty::Int64], span)?
     };
-    let dummy = ctx.fresh("notp");
-    // Dummy payload zero for compound literal (ignored when tag=Not).
-    if let Ty::May { inner } = &ty {
-        init_place(ctx, &dummy, inner)?;
-    }
-    let p = ctx.fresh("may");
-    ctx.assign(
-        p.clone(),
-        ty.clone(),
-        RValue::MayMake {
-            tag: MayTag::Not,
-            payload: dummy,
-            may_ty: ty.clone(),
-        },
-    );
-    Ok((p, ty))
+    let arm_ty = union_arm_payload(&ctx.types, &may_ty, "Not").ok_or_else(|| {
+        Error::at(format!("`Not` is not an arm of {may_ty:?}"), span)
+    })?;
+    let Ty::User(arm_name) = arm_ty else {
+        // Nullary Not is User with empty fields.
+        return Err(Error::at("internal: Not arm is not a product", span));
+    };
+    let (atom, aty) = construct_product(ctx, &arm_name, args, span)?;
+    inject_into_union(ctx, atom, &aty, &may_ty, span)
 }
 
 fn lower_call(
@@ -7704,9 +7888,9 @@ fn lower_call(
             ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
             Ok((p, Ty::Void))
         }
-        "Pass" | "Fail" => lower_pass_fail(ctx, callee, args, span),
-        "Has" => lower_has(ctx, args, span),
-        "Not" => lower_not(ctx, args, span),
+        "Pass" | "Fail" => lower_pass_fail(ctx, callee, args, span, expect),
+        "Has" => lower_has(ctx, args, span, expect),
+        "Not" => lower_not(ctx, args, span, expect),
         "Bytes" => {
             // `Bytes(n)` — zero-filled buffer (R9 / D18). Not a user type.
             lower_bytes_new(ctx, args, span)

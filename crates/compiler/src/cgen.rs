@@ -87,18 +87,9 @@ pub fn emit_program_with(
     out.push_str("#include \"thoxa_rt.h\"\n\n");
     let _ = program.externs; // used for include selection above
 
-    // User structs first (may appear as Trial ok payloads / Array elements).
-    // Emit non-sum products before union aliases so payload C types exist (D118).
-    for t in &program.types {
-        if t.sum.is_none() {
-            emit_typedef(&mut out, t);
-        }
-    }
-    for t in &program.types {
-        if t.sum.is_some() {
-            emit_typedef(&mut out, t);
-        }
-    }
+    // Topological typedef order so nested fallible monomorphs see payload types
+    // first (Pass__May requires May, Trial requires Pass, …).
+    emit_typedefs_topo(&mut out, &program.types);
 
     // Monomorphized May/Trial typedefs. Interleave by nest depth so
     // May<Trial<…>> and Trial<May<…>> both see payload types first (D113/D114).
@@ -331,6 +322,59 @@ fn emit_global_extern(out: &mut String, g: &GlobalVar) {
     let _ = writeln!(out, "extern {} {};", c_ty(&g.ty), g.name);
 }
 
+fn layout_deps(t: &TypeLayout) -> Vec<String> {
+    let mut deps = Vec::new();
+    let push_ty = |ty: &Ty, deps: &mut Vec<String>| {
+        if let Ty::User(n) = ty {
+            deps.push(n.clone());
+        }
+    };
+    for f in &t.fields {
+        push_ty(&f.ty, &mut deps);
+    }
+    if let Some(vars) = &t.sum {
+        for v in vars {
+            push_ty(&v.payload_ty, &mut deps);
+        }
+    }
+    deps
+}
+
+fn emit_typedefs_topo(out: &mut String, types: &[TypeLayout]) {
+    let names: HashSet<String> = types.iter().map(|t| t.name.clone()).collect();
+    let mut done: HashSet<String> = HashSet::new();
+    let mut remaining: Vec<&TypeLayout> = types.iter().collect();
+    let mut guard = 0;
+    while !remaining.is_empty() {
+        guard += 1;
+        if guard > types.len() + 2 {
+            for t in remaining {
+                emit_typedef(out, t);
+            }
+            break;
+        }
+        let mut next = Vec::new();
+        let mut progressed = false;
+        for t in remaining {
+            let ready = layout_deps(t).iter().all(|d| !names.contains(d) || done.contains(d));
+            if ready {
+                emit_typedef(out, t);
+                done.insert(t.name.clone());
+                progressed = true;
+            } else {
+                next.push(t);
+            }
+        }
+        if !progressed {
+            for t in next {
+                emit_typedef(out, t);
+            }
+            break;
+        }
+        remaining = next;
+    }
+}
+
 fn emit_typedef(out: &mut String, t: &TypeLayout) {
     if let Some(variants) = &t.sum {
         // Pure-literal-only: narrow scalar (Byte-up), tag stored as the value (D118 §6).
@@ -367,17 +411,23 @@ fn emit_typedef(out: &mut String, t: &TypeLayout) {
         return;
     }
     let _ = writeln!(out, "typedef struct {{");
+    let mut nfields = 0;
     for f in &t.fields {
         match &f.ty {
+            Ty::Void => {
+                // No C field for Void (Pass(Void) is empty product).
+            }
             Ty::FixedArray { elem, len } => {
                 let _ = writeln!(out, "    {} {}[{len}];", c_ty(elem), f.c_name);
+                nfields += 1;
             }
             other => {
                 let _ = writeln!(out, "    {} {};", c_ty(other), f.c_name);
+                nfields += 1;
             }
         }
     }
-    if t.fields.is_empty() {
+    if nfields == 0 {
         out.push_str("    char _pad;\n");
     }
     let _ = writeln!(out, "}} {};\n", c_type_name(&t.name));
@@ -983,12 +1033,18 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             let _ = write!(out, "{}.value", p.name);
         }
         RValue::StructLit { type_name, fields } => {
+            // Prefer designated init so Void-elided products and nested Users are clear.
             let _ = write!(out, "({}){{", c_type_name(type_name));
-            for (i, f) in fields.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(", ");
+            if fields.is_empty() {
+                out.push('0');
+            } else {
+                for (i, f) in fields.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    // Positional still works for non-Void fields matching layout order.
+                    out.push_str(&f.name);
                 }
-                out.push_str(&f.name);
             }
             out.push('}');
         }
