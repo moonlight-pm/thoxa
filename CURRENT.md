@@ -14,8 +14,8 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Default product work is **language / I/O / std gaps** from
 the capability matrix, one slice at a time with conformance.
 
-**Shipped recently:** Str.isEmpty/contains; **std/ LSP go-to-def**. Session residual
-deferred.
+**Shipped recently:** Str.isEmpty/contains; std/ LSP go-to-def; **Path.isAbsolute**.
+Session residual deferred.
 
 **In progress / next:** non-session gaps — modules D91, workspace-disk refs,
 sample-driven std when forced.

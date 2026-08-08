@@ -78,7 +78,11 @@ export fn join(left!: String, right!: String) -> String {
     }
 }
 
-## File name after the last `/` (same as `basename`).
+## True when `path` starts with `/` (POSIX absolute).
+export fn isAbsolute(path!: String) -> Bool {
+    startsWith(path, "/")
+}
+
 ## Extension after the last `.` in the basename, or `""` if none / leading-dot only.
 export fn extension(path!: String) -> String {
     let base = basename(path)

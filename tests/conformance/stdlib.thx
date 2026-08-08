@@ -1,6 +1,6 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
 import { startsWith, endsWith, isEmpty, contains, dropPrefix, dropSuffix, trimNewline } from "std/Str"
-import { dirname, basename, join, extension, stem, shortPath } from "std/Path"
+import { dirname, basename, join, isAbsolute, extension, stem, shortPath } from "std/Path"
 import { hasEnv } from "std/Env"
 import { branchName, branchSuffix } from "std/Git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
@@ -39,6 +39,16 @@ fn main() -> Int64 {
     println(join("/a/b", "c"))
     println(join("/a/b/", "c"))
     println(join("/a", "/abs"))
+    if isAbsolute("/a") {
+        println("abs-ok")
+    } else {
+        println("abs-bad")
+    }
+    if isAbsolute("rel") {
+        println("rel-bad")
+    } else {
+        println("rel-ok")
+    }
     println(extension("a/b/foo.thx"))
     println(extension("Makefile"))
     println(stem("a/b/foo.thx"))
