@@ -3,7 +3,7 @@
 **Date:** 2026-07-20  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** MIR lower on shared resolver; broader package intelligence; package-tree disk refs/rename (capped); typed-member residual for some untyped exprs (if/block/fn/match/generic/type-param shipped); multi-diag residual deep mid-item parse recovery (lex + top-level parse + type-reg + body shipped)  
+**Gaps:** MIR lower on shared resolver (**deferred architecture**, not phase-2 polish); broader package intelligence; package-tree disk refs/rename (capped). Nav multi-diag + typed-member stack shipped for v0 polish (rare untyped exprs remain).  
 
 
 

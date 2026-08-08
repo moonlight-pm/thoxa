@@ -44,16 +44,26 @@ impl Error {
     }
 
     /// Fold independent errors into one primary + `more` (LSP multi-diag).
+    /// Nested `more` on any input error is flattened (block recovery inside
+    /// a function, then top-level multi, must not drop inner diagnostics).
     pub fn multi(errors: Vec<Error>) -> Error {
-        let mut it = errors.into_iter();
-        let first = it.next().expect("Error::multi nonempty");
+        let mut flat: Vec<(String, Option<Span>)> = Vec::new();
+        for e in errors {
+            flat.push((e.message, e.span));
+            for m in e.more {
+                flat.push((m.message, m.span));
+            }
+        }
+        let mut it = flat.into_iter();
+        let (msg, span) = it.next().expect("Error::multi nonempty");
         let more = it
-            .map(|e| AdditionalDiagnostic {
-                message: e.message,
-                span: e.span,
-            })
+            .map(|(message, span)| AdditionalDiagnostic { message, span })
             .collect();
-        first.with_more(more)
+        Error {
+            message: msg,
+            span,
+            more,
+        }
     }
 }
 

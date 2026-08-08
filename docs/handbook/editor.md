@@ -19,11 +19,11 @@ language server (grammar color changes may need a full quit/restart).
 
 | Feature | Notes |
 |---------|--------|
-| Diagnostics | From native check / overlays; multi-diag for independent body/type-reg errors, unexpected lex chars, and top-level parse recovery |
+| Diagnostics | From native check / overlays; multi-diag for body/type-reg errors, unexpected lex chars, and parse recovery (top-level items + mid-block statements) |
 | Syntax color | Tree-sitter Thoxa grammar |
 | Hover | Signature + contiguous `##` docs |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
-| Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, ctor, method/fn return (generic head + type-param subst), copy-let, match payload, **if/else or block** inits with a known type |
+| Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, ctor, method/fn return (generic head + type-param subst), copy-let, match payload, if/else, block, **match**, or **module-level let** inits |
 | Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk |
 | References | Local file + open buffers + **package-tree `.thx` on disk** (under nearest `Main.thx` / `.git` root; same-dir fallback) that selective-import the export |
 | Rename | Local + open buffers + **package-tree disk** selective-import renames when renaming an export |
@@ -36,8 +36,8 @@ Library buffers without `main` typecheck as libraries (no false “requires main
 
 - Typed member navigation still misses some **untyped** expressions (no recoverable type).
 - Package-tree refs/rename are capped (nearest `Main.thx` / `.git` root; not an unbounded home walk).
-- Parse recovery is **top-level item** oriented (not full mid-expression recovery).
-- MIR-on-shared-resolver not started.
+- Parse recovery covers top-level items and mid-block statements (not full mid-expression recovery).
+- MIR lower still uses its own env (shared-resolver migration is deferred architecture, not day-to-day polish).
 - **No Python** in the product editor path.
 
 ## C runtime in editors (clangd)

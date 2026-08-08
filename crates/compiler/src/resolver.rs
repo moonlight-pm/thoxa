@@ -459,6 +459,20 @@ impl<'a> Resolver<'a> {
             ExprKind::Try(inner) | ExprKind::Unary { expr: inner, .. } => {
                 self.expr_nav_ty(inner, scope)
             }
+            // Value match: all arms must agree on a concrete nav type (pattern
+            // binds not re-scoped here — constructor tails work).
+            ExprKind::Match { arms, .. } => {
+                let mut acc: Option<NavTy> = None;
+                for arm in arms {
+                    let t = self.block_nav_ty(&arm.body, scope)?;
+                    match &acc {
+                        None => acc = Some(t),
+                        Some(prev) if prev == &t => {}
+                        _ => return None,
+                    }
+                }
+                acc
+            }
             _ => None,
         }
     }
@@ -737,6 +751,11 @@ impl<'a> Resolver<'a> {
             }
             Item::Global(g) => {
                 self.walk_expr(&g.init, root);
+                // Module-level let/mut: feed typed-member nav from init.
+                if let Some(id) = self.lookup(root, &g.name) {
+                    let nav = self.expr_nav_ty(&g.init, root);
+                    self.set_nav_ty(id, nav);
+                }
             }
             Item::Import(_) => {
                 // Import path string is not a name reference; locals already seeded.
@@ -1415,6 +1434,54 @@ fn main() -> Int64 {
         let p = byte_to_position(src, len_call);
         let r = res.ref_at(src, p.line, p.character).expect("p.len");
         let b = res.binding_of(Some(r)).expect("method via block-init");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "len");
+    }
+
+    #[test]
+    fn typed_member_via_match_init() {
+        // Value-match arms returning the same constructor type.
+        let src = "\
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+fn main() -> Int64 {
+  let n = 0
+  let p = match n {
+    0 { Point(x: 1) }
+    else { Point(x: 2) }
+  }
+  p.len()
+  0
+}
+";
+        let res = resolve_ok(src);
+        let len_call = src.find("p.len()").unwrap() + 2;
+        let p = byte_to_position(src, len_call);
+        let r = res.ref_at(src, p.line, p.character).expect("p.len");
+        let b = res.binding_of(Some(r)).expect("method via match-init");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "len");
+        assert_eq!(b.owner.as_deref(), Some("Point"));
+    }
+
+    #[test]
+    fn typed_member_via_global_init() {
+        let src = "\
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+let origin = Point(x: 0)
+fn main() -> Int64 {
+  origin.len()
+  0
+}
+";
+        let res = resolve_ok(src);
+        let len_call = src.find("origin.len()").unwrap() + "origin.".len();
+        let p = byte_to_position(src, len_call);
+        let r = res.ref_at(src, p.line, p.character).expect("origin.len");
+        let b = res.binding_of(Some(r)).expect("method via global init");
         assert_eq!(b.kind, BindingKind::Method);
         assert_eq!(b.name, "len");
     }

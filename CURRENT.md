@@ -4,23 +4,23 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-08 (editor multi-diag + untyped if/block nav; session deferred)
+**As of:** 2026-08-08 (editor residuals closed; session deferred)
 
 ---
 
 ## Now
 
 **Session / shell is deferred** — do not resume residual session polish unless
-this file says so. Prefer **finishing started frozen surfaces** (editor LSP
-partial, sum polish if forced) over free redesign or expand-std sprints.
+this file says so. Prefer **finishing started frozen surfaces** over free
+redesign or expand-std sprints.
 
-**Shipped recently:** editor polish — **lex/parse multi-diag** (top-level
-recovery), typed-member **if/block** inits, type-param subst, type-reg
-multi-diag, package-tree refs. Session residual deferred.
+**Shipped recently:** editor residuals closed for v0 polish — mid-block parse
+multi-diag, match/global typed-member inits, Error::multi flatten; package-tree
+refs; type-param nav. **MIR-on-resolver** stays **deferred architecture** (not
+day-to-day). Session residual deferred.
 
-**In progress / next:** editor residual only when forced (MIR-on-resolver,
-deep parse recovery, remaining untyped exprs); language matrix when a concrete
-freeze gap; sample-driven std when forced.
+**In progress / next:** language / I/O matrix gaps when concrete; sample-driven
+std when forced; MIR-on-resolver only if CURRENT schedules architecture work.
 
 ### Proceed order
 

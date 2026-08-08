@@ -340,19 +340,59 @@ impl Parser {
         let mut methods = Vec::new();
         if self.at(TokenKind::LBrace) {
             self.bump();
+            let mut type_body_errors: Vec<Error> = Vec::new();
             while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
-                if self.at(TokenKind::Fn) || self.at(TokenKind::Export) {
-                    methods.push(self.parse_method()?);
+                let start_pos = self.pos;
+                let item_res: Result<()> = if self.at(TokenKind::Fn) || self.at(TokenKind::Export)
+                {
+                    self.parse_method().map(|m| {
+                        methods.push(m);
+                    })
                 } else if self.at(TokenKind::Mut) || self.at(TokenKind::Let) {
-                    fields.push(self.parse_field_decl()?);
+                    self.parse_field_decl().map(|f| {
+                        fields.push(f);
+                    })
                 } else {
-                    return Err(Error::at(
+                    Err(Error::at(
                         "expected field (`mut`/`let name: Type`) or method in type body",
                         self.peek_span(),
-                    ));
+                    ))
+                };
+                match item_res {
+                    Ok(()) => {}
+                    Err(e) => {
+                        type_body_errors.push(e);
+                        if self.pos == start_pos
+                            && !self.at(TokenKind::Eof)
+                            && !self.at(TokenKind::RBrace)
+                        {
+                            self.bump();
+                        }
+                        // Seek next method/field or closing brace.
+                        while !self.at(TokenKind::Eof) && !self.at(TokenKind::RBrace) {
+                            if self.at(TokenKind::Fn)
+                                || self.at(TokenKind::Export)
+                                || self.at(TokenKind::Mut)
+                                || self.at(TokenKind::Let)
+                            {
+                                break;
+                            }
+                            self.bump();
+                        }
+                        if type_body_errors.len() >= 32 {
+                            break;
+                        }
+                    }
                 }
             }
-            self.expect_kind(&TokenKind::RBrace)?;
+            if self.at(TokenKind::RBrace) {
+                self.bump();
+            } else {
+                type_body_errors.push(Error::at("expected `}`", self.peek_span()));
+            }
+            if !type_body_errors.is_empty() {
+                return Err(Error::multi(type_body_errors));
+            }
         }
 
         if !params.is_empty() && !fields.is_empty() {
@@ -678,18 +718,40 @@ impl Parser {
         let start = self.peek_span();
         self.expect_kind(&TokenKind::LBrace)?;
         let mut elems: Vec<BlockElem> = Vec::new();
+        let mut errors: Vec<Error> = Vec::new();
         while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
-            if self.at(TokenKind::Let) {
-                elems.push(BlockElem::Let(self.parse_binding(false)?));
-            } else if self.at(TokenKind::Mut) {
-                elems.push(BlockElem::Let(self.parse_binding(true)?));
-            } else if self.at_assign_stmt() {
-                elems.push(BlockElem::Assign(self.parse_assign()?));
-            } else {
-                elems.push(BlockElem::Expr(self.parse_expr()?));
+            let start_pos = self.pos;
+            match self.parse_block_elem() {
+                Ok(e) => elems.push(e),
+                Err(e) => {
+                    errors.push(e);
+                    if self.pos == start_pos
+                        && !self.at(TokenKind::Eof)
+                        && !self.at(TokenKind::RBrace)
+                    {
+                        self.bump();
+                    }
+                    let ok = self.seek_block_recovery();
+                    if !ok {
+                        break;
+                    }
+                    if errors.len() >= 32 {
+                        break;
+                    }
+                    if self.pos == start_pos {
+                        break;
+                    }
+                }
             }
         }
-        self.expect_kind(&TokenKind::RBrace)?;
+        if self.at(TokenKind::RBrace) {
+            self.bump();
+        } else {
+            errors.push(Error::at("expected `}`", self.peek_span()));
+        }
+        if !errors.is_empty() {
+            return Err(Error::multi(errors));
+        }
         let end = self.prev_span();
 
         let (items, tail) = match elems.pop() {
@@ -710,6 +772,63 @@ impl Parser {
             tail,
             span: Span::new(start.start, end.end),
         })
+    }
+
+    fn parse_block_elem(&mut self) -> Result<BlockElem> {
+        if self.at(TokenKind::Let) {
+            Ok(BlockElem::Let(self.parse_binding(false)?))
+        } else if self.at(TokenKind::Mut) {
+            Ok(BlockElem::Let(self.parse_binding(true)?))
+        } else if self.at_assign_stmt() {
+            Ok(BlockElem::Assign(self.parse_assign()?))
+        } else {
+            Ok(BlockElem::Expr(self.parse_expr()?))
+        }
+    }
+
+    /// Skip to the next statement-like start or `}` (mid-block multi-diag).
+    fn seek_block_recovery(&mut self) -> bool {
+        let mut depth: i32 = 0;
+        while !self.at(TokenKind::Eof) {
+            if depth == 0 && self.at_block_recovery_point() {
+                return true;
+            }
+            match &self.current().kind {
+                TokenKind::LBrace | TokenKind::LParen | TokenKind::LBracket => {
+                    depth += 1;
+                    self.bump();
+                }
+                TokenKind::RBrace | TokenKind::RParen | TokenKind::RBracket => {
+                    if depth == 0 && matches!(self.current().kind, TokenKind::RBrace) {
+                        return true;
+                    }
+                    depth = (depth - 1).max(0);
+                    self.bump();
+                }
+                _ => {
+                    self.bump();
+                }
+            }
+        }
+        false
+    }
+
+    fn at_block_recovery_point(&self) -> bool {
+        matches!(
+            self.current().kind,
+            TokenKind::RBrace
+                | TokenKind::Let
+                | TokenKind::Mut
+                | TokenKind::If
+                | TokenKind::Match
+                | TokenKind::While
+                | TokenKind::Loop
+                | TokenKind::For
+                | TokenKind::Return
+                | TokenKind::Break
+                | TokenKind::Continue
+                | TokenKind::Ident(_)
+        )
     }
 
     /// Statement starts with an assignable place:
@@ -2039,4 +2158,7 @@ mod tests {
         );
         assert_eq!(module.items.len(), 1);
     }
+
+    
+
 }

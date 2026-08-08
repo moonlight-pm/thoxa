@@ -454,6 +454,25 @@ fn main() -> Int64 { 0 }
     }
 
     #[test]
+    fn parse_error_multi_inside_block() {
+        // Two incomplete `let`s: each is a separate block item; recovery lands on
+        // the next `let` (not nested as a then-block of the first).
+        let src = "\
+fn main() -> Int64 {
+  let
+  let
+  0
+}
+";
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.len() >= 2,
+            "expected mid-block multi parse diags, got {}: {diags:?}",
+            diags.len()
+        );
+    }
+
+    #[test]
     fn import_without_real_path_clear_diagnostic() {
         let src = "import { foo } from \"./Helper\"\nfn main() -> Int64 { 0 }\n";
         let diags = check_source("<input>", src);
@@ -725,3 +744,5 @@ fn main() -> Int64 {
         assert!(semantic_tokens("@").is_empty());
     }
 }
+
+    
