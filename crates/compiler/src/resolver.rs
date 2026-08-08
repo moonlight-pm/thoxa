@@ -320,13 +320,34 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// Type name for member linking: annotation or type-constructor call.
+    /// Head type name for member linking (nav). Includes generics: `Box<Int64>` →
+    /// `"Box"` so methods on the generic product still resolve. Literal types and
+    /// empty names yield `None`. Type-parameter returns (`T`) remain residual.
     fn simple_type_name(te: &TypeExpr) -> Option<String> {
-        if te.args.is_empty() && te.lit.is_none() && !te.name.is_empty() {
+        if te.lit.is_none() && !te.name.is_empty() {
             Some(te.name.clone())
         } else {
             None
         }
+    }
+
+    /// Product field types in declaration order (params then body fields).
+    fn type_def_field_types(&self, type_name: &str) -> Option<Vec<TypeExpr>> {
+        for item in &self.module.items {
+            if let Item::Type(td) = item {
+                if td.name == type_name {
+                    let mut out = Vec::new();
+                    for p in &td.params {
+                        out.push(p.ty.clone());
+                    }
+                    for f in &td.fields {
+                        out.push(f.ty.clone());
+                    }
+                    return Some(out);
+                }
+            }
+        }
+        None
     }
 
     fn ty_hint_from_init(&self, init: &Expr, scope: usize) -> Option<String> {
@@ -913,17 +934,7 @@ impl<'a> Resolver<'a> {
                 let name_end = span.start + name.len().min(span.end - span.start);
                 let name_span = Span::new(span.start, name_end);
                 self.add_ref(name_span, self.lookup(scope, name), RefCtx::Pattern);
-                for bname in binds.iter().flatten() {
-                    let id = self.new_binding(
-                        bname,
-                        BindingKind::Pattern,
-                        Some(*bind_span),
-                        false,
-                        None,
-                        false,
-                    );
-                    self.define(inner, bname, id);
-                }
+                self.bind_variant_pattern_fields(name, binds, *bind_span, inner);
             }
             // Literal / else patterns introduce no bindings.
             Pattern::StringLit { .. }
@@ -961,23 +972,43 @@ impl<'a> Resolver<'a> {
                             let name_end = span.start + name.len().min(span.end - span.start);
                             let name_span = Span::new(span.start, name_end);
                             self.add_ref(name_span, self.lookup(scope, name), RefCtx::Pattern);
-                            for bname in binds.iter().flatten() {
-                                let id = self.new_binding(
-                                    bname,
-                                    BindingKind::Pattern,
-                                    Some(*bind_span),
-                                    false,
-                                    None,
-                                    false,
-                                );
-                                self.define(inner, bname, id);
-                            }
+                            self.bind_variant_pattern_fields(name, binds, *bind_span, inner);
                         }
                     }
                 }
             }
         }
         self.walk_block(&arm.body, inner);
+    }
+
+    /// Bind variant payload names; ty_hint from product field types when known.
+    fn bind_variant_pattern_fields(
+        &mut self,
+        type_name: &str,
+        binds: &[Option<String>],
+        bind_span: Span,
+        scope: usize,
+    ) {
+        let field_tys = self.type_def_field_types(type_name);
+        for (i, bopt) in binds.iter().enumerate() {
+            let Some(bname) = bopt else {
+                continue;
+            };
+            let id = self.new_binding(
+                bname,
+                BindingKind::Pattern,
+                Some(bind_span),
+                false,
+                None,
+                false,
+            );
+            if let Some(fields) = field_tys.as_ref() {
+                if i < fields.len() {
+                    self.set_ty_hint(id, Self::simple_type_name(&fields[i]));
+                }
+            }
+            self.define(scope, bname, id);
+        }
     }
 
     fn walk_type_expr_opt(&mut self, ty: Option<&TypeExpr>, scope: usize) {
@@ -1180,6 +1211,56 @@ fn main() -> Int64 {
         let b = res.binding_of(Some(r)).expect("copy hint");
         assert_eq!(b.kind, BindingKind::Field);
         assert_eq!(b.name, "x");
+    }
+
+    #[test]
+    fn typed_member_via_generic_return_head() {
+        // `fn make() -> Box<Point>` → head name Box for member linking.
+        let src = "\
+type Point(x: Int64)
+type Box<T>(value: T) {
+  export fn get() -> T { value }
+}
+fn make() -> Box<Point> { Box(value: Point(x: 1)) }
+fn main() -> Int64 {
+  let b = make()
+  b.get()
+  0
+}
+";
+        let res = resolve_ok(src);
+        let get_call = src.find("b.get()").unwrap() + 2;
+        let p = byte_to_position(src, get_call);
+        let r = res.ref_at(src, p.line, p.character).expect("b.get");
+        let b = res.binding_of(Some(r)).expect("method via generic return head");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "get");
+        assert_eq!(b.owner.as_deref(), Some("Box"));
+    }
+
+    #[test]
+    fn typed_member_via_match_pattern_payload() {
+        // `Box(p)` payload inherits field type Point → p.x links.
+        let src = "\
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+type Wrap(value: Point)
+fn main() -> Int64 {
+  let w = Wrap(value: Point(x: 2))
+  match w {
+    Wrap(p) { p.len() }
+  }
+}
+";
+        let res = resolve_ok(src);
+        let len_call = src.find("p.len()").unwrap() + 2;
+        let p = byte_to_position(src, len_call);
+        let r = res.ref_at(src, p.line, p.character).expect("p.len in match");
+        let b = res.binding_of(Some(r)).expect("method via pattern payload");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "len");
+        assert_eq!(b.owner.as_deref(), Some("Point"));
     }
 
     #[test]

@@ -3,7 +3,7 @@
 **Date:** 2026-07-20  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** MIR lower on shared resolver; broader package intelligence; package-tree disk refs/rename (capped); typed-member residual for **generic-return** / untyped inits (fn/extern return + method chains shipped)  
+**Gaps:** MIR lower on shared resolver; broader package intelligence; package-tree disk refs/rename (capped); typed-member residual for **type-param returns** / untyped inits (generic head + match payload + fn/extern return shipped); multi-diag still first-error on lex/parse/type-reg  
 
 
 

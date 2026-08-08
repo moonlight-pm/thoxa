@@ -563,6 +563,34 @@ fn main() -> Int64 { 0 }
     }
 
     #[test]
+    fn multi_diag_collects_method_and_free_function() {
+        // Method body error + free-function body error both reported.
+        let src = r#"
+type Point(x: Int64) {
+  export fn bad() -> Int64 {
+    if 1 { 0 }
+    0
+  }
+}
+fn also() -> Int64 {
+  if 2 { 0 }
+  0
+}
+fn main() -> Int64 { 0 }
+"#;
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.len() >= 2,
+            "expected method+fn multi-diag, got {}: {diags:?}",
+            diags.len()
+        );
+        assert!(
+            diags.iter().all(|d| d.message.contains("Bool")),
+            "{diags:?}"
+        );
+    }
+
+    #[test]
     fn union_match_lists_missing_arms() {
         let src = r#"
 type A

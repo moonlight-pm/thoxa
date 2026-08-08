@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-08 (typed-member fn/extern return; package-tree LSP; thin std)
+**As of:** 2026-08-08 (typed-member generic head + match payload; package-tree LSP)
 
 ---
 
@@ -95,8 +95,8 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | check-source | Typecheck API + overlays | shipped | unit / LSP | D71–D79 | — | yes |
-| lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1 | Multi-diag for independent function/method body errors; lex/parse/type-reg still first-error | yes |
-| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member: ctor + method-return + **fn/extern return** + copy-let; residual **generic-return** / untyped inits; package-tree disk refs/rename | partial |
+| lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1 | Multi-diag: independent free-fn **and** method bodies; lex/parse/type-reg still first-error | yes |
+| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member: ctor, method/fn return (**incl. generic head**), copy-let, **match payload**; residual type-param returns / untyped inits; package-tree disk refs/rename | partial |
 | lsp-xmodule | Cross-module jump (`./` `~/` / `std/`) | partial | unit | D78 | `std/` go-to-def covered; open buffer wins over disk | partial |
 | tree-sitter-zed | Grammar + Zed extension extras | shipped | `cargo make zed` | editor plan | Not full IDE | yes |
 | mir-on-resolver | MIR lower on shared resolver | planned | — | editor plan | Not started | no |

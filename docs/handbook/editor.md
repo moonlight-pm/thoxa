@@ -23,7 +23,7 @@ language server (grammar color changes may need a full quit/restart).
 | Syntax color | Tree-sitter Thoxa grammar |
 | Hover | Signature + contiguous `##` docs |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
-| Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, `Type(...)` init, **method-return chain** (`p.moved().x`), **free/extern fn return** (`let p = make()` / `make().x`), or copy from a hinted binding |
+| Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, `Type(...)` init, method/fn return (**generic head** `Box<T>` → `Box`), copy-let, or **match payload** (`Wrap(p) { p.len() }`) |
 | Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk |
 | References | Local file + open buffers + **package-tree `.thx` on disk** (under nearest `Main.thx` / `.git` root; same-dir fallback) that selective-import the export |
 | Rename | Local + open buffers + **package-tree disk** selective-import renames when renaming an export |
@@ -34,7 +34,7 @@ Library buffers without `main` typecheck as libraries (no false “requires main
 
 ## Limits (partial)
 
-- Typed member navigation still misses **generic returns** and receivers with no recoverable type hint.
+- Typed member navigation still misses **type-parameter returns** (`get() -> T`) and receivers with no recoverable type hint.
 - Package-tree refs/rename are capped (nearest `Main.thx` / `.git` root; not an unbounded home walk).
 - Multi-diagnostic depth and MIR-on-shared-resolver are not full product yet.
 - **No Python** in the product editor path.
