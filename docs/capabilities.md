@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-08 (editor residuals closed; MIR-on-resolver deferred arch)
+**As of:** 2026-08-08 (union match guards D120; editor residuals closed)
 
 ---
 
