@@ -8,6 +8,10 @@ c
 /a/b/c
 /a/b/c
 /abs
+thx
+
+foo
+.git
 foo/bar
 path-env-ok
 missing-env-ok

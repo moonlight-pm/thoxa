@@ -78,6 +78,47 @@ export fn join(left!: String, right!: String) -> String {
     }
 }
 
+## File name after the last `/` (same as `basename`).
+## Extension after the last `.` in the basename, or `""` if none / leading-dot only.
+export fn extension(path!: String) -> String {
+    let base = basename(path)
+    let b = Bytes.fromString(base)
+    mut i = b.count - 1
+    mut dot = 0 - 1
+    loop {
+        if i <= 0 {
+            break
+        }
+        if b.get(i) == 46 {
+            dot = i
+            break
+        }
+        i = i - 1
+    }
+    if dot <= 0 {
+        ""
+    } else {
+        b.slice(dot + 1, b.count).toString()
+    }
+}
+
+## Basename without a non-leading extension (`.git` stays `.git`).
+export fn stem(path!: String) -> String {
+    let base = basename(path)
+    let ext = extension(path)
+    if ext == "" {
+        base
+    } else {
+        let b = Bytes.fromString(base)
+        let cut = b.count - Bytes.fromString(ext).count - 1
+        if cut <= 0 {
+            base
+        } else {
+            b.slice(0, cut).toString()
+        }
+    }
+}
+
 ## Current working directory, or "" on failure.
 export fn cwd() -> String {
     let buf = Bytes(pathCwdBufSize)

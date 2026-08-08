@@ -1,6 +1,6 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
 import { startsWith, endsWith, dropPrefix, dropSuffix, trimNewline } from "std/Str"
-import { dirname, basename, join, shortPath } from "std/Path"
+import { dirname, basename, join, extension, stem, shortPath } from "std/Path"
 import { hasEnv } from "std/Env"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 
@@ -23,6 +23,10 @@ fn main() -> Int64 {
     println(join("/a/b", "c"))
     println(join("/a/b/", "c"))
     println(join("/a", "/abs"))
+    println(extension("a/b/foo.thx"))
+    println(extension("Makefile"))
+    println(stem("a/b/foo.thx"))
+    println(stem(".git"))
     println(shortPath("/tmp/foo/bar"))
     ## PATH is always set in the conformance environment.
     if hasEnv("PATH") {
