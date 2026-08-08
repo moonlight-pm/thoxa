@@ -324,7 +324,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 ### Notes
 
 - Oracle `examples/http` remains the north star; R9 proves modules + FFI + Bytes integration without inventing stdlib roots (`ffi` / `std/`).
-- errno/`strerror`: **shipped for Io (D80)** without named `ffi` root; Net still uses static Fail tags.
+- errno/`strerror`: **shipped for Io and Net (D80)** without named `ffi` root.
 - Constructor-param types were Int64/Bool only at R9 → `Socket(fd: Int64)`; **String/Bytes fields shipped later (D48–D49)**.
 
 ## 2026-07-19 — R8 modules / multi-file
