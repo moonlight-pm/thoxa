@@ -34,6 +34,7 @@ foo/bar
 path-env-ok
 missing-env-ok
 fallback
+home-ok
 git-empty-ok
 git-miss-ok
 git-suf-ok

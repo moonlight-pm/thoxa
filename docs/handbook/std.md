@@ -21,7 +21,7 @@ import { branch } from "std/Git"
 | `Str` | `startsWith`/`endsWith`/`isEmpty`/`repeat`/`contains`/`indexOf`/`dropPrefix`/`dropSuffix`/`trimNewline`/`trim`/`toLowerAscii`/`toUpperAscii` |
 | `Path` | `dirname`/`basename`/`join`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`stem`/`withExtension`/`cwd`/`shortPath`/`cwdShort` |
 | `Ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
-| `Env` | `getenv`, `hasEnv`, `getenvOr`, `localHms`, `hostname`, `userName` |
+| `Env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `localHms`, `hostname`, `userName` |
 | `Git` | `branchName` / `branchSuffix` / `branch` / `branchHere` via `.git/HEAD` |
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
