@@ -1,6 +1,7 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
 import { startsWith, endsWith, dropPrefix, dropSuffix, trimNewline } from "std/Str"
 import { dirname, basename, join, shortPath } from "std/Path"
+import { hasEnv } from "std/Env"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 
 fn main() -> Int64 {
@@ -23,6 +24,17 @@ fn main() -> Int64 {
     println(join("/a/b/", "c"))
     println(join("/a", "/abs"))
     println(shortPath("/tmp/foo/bar"))
+    ## PATH is always set in the conformance environment.
+    if hasEnv("PATH") {
+        println("path-env-ok")
+    } else {
+        println("path-env-bad")
+    }
+    if hasEnv("THOXA_NO_SUCH_ENV_VAR_ZZZ") {
+        println("missing-env-bad")
+    } else {
+        println("missing-env-ok")
+    }
     ## fg/sgr0 must be non-empty SGR sequences (byte 27 present via length).
     let c = fg(1, 2, 3)
     let r = sgr0()
