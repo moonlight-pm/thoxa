@@ -23,7 +23,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D118 | Sum types + general `?` | TS-leaning unions; type marks `!`/`?` (target); May/Trial → prelude (target); tagged layout | **Partial:** named + pure-literal members; multi-field products; inject; match. Gates: `sums_nullary`, `sums_payload`, `sums_product`, `sums_literal`. Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
+| D118 | Sum types + general `?` | TS-leaning unions; arm marks `!`/`?`; May/Trial → prelude (target); tagged layout | **Partial:** named + lit members; multi-field products; inject; match; residual `?` + value `?` (W2). Gates: `sums_*`, `sums_try`. Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
 
 ## 2026-08-07 — Fixed Array locals
 

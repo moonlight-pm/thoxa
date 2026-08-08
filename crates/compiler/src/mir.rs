@@ -3,7 +3,7 @@
 
 use crate::ast::{
     self, Arg, AssignTarget, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item,
-    MatchArm, Method, Pattern, TypeArg, TypeDef, TypeExpr, TypeLit, UnaryOp,
+    MatchArm, Method, Pattern, TypeArg, TypeDef, TypeExpr, TypeLit, TypeMark, UnaryOp,
 };
 use crate::error::{Error, Result};
 use crate::loader::{self, BoundImport, Package, SourceModule};
@@ -550,6 +550,10 @@ struct TypeInfo {
 #[derive(Clone)]
 struct SumInfo {
     variants: Vec<SumVariant>,
+    /// Tag of residual arm (`?` mark), if any.
+    residual_tag: Option<u32>,
+    /// Tag of success-extract arm (`!` mark), if any.
+    extract_tag: Option<u32>,
 }
 
 #[derive(Clone)]
@@ -561,6 +565,9 @@ struct SumVariant {
     ty: Ty,
     /// Literal arm (`0 | 1`) — D118 pure-literal / mixed unions.
     lit: Option<TypeLit>,
+    /// Type-level mark on this arm (`!` / `?`); tags also stored on SumInfo.
+    #[allow(dead_code)]
+    mark: Option<TypeMark>,
 }
 
 /// Module-level value (let/mut).
@@ -936,12 +943,28 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             zero_init = false;
             let mut variants = Vec::new();
             let mut seen_names = HashSet::new();
+            let mut residual_tag: Option<u32> = None;
+            let mut extract_tag: Option<u32> = None;
             for (i, mem) in members.iter().enumerate() {
-                if mem.mark.is_some() {
-                    return Err(Error::at(
-                        "type extract marks (`!`/`?`) not yet implemented on union members",
-                        mem.span,
-                    ));
+                let tag = i as u32;
+                let mark = mem.mark;
+                if matches!(mark, Some(TypeMark::Residual)) {
+                    if residual_tag.is_some() {
+                        return Err(Error::at(
+                            "union may have at most one residual mark (`?`)",
+                            mem.span,
+                        ));
+                    }
+                    residual_tag = Some(tag);
+                }
+                if matches!(mark, Some(TypeMark::Extract)) {
+                    if extract_tag.is_some() {
+                        return Err(Error::at(
+                            "union may have at most one extract mark (`!`)",
+                            mem.span,
+                        ));
+                    }
+                    extract_tag = Some(tag);
                 }
                 // Pure literal arm: `0 | 1 | "x" | true` (D118).
                 if let Some(lit) = &mem.lit {
@@ -957,10 +980,11 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         ));
                     }
                     variants.push(SumVariant {
-                        tag: i as u32,
+                        tag,
                         name: vname,
                         ty: Ty::Void,
                         lit: Some(lit.clone()),
+                        mark,
                     });
                     continue;
                 }
@@ -1014,13 +1038,18 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     }
                 }
                 variants.push(SumVariant {
-                    tag: i as u32,
+                    tag,
                     name: vname,
                     ty,
                     lit: None,
+                    mark,
                 });
             }
-            sum_info = Some(SumInfo { variants });
+            sum_info = Some(SumInfo {
+                variants,
+                residual_tag,
+                extract_tag,
+            });
         } else if !td.fields.is_empty() {
             zero_init = true;
             for f in &td.fields {
@@ -4147,8 +4176,16 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
     if is_may(&scrut_ty) {
         return lower_try_may(ctx, scrut_p, scrut_ty, span);
     }
+    if let Ty::User(ref n) = &scrut_ty {
+        if let Some(sum) = ctx.types.get(n).and_then(|i| i.sum.clone()) {
+            return lower_try_sum(ctx, scrut_p, scrut_ty, sum, span);
+        }
+    }
     let Some((ok_ty, err_ty)) = trial_parts(&scrut_ty) else {
-        return Err(Error::at("`?` expects a Trial or May value", span));
+        return Err(Error::at(
+            "`?` expects a Trial, May, or residual-marked union value",
+            span,
+        ));
     };
     let ok_ty = ok_ty.clone();
     let err_ty = err_ty.clone();
@@ -4257,6 +4294,200 @@ fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)
     }
     let _ = ret_ok;
     Ok((payload, ok_ty))
+}
+
+/// `?` on a user union with a residual mark (D118).
+fn lower_try_sum(
+    ctx: &mut LowerCtx,
+    scrut_p: Place,
+    scrut_ty: Ty,
+    sum: SumInfo,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let residual_tag = sum.residual_tag.ok_or_else(|| {
+        Error::at(
+            "`?` requires a residual mark (`?`) on one union member",
+            span,
+        )
+    })?;
+    let fn_ret = ctx.fn_ret.clone();
+    if fn_ret != scrut_ty {
+        return Err(Error::at(
+            "`?` on a union requires the enclosing function to return the same union type",
+            span,
+        ));
+    }
+
+    // Success extract type.
+    let success_ty = sum_success_extract_ty(ctx, &sum, span)?;
+
+    let tag = ctx.fresh("stag");
+    ctx.assign(tag.clone(), Ty::Int64, RValue::SumTag(scrut_p.clone()));
+    let expected = ctx.fresh("sre");
+    ctx.assign(
+        expected.clone(),
+        Ty::Int64,
+        RValue::Int(residual_tag as i64),
+    );
+    let is_res = ctx.fresh("sres");
+    ctx.assign(
+        is_res.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Eq,
+            left: tag,
+            right: expected,
+        },
+    );
+
+    let outer = std::mem::take(&mut ctx.stmts);
+    // then: residual → return scrut (whole sum value)
+    let mut then_body = Vec::new();
+    // drops before return
+    let mut drops = Vec::new();
+    for (n, ty) in &ctx.drop_places {
+        if n != &scrut_p.name {
+            drops.push(Stmt::Drop {
+                place: Place { name: n.clone() },
+                ty: ty.clone(),
+            });
+        }
+    }
+    then_body.extend(drops);
+    then_body.push(Stmt::Return {
+        value: Some(scrut_p.clone()),
+    });
+
+    // else: extract success
+    let mut else_body = Vec::new();
+    let success_place = ctx.fresh("sok");
+    // Temporarily use else_body via ctx.stmts
+    ctx.stmts = std::mem::take(&mut else_body);
+    let ok_p = emit_sum_success_extract(ctx, &scrut_p, &sum, &success_ty, span)?;
+    ctx.assign(
+        success_place.clone(),
+        success_ty.clone(),
+        RValue::Use(ok_p),
+    );
+    else_body = std::mem::take(&mut ctx.stmts);
+
+    ctx.stmts = outer;
+    ctx.stmts.push(Stmt::If {
+        cond: is_res,
+        then_body,
+        else_body,
+    });
+    Ok((success_place, success_ty))
+}
+
+fn sum_success_extract_ty(ctx: &LowerCtx, sum: &SumInfo, span: Span) -> Result<Ty> {
+    if let Some(et) = sum.extract_tag {
+        let v = sum
+            .variants
+            .iter()
+            .find(|v| v.tag == et)
+            .ok_or_else(|| Error::at("internal: bad extract tag", span))?;
+        // Whole-arm extract (`Done!`): yield the arm type.
+        // One-field product: still whole arm unless marked on type arg (future).
+        return Ok(v.ty.clone());
+    }
+    // W2: no `!` mark — single non-residual arm; one-field → field type; nullary → Void.
+    let non_res: Vec<_> = sum
+        .variants
+        .iter()
+        .filter(|v| Some(v.tag) != sum.residual_tag)
+        .collect();
+    if non_res.len() != 1 {
+        return Err(Error::at(
+            "`?` success extract is ambiguous (mark success arm with `!` or use a single success member)",
+            span,
+        ));
+    }
+    let v = non_res[0];
+    match &v.ty {
+        Ty::User(n) => {
+            let fields = ctx
+                .types
+                .get(n)
+                .map(|i| i.fields.as_slice())
+                .unwrap_or(&[]);
+            if fields.is_empty() {
+                Ok(Ty::Void)
+            } else if fields.len() == 1 {
+                Ok(fields[0].ty.clone())
+            } else {
+                Ok(v.ty.clone())
+            }
+        }
+        Ty::Void => Ok(Ty::Void),
+        other => Ok(other.clone()),
+    }
+}
+
+fn emit_sum_success_extract(
+    ctx: &mut LowerCtx,
+    scrut_p: &Place,
+    sum: &SumInfo,
+    success_ty: &Ty,
+    span: Span,
+) -> Result<Place> {
+    let (tag, arm_ty) = if let Some(et) = sum.extract_tag {
+        let v = sum
+            .variants
+            .iter()
+            .find(|v| v.tag == et)
+            .ok_or_else(|| Error::at("internal: bad extract tag", span))?;
+        (v.tag, v.ty.clone())
+    } else {
+        let v = sum
+            .variants
+            .iter()
+            .find(|v| Some(v.tag) != sum.residual_tag)
+            .ok_or_else(|| Error::at("internal: no success arm", span))?;
+        (v.tag, v.ty.clone())
+    };
+
+    if arm_ty == Ty::Void || success_ty == &Ty::Void {
+        let p = ctx.fresh("svoid");
+        ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
+        return Ok(p);
+    }
+
+    let payload = ctx.fresh("spay");
+    ctx.assign(
+        payload.clone(),
+        arm_ty.clone(),
+        RValue::SumPayload {
+            base: scrut_p.clone(),
+            tag,
+            payload_ty: arm_ty.clone(),
+        },
+    );
+
+    // Unwrap single field when success_ty is the field type.
+    if let Ty::User(n) = &arm_ty {
+        let field_name = ctx.types.get(n).and_then(|info| {
+            if info.fields.len() == 1 && info.fields[0].ty == *success_ty {
+                Some(info.fields[0].name.clone())
+            } else {
+                None
+            }
+        });
+        if let Some(fname) = field_name {
+            let fp = ctx.fresh("sf");
+            ctx.assign(
+                fp.clone(),
+                success_ty.clone(),
+                RValue::Field {
+                    base: payload,
+                    field: sanitize_field(&fname),
+                },
+            );
+            return Ok(fp);
+        }
+    }
+    let _ = span;
+    Ok(payload)
 }
 
 fn lower_try_may(

@@ -1,0 +1,33 @@
+## General `?` on residual-marked unions (D118).
+type Done(n: Int64)
+type Quit
+type Outcome = Done | Quit?
+
+fn step(ok!: Bool) -> Outcome {
+    ## Branch types differ (Done vs Quit); annotate as Outcome for inject.
+    if ok {
+        let x: Outcome = Done(n: 3)
+        x
+    } else {
+        let x: Outcome = Quit()
+        x
+    }
+}
+
+fn chain(ok!: Bool) -> Outcome {
+    let n = step(ok)?
+    let x: Outcome = Done(n: n + 1)
+    x
+}
+
+fn main() -> Int64 {
+    match chain(true) {
+        Done(n) { println("ok={n}") }
+        Quit { println("quit") }
+    }
+    match chain(false) {
+        Done(n) { println("ok={n}") }
+        Quit { println("quit") }
+    }
+    0
+}
