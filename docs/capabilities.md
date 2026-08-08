@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-08 (type-param nav + type-reg multi-diag)
+**As of:** 2026-08-08 (lex/parse multi-diag + if/block typed-member)
 
 ---
 
