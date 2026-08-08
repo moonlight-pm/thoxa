@@ -83,6 +83,42 @@ export fn isAbsolute(path!: String) -> Bool {
     startsWith(path, "/")
 }
 
+## Collapse repeated `/` separators (does not resolve `.` / `..`).
+export fn normalize(path!: String) -> String {
+    let b = Bytes.fromString(path)
+    if b.count == 0 {
+        ""
+    } else {
+        mut out = Bytes(b.count)
+        mut o = 0
+        mut i = 0
+        mut prevSlash = false
+        loop {
+            if i >= b.count {
+                break
+            }
+            let c = b.get(i)
+            if c == 47 {
+                if !prevSlash {
+                    out.set(o, 47)
+                    o = o + 1
+                    prevSlash = true
+                }
+            } else {
+                out.set(o, c)
+                o = o + 1
+                prevSlash = false
+            }
+            i = i + 1
+        }
+        if o == 0 {
+            ""
+        } else {
+            out.slice(0, o).toString()
+        }
+    }
+}
+
 ## Extension after the last `.` in the basename, or `""` if none / leading-dot only.
 export fn extension(path!: String) -> String {
     let base = basename(path)
