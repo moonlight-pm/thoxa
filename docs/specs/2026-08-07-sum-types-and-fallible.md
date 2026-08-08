@@ -2,11 +2,11 @@
 
 **Date:** 2026-08-07  
 **Status:** target (accepted product intent; **partially implemented**)  
-**Implementation:** ladder §10 steps 1–2 partial — nullary unions + one-field
-scalar product members; inject; exhaustive constructor match  
-**Gaps:** literal union members; multi-field patterns; type `!`/`?` marks;
-general value `?`; May/Trial prelude cutover; heap payloads; nested unions
-(see §10)
+**Implementation:** ladder §10 steps 1–2 partial — nullary + multi-field scalar
+product members; inject; exhaustive constructor match  
+(`sums_nullary`, `sums_payload`, `sums_product`)  
+**Gaps:** literal union members; type `!`/`?` marks; general value `?`;
+May/Trial prelude cutover; heap payloads; nested unions (see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  
