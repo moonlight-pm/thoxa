@@ -23,45 +23,98 @@ impl Parser {
 
     pub fn parse_module(&mut self) -> Result<Module> {
         let mut items = Vec::new();
+        let mut errors: Vec<Error> = Vec::new();
         while !self.at(TokenKind::Eof) {
-            let exported = if self.at(TokenKind::Export) {
-                self.bump();
-                true
-            } else {
-                false
-            };
-
-            if self.at(TokenKind::Import) {
-                if exported {
-                    return Err(Error::at(
-                        "`export import` is not supported",
-                        self.peek_span(),
-                    ));
+            match self.parse_top_item() {
+                Ok(item) => items.push(item),
+                Err(e) => {
+                    errors.push(e);
+                    if !self.recover_to_next_item() {
+                        break;
+                    }
+                    if errors.len() >= 32 {
+                        break;
+                    }
                 }
-                items.push(Item::Import(self.parse_import()?));
-            } else if self.at(TokenKind::Type) {
-                items.push(Item::Type(self.parse_type_def(exported)?));
-            } else if self.at(TokenKind::Extern) {
-                items.push(Item::Extern(self.parse_extern(exported)?));
-            } else if self.at(TokenKind::Fn) {
-                items.push(Item::Function(self.parse_function(exported)?));
-            } else if self.at(TokenKind::Let) || self.at(TokenKind::Mut) {
-                items.push(Item::Global(self.parse_global(exported)?));
-            } else {
-                // Session-script top-level statement (assign or expression).
-                // Ordinary programs with `fn main` reject these in session::prepare
-                // if mixed incorrectly; pure programs never produce them if the
-                // author only uses decls — free stmts mark a session body.
-                if exported {
-                    return Err(Error::at(
-                        "`export` only applies to declarations, not statements",
-                        self.peek_span(),
-                    ));
-                }
-                items.push(Item::SessionStmt(self.parse_session_stmt()?));
             }
         }
+        if !errors.is_empty() {
+            return Err(Error::multi(errors));
+        }
         Ok(Module { items })
+    }
+
+    fn parse_top_item(&mut self) -> Result<Item> {
+        let exported = if self.at(TokenKind::Export) {
+            self.bump();
+            true
+        } else {
+            false
+        };
+
+        if self.at(TokenKind::Import) {
+            if exported {
+                return Err(Error::at(
+                    "`export import` is not supported",
+                    self.peek_span(),
+                ));
+            }
+            Ok(Item::Import(self.parse_import()?))
+        } else if self.at(TokenKind::Type) {
+            Ok(Item::Type(self.parse_type_def(exported)?))
+        } else if self.at(TokenKind::Extern) {
+            Ok(Item::Extern(self.parse_extern(exported)?))
+        } else if self.at(TokenKind::Fn) {
+            Ok(Item::Function(self.parse_function(exported)?))
+        } else if self.at(TokenKind::Let) || self.at(TokenKind::Mut) {
+            Ok(Item::Global(self.parse_global(exported)?))
+        } else {
+            // Session-script top-level statement (assign or expression).
+            if exported {
+                return Err(Error::at(
+                    "`export` only applies to declarations, not statements",
+                    self.peek_span(),
+                ));
+            }
+            Ok(Item::SessionStmt(self.parse_session_stmt()?))
+        }
+    }
+
+    /// After a top-level parse error, skip to the next likely item start.
+    /// Returns false if EOF is reached without a recovery point.
+    fn recover_to_next_item(&mut self) -> bool {
+        // Always consume at least one token so we cannot spin on the same error.
+        if !self.at(TokenKind::Eof) {
+            self.bump();
+        }
+        let mut depth: i32 = 0;
+        while !self.at(TokenKind::Eof) {
+            match &self.current().kind {
+                TokenKind::LBrace | TokenKind::LParen | TokenKind::LBracket => {
+                    depth += 1;
+                    self.bump();
+                }
+                TokenKind::RBrace | TokenKind::RParen | TokenKind::RBracket => {
+                    depth = (depth - 1).max(0);
+                    self.bump();
+                }
+                TokenKind::Fn
+                | TokenKind::Type
+                | TokenKind::Extern
+                | TokenKind::Import
+                | TokenKind::Export
+                | TokenKind::Let
+                | TokenKind::Mut
+                    if depth == 0 =>
+                {
+                    return true;
+                }
+                _ => {
+                    self.bump();
+                }
+            }
+        }
+        false
     }
 
     /// Top-level session body item: assignment or expression statement.

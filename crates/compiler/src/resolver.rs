@@ -427,17 +427,47 @@ impl<'a> Resolver<'a> {
     }
 
     fn ty_hint_from_init(&self, init: &Expr, scope: usize) -> Option<NavTy> {
-        match &init.kind {
-            ExprKind::Call { callee, .. } => self.call_result_nav_ty(callee, scope),
-            // `let q = p.moved()` — method return type as value hint.
-            ExprKind::MethodCall { .. } => self.receiver_nav_ty(init, scope),
-            // `let q = p` — copy known value hint.
-            ExprKind::Name(n) => {
-                let id = self.lookup(scope, n)?;
-                Self::binding_nav_ty(self.res.bindings.get(&id)?)
+        self.expr_nav_ty(init, scope)
+    }
+
+    /// Best-effort value type for untyped `let` inits (and nested expressions).
+    fn expr_nav_ty(&self, expr: &Expr, scope: usize) -> Option<NavTy> {
+        match &expr.kind {
+            ExprKind::Name(_)
+            | ExprKind::Call { .. }
+            | ExprKind::MethodCall { .. }
+            | ExprKind::Field { .. } => self.receiver_nav_ty(expr, scope),
+            ExprKind::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                let t = self.block_nav_ty(then_branch, scope)?;
+                match else_branch {
+                    Some(eb) => {
+                        let e = self.block_nav_ty(eb, scope)?;
+                        if t == e {
+                            Some(t)
+                        } else {
+                            None
+                        }
+                    }
+                    None => Some(t),
+                }
+            }
+            ExprKind::Block(b) => self.block_nav_ty(b, scope),
+            ExprKind::Try(inner) | ExprKind::Unary { expr: inner, .. } => {
+                self.expr_nav_ty(inner, scope)
             }
             _ => None,
         }
+    }
+
+    fn block_nav_ty(&self, block: &Block, scope: usize) -> Option<NavTy> {
+        block
+            .tail
+            .as_ref()
+            .and_then(|t| self.expr_nav_ty(t, scope))
     }
 
     /// Result type of a bare call for member linking: type ctor, or free/extern return.
@@ -1343,6 +1373,50 @@ fn main() -> Int64 {
         assert_eq!(b.kind, BindingKind::Method);
         assert_eq!(b.name, "len");
         assert_eq!(b.owner.as_deref(), Some("Point"));
+    }
+
+    #[test]
+    fn typed_member_via_if_init() {
+        // Untyped let from if/else with same constructor type in both arms.
+        let src = "\
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+fn main() -> Int64 {
+  let p = if true { Point(x: 1) } else { Point(x: 2) }
+  p.len()
+  0
+}
+";
+        let res = resolve_ok(src);
+        let len_call = src.find("p.len()").unwrap() + 2;
+        let p = byte_to_position(src, len_call);
+        let r = res.ref_at(src, p.line, p.character).expect("p.len");
+        let b = res.binding_of(Some(r)).expect("method via if-init");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "len");
+        assert_eq!(b.owner.as_deref(), Some("Point"));
+    }
+
+    #[test]
+    fn typed_member_via_block_init() {
+        let src = "\
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+fn main() -> Int64 {
+  let p = { Point(x: 3) }
+  p.len()
+  0
+}
+";
+        let res = resolve_ok(src);
+        let len_call = src.find("p.len()").unwrap() + 2;
+        let p = byte_to_position(src, len_call);
+        let r = res.ref_at(src, p.line, p.character).expect("p.len");
+        let b = res.binding_of(Some(r)).expect("method via block-init");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "len");
     }
 
     #[test]

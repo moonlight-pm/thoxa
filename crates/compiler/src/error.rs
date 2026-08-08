@@ -42,6 +42,19 @@ impl Error {
         self.more = more;
         self
     }
+
+    /// Fold independent errors into one primary + `more` (LSP multi-diag).
+    pub fn multi(errors: Vec<Error>) -> Error {
+        let mut it = errors.into_iter();
+        let first = it.next().expect("Error::multi nonempty");
+        let more = it
+            .map(|e| AdditionalDiagnostic {
+                message: e.message,
+                span: e.span,
+            })
+            .collect();
+        first.with_more(more)
+    }
 }
 
 impl fmt::Display for Error {

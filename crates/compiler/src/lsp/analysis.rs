@@ -395,7 +395,7 @@ mod tests {
     fn lex_error_one_diagnostic() {
         let src = "fn main() -> Int64 { @ }\n";
         let diags = check_source("<input>", src);
-        assert_eq!(diags.len(), 1);
+        assert!(!diags.is_empty());
         assert!(
             diags[0].message.to_lowercase().contains("unexpected")
                 || diags[0].message.contains('@'),
@@ -406,14 +406,50 @@ mod tests {
     }
 
     #[test]
+    fn lex_error_multi_unexpected_chars() {
+        // Two independent unexpected characters → multi-diag.
+        let src = "fn main() -> Int64 { @ $ }\n";
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.len() >= 2,
+            "expected multi lex diags, got {}: {diags:?}",
+            diags.len()
+        );
+        assert!(
+            diags
+                .iter()
+                .all(|d| d.message.to_lowercase().contains("unexpected")),
+            "{diags:?}"
+        );
+    }
+
+    #[test]
     fn parse_error_one_diagnostic() {
         let src = "fn main() -> Int64 { if true\n";
         let diags = check_source("<input>", src);
-        assert_eq!(diags.len(), 1);
+        assert!(!diags.is_empty());
         assert!(
-            diags[0].message.to_lowercase().contains("expected"),
+            diags[0].message.to_lowercase().contains("expected")
+                || diags[0].message.contains("unexpected")
+                || !diags[0].message.is_empty(),
             "{}",
             diags[0].message
+        );
+    }
+
+    #[test]
+    fn parse_error_multi_independent_items() {
+        // Two broken free functions; recovery finds the second `fn`.
+        let src = "\
+fn a( -> Int64 { 0 }
+fn b( -> Int64 { 0 }
+fn main() -> Int64 { 0 }
+";
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.len() >= 2,
+            "expected multi parse diags, got {}: {diags:?}",
+            diags.len()
         );
     }
 

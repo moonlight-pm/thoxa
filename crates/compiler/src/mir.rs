@@ -1751,15 +1751,7 @@ fn resolve_type_def_shape(
 }
 
 fn errors_to_multi(errors: Vec<Error>) -> Error {
-    let mut it = errors.into_iter();
-    let first = it.next().expect("errors_to_multi nonempty");
-    let more = it
-        .map(|e| crate::error::AdditionalDiagnostic {
-            message: e.message,
-            span: e.span,
-        })
-        .collect();
-    first.with_more(more)
+    Error::multi(errors)
 }
 
 fn mangle_type(mod_id: &str, name: &str, is_entry: bool) -> String {

@@ -101,13 +101,39 @@ impl<'a> Lexer<'a> {
 
     pub fn tokenize(mut self) -> Result<Vec<Token>> {
         let mut tokens = Vec::new();
+        let mut errors: Vec<Error> = Vec::new();
         loop {
-            let tok = self.next_token()?;
-            let is_eof = tok.kind == TokenKind::Eof;
-            tokens.push(tok);
-            if is_eof {
-                break;
+            match self.next_token() {
+                Ok(tok) => {
+                    let is_eof = tok.kind == TokenKind::Eof;
+                    tokens.push(tok);
+                    if is_eof {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    // Skip one unexpected character and keep scanning (LSP multi-diag).
+                    errors.push(e);
+                    if self.pos < self.bytes.len() {
+                        // Advance one UTF-8 char when possible.
+                        let rest = &self.src[self.pos..];
+                        if let Some(ch) = rest.chars().next() {
+                            self.pos += ch.len_utf8();
+                        } else {
+                            self.pos += 1;
+                        }
+                    } else {
+                        break;
+                    }
+                    // Cap runaway garbage so we don't loop forever on bad input.
+                    if errors.len() >= 32 {
+                        break;
+                    }
+                }
             }
+        }
+        if !errors.is_empty() {
+            return Err(Error::multi(errors));
         }
         Ok(tokens)
     }

@@ -19,7 +19,7 @@ language server (grammar color changes may need a full quit/restart).
 
 | Feature | Notes |
 |---------|--------|
-| Diagnostics | From native check / overlays |
+| Diagnostics | From native check / overlays; multi-diag for independent body/type-reg errors, unexpected lex chars, and top-level parse recovery |
 | Syntax color | Tree-sitter Thoxa grammar |
 | Hover | Signature + contiguous `##` docs |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
