@@ -14,9 +14,10 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 **language kernel depth** — one capability gap at a time, with conformance.
 **Shipped:** D106–D117; **D118 partial** (user unions).
 
-**In progress:** sum types (D118–D119) — unions through pure-lit scalar layout
-(`sums_*`). **Next:** May/Trial prelude (needs generic type defs
-`type Has<T>`); residual type-arg rewrap as smaller polish.
+**In progress:** sum types (D118–D119) — unions + generic monomorphs
+(`sums_*`, `sums_generic`). **Next:** May/Trial prelude cutover (rewrite as
+`type Has<T>` / `May<T> = Has<T!> | Not?`, drop builtins); residual type-arg
+rewrap as polish.
 Freeze: [`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
 
 ### Proceed order

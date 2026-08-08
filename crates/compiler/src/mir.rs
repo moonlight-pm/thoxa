@@ -571,6 +571,23 @@ struct SumInfo {
     extract_tag: Option<u32>,
 }
 
+/// Generic type template (`type Box<T>(…)` / `type Opt<T> = …`).
+#[derive(Clone)]
+struct GenericDef {
+    source_name: String,
+    mangled_base: String,
+    type_params: Vec<String>,
+    def_mod: String,
+    kind: GenericKind,
+    name_span: Span,
+}
+
+#[derive(Clone)]
+enum GenericKind {
+    Product { params: Vec<ast::Param> },
+    Union { members: Vec<TypeExpr> },
+}
+
 #[derive(Clone)]
 struct SumVariant {
     tag: u32,
@@ -890,8 +907,10 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     // ---------- Phase 1: register types (mangled names) ----------
     let mut types_info: HashMap<String, TypeInfo> = HashMap::new();
     let mut type_layouts: Vec<TypeLayout> = Vec::new();
-    // (module_id, mangled_type_name, &TypeDef)
+    // (module_id, mangled_type_name, &TypeDef) — concrete (non-generic) only
     let mut type_defs: Vec<(String, String, &TypeDef)> = Vec::new();
+    // Generic templates: mangled base name → def (D118 / May prelude path).
+    let mut generics: HashMap<String, GenericDef> = HashMap::new();
     let mut module_exports: HashMap<String, ModuleExports> = HashMap::new();
 
     for m in &package.modules {
@@ -899,15 +918,61 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         for item in &m.ast.items {
             let Item::Type(td) = item else { continue };
             let mangled = mangle_type(&m.id, &td.name, m.is_entry);
-            if types_info.contains_key(&mangled) {
+            if types_info.contains_key(&mangled) || generics.contains_key(&mangled) {
                 return Err(Error::at(
                     format!("duplicate type `{}`", td.name),
                     td.name_span,
                 ));
             }
+            if !td.type_params.is_empty() {
+                // Template only — monomorphs are materialized on use.
+                if td.type_params.len() > 4 {
+                    return Err(Error::at(
+                        "at most 4 type parameters are supported for now",
+                        td.name_span,
+                    ));
+                }
+                let kind = if let Some(members) = &td.union_members {
+                    if !td.params.is_empty() || !td.fields.is_empty() || !td.methods.is_empty() {
+                        return Err(Error::at(
+                            "union type cannot have constructor params, body fields, or methods",
+                            td.name_span,
+                        ));
+                    }
+                    GenericKind::Union {
+                        members: members.clone(),
+                    }
+                } else if !td.fields.is_empty() {
+                    return Err(Error::at(
+                        "generic types cannot use C-layout body fields yet",
+                        td.name_span,
+                    ));
+                } else {
+                    GenericKind::Product {
+                        params: td.params.clone(),
+                    }
+                };
+                generics.insert(
+                    mangled.clone(),
+                    GenericDef {
+                        source_name: td.name.clone(),
+                        mangled_base: mangled.clone(),
+                        type_params: td.type_params.clone(),
+                        def_mod: m.id.clone(),
+                        kind,
+                        name_span: td.name_span,
+                    },
+                );
+                if td.exported {
+                    module_exports
+                        .get_mut(&m.id)
+                        .unwrap()
+                        .types
+                        .insert(td.name.clone(), mangled);
+                }
+                continue;
+            }
             // Field types may reference other types; resolve after all types registered.
-            // First pass: placeholder with empty fields if needed — we resolve fields in pass 1b
-            // after all type names exist.
             type_defs.push((m.id.clone(), mangled.clone(), td));
             types_info.insert(
                 mangled.clone(),
@@ -957,7 +1022,16 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         per_mod_types.insert(m.id.clone(), map);
     }
 
-    // Fill type fields with resolved types.
+    // Eager monomorphization: materialize every GenericApp found in the package.
+    monomorphize_package(
+        package,
+        &mut types_info,
+        &mut type_layouts,
+        &generics,
+        &per_mod_types,
+    )?;
+
+    // Fill type fields with resolved types (concrete AST defs only).
     for (mod_id, mangled, td) in &type_defs {
         let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
         let mut fields: Vec<FieldInfo> = Vec::new();
@@ -1870,13 +1944,42 @@ fn resolve_ty(
                 Err(Error::at(format!("unknown type `{name}`"), t.span))
             }
         }
-        // Monomorphic product "application" for type-arg marks: `Hold<Int64!>` ≡ `Hold`
-        // when the single type arg matches the sole field type (D118 extract marks).
+        // Type application: monomorph (`Box<Int64>`) or identity mark app (`Hold<Int64!>`).
         (name, args) if !args.is_empty() => {
             let mangled = name_map
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| name.to_string());
+            // Prefer monomorph if already materialised (`Box__Int64`).
+            let mut arg_tys = Vec::new();
+            let mut all_type_args = true;
+            for arg in args {
+                match arg {
+                    TypeArg::Type(arg_te) => {
+                        arg_tys.push(resolve_ty(arg_te, types, name_map)?);
+                    }
+                    TypeArg::Int { .. } => {
+                        all_type_args = false;
+                        break;
+                    }
+                }
+            }
+            if all_type_args && !arg_tys.is_empty() {
+                let mono = mono_type_name(&mangled, &arg_tys);
+                if types.contains_key(&mono) {
+                    return Ok(Ty::User(mono));
+                }
+                // Generic base with no mono yet — should have been eager-monomorphized.
+                if !types.contains_key(&mangled) && !types.contains_key(name) {
+                    return Err(Error::at(
+                        format!(
+                            "generic type `{name}` is not instantiated for these arguments (internal monomorph missing: {mono})"
+                        ),
+                        t.span,
+                    ));
+                }
+            }
+            // Identity monomorphic product app for type-arg marks: `Hold<Int64!>` ≡ `Hold`.
             let key = if types.contains_key(&mangled) {
                 mangled
             } else if types.contains_key(name) {
@@ -1924,6 +2027,681 @@ fn resolve_ty(
         }
         (other, _) => Err(Error::at(format!("unknown type `{other}`"), t.span)),
     }
+}
+
+fn mono_type_name(base: &str, args: &[Ty]) -> String {
+    let mut s = base.to_string();
+    for a in args {
+        s.push_str("__");
+        s.push_str(&ty_mono_suffix(a));
+    }
+    s
+}
+
+fn ty_mono_suffix(ty: &Ty) -> String {
+    match ty {
+        Ty::Void => "Void".into(),
+        Ty::Int32 => "Int32".into(),
+        Ty::Int64 => "Int64".into(),
+        Ty::UInt32 => "UInt32".into(),
+        Ty::UInt64 => "UInt64".into(),
+        Ty::Byte => "Byte".into(),
+        Ty::Bool => "Bool".into(),
+        Ty::String => "String".into(),
+        Ty::Bytes => "Bytes".into(),
+        Ty::Buffer => "Buffer".into(),
+        Ty::User(n) => n.replace(['-', '$'], "_"),
+        Ty::May { inner } => format!("May_{}", ty_mono_suffix(inner)),
+        Ty::Trial { ok, err } => format!("Trial_{}_{}", ty_mono_suffix(ok), ty_mono_suffix(err)),
+        Ty::Array { elem } => format!("Array_{}", ty_mono_suffix(elem)),
+        Ty::FixedArray { elem, len } => format!("Fixed_{}_{len}", ty_mono_suffix(elem)),
+        Ty::Address(inner) => format!("Addr_{}", ty_mono_suffix(inner)),
+    }
+}
+
+fn is_mono_of_base(base: &str, mono: &str) -> bool {
+    mono == base || mono.starts_with(&format!("{base}__"))
+}
+
+/// Pick monomorph for a type constructor call from an expected type.
+/// Returns `Some(mono)` or `None` if `base` is already a concrete type name.
+fn resolve_ctor_mono(
+    ctx: &LowerCtx,
+    base: &str,
+    source_name: &str,
+    expect: Option<&Ty>,
+    span: Span,
+) -> Result<Option<String>> {
+    if ctx.types.contains_key(base) {
+        return Ok(None); // concrete type
+    }
+    // Generic: need expect to select monomorph.
+    let Some(exp) = expect else {
+        return Err(Error::at(
+            format!(
+                "generic type `{source_name}` requires a type annotation (e.g. let x: {source_name}<Int64> = …)"
+            ),
+            span,
+        ));
+    };
+    // Direct monomorph expect: Box__Int64
+    if let Ty::User(n) = exp {
+        if is_mono_of_base(base, n) && ctx.types.contains_key(n) {
+            return Ok(Some(n.clone()));
+        }
+        // Expect is a union containing a monomorph of this product.
+        if let Some(sum) = ctx.types.get(n).and_then(|i| i.sum.as_ref()) {
+            for v in &sum.variants {
+                if let Ty::User(pn) = &v.ty {
+                    if is_mono_of_base(base, pn) && ctx.types.contains_key(pn) {
+                        return Ok(Some(pn.clone()));
+                    }
+                }
+            }
+        }
+    }
+    Err(Error::at(
+        format!(
+            "cannot construct generic `{source_name}` for expected type {exp:?}"
+        ),
+        span,
+    ))
+}
+
+/// Materialize monomorphs for every generic application in the package.
+fn monomorphize_package(
+    package: &Package,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+    per_mod_types: &HashMap<String, HashMap<String, String>>,
+) -> Result<()> {
+    if generics.is_empty() {
+        return Ok(());
+    }
+    // Worklist of (base_mangled, arg_tys, name_map, span)
+    let mut pending: Vec<(String, Vec<Ty>, HashMap<String, String>, Span)> = Vec::new();
+
+    for m in &package.modules {
+        let name_map = per_mod_types.get(&m.id).cloned().unwrap_or_default();
+        let mut apps = Vec::new();
+        for item in &m.ast.items {
+            collect_item_type_apps(item, &mut apps);
+        }
+        for (te, span) in apps {
+            if te.args.is_empty() || is_builtin_generic(&te.name) {
+                continue;
+            }
+            let base = name_map
+                .get(&te.name)
+                .cloned()
+                .unwrap_or_else(|| te.name.clone());
+            if !generics.contains_key(&base) {
+                continue;
+            }
+            let mut arg_tys = Vec::new();
+            let mut ok = true;
+            for arg in &te.args {
+                match arg {
+                    TypeArg::Type(inner) => match resolve_ty(inner, types, &name_map) {
+                        Ok(ty) => arg_tys.push(ty),
+                        Err(_) => {
+                            ok = false;
+                            break;
+                        }
+                    },
+                    TypeArg::Int { .. } => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if ok && !arg_tys.is_empty() {
+                pending.push((base, arg_tys, name_map.clone(), span));
+            }
+        }
+    }
+
+    // Process until fixed point (nested mono apps inside templates).
+    let mut guard = 0;
+    while !pending.is_empty() {
+        guard += 1;
+        if guard > 10_000 {
+            return Err(Error::new(
+                "internal: monomorphization did not converge (too many iterations)",
+            ));
+        }
+        let (base, arg_tys, name_map, span) = pending.remove(0);
+        let mono = mono_type_name(&base, &arg_tys);
+        if types.contains_key(&mono) {
+            continue;
+        }
+        let gdef = generics.get(&base).ok_or_else(|| {
+            Error::at(format!("internal: missing generic `{base}`"), span)
+        })?;
+        if gdef.type_params.len() != arg_tys.len() {
+            return Err(Error::at(
+                format!(
+                    "type `{}` expects {} type argument(s), found {}",
+                    gdef.source_name,
+                    gdef.type_params.len(),
+                    arg_tys.len()
+                ),
+                span,
+            ));
+        }
+        let mut subst: HashMap<String, Ty> = HashMap::new();
+        for (p, ty) in gdef.type_params.iter().zip(arg_tys.iter()) {
+            subst.insert(p.clone(), ty.clone());
+        }
+        // Extend name_map with type params → concrete (via synthetic resolve).
+        match &gdef.kind {
+            GenericKind::Product { params } => {
+                instantiate_product_mono(
+                    mono, gdef, params, &subst, types, layouts, &name_map, generics, &mut pending,
+                    span,
+                )?;
+            }
+            GenericKind::Union { members } => {
+                instantiate_union_mono(
+                    mono, gdef, members, &subst, types, layouts, &name_map, generics, &mut pending,
+                    span,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_builtin_generic(name: &str) -> bool {
+    matches!(
+        name,
+        "May" | "Trial" | "Array" | "Address" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte"
+            | "UInt8" | "Bool" | "String" | "Bytes" | "Buffer" | "Void"
+    )
+}
+
+fn collect_item_type_apps(item: &Item, out: &mut Vec<(TypeExpr, Span)>) {
+    match item {
+        Item::Type(td) => {
+            if let Some(members) = &td.union_members {
+                for m in members {
+                    collect_type_apps(m, out);
+                }
+            }
+            for p in &td.params {
+                collect_type_apps(&p.ty, out);
+            }
+            for f in &td.fields {
+                collect_type_apps(&f.ty, out);
+            }
+            for m in &td.methods {
+                for p in &m.params {
+                    collect_type_apps(&p.ty, out);
+                }
+                if let Some(r) = &m.return_type {
+                    collect_type_apps(r, out);
+                }
+            }
+        }
+        Item::Function(f) => {
+            for p in &f.params {
+                collect_type_apps(&p.ty, out);
+            }
+            if let Some(r) = &f.return_type {
+                collect_type_apps(r, out);
+            }
+            collect_block_type_apps(&f.body, out);
+        }
+        Item::Extern(e) => {
+            for p in &e.params {
+                collect_type_apps(&p.ty, out);
+            }
+            if let Some(r) = &e.return_type {
+                collect_type_apps(r, out);
+            }
+        }
+        Item::Global(_) | Item::Import(_) | Item::SessionStmt(_) => {}
+    }
+}
+
+fn collect_block_type_apps(block: &Block, out: &mut Vec<(TypeExpr, Span)>) {
+    for it in &block.items {
+        match it {
+            BlockItem::Let { ty: Some(t), .. } => collect_type_apps(t, out),
+            BlockItem::Let { .. } => {}
+            _ => {}
+        }
+    }
+}
+
+fn collect_type_apps(te: &TypeExpr, out: &mut Vec<(TypeExpr, Span)>) {
+    if !te.name.is_empty() && !te.args.is_empty() {
+        out.push((te.clone(), te.span));
+    }
+    for a in &te.args {
+        if let TypeArg::Type(inner) = a {
+            collect_type_apps(inner, out);
+        }
+    }
+}
+
+fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
+    let (name, args) = match ty {
+        Ty::Int64 => ("Int64".into(), vec![]),
+        Ty::Int32 => ("Int32".into(), vec![]),
+        Ty::UInt32 => ("UInt32".into(), vec![]),
+        Ty::UInt64 => ("UInt64".into(), vec![]),
+        Ty::Byte => ("Byte".into(), vec![]),
+        Ty::Bool => ("Bool".into(), vec![]),
+        Ty::String => ("String".into(), vec![]),
+        Ty::Bytes => ("Bytes".into(), vec![]),
+        Ty::Buffer => ("Buffer".into(), vec![]),
+        Ty::Void => ("Void".into(), vec![]),
+        Ty::User(n) => (n.clone(), vec![]),
+        Ty::May { inner } => (
+            "May".into(),
+            vec![TypeArg::Type(ty_to_type_expr(inner, span))],
+        ),
+        Ty::Trial { ok, err } => (
+            "Trial".into(),
+            vec![
+                TypeArg::Type(ty_to_type_expr(ok, span)),
+                TypeArg::Type(ty_to_type_expr(err, span)),
+            ],
+        ),
+        Ty::Array { elem } => (
+            "Array".into(),
+            vec![TypeArg::Type(ty_to_type_expr(elem, span))],
+        ),
+        other => (format!("{other:?}"), vec![]),
+    };
+    TypeExpr {
+        name,
+        args,
+        span,
+        lit: None,
+        mark: None,
+    }
+}
+
+fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
+    if te.lit.is_some() {
+        return te.clone();
+    }
+    if te.args.is_empty() {
+        if let Some(ty) = subst.get(&te.name) {
+            let mut out = ty_to_type_expr(ty, te.span);
+            out.mark = te.mark;
+            return out;
+        }
+    }
+    let args = te
+        .args
+        .iter()
+        .map(|a| match a {
+            TypeArg::Type(inner) => TypeArg::Type(subst_type_expr(inner, subst)),
+            TypeArg::Int { value, span } => TypeArg::Int {
+                value: *value,
+                span: *span,
+            },
+        })
+        .collect();
+    TypeExpr {
+        name: te.name.clone(),
+        args,
+        span: te.span,
+        lit: None,
+        mark: te.mark,
+    }
+}
+
+fn instantiate_product_mono(
+    mono: String,
+    gdef: &GenericDef,
+    params: &[ast::Param],
+    subst: &HashMap<String, Ty>,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+    generics: &HashMap<String, GenericDef>,
+    pending: &mut Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
+    span: Span,
+) -> Result<()> {
+    let _ = generics;
+    let _ = pending;
+    let mut fields = Vec::new();
+    for p in params {
+        let te = subst_type_expr(&p.ty, subst);
+        // Request nested monos if needed.
+        if !te.args.is_empty() && !is_builtin_generic(&te.name) {
+            if let Some(base) = name_map.get(&te.name).or(Some(&te.name)) {
+                if generics.contains_key(base) {
+                    let mut arg_tys = Vec::new();
+                    for a in &te.args {
+                        if let TypeArg::Type(inner) = a {
+                            arg_tys.push(resolve_ty(inner, types, name_map)?);
+                        }
+                    }
+                    if arg_tys.len() == te.args.len() {
+                        pending.push((base.clone(), arg_tys, name_map.clone(), span));
+                    }
+                }
+            }
+        }
+        let ty = resolve_ty(&te, types, name_map)?;
+        let ok = matches!(
+            ty,
+            Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
+        );
+        if !ok {
+            return Err(Error::at(
+                format!(
+                    "generic product field `{}` must be Int64, Bool, String, Bytes, or Array (got {ty:?})",
+                    p.name
+                ),
+                p.ty.span,
+            ));
+        }
+        fields.push(FieldInfo {
+            name: p.name.clone(),
+            ty,
+            mutable: false,
+            default: p.default.clone(),
+        });
+    }
+    let info = TypeInfo {
+        fields: fields.clone(),
+        methods: HashMap::new(),
+        zero_init: false,
+        def_mod: gdef.def_mod.clone(),
+        sum: None,
+    };
+    let layout = TypeLayout {
+        name: mono.clone(),
+        fields: fields
+            .iter()
+            .map(|f| FieldLayout {
+                name: f.name.clone(),
+                c_name: sanitize_field(&f.name),
+                ty: f.ty.clone(),
+            })
+            .collect(),
+        sum: None,
+        sum_scalar: None,
+    };
+    types.insert(mono.clone(), info);
+    layouts.push(layout);
+    Ok(())
+}
+
+fn instantiate_union_mono(
+    mono: String,
+    gdef: &GenericDef,
+    members: &[TypeExpr],
+    subst: &HashMap<String, Ty>,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+    generics: &HashMap<String, GenericDef>,
+    pending: &mut Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
+    span: Span,
+) -> Result<()> {
+    // Ensure nested product monos exist first.
+    for mem in members {
+        let te = subst_type_expr(mem, subst);
+        if !te.args.is_empty() && !is_builtin_generic(&te.name) {
+            let base = name_map
+                .get(&te.name)
+                .cloned()
+                .unwrap_or_else(|| te.name.clone());
+            if generics.contains_key(&base) {
+                let mut arg_tys = Vec::new();
+                for a in &te.args {
+                    if let TypeArg::Type(inner) = a {
+                        // strip mark for mono key
+                        let mut bare = inner.clone();
+                        bare.mark = None;
+                        arg_tys.push(resolve_ty(&bare, types, name_map)?);
+                    }
+                }
+                if arg_tys.len() == te.args.len() {
+                    let nested_mono = mono_type_name(&base, &arg_tys);
+                    if !types.contains_key(&nested_mono) {
+                        pending.push((base, arg_tys, name_map.clone(), span));
+                        // Re-queue ourselves after deps.
+                        pending.push((
+                            gdef.mangled_base.clone(),
+                            gdef.type_params
+                                .iter()
+                                .map(|p| subst.get(p).unwrap().clone())
+                                .collect(),
+                            name_map.clone(),
+                            span,
+                        ));
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut variants = Vec::new();
+    let mut seen_names = HashSet::new();
+    let mut residual_tag: Option<u32> = None;
+    let mut extract_tag: Option<u32> = None;
+
+    for mem in members {
+        let te = subst_type_expr(mem, subst);
+        let arg_extract = type_expr_has_arg_mark(&te, TypeMark::Extract);
+        let arg_residual = type_expr_has_arg_mark(&te, TypeMark::Residual);
+        let whole_extract = matches!(te.mark, Some(TypeMark::Extract));
+        let whole_residual = matches!(te.mark, Some(TypeMark::Residual));
+        let unwrap_payload = arg_extract;
+        let mark = te.mark.or(if arg_extract {
+            Some(TypeMark::Extract)
+        } else if arg_residual {
+            Some(TypeMark::Residual)
+        } else {
+            None
+        });
+
+        if (whole_residual || arg_residual) && residual_tag.is_some() {
+            return Err(Error::at(
+                "union may have at most one residual mark (`?`)",
+                te.span,
+            ));
+        }
+        if (whole_extract || arg_extract) && extract_tag.is_some() {
+            return Err(Error::at(
+                "union may have at most one extract mark (`!`)",
+                te.span,
+            ));
+        }
+
+        if let Some(lit) = &te.lit {
+            let vname = match lit {
+                TypeLit::Int(n) => n.to_string(),
+                TypeLit::Bool(b) => b.to_string(),
+                TypeLit::String(s) => format!("\"{s}\""),
+            };
+            if !seen_names.insert(vname.clone()) {
+                return Err(Error::at(format!("duplicate union member `{vname}`"), te.span));
+            }
+            let tag = variants.len() as u32;
+            if whole_residual || arg_residual {
+                residual_tag = Some(tag);
+            }
+            if whole_extract || arg_extract {
+                extract_tag = Some(tag);
+            }
+            variants.push(SumVariant {
+                tag,
+                name: vname,
+                ty: Ty::Void,
+                lit: Some(lit.clone()),
+                mark,
+                unwrap_payload: false,
+            });
+            continue;
+        }
+
+        // Resolve member type (marks on args already handled for mono).
+        let mut te_res = te.clone();
+        te_res.mark = None;
+        for a in &mut te_res.args {
+            if let TypeArg::Type(inner) = a {
+                inner.mark = None;
+            }
+        }
+        let ty = resolve_ty(&te_res, types, name_map)?;
+        let Ty::User(ref member_name) = ty else {
+            return Err(Error::at(
+                format!("union member must be a named type or literal, got {ty:?}"),
+                te.span,
+            ));
+        };
+        // Flatten nested unions.
+        if let Some(minfo) = types.get(member_name) {
+            if let Some(inner_sum) = &minfo.sum {
+                if whole_extract || whole_residual || arg_extract || arg_residual {
+                    return Err(Error::at(
+                        "cannot place extract marks on nested union member",
+                        te.span,
+                    ));
+                }
+                for iv in &inner_sum.variants {
+                    if !seen_names.insert(iv.name.clone()) {
+                        return Err(Error::at(
+                            format!("duplicate union member `{}`", iv.name),
+                            te.span,
+                        ));
+                    }
+                    let tag = variants.len() as u32;
+                    variants.push(SumVariant {
+                        tag,
+                        name: iv.name.clone(),
+                        ty: iv.ty.clone(),
+                        lit: iv.lit.clone(),
+                        mark: None,
+                        unwrap_payload: iv.unwrap_payload,
+                    });
+                }
+                continue;
+            }
+        }
+        let vname = if te.name.is_empty() {
+            member_name.clone()
+        } else {
+            // Prefer source generic name for patterns: Box not Box__Int64
+            let src = te.name.clone();
+            if generics.values().any(|g| g.source_name == src) {
+                src
+            } else {
+                source_name_from_map(name_map, member_name)
+            }
+        };
+        if !seen_names.insert(vname.clone()) {
+            return Err(Error::at(format!("duplicate union member `{vname}`"), te.span));
+        }
+        if let Some(minfo) = types.get(member_name) {
+            for f in &minfo.fields {
+                if !matches!(
+                    f.ty,
+                    Ty::Int64
+                        | Ty::Int32
+                        | Ty::UInt32
+                        | Ty::UInt64
+                        | Ty::Byte
+                        | Ty::Bool
+                        | Ty::Void
+                        | Ty::String
+                        | Ty::Bytes
+                ) {
+                    return Err(Error::at(
+                        format!(
+                            "union member `{vname}` field `{}` must be scalar or String/Bytes",
+                            f.name
+                        ),
+                        te.span,
+                    ));
+                }
+            }
+            if unwrap_payload && minfo.fields.len() != 1 {
+                return Err(Error::at(
+                    format!("type-arg extract on `{vname}` requires a single-field product"),
+                    te.span,
+                ));
+            }
+        }
+        let tag = variants.len() as u32;
+        if whole_residual || arg_residual {
+            residual_tag = Some(tag);
+        }
+        if whole_extract || arg_extract {
+            extract_tag = Some(tag);
+        }
+        variants.push(SumVariant {
+            tag,
+            name: vname,
+            ty,
+            lit: None,
+            mark,
+            unwrap_payload,
+        });
+    }
+
+    if variants.len() < 2 {
+        return Err(Error::at(
+            "union type requires at least two members after monomorphization",
+            gdef.name_span,
+        ));
+    }
+
+    let sum = SumInfo {
+        variants: variants.clone(),
+        residual_tag,
+        extract_tag,
+    };
+    let sum_scalar = if variants.iter().all(|v| v.lit.is_some()) {
+        Some(pure_lit_scalar_ty(variants.len()))
+    } else {
+        None
+    };
+    let info = TypeInfo {
+        fields: Vec::new(),
+        methods: HashMap::new(),
+        zero_init: false,
+        def_mod: gdef.def_mod.clone(),
+        sum: Some(sum),
+    };
+    let layout = TypeLayout {
+        name: mono.clone(),
+        fields: Vec::new(),
+        sum: Some(
+            variants
+                .iter()
+                .map(|v| SumVariantLayout {
+                    tag: v.tag,
+                    name: v.name.clone(),
+                    payload_ty: v.ty.clone(),
+                })
+                .collect(),
+        ),
+        sum_scalar,
+    };
+    types.insert(mono, info);
+    layouts.push(layout);
+    Ok(())
+}
+
+fn source_name_from_map(name_map: &HashMap<String, String>, mangled: &str) -> String {
+    for (src, m) in name_map {
+        if m == mangled {
+            return src.clone();
+        }
+    }
+    mangled.to_string()
 }
 
 /// True when any nested type-arg carries `mark` (`Hold<Int64!>` / `Fail<E?>`).
@@ -2757,7 +3535,7 @@ fn lower_expr_expect(
             }
         }
         ExprKind::Binary { op, left, right } => lower_binary(ctx, *op, left, right, expr.span),
-        ExprKind::Call { callee, args } => lower_call(ctx, callee, args, expr.span),
+        ExprKind::Call { callee, args } => lower_call(ctx, callee, args, expr.span, expect),
         ExprKind::Field {
             base,
             name,
@@ -6874,7 +7652,13 @@ fn lower_not(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)
     Ok((p, ty))
 }
 
-fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+fn lower_call(
+    ctx: &mut LowerCtx,
+    callee: &str,
+    args: &[Arg],
+    span: Span,
+    expect: Option<&Ty>,
+) -> Result<(Place, Ty)> {
     match callee {
         "println" | "print" => {
             if args.len() != 1 {
@@ -6930,8 +7714,21 @@ fn lower_call(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Res
         "Buffer" => lower_buffer_new(ctx, args, span),
         other => {
             // Type constructor via local or imported name.
-            if let Some(mangled_ty) = ctx.resolve_type_name(other) {
-                let info = ctx.types.get(&mangled_ty).unwrap().clone();
+            if let Some(base_mangled) = ctx.resolve_type_name(other) {
+                let mangled_ty =
+                    resolve_ctor_mono(ctx, &base_mangled, other, expect, span)?.unwrap_or(base_mangled);
+                let info = ctx
+                    .types
+                    .get(&mangled_ty)
+                    .ok_or_else(|| {
+                        Error::at(
+                            format!(
+                                "generic type `{other}` requires a type annotation (e.g. `{other}<Int64>`)"
+                            ),
+                            span,
+                        )
+                    })?
+                    .clone();
                 let p = ctx.fresh("obj");
                 let ty = Ty::User(mangled_ty.clone());
                 if info.zero_init {

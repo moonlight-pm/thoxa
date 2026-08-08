@@ -74,6 +74,8 @@ pub struct TypeDef {
     pub exported: bool,
     pub name: String,
     pub name_span: Span,
+    /// Type parameters: `type Box<T>(value: T)` / `type Opt<T> = …` (D118 prelude path).
+    pub type_params: Vec<String>,
     /// Constructor parameters — R3 style `type Point(x: Int64, y: Int64)`.
     /// Empty when the type uses body fields (R7 C-layout `type Regs { … }`).
     /// Empty for nullary `type Up` and for union aliases.

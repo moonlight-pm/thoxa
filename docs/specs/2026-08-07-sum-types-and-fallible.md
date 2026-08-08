@@ -3,10 +3,10 @@
 **Date:** 2026-08-07  
 **Status:** target (accepted product intent; **partially implemented**)  
 **Implementation:** ladder §10 steps 1–5 + type-arg `!` + heap + nested + pure-lit
-scalar — unions, residual `?`, W2, **D119**, String/Bytes, nested flatten,
-pure-lit as Byte-up scalar typedef (gates: `sums_*`)  
-**Gaps:** generic type defs (`type Has<T>`); May/Trial prelude; residual
-type-arg rewrap (see §10)
+scalar + **generic monomorphs** (`type Box<T>`, `Opt<T> = Box<T!> | Empty?`)  
+(gates: `sums_*` incl. `sums_generic`)  
+**Gaps:** May/Trial prelude cutover (drop builtins); residual type-arg rewrap;
+generic methods (see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  
@@ -385,3 +385,5 @@ This freeze is **accepted product intent** when:
 | 2026-08-08 | Monomorphic type-arg extract `Hold<Int64!>` vs whole-arm `Hold!` (`sums_extract_mark`) |
 | 2026-08-08 | Heap String/Bytes payloads in sum members + tag-aware sum RC (`sums_heap`) |
 | 2026-08-08 | Nested union aliases flatten; subset inject into outer (`sums_nested`) |
+| 2026-08-08 | Pure-literal unions as narrow scalar (Byte-up typedef; `sums_literal`) |
+| 2026-08-08 | Generic products/unions + monomorphization (`sums_generic`) |

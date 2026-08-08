@@ -1,0 +1,37 @@
+## Generic products + generic unions with monomorphization (D118 prelude path).
+type Box<T>(value: T)
+type Empty
+type Opt<T> = Box<T!> | Empty?
+type Msg<T> = Box<T!> | Empty?
+
+fn chain(o!: Opt<Int64>) -> Opt<Int64> {
+    let n = o?
+    let x: Opt<Int64> = Box(value: n + 1)
+    x
+}
+
+fn label(o!: Opt<Int64>) -> String {
+    match o {
+        Box(n) { "box={n}" }
+        Empty { "empty" }
+    }
+}
+
+fn main() -> Int64 {
+    let a: Opt<Int64> = Box(value: 7)
+    println(label(a))
+    match chain(Box(value: 10)) {
+        Box(n) { println("ch={n}") }
+        Empty { println("empty") }
+    }
+    match chain(Empty()) {
+        Box(n) { println("ch={n}") }
+        Empty { println("empty") }
+    }
+    let m: Msg<String> = Box(value: "hi")
+    match m {
+        Box(s) { println("s={s}") }
+        Empty { println("empty") }
+    }
+    0
+}

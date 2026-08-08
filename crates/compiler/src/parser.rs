@@ -232,7 +232,14 @@ impl Parser {
         self.expect_kind(&TokenKind::Type)?;
         let (name, name_span) = self.expect_ident()?;
 
-        // Union alias: `type Name = A | B | …` (D118).
+        // Optional type parameters: `type Box<T>` / `type Trial<P, F>` (D118).
+        let type_params = if self.at(TokenKind::LAngle) {
+            self.parse_type_params()?
+        } else {
+            Vec::new()
+        };
+
+        // Union alias: `type Name = A | B | …` or `type Opt<T> = …` (D118).
         if self.at(TokenKind::Eq) {
             self.bump();
             let members = self.parse_union_members()?;
@@ -246,6 +253,7 @@ impl Parser {
                 exported,
                 name,
                 name_span,
+                type_params,
                 params: Vec::new(),
                 fields: Vec::new(),
                 methods: Vec::new(),
@@ -256,6 +264,7 @@ impl Parser {
         // R3: `type Point(x: Int64)` or `type Point(x: Int64) { methods }`
         // R7: `type Regs { mut a: UInt32 … }` (no constructor paren list)
         // Nullary: `type Up` (D118).
+        // Generic product: `type Box<T>(value: T)`.
         let mut params = Vec::new();
         if self.at(TokenKind::LParen) {
             self.bump();
@@ -299,16 +308,60 @@ impl Parser {
                 name_span,
             ));
         }
+        if !type_params.is_empty() && !fields.is_empty() {
+            return Err(Error::at(
+                "generic types cannot use C-layout body fields yet",
+                name_span,
+            ));
+        }
+        if !type_params.is_empty() && !methods.is_empty() {
+            return Err(Error::at(
+                "generic types cannot declare methods yet",
+                name_span,
+            ));
+        }
 
         Ok(TypeDef {
             exported,
             name,
             name_span,
+            type_params,
             params,
             fields,
             methods,
             union_members: None,
         })
+    }
+
+    /// `<T, U>` type parameter list on a type definition.
+    fn parse_type_params(&mut self) -> Result<Vec<String>> {
+        self.expect_kind(&TokenKind::LAngle)?;
+        let mut params = Vec::new();
+        if !self.at_rangle() {
+            loop {
+                let (p, pspan) = self.expect_ident()?;
+                if params.iter().any(|x| x == &p) {
+                    return Err(Error::at(
+                        format!("duplicate type parameter `{p}`"),
+                        pspan,
+                    ));
+                }
+                params.push(p);
+                if self.at(TokenKind::Comma) {
+                    self.bump();
+                    continue;
+                }
+                break;
+            }
+        }
+        self.expect_rangle()?;
+        if params.is_empty() {
+            return Err(Error::at(
+                "type parameter list cannot be empty",
+                self.peek_span(),
+            ));
+        }
+        Ok(params)
     }
 
     /// `A | B | C` type members (each may carry trailing `!` / `?` marks).
