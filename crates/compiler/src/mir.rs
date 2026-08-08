@@ -6295,6 +6295,8 @@ fn lower_match_sum(
     let mut result_ty: Option<Ty> = None;
     let mut covered: HashSet<u32> = HashSet::new();
     let mut has_else = false;
+    // True after a catch-all (`else` or whole-sum bind); further arms are unreachable.
+    let mut catch_all_done = false;
 
     // Forward pass: build list of (cond_setup, cond_place, then_body) or else_body.
     struct ArmCode {
@@ -6311,9 +6313,16 @@ fn lower_match_sum(
                 span,
             ));
         }
+        if catch_all_done {
+            return Err(Error::at(
+                "unreachable match arm after `else` or catch-all binding",
+                pattern_span_mir(&arm.pattern),
+            ));
+        }
         match &arm.pattern {
             Pattern::Else { .. } => {
                 has_else = true;
+                catch_all_done = true;
                 let outer = std::mem::take(&mut ctx.stmts);
                 lower_block_items(ctx, &arm.body.items)?;
                 let arm_val = match &arm.body.tail {
@@ -6384,6 +6393,7 @@ fn lower_match_sum(
                     });
                 } else {
                     has_else = true;
+                    catch_all_done = true;
                     let outer = std::mem::take(&mut ctx.stmts);
                     let bound = ctx.fresh("sbind");
                     ctx.assign(
@@ -6589,8 +6599,18 @@ fn lower_match_sum(
 
     let all_tags: HashSet<u32> = sum.variants.iter().map(|v| v.tag).collect();
     if !has_else && covered != all_tags {
+        let mut missing: Vec<&str> = sum
+            .variants
+            .iter()
+            .filter(|v| !covered.contains(&v.tag))
+            .map(|v| v.name.as_str())
+            .collect();
+        missing.sort();
+        let list = missing.join(", ");
         return Err(Error::at(
-            "non-exhaustive union match (missing arms or `else`)",
+            format!(
+                "non-exhaustive union match: missing {list} (or add `else`)"
+            ),
             span,
         ));
     }

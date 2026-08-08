@@ -511,6 +511,55 @@ mod tests {
     }
 
     #[test]
+    fn union_match_lists_missing_arms() {
+        let src = r#"
+type A
+type B
+type C
+type U = A | B | C
+fn main() -> Int64 {
+    let u: U = A()
+    match u {
+        A { 1 }
+        B { 2 }
+    }
+    0
+}
+"#;
+        let diags = check_source("<input>", src);
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert!(
+            diags[0].message.contains("non-exhaustive") && diags[0].message.contains("C"),
+            "expected missing C named: {}",
+            diags[0].message
+        );
+    }
+
+    #[test]
+    fn union_match_unreachable_after_else() {
+        let src = r#"
+type A
+type B
+type U = A | B
+fn main() -> Int64 {
+    let u: U = A()
+    match u {
+        else { 0 }
+        A { 1 }
+    }
+    0
+}
+"#;
+        let diags = check_source("<input>", src);
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert!(
+            diags[0].message.contains("unreachable"),
+            "{}",
+            diags[0].message
+        );
+    }
+
+    #[test]
     fn semantic_tokens_fn_and_call() {
         let src = "fn main() -> Int64 { println(\"hi\") 0 }\n";
         let toks = semantic_tokens(src);

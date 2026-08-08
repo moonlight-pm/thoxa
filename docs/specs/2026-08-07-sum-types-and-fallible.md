@@ -4,10 +4,10 @@
 **Status:** target (accepted product intent; **implemented** — polish remains)  
 **Implementation:** ladder §10 + **May/Trial prelude cutover** — ambient
 `Has`/`Not`/`May`/`Pass`/`Fail`/`Trial` as generic unions; monomorphs; methods
-on generic products; residual `?` rewrap (incl. cross-module Fail monomorphs);
-**no** builtin `Ty::May`/`Ty::Trial`. Gates green under `cargo make test`
-(`sums_*`, `sums_generic_methods`, `mays`, `trials*`, `http_*`, file I/O).  
-**Gaps:** polish-only (exhaustiveness quality, OpenMode samples)
+on generic products; residual `?` rewrap; exhaustiveness names missing arms /
+rejects post-`else` arms; OpenMode sample (`file_openmode`); **no** builtin
+`Ty::May`/`Ty::Trial`. Gates green under `cargo make test`.  
+**Gaps:** none for v0 (optional further match polish only)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) · focus
 [`../../CURRENT.md`](../../CURRENT.md)  
@@ -390,3 +390,4 @@ This freeze is **accepted product intent** when:
 | 2026-08-08 | Generic products/unions + monomorphization (`sums_generic`) |
 | 2026-08-08 | May/Trial prelude cutover (ambient Fallible generics; full conformance green) |
 | 2026-08-08 | Dead `Ty::May`/`Trial` removed; methods on generic products (`sums_generic_methods`) |
+| 2026-08-08 | Exhaustiveness names missing arms; OpenMode union sample (`file_openmode`) |

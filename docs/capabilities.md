@@ -23,7 +23,7 @@ change. See [`progress-model.md`](progress-model.md).
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
 | trial | `Trial` + `match` + `?` as prelude unions | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118 | Ambient `Pass`/`Fail`/`Trial` generics; cross-module residual rewrap | yes |
 | may | `May` / `Has` / `Not` + `?` as prelude unions | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118 | Ambient `Has`/`Not`/`May` generics; nested ok | yes |
-| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_generic`, `sums_generic_methods` | D118–D119; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | User unions + generics + methods on generic products; May/Trial prelude; no builtin `Ty::May`/`Trial`. Exhaustiveness quality / OpenMode samples still polish-only | yes |
+| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_generic`, `sums_generic_methods` | D118–D119; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Exhaustive union match names missing arms; rejects arms after `else`. OpenMode sample via file-io | yes |
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |
@@ -54,7 +54,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| file-io | `readFile` / `writeFile` / `appendFile` + OpenMode + **File** (seek/position) | shipped | `file_io`, `file_type`, `file_write`, `file_seek` | D56, D80–D82, D109, D112, D115 | OpenMode still Int32 lets (ADT deferred) | yes |
+| file-io | `readFile` / `writeFile` / `appendFile` + OpenMode + **File** (seek/position) | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode` | D56, D80–D82, D109, D112, D115 | OpenMode nullary union + `openModeBits`; Int32 flag lets for creat/trunc/append | yes |
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse` | D69, R9 | Net errno strings polish deferred | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70 | — | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | — | yes |

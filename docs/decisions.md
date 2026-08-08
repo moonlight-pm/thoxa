@@ -157,7 +157,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D80 | errno / strerror without `ffi` root | `thoxa_errno()` in `thoxa_rt` + `extern fn … from "c" "strerror"`; Fail via `fileErr("{what}: {strerror(errno)}")` | No named `import { errno, strerror } from "ffi"` (D30 still deferred). Path included in open/seek/read tags. Conformance expects English ENOENT text. |
-| D81 | OpenMode (native) | Exported Int32 module lets `oRdonly`/`oWronly`/`oRdwr` (POSIX 0/1/2) | ADT `OpenMode = ReadOnly \| …` deferred with sum types. Oracle-style `File` type deferred until method mut-field write-back (`fd = …` in methods). Free `readFile` remains the surface (D56). |
+| D81 | OpenMode (native) | Was Int32 lets only | **Refined:** nullary union `OpenMode = Rdonly \| Wronly \| Rdwr` + `openModeBits` in `iolib/Io.thx`; Int32 `oRdonly`/`oWronly`/`oRdwr` kept for bitwise OR with creat/trunc/append. Gate: `file_openmode`. |
 | D82 | Extern String return | C `char*` → `thoxa_string_from_cstr(…)` in cgen | Completes D20 marshal for String *returns* (args already used `thoxa_string_cstr`). |
 
 ## 2026-07-20 — Editor PR7: cross-module + open-buffer overlay

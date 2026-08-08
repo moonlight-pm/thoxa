@@ -125,11 +125,12 @@ Marshals common scalars, `String`, `Bytes`, `Void`, `Address<T>`. String
 
 ## I/O and HTTP (library shape)
 
-- Free `readFile` / `writeFile` / `appendFile` (`Trial<…, String>`) and
-  OpenMode constants (`oRdonly`, `oWronly`, `oCreat`, `oTrunc`, `oAppend`, …).
+- Free `readFile` / `writeFile` / `appendFile` (`Trial<…, String>`).
+- **OpenMode:** nullary union `Rdonly | Wronly | Rdwr` with `openModeBits(m)` for
+  `openFile` flags; Int32 lets `oRdonly` / `oCreat` / … still compose with `|`.
 - **`File` type:** `openFile` / `readAll` / `write` / `seek` / `position` /
-  `close` / `isOpen` (see conformance `file_type`, `file_write`, `file_seek` /
-  `iolib/Io.thx`).
+  `close` / `isOpen` (see conformance `file_type`, `file_write`, `file_seek`,
+  `file_openmode` / `iolib/Io.thx`).
 - HTTP: `Request` / `Response` / `Header`, parse/write helpers, Router, bounded
   static server (`http_server` conformance).
 

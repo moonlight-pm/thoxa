@@ -4,35 +4,33 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-08 (D106–D119; sum-types shipped incl. generic methods)
+**As of:** 2026-08-08 (sum polish done; session deferred)
 
 ---
 
 ## Now
 
-**Session / shell is parked** (core + libtcc shipped). Default product work is
-**language kernel depth** — one capability gap at a time, with conformance.
-**Shipped:** D106–D119; **D118** user unions + generics + methods + **May/Trial
-prelude**; builtin `Ty::May`/`Ty::Trial` removed. Sum/fallible ladder done for
-v0 (polish-only: exhaustiveness quality, OpenMode samples).
+**Session / shell is deferred** — do not resume residual session polish unless
+this file says so. Default product work is **language / I/O / std gaps** from
+the capability matrix, one slice at a time with conformance.
 
-**In progress:** pick next language gap from capabilities (not sum redesign);
-session residual / editor only if CURRENT reprioritizes.
-Freeze (sum, complete for v0):
-[`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
+**Shipped recently:** D106–D119 sum/fallible ladder (incl. generic methods);
+exhaustiveness quality; OpenMode as nullary union + `file_openmode`.
+
+**In progress / next:** non-session gaps of choice — e.g. **array-fixed**
+(whole-array assign), **modules** D91, **param-defaults** edges, **net-http**
+errno strings, thin **std/** when a sample needs it, or **lsp** depth when DX
+forces it.
 
 ### Proceed order
 
-1. **Language** — next capability gap from the matrix; not a free redesign.  
-   Also: session residual / editor only if CURRENT reprioritizes.
-2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
-   typed-member nav). Freeze:
+1. **Language / I/O / std** — next matrix gap (non-session); not free redesign.  
+2. **Editor depth** — only when DX forces it. Freeze:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md).
-3. **Parked: session residual** — redir polish (`2>`, redir-on-pipe), Shell
-   import-first, crude line editor — resume only if CURRENT says so. Freeze:
+3. **Deferred: all session / shell residual** — redir polish, line editor,
+   Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, Net errno
-   strings, TinyCC license packaging, libtcc base-object cache — not default
+4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
@@ -41,8 +39,8 @@ in the same change (not a free-floating “grow std” sprint).
 
 **Explicit holds:**
 
+- **All session / shell residual** (parked by user direction)
 - Inventing shell dialect (`if`/`for`/full `$` forest)
-- Session residual polish as default work (parked)
 - Tree-walk product interpreter or QBE path (phase A)
 - Claiming full oracle SPEC coverage
 - Windows / non-Linux session backends

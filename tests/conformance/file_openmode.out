@@ -1,0 +1,7 @@
+rdonly
+wronly
+rdwr
+bits=0/1/2
+eq=true
+body=hello from file
+

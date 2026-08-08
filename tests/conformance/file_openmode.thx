@@ -1,0 +1,41 @@
+## OpenMode union (D81 polish): nullary access modes + openModeBits → openFile.
+import { OpenMode, Rdonly, Wronly, Rdwr, openModeBits, openFile, oRdonly } from "./iolib/Io"
+
+fn label(m!: OpenMode) -> String {
+    match m {
+        Rdonly { "rdonly" }
+        Wronly { "wronly" }
+        Rdwr { "rdwr" }
+    }
+}
+
+fn main() -> Int64 {
+    let r: OpenMode = Rdonly()
+    let w: OpenMode = Wronly()
+    let rw: OpenMode = Rdwr()
+    println(label(r))
+    println(label(w))
+    println(label(rw))
+    println("bits={openModeBits(r)}/{openModeBits(w)}/{openModeBits(rw)}")
+    ## Same numeric value as the Int32 flag constant.
+    println("eq={openModeBits(Rdonly()) == oRdonly}")
+
+    match openFile("tests/conformance/io_data/sample.txt", openModeBits(Rdonly())) {
+        Fail(e) {
+            println("open-fail={e}")
+        }
+        Pass(f) {
+            match f.readAll() {
+                Fail(e) {
+                    f.close()
+                    println("read-fail={e}")
+                }
+                Pass(body) {
+                    f.close()
+                    println("body={body.toString()}")
+                }
+            }
+        }
+    }
+    0
+}

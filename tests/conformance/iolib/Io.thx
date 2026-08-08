@@ -1,6 +1,7 @@
 ## Io — file open/read/write/seek/close (R9+ / D109 / D112 / D115).
 ## Free `readFile` / `writeFile` plus `File` type with method field write-back.
-## Open flags are Int32 constants (ADT OpenMode waits on sum types).
+## Access modes: nullary union `OpenMode` + `openModeBits` (D81 ADT); Int32
+## flag lets remain for bitwise OR with oCreat/oTrunc/oAppend.
 ## errno/strerror: `thoxa_errno` RT helper + libc `strerror` via `extern … from "c"`.
 
 extern fn sysOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
@@ -12,7 +13,22 @@ extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
 extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
 extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
 
-## open(2) access modes (Linux / POSIX).
+## open(2) access modes as a nullary union (match-friendly; D81 / sum polish).
+export type Rdonly
+export type Wronly
+export type Rdwr
+export type OpenMode = Rdonly | Wronly | Rdwr
+
+## Map OpenMode → open(2) access bits (0/1/2).
+export fn openModeBits(m!: OpenMode) -> Int32 {
+    match m {
+        Rdonly { 0 }
+        Wronly { 1 }
+        Rdwr { 2 }
+    }
+}
+
+## Int32 access-mode flags (Linux / POSIX) for composing with oCreat etc.
 export let oRdonly = 0
 export let oWronly = 1
 export let oRdwr = 2
@@ -128,6 +144,7 @@ export type File(fd: Int64) {
 ## Open `path` with open(2) flags (default O_RDONLY).
 ## When O_CREAT is set, uses `mode` (default 0644 via `oMode644`).
 ## Default free names resolve in this module (D116), so callers need not import them.
+## Prefer `OpenMode` + `openModeBits` when you only need an access mode.
 export fn openFile(
     path!: String,
     flags: Int32 = oRdonly,
