@@ -23,7 +23,7 @@ change. See [`progress-model.md`](progress-model.md).
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
 | trial | `Trial` + `match` + `?` monomorphs | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial` | D40–D45, D113–D114 | Address not a payload; **target:** prelude union + general `?` (sum freeze) | yes |
 | may | `May` / `Has` / `Not` + `?` | shipped | `mays`, `trials_nested`, `trials_nested_trial` | D85, D113–D114 | Nested Array/May/Trial ok; **target:** prelude union (sum freeze) | yes |
-| sum-types | User unions, literals, tagged/pure-literal layout, type `!`/`?` marks | partial | `sums_nullary`, `sums_payload` | D118; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Nullary + multi-field scalar products; inject; match. **Gaps:** literal members; type `!`/`?` marks; general value `?`; May/Trial still builtins; heap payloads in variants; nested unions | no |
+| sum-types | User unions, literals, tagged/pure-literal layout, type `!`/`?` marks | partial | `sums_nullary`, `sums_payload`, `sums_product` | D118; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Nullary + multi-field scalar products; inject; match. **Gaps:** literal members; type `!`/`?` marks; general value `?`; May/Trial still builtins; heap payloads in variants; nested unions | no |
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |

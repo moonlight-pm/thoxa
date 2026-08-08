@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-07 (D106–D117 shipped; sum/fallible **spec’d**)
+**As of:** 2026-08-07 (D106–D118 partial; sum ladder in progress)
 
 ---
 
@@ -12,12 +12,12 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **Session / shell is parked** (core + libtcc shipped). Default product work is
 **language kernel depth** — one capability gap at a time, with conformance.
-**Shipped:** D106–D117 (defaults + def-module scope, write-back, match, File +
-seek, nested Array/May/Trial payloads, fixed Array locals).
+**Shipped:** D106–D117; **D118 partial** (user unions).
 
-**In progress:** sum types (D118) — nullary + one-field scalar unions shipped
-(`sums_nullary`, `sums_payload`). Next ladder: multi-field patterns, literal
-members, type `!`/`?` marks, general `?`, May/Trial prelude cutover.
+**In progress:** sum types (D118) — nullary + multi-field scalar product
+members; inject; match (`sums_nullary`, `sums_payload`, `sums_product`).
+**Next:** pure-literal union members; type `!`/`?` marks; general `?`;
+May/Trial prelude cutover.
 Freeze: [`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
 
 ### Proceed order

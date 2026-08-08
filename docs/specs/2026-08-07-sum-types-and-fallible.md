@@ -324,3 +324,4 @@ This freeze is **accepted product intent** when:
 |------|------|
 | 2026-08-07 | Initial freeze from design brainstorm (TS oracle, marks, layout, prelude fallibility) |
 | 2026-08-07 | Partial impl: nullary + one-field scalar unions, inject, match (`sums_nullary`, `sums_payload`) |
+| 2026-08-07 | Multi-field product patterns (`sums_product`); pattern binds are a field-order list |
