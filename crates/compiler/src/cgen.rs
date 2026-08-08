@@ -1498,6 +1498,41 @@ fn emit_rc(
             let Some(layout) = types.iter().find(|t| t.name == *name) else {
                 return;
             };
+            // Tagged sum: only the live arm's payload participates (D118 heap payloads).
+            if let Some(variants) = &layout.sum {
+                let any = variants.iter().any(|v| needs_drop_ty(&v.payload_ty));
+                if !any {
+                    return;
+                }
+                // Nest if/else on tag (same shape as union match).
+                let mut first = true;
+                for v in variants {
+                    if !needs_drop_ty(&v.payload_ty) {
+                        continue;
+                    }
+                    if first {
+                        let _ = writeln!(out, "{pad}if ({}.tag == {}) {{", place.name, v.tag);
+                        first = false;
+                    } else {
+                        let _ = writeln!(out, "{pad}}} else if ({}.tag == {}) {{", place.name, v.tag);
+                    }
+                    let nested = crate::mir::Place {
+                        name: format!("{}.u.v{}", place.name, v.tag),
+                    };
+                    emit_rc(
+                        out,
+                        &format!("{pad}    "),
+                        &nested,
+                        &v.payload_ty,
+                        dup,
+                        types,
+                    );
+                }
+                if !first {
+                    let _ = writeln!(out, "{pad}}}");
+                }
+                return;
+            }
             for f in &layout.fields {
                 if !needs_drop_ty(&f.ty) {
                     continue;

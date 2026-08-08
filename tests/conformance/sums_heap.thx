@@ -1,0 +1,42 @@
+## Heap payloads in user unions: String/Bytes fields (D118).
+type Msg(text: String)
+type Empty
+type Slot = Msg | Empty?
+type Slot2 = Msg | Empty?
+
+fn chain(s!: Slot) -> Slot {
+    let t = s?
+    let x: Slot = Msg(text: "{t}!")
+    x
+}
+
+fn describe(s!: Slot) -> String {
+    match s {
+        Msg(text) { "msg={text}" }
+        Empty { "empty" }
+    }
+}
+
+fn describe2(s!: Slot2) -> String {
+    match s {
+        Msg(text) { "msg={text}" }
+        Empty { "empty" }
+    }
+}
+
+fn main() -> Int64 {
+    println(describe(Msg(text: "hi")))
+    match chain(Msg(text: "ok")) {
+        Msg(text) { println("ch={text}") }
+        Empty { println("empty") }
+    }
+    match chain(Empty()) {
+        Msg(text) { println("ch={text}") }
+        Empty { println("empty") }
+    }
+    ## Transparent alias remap with heap payload
+    let a: Slot = Msg(text: "ab")
+    let b: Slot2 = a
+    println(describe2(b))
+    0
+}

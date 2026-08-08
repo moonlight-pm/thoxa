@@ -2,12 +2,11 @@
 
 **Date:** 2026-08-07  
 **Status:** target (accepted product intent; **partially implemented**)  
-**Implementation:** ladder §10 steps 1–5 + monomorphic type-arg `!` — unions +
-residual `?` + value `?` (W2) + **D119** + `Hold<Int64!>` vs `Hold!`
-(gates: `sums_*`, `sums_try`, `sums_alias`, `sums_if_lub`, `sums_extract_mark`)  
-**Gaps:** generic type defs (`type Has<T>`) for true `Pass<P!>`; May/Trial
-prelude cutover; pure-lit narrow scalar; heap payloads; nested unions;
-residual type-arg rewrap (see §10)
+**Implementation:** ladder §10 steps 1–5 + type-arg `!` + heap payloads —
+unions, residual `?`, W2, **D119**, `Hold<Int64!>` / `Hold!`, String/Bytes sum
+arms (gates: `sums_*` incl. `sums_heap`, `sums_extract_mark`)  
+**Gaps:** nested unions; pure-lit narrow scalar; generic type defs
+(`type Has<T>`); May/Trial prelude; residual type-arg rewrap (see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  

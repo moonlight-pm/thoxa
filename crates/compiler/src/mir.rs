@@ -773,6 +773,11 @@ impl LowerCtx {
         self.stmts.push(Stmt::Assign { place, ty, value });
     }
 
+    /// Assign without registering a drop (borrow / intermediate sum payload extract).
+    fn assign_no_drop(&mut self, place: Place, ty: Ty, value: RValue) {
+        self.stmts.push(Stmt::Assign { place, ty, value });
+    }
+
     /// Record a place that owns a heap / Trial-with-heap value (for early-return drops).
     fn note_drop_place(&mut self, place: &Place, ty: &Ty) {
         if needs_drop(ty) {
@@ -1052,7 +1057,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                             mem.span,
                         ));
                     }
-                    // Heap fields in sum payloads need RC rules; v1 is scalar/empty only.
+                    // Sum payload fields: scalars + String/Bytes (heap RC via sum emit_rc).
                     for f in &minfo.fields {
                         if !matches!(
                             f.ty,
@@ -1063,10 +1068,12 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                                 | Ty::Byte
                                 | Ty::Bool
                                 | Ty::Void
+                                | Ty::String
+                                | Ty::Bytes
                         ) {
                             return Err(Error::at(
                                 format!(
-                                    "union member `{vname}` field `{}` must be a scalar for now (got {:?})",
+                                    "union member `{vname}` field `{}` must be a scalar or String/Bytes for now (got {:?})",
                                     f.name, f.ty
                                 ),
                                 mem.span,
@@ -4629,8 +4636,9 @@ fn emit_sum_success_extract(
         return Ok(p);
     }
 
+    // Intermediate product aliases the sum arm — no drop registration.
     let payload = ctx.fresh("spay");
-    ctx.assign(
+    ctx.assign_no_drop(
         payload.clone(),
         arm_ty.clone(),
         RValue::SumPayload {
@@ -4660,12 +4668,21 @@ fn emit_sum_success_extract(
                         field: sanitize_field(&fname),
                     },
                 );
+                if needs_drop(success_ty) {
+                    ctx.stmts.push(Stmt::Dup {
+                        place: fp.clone(),
+                        ty: success_ty.clone(),
+                    });
+                }
                 return Ok(fp);
             }
         }
     }
+    // Whole-arm extract: re-home into a dropped place and Dup so sum + result both own.
+    let owned = ctx.fresh("sown");
+    ctx.assign(owned.clone(), arm_ty.clone(), RValue::Use(payload));
     let _ = span;
-    Ok(payload)
+    Ok(owned)
 }
 
 fn lower_try_may(
@@ -4889,7 +4906,8 @@ fn emit_sum_remap(
         let outer = std::mem::take(&mut ctx.stmts);
         let payload = if fv.ty != Ty::Void {
             let pp = ctx.fresh("srp");
-            ctx.assign(
+            // Alias source arm; no drop on intermediate product.
+            ctx.assign_no_drop(
                 pp.clone(),
                 fv.ty.clone(),
                 RValue::SumPayload {
@@ -4898,6 +4916,13 @@ fn emit_sum_remap(
                     payload_ty: fv.ty.clone(),
                 },
             );
+            // Own a ref for the inject (source sum still owns its arm).
+            if needs_drop(&fv.ty) {
+                ctx.stmts.push(Stmt::Dup {
+                    place: pp.clone(),
+                    ty: fv.ty.clone(),
+                });
+            }
             pp
         } else {
             let dummy = ctx.fresh("srz");
@@ -4915,11 +4940,8 @@ fn emit_sum_remap(
                 payload_ty: to_payload_ty,
             },
         );
-        ctx.stmts.push(Stmt::Assign {
-            place: out.clone(),
-            ty: out_ty.clone(),
-            value: RValue::Use(injected),
-        });
+        // Share into `out` (Use dups when sum needs_drop).
+        ctx.assign(out.clone(), out_ty.clone(), RValue::Use(injected));
         let body = std::mem::take(&mut ctx.stmts);
         ctx.stmts = outer;
 
@@ -5006,6 +5028,13 @@ fn try_sum_inject(
     };
     let tag = v.tag;
     let payload_ty = v.ty.clone();
+    // Heap-bearing product: Dup so inject's shallow copy and the source both own (D118).
+    if needs_drop(&payload_ty) {
+        ctx.stmts.push(Stmt::Dup {
+            place: place.clone(),
+            ty: payload_ty.clone(),
+        });
+    }
     let p = ctx.fresh("sum");
     ctx.assign(
         p.clone(),
@@ -5361,8 +5390,9 @@ fn lower_match_sum(
                             *pspan,
                         ));
                     }
+                    // Intermediate product: no drop (aliases scrutinee; fields Dup below).
                     let payload = ctx.fresh("spay");
-                    ctx.assign(
+                    ctx.assign_no_drop(
                         payload.clone(),
                         variant.ty.clone(),
                         RValue::SumPayload {
@@ -5383,6 +5413,13 @@ fn lower_match_sum(
                                     field: sanitize_field(&member_fields[i].name),
                                 },
                             );
+                            // Field load aliases the payload; own a separate ref when heap.
+                            if needs_drop(&fty) {
+                                ctx.stmts.push(Stmt::Dup {
+                                    place: fp.clone(),
+                                    ty: fty.clone(),
+                                });
+                            }
                             ctx.define(bname, fty, false, fp);
                         }
                     }
