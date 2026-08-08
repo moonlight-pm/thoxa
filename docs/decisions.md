@@ -19,11 +19,17 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-08 — Union identity (nominal atoms · transparent aliases)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D119 | Union identity | **Nominal atoms** (`type Foo` / products always unique by decl) + **transparent union aliases** (`type Outcome = Done \| Quit` ≡ member set `Done \| Quit`) | Equality by **member set** (order irrelevant). Inference yields the set; does **not** search for a matching alias name. True type stays the atom; assignability into a union is membership. Optional opaque/newtype wrapper later. Extends D118. Freeze §2.3: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
+
 ## 2026-08-07 — Sum types / fallibility (target freeze)
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D118 | Sum types + general `?` | TS-leaning unions; arm marks `!`/`?`; May/Trial → prelude (target); tagged layout | **Partial:** named + lit members; multi-field products; inject; match; residual `?` + value `?` (W2). Gates: `sums_*`, `sums_try`. Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
+| D118 | Sum types + general `?` | TS-leaning unions; arm marks `!`/`?`; May/Trial → prelude (target); tagged layout | **Partial:** named + lit members; multi-field products; inject; match; residual `?` + value `?` (W2). Gates: `sums_*`, `sums_try`. **Identity → D119.** Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
 
 ## 2026-08-07 — Fixed Array locals
 

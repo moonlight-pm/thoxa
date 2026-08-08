@@ -6,8 +6,10 @@
 value `?` (W2 success unwrap)  
 (gates: `sums_nullary`, `sums_payload`, `sums_product`, `sums_literal`,
 `sums_try`)  
-**Gaps:** type-arg marks (`Pass<P!>`); pure-lit narrow scalar layout; May/Trial
-prelude cutover; heap payloads; nested unions; if-branch auto-inject (see §10)
+**Gaps:** transparent union aliases (member-set equality) vs today’s nominal
+sum `User` name; expect-type on `if`; type-arg marks (`Pass<P!>`); pure-lit
+narrow scalar layout; May/Trial prelude cutover; heap payloads; nested unions
+(see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  

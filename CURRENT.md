@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-07 (D106–D118 partial; sum ladder in progress)
+**As of:** 2026-08-08 (D106–D119; sum ladder in progress)
 
 ---
 
