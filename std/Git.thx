@@ -26,9 +26,9 @@ fn readFileLimited(path!: String, max!: Int64) -> String {
     }
 }
 
-## Branch name for `dir`, walking parents for `.git/HEAD`.
-## Detached HEAD / missing repo → `""`. On a branch → `" <name>"` (zsh-style).
-export fn branchSuffix(startDir!: String) -> String {
+## Bare branch name for `dir`, walking parents for `.git/HEAD`.
+## Detached HEAD / missing repo → `""`.
+export fn branchName(startDir!: String) -> String {
     let refPrefix = "ref: refs/heads/"
     if startDir == "" {
         ""
@@ -44,8 +44,7 @@ export fn branchSuffix(startDir!: String) -> String {
             let raw = trimNewline(readFileLimited(headPath, 256))
             if raw != "" {
                 if startsWith(raw, refPrefix) {
-                    let name = dropPrefix(raw, refPrefix)
-                    out = " {name}"
+                    out = dropPrefix(raw, refPrefix)
                 }
                 break
             }
@@ -63,7 +62,23 @@ export fn branchSuffix(startDir!: String) -> String {
     }
 }
 
+## Branch name for `dir` with a leading space when present (zsh-style prompt).
+## Detached HEAD / missing repo → `""`. On a branch → `" <name>"`.
+export fn branchSuffix(startDir!: String) -> String {
+    let name = branchName(startDir)
+    if name == "" {
+        ""
+    } else {
+        " {name}"
+    }
+}
+
 ## `branchSuffix(cwd())`.
 export fn branch() -> String {
     branchSuffix(cwd())
+}
+
+## `branchName(cwd())`.
+export fn branchHere() -> String {
+    branchName(cwd())
 }

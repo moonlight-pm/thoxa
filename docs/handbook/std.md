@@ -22,7 +22,7 @@ import { branch } from "std/Git"
 | `Path` | `dirname`, `basename`, `join`, `extension`, `stem`, `cwd`, `shortPath`, `cwdShort` |
 | `Ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
 | `Env` | `getenv`, `hasEnv`, `localHms`, `hostname`, `userName` |
-| `Git` | `branch` / `branchSuffix` via `.git/HEAD` |
+| `Git` | `branchName` / `branchSuffix` / `branch` / `branchHere` via `.git/HEAD` |
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
 hex → black SGR.

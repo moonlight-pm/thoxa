@@ -2,6 +2,7 @@
 import { startsWith, endsWith, dropPrefix, dropSuffix, trimNewline } from "std/Str"
 import { dirname, basename, join, extension, stem, shortPath } from "std/Path"
 import { hasEnv } from "std/Env"
+import { branchName, branchSuffix } from "std/Git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 
 fn main() -> Int64 {
@@ -38,6 +39,22 @@ fn main() -> Int64 {
         println("missing-env-bad")
     } else {
         println("missing-env-ok")
+    }
+    ## Deterministic Git helpers (no real repo required).
+    if branchName("") == "" {
+        println("git-empty-ok")
+    } else {
+        println("git-empty-bad")
+    }
+    if branchName("/no/such/thoxa/repo/zzzz") == "" {
+        println("git-miss-ok")
+    } else {
+        println("git-miss-bad")
+    }
+    if branchSuffix("/no/such/thoxa/repo/zzzz") == "" {
+        println("git-suf-ok")
+    } else {
+        println("git-suf-bad")
     }
     ## fg/sgr0 must be non-empty SGR sequences (byte 27 present via length).
     let c = fg(1, 2, 3)

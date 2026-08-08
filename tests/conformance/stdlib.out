@@ -15,6 +15,9 @@ foo
 foo/bar
 path-env-ok
 missing-env-ok
+git-empty-ok
+git-miss-ok
+git-suf-ok
 fg-ok
 sgr0-ok
 cyan-ok
