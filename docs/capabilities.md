@@ -83,7 +83,7 @@ change. See [`progress-model.md`](progress-model.md).
 |----|------------|--------|------|--------------|------|----------|
 | std-root | Named `std/…` resolution | shipped | `stdlib` | D97 | — | yes |
 | std-str | Str helpers | partial | `stdlib` | D97 | `startsWith`/`endsWith`/`dropPrefix`/`dropSuffix`/`trimNewline`; still thin / sample-driven | yes |
-| std-path | Path helpers | partial | `stdlib` | D97 | Thin; sample-driven | yes |
+| std-path | Path helpers | partial | `stdlib` | D97 | `dirname`/`basename`/`join`/`cwd`/`shortPath`/`cwdShort`; still thin / sample-driven | yes |
 | std-ansi | 16 colors + hex SGR | shipped | `stdlib` | D99 | — | yes |
 | std-env | getenv / host identity helpers | partial | `stdlib` | D97 | Thin; sample-driven | yes |
 | std-git | branch helpers | partial | `stdlib` | D97 | Thin; sample-driven | yes |

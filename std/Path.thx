@@ -51,6 +51,33 @@ export fn basename(path!: String) -> String {
     }
 }
 
+## Join two path fragments with `/`. Empty sides collapse; absolute `right`
+## replaces `left`; a trailing slash on `left` is not doubled.
+export fn join(left!: String, right!: String) -> String {
+    if left == "" {
+        right
+    } else {
+        if right == "" {
+            left
+        } else {
+            if startsWith(right, "/") {
+                right
+            } else {
+                let lb = Bytes.fromString(left)
+                if lb.count > 0 {
+                    if lb.get(lb.count - 1) == 47 {
+                        "{left}{right}"
+                    } else {
+                        "{left}/{right}"
+                    }
+                } else {
+                    right
+                }
+            }
+        }
+    }
+}
+
 ## Current working directory, or "" on failure.
 export fn cwd() -> String {
     let buf = Bytes(pathCwdBufSize)
