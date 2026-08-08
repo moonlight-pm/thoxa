@@ -86,7 +86,48 @@ type Has<T>(value: T)   ## generic product (field form as product types today)
 - Reserved so later `Up` may denote a **type-value**; do not repurpose bare
   names as nullary instances.
 
-### 2.3 Union aliases
+### 2.3 Nominal atoms · transparent union aliases
+
+**Locked product rule (D119):**
+
+> **Every standalone `type Name` / product is a unique nominal atom.**  
+> **`type Alias = A | B | …` is a transparent name for that set of atoms.**  
+> **Union equality is by member set** (order irrelevant).  
+> **Inference yields that set** — it does **not** search for an alias name.
+
+| Kind | Example | Identity |
+|------|---------|----------|
+| **Atom (generative)** | `type Foo` · `type Bar` · `type Done(n: Int64)` | Distinct by **declaration**. Same empty shape does **not** unify `Foo` and `Bar`. |
+| **Alias (transparent)** | `type Outcome = Done \| Quit` | **Not** a new brand. Same type as `Done \| Quit` and as any other alias with the same members. |
+| **Union as set** | Inferred or written `Done \| Quit` | Equal iff same members (`Quit \| Done` ≡ `Done \| Quit`). |
+
+```thx
+type Foo
+type Bar
+## Foo ≠ Bar (nominal atoms)
+
+type Done(n: Int64)
+type Quit
+type Outcome = Done | Quit
+type Result = Done | Quit
+## Outcome ≡ Result ≡ Done | Quit  (transparent aliases / set equality)
+
+fn step(ok: Bool) {
+    if ok { Done(n: 3) } else { Quit() }
+}
+## unannotated infer: Done | Quit  (not “look up Outcome”)
+```
+
+- True type of a constructed value remains the **atom** (`Done`, `Quit`, `Foo`).
+- Use where a union is expected: **member of the set** (widen / inject), not
+  “atom became another atom.”
+- Expanding aliases when comparing is how the checker implements transparency;
+  no global “find a named type equal to this sum” search.
+
+**Optional later (not required):** opaque / newtype wrapper around a union when
+a **nominal** sum brand is needed (`WireOutcome` ≠ `Done | Quit` without wrap).
+
+### 2.4 Union aliases (syntax)
 
 ```thx
 type Shape = Circle | Rect
@@ -103,7 +144,7 @@ type May<T> = Has<T> | Not
   are the common ADT style.
 - **Partial / curry types** (`type X = Point(x: 0)`) — **parked** until forced.
 
-### 2.4 Type application vs construct
+### 2.5 Type application vs construct
 
 | Syntax | Position | Meaning |
 |--------|----------|---------|
@@ -114,17 +155,25 @@ type May<T> = Has<T> | Not
 
 Unions list **types** → prefer **`Has<T>`**, not `Has(T)`, in aliases.
 
-### 2.5 Constructor call rules
+### 2.6 Constructor call rules
 
 Same as **functions**: positional and named args, same defaults / `!` formal
 rules as the rest of the language. Not a special sum dialect.
 
-### 2.6 Assignability (true type)
+### 2.7 Assignability (true type + expect)
 
-- A value’s **true type** is its constructor / member type (e.g. `Circle`).
-- It **widens** to a union that includes that member when a use site needs it
-  (`let s: Shape = c`).
-- Reverse requires **match** (or later narrowing); no free downcast.
+- A value’s **true type** is its constructor / atom (e.g. `Circle`, `Done`).
+- It is assignable where a **union** (alias or written `A | B`) is expected if
+  that atom is a **member of the union’s set** (widen / inject).
+- **`Outcome` and `Done | Quit`** compare equal when aliases are transparent
+  (§2.3); no extra cast between them.
+- Reverse (union → atom) requires **match** (or later narrowing); no free
+  downcast.
+- **`if` / control-flow with expect:** when the outside provides an expected
+  type (`-> Outcome`, `let x: Outcome = if …`), each branch is checked against
+  that expect (inject allowed). Unannotated `if` arms: unify true types to a
+  member-set union (`Done | Quit`) or require agreement — do **not** search for
+  a named alias.
 
 ---
 
@@ -224,8 +273,9 @@ If a single success arm is marked for payload extract (`Pass<P!>`), unwrap to
 - Redefining May/Trial before user unions exist in code (order is ladder §10)
 - Effects integration
 - Full dependent types beyond literal types + marks
-- Structural TS typing (Thoxa stays nominal for named types; literals are
-  singletons)
+- **Structural products** (two products with the same fields are still
+  different types — atoms are nominal)
+- Opaque/newtype union brands (optional later; default aliases stay transparent)
 
 ---
 
@@ -300,8 +350,10 @@ Do not mint until code lands or CURRENT promotes implementation.
 2. **Tagged sums + nullary + product arms;** construct/match; widen into union.
 3. **Pure-literal unions** + Byte-up storage policy.
 4. **Marks `!` / `?` on types** + value `?` semantics (W2/U2).
-5. **Prelude May/Trial** rewrite; delete builtin special cases; full test cutover.
-6. **Polish:** OpenMode-as-union samples, exhaustiveness quality, generics edge
+5. **Transparent aliases / member-set equality** (`Outcome` ≡ `Done | Quit`);
+   expect-type on `if` / annotated lets; unannotated infer set union.
+6. **Prelude May/Trial** rewrite; delete builtin special cases; full test cutover.
+7. **Polish:** OpenMode-as-union samples, exhaustiveness quality, generics edge
    cases.
 
 Each step: conformance + progress docs + D-id as appropriate.
@@ -330,3 +382,4 @@ This freeze is **accepted product intent** when:
 | 2026-08-07 | Multi-field product patterns (`sums_product`); pattern binds are a field-order list |
 | 2026-08-07 | Pure-literal union members (`0 \| 1`, `"r" \| "w"`, bools); inject + lit patterns (`sums_literal`) |
 | 2026-08-07 | Residual arm mark + general value `?` with W2 unwrap (`sums_try`) |
+| 2026-08-08 | **Nominal atoms · transparent union aliases** locked (§2.3); infer set union, no alias search |

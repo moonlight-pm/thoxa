@@ -15,8 +15,9 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 **Shipped:** D106–D117; **D118 partial** (user unions).
 
 **In progress:** sum types (D118) — unions + residual-marked `?` (`sums_*`,
-`sums_try`). **Next:** richer `!` extract; May/Trial prelude cutover; heap
-payloads.
+`sums_try`). **Locked:** nominal atoms + transparent union aliases (**D119**).
+**Next:** member-set equality + expect on `if`; richer `!` extract; May/Trial
+prelude cutover.
 Freeze: [`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
 
 ### Proceed order
