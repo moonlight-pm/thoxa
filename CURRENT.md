@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-07 (D106–D117 language; shell parked)
+**As of:** 2026-08-07 (D106–D117 shipped; sum/fallible **spec’d**)
 
 ---
 
@@ -15,13 +15,19 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 **Shipped:** D106–D117 (defaults + def-module scope, write-back, match, File +
 seek, nested Array/May/Trial payloads, fixed Array locals).
 
+**Target (not scheduled until CURRENT says implement):** sum types + general
+`?` / `!` marks + May/Trial as prelude —
+[`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
+
 ### Proceed order
 
 1. **Language** — pick one open gap from the matrix (do not invent syntax without
    oracle / decisions check). Prefer small, conformance-backed slices.  
    Strong candidates (pick one):
-   - Sum types / richer ADTs where a sample forces.
+   - **Sum/fallible ladder** (freeze above) when choosing that megawork — one
+     step at a time; full May/Trial cutover when prelude step ships.
    - Session residual (`2>` / redir-on-pipe) if unparking shell.
+   - Other matrix gaps (editor only if DX forces).
 2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md).

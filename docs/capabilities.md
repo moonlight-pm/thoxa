@@ -21,8 +21,9 @@ change. See [`progress-model.md`](progress-model.md).
 |----|------------|--------|------|--------------|------|----------|
 | driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | none for v0 | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
-| trial | `Trial` + `match` + `?` monomorphs | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial` | D40–D45, D113–D114 | Address not a payload | yes |
-| may | `May` / `Has` / `Not` + `?` | shipped | `mays`, `trials_nested`, `trials_nested_trial` | D85, D113–D114 | No May↔Trial `?` mix; no inferred fallible returns; nested Array/May/Trial ok | yes |
+| trial | `Trial` + `match` + `?` monomorphs | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial` | D40–D45, D113–D114 | Address not a payload; **target:** prelude union + general `?` (sum freeze) | yes |
+| may | `May` / `Has` / `Not` + `?` | shipped | `mays`, `trials_nested`, `trials_nested_trial` | D85, D113–D114 | Nested Array/May/Trial ok; **target:** prelude union (sum freeze) | yes |
+| sum-types | User unions, literals, tagged/pure-literal layout, type `!`/`?` marks | spec’d | — | [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Not implemented; May/Trial still builtins | no |
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |

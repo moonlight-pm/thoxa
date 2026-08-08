@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-07 — Sum types / fallibility (target freeze)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D118 | Sum types + general `?` (intent) | TS-leaning unions; type marks `!` (success extract) / `?` (residual extract); May/Trial → prelude unions; pure-literal = narrow scalar, else tagged | **Spec only** until CURRENT schedules impl. Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). Supersedes “OpenMode waits on sum types” as the home for ADT design; does not ship OpenMode rewrite. Effects (D2) may later subsume parts of `?`. |
+
 ## 2026-08-07 — Fixed Array locals
 
 | ID | Decision | Choice | Notes |
@@ -396,8 +402,8 @@ Revisit D17 with Buffer / growable-buffer design; revisit D18 when more factorie
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D1 | Growth model | Example ladder toward HTTP | Small kernel first |
-| D2 | Algebraic effects | Deferred | Revisit with async |
-| D3 | Error model | `May`/`Trial` + force-to-deal | Not effect-`exn` |
+| D2 | Algebraic effects | Deferred | Revisit with async; may later interact with general `?` (D118) |
+| D3 | Error model | `May`/`Trial` + force-to-deal | Not effect-`exn`. **Target refinement (D118):** May/Trial as prelude unions + general `?` via type marks — freeze `2026-08-07-sum-types-and-fallible` |
 | D4 | Value model | Hybrid (A) | Unboxed scalars; inline small sums; RC heap; C-layout FFI structs |
 | D5 | Phase A backend | Compile-to-C | No QBE yet |
 | D6 | Compiler host | Rust under `crates/compiler` | |

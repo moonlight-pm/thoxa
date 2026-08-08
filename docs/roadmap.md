@@ -96,9 +96,11 @@ Freezes:
 **Horizon / deferred until CURRENT says so:**
 
 - Perceus / precise RC
-- Sum types / richer ADTs (where oracle forces)
+- **Sum types + general fallibility** — freeze accepted:
+  [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md)
+  (implement when CURRENT schedules ladder steps)
 - Named `ffi` root
-- Algebraic effects (only when forced)
+- Algebraic effects (only when forced; may later interact with `?`)
 
 ---
 
