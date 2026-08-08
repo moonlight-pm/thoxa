@@ -15,19 +15,16 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 **Shipped:** D106–D117 (defaults + def-module scope, write-back, match, File +
 seek, nested Array/May/Trial payloads, fixed Array locals).
 
-**Target (not scheduled until CURRENT says implement):** sum types + general
-`?` / `!` marks + May/Trial as prelude —
-[`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
+**In progress:** sum types (D118) — nullary + one-field scalar unions shipped
+(`sums_nullary`, `sums_payload`). Next ladder: multi-field patterns, literal
+members, type `!`/`?` marks, general `?`, May/Trial prelude cutover.
+Freeze: [`docs/specs/2026-08-07-sum-types-and-fallible.md`](docs/specs/2026-08-07-sum-types-and-fallible.md).
 
 ### Proceed order
 
-1. **Language** — pick one open gap from the matrix (do not invent syntax without
-   oracle / decisions check). Prefer small, conformance-backed slices.  
-   Strong candidates (pick one):
-   - **Sum/fallible ladder** (freeze above) when choosing that megawork — one
-     step at a time; full May/Trial cutover when prelude step ships.
-   - Session residual (`2>` / redir-on-pipe) if unparking shell.
-   - Other matrix gaps (editor only if DX forces).
+1. **Language** — continue **sum/fallible ladder** (freeze above) one step at a
+   time; full May/Trial cutover when prelude step ships.  
+   Also: session residual / editor only if CURRENT reprioritizes.
 2. **Editor depth** — only when DX forces it (MIR on shared resolver, multi-diag,
    typed-member nav). Freeze:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md).

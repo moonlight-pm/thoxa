@@ -1,9 +1,12 @@
 # Sum types, unions, and general fallibility (`?` / `!`)
 
 **Date:** 2026-08-07  
-**Status:** target (accepted product intent; not implemented)  
-**Implementation:** none yet  
-**Gaps:** entire surface — see §10 ladder  
+**Status:** target (accepted product intent; **partially implemented**)  
+**Implementation:** ladder §10 steps 1–2 partial — nullary unions + one-field
+scalar product members; inject; exhaustive constructor match  
+**Gaps:** literal union members; multi-field patterns; type `!`/`?` marks;
+general value `?`; May/Trial prelude cutover; heap payloads; nested unions
+(see §10)
 
 **As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
 builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  
@@ -320,3 +323,4 @@ This freeze is **accepted product intent** when:
 | Date | Note |
 |------|------|
 | 2026-08-07 | Initial freeze from design brainstorm (TS oracle, marks, layout, prelude fallibility) |
+| 2026-08-07 | Partial impl: nullary + one-field scalar unions, inject, match (`sums_nullary`, `sums_payload`) |

@@ -23,7 +23,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D118 | Sum types + general `?` (intent) | TS-leaning unions; type marks `!` (success extract) / `?` (residual extract); May/Trial → prelude unions; pure-literal = narrow scalar, else tagged | **Spec only** until CURRENT schedules impl. Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). Supersedes “OpenMode waits on sum types” as the home for ADT design; does not ship OpenMode rewrite. Effects (D2) may later subsume parts of `?`. |
+| D118 | Sum types + general `?` | TS-leaning unions; type marks `!`/`?` (target); May/Trial → prelude (target); tagged layout | **Partial:** `type U = A \| B`; nullary + one-field scalar members; inject; match. Gates: `sums_nullary`, `sums_payload`. Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
 
 ## 2026-08-07 — Fixed Array locals
 

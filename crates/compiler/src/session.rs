@@ -220,6 +220,8 @@ fn make_step_method(stmts: Vec<BlockItem>) -> Method {
             name: "Shell".into(),
             args: vec![],
             span: Span::dummy(),
+            lit: None,
+            mark: None,
         }),
         body: Block {
             items,
@@ -260,6 +262,8 @@ fn make_session_main() -> Function {
             name: "Int64".into(),
             args: vec![],
             span: Span::dummy(),
+            lit: None,
+            mark: None,
         }),
         body: Block {
             items: vec![],

@@ -232,8 +232,30 @@ impl Parser {
         self.expect_kind(&TokenKind::Type)?;
         let (name, name_span) = self.expect_ident()?;
 
+        // Union alias: `type Name = A | B | …` (D118).
+        if self.at(TokenKind::Eq) {
+            self.bump();
+            let members = self.parse_union_members()?;
+            if members.len() < 2 {
+                return Err(Error::at(
+                    "union type requires at least two members (`A | B`)",
+                    name_span,
+                ));
+            }
+            return Ok(TypeDef {
+                exported,
+                name,
+                name_span,
+                params: Vec::new(),
+                fields: Vec::new(),
+                methods: Vec::new(),
+                union_members: Some(members),
+            });
+        }
+
         // R3: `type Point(x: Int64)` or `type Point(x: Int64) { methods }`
         // R7: `type Regs { mut a: UInt32 … }` (no constructor paren list)
+        // Nullary: `type Up` (D118).
         let mut params = Vec::new();
         if self.at(TokenKind::LParen) {
             self.bump();
@@ -285,7 +307,22 @@ impl Parser {
             params,
             fields,
             methods,
+            union_members: None,
         })
+    }
+
+    /// `A | B | C` type members (each may carry trailing `!` / `?` marks).
+    fn parse_union_members(&mut self) -> Result<Vec<TypeExpr>> {
+        let mut members = Vec::new();
+        loop {
+            members.push(self.parse_type()?);
+            if self.at(TokenKind::Pipe) {
+                self.bump();
+                continue;
+            }
+            break;
+        }
+        Ok(members)
     }
 
     /// `[mut|let] name: Type` inside a type body (R7 C-layout fields).
@@ -414,9 +451,53 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<TypeExpr> {
+        // Literal types (D118): `0`, `true`, `"x"` in type position (union members).
+        if let TokenKind::Int(n) = self.current().kind {
+            let n = n;
+            let span = self.current().span;
+            self.bump();
+            let mark = self.parse_type_mark();
+            let end = mark.map(|_| self.prev_span().end).unwrap_or(span.end);
+            return Ok(TypeExpr {
+                name: String::new(),
+                args: Vec::new(),
+                span: Span::new(span.start, end),
+                lit: Some(TypeLit::Int(n)),
+                mark,
+            });
+        }
+        if self.at(TokenKind::True) || self.at(TokenKind::False) {
+            let value = self.at(TokenKind::True);
+            let span = self.current().span;
+            self.bump();
+            let mark = self.parse_type_mark();
+            let end = mark.map(|_| self.prev_span().end).unwrap_or(span.end);
+            return Ok(TypeExpr {
+                name: String::new(),
+                args: Vec::new(),
+                span: Span::new(span.start, end),
+                lit: Some(TypeLit::Bool(value)),
+                mark,
+            });
+        }
+        if let TokenKind::String(ref s) = self.current().kind.clone() {
+            let s = s.clone();
+            let span = self.current().span;
+            self.bump();
+            let mark = self.parse_type_mark();
+            let end = mark.map(|_| self.prev_span().end).unwrap_or(span.end);
+            return Ok(TypeExpr {
+                name: String::new(),
+                args: Vec::new(),
+                span: Span::new(span.start, end),
+                lit: Some(TypeLit::String(s)),
+                mark,
+            });
+        }
+
         let (name, start_span) = self.expect_ident()?;
         let mut args = Vec::new();
-        let end = if self.at(TokenKind::LAngle) {
+        let mut end = if self.at(TokenKind::LAngle) {
             self.bump();
             if !self.at_rangle() {
                 loop {
@@ -434,11 +515,30 @@ impl Parser {
         } else {
             start_span.end
         };
+        let mark = self.parse_type_mark();
+        if mark.is_some() {
+            end = self.prev_span().end;
+        }
         Ok(TypeExpr {
             name,
             args,
             span: Span::new(start_span.start, end),
+            lit: None,
+            mark,
         })
+    }
+
+    /// Optional trailing `!` (extract) or `?` (residual) on a type (D118).
+    fn parse_type_mark(&mut self) -> Option<TypeMark> {
+        if self.at(TokenKind::Bang) {
+            self.bump();
+            Some(TypeMark::Extract)
+        } else if self.at(TokenKind::Question) {
+            self.bump();
+            Some(TypeMark::Residual)
+        } else {
+            None
+        }
     }
 
     /// `>` or the first half of `>>` (lexer emits Shr for nested generics like `May<Array<T>>`).

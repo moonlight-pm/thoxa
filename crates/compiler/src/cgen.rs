@@ -88,8 +88,16 @@ pub fn emit_program_with(
     let _ = program.externs; // used for include selection above
 
     // User structs first (may appear as Trial ok payloads / Array elements).
+    // Emit non-sum products before union aliases so payload C types exist (D118).
     for t in &program.types {
-        emit_typedef(&mut out, t);
+        if t.sum.is_none() {
+            emit_typedef(&mut out, t);
+        }
+    }
+    for t in &program.types {
+        if t.sum.is_some() {
+            emit_typedef(&mut out, t);
+        }
     }
 
     // Monomorphized May/Trial typedefs. Interleave by nest depth so
@@ -324,6 +332,33 @@ fn emit_global_extern(out: &mut String, g: &GlobalVar) {
 }
 
 fn emit_typedef(out: &mut String, t: &TypeLayout) {
+    if let Some(variants) = &t.sum {
+        // Tagged sum (D118).
+        let _ = writeln!(out, "typedef struct {{");
+        out.push_str("    int32_t tag;\n");
+        let any_payload = variants.iter().any(|v| v.payload_ty != Ty::Void
+            && !matches!(&v.payload_ty, Ty::User(n) if {
+                // empty product still has a C struct type
+                let _ = n;
+                false
+            }));
+        // Always emit union of member types (empty products are padded structs).
+        if !variants.is_empty() {
+            out.push_str("    union {\n");
+            for v in variants {
+                let _ = writeln!(
+                    out,
+                    "        {} v{};",
+                    c_ty(&v.payload_ty),
+                    v.tag
+                );
+            }
+            out.push_str("    } u;\n");
+        }
+        let _ = any_payload;
+        let _ = writeln!(out, "}} {};\n", c_type_name(&t.name));
+        return;
+    }
     let _ = writeln!(out, "typedef struct {{");
     for f in &t.fields {
         match &f.ty {
@@ -963,6 +998,30 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                 field,
                 index.name
             );
+        }
+        RValue::SumInject {
+            sum_type,
+            tag,
+            payload,
+            payload_ty,
+        } => {
+            let name = c_type_name(sum_type);
+            // Compound literal: tag + payload in union arm.
+            let _ = write!(out, "({name}){{ .tag = {tag}");
+            if *payload_ty != Ty::Void {
+                let _ = write!(out, ", .u.v{tag} = {}", payload.name);
+            }
+            out.push_str(" }");
+        }
+        RValue::SumTag(p) => {
+            let _ = write!(out, "{}.tag", p.name);
+        }
+        RValue::SumPayload {
+            base,
+            tag,
+            payload_ty: _,
+        } => {
+            let _ = write!(out, "{}.u.v{tag}", base.name);
         }
         RValue::FixedIndex { base, index } => {
             let _ = write!(out, "{}[{}]", base.name, index.name);

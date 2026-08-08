@@ -1,0 +1,33 @@
+## Nullary union types (D118 ladder step 1–2).
+type Up
+type Down
+type Left
+type Right
+type Dir = Up | Down | Left | Right
+
+fn label(d!: Dir) -> String {
+    match d {
+        Up { "up" }
+        Down { "down" }
+        Left { "left" }
+        Right { "right" }
+    }
+}
+
+fn main() -> Int64 {
+    let a: Dir = Up()
+    let b: Dir = Down()
+    println(label(a))
+    println(label(b))
+    println(label(Left()))
+    println(label(Right()))
+    ## Exhaustive match expression value
+    let s = match a {
+        Up { 1 }
+        Down { 2 }
+        Left { 3 }
+        Right { 4 }
+    }
+    println(s)
+    0
+}

@@ -76,11 +76,14 @@ pub struct TypeDef {
     pub name_span: Span,
     /// Constructor parameters — R3 style `type Point(x: Int64, y: Int64)`.
     /// Empty when the type uses body fields (R7 C-layout `type Regs { … }`).
+    /// Empty for nullary `type Up` and for union aliases.
     pub params: Vec<Param>,
     /// Body fields — R7 style `[mut|let] name: Type` inside the type brace.
     /// Empty when using constructor params (R3).
     pub fields: Vec<FieldDecl>,
     pub methods: Vec<Method>,
+    /// `type Name = A | B | …` (D118). When set, params/fields/methods must be empty.
+    pub union_members: Option<Vec<TypeExpr>>,
 }
 
 /// A field declared in a type body: `mut a: UInt32` or `let cLine: Byte`.
@@ -126,12 +129,35 @@ pub struct Param {
 
 #[derive(Debug, Clone)]
 pub struct TypeExpr {
+    /// Named type (`Int64`, `Has`, `Circle`). Empty when `kind` is a literal type.
     pub name: String,
     pub args: Vec<TypeArg>,
     pub span: Span,
+    /// Literal type (`0`, `true`, `"x"`) — D118. When set, `name` is unused.
+    pub lit: Option<TypeLit>,
+    /// Trailing extract mark on this type as a whole: `Has<T>!` or `Not?` (D118).
+    pub mark: Option<TypeMark>,
+}
+
+/// Literal types in typespace (D118): `type Flag = 0 | 1`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeLit {
+    Int(i64),
+    Bool(bool),
+    String(String),
+}
+
+/// Type-level extract marks (D118): `!` success, `?` residual.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeMark {
+    /// Success extract (`!`).
+    Extract,
+    /// Residual extract (`?`).
+    Residual,
 }
 
 /// Type argument: a nested type (`Trial<Int64, Int64>`) or a const int (`Array<Byte, 4>`).
+/// Nested types may carry `!` / `?` marks (`Has<T!>`).
 #[derive(Debug, Clone)]
 pub enum TypeArg {
     Type(TypeExpr),

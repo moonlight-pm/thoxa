@@ -1,0 +1,28 @@
+## Union with one-field product members (D118).
+type Empty
+type Hold(n: Int64)
+type Slot = Empty | Hold
+
+fn main() -> Int64 {
+    let a: Slot = Empty()
+    match a {
+        Empty { println("empty") }
+        Hold(n) { println("hold={n}") }
+    }
+    let b: Slot = Hold(n: 42)
+    match b {
+        Empty { println("empty") }
+        Hold(n) { println("hold={n}") }
+    }
+    ## Inject via call
+    println(describe(Hold(n: 7)))
+    println(describe(Empty()))
+    0
+}
+
+fn describe(s!: Slot) -> String {
+    match s {
+        Empty { "none" }
+        Hold(n) { "n={n}" }
+    }
+}

@@ -8,7 +8,7 @@ use crate::ast::{
 use crate::error::{Error, Result};
 use crate::loader::{self, BoundImport, Package, SourceModule};
 use crate::span::Span;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -43,6 +43,8 @@ pub struct TypeLayout {
     pub name: String,
     /// Field name (source) → C local-style sanitized field name, type.
     pub fields: Vec<FieldLayout>,
+    /// D118: when set, this type is a union alias (tagged sum).
+    pub sum: Option<Vec<SumVariantLayout>>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +52,16 @@ pub struct FieldLayout {
     pub name: String,
     pub c_name: String,
     pub ty: Ty,
+}
+
+/// One arm of a user union type (D118).
+#[derive(Debug, Clone)]
+pub struct SumVariantLayout {
+    pub tag: u32,
+    /// Source constructor / member name (e.g. `Up`, `Circle`).
+    pub name: String,
+    /// Payload type (`User` for nominal members; `Void` if empty product).
+    pub payload_ty: Ty,
 }
 
 #[derive(Debug, Clone)]
@@ -197,6 +209,21 @@ pub enum RValue {
         base: Place,
         field: String,
         index: Place,
+    },
+    /// Inject a member value into a union (D118).
+    SumInject {
+        sum_type: String,
+        tag: u32,
+        payload: Place,
+        payload_ty: Ty,
+    },
+    /// Read `.tag` from a union place.
+    SumTag(Place),
+    /// Extract payload for `tag` from a union place into a typed temporary.
+    SumPayload {
+        base: Place,
+        tag: u32,
+        payload_ty: Ty,
     },
     /// `name[index]` — first-class fixed Array<T,N> local element load (D117).
     FixedIndex {
@@ -515,6 +542,23 @@ struct TypeInfo {
     zero_init: bool,
     /// Defining module — ctor field defaults resolve here (D116).
     def_mod: String,
+    /// D118: union alias arms (ordered). `None` for ordinary product / C-layout types.
+    sum: Option<SumInfo>,
+}
+
+/// Resolved union alias (D118).
+#[derive(Clone)]
+struct SumInfo {
+    variants: Vec<SumVariant>,
+}
+
+#[derive(Clone)]
+struct SumVariant {
+    tag: u32,
+    /// Source name for patterns and diagnostics.
+    name: String,
+    /// Member type (typically `User` of a nominal ctor type).
+    ty: Ty,
 }
 
 /// Module-level value (let/mut).
@@ -829,8 +873,9 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                 TypeInfo {
                     fields: Vec::new(),
                     methods: HashMap::new(),
-                    zero_init: !td.fields.is_empty(),
+                    zero_init: !td.fields.is_empty() && td.union_members.is_none(),
                     def_mod: m.id.clone(),
+                    sum: None,
                 },
             );
             if td.exported {
@@ -876,7 +921,89 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
         let mut fields: Vec<FieldInfo> = Vec::new();
         let zero_init;
-        if !td.fields.is_empty() {
+        let mut sum_info: Option<SumInfo> = None;
+
+        // Union alias: `type Dir = Up | Down` (D118).
+        if let Some(members) = &td.union_members {
+            if !td.params.is_empty() || !td.fields.is_empty() || !td.methods.is_empty() {
+                return Err(Error::at(
+                    "union type cannot have constructor params, body fields, or methods",
+                    td.name_span,
+                ));
+            }
+            zero_init = false;
+            let mut variants = Vec::new();
+            let mut seen_names = HashSet::new();
+            for (i, mem) in members.iter().enumerate() {
+                if mem.lit.is_some() {
+                    return Err(Error::at(
+                        "literal union members not yet implemented (named types only for now)",
+                        mem.span,
+                    ));
+                }
+                if mem.mark.is_some() {
+                    return Err(Error::at(
+                        "type extract marks (`!`/`?`) not yet implemented on union members",
+                        mem.span,
+                    ));
+                }
+                let ty = resolve_ty(mem, &types_info, &name_map)?;
+                let Ty::User(ref member_name) = ty else {
+                    return Err(Error::at(
+                        format!("union member must be a named type, got {ty:?}"),
+                        mem.span,
+                    ));
+                };
+                // Prefer source name from type expr for patterns.
+                let vname = if mem.name.is_empty() {
+                    member_name.clone()
+                } else {
+                    mem.name.clone()
+                };
+                if !seen_names.insert(vname.clone()) {
+                    return Err(Error::at(
+                        format!("duplicate union member `{vname}`"),
+                        mem.span,
+                    ));
+                }
+                // Member must be a product type (not another sum) for v1.
+                if let Some(minfo) = types_info.get(member_name) {
+                    if minfo.sum.is_some() {
+                        return Err(Error::at(
+                            format!("nested union member `{vname}` not yet supported"),
+                            mem.span,
+                        ));
+                    }
+                    // Heap fields in sum payloads need RC rules; v1 is scalar/empty only.
+                    for f in &minfo.fields {
+                        if !matches!(
+                            f.ty,
+                            Ty::Int64
+                                | Ty::Int32
+                                | Ty::UInt32
+                                | Ty::UInt64
+                                | Ty::Byte
+                                | Ty::Bool
+                                | Ty::Void
+                        ) {
+                            return Err(Error::at(
+                                format!(
+                                    "union member `{vname}` field `{}` must be a scalar for now (got {:?})",
+                                    f.name, f.ty
+                                ),
+                                mem.span,
+                            ));
+                        }
+                    }
+                }
+                variants.push(SumVariant {
+                    tag: i as u32,
+                    name: vname,
+                    ty,
+                });
+            }
+            sum_info = Some(SumInfo { variants });
+        } else if !td.fields.is_empty() {
             zero_init = true;
             for f in &td.fields {
                 let ty = resolve_ty(&f.ty, &types_info, &name_map)?;
@@ -941,6 +1068,17 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         let info = types_info.get_mut(mangled).unwrap();
         info.fields = fields.clone();
         info.zero_init = zero_init;
+        info.sum = sum_info.clone();
+        let sum_layout = sum_info.map(|s| {
+            s.variants
+                .iter()
+                .map(|v| SumVariantLayout {
+                    tag: v.tag,
+                    name: v.name.clone(),
+                    payload_ty: v.ty.clone(),
+                })
+                .collect()
+        });
         type_layouts.push(TypeLayout {
             name: mangled.clone(),
             fields: fields
@@ -951,6 +1089,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     ty: f.ty.clone(),
                 })
                 .collect(),
+            sum: sum_layout,
         });
     }
 
@@ -1793,12 +1932,18 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
         } else {
             lower_expr(ctx, tail)?
         };
-        if *expect != Ty::Void && &ty != expect {
-            return Err(Error::at(
-                format!("expected {expect:?}, found {ty:?}"),
-                tail.span,
-            ));
-        }
+        let place = if *expect != Ty::Void && &ty != expect {
+            if let Some(inj) = try_sum_inject(ctx, place, &ty, expect, tail.span)? {
+                inj
+            } else {
+                return Err(Error::at(
+                    format!("expected {expect:?}, found {ty:?}"),
+                    tail.span,
+                ));
+            }
+        } else {
+            place
+        };
         Some(place)
     } else if *expect == Ty::Void {
         None
@@ -1948,12 +2093,18 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
                 let (place, ty) = if let Some(ann) = ann {
                     let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
                     if ty != expect {
-                        return Err(Error::at(
-                            format!(
-                                "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
-                            ),
-                            *name_span,
-                        ));
+                        if let Some(inj) =
+                            try_sum_inject(ctx, place.clone(), &ty, &expect, *name_span)?
+                        {
+                            (inj, expect)
+                        } else {
+                            return Err(Error::at(
+                                format!(
+                                    "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
+                                ),
+                                *name_span,
+                            ));
+                        }
                     } else {
                         (place, expect)
                     }
@@ -3876,7 +4027,7 @@ fn resolve_call_args_with_defaults(
     Ok(places)
 }
 
-/// Lower one call argument against a formal type (int coerce, Address implicit).
+/// Lower one call argument against a formal type (int coerce, Address implicit, sum inject).
 fn lower_arg_for_formal(
     ctx: &mut LowerCtx,
     expr: &Expr,
@@ -3926,6 +4077,8 @@ fn lower_arg_for_formal(
         Ok(p)
     } else if is_int(&ty) && is_int(formal_ty) {
         coerce_place(ctx, p, &ty, formal_ty, expr.span)
+    } else if let Some(inj) = try_sum_inject(ctx, p.clone(), &ty, formal_ty, expr.span)? {
+        Ok(inj)
     } else {
         Err(Error::at(
             format!(
@@ -4156,6 +4309,45 @@ fn lower_try_may(
     Ok((payload, inner_ty))
 }
 
+/// If `from` is a member of union type `to`, inject into a sum value (D118).
+fn try_sum_inject(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    to: &Ty,
+    _span: Span,
+) -> Result<Option<Place>> {
+    let (Ty::User(from_n), Ty::User(to_n)) = (from, to) else {
+        return Ok(None);
+    };
+    let Some(info) = ctx.types.get(to_n) else {
+        return Ok(None);
+    };
+    let Some(sum) = info.sum.as_ref() else {
+        return Ok(None);
+    };
+    let Some(v) = sum.variants.iter().find(|v| match &v.ty {
+        Ty::User(n) => n == from_n,
+        _ => false,
+    }) else {
+        return Ok(None);
+    };
+    let tag = v.tag;
+    let payload_ty = v.ty.clone();
+    let p = ctx.fresh("sum");
+    ctx.assign(
+        p.clone(),
+        to.clone(),
+        RValue::SumInject {
+            sum_type: to_n.clone(),
+            tag,
+            payload: place,
+            payload_ty,
+        },
+    );
+    Ok(Some(p))
+}
+
 fn lower_match(
     ctx: &mut LowerCtx,
     scrutinee: &Expr,
@@ -4188,10 +4380,360 @@ fn lower_match(
     if matches!(scrut_ty, Ty::String | Ty::Int64 | Ty::Bool) {
         return lower_match_value(ctx, scrut_p, scrut_ty, arms, span);
     }
+    if let Ty::User(ref n) = &scrut_ty {
+        if ctx.types.get(n).and_then(|i| i.sum.as_ref()).is_some() {
+            return lower_match_sum(ctx, scrut_p, scrut_ty, arms, span);
+        }
+    }
     Err(Error::at(
-        "match supports Trial, May, String, Int64, or Bool",
+        "match supports Trial, May, String, Int64, Bool, or union types",
         span,
     ))
+}
+
+fn finish_match_arm_ty(
+    ctx: &mut LowerCtx,
+    result_place: &Place,
+    result_ty: &mut Option<Ty>,
+    arm_val: Option<(Place, Ty)>,
+    body: &mut Vec<Stmt>,
+    span: Span,
+) -> Result<Ty> {
+    let _ = ctx;
+    match arm_val {
+        Some((p, ty)) => {
+            if let Some(rt) = result_ty {
+                if *rt != ty {
+                    return Err(Error::at(
+                        format!("match arms have different types: {rt:?} vs {ty:?}"),
+                        span,
+                    ));
+                }
+            } else {
+                *result_ty = Some(ty.clone());
+            }
+            if ty != Ty::Void {
+                // Share ownership of heap result with the arm temp (dropped at fn end).
+                if needs_drop(&ty) {
+                    body.push(Stmt::Dup {
+                        place: p.clone(),
+                        ty: ty.clone(),
+                    });
+                }
+                body.push(Stmt::Assign {
+                    place: result_place.clone(),
+                    ty: ty.clone(),
+                    value: RValue::Use(p),
+                });
+            }
+            Ok(ty)
+        }
+        None => {
+            if let Some(rt) = result_ty {
+                if *rt != Ty::Void {
+                    return Err(Error::at(
+                        format!("match arms have different types: {rt:?} vs Void"),
+                        span,
+                    ));
+                }
+            } else {
+                *result_ty = Some(Ty::Void);
+            }
+            Ok(Ty::Void)
+        }
+    }
+}
+
+/// Match on a user union (D118): constructor arms + optional `else`.
+fn lower_match_sum(
+    ctx: &mut LowerCtx,
+    scrut_p: Place,
+    scrut_ty: Ty,
+    arms: &[MatchArm],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let Ty::User(sum_name) = &scrut_ty else {
+        return Err(Error::at("internal: sum match on non-User", span));
+    };
+    let sum = ctx
+        .types
+        .get(sum_name)
+        .and_then(|i| i.sum.clone())
+        .ok_or_else(|| Error::at("internal: missing sum info", span))?;
+
+    let tag_p = ctx.fresh("stag");
+    ctx.assign(tag_p.clone(), Ty::Int64, RValue::SumTag(scrut_p.clone()));
+
+    let result_place = ctx.fresh("mres");
+    let mut result_ty: Option<Ty> = None;
+    let mut covered: HashSet<u32> = HashSet::new();
+    let mut has_else = false;
+
+    // Forward pass: build list of (cond_setup, cond_place, then_body) or else_body.
+    struct ArmCode {
+        /// None = else/bind arm
+        tag: Option<u32>,
+        body: Vec<Stmt>,
+    }
+    let mut codes: Vec<ArmCode> = Vec::new();
+
+    for arm in arms {
+        if arm.guard.is_some() {
+            return Err(Error::at(
+                "guards on union match arms are not yet supported",
+                span,
+            ));
+        }
+        match &arm.pattern {
+            Pattern::Else { .. } => {
+                has_else = true;
+                let outer = std::mem::take(&mut ctx.stmts);
+                lower_block_items(ctx, &arm.body.items)?;
+                let arm_val = match &arm.body.tail {
+                    Some(t) => {
+                        let (p, ty) = lower_expr(ctx, t)?;
+                        Some((p, ty))
+                    }
+                    None => None,
+                };
+                let mut body = std::mem::take(&mut ctx.stmts);
+                ctx.stmts = outer;
+                finish_match_arm_ty(
+                    ctx,
+                    &result_place,
+                    &mut result_ty,
+                    arm_val,
+                    &mut body,
+                    span,
+                )?;
+                codes.push(ArmCode { tag: None, body });
+            }
+            Pattern::Bind { name, span: bspan } => {
+                // Bare `Up` is a nullary variant if it names a union member (D118);
+                // otherwise catch-all bind of the whole sum value.
+                if let Some(variant) = sum.variants.iter().find(|v| v.name == *name).cloned() {
+                    let member_fields = match &variant.ty {
+                        Ty::User(mn) => ctx
+                            .types
+                            .get(mn)
+                            .map(|i| i.fields.clone())
+                            .unwrap_or_default(),
+                        _ => Vec::new(),
+                    };
+                    if !member_fields.is_empty() {
+                        return Err(Error::at(
+                            format!("`{name}` has a payload; use `{name}(x)` pattern"),
+                            *bspan,
+                        ));
+                    }
+                    if !covered.insert(variant.tag) {
+                        return Err(Error::at(
+                            format!("duplicate match arm for `{name}`"),
+                            *bspan,
+                        ));
+                    }
+                    let outer = std::mem::take(&mut ctx.stmts);
+                    lower_block_items(ctx, &arm.body.items)?;
+                    let arm_val = match &arm.body.tail {
+                        Some(t) => {
+                            let (p, ty) = lower_expr(ctx, t)?;
+                            Some((p, ty))
+                        }
+                        None => None,
+                    };
+                    let mut body = std::mem::take(&mut ctx.stmts);
+                    ctx.stmts = outer;
+                    finish_match_arm_ty(
+                        ctx,
+                        &result_place,
+                        &mut result_ty,
+                        arm_val,
+                        &mut body,
+                        span,
+                    )?;
+                    codes.push(ArmCode {
+                        tag: Some(variant.tag),
+                        body,
+                    });
+                } else {
+                    has_else = true;
+                    let outer = std::mem::take(&mut ctx.stmts);
+                    let bound = ctx.fresh("sbind");
+                    ctx.assign(
+                        bound.clone(),
+                        scrut_ty.clone(),
+                        RValue::Use(scrut_p.clone()),
+                    );
+                    ctx.define(name, scrut_ty.clone(), false, bound);
+                    lower_block_items(ctx, &arm.body.items)?;
+                    let arm_val = match &arm.body.tail {
+                        Some(t) => {
+                            let (p, ty) = lower_expr(ctx, t)?;
+                            Some((p, ty))
+                        }
+                        None => None,
+                    };
+                    let mut body = std::mem::take(&mut ctx.stmts);
+                    ctx.stmts = outer;
+                    finish_match_arm_ty(
+                        ctx,
+                        &result_place,
+                        &mut result_ty,
+                        arm_val,
+                        &mut body,
+                        *bspan,
+                    )?;
+                    codes.push(ArmCode { tag: None, body });
+                }
+            }
+            Pattern::Variant {
+                name,
+                bind,
+                has_payload,
+                span: pspan,
+                ..
+            } => {
+                let variant = sum
+                    .variants
+                    .iter()
+                    .find(|v| v.name == *name)
+                    .ok_or_else(|| {
+                        Error::at(
+                            format!("`{name}` is not a member of this union"),
+                            *pspan,
+                        )
+                    })?
+                    .clone();
+                if !covered.insert(variant.tag) {
+                    return Err(Error::at(
+                        format!("duplicate match arm for `{name}`"),
+                        *pspan,
+                    ));
+                }
+                let member_fields = match &variant.ty {
+                    Ty::User(mn) => ctx
+                        .types
+                        .get(mn)
+                        .map(|i| i.fields.clone())
+                        .unwrap_or_default(),
+                    _ => Vec::new(),
+                };
+                let outer = std::mem::take(&mut ctx.stmts);
+                if *has_payload {
+                    if member_fields.is_empty() {
+                        return Err(Error::at(
+                            format!("`{name}` has no payload; use bare `{name}` pattern"),
+                            *pspan,
+                        ));
+                    }
+                    if member_fields.len() != 1 {
+                        return Err(Error::at(
+                            "union payload patterns support one field for now",
+                            *pspan,
+                        ));
+                    }
+                    let payload = ctx.fresh("spay");
+                    ctx.assign(
+                        payload.clone(),
+                        variant.ty.clone(),
+                        RValue::SumPayload {
+                            base: scrut_p.clone(),
+                            tag: variant.tag,
+                            payload_ty: variant.ty.clone(),
+                        },
+                    );
+                    if let Some(bname) = bind {
+                        let fty = member_fields[0].ty.clone();
+                        let fp = ctx.fresh("sf");
+                        ctx.assign(
+                            fp.clone(),
+                            fty.clone(),
+                            RValue::Field {
+                                base: payload,
+                                field: sanitize_field(&member_fields[0].name),
+                            },
+                        );
+                        ctx.define(bname, fty, false, fp);
+                    }
+                } else if !member_fields.is_empty() {
+                    return Err(Error::at(
+                        format!("`{name}` has a payload; use `{name}(x)` pattern"),
+                        *pspan,
+                    ));
+                }
+                lower_block_items(ctx, &arm.body.items)?;
+                let arm_val = match &arm.body.tail {
+                    Some(t) => {
+                        let (p, ty) = lower_expr(ctx, t)?;
+                        Some((p, ty))
+                    }
+                    None => None,
+                };
+                let mut body = std::mem::take(&mut ctx.stmts);
+                ctx.stmts = outer;
+                finish_match_arm_ty(
+                    ctx,
+                    &result_place,
+                    &mut result_ty,
+                    arm_val,
+                    &mut body,
+                    span,
+                )?;
+                codes.push(ArmCode {
+                    tag: Some(variant.tag),
+                    body,
+                });
+            }
+            other => {
+                return Err(Error::at(
+                    format!("unsupported pattern in union match: {other:?}"),
+                    span,
+                ));
+            }
+        }
+    }
+
+    let all_tags: HashSet<u32> = sum.variants.iter().map(|v| v.tag).collect();
+    if !has_else && covered != all_tags {
+        return Err(Error::at(
+            "non-exhaustive union match (missing arms or `else`)",
+            span,
+        ));
+    }
+
+    // Nest ifs from the end.
+    let mut acc: Vec<Stmt> = Vec::new();
+    for code in codes.into_iter().rev() {
+        match code.tag {
+            None => {
+                acc = code.body;
+            }
+            Some(tag) => {
+                let expected = ctx.fresh("ste");
+                ctx.assign(expected.clone(), Ty::Int64, RValue::Int(tag as i64));
+                let cond = ctx.fresh("sc");
+                ctx.assign(
+                    cond.clone(),
+                    Ty::Bool,
+                    RValue::Binary {
+                        op: BinaryOp::Eq,
+                        left: tag_p.clone(),
+                        right: expected,
+                    },
+                );
+                acc = vec![Stmt::If {
+                    cond,
+                    then_body: code.body,
+                    else_body: acc,
+                }];
+            }
+        }
+    }
+    ctx.stmts.extend(acc);
+
+    // Result place is declared zeroed with other locals; arms assign into it.
+    let ty = result_ty.unwrap_or(Ty::Void);
+    Ok((result_place, ty))
 }
 
 /// Value match: literal arms + required final `else` (D87).
