@@ -50,8 +50,9 @@ step `.so` on the happy path.
 
 **Ambient Fallible:** `Has` / `Not` / `May` / `Pass` / `Fail` / `Trial` are
 injected into every package at lower time (source of truth also in
-`std/Fallible.thx`). They lower as ordinary generic unions, not separate
-`Ty::May` / `Ty::Trial` layouts.
+`std/Fallible.thx`). They lower as ordinary generic unions (`Ty::User`
+monomorphs). Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are
+gone.
 
 ## Session execution (as-built)
 

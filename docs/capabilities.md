@@ -23,7 +23,7 @@ change. See [`progress-model.md`](progress-model.md).
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
 | trial | `Trial` + `match` + `?` as prelude unions | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118 | Ambient `Pass`/`Fail`/`Trial` generics; cross-module residual rewrap | yes |
 | may | `May` / `Has` / `Not` + `?` as prelude unions | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118 | Ambient `Has`/`Not`/`May` generics; nested ok | yes |
-| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | partial | `sums_*`, `sums_generic` | D118–D119; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Ladder through generics + May/Trial prelude. **Gaps:** generic methods; remove dead Ty::May/Trial cgen paths | yes |
+| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | partial | `sums_*`, `sums_generic` | D118–D119; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Ladder through generics + May/Trial prelude; builtin `Ty::May`/`Ty::Trial` removed. **Gaps:** generic methods | yes |
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |

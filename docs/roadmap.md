@@ -94,9 +94,10 @@ Freezes:
 - ~~First-class fixed Array locals~~ (**D117** shipped)
 
 - ~~Sum types + general fallibility (D118–D119)~~ — user unions, generics,
-  pure-lit scalar, **May/Trial prelude cutover** shipped (freeze
+  pure-lit scalar, **May/Trial prelude cutover**, dead `Ty::May`/`Trial`
+  removed (freeze
   [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md);
-  polish: generic methods, dead builtin cgen paths)
+  polish: generic methods)
 
 **Horizon / deferred until CURRENT says so:**
 

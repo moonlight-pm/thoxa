@@ -4,12 +4,13 @@
 **Status:** target (accepted product intent; **implemented** — polish remains)  
 **Implementation:** ladder §10 + **May/Trial prelude cutover** — ambient
 `Has`/`Not`/`May`/`Pass`/`Fail`/`Trial` as generic unions; monomorphs; residual
-`?` rewrap (incl. cross-module Fail monomorphs). Gates green under
+`?` rewrap (incl. cross-module Fail monomorphs); **no** builtin
+`Ty::May`/`Ty::Trial` (removed from MIR/cgen). Gates green under
 `cargo make test` (`sums_*`, `mays`, `trials*`, `http_*`, file I/O).  
-**Gaps:** dead Ty::May/Trial cgen paths; generic methods (see §10)
+**Gaps:** generic methods (see §10)
 
-**As-built:** [`../capabilities.md`](../capabilities.md) (May/Trial still
-builtins) · focus [`../../CURRENT.md`](../../CURRENT.md)  
+**As-built:** [`../capabilities.md`](../capabilities.md) · focus
+[`../../CURRENT.md`](../../CURRENT.md)  
 
 > **For agentic workers:** Do **not** implement from this freeze until
 > `CURRENT.md` schedules a slice. When implementing, one ladder step at a time

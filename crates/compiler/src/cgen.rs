@@ -1,9 +1,7 @@
 //! MIR → C source.
 
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::mir::{
-    Callee, Function, GlobalVar, MayTag, Program, RValue, Stmt, TrialTag, Ty, TypeLayout,
-};
+use crate::mir::{Callee, Function, GlobalVar, Program, RValue, Stmt, Ty, TypeLayout};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 
@@ -90,28 +88,6 @@ pub fn emit_program_with(
     // Topological typedef order so nested fallible monomorphs see payload types
     // first (Pass__May requires May, Trial requires Pass, …).
     emit_typedefs_topo(&mut out, &program.types);
-
-    // Monomorphized May/Trial typedefs. Interleave by nest depth so
-    // May<Trial<…>> and Trial<May<…>> both see payload types first (D113/D114).
-    let mut may_tys: Vec<Ty> = Vec::new();
-    collect_may_tys_program(program, &mut may_tys);
-    let mut trial_tys: Vec<Ty> = Vec::new();
-    collect_trial_tys_program(program, &mut trial_tys);
-    let mut monos: Vec<Ty> = Vec::new();
-    monos.extend(may_tys.iter().cloned());
-    monos.extend(trial_tys.iter().cloned());
-    monos.sort_by_key(mono_nest_depth);
-    // Stable secondary: keep unique order after sort (may/trial already unique).
-    for ty in &monos {
-        match ty {
-            Ty::May { .. } => emit_may_typedef(&mut out, ty),
-            Ty::Trial { .. } => emit_trial_typedef(&mut out, ty),
-            _ => {}
-        }
-    }
-    if !monos.is_empty() {
-        out.push('\n');
-    }
 
     // Per-User-type field RC helpers for Array<User> (D65).
     // Emit helpers for any type referenced by *emitted* bodies so each TU is self-contained
@@ -534,12 +510,10 @@ fn is_sum_scalar(types: &[TypeLayout], sum_type: &str) -> bool {
 
 /// Same policy as MIR `needs_drop` — User always walks fields (may be no-op).
 fn needs_drop_ty(ty: &Ty) -> bool {
-    match ty {
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } | Ty::User(_) => true,
-        Ty::Trial { ok, err } => needs_drop_ty(ok) || needs_drop_ty(err),
-        Ty::May { inner } => needs_drop_ty(inner),
-        _ => false,
-    }
+    matches!(
+        ty,
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } | Ty::User(_)
+    )
 }
 
 /// Declare a local with a safe zero value (so branch-skipped drops are no-ops).
@@ -551,25 +525,6 @@ fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
         Ty::User(_) => {
             // Zero: struct `{0}` or scalar `0` both work for pure-lit typedefs.
             let _ = writeln!(out, "    {} {} = {{0}};", c_ty(ty), name);
-        }
-        Ty::Trial { ok, err } => {
-            // tag=0 (Pass), heap sides NULL, scalars/compounds zero — drop no-op until assigned.
-            let _ = write!(out, "    {} {} = {{ .tag = 0", c_ty(ty), name);
-            if *ok.as_ref() != Ty::Void {
-                emit_zero_field(out, "ok", ok);
-            }
-            if *err.as_ref() != Ty::Void {
-                emit_zero_field(out, "err", err);
-            }
-            out.push_str(" };\n");
-        }
-        Ty::May { inner } => {
-            // tag=1 (Not), value zeroed — drop is a no-op until assigned Has.
-            let _ = write!(out, "    {} {} = {{ .tag = 1", c_ty(ty), name);
-            if *inner.as_ref() != Ty::Void {
-                emit_zero_field(out, "value", inner);
-            }
-            out.push_str(" };\n");
         }
         Ty::FixedArray { elem, len } => {
             // First-class fixed Array<T,N> local (D117): C array, zero-init.
@@ -1003,35 +958,6 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                 }
             }
         },
-        RValue::TrialMake {
-            tag,
-            payload,
-            trial_ty,
-        } => {
-            emit_trial_make(out, tag, payload, trial_ty);
-        }
-        RValue::TrialTag(p) => {
-            let _ = write!(out, "(int64_t)({}.tag)", p.name);
-        }
-        RValue::TrialOk(p) => {
-            let _ = write!(out, "{}.ok", p.name);
-        }
-        RValue::TrialErr(p) => {
-            let _ = write!(out, "{}.err", p.name);
-        }
-        RValue::MayMake {
-            tag,
-            payload,
-            may_ty,
-        } => {
-            emit_may_make(out, tag, payload, may_ty);
-        }
-        RValue::MayTag(p) => {
-            let _ = write!(out, "(int64_t)({}.tag)", p.name);
-        }
-        RValue::MayValue(p) => {
-            let _ = write!(out, "{}.value", p.name);
-        }
         RValue::StructLit { type_name, fields } => {
             // Prefer designated init so Void-elided products and nested Users are clear.
             let _ = write!(out, "({}){{", c_type_name(type_name));
@@ -1218,8 +1144,6 @@ fn c_ty(ty: &Ty) -> String {
         Ty::Buffer => "ThoxaBuffer*".into(),
         Ty::Array { .. } => "ThoxaArray*".into(),
         Ty::Void => "void".into(),
-        Ty::Trial { .. } => trial_c_name(ty),
-        Ty::May { .. } => may_c_name(ty),
         Ty::User(name) => c_type_name(name),
         Ty::FixedArray { elem, .. } => {
             // Locals of fixed-array type are not emitted; typedefs handle arrays.
@@ -1282,152 +1206,6 @@ fn emit_array_lit(out: &mut String, elems: &[crate::mir::Place], elem_ty: &Ty) {
             }
         }
         let _ = write!(out, "}}, {})", elems.len());
-    }
-}
-
-fn trial_c_name(ty: &Ty) -> String {
-    match ty {
-        Ty::Trial { ok, err } => {
-            format!("ThoxaTrial_{}_{}", ty_mangle(ok), ty_mangle(err))
-        }
-        _ => "ThoxaTrial_Invalid".into(),
-    }
-}
-
-fn may_c_name(ty: &Ty) -> String {
-    match ty {
-        Ty::May { inner } => format!("ThoxaMay_{}", ty_mangle(inner)),
-        _ => "ThoxaMay_Invalid".into(),
-    }
-}
-
-fn ty_mangle(ty: &Ty) -> String {
-    match ty {
-        Ty::Void => "Void".into(),
-        Ty::Int32 => "I32".into(),
-        Ty::Int64 => "I64".into(),
-        Ty::UInt32 => "U32".into(),
-        Ty::UInt64 => "U64".into(),
-        Ty::Byte => "Byte".into(),
-        Ty::Bool => "Bool".into(),
-        Ty::String => "String".into(),
-        Ty::Bytes => "Bytes".into(),
-        Ty::Buffer => "Buffer".into(),
-        Ty::User(n) => n.replace('-', "_"),
-        Ty::Array { elem } => format!("Array_{}", ty_mangle(elem)),
-        Ty::May { inner } => format!("May_{}", ty_mangle(inner)),
-        Ty::Trial { ok, err } => format!("Trial_{}_{}", ty_mangle(ok), ty_mangle(err)),
-        other => format!("{other:?}").replace(['<', '>', ' ', ','], "_"),
-    }
-}
-
-/// Nest depth of May/Trial wrappers (for interleaved typedef emit order).
-fn mono_nest_depth(ty: &Ty) -> usize {
-    match ty {
-        Ty::May { inner } => 1 + mono_nest_depth(inner),
-        Ty::Trial { ok, err } => 1 + mono_nest_depth(ok).max(mono_nest_depth(err)),
-        Ty::Array { elem } => mono_nest_depth(elem),
-        _ => 0,
-    }
-}
-
-/// Zero a field in a compound-literal / local initializer (scalars, heap, User, May).
-fn emit_zero_field(out: &mut String, field: &str, ty: &Ty) {
-    if is_heap_ty(ty) {
-        let _ = write!(out, ", .{field} = NULL");
-    } else if matches!(ty, Ty::Bool) {
-        let _ = write!(out, ", .{field} = false");
-    } else if matches!(ty, Ty::User(_) | Ty::May { .. } | Ty::Trial { .. }) {
-        let _ = write!(out, ", .{field} = ({}){{0}}", c_ty(ty));
-    } else {
-        let _ = write!(out, ", .{field} = 0");
-    }
-}
-
-fn emit_trial_typedef(out: &mut String, ty: &Ty) {
-    let Ty::Trial { ok, err } = ty else {
-        return;
-    };
-    let name = trial_c_name(ty);
-    let _ = writeln!(out, "typedef struct {{");
-    out.push_str("    int32_t tag; /* 0 = Pass, 1 = Fail */\n");
-    if *ok.as_ref() != Ty::Void {
-        let _ = writeln!(out, "    {} ok;", c_ty(ok));
-    }
-    if *err.as_ref() != Ty::Void {
-        let _ = writeln!(out, "    {} err;", c_ty(err));
-    }
-    // C forbids empty structs in some modes; ensure at least tag is present.
-    let _ = writeln!(out, "}} {name};");
-}
-
-fn emit_trial_make(out: &mut String, tag: &TrialTag, payload: &crate::mir::Place, trial_ty: &Ty) {
-    let Ty::Trial { ok, err } = trial_ty else {
-        out.push_str("/* bad TrialMake */");
-        return;
-    };
-    let name = trial_c_name(trial_ty);
-    match tag {
-        TrialTag::Pass => {
-            // Compound literal: tag=0, ok=payload (if not Void), err zeroed.
-            let _ = write!(out, "({name}){{ .tag = 0");
-            if *ok.as_ref() != Ty::Void {
-                let _ = write!(out, ", .ok = {}", payload.name);
-            }
-            if *err.as_ref() != Ty::Void {
-                emit_zero_field(out, "err", err);
-            }
-            out.push_str(" }");
-            // Heap ok: MIR dups payload before TrialMake so RC is correct after drop.
-        }
-        TrialTag::Fail => {
-            let _ = write!(out, "({name}){{ .tag = 1");
-            if *ok.as_ref() != Ty::Void {
-                emit_zero_field(out, "ok", ok);
-            }
-            if *err.as_ref() != Ty::Void {
-                let _ = write!(out, ", .err = {}", payload.name);
-            }
-            out.push_str(" }");
-        }
-    }
-}
-
-fn emit_may_typedef(out: &mut String, ty: &Ty) {
-    let Ty::May { inner } = ty else {
-        return;
-    };
-    let name = may_c_name(ty);
-    let _ = writeln!(out, "typedef struct {{");
-    out.push_str("    int32_t tag; /* 0 = Has, 1 = Not */\n");
-    if *inner.as_ref() != Ty::Void {
-        let _ = writeln!(out, "    {} value;", c_ty(inner));
-    }
-    let _ = writeln!(out, "}} {name};");
-}
-
-fn emit_may_make(out: &mut String, tag: &MayTag, payload: &crate::mir::Place, may_ty: &Ty) {
-    let Ty::May { inner } = may_ty else {
-        out.push_str("/* bad MayMake */");
-        return;
-    };
-    let name = may_c_name(may_ty);
-    match tag {
-        MayTag::Has => {
-            let _ = write!(out, "({name}){{ .tag = 0");
-            if *inner.as_ref() != Ty::Void {
-                let _ = write!(out, ", .value = {}", payload.name);
-            }
-            out.push_str(" }");
-        }
-        MayTag::Not => {
-            let _ = write!(out, "({name}){{ .tag = 1");
-            if *inner.as_ref() != Ty::Void {
-                emit_zero_field(out, "value", inner);
-            }
-            out.push_str(" }");
-            let _ = payload; // ignored for Not
-        }
     }
 }
 
@@ -1629,158 +1407,6 @@ fn emit_rc(
                 emit_rc(out, pad, &nested, &f.ty, dup, types);
             }
         }
-        Ty::Trial { ok, err } => {
-            let ok_d = needs_drop_ty(ok);
-            let err_d = needs_drop_ty(err);
-            if !ok_d && !err_d {
-                return;
-            }
-            let _ = writeln!(out, "{pad}if ({}.tag == 0) {{", place.name);
-            if ok_d {
-                let nested = crate::mir::Place {
-                    name: format!("{}.ok", place.name),
-                };
-                emit_rc(out, &format!("{pad}    "), &nested, ok, dup, types);
-            }
-            let _ = writeln!(out, "{pad}}} else {{");
-            if err_d {
-                let nested = crate::mir::Place {
-                    name: format!("{}.err", place.name),
-                };
-                emit_rc(out, &format!("{pad}    "), &nested, err, dup, types);
-            }
-            let _ = writeln!(out, "{pad}}}");
-        }
-        Ty::May { inner } => {
-            if !needs_drop_ty(inner) {
-                return;
-            }
-            let _ = writeln!(out, "{pad}if ({}.tag == 0) {{", place.name);
-            let nested = crate::mir::Place {
-                name: format!("{}.value", place.name),
-            };
-            emit_rc(out, &format!("{pad}    "), &nested, inner, dup, types);
-            let _ = writeln!(out, "{pad}}}");
-        }
-        _ => {}
-    }
-}
-
-fn collect_trial_tys_program(program: &Program, out: &mut Vec<Ty>) {
-    for f in &program.functions {
-        collect_trial_tys_stmts(&f.body, out);
-        push_trial_ty(&f.ret_ty, out);
-        for (_, ty) in &f.params {
-            push_trial_ty(ty, out);
-        }
-        if let Some((_, ty)) = &f.receiver {
-            push_trial_ty(ty, out);
-        }
-    }
-    collect_trial_tys_stmts(&program.init, out);
-    for g in &program.globals {
-        push_trial_ty(&g.ty, out);
-    }
-}
-
-fn collect_trial_tys_stmts(stmts: &[Stmt], out: &mut Vec<Ty>) {
-    for s in stmts {
-        match s {
-            Stmt::Assign { ty, value, .. } => {
-                push_trial_ty(ty, out);
-                if let RValue::TrialMake { trial_ty, .. } = value {
-                    push_trial_ty(trial_ty, out);
-                }
-            }
-            Stmt::Dup { ty, .. } | Stmt::Drop { ty, .. } => push_trial_ty(ty, out),
-            Stmt::If {
-                then_body,
-                else_body,
-                ..
-            } => {
-                collect_trial_tys_stmts(then_body, out);
-                collect_trial_tys_stmts(else_body, out);
-            }
-            Stmt::Loop { body } => collect_trial_tys_stmts(body, out),
-            Stmt::ForRange { body, .. } => collect_trial_tys_stmts(body, out),
-            _ => {}
-        }
-    }
-}
-
-/// Collect `Trial<…>` monomorphs only (walks nested May/Array/Trial containers).
-fn push_trial_ty(ty: &Ty, out: &mut Vec<Ty>) {
-    match ty {
-        Ty::Trial { ok, err } => {
-            // Inner monomorphs first so typedef order is safe even without sort.
-            push_trial_ty(ok, out);
-            push_trial_ty(err, out);
-            if !out.iter().any(|t| t == ty) {
-                out.push(ty.clone());
-            }
-        }
-        Ty::May { inner } => push_trial_ty(inner, out),
-        Ty::Array { elem } => push_trial_ty(elem, out),
-        _ => {}
-    }
-}
-
-fn collect_may_tys_program(program: &Program, out: &mut Vec<Ty>) {
-    for f in &program.functions {
-        collect_may_tys_stmts(&f.body, out);
-        push_may_ty(&f.ret_ty, out);
-        for (_, ty) in &f.params {
-            push_may_ty(ty, out);
-        }
-        if let Some((_, ty)) = &f.receiver {
-            push_may_ty(ty, out);
-        }
-    }
-    collect_may_tys_stmts(&program.init, out);
-    for g in &program.globals {
-        push_may_ty(&g.ty, out);
-    }
-}
-
-fn collect_may_tys_stmts(stmts: &[Stmt], out: &mut Vec<Ty>) {
-    for s in stmts {
-        match s {
-            Stmt::Assign { ty, value, .. } => {
-                push_may_ty(ty, out);
-                if let RValue::MayMake { may_ty, .. } = value {
-                    push_may_ty(may_ty, out);
-                }
-            }
-            Stmt::Dup { ty, .. } | Stmt::Drop { ty, .. } => push_may_ty(ty, out),
-            Stmt::If {
-                then_body,
-                else_body,
-                ..
-            } => {
-                collect_may_tys_stmts(then_body, out);
-                collect_may_tys_stmts(else_body, out);
-            }
-            Stmt::Loop { body } => collect_may_tys_stmts(body, out),
-            Stmt::ForRange { body, .. } => collect_may_tys_stmts(body, out),
-            _ => {}
-        }
-    }
-}
-
-/// Collect `May<…>` monomorphs only (walks nested Trial/Array containers — D113).
-fn push_may_ty(ty: &Ty, out: &mut Vec<Ty>) {
-    match ty {
-        Ty::May { inner } => {
-            push_may_ty(inner, out);
-            if !out.iter().any(|t| t == ty) {
-                out.push(ty.clone());
-            }
-        }
-        Ty::Trial { ok, err } => {
-            push_may_ty(ok, out);
-            push_may_ty(err, out);
-        }
-        Ty::Array { elem } => push_may_ty(elem, out),
         _ => {}
     }
 }
