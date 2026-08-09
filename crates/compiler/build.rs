@@ -22,10 +22,10 @@ fn main() {
         .join("../..")
         .canonicalize()
         .expect("workspace root");
-    let src = workspace.join("third_party/tinycc");
+    let src = workspace.join("vendor/tinycc");
     if !src.join("configure").is_file() {
         panic!(
-            "vendored TinyCC missing at {} (expected third_party/tinycc)",
+            "vendored TinyCC missing at {} (expected vendor/tinycc)",
             src.display()
         );
     }

@@ -80,7 +80,7 @@ Does not reopen desugar, splice, Shell API, or status threading.
 
 | Component | Role |
 |-----------|------|
-| Vendored TinyCC sources | Pinned under `third_party/tinycc` (or equivalent) |
+| Vendored TinyCC sources | Pinned under `vendor/tinycc` |
 | Build of `libtcc` (+ libtcc1) | Host Linux; produced into `target/` or linked by `crates/compiler` |
 | Session step compiler | Rust host API: C strings (and optional files) → relocated entry |
 | REPL / prompt / path | Call that API instead of `cc`+`dlopen` |
@@ -194,7 +194,7 @@ Implement **one PR at a time**. Each phase leaves `cargo make test` green.
 
 **Goal:** TinyCC builds and links into the host; prove memory compile.
 
-- Pin sources under `third_party/tinycc` (or agreed path).  
+- Pin sources under `vendor/tinycc`.  
 - Build `libtcc` (+ libtcc1) for host Linux (xtask / `build.rs` / `cargo make`).  
 - Link into `thoxa` (or a small internal crate).  
 - Unit smoke: compile `int f(void){return 42;}` in memory, call, assert.

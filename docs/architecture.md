@@ -31,7 +31,7 @@ step `.so` on the happy path.
 | MIR | `mir.rs` | RC; generic monomorphs; ambient Fallible prelude inject (D118) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
-| libtcc | `tcc.rs` + `build.rs` + `third_party/tinycc` | Vendored TinyCC; memory compile |
+| libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
 | LSP | `lsp/` | stdio server; check overlays; nav (incl. package-tree refs/rename, `workspace/symbol`); multi-diag |
 
@@ -42,9 +42,10 @@ step `.so` on the happy path.
 | `crates/compiler` | `thoxa` binary + compiler library (+ libtcc link) |
 | `crates/make` | xtask (`cargo make …`) |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
-| `third_party/tinycc` | Vendored TinyCC sources (session steps only) |
+| `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
 | `std/` | Product std (`Shell.thx`, `Fallible.thx` surface, …) |
 | `tests/conformance/` | `.thx` + `.out` gate |
+| `examples/` | Runnable demos (e.g. static HTTP server); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
 | `apocrypha/` | Historical + Python oracle |
 

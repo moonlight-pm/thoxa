@@ -1,0 +1,114 @@
+## Router — map an HTTP Request onto files under a root directory. Directories serve
+## `index.html`; path traversal (`..` / `.` segments) is rejected as 404. Content-Type
+## comes from the final file extension. Oracle examples/http/Router.thx subset.
+
+import { readFile } from "./Io"
+import { Request, Response, ok, notFound } from "./Http"
+
+## Split URL path on `/` into non-empty segments.
+fn pathSegments(path!: String) -> Array<String> {
+    let data = Bytes.fromString(path)
+    mut segs: Array<String> = []
+    mut start = 0
+    mut i = 0
+    let n = data.count
+    loop {
+        if i >= n { break }
+        if data.get(i) == 47 {
+            if i > start {
+                segs = segs.append(data.slice(start, i).toString())
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < n {
+        segs = segs.append(data.slice(start, n).toString())
+    }
+    segs
+}
+
+## True when any segment is `.` or `..` (path traversal / current-dir noise).
+fn hasUnsafeSegment(segs!: Array<String>) -> Bool {
+    for s in segs {
+        if s == ".." {
+            return true
+        }
+        if s == "." {
+            return true
+        }
+    }
+    false
+}
+
+fn joinPath(root!: String, segs!: Array<String>) -> String {
+    mut path = root
+    for s in segs {
+        path = "{path}/{s}"
+    }
+    path
+}
+
+## Content-Type from extension (ASCII path via Bytes).
+fn contentTypeFor(path!: String) -> String {
+    let data = Bytes.fromString(path)
+    mut i = data.count - 1
+    mut ext = ""
+    loop {
+        if i < 0 { break }
+        let c = data.get(i)
+        if c == 47 { break }
+        if c == 46 {
+            ext = data.slice(i, data.count).toString()
+            break
+        }
+        i = i - 1
+    }
+    if ext == ".html" {
+        return "text/html"
+    }
+    if ext == ".css" {
+        return "text/css"
+    }
+    if ext == ".txt" {
+        return "text/plain"
+    }
+    "application/octet-stream"
+}
+
+## A static-file router rooted at `root` (cwd-relative).
+export type Router(root: String) {
+    ## Resolve `req.path` under `root` and return a Response. Always a Response
+    ## value (404 on missing/unsafe paths); never a Trial.
+    export fn handle(req!: Request) -> Response {
+        let urlPath = req.path
+        let raw = Bytes.fromString(urlPath)
+        if raw.count == 0 {
+            return notFound()
+        }
+        if raw.get(0) != 47 {
+            return notFound()
+        }
+        let segs = pathSegments(urlPath)
+        if hasUnsafeSegment(segs) {
+            return notFound()
+        }
+        let candidate = joinPath(root, segs)
+        match readFile(candidate) {
+            Pass(body) {
+                ok(body, contentTypeFor(candidate))
+            }
+            Fail(_) {
+                let indexPath = "{candidate}/index.html"
+                match readFile(indexPath) {
+                    Pass(body) {
+                        ok(body, contentTypeFor(indexPath))
+                    }
+                    Fail(_) {
+                        notFound()
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,67 @@
+## Minimal HTTP/1.1 static file server (real listen loop).
+## Modules: Net (sockets), Http (protocol), Io (files), Router (web/ map).
+##
+##   cargo make run examples/http
+##   # or: cargo run -p thoxa -- run examples/http
+##
+## From the workspace root (cwd-relative web root):
+##   curl -s  http://127.0.0.1:9091/
+##   curl -s  http://127.0.0.1:9091/about/
+##   curl -sD- http://127.0.0.1:9091/style.css
+##   curl -s  http://127.0.0.1:9091/nope.html   # 404
+##
+## Ctrl-C to stop. Port 9091; SO_REUSEADDR enabled.
+
+import net from "./Net"
+import http from "./Http"
+import { Router } from "./Router"
+
+let listenPort = 9091
+let webRoot = "examples/http/web"
+
+fn main() -> Int64 {
+    match run() {
+        Pass(_) {
+            0
+        }
+        Fail(e) {
+            println("server error: {e}")
+            1
+        }
+    }
+}
+
+fn run() -> Trial<Void, String> {
+    let server = net.createSocket()?
+    server.reuseAddr()?
+    server.bind(listenPort)?
+    server.listen(16)?
+    println("http server listening on 127.0.0.1:{listenPort}")
+    println("serving files from {webRoot}/  (Ctrl-C to stop)")
+    let router = Router(root: webRoot)
+    loop {
+        ## Accept errors fail the process; per-request send issues log and continue.
+        let peer = server.accept()?
+        let raw = peer.receive()
+        if raw.count > 0 {
+            let response = match http.parseRequest(raw) {
+                Pass(req) {
+                    router.handle(req)
+                }
+                Fail(msg) {
+                    http.badRequest(msg)
+                }
+            }
+            let wire = http.writeResponse(response)
+            let ns = peer.send(wire)
+            if ns < 0 {
+                println("request error: send failed")
+            } else {
+                println("{response.status} {response.reason}")
+            }
+        }
+        peer.close()
+    }
+    ## Unreachable; keeps Trial return shape if the loop ever breaks.
+    Pass(Void)
+}

@@ -92,6 +92,8 @@ over ad-hoc scripts (D10).
 | `std/` | Product standard library (`std/…`) |
 | `tests/conformance/` | `*.thx` + `*.out` |
 | `extras/` | Non-product DX; dogfood shell (product REPL is bare `thoxa`) |
+| `examples/` | Runnable demos (not conformance); e.g. `examples/http` |
+| `vendor/` | Vendored upstream (TinyCC for libtcc session steps) |
 | `CURRENT.md` | Living focus |
 | `docs/` | Canonical docs (see `docs/README.md`) |
 

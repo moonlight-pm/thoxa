@@ -27,6 +27,9 @@ cargo make test
 # Run a Thoxa file
 cargo make run tests/conformance/hello.thx
 
+# Example: static HTTP server (Ctrl-C to stop; port 9091)
+cargo make run examples/http
+
 # Session REPL (product shell)
 cargo make shell
 # or: cargo run -p thoxa --
@@ -53,6 +56,8 @@ crates/make       xtask (cargo make …)
 runtime/          C runtime (thoxa_rt)
 std/              product standard library (std/… imports)
 tests/conformance definition of done (.thx + .out)
+examples/         runnable demos (e.g. static HTTP server)
+vendor/           vendored upstream (TinyCC for session libtcc)
 docs/             canonical engineering + handbook
 CURRENT.md        living session handoff
 extras/           non-product DX (tree-sitter, Zed, dogfood shell)

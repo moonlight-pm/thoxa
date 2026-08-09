@@ -1,4 +1,8 @@
-# Third-party sources
+# Vendored sources
+
+Upstream trees we ship and build against. Prefer this name over
+`third_party` (same role) or `contrib` (that usually means *our* optional
+add-ons — closer to `extras/`).
 
 ## TinyCC (`tinycc/`)
 

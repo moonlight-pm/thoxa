@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-08 (Array/Bytes insertAt/removeAt)
+**As of:** 2026-08-09 (examples/http + vendor/)
 
 ---
 
@@ -58,6 +58,7 @@ change. See [`progress-model.md`](progress-model.md).
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err` | D69, R9 | Fail messages use errno/strerror (`netErr`); parse/write wire as before | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70 | — | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | — | yes |
+| examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; modules co-located (not yet `std/`); cwd-relative `web/` | yes |
 
 ## Session / shell
 

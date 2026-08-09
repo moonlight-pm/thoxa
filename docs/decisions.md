@@ -88,7 +88,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and â
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D105 | REPL / session-step C backend | **In-process libtcc only** (`TCC_OUTPUT_MEMORY`); no compiler spawn, no step `.so` | Vendored TinyCC under `third_party/tinycc` (Linux x86_64). Batch + `libthoxa_rt` stay system `cc`. Legacy `cc`+dlopen escape **removed**. Freeze: `docs/specs/2026-08-05-session-libtcc.md`. |
+| D105 | REPL / session-step C backend | **In-process libtcc only** (`TCC_OUTPUT_MEMORY`); no compiler spawn, no step `.so` | Vendored TinyCC under `vendor/tinycc` (Linux x86_64). Batch + `libthoxa_rt` stay system `cc`. Legacy `cc`+dlopen escape **removed**. Freeze: `docs/specs/2026-08-05-session-libtcc.md`. |
 
 ## 2026-08-05 â€” Session pipes, redirs, pure-step, std Shell
 
