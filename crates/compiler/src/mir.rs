@@ -253,6 +253,19 @@ pub enum RValue {
         arr: Place,
         elem_ty: Ty,
     },
+    /// Functional insertAt for User elements (blob + field-dup).
+    ArrayInsertAt {
+        arr: Place,
+        at: Place,
+        item: Place,
+        elem_ty: Ty,
+    },
+    /// Functional removeAt for User elements (field-dup survivors).
+    ArrayRemoveAt {
+        arr: Place,
+        at: Place,
+        elem_ty: Ty,
+    },
     /// Convert Int64/Bool/Array → owned String.
     ToString {
         value: Place,
@@ -4626,7 +4639,9 @@ fn lower_field(
         Ty::Array { .. } => {
             if name != "count" {
                 return Err(Error::at(
-                    format!("no field `{name}` on Array (use .count, .append, .dropLast, [i])"),
+                    format!(
+                        "no field `{name}` on Array (use .count, .append, .dropLast, .insertAt, .removeAt, [i])"
+                    ),
                     name_span,
                 ));
             }
@@ -5215,22 +5230,7 @@ fn lower_array_method(
                 );
                 return Ok((p, arr_ty));
             }
-            let item = if *elem == Ty::Bool {
-                // Runtime slots are int64.
-                let p = ctx.fresh("abool");
-                ctx.assign(
-                    p.clone(),
-                    Ty::Int64,
-                    RValue::Cast {
-                        value: item,
-                        from: Ty::Bool,
-                        to: Ty::Int64,
-                    },
-                );
-                p
-            } else {
-                item
-            };
+            let item = coerce_array_scalar_item(ctx, elem, item);
             let all = vec![recv, item];
             let builtin = if array_elem_is_heap(elem) {
                 "array_append_ptr"
@@ -5262,10 +5262,82 @@ fn lower_array_method(
                 arr_ty,
             )
         }
+        "insertAt" => {
+            let formal = vec![("at".into(), Ty::Int64), ("item".into(), elem.clone())];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut it = places.into_iter();
+            let at = it.next().unwrap();
+            let item = it.next().unwrap();
+            if array_elem_is_user(elem) {
+                let p = ctx.fresh("ains");
+                ctx.assign(
+                    p.clone(),
+                    arr_ty.clone(),
+                    RValue::ArrayInsertAt {
+                        arr: recv,
+                        at,
+                        item,
+                        elem_ty: elem.clone(),
+                    },
+                );
+                return Ok((p, arr_ty));
+            }
+            let item = coerce_array_scalar_item(ctx, elem, item);
+            let all = vec![recv, at, item];
+            let builtin = if array_elem_is_heap(elem) {
+                "array_insert_at_ptr"
+            } else {
+                "array_insert_at_i64"
+            };
+            emit_call_result(ctx, Callee::Builtin(builtin.into()), all, arr_ty)
+        }
+        "removeAt" => {
+            let formal = vec![("at".into(), Ty::Int64)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let at = places.into_iter().next().unwrap();
+            if array_elem_is_user(elem) {
+                let p = ctx.fresh("arm");
+                ctx.assign(
+                    p.clone(),
+                    arr_ty.clone(),
+                    RValue::ArrayRemoveAt {
+                        arr: recv,
+                        at,
+                        elem_ty: elem.clone(),
+                    },
+                );
+                return Ok((p, arr_ty));
+            }
+            emit_call_result(
+                ctx,
+                Callee::Builtin("array_remove_at".into()),
+                vec![recv, at],
+                arr_ty,
+            )
+        }
         other => Err(Error::at(
-            format!("no method `{other}` on Array (use .append, .dropLast)"),
+            format!("no method `{other}` on Array (use .append, .dropLast, .insertAt, .removeAt)"),
             span,
         )),
+    }
+}
+
+/// Bool array slots are int64 at runtime; cast when needed.
+fn coerce_array_scalar_item(ctx: &mut LowerCtx, elem: &Ty, item: Place) -> Place {
+    if *elem == Ty::Bool {
+        let p = ctx.fresh("abool");
+        ctx.assign(
+            p.clone(),
+            Ty::Int64,
+            RValue::Cast {
+                value: item,
+                from: Ty::Bool,
+                to: Ty::Int64,
+            },
+        );
+        p
+    } else {
+        item
     }
 }
 
@@ -5471,7 +5543,36 @@ fn lower_bytes_method(
                 Ty::String,
             )
         }
-        other => Err(Error::at(format!("no method `{other}` on Bytes"), span)),
+        "insertAt" => {
+            let formal = vec![("at".into(), Ty::Int64), ("byte".into(), Ty::Int64)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut all = vec![recv];
+            all.extend(places);
+            emit_call_result(
+                ctx,
+                Callee::Builtin("bytes_insert_at".into()),
+                all,
+                Ty::Bytes,
+            )
+        }
+        "removeAt" => {
+            let formal = vec![("at".into(), Ty::Int64)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut all = vec![recv];
+            all.extend(places);
+            emit_call_result(
+                ctx,
+                Callee::Builtin("bytes_remove_at".into()),
+                all,
+                Ty::Bytes,
+            )
+        }
+        other => Err(Error::at(
+            format!(
+                "no method `{other}` on Bytes (use .get, .set, .slice, .find, .toString, .insertAt, .removeAt)"
+            ),
+            span,
+        )),
     }
 }
 

@@ -897,6 +897,8 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     "bytes_slice" => "thoxa_bytes_slice",
                     "bytes_find" => "thoxa_bytes_find",
                     "bytes_to_string" => "thoxa_bytes_to_string",
+                    "bytes_insert_at" => "thoxa_bytes_insert_at",
+                    "bytes_remove_at" => "thoxa_bytes_remove_at",
                     "buffer_new" => "thoxa_buffer_new",
                     "buffer_with_capacity" => "thoxa_buffer_with_capacity",
                     "buffer_count" => "thoxa_buffer_count",
@@ -910,6 +912,9 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     "array_append_i64" => "thoxa_array_append_i64",
                     "array_append_ptr" => "thoxa_array_append_ptr",
                     "array_drop_last" => "thoxa_array_drop_last",
+                    "array_insert_at_i64" => "thoxa_array_insert_at_i64",
+                    "array_insert_at_ptr" => "thoxa_array_insert_at_ptr",
+                    "array_remove_at" => "thoxa_array_remove_at",
                     other => other,
                 };
                 out.push_str(c);
@@ -1109,6 +1114,41 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                 let _ = write!(out, "thoxa_array_drop_last({})", arr.name);
             }
         },
+        RValue::ArrayInsertAt {
+            arr,
+            at,
+            item,
+            elem_ty,
+        } => match elem_ty {
+            Ty::User(type_name) => {
+                let _ = write!(
+                    out,
+                    "thoxa_array_insert_at_elem({}, {}, &{}, (uint32_t)sizeof({}), 0u, {})",
+                    arr.name,
+                    at.name,
+                    item.name,
+                    c_type_name(type_name),
+                    array_user_elem_dup_fn(type_name)
+                );
+            }
+            _ => {
+                out.push_str("/* bad ArrayInsertAt elem */ NULL");
+            }
+        },
+        RValue::ArrayRemoveAt { arr, at, elem_ty } => match elem_ty {
+            Ty::User(type_name) => {
+                let _ = write!(
+                    out,
+                    "thoxa_array_remove_at_ex({}, {}, {})",
+                    arr.name,
+                    at.name,
+                    array_user_elem_dup_fn(type_name)
+                );
+            }
+            _ => {
+                let _ = write!(out, "thoxa_array_remove_at({}, {})", arr.name, at.name);
+            }
+        },
         RValue::ToString { value, from } => match from {
             Ty::Int64 => {
                 let _ = write!(out, "thoxa_string_from_i64({})", value.name);
@@ -1305,7 +1345,9 @@ fn push_user_array_elem_from_rvalue(rv: &RValue, out: &mut Vec<String>) {
         RValue::ArrayLit { elem_ty, .. }
         | RValue::ArrayGet { elem_ty, .. }
         | RValue::ArrayAppend { elem_ty, .. }
-        | RValue::ArrayDropLast { elem_ty, .. } => {
+        | RValue::ArrayDropLast { elem_ty, .. }
+        | RValue::ArrayInsertAt { elem_ty, .. }
+        | RValue::ArrayRemoveAt { elem_ty, .. } => {
             push_user_array_elem_ty(elem_ty, out);
         }
         _ => {}

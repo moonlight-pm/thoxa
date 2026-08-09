@@ -1,0 +1,7 @@
+bytes ins=hello del=hlo app=helo!
+bytes src count=4 text=helo
+array ins count=4 at1=99
+array del count=2 at0=20
+array src count=3 at1=20
+array tail=[10, 20, 30, 40]
+str mid=abc cut0=c src0=a

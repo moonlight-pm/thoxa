@@ -94,6 +94,7 @@ Freezes:
 - ~~File seek/position~~ (**D115** shipped)
 - ~~Default-arg defining-module scope~~ (**D116** shipped)
 - ~~First-class fixed Array locals~~ (**D117** shipped)
+- ~~Array/Bytes `insertAt`/`removeAt`~~ (**D55** splice shipped)
 
 - ~~Sum types + general fallibility (D118–D119)~~ — user unions, generics +
   methods, pure-lit scalar, **May/Trial prelude cutover**, dead

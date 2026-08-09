@@ -38,5 +38,12 @@ fn main() -> Int64 {
     let zs = [Header(name: "A", value: "1"), Header(name: "B", value: "2")]
     println("lit_count={zs.count}")
     println("lit0={zs[0].name}")
+
+    ## Functional insertAt / removeAt (User elems)
+    let mid = zs.insertAt(1, Header(name: "M", value: "x"))
+    println("ins_count={mid.count} mid={mid[1].name}")
+    let cut = zs.removeAt(0)
+    println("rm_count={cut.count} rm0={cut[0].name}")
+    println("zs_still={zs.count}")
     0
 }

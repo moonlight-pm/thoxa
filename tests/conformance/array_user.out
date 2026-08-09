@@ -12,3 +12,6 @@ dropped_only=Host=localhost
 orig_count=2
 lit_count=2
 lit0=A
+ins_count=3 mid=M
+rm_count=1 rm0=B
+zs_still=2

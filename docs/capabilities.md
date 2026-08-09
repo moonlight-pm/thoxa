@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-08 (workspace/symbol package intelligence)
+**As of:** 2026-08-08 (Array/Bytes insertAt/removeAt)
 
 ---
 
@@ -23,19 +23,19 @@ change. See [`progress-model.md`](progress-model.md).
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
 | trial | `Trial` + `match` + `?` as prelude unions | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118 | Ambient `Pass`/`Fail`/`Trial` generics; cross-module residual rewrap | yes |
 | may | `May` / `Has` / `Not` + `?` as prelude unions | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118 | Ambient `Has`/`Not`/`May` generics; nested ok | yes |
-| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Exhaustive match names missing arms; post-`else` rejected; union match guards (D120) | yes |
+| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | none for v0 | yes |
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |
 | string | String, interpolation, simple RC | shipped | `strings` | R4 | Perceus later | yes |
 | string-eq | String `==` / `!=` | shipped | `router` (uses) | D60 | — | yes |
-| bytes | Bytes API + slice + find→May | shipped | `bytes` | D14–D18, D36–D37, D46′/D85 | String→Bytes is `fromString` only; **no** `"…" as Bytes` (D15 rejected) | yes |
+| bytes | Bytes API + slice + find→May + insertAt/removeAt | shipped | `bytes`, `splice` | D14–D18, D36–D37, D46′/D85, D55 | String→Bytes is `fromString` only; **no** `"…" as Bytes` (D15 rejected) | yes |
 | buffer | Growable Buffer COW → freeze | shipped | `buffer` | D50–D52 | — | yes |
 | mut-assign | `mut` + assign + method field write-back | shipped | `bytes`, `method_field_writeback` | R5, D107 | — | yes |
 | control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops` | D47, D55 | — | yes |
 | early-return | `return` / `return expr` | shipped | `early_return` | D63 | — | yes |
-| array-dyn | Dynamic `Array<T>` (incl. User) | shipped | `arrays`, `array_user`, `array_heap_elems` | D53–D55, D62, D65 | — | yes |
-| array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | Whole-array assign/bind (element copy); ABI scalar elems only | yes |
+| array-dyn | Dynamic `Array<T>` (incl. User) + insertAt/removeAt | shipped | `arrays`, `array_user`, `array_heap_elems`, `splice` | D53–D55, D62, D65 | — | yes |
+| array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | ABI scalar elems only (no User fixed-array elems) | yes |
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array ctor fields | shipped | `string_fields` | D48–D49, D69 | — | yes |
 | param-defaults | Formal defaults M3 (+ methods/ctors/`!`/extern) | shipped | `param_defaults`, `defaults_mod`, `param_bang_defaults` | D98, D106, D116 | `!` and extern formals may default (call-site fill); non-default cannot follow defaulted; free names use defining module | yes |

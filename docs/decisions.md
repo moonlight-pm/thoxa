@@ -287,7 +287,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 |----|----------|--------|-------|
 | D53 | Dynamic `Array<T>` | Heap RC `ThoxaArray*` (slots as `int64_t`; heap elems bitcast) | Distinct from fixed field `Array<T,N>` (D27); elems: Int64, Bool, String, Bytes; **User via D65** |
 | D54 | Array mutation model | Functional `append`/`dropLast` return new arrays; index set mutates shared storage | Matches oracle list semantics; not Buffer-style COW write-back |
-| D55 | Array surface | Literals, empty `[]` + type ann, `.count`, `[i]`, append, dropLast, `for x in arr`, display | `insertAt`/`removeAt` deferred; typed let `let xs: Array<T> = []` |
+| D55 | Array / Bytes splice surface | Literals, empty `[]` + type ann, `.count`, `[i]`, append, dropLast, **`insertAt`/`removeAt`**, `for x in arr`, display; Bytes **`insertAt`/`removeAt`** too | Functional copy (source unchanged); insert `0 ≤ at ≤ count`, remove `0 ≤ at < count` (else panic); byte masked 0–255. Gates: `arrays`, `array_user`, `splice`. |
 
 ## 2026-07-19 — R9+ Buffer
 

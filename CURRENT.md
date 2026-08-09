@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-08 (workspace/symbol; session deferred)
+**As of:** 2026-08-08 (Array/Bytes insertAt/removeAt; session deferred)
 
 ---
 
@@ -14,9 +14,10 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** **`workspace/symbol`** package search (open buffers +
-package-tree disk); union match guards (D120); editor v0 polish. **MIR-on-resolver**
-deferred architecture. Session residual deferred.
+**Shipped recently:** **`insertAt`/`removeAt`** on dynamic `Array<T>` and
+`Bytes` (D55 splice, `splice` gate); **`workspace/symbol`**; union match guards
+(D120); editor v0 polish. **MIR-on-resolver** deferred architecture. Session
+residual deferred.
 
 **In progress / next:** language matrix when concrete; sample-driven std when
 forced; editor only when DX forces (multi-root folders / MIR arch).

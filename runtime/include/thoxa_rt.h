@@ -165,6 +165,12 @@ ThoxaBytes *thoxa_bytes_slice(const ThoxaBytes *b, int64_t start, int64_t end);
 int64_t thoxa_bytes_find(const ThoxaBytes *hay, const ThoxaBytes *needle, int64_t from);
 /* Fresh owned String with the same bytes (not necessarily valid UTF-8). */
 ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b);
+/* Functional: new Bytes with `byte` (masked 0–255) inserted at `at`.
+ * Bounds: 0 ≤ at ≤ count (at == count appends). Source unchanged. */
+ThoxaBytes *thoxa_bytes_insert_at(const ThoxaBytes *b, int64_t at, int64_t byte);
+/* Functional: new Bytes without the byte at `at`.
+ * Bounds: 0 ≤ at < count. Source unchanged. */
+ThoxaBytes *thoxa_bytes_remove_at(const ThoxaBytes *b, int64_t at);
 
 /* --- Buffer (growable, COW, RC heap) ------------------------------------ */
 
@@ -194,7 +200,7 @@ ThoxaBuffer *thoxa_buffer_append_bytes(ThoxaBuffer *b, const ThoxaBytes *src);
 /* Copy live prefix → owned fixed Bytes (buffer left intact). */
 ThoxaBytes *thoxa_buffer_freeze(const ThoxaBuffer *b);
 
-/* --- Array (dynamic, RC heap; functional append/dropLast) ---------------- */
+/* --- Array (dynamic, RC heap; functional append/dropLast/insertAt/removeAt) */
 
 /*
  * Layout: [ThoxaHeader][ThoxaArray { len, cap, flags, elem_size, data[cap*elem_size] }]
@@ -279,6 +285,20 @@ ThoxaArray *thoxa_array_append_elem(
 ThoxaArray *thoxa_array_drop_last(const ThoxaArray *a);
 /* Like drop_last but field-dups surviving elements (User arrays). */
 ThoxaArray *thoxa_array_drop_last_ex(const ThoxaArray *a, ThoxaArrayElemFn elem_dup);
+/* Functional insertAt: 0 ≤ at ≤ count (at == count appends). */
+ThoxaArray *thoxa_array_insert_at_i64(const ThoxaArray *a, int64_t at, int64_t v);
+ThoxaArray *thoxa_array_insert_at_ptr(const ThoxaArray *a, int64_t at, void *p);
+ThoxaArray *thoxa_array_insert_at_elem(
+    const ThoxaArray *a,
+    int64_t at,
+    const void *elem,
+    uint32_t elem_size,
+    uint32_t flags,
+    ThoxaArrayElemFn elem_dup
+);
+/* Functional removeAt: 0 ≤ at < count. */
+ThoxaArray *thoxa_array_remove_at(const ThoxaArray *a, int64_t at);
+ThoxaArray *thoxa_array_remove_at_ex(const ThoxaArray *a, int64_t at, ThoxaArrayElemFn elem_dup);
 /* Display as `[a, b, c]` for Int64 arrays. */
 ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a);
 /* Display as `["a", "b"]` for String arrays. */

@@ -275,6 +275,47 @@ ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b) {
     return thoxa_string_new((const char *)b->data, b->len);
 }
 
+ThoxaBytes *thoxa_bytes_insert_at(const ThoxaBytes *b, int64_t at, int64_t byte) {
+    size_t old_len = b ? b->len : 0;
+    if (at < 0 || (size_t)at > old_len) {
+        thoxa_panic("Bytes.insertAt out of range");
+    }
+    size_t pos = (size_t)at;
+    size_t n = old_len + 1;
+    size_t payload = sizeof(size_t) + n;
+    ThoxaBytes *out = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
+    out->len = n;
+    if (pos > 0 && b) {
+        memcpy(out->data, b->data, pos);
+    }
+    out->data[pos] = (uint8_t)(byte & 0xFF);
+    if (pos < old_len && b) {
+        memcpy(out->data + pos + 1, b->data + pos, old_len - pos);
+    }
+    return out;
+}
+
+ThoxaBytes *thoxa_bytes_remove_at(const ThoxaBytes *b, int64_t at) {
+    if (!b || b->len == 0) {
+        thoxa_panic("Bytes.removeAt out of range");
+    }
+    if (at < 0 || (size_t)at >= b->len) {
+        thoxa_panic("Bytes.removeAt out of range");
+    }
+    size_t pos = (size_t)at;
+    size_t n = b->len - 1;
+    size_t payload = sizeof(size_t) + n;
+    ThoxaBytes *out = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
+    out->len = n;
+    if (pos > 0) {
+        memcpy(out->data, b->data, pos);
+    }
+    if (pos < n) {
+        memcpy(out->data + pos, b->data + pos + 1, n - pos);
+    }
+    return out;
+}
+
 /* --- Buffer ------------------------------------------------------------- */
 
 static size_t buffer_payload_size(size_t cap) {
@@ -450,6 +491,33 @@ static void array_copy_items(ThoxaArray *dst, const ThoxaArray *src, size_t n) {
     }
 }
 
+/* Copy `n` elements from src[src_off..] into dst[dst_off..] (heap-aware). */
+static void array_copy_range(
+    ThoxaArray *dst,
+    size_t dst_off,
+    const ThoxaArray *src,
+    size_t src_off,
+    size_t n
+) {
+    if (n == 0 || !src) {
+        return;
+    }
+    if (array_heap_elems(src) || array_heap_elems(dst)) {
+        for (size_t i = 0; i < n; i++) {
+            int64_t slot = *array_i64_c(src, src_off + i);
+            void *p = (void *)(intptr_t)slot;
+            thoxa_dup(p);
+            *array_i64(dst, dst_off + i) = slot;
+        }
+    } else {
+        memcpy(
+            array_slot(dst, dst_off),
+            array_slot_c(src, src_off),
+            n * (size_t)src->elem_size
+        );
+    }
+}
+
 /* Shallow copy n elements then optionally field-dup each destination slot. */
 static void array_copy_items_ex(
     ThoxaArray *dst,
@@ -464,6 +532,30 @@ static void array_copy_items_ex(
     if (elem_dup) {
         for (size_t i = 0; i < n; i++) {
             elem_dup(array_slot(dst, i));
+        }
+    }
+}
+
+/* Range variant of array_copy_items_ex (User inline elems). */
+static void array_copy_range_ex(
+    ThoxaArray *dst,
+    size_t dst_off,
+    const ThoxaArray *src,
+    size_t src_off,
+    size_t n,
+    ThoxaArrayElemFn elem_dup
+) {
+    if (n == 0 || !src) {
+        return;
+    }
+    memcpy(
+        array_slot(dst, dst_off),
+        array_slot_c(src, src_off),
+        n * (size_t)src->elem_size
+    );
+    if (elem_dup) {
+        for (size_t i = 0; i < n; i++) {
+            elem_dup(array_slot(dst, dst_off + i));
         }
     }
 }
@@ -660,6 +752,119 @@ ThoxaArray *thoxa_array_drop_last_ex(const ThoxaArray *a, ThoxaArrayElemFn elem_
     size_t new_len = a->len - 1;
     ThoxaArray *n = array_alloc(new_len, new_len, a->flags, a->elem_size);
     array_copy_items_ex(n, a, new_len, elem_dup);
+    return n;
+}
+
+ThoxaArray *thoxa_array_insert_at_i64(const ThoxaArray *a, int64_t at, int64_t v) {
+    size_t old_len = a ? a->len : 0;
+    if (at < 0 || (size_t)at > old_len) {
+        thoxa_panic("Array.insertAt out of range");
+    }
+    size_t pos = (size_t)at;
+    uint32_t flags = a ? a->flags : 0;
+    ThoxaArray *n =
+        array_alloc(old_len + 1, old_len + 1, flags, (uint32_t)sizeof(int64_t));
+    array_copy_range(n, 0, a, 0, pos);
+    if (array_heap_elems(n)) {
+        void *p = (void *)(intptr_t)v;
+        thoxa_dup(p);
+        *array_i64(n, pos) = v;
+    } else {
+        *array_i64(n, pos) = v;
+    }
+    array_copy_range(n, pos + 1, a, pos, old_len - pos);
+    return n;
+}
+
+ThoxaArray *thoxa_array_insert_at_ptr(const ThoxaArray *a, int64_t at, void *p) {
+    size_t old_len = a ? a->len : 0;
+    if (at < 0 || (size_t)at > old_len) {
+        thoxa_panic("Array.insertAt out of range");
+    }
+    size_t pos = (size_t)at;
+    ThoxaArray *n = array_alloc(
+        old_len + 1,
+        old_len + 1,
+        THOXA_ARRAY_FLAG_HEAP_ELEMS,
+        (uint32_t)sizeof(int64_t)
+    );
+    if (a && array_heap_elems(a)) {
+        array_copy_range(n, 0, a, 0, pos);
+        array_copy_range(n, pos + 1, a, pos, old_len - pos);
+    } else if (a && old_len > 0) {
+        if (pos > 0) {
+            memcpy(n->data, a->data, pos * sizeof(int64_t));
+        }
+        if (pos < old_len) {
+            memcpy(
+                n->data + (pos + 1) * sizeof(int64_t),
+                a->data + pos * sizeof(int64_t),
+                (old_len - pos) * sizeof(int64_t)
+            );
+        }
+    }
+    thoxa_dup(p);
+    *array_i64(n, pos) = (int64_t)(intptr_t)p;
+    return n;
+}
+
+ThoxaArray *thoxa_array_insert_at_elem(
+    const ThoxaArray *a,
+    int64_t at,
+    const void *elem,
+    uint32_t elem_size,
+    uint32_t flags,
+    ThoxaArrayElemFn elem_dup
+) {
+    size_t old_len = a ? a->len : 0;
+    if (at < 0 || (size_t)at > old_len) {
+        thoxa_panic("Array.insertAt out of range");
+    }
+    if (a) {
+        elem_size = a->elem_size;
+        flags = a->flags;
+    }
+    if (!elem) {
+        thoxa_panic("array insert_at_elem null elem");
+    }
+    size_t pos = (size_t)at;
+    ThoxaArray *n = array_alloc(old_len + 1, old_len + 1, flags, elem_size);
+    array_copy_range_ex(n, 0, a, 0, pos, elem_dup);
+    memcpy(array_slot(n, pos), elem, (size_t)elem_size);
+    if (elem_dup) {
+        elem_dup(array_slot(n, pos));
+    }
+    array_copy_range_ex(n, pos + 1, a, pos, old_len - pos, elem_dup);
+    return n;
+}
+
+ThoxaArray *thoxa_array_remove_at(const ThoxaArray *a, int64_t at) {
+    if (!a || a->len == 0) {
+        thoxa_panic("Array.removeAt out of range");
+    }
+    if (at < 0 || (size_t)at >= a->len) {
+        thoxa_panic("Array.removeAt out of range");
+    }
+    size_t pos = (size_t)at;
+    size_t new_len = a->len - 1;
+    ThoxaArray *n = array_alloc(new_len, new_len, a->flags, a->elem_size);
+    array_copy_range(n, 0, a, 0, pos);
+    array_copy_range(n, pos, a, pos + 1, new_len - pos);
+    return n;
+}
+
+ThoxaArray *thoxa_array_remove_at_ex(const ThoxaArray *a, int64_t at, ThoxaArrayElemFn elem_dup) {
+    if (!a || a->len == 0) {
+        thoxa_panic("Array.removeAt out of range");
+    }
+    if (at < 0 || (size_t)at >= a->len) {
+        thoxa_panic("Array.removeAt out of range");
+    }
+    size_t pos = (size_t)at;
+    size_t new_len = a->len - 1;
+    ThoxaArray *n = array_alloc(new_len, new_len, a->flags, a->elem_size);
+    array_copy_range_ex(n, 0, a, 0, pos, elem_dup);
+    array_copy_range_ex(n, pos, a, pos + 1, new_len - pos, elem_dup);
     return n;
 }
 
