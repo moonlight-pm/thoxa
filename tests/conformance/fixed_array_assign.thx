@@ -1,27 +1,31 @@
 ## Whole fixed Array<T,N> assign / bind without literal (D117 extension).
+import logging from "std/Logging"
 type Bag {
     mut data: Array<Byte, 3>
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     mut xs: Array<Byte, 4> = [10, 20, 30, 40]
     ## Bind from another fixed array (not only a lit).
     let ys: Array<Byte, 4> = xs
-    println("y1={ys[1]}")
+    logging.info("y1={ys[1]}")
     ## Mut reassign from another array.
     mut zs: Array<Byte, 4> = [0, 0, 0, 0]
     zs = xs
-    println("z0={zs[0]}")
+    logging.info("z0={zs[0]}")
     ## Mut reassign from a fresh lit.
     zs = [1, 2, 3, 4]
-    println("z2={zs[2]}")
+    logging.info("z2={zs[2]}")
     ## Field whole-array assign + load.
     mut b = Bag()
     b.data = [65, 66, 67]
-    println("b0={b.data[0]}")
+    logging.info("b0={b.data[0]}")
     let copied: Array<Byte, 3> = b.data
-    println("c1={copied[1]}")
+    logging.info("c1={copied[1]}")
     b.data = copied
-    println("b2={b.data[2]}")
+    logging.info("b2={b.data[2]}")
     0
 }

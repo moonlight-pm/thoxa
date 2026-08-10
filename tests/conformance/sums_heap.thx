@@ -1,4 +1,5 @@
 ## Heap payloads in user unions: String/Bytes fields (D118).
+import logging from "std/Logging"
 type Msg(text: String)
 type Empty
 type Slot = Msg | Empty?
@@ -25,18 +26,21 @@ fn describe2(s!: Slot2) -> String {
 }
 
 fn main() -> Int64 {
-    println(describe(Msg(text: "hi")))
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info(describe(Msg(text: "hi")))
     match chain(Msg(text: "ok")) {
-        Msg(text) { println("ch={text}") }
-        Empty { println("empty") }
+        Msg(text) { logging.info("ch={text}") }
+        Empty { logging.info("empty") }
     }
     match chain(Empty()) {
-        Msg(text) { println("ch={text}") }
-        Empty { println("empty") }
+        Msg(text) { logging.info("ch={text}") }
+        Empty { logging.info("empty") }
     }
     ## Transparent alias remap with heap payload
     let a: Slot = Msg(text: "ab")
     let b: Slot2 = a
-    println(describe2(b))
+    logging.info("{describe2(b)}")
     0
 }

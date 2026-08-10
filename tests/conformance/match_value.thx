@@ -1,4 +1,5 @@
 ## Value match: string / int / bool literal arms + required `else` (D87).
+import logging from "std/Logging"
 fn label(n!: Int64) -> String {
     match n {
         0 { "zero" }
@@ -25,18 +26,24 @@ fn dispatch(cmd!: String) -> Int64 {
 }
 
 fn main() -> Int64 {
-    println(label(0))
-    println(label(1))
-    println(label(7))
-    println(flag(true))
-    println(flag(false))
-    println(dispatch("help"))
-    println(dispatch("echo"))
-    println(dispatch("bogus"))
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("{label(0)}")
+    logging.info("{label(1)}")
+    logging.info("{label(7)}")
+    logging.info("{flag(true)}")
+    logging.info("{flag(false)}")
+    let d0 = dispatch("help")
+    let d1 = dispatch("echo")
+    let d2 = dispatch("bogus")
+    logging.info("{d0}")
+    logging.info("{d1}")
+    logging.info("{d2}")
     ## match as statement (Void arms)
     match "pwd" {
-        "pwd" { println("got-pwd") }
-        else { println("other") }
+        "pwd" { logging.info("got-pwd") }
+        else { logging.info("other") }
     }
     0
 }

@@ -3,6 +3,7 @@
 ## Pattern `_` only; body `_` is ordinary lookup (no outer `_` here).
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 type Box(n: Int64)
 
@@ -39,50 +40,53 @@ fn asBox(n!: Int64) -> Trial<Box, String> {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     ## Bind ok, discard err payload.
     match half(20) {
-        Pass(v) { println(v) }
-        Fail(_) { println("fail-side") }
+        Pass(v) { logging.info("{v}") }
+        Fail(_) { logging.info("fail-side") }
     }
     match half(7) {
-        Pass(v) { println(v) }
-        Fail(_) { println("x") }
+        Pass(v) { logging.info("{v}") }
+        Fail(_) { logging.info("x") }
     }
 
     ## Discard ok, bind err.
     match asMsg(false) {
-        Pass(_) { println("unexpected-pass") }
-        Fail(e) { println(e) }
+        Pass(_) { logging.info("unexpected-pass") }
+        Fail(e) { logging.info("{e}") }
     }
 
     ## Discard both sides (heap String payloads still RC-dropped).
     match asMsg(true) {
-        Pass(_) { println("pass-disc") }
-        Fail(_) { println("fail-disc") }
+        Pass(_) { logging.info("pass-disc") }
+        Fail(_) { logging.info("fail-disc") }
     }
     match asMsg(false) {
-        Pass(_) { println("pass-disc") }
-        Fail(_) { println("fail-disc") }
+        Pass(_) { logging.info("pass-disc") }
+        Fail(_) { logging.info("fail-disc") }
     }
 
     ## Bytes heap discard.
     match asBytes(true) {
-        Pass(_) { println("bytes-ok") }
-        Fail(_) { println("bytes-fail") }
+        Pass(_) { logging.info("bytes-ok") }
+        Fail(_) { logging.info("bytes-fail") }
     }
     match asBytes(false) {
-        Pass(_) { println("bytes-ok") }
-        Fail(_) { println("bytes-fail") }
+        Pass(_) { logging.info("bytes-ok") }
+        Fail(_) { logging.info("bytes-fail") }
     }
 
     ## User (Int64 field only) discard — exercises needs_drop && !is_heap Dup path.
     match asBox(3) {
-        Pass(_) { println("box-ok") }
-        Fail(_) { println("box-fail") }
+        Pass(_) { logging.info("box-ok") }
+        Fail(_) { logging.info("box-fail") }
     }
     match asBox(-1) {
-        Pass(_) { println("box-ok") }
-        Fail(_) { println("box-fail") }
+        Pass(_) { logging.info("box-ok") }
+        Fail(_) { logging.info("box-fail") }
     }
 
     0

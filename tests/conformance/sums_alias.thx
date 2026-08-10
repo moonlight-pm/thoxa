@@ -1,4 +1,5 @@
 ## Transparent union aliases + expect on if (D119).
+import logging from "std/Logging"
 type Done(n: Int64)
 type Quit
 type Outcome = Done | Quit
@@ -23,25 +24,28 @@ fn asResult(o!: Outcome) -> Result {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let a: Outcome = step(true)
-    println(label(a))
+    logging.info("{label(a)}")
     let b: Outcome = step(false)
-    println(label(b))
+    logging.info("{label(b)}")
 
     ## Annotated if: expect injects each arm
     let c: Outcome = if true { Done(n: 9) } else { Quit() }
-    println(label(c))
+    logging.info("{label(c)}")
     let d: Outcome = if false { Done(n: 1) } else { Quit() }
-    println(label(d))
+    logging.info("{label(d)}")
 
     ## Alias-to-alias (transparent remap)
     let r: Result = asResult(a)
     match r {
-        Done(n) { println("result={n}") }
-        Quit { println("result-quit") }
+        Done(n) { logging.info("result={n}") }
+        Quit { logging.info("result-quit") }
     }
 
     ## Call-site inject still works
-    println(label(Done(n: 7)))
+    logging.info("{label(Done(n: 7))}")
     0
 }

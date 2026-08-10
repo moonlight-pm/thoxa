@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn hello_tokens() {
-        let src = r#"fn main() -> Int64 { println("Hello, world!") 0 }"#;
+        let src = r#"fn main() -> Int64 { 0 }"#;
         let tokens = Lexer::new(src).tokenize().unwrap();
         assert!(matches!(tokens[0].kind, TokenKind::Fn));
         assert!(matches!(tokens[1].kind, TokenKind::Ident(ref s) if s == "main"));

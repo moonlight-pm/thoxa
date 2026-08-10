@@ -1,45 +1,49 @@
 ## File type with method write-back (D107/D109): openFile / readAll / close.
 import { openFile, oRdonly, readFile } from "./iolib/Io"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
-    println("oRdonly={oRdonly}")
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("oRdonly={oRdonly}")
     match openFile("tests/conformance/io_data/sample.txt") {
         Fail(e) {
-            println("open-fail={e}")
+            logging.info("open-fail={e}")
         }
         Pass(f) {
             if f.isOpen() {
-                println("open-ok")
+                logging.info("open-ok")
             } else {
-                println("open-closed")
+                logging.info("open-closed")
             }
             match f.readAll() {
                 Pass(body) {
-                    println("body={body.toString()}")
+                    logging.info("body={body.toString()}")
                 }
                 Fail(e) {
-                    println("read-fail={e}")
+                    logging.info("read-fail={e}")
                 }
             }
             f.close()
             if f.isOpen() {
-                println("still-open")
+                logging.info("still-open")
             } else {
-                println("closed")
+                logging.info("closed")
             }
             ## Second close is a no-op (fd already -1).
             f.close()
-            println("double-close-ok")
+            logging.info("double-close-ok")
         }
     }
     ## Free function still works.
     match readFile("tests/conformance/io_data/sample.txt") {
         Pass(body) {
-            println("free={body.toString()}")
+            logging.info("free={body.toString()}")
         }
         Fail(e) {
-            println("free-fail={e}")
+            logging.info("free-fail={e}")
         }
     }
     0

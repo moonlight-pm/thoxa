@@ -2,45 +2,49 @@
 ## R9: Bytes(n) zero-fill + slice.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     mut b = Bytes.fromString("abc")
-    println(b.count)
-    println(b.get(0))
+    logging.info("{b.count}")
+    logging.info("{b.get(0)}")
     b.set(0, 65)
-    println(b.toString())
+    logging.info("{b.toString()}")
 
     mut n = 0
     n = n + 1
     n = n + 1
-    println(n)
+    logging.info("{n}")
 
     b = Bytes.fromString("xy")
-    println(b.count)
-    println(b.toString())
+    logging.info("{b.count}")
+    logging.info("{b.toString()}")
 
     let z = Bytes(4)
-    println(z.count)
-    println(z.get(0))
+    logging.info("{z.count}")
+    logging.info("{z.get(0)}")
     z.set(2, 99)
-    println(z.get(2))
+    logging.info("{z.get(2)}")
 
     let s = Bytes.fromString("hello").slice(1, 4)
-    println(s.toString())
+    logging.info("{s.toString()}")
 
     let hay = Bytes.fromString("abXabY")
     let needle = Bytes.fromString("ab")
     match hay.find(needle) {
-        Has(i) { println(i) }
-        Not { println("none") }
+        Has(i) { logging.info("{i}") }
+        Not { logging.info("none") }
     }
     match hay.find(needle, 1) {
-        Has(i) { println(i) }
-        Not { println("none") }
+        Has(i) { logging.info("{i}") }
+        Not { logging.info("none") }
     }
     match hay.find(Bytes.fromString("ZZ")) {
-        Has(i) { println(i) }
-        Not { println("none") }
+        Has(i) { logging.info("{i}") }
+        Not { logging.info("none") }
     }
     0
 }

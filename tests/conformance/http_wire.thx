@@ -3,15 +3,19 @@
 import net from "./httplib/Net"
 import http from "./httplib/Http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     match serveOnce() {
         Pass(u) {
-            println("wire-ok")
+            logging.info("wire-ok")
             0
         }
         Fail(e) {
-            println("wire-fail {e}")
+            logging.info("wire-fail {e}")
             1
         }
     }
@@ -39,7 +43,7 @@ fn serveOnce() -> Trial<Void, String> {
             Fail("empty-request")
         } else {
             let summary = http.summarizeRequest(raw)
-            println(summary)
+            logging.info("{summary}")
             let body = Bytes.fromString("pong\n")
             let res = http.writeResponse(http.ok(body, "text/plain"))
             let ns = peer.send(res)
@@ -47,7 +51,7 @@ fn serveOnce() -> Trial<Void, String> {
                 Fail("server-send")
             } else {
                 let got = client.receive()
-                println(got.toString())
+                logging.info("{got.toString()}")
                 peer.close()
                 client.close()
                 server.close()

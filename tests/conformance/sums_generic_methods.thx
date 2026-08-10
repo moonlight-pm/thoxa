@@ -1,4 +1,5 @@
 ## Methods on generic products — monomorphized with the type.
+import logging from "std/Logging"
 type Box<T>(value: T) {
     export fn get() -> T {
         value
@@ -15,13 +16,16 @@ type Counter<T>(value: T) {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let a: Box<Int64> = Box(value: 10)
-    println(a.get())
+    logging.info("{a.get()}")
     let s: Box<String> = Box(value: "hi")
-    println(s.get())
+    logging.info("{s.get()}")
     let c: Counter<Int64> = Counter(value: 7)
-    println(c.get())
+    logging.info("{c.get()}")
     let d = c.add(d: 3)
-    println(d.get())
+    logging.info("{d.get()}")
     0
 }

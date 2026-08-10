@@ -37,11 +37,26 @@ pub fn prepare_package(package: &mut Package) -> Result<()> {
         .position(|m| m.is_entry)
         .unwrap_or(package.modules.len() - 1);
     let injected_shell = prepare_entry(&mut package.modules[entry_idx])?;
-    // Shell.thx imports `std/Fallible`; inject happens after load, so pull
-    // Fallible into the package when the session prelude was spliced in.
+    // Shell.thx imports Fallible + Logging (and Logging pulls Env/Str/Path).
+    // Inject happens after load_package, so pull those modules into the package.
     if injected_shell {
-        ensure_fallible_module(package)?;
+        ensure_shell_std_deps(package)?;
     }
+    Ok(())
+}
+
+/// Load std modules required by the injected Shell prelude (D104 + D125).
+fn ensure_shell_std_deps(package: &mut Package) -> Result<()> {
+    // Prefer on-disk std tree so Logging/Env/Str/Path load transitively.
+    if let Ok(root) = loader::std_lib_root() {
+        let logging = root.join("Logging.thx");
+        if logging.is_file() {
+            loader::ensure_module_in_package(package, &logging)?;
+            return Ok(());
+        }
+    }
+    // Embed fallback path: Fallible only (legacy); Logging needs disk std.
+    ensure_fallible_module(package)?;
     Ok(())
 }
 
@@ -381,7 +396,7 @@ mod tests {
 
     #[test]
     fn session_stmt_injects_shell_step_and_main() {
-        let m = prep(r#"println("hi")"#);
+        let m = prep(r#"logging.info("hi")"#);
         assert!(m
             .items
             .iter()
@@ -418,7 +433,7 @@ mod tests {
 
     #[test]
     fn program_with_main_unchanged() {
-        let src = r#"fn main() -> Int64 { println("x") 0 }"#;
+        let src = r#"fn main() -> Int64 { 0 }"#;
         let mut entry = SourceModule {
             id: "Main".into(),
             path: std::path::PathBuf::from("Main.thx"),
@@ -432,7 +447,7 @@ mod tests {
     #[test]
     fn main_plus_session_stmt_errors() {
         let src = r#"
-println("nope")
+logging.info("nope")
 fn main() -> Int64 { 0 }
 "#;
         // Localized at parse time (and still guarded in prepare for synthetic ASTs).

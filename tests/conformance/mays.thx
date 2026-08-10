@@ -1,6 +1,7 @@
 ## May / Has / Not + Bytes.find -> May<Int64> (D85).
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn firstAb(hay!: Bytes) -> May<Int64> {
     let i = hay.find(Bytes.fromString("ab"))?
@@ -8,32 +9,35 @@ fn firstAb(hay!: Bytes) -> May<Int64> {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let hay = Bytes.fromString("xxabY")
     match hay.find(Bytes.fromString("ab")) {
-        Has(i) { println("found={i}") }
-        Not { println("missing") }
+        Has(i) { logging.info("found={i}") }
+        Not { logging.info("missing") }
     }
     match hay.find(Bytes.fromString("zz")) {
-        Has(i) { println("found={i}") }
-        Not { println("missing") }
+        Has(i) { logging.info("found={i}") }
+        Not { logging.info("missing") }
     }
     match firstAb(hay) {
-        Has(i) { println("q={i}") }
-        Not { println("q-miss") }
+        Has(i) { logging.info("q={i}") }
+        Not { logging.info("q-miss") }
     }
     match firstAb(Bytes.fromString("nope")) {
-        Has(i) { println("q={i}") }
-        Not { println("q-miss") }
+        Has(i) { logging.info("q={i}") }
+        Not { logging.info("q-miss") }
     }
     ## Explicit Has / Not constructors (Not needs `-> May` for typing).
     let m = Has(7)
     match m {
-        Has(v) { println("has={v}") }
-        Not { println("not") }
+        Has(v) { logging.info("has={v}") }
+        Not { logging.info("not") }
     }
     match noInt() {
-        Has(v) { println("has={v}") }
-        Not { println("not") }
+        Has(v) { logging.info("has={v}") }
+        Not { logging.info("not") }
     }
     0
 }

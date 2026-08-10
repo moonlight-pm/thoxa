@@ -1,4 +1,5 @@
 ## General `?` on residual-marked unions (D118).
+import logging from "std/Logging"
 type Done(n: Int64)
 type Quit
 type Outcome = Done | Quit?
@@ -21,13 +22,16 @@ fn chain(ok!: Bool) -> Outcome {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     match chain(true) {
-        Done(n) { println("ok={n}") }
-        Quit { println("quit") }
+        Done(n) { logging.info("ok={n}") }
+        Quit { logging.info("quit") }
     }
     match chain(false) {
-        Done(n) { println("ok={n}") }
-        Quit { println("quit") }
+        Done(n) { logging.info("ok={n}") }
+        Quit { logging.info("quit") }
     }
     0
 }

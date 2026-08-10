@@ -1,6 +1,7 @@
 ## OpenMode union (D81 polish): nullary access modes + openModeBits → openFile.
 import { OpenMode, Rdonly, Wronly, Rdwr, openModeBits, openFile, oRdonly } from "./iolib/Io"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn label(m!: OpenMode) -> String {
     match m {
@@ -11,29 +12,32 @@ fn label(m!: OpenMode) -> String {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let r: OpenMode = Rdonly()
     let w: OpenMode = Wronly()
     let rw: OpenMode = Rdwr()
-    println(label(r))
-    println(label(w))
-    println(label(rw))
-    println("bits={openModeBits(r)}/{openModeBits(w)}/{openModeBits(rw)}")
+    logging.info("{label(r)}")
+    logging.info("{label(w)}")
+    logging.info("{label(rw)}")
+    logging.info("bits={openModeBits(r)}/{openModeBits(w)}/{openModeBits(rw)}")
     ## Same numeric value as the Int32 flag constant.
-    println("eq={openModeBits(Rdonly()) == oRdonly}")
+    logging.info("eq={openModeBits(Rdonly()) == oRdonly}")
 
     match openFile("tests/conformance/io_data/sample.txt", openModeBits(Rdonly())) {
         Fail(e) {
-            println("open-fail={e}")
+            logging.info("open-fail={e}")
         }
         Pass(f) {
             match f.readAll() {
                 Fail(e) {
                     f.close()
-                    println("read-fail={e}")
+                    logging.info("read-fail={e}")
                 }
                 Pass(body) {
                     f.close()
-                    println("body={body.toString()}")
+                    logging.info("body={body.toString()}")
                 }
             }
         }

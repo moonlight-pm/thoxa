@@ -1,12 +1,16 @@
 ## let bindings and if/else as an expression.
+import logging from "std/Logging"
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let a = 7
     let b = 3
     let sum = a + b
-    println(sum)
+    logging.info("{sum}")
     let pick = if a > b { a } else { b }
-    println(pick)
+    logging.info("{pick}")
     let label = if sum == 10 { 1 } else { 0 }
-    println(label)
+    logging.info("{label}")
     0
 }

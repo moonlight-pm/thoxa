@@ -3,66 +3,70 @@ import {
     openFile, writeFile, readFile, seekSet, seekCur, seekEnd, oRdwr
 } from "./iolib/Io"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let path = "/tmp/thoxa_file_seek_conformance.txt"
     match writeFile(path, Bytes.fromString("abcdefghij")) {
-        Fail(e) { println("write-fail={e}") }
-        Pass(n) { println("wrote={n}") }
+        Fail(e) { logging.info("write-fail={e}") }
+        Pass(n) { logging.info("wrote={n}") }
     }
     match openFile(path, oRdwr) {
-        Fail(e) { println("open-fail={e}") }
+        Fail(e) { logging.info("open-fail={e}") }
         Pass(f) {
             match f.position() {
-                Pass(p) { println("pos0={p}") }
-                Fail(e) { println("pos0-fail={e}") }
+                Pass(p) { logging.info("pos0={p}") }
+                Fail(e) { logging.info("pos0-fail={e}") }
             }
             match f.seek(3, seekSet) {
-                Pass(p) { println("seek3={p}") }
-                Fail(e) { println("seek3-fail={e}") }
+                Pass(p) { logging.info("seek3={p}") }
+                Fail(e) { logging.info("seek3-fail={e}") }
             }
             match f.readAll() {
-                Pass(b) { println("from3={b.toString()}") }
-                Fail(e) { println("read-fail={e}") }
+                Pass(b) { logging.info("from3={b.toString()}") }
+                Fail(e) { logging.info("read-fail={e}") }
             }
             ## After readAll, offset is at end.
             match f.position() {
-                Pass(p) { println("at-end={p}") }
-                Fail(e) { println("at-end-fail={e}") }
+                Pass(p) { logging.info("at-end={p}") }
+                Fail(e) { logging.info("at-end-fail={e}") }
             }
             match f.seek(-2, seekEnd) {
-                Pass(p) { println("end-2={p}") }
-                Fail(e) { println("end-2-fail={e}") }
+                Pass(p) { logging.info("end-2={p}") }
+                Fail(e) { logging.info("end-2-fail={e}") }
             }
             match f.readAll() {
-                Pass(b) { println("tail={b.toString()}") }
-                Fail(e) { println("tail-fail={e}") }
+                Pass(b) { logging.info("tail={b.toString()}") }
+                Fail(e) { logging.info("tail-fail={e}") }
             }
             match f.seek(1, seekSet) {
                 Pass(_) {
                     match f.seek(2, seekCur) {
-                        Pass(p) { println("cur+2={p}") }
-                        Fail(e) { println("cur-fail={e}") }
+                        Pass(p) { logging.info("cur+2={p}") }
+                        Fail(e) { logging.info("cur-fail={e}") }
                     }
                 }
-                Fail(e) { println("seek1-fail={e}") }
+                Fail(e) { logging.info("seek1-fail={e}") }
             }
             f.close()
             match f.seek(0, seekSet) {
-                Pass(p) { println("closed-seek={p}") }
-                Fail(e) { println("closed-seek={e}") }
+                Pass(p) { logging.info("closed-seek={p}") }
+                Fail(e) { logging.info("closed-seek={e}") }
             }
             match f.position() {
-                Pass(p) { println("closed-pos={p}") }
-                Fail(e) { println("closed-pos={e}") }
+                Pass(p) { logging.info("closed-pos={p}") }
+                Fail(e) { logging.info("closed-pos={e}") }
             }
         }
     }
     ## Fixture still intact for free read.
     match readFile(path) {
-        Pass(b) { println("full={b.toString()}") }
-        Fail(e) { println("full-fail={e}") }
+        Pass(b) { logging.info("full={b.toString()}") }
+        Fail(e) { logging.info("full-fail={e}") }
     }
-    println("whence={seekSet}|{seekCur}|{seekEnd}")
+    logging.info("whence={seekSet}|{seekCur}|{seekEnd}")
     0
 }

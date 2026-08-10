@@ -7,6 +7,7 @@ As-built rows: [`docs/capabilities.md`](../docs/capabilities.md) (`std-*`).
 
 ```thx
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 import { defaultPrompt } from "std/Prompt"   ## session shell.thx
 import { startsWith, dropPrefix } from "std/Str"
 import { cwdShort, shortPath } from "std/Path"
@@ -19,6 +20,7 @@ import { branch } from "std/Git"
 |--------|------|
 | `Shell` | Session `type Shell` + builtins (`echo`/`cd`/`run`/`runIo`/`pipeline`/…); auto-injected for session scripts |
 | `Fallible` | Exported `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` — **import required** for programs (D123; not ambient) |
+| `Logging` | Default logger: levels, sinks (stderr/stdout/file), full/plain format; no ambient `println` (**D125**) |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
 | `Str` | search/slice/replace/`split`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |
 | `Path` | dirname/basename/join/`joinAll`/`parts`/slash helpers/extension/`cwd`/`shortPath`/… |

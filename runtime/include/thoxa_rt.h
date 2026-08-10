@@ -23,12 +23,6 @@ typedef void (*ThoxaArrayElemFn)(void *elem);
 
 /* --- I/O ---------------------------------------------------------------- */
 
-void thoxa_print(const char *s);
-void thoxa_println(const char *s);
-void thoxa_print_i64(int64_t v);
-void thoxa_println_i64(int64_t v);
-void thoxa_print_bool(bool v);
-void thoxa_println_bool(bool v);
 void thoxa_panic(const char *msg);
 
 /* Thread-local errno after a failed libc call (no named `ffi` root — D80). */
@@ -128,8 +122,9 @@ bool thoxa_string_eq(const ThoxaString *a, const ThoxaString *b);
 const char *thoxa_string_cstr(const ThoxaString *s);
 size_t thoxa_string_len(const ThoxaString *s);
 
-void thoxa_print_string(const ThoxaString *s);
-void thoxa_println_string(const ThoxaString *s);
+/* Best-effort write of C string bytes + '\n' to fd (1/2/file). Returns 0 / -1.
+ * Takes const char* so Thoxa `extern … from "c"` String args marshal cleanly. */
+int32_t thoxa_write_line_fd(int32_t fd, const char *s);
 
 /* Session prompt helpers (D96): return cstr; Thoxa extern -> String
  * copies via thoxa_string_from_cstr. Buffers are thread-local. */

@@ -1,10 +1,14 @@
 ## String interpolation, brace escaping, and character escapes (R4 — heap String + RC).
+import logging from "std/Logging"
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let name = "Ada"
     let x = 6
     let y = 7
-    println("Hello, {name}! {x} * {y} = {x * y}")
-    println("literal {{braces}}")
-    println("tab\tafter\ndone")
+    logging.info("Hello, {name}! {x} * {y} = {x * y}")
+    logging.info("literal {{braces}}")
+    logging.info("tab\tafter\ndone")
     0
 }

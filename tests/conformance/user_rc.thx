@@ -2,6 +2,7 @@
 ## Also: multi-field String+Bytes, Fail(User) err payload.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 type Box(s: String) {
     export fn get() -> String {
@@ -47,61 +48,64 @@ fn makePair(ok!: Bool) -> Trial<Pair, ErrMsg> {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     ## Assign copy: both own the String field
     let a = Box(s: "hello")
     let b = a
-    println(a.s)
-    println(b.s)
+    logging.info("{a.s}")
+    logging.info("{b.s}")
 
     ## Method returning Box does not double-free path field
     let c = a.clone()
-    println(c.s)
-    println(a.get())
+    logging.info("{c.s}")
+    logging.info("{a.get()}")
 
     ## Trial Pass + match
     match makeBox("x") {
-        Pass(box) { println(box.s) }
-        Fail(e) { println(e) }
+        Pass(box) { logging.info("{box.s}") }
+        Fail(e) { logging.info("{e}") }
     }
     match makeBox("") {
-        Pass(box) { println(box.s) }
-        Fail(e) { println(e) }
+        Pass(box) { logging.info("{box.s}") }
+        Fail(e) { logging.info("{e}") }
     }
 
     ## ? rewrap — two sequential calls (ASan must stay clean)
     match chain("y") {
-        Pass(box) { println(box.s) }
-        Fail(e) { println(e) }
+        Pass(box) { logging.info("{box.s}") }
+        Fail(e) { logging.info("{e}") }
     }
     match chain("z") {
-        Pass(box) { println(box.s) }
-        Fail(e) { println(e) }
+        Pass(box) { logging.info("{box.s}") }
+        Fail(e) { logging.info("{e}") }
     }
     match chain("w") {
-        Pass(box) { println(box.s) }
-        Fail(e) { println(e) }
+        Pass(box) { logging.info("{box.s}") }
+        Fail(e) { logging.info("{e}") }
     }
 
     ## Multi-field String+Bytes: assign copy + method reads
     let p = Pair(name: "pair", data: Bytes.fromString("ab"))
     let q = p
-    println(p.nameOf())
-    println(q.dataOf())
+    logging.info("{p.nameOf()}")
+    logging.info("{q.dataOf()}")
 
     ## Trial Pass(Pair) + Fail(ErrMsg) — User on both sides
     match makePair(true) {
         Pass(pr) {
-            println(pr.nameOf())
-            println(pr.dataOf())
+            logging.info("{pr.nameOf()}")
+            logging.info("{pr.dataOf()}")
         }
-        Fail(er) { println(er.text) }
+        Fail(er) { logging.info("{er.text}") }
     }
     match makePair(false) {
         Pass(pr) {
-            println(pr.nameOf())
-            println(pr.dataOf())
+            logging.info("{pr.nameOf()}")
+            logging.info("{pr.dataOf()}")
         }
-        Fail(er) { println(er.text) }
+        Fail(er) { logging.info("{er.text}") }
     }
     0
 }

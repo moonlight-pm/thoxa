@@ -4,6 +4,18 @@
 ## compile-time fallback copy for environments without a discoverable std root.
 
 import { Has, Not, May } from "std/Fallible"
+import logging from "std/Logging"
+
+fn shellConfigureOut() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+}
+
+fn shellOut(msg!: String) {
+    shellConfigureOut()
+    logging.info(msg)
+}
+
 
 extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
 extern fn sysChdir(path!: String) -> Int32 from "c" "chdir"
@@ -161,7 +173,7 @@ fn sessionRunCommand(
         let cmd = argv[0]
         match sessionResolveCommand(cmd) {
             Not {
-                println("thoxa: {cmd}: command not found")
+                shellOut("thoxa: {cmd}: command not found")
                 127
             }
             Has(path) {
@@ -179,7 +191,7 @@ fn sessionRunCommand(
                     app
                 )
                 if st < 0 {
-                    println("thoxa: {cmd}: {sysStrerror(sysErrno())}")
+                    shellOut("thoxa: {cmd}: {sysStrerror(sysErrno())}")
                     1
                 } else {
                     st
@@ -191,7 +203,7 @@ fn sessionRunCommand(
 
 type Shell(status: Int64) {
     export fn echo(args: Array<String>) -> Shell {
-        println(sessionJoinSpace(args))
+        shellOut("{sessionJoinSpace(args)}")
         Shell(status: 0)
     }
 
@@ -199,17 +211,17 @@ type Shell(status: Int64) {
         let buf = Bytes(sessionCwdBufSize)
         let path = sysGetcwd(buf, sessionCwdBufSize)
         if path == "" {
-            println("pwd: {sysStrerror(sysErrno())}")
+            shellOut("pwd: {sysStrerror(sysErrno())}")
             Shell(status: 1)
         } else {
-            println(path)
+            shellOut("{path}")
             Shell(status: 0)
         }
     }
 
     export fn cd(args: Array<String>) -> Shell {
         if args.count > 1 {
-            println("cd: too many arguments")
+            shellOut("cd: too many arguments")
             Shell(status: 1)
         } else {
             mut path = ""
@@ -217,7 +229,7 @@ type Shell(status: Int64) {
             if args.count == 0 {
                 path = sysGetenv("HOME")
                 if path == "" {
-                    println("cd: HOME not set")
+                    shellOut("cd: HOME not set")
                     bad = true
                 }
             } else {
@@ -228,7 +240,7 @@ type Shell(status: Int64) {
             } else {
                 let rc = sysChdir(path)
                 if rc != 0 {
-                    println("cd: {path}: {sysStrerror(sysErrno())}")
+                    shellOut("cd: {path}: {sysStrerror(sysErrno())}")
                     Shell(status: 1)
                 } else {
                     Shell(status: 0)
@@ -262,7 +274,7 @@ type Shell(status: Int64) {
         } else {
             let st = sysPipeline(stagesBlob, stagesBlob.count)
             if st < 0 {
-                println("thoxa: pipeline: {sysStrerror(sysErrno())}")
+                shellOut("thoxa: pipeline: {sysStrerror(sysErrno())}")
                 Shell(status: 1)
             } else {
                 Shell(status: st)
@@ -271,12 +283,12 @@ type Shell(status: Int64) {
     }
 
     export fn showStatus() -> Shell {
-        println("{status}")
+        shellOut("{status}")
         Shell(status: status)
     }
 
     export fn help() -> Shell {
-        println("thoxa session — Shell: echo, pwd, cd, status, help, run, pipeline, redirs via PATH")
+        shellOut("thoxa session — Shell: echo, pwd, cd, status, help, run, pipeline, redirs via PATH")
         Shell(status: 0)
     }
 }

@@ -1,4 +1,5 @@
 ## Value-match or-patterns (D108): `0 | 1 { … }` + required else.
+import logging from "std/Logging"
 fn size(n!: Int64) -> String {
     match n {
         0 | 1 { "tiny" }
@@ -16,14 +17,22 @@ fn cmd(s!: String) -> Int64 {
 }
 
 fn main() -> Int64 {
-    println(size(0))
-    println(size(1))
-    println(size(3))
-    println(size(99))
-    println(cmd("exit"))
-    println(cmd("quit"))
-    println(cmd("help"))
-    println(cmd("?"))
-    println(cmd("run"))
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("{size(0)}")
+    logging.info("{size(1)}")
+    logging.info("{size(3)}")
+    logging.info("{size(99)}")
+    let c0 = cmd("exit")
+    let c1 = cmd("quit")
+    let c2 = cmd("help")
+    let c3 = cmd("?")
+    let c4 = cmd("run")
+    logging.info("{c0}")
+    logging.info("{c1}")
+    logging.info("{c2}")
+    logging.info("{c3}")
+    logging.info("{c4}")
     0
 }

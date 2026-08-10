@@ -1,39 +1,43 @@
 ## File I/O — `readFile` via iolib/Io (R9+; PR9 errno/OpenMode polish).
 import { readFile, oRdonly } from "./iolib/Io"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     ## OpenMode constant is exported (Linux O_RDONLY == 0).
-    println("oRdonly={oRdonly}")
+    logging.info("oRdonly={oRdonly}")
 
     ## Happy path: whole-file read of a checked-in fixture (cwd = workspace root).
     match readFile("tests/conformance/io_data/sample.txt") {
         Pass(body) {
-            println("body={body.toString()}")
-            println("count={body.count}")
+            logging.info("body={body.toString()}")
+            logging.info("count={body.count}")
         }
         Fail(e) {
-            println("read-fail={e}")
+            logging.info("read-fail={e}")
         }
     }
 
     ## Missing file → Fail with path + strerror (ENOENT).
     match readFile("tests/conformance/io_data/does-not-exist.txt") {
         Pass(body) {
-            println("unexpected={body.count}")
+            logging.info("unexpected={body.count}")
         }
         Fail(e) {
-            println("missing={e}")
+            logging.info("missing={e}")
         }
     }
 
     ## Second successful read (no leftover fd / RC corruption).
     match readFile("tests/conformance/io_data/sample.txt") {
         Pass(body) {
-            println("again={body.toString()}")
+            logging.info("again={body.toString()}")
         }
         Fail(e) {
-            println("again-fail={e}")
+            logging.info("again-fail={e}")
         }
     }
     0

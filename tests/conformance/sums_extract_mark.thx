@@ -1,4 +1,5 @@
 ## Type-arg `!` vs whole-arm `!` extract marks (D118).
+import logging from "std/Logging"
 type Hold(n: Int64)
 type Empty
 
@@ -22,21 +23,24 @@ fn wrap(s!: Wrapped) -> Wrapped {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     match chain(Hold(n: 5)) {
-        Hold(n) { println("slot={n}") }
-        Empty { println("empty") }
+        Hold(n) { logging.info("slot={n}") }
+        Empty { logging.info("empty") }
     }
     match chain(Empty()) {
-        Hold(n) { println("slot={n}") }
-        Empty { println("empty") }
+        Hold(n) { logging.info("slot={n}") }
+        Empty { logging.info("empty") }
     }
     match wrap(Hold(n: 9)) {
-        Hold(n) { println("wrap={n}") }
-        Empty { println("empty") }
+        Hold(n) { logging.info("wrap={n}") }
+        Empty { logging.info("empty") }
     }
     match wrap(Empty()) {
-        Hold(n) { println("wrap={n}") }
-        Empty { println("empty") }
+        Hold(n) { logging.info("wrap={n}") }
+        Empty { logging.info("empty") }
     }
     0
 }

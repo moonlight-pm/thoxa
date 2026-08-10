@@ -1,4 +1,5 @@
 ## Constructor-param String fields + methods (RC-in-struct).
+import logging from "std/Logging"
 type Person(name: String, age: Int64) {
     export fn label() -> String {
         "{name} ({age})"
@@ -9,11 +10,14 @@ type Person(name: String, age: Int64) {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let p = Person(name: "Ada", age: 36)
-    println(p.label())
+    logging.info("{p.label()}")
     let q = p.renamed(newName: "Augusta")
-    println(q.label())
+    logging.info("{q.label()}")
     ## Field read of String
-    println(p.name)
+    logging.info("{p.name}")
     0
 }

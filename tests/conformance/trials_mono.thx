@@ -1,6 +1,7 @@
 ## Trial monomorphs: Void/String and User/String (post-R9).
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 type Box(n: Int64)
 
@@ -27,25 +28,28 @@ fn chain(n!: Int64) -> Trial<Box, String> {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     match asVoid(true) {
-        Pass(u) { println("void-ok") }
-        Fail(e) { println(e) }
+        Pass(u) { logging.info("void-ok") }
+        Fail(e) { logging.info("{e}") }
     }
     match asVoid(false) {
-        Pass(u) { println("void-pass?") }
-        Fail(e) { println(e) }
+        Pass(u) { logging.info("void-pass?") }
+        Fail(e) { logging.info("{e}") }
     }
     match asBox(7) {
-        Pass(b) { println(b.n) }
-        Fail(e) { println(e) }
+        Pass(b) { logging.info("{b.n}") }
+        Fail(e) { logging.info("{e}") }
     }
     match chain(-1) {
-        Pass(b) { println(b.n) }
-        Fail(e) { println(e) }
+        Pass(b) { logging.info("{b.n}") }
+        Fail(e) { logging.info("{e}") }
     }
     match chain(3) {
-        Pass(b) { println(b.n) }
-        Fail(e) { println(e) }
+        Pass(b) { logging.info("{b.n}") }
+        Fail(e) { logging.info("{e}") }
     }
     0
 }

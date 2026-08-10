@@ -1,17 +1,21 @@
 ## First-class fixed Array<T,N> locals (D117).
+import logging from "std/Logging"
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     mut xs: Array<Byte, 4> = [65, 66, 67, 68]
-    println("a={xs[0]}")
-    println("b={xs[1]}")
+    logging.info("a={xs[0]}")
+    logging.info("b={xs[1]}")
     xs[1] = 90
-    println("b2={xs[1]}")
+    logging.info("b2={xs[1]}")
     xs[3] = xs[0]
-    println("d={xs[3]}")
+    logging.info("d={xs[3]}")
     ## Const-index OOB is a compile error; runtime path uses C.
     mut ys: Array<Int64, 3> = [10, 20, 30]
-    println("sum={ys[0] + ys[1] + ys[2]}")
+    logging.info("sum={ys[0] + ys[1] + ys[2]}")
     ys[0] = ys[2]
-    println("y0={ys[0]}")
+    logging.info("y0={ys[0]}")
     ## Field fixed arrays still work (cstruct_ffi).
     0
 }

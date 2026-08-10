@@ -637,7 +637,7 @@ fn main() -> Int64 { 0 }
 
     #[test]
     fn good_hello_style() {
-        let src = "fn main() -> Int64 {\n    println(\"Hello, world!\")\n    0\n}\n";
+        let src = "fn main() -> Int64 {\n    0\n}\n";
         let diags = check_source("<input>", src);
         assert!(diags.is_empty(), "unexpected: {diags:?}");
     }
@@ -1054,10 +1054,10 @@ fn main() -> Int64 {
 
     #[test]
     fn semantic_tokens_fn_and_call() {
-        let src = "fn main() -> Int64 { println(\"hi\") 0 }\n";
+        let src = "fn main() -> Int64 { 0 }\n";
         let toks = semantic_tokens(src);
         let types: Vec<&str> = toks.iter().map(|t| t.token_type.as_str()).collect();
-        // main + Int64 + println
+        // main + Int64
         assert!(types.contains(&"function"), "{toks:?}");
         assert!(types.contains(&"type"), "{toks:?}");
         let main = toks

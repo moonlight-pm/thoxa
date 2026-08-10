@@ -3,6 +3,7 @@
 import { Router } from "./httplib/Router"
 import { Request, Header, writeResponse } from "./httplib/Http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn makeGet(path!: String) -> Request {
     mut headers: Array<Header> = []
@@ -24,50 +25,53 @@ fn statusOf(resp!: Bytes) -> String {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let router = Router(root: "tests/conformance/io_data/web")
 
     ## Directory → index.html (bind Response: status + wire)
     let resp0 = router.handle(makeGet("/"))
-    println("root-status={resp0.status}")
+    logging.info("root-status={resp0.status}")
     let r0 = writeResponse(resp0)
-    println("root={statusOf(r0)}")
+    logging.info("root={statusOf(r0)}")
 
     ## Nested index
     let r1 = writeResponse(router.handle(makeGet("/about/")))
-    println("about={statusOf(r1)}")
+    logging.info("about={statusOf(r1)}")
 
     ## Direct file + Content-Type from Response.headers (ok() first header)
     let resp2 = router.handle(makeGet("/style.css"))
-    println("css-status={resp2.status}")
+    logging.info("css-status={resp2.status}")
     if resp2.headers[0].name == "Content-Type" {
         if resp2.headers[0].value == "text/css" {
-            println("css-type-ok")
+            logging.info("css-type-ok")
         } else {
-            println("css-type-missing")
+            logging.info("css-type-missing")
         }
     } else {
-        println("css-type-missing")
+        logging.info("css-type-missing")
     }
     let r2 = writeResponse(resp2)
-    println("css={statusOf(r2)}")
+    logging.info("css={statusOf(r2)}")
 
     ## Path traversal → 404 (bind Response: status + wire)
     let resp3 = router.handle(makeGet("/../secret"))
-    println("trav-status={resp3.status}")
+    logging.info("trav-status={resp3.status}")
     let r3 = writeResponse(resp3)
-    println("trav={statusOf(r3)}")
+    logging.info("trav={statusOf(r3)}")
 
     ## Missing → 404
     let r4 = writeResponse(router.handle(makeGet("/nope.html")))
-    println("miss={statusOf(r4)}")
+    logging.info("miss={statusOf(r4)}")
 
     ## Must start with /
     let r5 = writeResponse(router.handle(makeGet("relative")))
-    println("rel={statusOf(r5)}")
+    logging.info("rel={statusOf(r5)}")
 
     ## Empty path → 404
     let r6 = writeResponse(router.handle(makeGet("")))
-    println("empty={statusOf(r6)}")
+    logging.info("empty={statusOf(r6)}")
 
     0
 }

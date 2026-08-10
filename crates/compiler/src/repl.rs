@@ -502,10 +502,14 @@ fn ensure_prompt_lib(
     Ok(())
 }
 
-/// Session step image whose body is `println(prompt())`.
+/// Session step image whose body prints `prompt()` via std/Logging.
 fn build_prompt_lib(decls: &[String], cache: &mut SessionBuildCache) -> Result<SessionStepLib> {
     driver::capture_toolchain_path();
-    driver::build_session_step(decls, "println(prompt())\n", cache)
+    driver::build_session_step(
+        decls,
+        "logging.toStdout()\nlogging.setFormat(logging.formatPlain)\nlogging.info(prompt())\n",
+        cache,
+    )
 }
 
 fn run_prompt_lib(state: &mut PromptState, status: i32) -> Result<String> {
@@ -630,7 +634,9 @@ fn path_hook_chunk(parent: &[String]) -> String {
         src.push_str(&thoxa_string_array_lit(parent));
         src.push('\n');
     }
-    src.push_str("for p in path(parent) { println(p) }\n");
+    src.push_str(
+        "logging.toStdout()\nlogging.setFormat(logging.formatPlain)\nfor p in path(parent) { logging.info(p) }\n",
+    );
     src
 }
 
@@ -815,7 +821,10 @@ echo hi
 fn prompt() -> String {
     "CUSTOM$ "
 }
-println("from-rc")
+## logging import comes from injected Shell prelude (std/Logging).
+logging.toStdout()
+logging.setFormat(logging.formatPlain)
+logging.info("from-rc")
 "#,
         )
         .unwrap();

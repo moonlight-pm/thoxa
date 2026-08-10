@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-10  
 **Status:** target (freeze)  
-**Implementation:** not started  
-**Gaps:** full surface (this freeze)  
+**Implementation:** shipped  
+**Gaps:** multi named loggers / `initLog` (trajectory only); structured/JSON lines; colors/TTY; source location in lines
 
 **As-built:** [`../capabilities.md`](../capabilities.md) ·
 [`../architecture.md`](../architecture.md) · focus

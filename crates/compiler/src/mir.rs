@@ -7996,50 +7996,6 @@ fn lower_call(
     expect: Option<&Ty>,
 ) -> Result<(Place, Ty)> {
     match callee {
-        "println" | "print" => {
-            if args.len() != 1 {
-                return Err(Error::at(format!("`{callee}` expects 1 argument"), span));
-            }
-            let expr = match &args[0] {
-                Arg::Pos(e) => e,
-                Arg::Named { value, .. } => value,
-            };
-            let (arg, ty) = lower_expr(ctx, expr)?;
-            let (print_arg, print_ty) = match &ty {
-                Ty::String | Ty::Int64 | Ty::Bool => (arg, ty),
-                t if is_int(t) => {
-                    let widened = coerce_place(ctx, arg, t, &Ty::Int64, span)?;
-                    (widened, Ty::Int64)
-                }
-                other => {
-                    return Err(Error::at(
-                        format!("`{callee}` cannot print {other:?}"),
-                        span,
-                    ));
-                }
-            };
-            let builtin = match (callee, &print_ty) {
-                ("println", Ty::String) => "println_string",
-                ("print", Ty::String) => "print_string",
-                ("println", Ty::Int64) => "println_i64",
-                ("print", Ty::Int64) => "print_i64",
-                ("println", Ty::Bool) => "println_bool",
-                ("print", Ty::Bool) => "print_bool",
-                _ => {
-                    return Err(Error::at(
-                        format!("`{callee}` cannot print {print_ty:?}"),
-                        span,
-                    ));
-                }
-            };
-            ctx.stmts.push(Stmt::Eval(RValue::Call {
-                callee: Callee::Builtin(builtin.into()),
-                args: vec![print_arg],
-            }));
-            let p = ctx.fresh("u");
-            ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
-            Ok((p, Ty::Void))
-        }
         "Pass" | "Fail" => lower_pass_fail(ctx, callee, args, span, expect),
         "Has" => lower_has(ctx, args, span, expect),
         "Not" => lower_not(ctx, args, span, expect),

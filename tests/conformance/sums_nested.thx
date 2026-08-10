@@ -1,4 +1,5 @@
 ## Nested union aliases flatten (D118).
+import logging from "std/Logging"
 type A
 type B
 type Inner = A | B
@@ -14,14 +15,17 @@ fn label(o!: Outer) -> String {
 }
 
 fn main() -> Int64 {
-    println(label(A()))
-    println(label(B()))
-    println(label(C()))
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("{label(A())}")
+    logging.info("{label(B())}")
+    logging.info("{label(C())}")
     ## Inject nested sum value into outer (subset remap)
     let i: Inner = A()
     let o: Outer = i
-    println(label(o))
+    logging.info("{label(o)}")
     let i2: Inner = B()
-    println(label(i2))
+    logging.info("{label(i2)}")
     0
 }

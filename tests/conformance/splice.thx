@@ -1,30 +1,34 @@
 ## insertAt / removeAt — functional value splice (D55). Copying and strict-
 ## bounds on Bytes and Array. Source values stay unchanged.
+import logging from "std/Logging"
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     ## Bytes: insert mid, remove one, append at end (at == count).
     let b = Bytes.fromString("helo")
     let ins = b.insertAt(2, 108)           ## h e [l] l o  (108 = 'l')
     let del = b.removeAt(1)                ## h l o
     let app = b.insertAt(b.count, 33)      ## helo!  (33 = '!')
-    println("bytes ins={ins.toString()} del={del.toString()} app={app.toString()}")
-    println("bytes src count={b.count} text={b.toString()}")
+    logging.info("bytes ins={ins.toString()} del={del.toString()} app={app.toString()}")
+    logging.info("bytes src count={b.count} text={b.toString()}")
 
     ## Array Int64: insert mid, remove first, source intact.
     let xs = [10, 20, 30]
     let ays = xs.insertAt(1, 99)           ## [10, 99, 20, 30]
     let azs = xs.removeAt(0)               ## [20, 30]
-    println("array ins count={ays.count} at1={ays[1]}")
-    println("array del count={azs.count} at0={azs[0]}")
-    println("array src count={xs.count} at1={xs[1]}")
+    logging.info("array ins count={ays.count} at1={ays[1]}")
+    logging.info("array del count={azs.count} at0={azs[0]}")
+    logging.info("array src count={xs.count} at1={xs[1]}")
 
     ## Array append-at-end via insertAt(count, …)
     let tail = xs.insertAt(xs.count, 40)
-    println("array tail={tail}")
+    logging.info("array tail={tail}")
 
     ## String array heap elems
     let ss = ["a", "c"]
     let mid = ss.insertAt(1, "b")
     let cut = ss.removeAt(0)
-    println("str mid={mid[0]}{mid[1]}{mid[2]} cut0={cut[0]} src0={ss[0]}")
+    logging.info("str mid={mid[0]}{mid[1]}{mid[2]} cut0={cut[0]} src0={ss[0]}")
     0
 }

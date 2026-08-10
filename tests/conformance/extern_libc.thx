@@ -1,24 +1,28 @@
 ## R6: extern fn libc — write(2), abs, optional C symbol rename.
+import logging from "std/Logging"
 extern fn write(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c"
 extern fn abs(x!: Int32) -> Int32 from "c"
 extern fn sysGetpid() -> Int32 from "c" "getpid"
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let msg = Bytes.fromString("hello via write\n")
     let n = write(1, msg, msg.count)
     if n < 0 {
-        println("write failed")
+        logging.info("write failed")
         1
     } else {
         let a = abs(-42)
-        println(a)
+        logging.info("{a}")
 
         ## Symbol rename: call getpid through a different Thoxa name.
         let pid = sysGetpid()
         if pid > 0 {
-            println("pid-ok")
+            logging.info("pid-ok")
         } else {
-            println("pid-bad")
+            logging.info("pid-bad")
         }
         0
     }

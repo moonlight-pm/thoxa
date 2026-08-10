@@ -1,4 +1,5 @@
 ## Union-match guards (D120): `Ctor if cond` / `Ctor(x) if cond`.
+import logging from "std/Logging"
 type Zero
 type Pos(n: Int64)
 type Neg(n: Int64)
@@ -16,15 +17,18 @@ fn label(s!: Sign) -> String {
 }
 
 fn main() -> Int64 {
-    println(label(Zero()))
-    println(label(Pos(n: 3)))
-    println(label(Pos(n: 20)))
-    println(label(Neg(n: 0 - 4)))
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("{label(Zero())}")
+    logging.info("{label(Pos(n: 3))}")
+    logging.info("{label(Pos(n: 20))}")
+    logging.info("{label(Neg(n: 0 - 4))}")
     ## Guard fail falls through to later arm / else.
     let z: Sign = Pos(n: 0)
     match z {
-        Pos(n) if n > 0 { println("skip") }
-        else { println("else-ok") }
+        Pos(n) if n > 0 { logging.info("skip") }
+        else { logging.info("else-ok") }
     }
     0
 }

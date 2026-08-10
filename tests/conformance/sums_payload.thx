@@ -1,22 +1,26 @@
 ## Union with one-field product members (D118).
+import logging from "std/Logging"
 type Empty
 type Hold(n: Int64)
 type Slot = Empty | Hold
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let a: Slot = Empty()
     match a {
-        Empty { println("empty") }
-        Hold(n) { println("hold={n}") }
+        Empty { logging.info("empty") }
+        Hold(n) { logging.info("hold={n}") }
     }
     let b: Slot = Hold(n: 42)
     match b {
-        Empty { println("empty") }
-        Hold(n) { println("hold={n}") }
+        Empty { logging.info("empty") }
+        Hold(n) { logging.info("hold={n}") }
     }
     ## Inject via call
-    println(describe(Hold(n: 7)))
-    println(describe(Empty()))
+    logging.info("{describe(Hold(n: 7))}")
+    logging.info("{describe(Empty())}")
     0
 }
 

@@ -901,14 +901,6 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
         RValue::Call { callee, args } => match callee {
             Callee::Builtin(name) => {
                 let c = match name.as_str() {
-                    "println" => "thoxa_println",
-                    "print" => "thoxa_print",
-                    "println_string" => "thoxa_println_string",
-                    "print_string" => "thoxa_print_string",
-                    "println_i64" => "thoxa_println_i64",
-                    "print_i64" => "thoxa_print_i64",
-                    "println_bool" => "thoxa_println_bool",
-                    "print_bool" => "thoxa_print_bool",
                     "string_eq" => "thoxa_string_eq",
                     "string_len" => "(int64_t)thoxa_string_len",
                     "bytes_from_string" => "thoxa_bytes_from_string",

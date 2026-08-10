@@ -1,6 +1,7 @@
 ## Trial + match + ? (R2). Error payload is Int64 — String arrives with R4.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn half(x: Int64) -> Trial<Int64, Int64> {
     if x % 2 == 0 { Pass(x / 2) } else { Fail(x) }
@@ -13,17 +14,20 @@ fn quarter(x: Int64) -> Trial<Int64, Int64> {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     match quarter(20) {
-        Pass(v) { println(v) }
-        Fail(e) { println(e) }
+        Pass(v) { logging.info("{v}") }
+        Fail(e) { logging.info("{e}") }
     }
     match quarter(6) {
-        Pass(v) { println(v) }
-        Fail(e) { println(e) }
+        Pass(v) { logging.info("{v}") }
+        Fail(e) { logging.info("{e}") }
     }
     match quarter(7) {
-        Pass(v) { println(v) }
-        Fail(e) { println(e) }
+        Pass(v) { logging.info("{v}") }
+        Fail(e) { logging.info("{e}") }
     }
     0
 }

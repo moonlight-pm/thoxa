@@ -5,286 +5,290 @@ import { hasEnv, getenvOr, home, tmpdir, shell, pathVar, pwd } from "std/Env"
 import { branchName, branchSuffix, isRepo, repoRoot, isDetached, headLine } from "std/Git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     if startsWith("hello", "he") {
-        println("starts-ok")
+        logging.info("starts-ok")
     } else {
-        println("starts-bad")
+        logging.info("starts-bad")
     }
     if endsWith("hello", "lo") {
-        println("ends-ok")
+        logging.info("ends-ok")
     } else {
-        println("ends-bad")
+        logging.info("ends-bad")
     }
     if isEmpty("") {
-        println("empty-ok")
+        logging.info("empty-ok")
     } else {
-        println("empty-bad")
+        logging.info("empty-bad")
     }
-    println(repeat("ab", 3))
-    println(repeat("x", 0))
+    logging.info(repeat("ab", 3))
+    logging.info(repeat("x", 0))
     if contains("hello", "ell") {
-        println("contains-ok")
+        logging.info("contains-ok")
     } else {
-        println("contains-bad")
+        logging.info("contains-bad")
     }
     if contains("hello", "xyz") {
-        println("contains-miss-bad")
+        logging.info("contains-miss-bad")
     } else {
-        println("contains-miss-ok")
+        logging.info("contains-miss-ok")
     }
-    println("idx={indexOf(\"hello\", \"ll\")}")
-    println("idx-miss={indexOf(\"hello\", \"zz\")}")
-    println("last={lastIndexOf(\"ababa\", \"ab\")}")
-    println("cnt={count(\"ababab\", \"ab\")}")
-    println("len={length(\"hi\")}")
-    println(substring("hello", 1, 4))
-    println(replaceFirst("aa-aa", "aa", "b"))
-    println(replaceAll("aa-aa", "aa", "b"))
+    logging.info("idx={indexOf(\"hello\", \"ll\")}")
+    logging.info("idx-miss={indexOf(\"hello\", \"zz\")}")
+    logging.info("last={lastIndexOf(\"ababa\", \"ab\")}")
+    logging.info("cnt={count(\"ababab\", \"ab\")}")
+    logging.info("len={length(\"hi\")}")
+    logging.info(substring("hello", 1, 4))
+    logging.info(replaceFirst("aa-aa", "aa", "b"))
+    logging.info(replaceAll("aa-aa", "aa", "b"))
     if equalsIgnoreCaseAscii("AbC", "aBc") {
-        println("eq-ic-ok")
+        logging.info("eq-ic-ok")
     } else {
-        println("eq-ic-bad")
+        logging.info("eq-ic-bad")
     }
     let parts = split("a,b,c", ",")
-    println("split={parts.count}:{parts[0]}:{parts[2]}")
-    println(padLeft("7", 3, "0"))
-    println(padRight("x", 3, "."))
-    println(dropPrefix("hello", "he"))
-    println(dropSuffix("hello", "lo"))
-    println(trimNewline("line\n"))
-    println(trim("  hi\t\n"))
-    println(trimStart("  hi"))
-    println(trimEnd("hi  "))
-    println("byte={byteAt(\"ABC\", 1)}")
-    println("byte-oob={byteAt(\"A\", 3)}")
+    logging.info("split={parts.count}:{parts[0]}:{parts[2]}")
+    logging.info(padLeft("7", 3, "0"))
+    logging.info(padRight("x", 3, "."))
+    logging.info(dropPrefix("hello", "he"))
+    logging.info(dropSuffix("hello", "lo"))
+    logging.info(trimNewline("line\n"))
+    logging.info(trim("  hi\t\n"))
+    logging.info(trimStart("  hi"))
+    logging.info(trimEnd("hi  "))
+    logging.info("byte={byteAt(\"ABC\", 1)}")
+    logging.info("byte-oob={byteAt(\"A\", 3)}")
     let ls = lines("a\nb\r\nc")
-    println("lines={ls.count}:{ls[0]}:{ls[1]}:{ls[2]}")
-    println(strJoin(["x", "y", "z"], "-"))
+    logging.info("lines={ls.count}:{ls[0]}:{ls[1]}:{ls[2]}")
+    logging.info(strJoin(["x", "y", "z"], "-"))
     if startsWithIgnoreCaseAscii("Hello", "he") {
-        println("sw-ic-ok")
+        logging.info("sw-ic-ok")
     } else {
-        println("sw-ic-bad")
+        logging.info("sw-ic-bad")
     }
     if endsWithIgnoreCaseAscii("Hello", "LO") {
-        println("ew-ic-ok")
+        logging.info("ew-ic-ok")
     } else {
-        println("ew-ic-bad")
+        logging.info("ew-ic-bad")
     }
     if containsIgnoreCaseAscii("AbCd", "bc") {
-        println("ci-ok")
+        logging.info("ci-ok")
     } else {
-        println("ci-bad")
+        logging.info("ci-bad")
     }
-    println(removePrefix("hello", "he"))
-    println(removePrefix("hello", "x"))
-    println(removeSuffix("hello", "lo"))
-    println(removeSuffix("hello", "x"))
-    println(truncate("abcdef", 3))
-    println(truncate("ab", 10))
-    println(reverse("abc"))
+    logging.info(removePrefix("hello", "he"))
+    logging.info(removePrefix("hello", "x"))
+    logging.info(removeSuffix("hello", "lo"))
+    logging.info(removeSuffix("hello", "x"))
+    logging.info(truncate("abcdef", 3))
+    logging.info(truncate("ab", 10))
+    logging.info(reverse("abc"))
     if isAscii("hi") {
-        println("ascii-ok")
+        logging.info("ascii-ok")
     } else {
-        println("ascii-bad")
+        logging.info("ascii-bad")
     }
-    println(toLowerAscii("AbC"))
-    println(toUpperAscii("AbC"))
-    println(dirname("/a/b/c"))
-    println(parent("/a/b/c"))
-    println(basename("/a/b/c"))
-    println(fileName("/a/b/c"))
-    println(join("/a/b", "c"))
-    println(join("/a/b/", "c"))
-    println(join("/a", "/abs"))
-    println(withFileName("/a/b/c.thx", "d.md"))
+    logging.info(toLowerAscii("AbC"))
+    logging.info(toUpperAscii("AbC"))
+    logging.info(dirname("/a/b/c"))
+    logging.info(parent("/a/b/c"))
+    logging.info(basename("/a/b/c"))
+    logging.info(fileName("/a/b/c"))
+    logging.info(join("/a/b", "c"))
+    logging.info(join("/a/b/", "c"))
+    logging.info(join("/a", "/abs"))
+    logging.info(withFileName("/a/b/c.thx", "d.md"))
     let pp = parts("/a/b")
-    println("parts={pp.count}:{pp[0]}:{pp[1]}:{pp[2]}")
-    println(stripTrailingSlash("/a/b/"))
-    println(stripTrailingSlash("/"))
-    println(ensureTrailingSlash("/a/b"))
-    println(joinAll(["/a", "b", "c"]))
+    logging.info("parts={pp.count}:{pp[0]}:{pp[1]}:{pp[2]}")
+    logging.info(stripTrailingSlash("/a/b/"))
+    logging.info(stripTrailingSlash("/"))
+    logging.info(ensureTrailingSlash("/a/b"))
+    logging.info(joinAll(["/a", "b", "c"]))
     if isAbsolute("/a") {
-        println("abs-ok")
+        logging.info("abs-ok")
     } else {
-        println("abs-bad")
+        logging.info("abs-bad")
     }
     if isAbsolute("rel") {
-        println("rel-bad")
+        logging.info("rel-bad")
     } else {
-        println("rel-ok")
+        logging.info("rel-ok")
     }
-    println(normalize("/a//b///c"))
-    println(normalize("x//y"))
-    println(extension("a/b/foo.thx"))
-    println(extension("Makefile"))
+    logging.info(normalize("/a//b///c"))
+    logging.info(normalize("x//y"))
+    logging.info(extension("a/b/foo.thx"))
+    logging.info(extension("Makefile"))
     if hasExtension("a/b/foo.thx") {
-        println("has-ext-ok")
+        logging.info("has-ext-ok")
     } else {
-        println("has-ext-bad")
+        logging.info("has-ext-bad")
     }
     if hasExtension("Makefile") {
-        println("has-ext-miss-bad")
+        logging.info("has-ext-miss-bad")
     } else {
-        println("has-ext-miss-ok")
+        logging.info("has-ext-miss-ok")
     }
-    println(stem("a/b/foo.thx"))
-    println(stem(".git"))
-    println(withExtension("a/b/foo.thx", "md"))
-    println(withExtension("plain", "thx"))
+    logging.info(stem("a/b/foo.thx"))
+    logging.info(stem(".git"))
+    logging.info(withExtension("a/b/foo.thx", "md"))
+    logging.info(withExtension("plain", "thx"))
     if isRelative("rel/x") {
-        println("relative-ok")
+        logging.info("relative-ok")
     } else {
-        println("relative-bad")
+        logging.info("relative-bad")
     }
     if isRelative("/abs") {
-        println("relative-abs-bad")
+        logging.info("relative-abs-bad")
     } else {
-        println("relative-abs-ok")
+        logging.info("relative-abs-ok")
     }
-    println(shortPath("/tmp/foo/bar"))
+    logging.info(shortPath("/tmp/foo/bar"))
     ## PATH is always set in the conformance environment.
     if hasEnv("PATH") {
-        println("path-env-ok")
+        logging.info("path-env-ok")
     } else {
-        println("path-env-bad")
+        logging.info("path-env-bad")
     }
     if pathVar() == "" {
-        println("pathvar-empty")
+        logging.info("pathvar-empty")
     } else {
-        println("pathvar-ok")
+        logging.info("pathvar-ok")
     }
     ## pwd may fail in weird sandboxes; treat empty as call-ok only when non-empty fails.
     let p = pwd()
     if length(p) < 0 {
-        println("pwd-bad")
+        logging.info("pwd-bad")
     } else {
-        println("pwd-call-ok")
+        logging.info("pwd-call-ok")
     }
     if hasEnv("THOXA_NO_SUCH_ENV_VAR_ZZZ") {
-        println("missing-env-bad")
+        logging.info("missing-env-bad")
     } else {
-        println("missing-env-ok")
+        logging.info("missing-env-ok")
     }
-    println(getenvOr("THOXA_NO_SUCH_ENV_VAR_ZZZ", "fallback"))
+    logging.info(getenvOr("THOXA_NO_SUCH_ENV_VAR_ZZZ", "fallback"))
     ## home() is getenv("HOME"); non-empty in normal developer environments.
     if home() == "" {
-        println("home-empty")
+        logging.info("home-empty")
     } else {
-        println("home-ok")
+        logging.info("home-ok")
     }
     ## tmpdir is non-empty (TMPDIR or /tmp).
     if tmpdir() == "" {
-        println("tmpdir-bad")
+        logging.info("tmpdir-bad")
     } else {
-        println("tmpdir-ok")
+        logging.info("tmpdir-ok")
     }
     ## Deterministic Git helpers (no real repo required).
     if branchName("") == "" {
-        println("git-empty-ok")
+        logging.info("git-empty-ok")
     } else {
-        println("git-empty-bad")
+        logging.info("git-empty-bad")
     }
     if branchName("/no/such/thoxa/repo/zzzz") == "" {
-        println("git-miss-ok")
+        logging.info("git-miss-ok")
     } else {
-        println("git-miss-bad")
+        logging.info("git-miss-bad")
     }
     if branchSuffix("/no/such/thoxa/repo/zzzz") == "" {
-        println("git-suf-ok")
+        logging.info("git-suf-ok")
     } else {
-        println("git-suf-bad")
+        logging.info("git-suf-bad")
     }
     if isRepo("/no/such/thoxa/repo/zzzz") {
-        println("git-repo-bad")
+        logging.info("git-repo-bad")
     } else {
-        println("git-repo-ok")
+        logging.info("git-repo-ok")
     }
     if repoRoot("/no/such/thoxa/repo/zzzz") == "" {
-        println("git-root-ok")
+        logging.info("git-root-ok")
     } else {
-        println("git-root-bad")
+        logging.info("git-root-bad")
     }
     if isDetached("/no/such/thoxa/repo/zzzz") {
-        println("git-det-bad")
+        logging.info("git-det-bad")
     } else {
-        println("git-det-ok")
+        logging.info("git-det-ok")
     }
     if headLine("/no/such/thoxa/repo/zzzz") == "" {
-        println("git-head-ok")
+        logging.info("git-head-ok")
     } else {
-        println("git-head-bad")
+        logging.info("git-head-bad")
     }
     ## shell() is getenv("SHELL"); value may be empty — just prove the call.
     let sh = shell()
     if length(sh) < 0 {
-        println("shell-bad")
+        logging.info("shell-bad")
     } else {
-        println("shell-call-ok")
+        logging.info("shell-call-ok")
     }
     ## fg/sgr0 must be non-empty SGR sequences (byte 27 present via length).
     let c = fg(1, 2, 3)
     let r = sgr0()
     if c == "" {
-        println("fg-empty")
+        logging.info("fg-empty")
     } else {
-        println("fg-ok")
+        logging.info("fg-ok")
     }
     if r == "" {
-        println("sgr0-empty")
+        logging.info("sgr0-empty")
     } else {
-        println("sgr0-ok")
+        logging.info("sgr0-ok")
     }
     ## Named ANSI colors are prebuilt fg sequences (non-empty).
     if cyan == "" {
-        println("cyan-empty")
+        logging.info("cyan-empty")
     } else {
-        println("cyan-ok")
+        logging.info("cyan-ok")
     }
     if brightWhite == "" {
-        println("brightWhite-empty")
+        logging.info("brightWhite-empty")
     } else {
-        println("brightWhite-ok")
+        logging.info("brightWhite-ok")
     }
     ## Hex parse: 6-digit RGB (no alpha → a=255) and 8-digit RGBA.
     match parseRgba("#3B9DC2") {
         Has(c) {
-            println("{c.r},{c.g},{c.b},{c.a}")
+            logging.info("{c.r},{c.g},{c.b},{c.a}")
         }
         Not {
-            println("parse-fail")
+            logging.info("parse-fail")
         }
     }
     match parseRgba("#3B9DC2FF") {
         Has(c) {
-            println("{c.r},{c.g},{c.b},{c.a}")
+            logging.info("{c.r},{c.g},{c.b},{c.a}")
         }
         Not {
-            println("parse8-fail")
+            logging.info("parse8-fail")
         }
     }
     match parseRgba("FF0000") {
         Has(c) {
-            println("{c.r},{c.g},{c.b},{c.a}")
+            logging.info("{c.r},{c.g},{c.b},{c.a}")
         }
         Not {
-            println("parse6-fail")
+            logging.info("parse6-fail")
         }
     }
     match parseRgba("nope") {
         Has(_) {
-            println("bad-ok")
+            logging.info("bad-ok")
         }
         Not {
-            println("bad-not")
+            logging.info("bad-not")
         }
     }
     let hx = fgHex("#3B9DC2")
     if hx == "" {
-        println("fgHex-empty")
+        logging.info("fgHex-empty")
     } else {
-        println("fgHex-ok")
+        logging.info("fgHex-ok")
     }
     0
 }

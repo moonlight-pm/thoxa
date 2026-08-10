@@ -1,4 +1,5 @@
 ## Pure-literal union members (D118).
+import logging from "std/Logging"
 type Flag = 0 | 1
 type Mode = "r" | "w"
 type Toggle = true | false
@@ -11,20 +12,23 @@ fn flagName(f!: Flag) -> String {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let a: Flag = 0
     let b: Flag = 1
-    println(flagName(a))
-    println(flagName(b))
-    println(flagName(0))
+    logging.info("{flagName(a)}")
+    logging.info("{flagName(b)}")
+    logging.info("{flagName(0)}")
     let m: Mode = "r"
     match m {
-        "r" { println("read") }
-        "w" { println("write") }
+        "r" { logging.info("read") }
+        "w" { logging.info("write") }
     }
     let t: Toggle = true
     match t {
-        true { println("yes") }
-        false { println("no") }
+        true { logging.info("yes") }
+        false { logging.info("no") }
     }
     0
 }

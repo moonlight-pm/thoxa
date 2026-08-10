@@ -1,5 +1,6 @@
 ## Array<User>: empty + append + index get + for-in + field access + dropLast.
 ## Constructor-param User with String fields (inline elems, field RC — D65).
+import logging from "std/Logging"
 type Header(name: String, value: String) {
     export fn label() -> String {
         "{name}={value}"
@@ -7,43 +8,46 @@ type Header(name: String, value: String) {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     mut xs: Array<Header> = []
-    println("empty_count={xs.count}")
+    logging.info("empty_count={xs.count}")
 
     xs = xs.append(Header(name: "Host", value: "ex"))
     xs = xs.append(Header(name: "Accept", value: "*/*"))
-    println("count={xs.count}")
-    println("first={xs[0].label()}")
-    println("second_name={xs[1].name}")
-    println("second_value={xs[1].value}")
+    logging.info("count={xs.count}")
+    logging.info("first={xs[0].label()}")
+    logging.info("second_name={xs[1].name}")
+    logging.info("second_value={xs[1].value}")
 
     mut n = 0
     for h in xs {
         n = n + 1
-        println("iter={h.label()}")
+        logging.info("iter={h.label()}")
     }
-    println("iters={n}")
+    logging.info("iters={n}")
 
     ## Index set mutates shared storage
     xs[0] = Header(name: "Host", value: "localhost")
-    println("mutated={xs[0].label()}")
+    logging.info("mutated={xs[0].label()}")
 
     let ys = xs.dropLast()
-    println("dropped_count={ys.count}")
-    println("dropped_only={ys[0].label()}")
+    logging.info("dropped_count={ys.count}")
+    logging.info("dropped_only={ys[0].label()}")
     ## Original still intact
-    println("orig_count={xs.count}")
+    logging.info("orig_count={xs.count}")
 
     ## Literal of User elements
     let zs = [Header(name: "A", value: "1"), Header(name: "B", value: "2")]
-    println("lit_count={zs.count}")
-    println("lit0={zs[0].name}")
+    logging.info("lit_count={zs.count}")
+    logging.info("lit0={zs[0].name}")
 
     ## Functional insertAt / removeAt (User elems)
     let mid = zs.insertAt(1, Header(name: "M", value: "x"))
-    println("ins_count={mid.count} mid={mid[1].name}")
+    logging.info("ins_count={mid.count} mid={mid[1].name}")
     let cut = zs.removeAt(0)
-    println("rm_count={cut.count} rm0={cut[0].name}")
-    println("zs_still={zs.count}")
+    logging.info("rm_count={cut.count} rm0={cut[0].name}")
+    logging.info("zs_still={zs.count}")
     0
 }

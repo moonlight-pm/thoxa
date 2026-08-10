@@ -1,4 +1,5 @@
 ## Value-match bare bind catch-all (D110): `n { … }` binds the scrutinee.
+import logging from "std/Logging"
 fn label(n!: Int64) -> String {
     match n {
         0 { "zero" }
@@ -15,15 +16,18 @@ fn echo(cmd!: String) -> String {
 }
 
 fn main() -> Int64 {
-    println(label(0))
-    println(label(1))
-    println(label(42))
-    println(echo("help"))
-    println(echo("run"))
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("{label(0)}")
+    logging.info("{label(1)}")
+    logging.info("{label(42)}")
+    logging.info(echo("help"))
+    logging.info(echo("run"))
     ## `_` is still a discard catch-all (same as else).
     match 9 {
-        0 { println("nope") }
-        _ { println("uscore") }
+        0 { logging.info("nope") }
+        _ { logging.info("uscore") }
     }
     0
 }

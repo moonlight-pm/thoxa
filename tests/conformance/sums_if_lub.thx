@@ -1,4 +1,5 @@
 ## Unannotated if lub → member-set union (D119).
+import logging from "std/Logging"
 type Done(n: Int64)
 type Quit
 type Outcome = Done | Quit
@@ -11,25 +12,28 @@ fn label(o!: Outcome) -> String {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     ## Unannotated let: infer Done | Quit
     let x = if true { Done(n: 3) } else { Quit() }
-    println(label(x))
+    logging.info("{label(x)}")
     let y = if false { Done(n: 1) } else { Quit() }
-    println(label(y))
+    logging.info("{label(y)}")
 
     ## Match scrutinee is unannotated if
     match if true { Done(n: 8) } else { Quit() } {
-        Done(n) { println("m={n}") }
-        Quit { println("m-quit") }
+        Done(n) { logging.info("m={n}") }
+        Quit { logging.info("m-quit") }
     }
     match if false { Done(n: 9) } else { Quit() } {
-        Done(n) { println("m={n}") }
-        Quit { println("m-quit") }
+        Done(n) { logging.info("m={n}") }
+        Quit { logging.info("m-quit") }
     }
 
     ## One arm already a union value: lub prefers / coerces into it
     let base: Outcome = Quit()
     let z = if false { Done(n: 2) } else { base }
-    println(label(z))
+    logging.info("{label(z)}")
     0
 }

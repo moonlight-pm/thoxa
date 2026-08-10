@@ -2,13 +2,17 @@
 ## using each other's exported fn, type, and let. Only exported names cross.
 import { add, double, originSum } from "./modlib/MathUtils"
 import { Point, origin } from "~/modlib/Geometry"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
-    println("add = {add(a: 2, b: 3)}")
-    println("double = {double(n: 21)}")
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("add = {add(a: 2, b: 3)}")
+    logging.info("double = {double(n: 21)}")
     let p = Point(x: 3, y: 4)
-    println("p.sum = {p.sum()}")
-    println("origin.sum = {origin.sum()}")
-    println("originSum = {originSum()}")
+    logging.info("p.sum = {p.sum()}")
+    logging.info("origin.sum = {origin.sum()}")
+    logging.info("originSum = {originSum()}")
     0
 }

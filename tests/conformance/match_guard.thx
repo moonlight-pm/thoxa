@@ -1,23 +1,27 @@
 ## Value-match guards (D111): `lit if cond { … }` on literal/or arms only.
+import logging from "std/Logging"
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     match 0 {
-        0 if true { println("ok-zero") }
-        else { println("no") }
+        0 if true { logging.info("ok-zero") }
+        else { logging.info("no") }
     }
     match 5 {
-        0 { println("no") }
-        5 if false { println("no-guard") }
-        5 if true { println("ok-five") }
-        else { println("fall") }
+        0 { logging.info("no") }
+        5 if false { logging.info("no-guard") }
+        5 if true { logging.info("ok-five") }
+        else { logging.info("fall") }
     }
     match 3 {
-        1 | 2 | 3 if true { println("or-guard") }
-        else { println("no") }
+        1 | 2 | 3 if true { logging.info("or-guard") }
+        else { logging.info("no") }
     }
     ## Guard failure falls through to else.
     match 7 {
-        7 if false { println("skip") }
-        else { println("else-ok") }
+        7 if false { logging.info("skip") }
+        else { logging.info("else-ok") }
     }
     0
 }

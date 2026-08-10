@@ -15,38 +15,6 @@ int32_t thoxa_errno(void) {
     return (int32_t)errno;
 }
 
-void thoxa_print(const char *s) {
-    if (s) {
-        fputs(s, stdout);
-    }
-}
-
-void thoxa_println(const char *s) {
-    if (s) {
-        fputs(s, stdout);
-    }
-    fputc('\n', stdout);
-    fflush(stdout);
-}
-
-void thoxa_print_i64(int64_t v) {
-    printf("%lld", (long long)v);
-}
-
-void thoxa_println_i64(int64_t v) {
-    printf("%lld\n", (long long)v);
-    fflush(stdout);
-}
-
-void thoxa_print_bool(bool v) {
-    fputs(v ? "true" : "false", stdout);
-}
-
-void thoxa_println_bool(bool v) {
-    fputs(v ? "true\n" : "false\n", stdout);
-    fflush(stdout);
-}
-
 void thoxa_panic(const char *msg) {
     fprintf(stderr, "thoxa panic: %s\n", msg ? msg : "(null)");
     abort();
@@ -164,16 +132,47 @@ size_t thoxa_string_len(const ThoxaString *s) {
     return s ? s->len : 0;
 }
 
-void thoxa_print_string(const ThoxaString *s) {
-    if (s && s->len > 0) {
-        fwrite(s->data, 1, s->len, stdout);
+int32_t thoxa_write_line_fd(int32_t fd, const char *s) {
+    if (fd < 0) {
+        return -1;
     }
-}
-
-void thoxa_println_string(const ThoxaString *s) {
-    thoxa_print_string(s);
-    fputc('\n', stdout);
-    fflush(stdout);
+    if (s && s[0] != '\0') {
+        const uint8_t *p = (const uint8_t *)s;
+        size_t left = strlen(s);
+        while (left > 0) {
+            ssize_t n = write(fd, p, left);
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                return -1;
+            }
+            if (n == 0) {
+                return -1;
+            }
+            p += (size_t)n;
+            left -= (size_t)n;
+        }
+    }
+    for (;;) {
+        ssize_t n = write(fd, "\n", 1);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (n == 1) {
+            break;
+        }
+    }
+    /* Best-effort flush for stdio-backed fds; ignore failures. */
+    if (fd == 1) {
+        fflush(stdout);
+    } else if (fd == 2) {
+        fflush(stderr);
+    }
+    return 0;
 }
 
 /* --- Bytes -------------------------------------------------------------- */

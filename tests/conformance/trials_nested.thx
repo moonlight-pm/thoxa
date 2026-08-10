@@ -2,6 +2,7 @@
 ## Also exercises `>>` type-arg close (`May<Array<Int64>>`).
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn arrOk() -> Trial<Array<Int64>, String> {
     Pass([10, 20, 30])
@@ -41,56 +42,59 @@ fn chainArr(n!: Int64) -> Trial<Array<Int64>, String> {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     match arrOk() {
-        Pass(a) { println("arr-count={a.count} first={a[0]}") }
-        Fail(e) { println("arr-fail={e}") }
+        Pass(a) { logging.info("arr-count={a.count} first={a[0]}") }
+        Fail(e) { logging.info("arr-fail={e}") }
     }
     match arrFail() {
-        Pass(a) { println("unexpected={a.count}") }
-        Fail(e) { println("arr-err={e}") }
+        Pass(a) { logging.info("unexpected={a.count}") }
+        Fail(e) { logging.info("arr-err={e}") }
     }
     match mayOk() {
         Pass(m) {
             match m {
-                Has(v) { println("may-has={v}") }
-                Not { println("may-not") }
+                Has(v) { logging.info("may-has={v}") }
+                Not { logging.info("may-not") }
             }
         }
-        Fail(e) { println("may-fail={e}") }
+        Fail(e) { logging.info("may-fail={e}") }
     }
     match mayNot() {
         Pass(m) {
             match m {
-                Has(v) { println("may-has={v}") }
-                Not { println("may-not") }
+                Has(v) { logging.info("may-has={v}") }
+                Not { logging.info("may-not") }
             }
         }
-        Fail(e) { println("may-fail={e}") }
+        Fail(e) { logging.info("may-fail={e}") }
     }
     match mayFail() {
         Pass(m) {
             match m {
-                Has(v) { println("may-has={v}") }
-                Not { println("may-not") }
+                Has(v) { logging.info("may-has={v}") }
+                Not { logging.info("may-not") }
             }
         }
-        Fail(e) { println("may-fail={e}") }
+        Fail(e) { logging.info("may-fail={e}") }
     }
     match mayArr() {
-        Has(a) { println("ma-count={a.count}") }
-        Not { println("ma-not") }
+        Has(a) { logging.info("ma-count={a.count}") }
+        Not { logging.info("ma-not") }
     }
     match mayArrEmpty() {
-        Has(a) { println("mae={a.count}") }
-        Not { println("mae-not") }
+        Has(a) { logging.info("mae={a.count}") }
+        Not { logging.info("mae-not") }
     }
     match chainArr(1) {
-        Pass(a) { println("chain={a.count}") }
-        Fail(e) { println("chain-fail={e}") }
+        Pass(a) { logging.info("chain={a.count}") }
+        Fail(e) { logging.info("chain-fail={e}") }
     }
     match chainArr(-1) {
-        Pass(a) { println("chain2={a.count}") }
-        Fail(e) { println("chain-fail={e}") }
+        Pass(a) { logging.info("chain2={a.count}") }
+        Fail(e) { logging.info("chain-fail={e}") }
     }
     0
 }

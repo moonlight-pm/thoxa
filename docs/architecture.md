@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-10 (D124 + THX010 warnings; LSP nav depth: `?`/namespace members, call-arg hover)
+**As of:** 2026-08-10 (D125 `std/Logging` + no ambient println; D124 diagnostics; LSP nav)
 
 ---
 
@@ -31,8 +31,8 @@ step `.so` on the happy path.
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
 | MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars |
-| Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104); loads `std/Fallible` when Shell injects (D123) |
-| Loader | `loader.rs` | `./` `~/` `std/…`; `load_package_with_entry_ast` for LSP buffer soft-recover |
+| Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/Fallible` + `std/Logging` (+ deps) |
+| Loader | `loader.rs` | `./` `~/` `std/…`; `load_package_with_entry_ast`; `ensure_module_in_package` for post-load inject deps |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; build stamps `THOXA_GIT_HASH` / dirty |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
 | LSP | `lsp/` | stdio server; check overlays; multi-diag + D124 codes/related/warnings; nav (typed members after `?`/namespace, call-arg formals); identity log (`version`) |
@@ -45,7 +45,7 @@ step `.so` on the happy path.
 | `crates/make` | xtask (`cargo make …`) |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
-| `std/` | Product std (`Shell.thx`, `Fallible.thx` surface, …) |
+| `std/` | Product std (`Shell`, `Fallible`, `Logging`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate |
 | `examples/` | Runnable demos (`http` static server, `kilo` terminal editor); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |

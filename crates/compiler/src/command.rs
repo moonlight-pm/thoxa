@@ -567,9 +567,9 @@ mod tests {
     }
 
     #[test]
-    fn keep_println() {
-        let src = desugar_session_source(r#"println("hi")"#).unwrap();
-        assert!(src.contains("println"));
+    fn keep_logging_call() {
+        let src = desugar_session_source(r#"logging.info("hi")"#).unwrap();
+        assert!(src.contains("logging.info"));
         assert!(!src.contains("shell = shell"));
     }
 
@@ -592,8 +592,8 @@ mod tests {
     #[test]
     fn keep_real_field_in_call() {
         // Calls mean real Thoxa — do not steal.
-        let src = desugar_session_source(r#"println(p.name)"#).unwrap();
-        assert!(src.contains("println"));
+        let src = desugar_session_source(r#"logging.info(p.name)"#).unwrap();
+        assert!(src.contains("logging.info"));
         assert!(!src.contains("shell = shell.run"));
     }
 

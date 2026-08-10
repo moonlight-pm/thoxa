@@ -1,4 +1,5 @@
 ## Named parameters with defaults (SPEC §4.1 / M3 + D106 method/ctor).
+import logging from "std/Logging"
 fn greet(name: String, greeting: String = "Hello") -> String {
     "{greeting}, {name}"
 }
@@ -14,14 +15,17 @@ type Box(label: String, n: Int64 = 0) {
 }
 
 fn main() -> Int64 {
-    println(greet(name: "Ada"))
-    println(greet(name: "Bo", greeting: "Hi"))
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info(greet(name: "Ada"))
+    logging.info(greet(name: "Bo", greeting: "Hi"))
     let a = Box(label: "x")
-    println(a.describe())
-    println(a.describe(prefix: "item"))
-    println("{a.bump()}")
-    println("{a.bump(by: 10)}")
+    logging.info("{a.describe()}")
+    logging.info(a.describe(prefix: "item"))
+    logging.info("{a.bump()}")
+    logging.info("{a.bump(by: 10)}")
     let b = Box(label: "y", n: 7)
-    println(b.describe())
+    logging.info("{b.describe()}")
     0
 }

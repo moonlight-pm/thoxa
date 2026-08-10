@@ -28,6 +28,7 @@ import {
     Delete
 } from "./Keys"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 export type Quit
 export type RunFind
@@ -155,6 +156,9 @@ fn emptyRows() -> Array<Row> {
 }
 
 export fn main(arguments: Array<String>) -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     if arguments.count > 1 {
         let path = arguments[1]
         match fileio.open(path) {
@@ -172,7 +176,7 @@ export fn main(arguments: Array<String>) -> Int64 {
             state.setScreenSize(size.rows, size.cols)
         }
         Fail(e) {
-            println("window size unavailable ({e}); assuming 24x80")
+            logging.info("window size unavailable ({e}); assuming 24x80")
             state.setScreenSize(24, 80)
         }
     }
@@ -180,7 +184,7 @@ export fn main(arguments: Array<String>) -> Int64 {
     mut rawOk = true
     match terminal.enable() {
         Fail(e) {
-            println("could not enter raw mode: {e}")
+            logging.info("could not enter raw mode: {e}")
             rawOk = false
         }
         Pass(_) {
@@ -193,7 +197,7 @@ export fn main(arguments: Array<String>) -> Int64 {
 
     match screen.clear() {
         Fail(e) {
-            print("clear failed: {e}\r\n")
+            logging.info("clear failed: {e}\r\n")
         }
         Pass(_) {
             Void
@@ -218,7 +222,7 @@ export fn main(arguments: Array<String>) -> Int64 {
         mut frameOk = true
         match screen.refresh() {
             Fail(e) {
-                print("refresh error: {e}\r\n")
+                logging.info("refresh error: {e}\r\n")
                 frameOk = false
             }
             Pass(_) {
@@ -230,7 +234,7 @@ export fn main(arguments: Array<String>) -> Int64 {
         } else {
             match readKey() {
                 Fail(e) {
-                    print("read error: {e}\r\n")
+                    logging.info("read error: {e}\r\n")
                     running = false
                 }
                 Pass(k) {
@@ -275,7 +279,7 @@ export fn main(arguments: Array<String>) -> Int64 {
             Void
         }
         Fail(e) {
-            println("restore failed: {e}")
+            logging.info("restore failed: {e}")
         }
     }
     0

@@ -1,0 +1,16 @@
+## std/Logging — level filter on the default logger (D125).
+import logging from "std/Logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    ## Default min level is Info: debug is silent.
+    logging.debug("hidden-debug")
+    logging.info("see-info")
+    logging.warn("see-warn")
+    logging.error("see-error")
+    ## Lower filter so debug appears.
+    logging.setLevel(logging.levelDebug)
+    logging.debug("see-debug")
+    0
+}

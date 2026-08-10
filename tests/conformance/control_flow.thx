@@ -1,4 +1,5 @@
 ## if/else-if as an expression, inclusive ranges, and a for loop: FizzBuzz 1..=15.
+import logging from "std/Logging"
 fn label(n: Int64) -> String {
     if n % 15 == 0 { "FizzBuzz" }
     else if n % 3 == 0 { "Fizz" }
@@ -7,8 +8,11 @@ fn label(n: Int64) -> String {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     for i in 1..=15 {
-        println(label(i))
+        logging.info("{label(i)}")
     }
     0
 }

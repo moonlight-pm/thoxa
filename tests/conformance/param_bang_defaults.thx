@@ -1,6 +1,7 @@
 ## Positional `!` formals may carry defaults (call-site fill).
 ## Free functions, methods, ctors, and extern C wrappers.
 
+import logging from "std/Logging"
 extern fn sysAbs(x!: Int32) -> Int32 from "c" "abs"
 
 fn scale(x!: Int64, factor!: Int64 = 2) -> Int64 {
@@ -14,14 +15,17 @@ type Point(x: Int64, y: Int64 = 0) {
 }
 
 fn main() -> Int64 {
-    println(scale(10))
-    println(scale(10, 3))
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("{scale(10)}")
+    logging.info("{scale(10, 3)}")
     let p = Point(x: 5)
     let q = p.moved()
-    println("{q.x},{q.y}")
+    logging.info("{q.x},{q.y}")
     let r = p.moved(dx: 2, dy: 3)
-    println("{r.x},{r.y}")
+    logging.info("{r.x},{r.y}")
     ## extern still gets all args after defaults expand (no default on this call).
-    println(sysAbs(-7))
+    logging.info("{sysAbs(-7)}")
     0
 }

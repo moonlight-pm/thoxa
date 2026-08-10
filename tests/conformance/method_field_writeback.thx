@@ -1,4 +1,5 @@
 ## Method mut-field write-back (D107): bare field assign in methods updates receiver.
+import logging from "std/Logging"
 type Counter(n: Int64) {
     export fn inc() -> Counter {
         n = n + 1
@@ -31,23 +32,26 @@ type Reg {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     mut c = Counter(n: 10)
-    println("{c.add(by: 5)}")
-    println("{c.n}")
+    logging.info("{c.add(by: 5)}")
+    logging.info("{c.n}")
     c.set(v: 100)
-    println("{c.n}")
+    logging.info("{c.n}")
     let d = c.inc()
-    println("{d.n}")
+    logging.info("{d.n}")
     ## c was not mutated by inc (returns new); n still 100
-    println("{c.n}")
+    logging.info("{c.n}")
 
     mut h = Holder(label: "old")
     h.rename(newName: "new")
-    println(h.text())
+    logging.info("{h.text()}")
 
     mut r = Reg()
     ## zero-init: mut field assign via method would need methods; use direct field
     r.a = 7
-    println("{r.a}")
+    logging.info("{r.a}")
     0
 }

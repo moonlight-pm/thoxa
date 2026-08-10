@@ -1,0 +1,52 @@
+## std/Logging — file sink Trial + sink leave-on-fail (D125).
+import logging from "std/Logging"
+import { Pass, Fail, Trial } from "std/Fallible"
+import { readFile, writeFile } from "./iolib/Io"
+
+fn main() -> Int64 {
+    let path = "/tmp/thoxa_logging_sink_conformance.log"
+    ## Fresh file each run (append sink would otherwise accumulate).
+    match writeFile(path, Bytes.fromString("")) {
+        Pass(_) { }
+        Fail(_) { }
+    }
+    match logging.toFile(path) {
+        Pass(_) {
+            logging.setFormat(logging.formatPlain)
+            logging.info("file-line")
+        }
+        Fail(e) {
+            logging.toStdout()
+            logging.setFormat(logging.formatPlain)
+            logging.info("open-fail={e}")
+        }
+    }
+
+    mut badOk = false
+    match logging.toFile("/tmp/thoxa_logging_no_such_dir/does_not_exist.log") {
+        Pass(_) {
+            badOk = true
+        }
+        Fail(_) {
+            badOk = false
+        }
+    }
+
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    if badOk {
+        logging.info("unexpected-pass")
+    } else {
+        logging.info("bad-path-fail")
+    }
+    match readFile(path) {
+        Pass(b) {
+            logging.info("file-body={b.toString()}")
+        }
+        Fail(e) {
+            logging.info("read-fail={e}")
+        }
+    }
+    logging.info("sink={logging.getSink()}")
+    0
+}

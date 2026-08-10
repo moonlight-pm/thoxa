@@ -194,6 +194,59 @@ pub fn load_package_with_entry_ast(entry: &Path, entry_ast: ast::Module) -> Resu
     })
 }
 
+/// Load `path` and its transitive imports into `package` if not already present.
+///
+/// Used when session inject splices imports (e.g. Shell → Logging) after the
+/// initial package load. New modules are inserted before the entry module so
+/// dependency order is preserved.
+pub fn ensure_module_in_package(package: &mut Package, path: &Path) -> Result<()> {
+    let path = canonicalize_soft(path)?;
+    if package.modules.iter().any(|m| m.path == path) {
+        return Ok(());
+    }
+
+    let mut by_path: HashMap<PathBuf, SourceModule> = HashMap::new();
+    let mut order: Vec<PathBuf> = Vec::new();
+    let mut visiting: HashSet<PathBuf> = HashSet::new();
+    let mut visited: HashSet<PathBuf> = HashSet::new();
+
+    for m in &package.modules {
+        let p = m.path.clone();
+        visited.insert(p.clone());
+        by_path.insert(p.clone(), m.clone());
+        order.push(p);
+    }
+
+    load_one(
+        &path,
+        false,
+        &package.project_root,
+        &mut by_path,
+        &mut order,
+        &mut visiting,
+        &mut visited,
+    )?;
+
+    // Rebuild modules: non-entry in dependency order, entry last.
+    let mut entry: Option<SourceModule> = None;
+    let mut modules = Vec::new();
+    for p in order {
+        let m = by_path.remove(&p).expect("loaded module");
+        if m.is_entry {
+            entry = Some(m);
+        } else {
+            modules.push(m);
+        }
+    }
+    if let Some(e) = entry {
+        modules.push(e);
+    } else if let Some(e) = package.modules.iter().find(|m| m.is_entry).cloned() {
+        modules.push(e);
+    }
+    package.modules = modules;
+    Ok(())
+}
+
 fn load_one(
     path: &Path,
     is_entry: bool,

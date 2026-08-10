@@ -2,9 +2,13 @@
 ## `~/` resolves against the package directory (entry file's parent).
 import { greet } from "~/Helper"
 import { twice } from "./Helper"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
-    println(greet(name: "pkg"))
-    println("twice = {twice(n: 21)}")
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info(greet(name: "pkg"))
+    logging.info("twice = {twice(n: 21)}")
     0
 }

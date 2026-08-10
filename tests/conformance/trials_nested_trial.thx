@@ -1,6 +1,7 @@
 ## Nested Trial as Trial/May payload (D114).
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn innerOk() -> Trial<Int64, String> {
     Pass(42)
@@ -36,59 +37,62 @@ fn chain() -> Trial<Trial<Int64, String>, String> {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     match wrapOk() {
         Pass(t) {
             match t {
-                Pass(v) { println("ok={v}") }
-                Fail(e) { println("inner-fail={e}") }
+                Pass(v) { logging.info("ok={v}") }
+                Fail(e) { logging.info("inner-fail={e}") }
             }
         }
-        Fail(e) { println("outer-fail={e}") }
+        Fail(e) { logging.info("outer-fail={e}") }
     }
     match wrapInnerFail() {
         Pass(t) {
             match t {
-                Pass(v) { println("ok={v}") }
-                Fail(e) { println("inner-fail={e}") }
+                Pass(v) { logging.info("ok={v}") }
+                Fail(e) { logging.info("inner-fail={e}") }
             }
         }
-        Fail(e) { println("outer-fail={e}") }
+        Fail(e) { logging.info("outer-fail={e}") }
     }
     match wrapOuterFail() {
         Pass(t) {
             match t {
-                Pass(v) { println("ok={v}") }
-                Fail(e) { println("inner-fail={e}") }
+                Pass(v) { logging.info("ok={v}") }
+                Fail(e) { logging.info("inner-fail={e}") }
             }
         }
-        Fail(e) { println("outer-fail={e}") }
+        Fail(e) { logging.info("outer-fail={e}") }
     }
     match wrapMay() {
         Has(t) {
             match t {
-                Pass(v) { println("may-ok={v}") }
-                Fail(e) { println("may-inner={e}") }
+                Pass(v) { logging.info("may-ok={v}") }
+                Fail(e) { logging.info("may-inner={e}") }
             }
         }
-        Not { println("may-not") }
+        Not { logging.info("may-not") }
     }
     match wrapMayNot() {
         Has(t) {
             match t {
-                Pass(v) { println("may-ok={v}") }
-                Fail(e) { println("may-inner={e}") }
+                Pass(v) { logging.info("may-ok={v}") }
+                Fail(e) { logging.info("may-inner={e}") }
             }
         }
-        Not { println("may-not") }
+        Not { logging.info("may-not") }
     }
     match chain() {
         Pass(t) {
             match t {
-                Pass(v) { println("chain={v}") }
-                Fail(e) { println("chain-inner={e}") }
+                Pass(v) { logging.info("chain={v}") }
+                Fail(e) { logging.info("chain-inner={e}") }
             }
         }
-        Fail(e) { println("chain-outer={e}") }
+        Fail(e) { logging.info("chain-outer={e}") }
     }
     0
 }

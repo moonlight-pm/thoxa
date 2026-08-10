@@ -1410,7 +1410,7 @@ fn main() -> Int64 {
                         "uri": uri,
                         "languageId": "thoxa",
                         "version": 1,
-                        "text": "fn main() -> Int64 { println(\"x\") 0 }\n"
+                        "text": "fn main() -> Int64 { 0 }\n"
                     }
                 }
             }),

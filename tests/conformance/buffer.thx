@@ -1,21 +1,25 @@
 ## Buffer — growable byte buffer with geometric capacity growth and COW.
 ## See oracle design: value semantics; freeze → fixed Bytes.
 
+import logging from "std/Logging"
 fn grown(seed: Buffer) -> Int64 {
     seed.append(0)
     seed.count
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     ## Geometric growth: capacity doubles (0 -> 8 -> 16 -> 32) as bytes are appended.
     mut b = Buffer()
-    println("empty: count={b.count} cap={b.capacity}")
+    logging.info("empty: count={b.count} cap={b.capacity}")
     mut i = 0
     while i < 20 {
         b.append(65)
         i = i + 1
     }
-    println("grown: count={b.count} cap={b.capacity}")
+    logging.info("grown: count={b.count} cap={b.capacity}")
 
     ## Copy-on-write: `two` aliases `one`; mutating `one` must not touch `two`.
     mut one = Buffer()
@@ -23,19 +27,19 @@ fn main() -> Int64 {
     one.append(2)
     let two = one
     one.append(3)
-    println("cow: one={one.count} two={two.count}")
+    logging.info("cow: one={one.count} two={two.count}")
 
     ## Value semantics across a call: `grown` mutates its own copy.
     mut c = Buffer()
     c.append(9)
     let inner = grown(c)
-    println("call: inner={inner} caller={c.count}")
+    logging.info("call: inner={inner} caller={c.count}")
 
     ## appendBytes concatenates fixed Bytes; freeze hands back an FFI-safe Bytes.
     mut msg = Buffer()
     msg.appendBytes(Bytes.fromString("Hello, "))
     msg.appendBytes(Bytes.fromString("Thoxa!"))
     let frozen = msg.freeze()
-    println("frozen: count={frozen.count} text={frozen.toString()}")
+    logging.info("frozen: count={frozen.count} text={frozen.toString()}")
     0
 }

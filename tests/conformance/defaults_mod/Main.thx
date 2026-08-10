@@ -1,16 +1,20 @@
 ## Cross-module parameter defaults (D116).
 import { tag, add, Box } from "./Lib"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     ## Caller does not import defaultTag / defaultN.
-    println(tag())
-    println(tag(prefix: "override"))
-    println(add())
-    println(add(n: 100))
+    logging.info("{tag()}")
+    logging.info(tag(prefix: "override"))
+    logging.info("{add()}")
+    logging.info("{add(n: 100)}")
     let b = Box()
-    println(b.show())
-    println(b.show(suffix: "x"))
+    logging.info("{b.show()}")
+    logging.info(b.show(suffix: "x"))
     let c = Box(label: "custom")
-    println(c.show())
+    logging.info("{c.show()}")
     0
 }

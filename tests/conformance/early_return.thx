@@ -2,6 +2,7 @@
 ## Also: String params must not be dropped on early return / ? Fail (caller owns).
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn mid() -> Int64 {
     let a = 1
@@ -62,16 +63,16 @@ fn nested() -> Int64 {
 
 ## Void early return (side effect then exit).
 fn side() -> Void {
-    println("side")
+    logging.info("side")
     return
 }
 
 fn withHeap() -> Int64 {
     let s = "keep"
-    println(s)
+    logging.info("{s}")
     if true {
         let t = "drop-me"
-        println(t)
+        logging.info("{t}")
         return 7
     }
     0
@@ -89,7 +90,7 @@ fn giveBack(s: String) -> String {
 ## Early return with a live local heap + String param (drop local, not param).
 fn retWithLocal(s: String) -> String {
     let t = "local"
-    println(t)
+    logging.info("{t}")
     return s
 }
 
@@ -110,32 +111,35 @@ type Box(n: Int64) {
 }
 
 fn main() -> Int64 {
-    println(mid())
-    println(fromFor())
-    println(fromWhile())
-    println(fromLoop())
-    println(fromMatch(Pass(9)))
-    println(fromMatch(Fail(8)))
-    println(nested())
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("{mid()}")
+    logging.info("{fromFor()}")
+    logging.info("{fromWhile()}")
+    logging.info("{fromLoop()}")
+    logging.info("{fromMatch(Pass(9))}")
+    logging.info("{fromMatch(Fail(8))}")
+    logging.info("{nested()}")
     side()
-    println(withHeap())
+    logging.info("{withHeap()}")
     let b = Box(n: 11)
-    println(b.early())
+    logging.info("{b.early()}")
 
     ## caller still owns / can print after early-return callee
     let msg = "alive"
-    println(take(msg))
-    println(msg)
+    logging.info("{take(msg)}")
+    logging.info("{msg}")
 
     let back = giveBack("echo")
-    println(back)
+    logging.info("{back}")
 
     let again = retWithLocal("param")
-    println(again)
+    logging.info("{again}")
 
     match tryFail("param-live") {
-        Pass(v) { println(v) }
-        Fail(e) { println(e) }
+        Pass(v) { logging.info("{v}") }
+        Fail(e) { logging.info("{e}") }
     }
 
     0

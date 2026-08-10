@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-10 (`std/Logging` freeze **D125**; session deferred)
+**As of:** 2026-08-10 (`std/Logging` **D125** shipped; session deferred)
 
 ---
 
@@ -14,37 +14,30 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Active freeze:** **`std/Logging` + remove ambient `println`/`print`** (**D125**)
-— [`docs/specs/2026-08-10-std-log-and-println-removal.md`](docs/specs/2026-08-10-std-log-and-println-removal.md).
-Module **`Logging`** (not `Log`; keep `log` for instances later). Defaults:
-Info + stderr + full format; `toFile` → `Trial`; emit never `?`; multi-logger
-later only. Dogfood = migrate all conformance/examples/`std/Shell`/session.
-
-**Shipped recently:** **LSP call-arg hover**; **typed members after `?`**;
-**THX010**; **D124** structured diagnostics; **`thoxa version`**; **D123**
-Fallible import; **`examples/kilo`** / **`examples/http`**. Session residual
-deferred. Agent-only ideas parked:
+**Shipped recently:** **`std/Logging` + remove ambient `println`/`print`**
+(**D125**); **LSP call-arg hover**; **typed members after `?`**; **THX010**;
+**D124** structured diagnostics; **`thoxa version`**; **D123** Fallible import;
+**`examples/kilo`** / **`examples/http`**. Session residual deferred.
+Agent-only ideas parked:
 [`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 
-**In progress / next:** implement **D125** slices (Logging skeleton → file sink
-→ env → atomic println removal + mass migrate); then other language gaps as
-forced.
+**In progress / next:** language gaps forced by samples; sample-driven std when
+forced; editor only when DX forces (nav residual / recovery depth).
 
 ### Proceed order
 
-1. **`std/Logging` + println removal (D125)** — freeze above; not optional churn.  
-2. **Language / I/O / std** — other matrix gaps after D125; not free redesign.  
-3. **Editor depth** — only when DX forces it. Freezes:
+1. **Language / I/O / std** — next matrix gap (non-session); not free redesign.  
+2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).  
-4. **Deferred: all session / shell residual** — redir polish, line editor,
+3. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-   (Shell `println` migration is **in** D125; residual session polish stays deferred.)
-5. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
-   until CURRENT says so.
+4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+   until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
+   a CURRENT line until samples force it.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups; **opportunistic `std/` helpers** proven by a real sample
@@ -81,7 +74,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
 | `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; `ffi` deferred |
-| Logging / print | **`std/Logging` only** (**D125** target); ambient **`println`/`print` removed** on ship; no ambient Logging inject; multi-logger later |
+| Logging / print | **`std/Logging` only** (**D125** shipped); ambient **`println`/`print` removed**; no ambient Logging inject; multi-logger later |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |

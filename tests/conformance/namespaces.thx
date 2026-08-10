@@ -5,13 +5,17 @@
 ## namespace itself is never a value.
 import mu       from "./modlib/MathUtils"
 import geometry from "./modlib/Geometry"
+import logging from "std/Logging"
 
 fn main() -> Int64 {
-    println("add = {mu.add(a: 2, b: 3)}")
-    println("double = {mu.double(n: 21)}")
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("add = {mu.add(a: 2, b: 3)}")
+    logging.info("double = {mu.double(n: 21)}")
     let p = geometry.Point(x: 3, y: 4)
-    println("p.sum = {p.sum()}")
-    println("origin.sum = {geometry.origin.sum()}")
-    println("originSum = {mu.originSum()}")
+    logging.info("p.sum = {p.sum()}")
+    logging.info("origin.sum = {geometry.origin.sum()}")
+    logging.info("originSum = {mu.originSum()}")
     0
 }

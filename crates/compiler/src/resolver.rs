@@ -205,8 +205,7 @@ impl Resolution {
 /// Built-in type and value names with no source definition in the buffer.
 const BUILTINS: &[&str] = &[
     "Int64", "Int32", "UInt64", "UInt32", "Byte", "Bool", "Void", "String", "Bytes", "Buffer",
-    "Array", "Address", "Trial", "May", "Pass", "Fail", "Has", "Not", "true", "false", "println",
-    "print",
+    "Array", "Address", "Trial", "May", "Pass", "Fail", "Has", "Not", "true", "false",
 ];
 
 struct Scope {

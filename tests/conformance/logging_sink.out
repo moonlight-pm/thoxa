@@ -1,0 +1,4 @@
+bad-path-fail
+file-body=file-line
+
+sink=stdout

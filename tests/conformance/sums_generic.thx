@@ -1,4 +1,5 @@
 ## Generic products + generic unions with monomorphization (D118 prelude path).
+import logging from "std/Logging"
 type Box<T>(value: T)
 type Empty
 type Opt<T> = Box<T!> | Empty?
@@ -18,20 +19,23 @@ fn label(o!: Opt<Int64>) -> String {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     let a: Opt<Int64> = Box(value: 7)
-    println(label(a))
+    logging.info("{label(a)}")
     match chain(Box(value: 10)) {
-        Box(n) { println("ch={n}") }
-        Empty { println("empty") }
+        Box(n) { logging.info("ch={n}") }
+        Empty { logging.info("empty") }
     }
     match chain(Empty()) {
-        Box(n) { println("ch={n}") }
-        Empty { println("empty") }
+        Box(n) { logging.info("ch={n}") }
+        Empty { logging.info("empty") }
     }
     let m: Msg<String> = Box(value: "hi")
     match m {
-        Box(s) { println("s={s}") }
-        Empty { println("empty") }
+        Box(s) { logging.info("s={s}") }
+        Empty { logging.info("empty") }
     }
     0
 }

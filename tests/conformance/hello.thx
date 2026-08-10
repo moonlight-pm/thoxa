@@ -1,5 +1,9 @@
 ## The canonical greeting — the smallest complete program.
+import logging from "std/Logging"
 fn main() -> Int64 {
-    println("Hello, world!")
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("Hello, world!")
     0
 }

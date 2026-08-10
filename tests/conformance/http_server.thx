@@ -5,6 +5,7 @@ import net from "./httplib/Net"
 import http from "./httplib/Http"
 import { Router } from "./httplib/Router"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
 
 fn statusLine(resp!: Bytes) -> String {
     match resp.find(Bytes.fromString("\r")) {
@@ -14,13 +15,16 @@ fn statusLine(resp!: Bytes) -> String {
 }
 
 fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
     match serve() {
         Pass(_) {
-            println("server-ok")
+            logging.info("server-ok")
             0
         }
         Fail(e) {
-            println("server-fail {e}")
+            logging.info("server-fail {e}")
             1
         }
     }
@@ -67,7 +71,7 @@ fn serve() -> Trial<Void, String> {
         if got.count == 0 {
             return Fail("empty-response")
         }
-        println("{path} {statusLine(got)}")
+        logging.info("{path} {statusLine(got)}")
         peer.close()
         client.close()
     }
