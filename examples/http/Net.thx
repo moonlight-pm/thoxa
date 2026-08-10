@@ -1,7 +1,8 @@
-## Net — TCP sockets for R9+ (closer to oracle examples/http/Net.thx).
+## Net — TCP sockets for the HTTP example.
 ## Errors are Trial<…, String> with errno/strerror polish (Io-style D80).
+## Request read accumulates until the header terminator; send drains partial writes.
 
-import { Pass, Fail, Trial } from "std/Fallible"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 extern fn sysSocket(domain!: Int32, kind!: Int32, protocol!: Int32) -> Int32 from "c" "socket"
 extern fn sysSetsockopt(fd!: Int32, level!: Int32, optname!: Int32, optval!: Bytes, optlen!: UInt32) -> Int32 from "c" "setsockopt"
@@ -24,6 +25,8 @@ let soReuseAddr = 2
 let sockaddrLen = 16
 let intSize = 4
 let recvBufSize = 4096
+## Cap header accumulation so a client cannot force unbounded memory use.
+let maxRequestHeaders = 65536
 
 ## "context: reason" from the current errno, for a Fail payload.
 fn netErr(what!: String) -> String {
@@ -116,6 +119,7 @@ export type Socket(fd: Int64) {
     }
 
     ## One recv chunk; empty Bytes when peer closed or error.
+    ## Prefer `receiveRequest` for HTTP (reads until header terminator).
     export fn receive() -> Bytes {
         let buf = Bytes(recvBufSize)
         let n = sysRecv(fd, buf, recvBufSize, 0)
@@ -126,8 +130,76 @@ export type Socket(fd: Int64) {
         }
     }
 
+    ## Read until `\r\n\r\n` (complete header block) or peer close / size cap.
+    ## Empty Pass means the peer closed before sending anything.
+    ## Does not read a request body (static server ignores bodies).
+    export fn receiveRequest() -> Trial<Bytes, String> {
+        mut acc = Buffer()
+        let sep = Bytes.fromString("\r\n\r\n")
+        loop {
+            let soFar = acc.freeze()
+            let complete = match soFar.find(sep) {
+                Has(_) { true }
+                Not { false }
+            }
+            if complete {
+                return Pass(soFar)
+            }
+            if soFar.count >= maxRequestHeaders {
+                return Fail("request headers too large")
+            }
+            let room = maxRequestHeaders - soFar.count
+            let want = if room < recvBufSize {
+                room
+            } else {
+                recvBufSize
+            }
+            if want <= 0 {
+                return Fail("request headers too large")
+            }
+            let chunk = Bytes(want)
+            let n = sysRecv(fd, chunk, want, 0)
+            if n < 0 {
+                return Fail(netErr("recv"))
+            }
+            if n == 0 {
+                if soFar.count == 0 {
+                    return Pass(Bytes(0))
+                } else {
+                    return Fail("incomplete request: peer closed")
+                }
+            }
+            acc.appendBytes(chunk.slice(0, n))
+        }
+        ## Unreachable; loop always returns.
+        Fail("receiveRequest: internal")
+    }
+
+    ## One send syscall; may write only part of `data`. Prefer `sendAll`.
     export fn send(data!: Bytes) -> Int64 {
         sysSend(fd, data, data.count, 0)
+    }
+
+    ## Write all of `data`, looping on partial sends.
+    export fn sendAll(data!: Bytes) -> Trial<Int64, String> {
+        mut sent = 0
+        let total = data.count
+        loop {
+            if sent >= total {
+                return Pass(total)
+            }
+            let remaining = data.slice(sent, total)
+            let n = sysSend(fd, remaining, remaining.count, 0)
+            if n < 0 {
+                return Fail(netErr("send"))
+            }
+            if n == 0 {
+                return Fail("send: peer closed")
+            }
+            sent = sent + n
+        }
+        ## Unreachable.
+        Fail("sendAll: internal")
     }
 
     export fn close() -> Void {

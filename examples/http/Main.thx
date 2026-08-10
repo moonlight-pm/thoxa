@@ -9,15 +9,18 @@
 ##   curl -s  http://127.0.0.1:9091/about/
 ##   curl -sD- http://127.0.0.1:9091/style.css
 ##   curl -s  http://127.0.0.1:9091/nope.html   # 404
+##   curl -sI http://127.0.0.1:9091/            # HEAD
 ##
 ## Ctrl-C to stop. Port 9091; SO_REUSEADDR enabled.
+## Setup failures (bind/listen) exit the process; accept/recv/send issues log and continue.
 
 import net from "./Net"
+import { Socket } from "./Net"
 import http from "./Http"
 import { Router } from "./Router"
 import { Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
-import { info } from "std/Logging"
+import { info, warn } from "std/Logging"
 
 let listenPort = 9091
 let webRoot = "examples/http/web"
@@ -31,7 +34,7 @@ fn main() -> Int64 {
             0
         }
         Fail(e) {
-            info("server error: {e}")
+            warn("server error: {e}")
             1
         }
     }
@@ -46,28 +49,52 @@ fn run() -> Trial<Void, String> {
     info("serving files from {webRoot}/  (Ctrl-C to stop)")
     let router = Router(root: webRoot)
     loop {
-        ## Accept errors fail the process; per-request send issues log and continue.
-        let peer = server.accept()?
-        let raw = peer.receive()
-        if raw.count > 0 {
-            let response = match http.parseRequest(raw) {
-                Pass(req) {
-                    router.handle(req)
-                }
-                Fail(msg) {
-                    http.badRequest(msg)
-                }
+        match server.accept() {
+            Fail(e) {
+                ## Transient accept errors (EINTR, ECONNABORTED, ...) must not kill the server.
+                warn("accept: {e}")
             }
-            let wire = http.writeResponse(response)
-            let ns = peer.send(wire)
-            if ns < 0 {
-                info("request error: send failed")
-            } else {
-                info("{response.status} {response.reason}")
+            Pass(peer) {
+                serveOne(peer, router)
+                peer.close()
+                Void
             }
         }
-        peer.close()
     }
     ## Unreachable; keeps Trial return shape if the loop ever breaks.
     Pass(Void)
+}
+
+## One connection: read headers, route, write full response. Never fails the process.
+fn serveOne(peer!: Socket, router!: Router) {
+    match peer.receiveRequest() {
+        Fail(e) {
+            warn("recv: {e}")
+        }
+        Pass(raw) {
+            if raw.count == 0 {
+                ## Peer closed without sending data — quiet.
+                Void
+            } else {
+                let response = match http.parseRequest(raw) {
+                    Pass(req) {
+                        let res = router.handle(req)
+                        info("{req.method} {req.path} -> {res.status} {res.reason}")
+                        res
+                    }
+                    Fail(msg) {
+                        warn("parse: {msg}")
+                        http.badRequest(msg)
+                    }
+                }
+                let wire = http.writeResponse(response)
+                match peer.sendAll(wire) {
+                    Pass(_) { Void }
+                    Fail(e) {
+                        warn("send: {e}")
+                    }
+                }
+            }
+        }
+    }
 }

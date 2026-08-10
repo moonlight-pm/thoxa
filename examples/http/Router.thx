@@ -1,10 +1,12 @@
 ## Router — map an HTTP Request onto files under a root directory. Directories serve
 ## `index.html`; path traversal (`..` / `.` segments) is rejected as 404. Content-Type
-## comes from the final file extension. Oracle examples/http/Router.thx subset.
+## comes from the final file extension. GET and HEAD only.
 
 import { readFile } from "./Io"
-import { Request, Response, ok, notFound } from "./Http"
+import { Request, Response, ok, okHead, notFound, forbidden, methodNotAllowed } from "./Http"
 import { Pass, Fail } from "std/Fallible"
+import { contains } from "std/Str"
+import { warn } from "std/Logging"
 
 ## Split URL path on `/` into non-empty segments.
 fn pathSegments(path!: String) -> Array<String> {
@@ -77,36 +79,94 @@ fn contentTypeFor(path!: String) -> String {
     "application/octet-stream"
 }
 
+## Missing path / directory (expected on index fallback and 404).
+fn isMissingish(err!: String) -> Bool {
+    if contains(err, "No such file") {
+        true
+    } else {
+        contains(err, "Is a directory")
+    }
+}
+
+fn isForbiddenish(err!: String) -> Bool {
+    contains(err, "Permission denied")
+}
+
+## Turn a successful file body into GET or HEAD Response.
+fn fileResponse(body!: Bytes, path!: String, headOnly: Bool) -> Response {
+    let ct = contentTypeFor(path)
+    if headOnly {
+        okHead(body.count, ct)
+    } else {
+        ok(body, ct)
+    }
+}
+
+## Map a terminal Io Fail (after index fallback) to a client Response.
+fn failResponse(path!: String, err!: String) -> Response {
+    if isForbiddenish(err) {
+        warn("forbid {path}: {err}")
+        forbidden()
+    } else {
+        if isMissingish(err) {
+            notFound()
+        } else {
+            warn("read {path}: {err}")
+            notFound()
+        }
+    }
+}
+
 ## A static-file router rooted at `root` (cwd-relative).
 export type Router(root: String) {
     ## Resolve `req.path` under `root` and return a Response. Always a Response
-    ## value (404 on missing/unsafe paths); never a Trial.
+    ## value (never a Trial). Non-GET/HEAD → 405; missing/unsafe → 404;
+    ## permission denied → 403. Unexpected Io errors are logged then 404.
     export fn handle(req!: Request) -> Response {
-        let urlPath = req.path
-        let raw = Bytes.fromString(urlPath)
-        if raw.count == 0 {
-            return notFound()
-        }
-        if raw.get(0) != 47 {
-            return notFound()
-        }
-        let segs = pathSegments(urlPath)
-        if hasUnsafeSegment(segs) {
-            return notFound()
-        }
-        let candidate = joinPath(root, segs)
-        match readFile(candidate) {
-            Pass(body) {
-                ok(body, contentTypeFor(candidate))
+        let isGet = req.method == "GET"
+        let headOnly = req.method == "HEAD"
+        if isGet {
+            servePath(root, req.path, false)
+        } else {
+            if headOnly {
+                servePath(root, req.path, true)
+            } else {
+                methodNotAllowed("GET, HEAD")
             }
-            Fail(_) {
+        }
+    }
+}
+
+## Resolve a URL path under `root` (shared by GET and HEAD).
+fn servePath(root!: String, urlPath!: String, headOnly: Bool) -> Response {
+    let raw = Bytes.fromString(urlPath)
+    if raw.count == 0 {
+        return notFound()
+    }
+    if raw.get(0) != 47 {
+        return notFound()
+    }
+    let segs = pathSegments(urlPath)
+    if hasUnsafeSegment(segs) {
+        return notFound()
+    }
+    let candidate = joinPath(root, segs)
+    match readFile(candidate) {
+        Pass(body) {
+            fileResponse(body, candidate, headOnly)
+        }
+        Fail(err1) {
+            if isForbiddenish(err1) {
+                warn("forbid {candidate}: {err1}")
+                forbidden()
+            } else {
                 let indexPath = "{candidate}/index.html"
                 match readFile(indexPath) {
                     Pass(body) {
-                        ok(body, contentTypeFor(indexPath))
+                        fileResponse(body, indexPath, headOnly)
                     }
-                    Fail(_) {
-                        notFound()
+                    Fail(err2) {
+                        failResponse(indexPath, err2)
                     }
                 }
             }

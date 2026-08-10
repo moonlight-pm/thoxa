@@ -1,10 +1,9 @@
 ## Http — HTTP/1.1 request parsing and response building (oracle examples/http/Http.thx subset).
 ## Pure protocol: no syscalls. Request body is always empty Bytes until body reading lands.
 
-## One header field: name and value as Strings (ASCII for this demo).
-
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
+## One header field: name and value as Strings (ASCII for this demo).
 export type Header(name: String, value: String)
 
 ## A parsed request. `body` is always empty Bytes until body reading lands.
@@ -24,6 +23,37 @@ export type Response(
     body: Bytes
 )
 
+## Shared constructor for text/binary responses with the usual close headers.
+export fn response(
+    status!: Int64,
+    reason!: String,
+    contentType!: String,
+    body!: Bytes
+) -> Response {
+    let headers = [
+        Header(name: "Content-Type", value: contentType),
+        Header(name: "Content-Length", value: "{body.count}"),
+        Header(name: "Connection", value: "close"),
+    ]
+    Response(status: status, reason: reason, headers: headers, body: body)
+}
+
+## Like `response`, but keeps a declared Content-Length while sending an empty body
+## (HTTP HEAD).
+export fn responseHead(
+    status!: Int64,
+    reason!: String,
+    contentType!: String,
+    contentLength!: Int64
+) -> Response {
+    let headers = [
+        Header(name: "Content-Type", value: contentType),
+        Header(name: "Content-Length", value: "{contentLength}"),
+        Header(name: "Connection", value: "close"),
+    ]
+    Response(status: status, reason: reason, headers: headers, body: Bytes(0))
+}
+
 ## Parse a raw request buffer into a Request. Fails on incomplete or malformed input.
 ## Body bytes after the header separator are ignored; `body` is always empty.
 export fn parseRequest(raw!: Bytes) -> Trial<Request, String> {
@@ -40,24 +70,28 @@ export fn parseRequest(raw!: Bytes) -> Trial<Request, String> {
                 Not { headerBlock }
                 Has(firstCrlf) { headerBlock.slice(0, firstCrlf) }
             }
-            let sp = Bytes.fromString(" ")
-            match reqLine.find(sp) {
-                Not {
-                    Fail("malformed request line")
-                }
-                Has(sp1) {
-                    match reqLine.find(sp, sp1 + 1) {
-                        Not {
-                            Fail("malformed request line")
-                        }
-                        Has(sp2) {
-                            ## Reject extra spaces / extra tokens on the request line.
-                            match reqLine.find(sp, sp2 + 1) {
-                                Has(_) {
-                                    Fail("malformed request line")
-                                }
-                                Not {
-                                    parseRequestBody(reqLine, sp1, sp2, headerBlock, crlf)
+            if reqLine.count == 0 {
+                Fail("empty request line")
+            } else {
+                let sp = Bytes.fromString(" ")
+                match reqLine.find(sp) {
+                    Not {
+                        Fail("malformed request line")
+                    }
+                    Has(sp1) {
+                        match reqLine.find(sp, sp1 + 1) {
+                            Not {
+                                Fail("malformed request line")
+                            }
+                            Has(sp2) {
+                                ## Reject extra spaces / extra tokens on the request line.
+                                match reqLine.find(sp, sp2 + 1) {
+                                    Has(_) {
+                                        Fail("malformed request line")
+                                    }
+                                    Not {
+                                        parseRequestBody(reqLine, sp1, sp2, headerBlock, crlf)
+                                    }
                                 }
                             }
                         }
@@ -79,6 +113,12 @@ fn parseRequestBody(
     let method = reqLine.slice(0, sp1).toString()
     mut target = reqLine.slice(sp1 + 1, sp2)
     let version = reqLine.slice(sp2 + 1, reqLine.count).toString()
+    if method == "" {
+        return Fail("empty method")
+    }
+    if version == "" {
+        return Fail("empty version")
+    }
     ## Strip query string: path only.
     match target.find(Bytes.fromString("?")) {
         Has(q) {
@@ -87,7 +127,11 @@ fn parseRequestBody(
         Not { Void }
     }
     let path = target.toString()
+    if path == "" {
+        return Fail("empty path")
+    }
     mut headers: Array<Header> = []
+    let colon = Bytes.fromString(":")
     match headerBlock.find(crlf) {
         Not { Void }
         Has(firstCrlf) {
@@ -103,7 +147,7 @@ fn parseRequestBody(
                 if line.count == 0 {
                     ## empty line inside header block — skip
                 } else {
-                    let h = parseHeaderLine(line)?
+                    let h = parseHeaderLine(line, colon)?
                     headers = headers.append(h)
                 }
                 match headerBlock.find(crlf, pos) {
@@ -125,23 +169,62 @@ fn parseRequestBody(
     ))
 }
 
-fn parseHeaderLine(line!: Bytes) -> Trial<Header, String> {
-    match line.find(Bytes.fromString(":")) {
+## Skip leading OWS (SP / HTAB) after the colon.
+fn skipOws(line!: Bytes, start!: Int64) -> Int64 {
+    mut i = start
+    loop {
+        if i >= line.count {
+            break
+        }
+        let c = line.get(i)
+        ## SP or HTAB
+        if c == 32 {
+            i = i + 1
+        } else {
+            if c == 9 {
+                i = i + 1
+            } else {
+                break
+            }
+        }
+    }
+    i
+}
+
+## Trim trailing OWS from a header value slice end index.
+fn trimOwsEnd(line!: Bytes, start!: Int64, end!: Int64) -> Int64 {
+    mut e = end
+    loop {
+        if e <= start {
+            break
+        }
+        let c = line.get(e - 1)
+        if c == 32 {
+            e = e - 1
+        } else {
+            if c == 9 {
+                e = e - 1
+            } else {
+                break
+            }
+        }
+    }
+    e
+}
+
+fn parseHeaderLine(line!: Bytes, colon!: Bytes) -> Trial<Header, String> {
+    match line.find(colon) {
         Not {
             Fail("malformed header")
         }
-        Has(colon) {
-            let name = line.slice(0, colon).toString()
+        Has(colonAt) {
+            let name = line.slice(0, colonAt).toString()
             if name == "" {
                 Fail("empty header name")
             } else {
-                mut valStart = colon + 1
-                if valStart < line.count {
-                    if line.get(valStart) == 32 {
-                        valStart = valStart + 1
-                    }
-                }
-                let value = line.slice(valStart, line.count).toString()
+                let valStart = skipOws(line, colonAt + 1)
+                let valEnd = trimOwsEnd(line, valStart, line.count)
+                let value = line.slice(valStart, valEnd).toString()
                 Pass(Header(name: name, value: value))
             }
         }
@@ -166,34 +249,39 @@ export fn summarizeRequest(raw!: Bytes) -> String {
 
 ## 200 OK with the given body and Content-Type.
 export fn ok(body!: Bytes, contentType!: String) -> Response {
-    let headers = [
-        Header(name: "Content-Type", value: contentType),
-        Header(name: "Content-Length", value: "{body.count}"),
-        Header(name: "Connection", value: "close"),
-    ]
-    Response(status: 200, reason: "OK", headers: headers, body: body)
+    response(200, "OK", contentType, body)
+}
+
+## 200 OK for HEAD: empty body, Content-Length of the would-be entity.
+export fn okHead(contentLength!: Int64, contentType!: String) -> Response {
+    responseHead(200, "OK", contentType, contentLength)
 }
 
 ## 404 Not Found — plain text body.
 export fn notFound() -> Response {
-    let body = Bytes.fromString("Not Found\n")
-    let headers = [
-        Header(name: "Content-Type", value: "text/plain"),
-        Header(name: "Content-Length", value: "{body.count}"),
-        Header(name: "Connection", value: "close"),
-    ]
-    Response(status: 404, reason: "Not Found", headers: headers, body: body)
+    response(404, "Not Found", "text/plain", Bytes.fromString("Not Found\n"))
+}
+
+## 403 Forbidden — plain text body.
+export fn forbidden() -> Response {
+    response(403, "Forbidden", "text/plain", Bytes.fromString("Forbidden\n"))
 }
 
 ## 400 Bad Request — plain text body (optional detail message).
 export fn badRequest(msg!: String) -> Response {
-    let body = Bytes.fromString("Bad Request: {msg}\n")
+    response(400, "Bad Request", "text/plain", Bytes.fromString("Bad Request: {msg}\n"))
+}
+
+## 405 Method Not Allowed — plain text body + Allow header.
+export fn methodNotAllowed(allow!: String) -> Response {
+    let body = Bytes.fromString("Method Not Allowed\n")
     let headers = [
         Header(name: "Content-Type", value: "text/plain"),
         Header(name: "Content-Length", value: "{body.count}"),
+        Header(name: "Allow", value: allow),
         Header(name: "Connection", value: "close"),
     ]
-    Response(status: 400, reason: "Bad Request", headers: headers, body: body)
+    Response(status: 405, reason: "Method Not Allowed", headers: headers, body: body)
 }
 
 ## Serialize a Response to wire bytes (status line + headers + body).
