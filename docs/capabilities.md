@@ -92,6 +92,7 @@ change. See [`progress-model.md`](progress-model.md).
 | std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`pathVar`/`pwd`/`shell`; sample-driven | yes |
 | std-git | branch helpers | partial | `stdlib` | D97 | +`headLine`/`isDetached`/`repoRoot`; sample-driven | yes |
 | std-prompt | `defaultPrompt` | shipped | `stdlib` | D97, D99 | — | yes |
+| std-log | Leveled `std/Log` + no ambient `println` | spec’d | — | **D125**; [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | Not implemented: five levels, stderr/Info defaults, `toFile`→Trial, plain format for goldens, remove `println`/`print` builtins, migrate conformance/examples/Shell | no |
 | std-io | Richer Io in `std/` | idea | — | sample-driven | Free `readFile` / iolib tests only; not a CURRENT todo | no |
 
 ## Editor / LSP
