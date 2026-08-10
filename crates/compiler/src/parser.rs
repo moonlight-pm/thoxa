@@ -10,7 +10,15 @@ pub struct Parser {
     pos: usize,
     /// Synthetic `>` closers left after splitting a `>>` (Shr) in type args (D113).
     extra_rangles: usize,
+    /// Recoverable errors inside blocks that still produced a partial AST.
+    soft_errors: Vec<Error>,
 }
+
+/// User-facing message when a program with `fn main` has top-level statements.
+/// (Internally those are session-script statements; the user does not need that term.)
+pub const TOP_LEVEL_STMT_WITH_MAIN_MSG: &str =
+    "unexpected top-level statement in a program with `fn main` \
+     (only import / type / fn / let allowed here; omit `main` for a session script)";
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
@@ -18,6 +26,7 @@ impl Parser {
             tokens,
             pos: 0,
             extra_rangles: 0,
+            soft_errors: Vec::new(),
         }
     }
 
@@ -28,7 +37,9 @@ impl Parser {
             match self.parse_top_item() {
                 Ok(item) => items.push(item),
                 Err(e) => {
-                    errors.push(e);
+                    // Soft errors from a partial function body may already be recorded;
+                    // flatten hard errors too.
+                    errors.extend(e.into_diagnostics());
                     if !self.recover_to_next_item() {
                         break;
                     }
@@ -38,6 +49,7 @@ impl Parser {
                 }
             }
         }
+        errors.append(&mut self.soft_errors);
         // Programs with `fn main` cannot have top-level session statements
         // (bare exprs like `FOOBAR`). Flag each with its own span even when
         // other parse errors also exist (e.g. `as` keyword), so LSP multi-diag
@@ -48,18 +60,15 @@ impl Parser {
         if has_main {
             for it in &items {
                 if let Item::SessionStmt(bi) = it {
-                    errors.push(Error::at(
-                        "session statements cannot appear in a program that defines `fn main` \
-                         (use only declarations + main, or omit main for a session script)",
-                        block_item_span(bi),
-                    ));
+                    errors.push(Error::at(TOP_LEVEL_STMT_WITH_MAIN_MSG, block_item_span(bi)));
                 }
             }
         }
+        let module = Module { items };
         if !errors.is_empty() {
-            return Err(Error::multi(errors));
+            return Err(Error::multi(errors).with_recovered_module(module));
         }
-        Ok(Module { items })
+        Ok(module)
     }
 
     fn parse_top_item(&mut self) -> Result<Item> {
@@ -767,8 +776,10 @@ impl Parser {
         } else {
             errors.push(Error::at("expected `}`", self.peek_span()));
         }
+        // Soft-recover: keep successfully parsed statements so later stages can
+        // report undefined names, etc., even when one line failed (e.g. `as`).
         if !errors.is_empty() {
-            return Err(Error::multi(errors));
+            self.soft_errors.extend(errors);
         }
         let end = self.prev_span();
 

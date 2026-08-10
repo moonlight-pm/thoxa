@@ -106,6 +106,94 @@ pub fn load_package(entry: &Path) -> Result<Package> {
     })
 }
 
+/// Load a package using an already-parsed entry AST (LSP buffer / soft-recover).
+///
+/// Dependencies are still loaded from disk. Use this when the entry parse had
+/// recoverable errors so check can still lower the partial AST for multi-diag.
+pub fn load_package_with_entry_ast(entry: &Path, entry_ast: ast::Module) -> Result<Package> {
+    let entry = resolve_entry(entry)?;
+    if !entry.is_file() {
+        return Err(Error::new(format!(
+            "source file not found: {}",
+            entry.display()
+        )));
+    }
+    let project_root = entry
+        .parent()
+        .ok_or_else(|| Error::new("entry file has no parent directory"))?
+        .to_path_buf();
+    let entry = canonicalize_soft(&entry)?;
+
+    let mut by_path: HashMap<PathBuf, SourceModule> = HashMap::new();
+    let mut order: Vec<PathBuf> = Vec::new();
+    let mut visiting: HashSet<PathBuf> = HashSet::new();
+    let mut visited: HashSet<PathBuf> = HashSet::new();
+
+    // Load deps first (from the buffer AST's imports).
+    let dir = entry
+        .parent()
+        .ok_or_else(|| Error::new("entry file has no parent directory"))?;
+    let imports: Vec<&ast::Import> = entry_ast
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            ast::Item::Import(imp) => Some(imp),
+            _ => None,
+        })
+        .collect();
+    for imp in &imports {
+        let dep = resolve_specifier(&imp.path, dir, &project_root, imp.path_span)?;
+        let stem = dep
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        if !is_pascal_case(stem) {
+            return Err(Error::at(
+                format!(
+                    "module file name `{stem}` must be PascalCase (got `{}`)",
+                    imp.path
+                ),
+                imp.path_span,
+            ));
+        }
+        load_one(
+            &dep,
+            false,
+            &project_root,
+            &mut by_path,
+            &mut order,
+            &mut visiting,
+            &mut visited,
+        )?;
+    }
+
+    let id = entry
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Main")
+        .to_string();
+    order.push(entry.clone());
+    by_path.insert(
+        entry.clone(),
+        SourceModule {
+            id,
+            path: entry,
+            ast: entry_ast,
+            is_entry: true,
+        },
+    );
+
+    let modules = order
+        .into_iter()
+        .map(|p| by_path.remove(&p).expect("loaded module"))
+        .collect();
+
+    Ok(Package {
+        project_root,
+        modules,
+    })
+}
+
 fn load_one(
     path: &Path,
     is_entry: bool,

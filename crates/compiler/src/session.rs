@@ -66,11 +66,14 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<bool> {
         if !session_stmts.is_empty() {
             // Prefer one diagnostic per statement with a real span (parser also
             // catches this; this path covers AST built without re-parse).
-            let msg = "session statements cannot appear in a program that defines `fn main` \
-                 (use only declarations + main, or omit main for a session script)";
             let errors: Vec<Error> = session_stmts
                 .iter()
-                .map(|bi| Error::at(msg, session_block_item_span(bi)))
+                .map(|bi| {
+                    Error::at(
+                        crate::parser::TOP_LEVEL_STMT_WITH_MAIN_MSG,
+                        session_block_item_span(bi),
+                    )
+                })
                 .collect();
             return Err(Error::multi(errors));
         }
@@ -432,10 +435,11 @@ fn main() -> Int64 { 0 }
         let tokens = Lexer::new(src).tokenize().expect("lex");
         let err = Parser::new(tokens).parse_module().expect_err("expected session+main error");
         assert!(
-            err.message.contains("session statements cannot appear"),
+            err.message.contains("unexpected top-level statement"),
             "{err}"
         );
         assert!(err.span.is_some(), "expected span on session stmt");
+        assert!(err.recovered_module.is_some(), "expected recovered AST");
     }
 
     #[test]
@@ -457,7 +461,10 @@ fn main() -> Int64 { 0 }
             is_entry: true,
         };
         let err = prepare_entry(&mut entry).expect_err("prepare should reject");
-        assert!(err.message.contains("session statements cannot appear"), "{err}");
+        assert!(
+            err.message.contains("unexpected top-level statement"),
+            "{err}"
+        );
         assert_eq!(err.span, Some(Span::new(0, 6)));
     }
 }

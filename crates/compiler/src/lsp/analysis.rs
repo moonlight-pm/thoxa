@@ -90,14 +90,30 @@ fn check_source_inner(
     // Session command sugar (same as loader entry path).
     let text = crate::command::desugar_session_source(text)?;
     let tokens = Lexer::new(&text).tokenize()?;
-    let module = Parser::new(tokens).parse_module()?;
+    // Soft parse: recover partial AST so we can still report undefined names
+    // after a mid-file syntax error (e.g. keyword `as`).
+    let (mut module, mut pre_errors) = match Parser::new(tokens).parse_module() {
+        Ok(m) => (m, Vec::new()),
+        Err(mut e) => match e.recovered_module.take() {
+            Some(recovered) => (*recovered, e.into_diagnostics()),
+            None => return Err(e),
+        },
+    };
+
+    // Session stmts already diagnosed at parse when `main` exists; drop them so
+    // prepare/lower can analyze the rest of the program.
+    if module_has_main(&module) {
+        module
+            .items
+            .retain(|it| !matches!(it, Item::SessionStmt(_)));
+    }
 
     let has_imports = module
         .items
         .iter()
         .any(|item| matches!(item, Item::Import(_)));
 
-    if !has_imports {
+    let lower_err = if !has_imports {
         // Single-file: session prepare (no-main scripts) then lower.
         let mut package = Package {
             project_root: PathBuf::from("."),
@@ -108,41 +124,59 @@ fn check_source_inner(
                 is_entry: true,
             }],
         };
-        crate::session::prepare_package(&mut package)?;
-        let has_main = package
-            .modules
-            .iter()
-            .any(|m| m.is_entry && module_has_main(&m.ast));
-        let opts = mir::LowerOptions {
-            require_main: has_main,
+        crate::session::prepare_package(&mut package).and_then(|_| {
+            let has_main = package
+                .modules
+                .iter()
+                .any(|m| m.is_entry && module_has_main(&m.ast));
+            let opts = mir::LowerOptions {
+                require_main: has_main,
+            };
+            mir::lower_package_with(&package, opts).map(|_| ())
+        })
+    } else {
+        let path = Path::new(filename);
+        if !path.is_file() {
+            let span = first_import_span(&module).unwrap_or_else(Span::dummy);
+            pre_errors.push(Error::at(
+                "checking imports requires a real file path (open the file on disk for multi-file check)",
+                span,
+            ));
+            return Err(Error::multi(pre_errors));
+        }
+
+        let has_main = module_has_main(&module);
+        // Prefer the buffer AST so soft-recovered parse errors still lower.
+        // Re-parsing the entry from disk would hard-fail on the same soft errors.
+        let mut package = if pre_errors.is_empty() {
+            let mut p = loader::load_package(path)?;
+            overlay_open_ast(&mut p, module, path, has_main);
+            p
+        } else {
+            loader::load_package_with_entry_ast(path, module)?
         };
-        mir::lower_package_with(&package, opts)?;
-        return Ok(());
-    }
-
-    let path = Path::new(filename);
-    if !path.is_file() {
-        let span = first_import_span(&module).unwrap_or_else(Span::dummy);
-        return Err(Error::at(
-            "checking imports requires a real file path (open the file on disk for multi-file check)",
-            span,
-        ));
-    }
-
-    let has_main = module_has_main(&module);
-    let mut package = loader::load_package(path)?;
-    overlay_open_ast(&mut package, module, path, has_main);
-    apply_open_overlays(&mut package, overlays, path);
-    crate::session::prepare_package(&mut package)?;
-    let has_main_after = package
-        .modules
-        .iter()
-        .any(|m| m.is_entry && module_has_main(&m.ast));
-    let opts = mir::LowerOptions {
-        require_main: has_main_after,
+        apply_open_overlays(&mut package, overlays, path);
+        crate::session::prepare_package(&mut package).and_then(|_| {
+            let has_main_after = package
+                .modules
+                .iter()
+                .any(|m| m.is_entry && module_has_main(&m.ast));
+            let opts = mir::LowerOptions {
+                require_main: has_main_after,
+            };
+            mir::lower_package_with(&package, opts).map(|_| ())
+        })
     };
-    mir::lower_package_with(&package, opts)?;
-    Ok(())
+
+    match (pre_errors.is_empty(), lower_err) {
+        (true, Ok(())) => Ok(()),
+        (true, Err(e)) => Err(e),
+        (false, Ok(())) => Err(Error::multi(pre_errors)),
+        (false, Err(e)) => {
+            pre_errors.extend(e.into_diagnostics());
+            Err(Error::multi(pre_errors))
+        }
+    }
 }
 
 /// Replace the open module's AST with the in-memory buffer parse.
@@ -746,3 +780,39 @@ fn main() -> Int64 {
 }
 
     
+
+#[cfg(test)]
+mod recover_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn soft_parse_reports_undefined_after_keyword() {
+        let path = PathBuf::from("/tmp/thoxa_recover_test.thx");
+        let text = r#"
+import { Pass } from "std/Fallible"
+fn main() -> Int64 {
+    bar
+    FOOBAR
+    as
+    0
+}
+"#;
+        std::fs::write(&path, text).unwrap();
+        let diags = check_source(path.to_str().unwrap(), text);
+        let msgs: Vec<_> = diags.iter().map(|d| d.message.as_str()).collect();
+        assert!(
+            msgs.iter().any(|m| m.contains("undefined name `bar`")),
+            "missing bar: {msgs:?}"
+        );
+        assert!(
+            msgs.iter().any(|m| m.contains("undefined name `FOOBAR`")),
+            "missing FOOBAR: {msgs:?}"
+        );
+        assert!(
+            msgs.iter().any(|m| m.contains("found As")),
+            "missing As: {msgs:?}"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+}

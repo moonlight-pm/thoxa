@@ -3363,54 +3363,70 @@ fn collect_drop_places(stmts: &[Stmt], out: &mut Vec<(String, Ty)>) {
 
 fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Option<Place>> {
     ctx.push_scope();
-    lower_block_items(ctx, &block.items)?;
+    let mut errors: Vec<Error> = Vec::new();
+    if let Err(e) = lower_block_items(ctx, &block.items) {
+        errors.extend(e.into_diagnostics());
+    }
 
     let result = if let Some(tail) = &block.tail {
         // Empty `[]` as block tail: take elem type from expected Array<T> (e.g. fn return).
-        let (place, ty) = if is_empty_array_lit(tail) {
-            if let Ty::Array { elem } = expect {
-                lower_empty_array_typed(ctx, elem.as_ref(), tail.span)?
+        let tail_res = (|| -> Result<Option<Place>> {
+            let (place, ty) = if is_empty_array_lit(tail) {
+                if let Ty::Array { elem } = expect {
+                    lower_empty_array_typed(ctx, elem.as_ref(), tail.span)?
+                } else {
+                    lower_expr_expect(ctx, tail, Some(expect))?
+                }
             } else {
-                lower_expr_expect(ctx, tail, Some(expect))?
-            }
-        } else {
-            let exp = if *expect != Ty::Void {
-                Some(expect)
-            } else {
-                None
+                let exp = if *expect != Ty::Void {
+                    Some(expect)
+                } else {
+                    None
+                };
+                lower_expr_expect(ctx, tail, exp)?
             };
-            lower_expr_expect(ctx, tail, exp)?
-        };
-        let place = if *expect != Ty::Void && &ty != expect {
-            match try_sum_coerce(
-                ctx,
-                place.clone(),
-                &ty,
-                expect,
-                expr_as_type_lit(tail).as_ref(),
-                tail.span,
-            )? {
-                Some(p) => p,
-                None if is_int(&ty) && is_int(expect) => {
-                    coerce_place(ctx, place, &ty, expect, tail.span)?
+            let place = if *expect != Ty::Void && &ty != expect {
+                match try_sum_coerce(
+                    ctx,
+                    place.clone(),
+                    &ty,
+                    expect,
+                    expr_as_type_lit(tail).as_ref(),
+                    tail.span,
+                )? {
+                    Some(p) => p,
+                    None if is_int(&ty) && is_int(expect) => {
+                        coerce_place(ctx, place, &ty, expect, tail.span)?
+                    }
+                    None => {
+                        return Err(Error::at(
+                            format!("expected {expect:?}, found {ty:?}"),
+                            tail.span,
+                        ));
+                    }
                 }
-                None => {
-                    return Err(Error::at(
-                        format!("expected {expect:?}, found {ty:?}"),
-                        tail.span,
-                    ));
-                }
+            } else {
+                place
+            };
+            Ok(Some(place))
+        })();
+        match tail_res {
+            Ok(r) => r,
+            Err(e) => {
+                errors.extend(e.into_diagnostics());
+                None
             }
-        } else {
-            place
-        };
-        Some(place)
+        }
     } else if *expect == Ty::Void {
         None
     } else {
-        return Err(Error::at("missing block value", block.span));
+        errors.push(Error::at("missing block value", block.span));
+        None
     };
     ctx.pop_scope();
+    if !errors.is_empty() {
+        return Err(Error::multi(errors));
+    }
     Ok(result)
 }
 
@@ -3450,155 +3466,167 @@ fn lower_empty_array_typed(ctx: &mut LowerCtx, elem: &Ty, span: Span) -> Result<
 }
 
 fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
+    // Collect independent statement errors so one bad name does not hide the next.
+    let mut errors: Vec<Error> = Vec::new();
     for item in items {
-        match item {
-            BlockItem::Let {
-                name,
-                name_span,
-                mutable,
-                ty: ann,
-                init,
-            } => {
-                // Annotated empty `[]` — emit only the typed empty lit (skip Void intermediate).
-                if let Some(ann) = ann {
-                    if is_empty_array_lit(init) {
-                        let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
-                        let Ty::Array { elem } = &expect else {
-                            return Err(Error::at(
-                                format!(
-                                    "empty array `[]` needs Array<T> annotation, got {expect:?}"
-                                ),
-                                *name_span,
-                            ));
-                        };
-                        if !is_array_elem_ty(elem.as_ref()) {
-                            return Err(Error::at(
-                                format!("Array element type not yet supported: {:?}", elem),
-                                *name_span,
-                            ));
-                        }
-                        if array_elem_is_user(elem.as_ref())
-                            && !is_array_user_elem(elem.as_ref(), &ctx.types)
-                        {
-                            return Err(Error::at(
-                                format!(
-                                    "Array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {:?}",
-                                    elem
-                                ),
-                                *name_span,
-                            ));
-                        }
-                        let p = ctx.fresh("aempty");
-                        ctx.assign(
-                            p.clone(),
-                            expect.clone(),
-                            RValue::ArrayLit {
-                                elems: vec![],
-                                elem_ty: elem.as_ref().clone(),
-                            },
-                        );
-                        ctx.bind_name(name, expect, *mutable, p);
-                        continue;
-                    }
-                }
-
-                // Annotated fixed Array<T,N> from array literal (D117).
-                if let Some(ann) = ann {
-                    let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
-                    if let Ty::FixedArray { elem, len } = &expect {
-                        if let ExprKind::ArrayLit(elems) = &init.kind {
-                            if elems.len() as u64 != *len {
-                                return Err(Error::at(
-                                    format!(
-                                        "fixed Array length mismatch: expected {len}, found {}",
-                                        elems.len()
-                                    ),
-                                    init.span,
-                                ));
-                            }
-                            if !is_abi_scalar(elem) {
-                                return Err(Error::at(
-                                    format!(
-                                        "fixed Array element must be an ABI scalar, got {elem:?}"
-                                    ),
-                                    *name_span,
-                                ));
-                            }
-                            let mut places = Vec::new();
-                            for e in elems {
-                                let (p, ty) = lower_expr(ctx, e)?;
-                                let p = coerce_to_field(ctx, p, &ty, elem, e.span)?;
-                                places.push(p);
-                            }
-                            // Bind directly (C arrays are not assignable via `Use` copy).
-                            let bound = Place {
-                                name: sanitize_name(name),
-                            };
-                            ctx.assign(
-                                bound.clone(),
-                                expect.clone(),
-                                RValue::FixedArrayLit {
-                                    elems: places,
-                                    elem_ty: elem.as_ref().clone(),
-                                    len: *len,
-                                },
-                            );
-                            ctx.define(name, expect, *mutable, bound);
-                            continue;
-                        }
-                    }
-                }
-
-                let (place, ty) = if let Some(ann) = ann {
-                    let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
-                    let (place, ty) = lower_expr_expect(ctx, init, Some(&expect))?;
-                    if &ty != &expect {
-                        match try_sum_coerce(
-                            ctx,
-                            place.clone(),
-                            &ty,
-                            &expect,
-                            expr_as_type_lit(init).as_ref(),
-                            *name_span,
-                        )? {
-                            Some(p) => (p, expect),
-                            None if is_int(&ty) && is_int(&expect) => {
-                                let p = coerce_place(ctx, place, &ty, &expect, *name_span)?;
-                                (p, expect)
-                            }
-                            None => {
-                                return Err(Error::at(
-                                    format!(
-                                        "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
-                                    ),
-                                    *name_span,
-                                ));
-                            }
-                        }
-                    } else {
-                        (place, expect)
-                    }
-                } else {
-                    let (place, ty) = lower_expr(ctx, init)?;
-                    if matches!(&ty, Ty::Array { elem } if matches!(elem.as_ref(), Ty::Void)) {
-                        return Err(Error::at(
-                            "empty array `[]` requires a type annotation (e.g. `Array<Int64>`)",
-                            init.span,
-                        ));
-                    }
-                    (place, ty)
-                };
-                ctx.bind_name(name, ty, *mutable, place);
-            }
-            BlockItem::Assign { target, value } => {
-                lower_assign(ctx, target, value)?;
-            }
-            BlockItem::Expr(e) => {
-                let _ = lower_expr(ctx, e)?;
-            }
+        if let Err(e) = lower_block_item(ctx, item) {
+            errors.extend(e.into_diagnostics());
         }
     }
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::multi(errors))
+    }
+}
+
+fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
+    match item {
+        BlockItem::Let {
+            name,
+            name_span,
+            mutable,
+            ty: ann,
+            init,
+        } => {
+            // Annotated empty `[]` — emit only the typed empty lit (skip Void intermediate).
+            if let Some(ann) = ann {
+                if is_empty_array_lit(init) {
+                    let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
+                    let Ty::Array { elem } = &expect else {
+                        return Err(Error::at(
+                            format!(
+                                "empty array `[]` needs Array<T> annotation, got {expect:?}"
+                            ),
+                            *name_span,
+                        ));
+                    };
+                    if !is_array_elem_ty(elem.as_ref()) {
+                        return Err(Error::at(
+                            format!("Array element type not yet supported: {:?}", elem),
+                            *name_span,
+                        ));
+                    }
+                    if array_elem_is_user(elem.as_ref())
+                        && !is_array_user_elem(elem.as_ref(), &ctx.types)
+                    {
+                        return Err(Error::at(
+                            format!(
+                                "Array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {:?}",
+                                elem
+                            ),
+                            *name_span,
+                        ));
+                    }
+                    let p = ctx.fresh("aempty");
+                    ctx.assign(
+                        p.clone(),
+                        expect.clone(),
+                        RValue::ArrayLit {
+                            elems: vec![],
+                            elem_ty: elem.as_ref().clone(),
+                        },
+                    );
+                    ctx.bind_name(name, expect, *mutable, p);
+                    return Ok(());
+                }
+            }
+
+            // Annotated fixed Array<T,N> from array literal (D117).
+            if let Some(ann) = ann {
+                let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
+                if let Ty::FixedArray { elem, len } = &expect {
+                    if let ExprKind::ArrayLit(elems) = &init.kind {
+                        if elems.len() as u64 != *len {
+                            return Err(Error::at(
+                                format!(
+                                    "fixed Array length mismatch: expected {len}, found {}",
+                                    elems.len()
+                                ),
+                                init.span,
+                            ));
+                        }
+                        if !is_abi_scalar(elem) {
+                            return Err(Error::at(
+                                format!(
+                                    "fixed Array element must be an ABI scalar, got {elem:?}"
+                                ),
+                                *name_span,
+                            ));
+                        }
+                        let mut places = Vec::new();
+                        for e in elems {
+                            let (p, ty) = lower_expr(ctx, e)?;
+                            let p = coerce_to_field(ctx, p, &ty, elem, e.span)?;
+                            places.push(p);
+                        }
+                        // Bind directly (C arrays are not assignable via `Use` copy).
+                        let bound = Place {
+                            name: sanitize_name(name),
+                        };
+                        ctx.assign(
+                            bound.clone(),
+                            expect.clone(),
+                            RValue::FixedArrayLit {
+                                elems: places,
+                                elem_ty: elem.as_ref().clone(),
+                                len: *len,
+                            },
+                        );
+                        ctx.define(name, expect, *mutable, bound);
+                        return Ok(());
+                    }
+                }
+            }
+
+            let (place, ty) = if let Some(ann) = ann {
+                let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
+                let (place, ty) = lower_expr_expect(ctx, init, Some(&expect))?;
+                if &ty != &expect {
+                    match try_sum_coerce(
+                        ctx,
+                        place.clone(),
+                        &ty,
+                        &expect,
+                        expr_as_type_lit(init).as_ref(),
+                        *name_span,
+                    )? {
+                        Some(p) => (p, expect),
+                        None if is_int(&ty) && is_int(&expect) => {
+                            let p = coerce_place(ctx, place, &ty, &expect, *name_span)?;
+                            (p, expect)
+                        }
+                        None => {
+                            return Err(Error::at(
+                                format!(
+                                    "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
+                                ),
+                                *name_span,
+                            ));
+                        }
+                    }
+                } else {
+                    (place, expect)
+                }
+            } else {
+                let (place, ty) = lower_expr(ctx, init)?;
+                if matches!(&ty, Ty::Array { elem } if matches!(elem.as_ref(), Ty::Void)) {
+                    return Err(Error::at(
+                        "empty array `[]` requires a type annotation (e.g. `Array<Int64>`)",
+                        init.span,
+                    ));
+                }
+                (place, ty)
+            };
+            ctx.bind_name(name, ty, *mutable, place);
+            Ok(())
+        }
+        BlockItem::Assign { target, value } => lower_assign(ctx, target, value),
+        BlockItem::Expr(e) => {
+            let _ = lower_expr(ctx, e)?;
+            Ok(())
+        }
+    }
 }
 
 fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Result<()> {
