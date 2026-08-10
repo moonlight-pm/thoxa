@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-09 (`examples/kilo` user-tested; session deferred)
+**As of:** 2026-08-09 (Fallible import / D123; session deferred)
 
 ---
 
@@ -14,10 +14,12 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** **`examples/kilo`** terminal editor (**user-tested** —
-empty buffer + typing OK after **D122** module-global RC fix); language forced
-by it (`Bytes.equals`, `String.count`, `\xHH`, `main(arguments)`, CLI args);
-**`examples/http`**; **`vendor/`** rename. Session residual deferred.
+**Shipped recently:** **`std/Fallible` import required** (**D123** — no ambient
+May/Trial inject for programs); **`examples/kilo`** terminal editor
+(**user-tested** — empty buffer + typing OK after **D122** module-global RC
+fix); language forced by it (`Bytes.equals`, `String.count`, `\xHH`,
+`main(arguments)`, CLI args); **`examples/http`**; **`vendor/`** rename.
+Session residual deferred.
 
 **In progress / next:** language gaps forced by samples; sample-driven std when
 forced; editor only when DX forces.
@@ -59,7 +61,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 |-------|------|
 | Backend (phase A) | **Compile-to-C** + `thoxa_rt`; no QBE product path |
 | Value model | Hybrid A; simple single-threaded RC; Perceus later |
-| Errors | `May` / `Trial` + `?` / `match`; no May↔Trial mix via `?` |
+| Errors | `May` / `Trial` from `std/Fallible` (import) + `?` / `match`; no May↔Trial mix via `?` |
 | Session product face | Bare `thoxa` / `thoxa repl`; no-`main` = session script |
 | Session value | `type Shell(status: Int64)` + methods; real Thoxa; `std/Shell.thx` |
 | REPL step backend | **libtcc in-process only** (`TCC_OUTPUT_MEMORY`) → call `thoxa_session_step` (D105); no step `.so` |

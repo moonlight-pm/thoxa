@@ -21,8 +21,8 @@ change. See [`progress-model.md`](progress-model.md).
 |----|------------|--------|------|--------------|------|----------|
 | driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | none for v0 | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
-| trial | `Trial` + `match` + `?` as prelude unions | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118 | Ambient `Pass`/`Fail`/`Trial` generics; cross-module residual rewrap | yes |
-| may | `May` / `Has` / `Not` + `?` as prelude unions | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118 | Ambient `Has`/`Not`/`May` generics; nested ok | yes |
+| trial | `Trial` + `match` + `?` via `std/Fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | Import `Pass`/`Fail`/`Trial` from `std/Fallible`; cross-module residual rewrap | yes |
+| may | `May` / `Has` / `Not` + `?` via `std/Fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | Import `Has`/`Not`/`May` from `std/Fallible`; nested ok; `Bytes.find` needs `May` in scope | yes |
 | sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | none for v0 | yes |
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
@@ -75,7 +75,8 @@ change. See [`progress-model.md`](progress-model.md).
 | session-pipeline | Thoxa-side `\|` → `Shell.pipeline` + RT | shipped | `session_pipe`; `command::` | D101 | Nested Array stages N/A (Bytes blob) | yes |
 | session-redir | File `>` / `>>` / `<` → `Shell.runIo` | shipped | `session_redir`; `command::` | D102 | No `2>`; redir+pipe combo; ops need whitespace | yes |
 | session-host-pipe | Host OS `\|` fast path in REPL | shipped (removed) | `repl::pure_step_*` | D103 | Replaced by Thoxa-side pipeline (D101) | yes |
-| session-prelude | Shell API in product `std/Shell.thx` | shipped | `session::`; session scripts | D104 | Still auto-injected (not `import` by default); compile-time embed fallback | yes |
+| session-prelude | Shell API in product `std/Shell.thx` | shipped | `session::`; session scripts | D104, D123 | Still auto-injected (not `import` by default); compile-time embed fallback; inject loads `std/Fallible` for Shell | yes |
+| std-fallible | `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` in `std/Fallible` | shipped | `mays`, `trials*`, `stdlib` | D118, D123 | Programs import; not ambient | yes |
 | session-host-builtins | Drop host `cd`/`status`/`\|` for pure step | shipped | `repl::pure_step_*` | D103 | All session commands via step image (libtcc) | yes |
 | session-libtcc | In-process libtcc for REPL steps (no spawn / no step `.so`) | shipped | `tcc::`; `repl::pure_step_*` | D105; [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | Linux x86_64 only; later polish (base cache / license notice) not CURRENT | no |
 | extras-shell | Pure-Thoxa dogfood Shell | shipped | `cargo make run extras/shell` | D95 | **Not** product face | no |

@@ -15,6 +15,7 @@
 import net from "./Net"
 import http from "./Http"
 import { Router } from "./Router"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 let listenPort = 9091
 let webRoot = "examples/http/web"

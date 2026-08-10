@@ -1,6 +1,8 @@
 ## Keys — read and decode one keypress from stdin (VT100 escape sequences).
 ## Key payload bytes are Int64 (0–255); no byte-literal syntax yet.
 
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 extern fn sysRead(fd!: Int32, buf!: Bytes, n!: UInt64) -> Int64 from "c" "read"
 extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
 extern fn sysErrno() -> Int32 from "c" "thoxa_errno"

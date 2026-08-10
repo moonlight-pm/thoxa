@@ -1,5 +1,7 @@
 ## Nested Trial as Trial/May payload (D114).
 
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 fn innerOk() -> Trial<Int64, String> {
     Pass(42)
 }

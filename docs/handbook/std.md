@@ -3,6 +3,7 @@
 Import product modules with the **`std/…`** named root:
 
 ```thx
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import { defaultPrompt } from "std/Prompt"
 import { startsWith, dropPrefix } from "std/Str"
 import { cwdShort, shortPath } from "std/Path"
@@ -16,7 +17,7 @@ import { branch } from "std/Git"
 | Module | Role |
 |--------|------|
 | `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts |
-| `Fallible` | Surface source for ambient `May` / `Trial` / `Has` / `Not` / `Pass` / `Fail` (compiler injects; no `import` needed) |
+| `Fallible` | Exported `May` / `Trial` / `Has` / `Not` / `Pass` / `Fail` — **import required** for programs |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `Str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`join`/`lines`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
 | `Path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |
@@ -37,10 +38,9 @@ hex → black SGR.
 ## Limits
 
 This is a **thin** library for session prompts and shared helpers. Fallibility
-types are ambient (no import). Named **`ffi`** root is deferred. File I/O for
-programs often lives in conformance helpers (`iolib`) / free `readFile` rather
-than a large `std/Io`
-yet.
+types live in `std/Fallible` and are imported like other std modules. Named
+**`ffi`** root is deferred. File I/O for programs often lives in conformance
+helpers (`iolib`) / free `readFile` rather than a large `std/Io` yet.
 
 New helpers land when real samples need them — not via a free-floating
 “expand the stdlib” backlog.

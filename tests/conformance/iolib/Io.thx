@@ -4,6 +4,8 @@
 ## flag lets remain for bitwise OR with oCreat/oTrunc/oAppend.
 ## errno/strerror: `thoxa_errno` RT helper + libc `strerror` via `extern … from "c"`.
 
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 extern fn sysOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
 extern fn sysOpenMode(path!: String, flags!: Int32, mode!: Int32) -> Int32 from "c" "open"
 extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"

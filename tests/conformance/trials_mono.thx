@@ -1,4 +1,7 @@
 ## Trial monomorphs: Void/String and User/String (post-R9).
+
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 type Box(n: Int64)
 
 fn asVoid(ok!: Bool) -> Trial<Void, String> {

@@ -1,5 +1,7 @@
 ## Syntax — highlight classifier (kilo editorUpdateSyntax subset).
 
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 export type Normal
 export type Comment
 export type Keyword1

@@ -20,6 +20,10 @@ use std::fs;
 /// Keep in sync with the product file under `std/Shell.thx` (D104).
 const SESSION_PRELUDE_EMBED: &str = include_str!("../../../std/Shell.thx");
 
+/// Compile-time fallback for `std/Fallible.thx` when the std tree is missing.
+/// Keep in sync with the product file under `std/Fallible.thx`.
+const FALLIBLE_EMBED: &str = include_str!("../../../std/Fallible.thx");
+
 /// Rewrite the package entry for session mode when needed.
 pub fn prepare_package(package: &mut Package) -> Result<()> {
     if package.modules.is_empty() {
@@ -32,10 +36,17 @@ pub fn prepare_package(package: &mut Package) -> Result<()> {
         .iter()
         .position(|m| m.is_entry)
         .unwrap_or(package.modules.len() - 1);
-    prepare_entry(&mut package.modules[entry_idx])
+    let injected_shell = prepare_entry(&mut package.modules[entry_idx])?;
+    // Shell.thx imports `std/Fallible`; inject happens after load, so pull
+    // Fallible into the package when the session prelude was spliced in.
+    if injected_shell {
+        ensure_fallible_module(package)?;
+    }
+    Ok(())
 }
 
-fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
+/// Returns `true` when product Shell items were injected into the entry.
+fn prepare_entry(entry: &mut SourceModule) -> Result<bool> {
     let has_main = entry
         .ast
         .items
@@ -58,7 +69,7 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
                  (use only declarations + main, or omit main for a session script)",
             ));
         }
-        return Ok(());
+        return Ok(false);
     }
 
     entry
@@ -82,7 +93,7 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
 
     if session_stmts.is_empty() && !has_step {
         // Library module — leave unchanged.
-        return Ok(());
+        return Ok(false);
     }
 
     if !session_stmts.is_empty() && has_step {
@@ -91,10 +102,12 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
         ));
     }
 
+    let mut injected_shell = false;
     if !session_stmts.is_empty() {
         let needs_prelude = shell_idx.is_none();
         if needs_prelude {
             inject_prelude(entry)?;
+            injected_shell = true;
         } else if let Some(i) = shell_idx {
             if let Item::Type(t) = &entry.ast.items[i] {
                 ensure_shell_status_param(t)?;
@@ -122,7 +135,7 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<()> {
     }
 
     entry.ast.items.push(Item::Function(make_session_main()));
-    Ok(())
+    Ok(injected_shell)
 }
 
 fn inject_prelude(entry: &mut SourceModule) -> Result<()> {
@@ -151,6 +164,49 @@ fn session_shell_source() -> Result<String> {
         }
     }
     Ok(SESSION_PRELUDE_EMBED.to_string())
+}
+
+/// Ensure `std/Fallible` is a package module (Shell inject imports it after load).
+fn ensure_fallible_module(package: &mut Package) -> Result<()> {
+    if package.modules.iter().any(|m| m.id == "Fallible") {
+        return Ok(());
+    }
+    let (path, src) = fallible_source()?;
+    let tokens = Lexer::new(&src)
+        .tokenize()
+        .map_err(|e| Error::new(format!("std/Fallible lex: {e}")))?;
+    let ast = Parser::new(tokens)
+        .parse_module()
+        .map_err(|e| Error::new(format!("std/Fallible parse: {e}")))?;
+    // Dependency order: Fallible before modules that import it (entry is last).
+    package.modules.insert(
+        0,
+        SourceModule {
+            id: "Fallible".into(),
+            path,
+            ast,
+            is_entry: false,
+        },
+    );
+    Ok(())
+}
+
+fn fallible_source() -> Result<(std::path::PathBuf, String)> {
+    if let Ok(root) = loader::std_lib_root() {
+        let path = root.join("Fallible.thx");
+        if path.is_file() {
+            let src = fs::read_to_string(&path).map_err(|e| {
+                Error::new(format!("read std/Fallible {}: {e}", path.display()))
+            })?;
+            // Match loader::resolve_specifier path key (canonical when possible).
+            let path = fs::canonicalize(&path).unwrap_or(path);
+            return Ok((path, src));
+        }
+    }
+    Ok((
+        std::path::PathBuf::from("std/Fallible.thx"),
+        FALLIBLE_EMBED.to_string(),
+    ))
 }
 
 fn ensure_shell_status_param(t: &TypeDef) -> Result<()> {

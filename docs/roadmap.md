@@ -99,7 +99,7 @@ Freezes:
 - ~~Module-global RC end-of-fn drop~~ (**D122** shipped; kilo empty-buffer fix)
 
 - ~~Sum types + general fallibility (D118–D119)~~ — user unions, generics +
-  methods, pure-lit scalar, **May/Trial prelude cutover**, dead
+  methods, pure-lit scalar, **May/Trial as `std/Fallible` (import, D123)**, dead
   `Ty::May`/`Trial` removed (freeze
   [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md))
 

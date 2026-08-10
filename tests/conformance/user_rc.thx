@@ -1,5 +1,8 @@
 ## User+heap field RC: assign, methods, Trial Pass/match/?, sequential calls.
 ## Also: multi-field String+Bytes, Fail(User) err payload.
+
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 type Box(s: String) {
     export fn get() -> String {
         s

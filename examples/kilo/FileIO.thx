@@ -1,6 +1,7 @@
 ## FileIO — open / save a file as Array<Row>.
 
 import { Row, make } from "./Row"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 extern fn sysOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
 extern fn sysOpen3(path!: String, flags!: Int32, mode!: Int32) -> Int32 from "c" "open"

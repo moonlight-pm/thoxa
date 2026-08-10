@@ -2,6 +2,9 @@
 ## Pure protocol: no syscalls. Request body is always empty Bytes until body reading lands.
 
 ## One header field: name and value as Strings (ASCII for this demo).
+
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 export type Header(name: String, value: String)
 
 ## A parsed request. `body` is always empty Bytes until body reading lands.

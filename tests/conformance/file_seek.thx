@@ -2,6 +2,7 @@
 import {
     openFile, writeFile, readFile, seekSet, seekCur, seekEnd, oRdwr
 } from "./iolib/Io"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 fn main() -> Int64 {
     let path = "/tmp/thoxa_file_seek_conformance.txt"

@@ -4,6 +4,7 @@
 import net from "./httplib/Net"
 import http from "./httplib/Http"
 import { Router } from "./httplib/Router"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 fn statusLine(resp!: Bytes) -> String {
     match resp.find(Bytes.fromString("\r")) {

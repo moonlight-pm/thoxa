@@ -1,6 +1,8 @@
 ## Early `return` / `return expr` in nested if, for, while, loop, and match.
 ## Also: String params must not be dropped on early return / ? Fail (caller owns).
 
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 fn mid() -> Int64 {
     let a = 1
     if a == 1 {

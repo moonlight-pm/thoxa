@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-09 — Fallible import (no ambient prelude)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D123 | May/Trial not ambient | Programs **must** `import { … } from "std/Fallible"`; compiler no longer injects Fallible into every module | Refines D118 ambient cutover. Session Shell inject still loads `std/Fallible` into the package (Shell imports Has/Not/May). Types remain ordinary generic unions. Gates: `mays`, `trials*`, `bytes`, `http_*`, `stdlib`. |
+
 ## 2026-08-09 — Examples / argv / module-global RC
 
 | ID | Decision | Choice | Notes |
@@ -30,7 +36,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D120 | Union-match guards | `Ctor if bool` / `Ctor(x) if bool` on tagged/literal union arms; binds visible to the guard | Not on catch-all (`else` / bare whole-sum bind). Guarded arms do **not** exhaust a tag (same tag may repeat). Guard fail falls through to later arms. Applies to user unions and ambient May/Trial. Conformance: `sums_match_guard`. Extends D111 + D118. |
+| D120 | Union-match guards | `Ctor if bool` / `Ctor(x) if bool` on tagged/literal union arms; binds visible to the guard | Not on catch-all (`else` / bare whole-sum bind). Guarded arms do **not** exhaust a tag (same tag may repeat). Guard fail falls through to later arms. Applies to user unions and May/Trial. Conformance: `sums_match_guard`. Extends D111 + D118. |
 
 ## 2026-08-08 — Union identity (nominal atoms · transparent aliases)
 
@@ -42,7 +48,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D118 | Sum types + general `?` | TS-leaning unions; arm marks `!`/`?`; May/Trial as prelude generics | **Shipped:** unions + marks + generics + ambient `May`/`Trial` prelude cutover; cross-module residual rewrap. Gates: `sums_*`, `mays`, `trials*`, `http_*`. **Identity → D119.** Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
+| D118 | Sum types + general `?` | TS-leaning unions; arm marks `!`/`?`; May/Trial as std generics | **Shipped:** unions + marks + generics + May/Trial as `std/Fallible` unions; cross-module residual rewrap. **Import → D123** (no ambient inject). Gates: `sums_*`, `mays`, `trials*`, `http_*`. **Identity → D119.** Freeze: [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md). |
 
 ## 2026-08-07 — Fixed Array locals
 

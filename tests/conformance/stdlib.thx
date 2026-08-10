@@ -4,6 +4,7 @@ import { dirname, parent, basename, fileName, join, joinAll, isAbsolute, isRelat
 import { hasEnv, getenvOr, home, tmpdir, shell, pathVar, pwd } from "std/Env"
 import { branchName, branchSuffix, isRepo, repoRoot, isDetached, headLine } from "std/Git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 fn main() -> Int64 {
     if startsWith("hello", "he") {

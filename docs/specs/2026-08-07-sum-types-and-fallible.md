@@ -2,12 +2,13 @@
 
 **Date:** 2026-08-07  
 **Status:** target (accepted product intent; **implemented** for v0)  
-**Implementation:** ladder §10 + **May/Trial prelude cutover** — ambient
-`Has`/`Not`/`May`/`Pass`/`Fail`/`Trial` as generic unions; monomorphs; methods
-on generic products; residual `?` rewrap; exhaustiveness names missing arms /
-rejects post-`else` arms; OpenMode sample (`file_openmode`); union match guards
-(**D120**, `sums_match_guard`); **no** builtin `Ty::May`/`Ty::Trial`. Gates green
-under `cargo make test`.  
+**Implementation:** ladder §10 + **May/Trial as `std/Fallible`** — exported
+`Has`/`Not`/`May`/`Pass`/`Fail`/`Trial` generic unions (**import required**,
+**D123**; no ambient inject); monomorphs; methods on generic products; residual
+`?` rewrap; exhaustiveness names missing arms / rejects post-`else` arms;
+OpenMode sample (`file_openmode`); union match guards (**D120**,
+`sums_match_guard`); **no** builtin `Ty::May`/`Ty::Trial`. Gates green under
+`cargo make test`.  
 **Gaps:** none for v0
 
 **As-built:** [`../capabilities.md`](../capabilities.md) · focus
@@ -39,7 +40,7 @@ early-return on residual.
 
 **One sentence:**  
 Unions are TypeScript-shaped; `!` / `?` on types mark extract and residual for
-a general `?` operator; May/Trial become ordinary prelude unions.
+a general `?` operator; May/Trial become ordinary `std/Fallible` unions.
 
 ---
 
@@ -245,10 +246,11 @@ If a single success arm is marked for payload extract (`Pass<P!>`), unwrap to
 
 ### 3.5 May / Trial
 
-- **Not compiler builtins** long-term — **prelude / stdlib** unions using this
-  surface (auto-imported like today’s ambient May/Trial).
-- Special only as prelude + marks; same IR as user unions.
-- **Full cutover** of conformance and samples when this lands (no dual stack).
+- **Not compiler builtins** — **`std/Fallible`** unions using this surface
+  (**import required**, D123; session Shell inject still loads Fallible for
+  the product Shell API).
+- Special only as std + marks; same IR as user unions.
+- **Full cutover** of conformance and samples landed with D118 then D123.
 - **Effects (D2)** may later subsume or replace parts of this; freeze does not
   depend on effects.
 
@@ -392,3 +394,4 @@ This freeze is **accepted product intent** when:
 | 2026-08-08 | May/Trial prelude cutover (ambient Fallible generics; full conformance green) |
 | 2026-08-08 | Dead `Ty::May`/`Trial` removed; methods on generic products (`sums_generic_methods`) |
 | 2026-08-08 | Exhaustiveness names missing arms; OpenMode union sample (`file_openmode`) |
+| 2026-08-09 | May/Trial **import required** from `std/Fallible` (D123; no ambient inject) |

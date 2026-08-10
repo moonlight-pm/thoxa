@@ -36,22 +36,24 @@ Directory packages may use `Main.thx` as the entry file.
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
 | Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?` |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
-| Errors | Ambient prelude `May<T>` / `Trial<Ok,Err>` with `?` / `match` (ok/err may nest) |
+| Errors | `May<T>` / `Trial<Ok,Err>` from `std/Fallible` with `?` / `match` (ok/err may nest) |
 | Equality | String `==` / `!=`; usual scalar compares |
 
-**Fallibility (ambient — no import):** same surface as always, now ordinary
-generic unions (`std/Fallible.thx` / compiler inject):
+**Fallibility** — ordinary generic unions in `std/Fallible`; **import required**:
 
 ```thx
-type Has<T>(value: T)
-type Not
-type May<T> = Has<T!> | Not?
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
-type Pass<T>(value: T)
-type Fail<E>(error: E)
-type Trial<P, F> = Pass<P!> | Fail<F?>
+fn half(x: Int64) -> Trial<Int64, Int64> {
+    if x % 2 == 0 { Pass(x / 2) } else { Fail(x) }
+}
+
+fn firstAb(hay!: Bytes) -> May<Int64> {
+    hay.find(Bytes.fromString("ab"))
+}
 ```
 
+Defined as `May<T> = Has<T!> | Not?` and `Trial<P, F> = Pass<P!> | Fail<F?>`.
 `?` unwraps the success extract or early-returns the residual (rewraps across
 compatible Trial monomorphs, including across modules). User unions with a
 residual mark use the same `?` operator.

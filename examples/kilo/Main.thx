@@ -27,6 +27,7 @@ import {
     PageDown,
     Delete
 } from "./Keys"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 export type Quit
 export type RunFind

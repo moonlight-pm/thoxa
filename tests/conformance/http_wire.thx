@@ -2,6 +2,7 @@
 ## No infinite accept loop; deterministic for conformance.
 import net from "./httplib/Net"
 import http from "./httplib/Http"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 fn main() -> Int64 {
     match serveOnce() {

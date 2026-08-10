@@ -1,6 +1,8 @@
 ## Nested Trial/May payloads: Array and May as ok/err (D113).
 ## Also exercises `>>` type-arg close (`May<Array<Int64>>`).
 
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 fn arrOk() -> Trial<Array<Int64>, String> {
     Pass([10, 20, 30])
 }

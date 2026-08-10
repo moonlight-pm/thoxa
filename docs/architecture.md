@@ -28,7 +28,7 @@ step `.so` on the happy path.
 |-------|----------|--------|
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` / `emit-c` / `lsp` / bare REPL |
 | Frontend | `lexer`, `parser`, `ast`, `resolver` | Shared resolver used by LSP |
-| MIR | `mir.rs` | RC; generic monomorphs; ambient Fallible prelude inject (D118); module globals not end-of-fn dropped (D122) |
+| MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); module globals not end-of-fn dropped (D122) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile |
@@ -49,11 +49,12 @@ step `.so` on the happy path.
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
 | `apocrypha/` | Historical + Python oracle |
 
-**Ambient Fallible:** `Has` / `Not` / `May` / `Pass` / `Fail` / `Trial` are
-injected into every package at lower time (source of truth also in
-`std/Fallible.thx`). They lower as ordinary generic unions (`Ty::User`
-monomorphs). Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are
-gone.
+**Fallible (`std/Fallible`):** `Has` / `Not` / `May` / `Pass` / `Fail` /
+`Trial` are ordinary exported generic unions. Programs **import** them (no
+ambient inject for compiled modules). Session Shell inject still pulls
+`std/Fallible` into the package when the product Shell prelude is spliced
+(Shell itself imports May/Has/Not). They lower as `Ty::User` monomorphs.
+Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are gone.
 
 ## Session execution (as-built)
 

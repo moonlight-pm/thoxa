@@ -1,5 +1,8 @@
 ## Bytes + mut (R5). Fixed heap Bytes with simple RC; mut reassignment.
 ## R9: Bytes(n) zero-fill + slice.
+
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 fn main() -> Int64 {
     mut b = Bytes.fromString("abc")
     println(b.count)

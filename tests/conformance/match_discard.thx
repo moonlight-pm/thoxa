@@ -2,6 +2,8 @@
 ## Discarded heap payloads are still dropped at function end (RC).
 ## Pattern `_` only; body `_` is ordinary lookup (no outer `_` here).
 
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 type Box(n: Int64)
 
 fn half(x: Int64) -> Trial<Int64, String> {

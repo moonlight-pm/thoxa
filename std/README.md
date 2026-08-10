@@ -6,6 +6,7 @@ User handbook: [`docs/handbook/std.md`](../docs/handbook/std.md).
 As-built rows: [`docs/capabilities.md`](../docs/capabilities.md) (`std-*`).
 
 ```thx
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import { defaultPrompt } from "std/Prompt"   ## session shell.thx
 import { startsWith, dropPrefix } from "std/Str"
 import { cwdShort, shortPath } from "std/Path"
@@ -17,7 +18,7 @@ import { branch } from "std/Git"
 | Module | Role |
 |--------|------|
 | `Shell` | Session `type Shell` + builtins (`echo`/`cd`/`run`/`runIo`/`pipeline`/…); auto-injected for session scripts |
-| `Fallible` | Ambient May/Trial surface (compiler inject; no import) |
+| `Fallible` | Exported May/Trial surface — **import required** for programs |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
 | `Str` | search/slice/replace/`split`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |
 | `Path` | dirname/basename/join/`joinAll`/`parts`/slash helpers/extension/`cwd`/`shortPath`/… |

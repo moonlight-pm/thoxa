@@ -4,6 +4,7 @@ import { readKey, Press, Up, Down, Left, Right } from "./Keys"
 import { Row } from "./Row"
 import screen from "./Screen"
 import state from "./State"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 let hint = " (ESC cancel | Arrows next/prev | Enter confirm)"
 let esc = 27

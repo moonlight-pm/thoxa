@@ -1,5 +1,7 @@
 ## Terminal — raw mode + window size via Bytes buffers (matches termios/winsize ABI).
 
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+
 extern fn sysTcgetattr(fd!: Int32, p!: Bytes) -> Int32 from "c" "tcgetattr"
 extern fn sysTcsetattr(fd!: Int32, act!: Int32, p!: Bytes) -> Int32 from "c" "tcsetattr"
 extern fn sysIoctl(fd!: Int32, request!: UInt64, ws!: Bytes) -> Int32 from "c" "ioctl"

@@ -1,5 +1,6 @@
 ## File write/create (D112): writeFile, appendFile, File.write.
 import { writeFile, appendFile, readFile, oCreat, oWronly, oTrunc } from "./iolib/Io"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 fn main() -> Int64 {
     let path = "/tmp/thoxa_file_write_conformance.txt"

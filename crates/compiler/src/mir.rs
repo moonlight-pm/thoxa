@@ -335,7 +335,7 @@ pub enum Ty {
     },
     /// FFI pointer `Address<T>` (param types only in R7).
     Address(Box<Ty>),
-    /// User product / union / monomorph (including ambient May/Trial).
+    /// User product / union / monomorph (including std/Fallible May/Trial).
     User(String),
 }
 
@@ -854,47 +854,9 @@ pub fn lower_package(package: &Package) -> Result<Program> {
     lower_package_with(package, LowerOptions::default())
 }
 
-/// Ambient fallibility prelude (D118): May/Trial as generic unions.
-const FALLIBLE_PRELUDE: &str = r#"
-type Has<T>(value: T)
-type Not
-type May<T> = Has<T!> | Not?
-
-type Pass<T>(value: T)
-type Fail<E>(error: E)
-type Trial<P, F> = Pass<P!> | Fail<F?>
-"#;
-
-/// Parse ambient Fallible types once and prepend to each module that lacks them.
-fn package_with_fallible_prelude(package: &Package) -> Result<Package> {
-    let tokens = crate::lexer::Lexer::new(FALLIBLE_PRELUDE)
-        .tokenize()
-        .map_err(|e| Error::new(format!("fallible prelude lex: {e}")))?;
-    let prelude = crate::parser::Parser::new(tokens)
-        .parse_module()
-        .map_err(|e| Error::new(format!("fallible prelude parse: {e}")))?;
-    let mut modules = package.modules.clone();
-    for m in &mut modules {
-        let has_may = m.ast.items.iter().any(|it| {
-            matches!(it, Item::Type(td) if td.name == "May" || td.name == "Has")
-        });
-        if has_may {
-            continue;
-        }
-        let mut items = prelude.items.clone();
-        items.append(&mut m.ast.items);
-        m.ast.items = items;
-    }
-    Ok(Package {
-        project_root: package.project_root.clone(),
-        modules,
-    })
-}
-
 /// Lower a multi-file package with explicit options.
 pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Program> {
-    let package = package_with_fallible_prelude(package)?;
-    let package = &package;
+    // May/Trial live in `std/Fallible` and must be imported (no ambient inject).
     let import_maps = loader::build_import_maps(package)?;
 
     // ---------- Phase 1: register types (mangled names) ----------
@@ -1926,7 +1888,7 @@ fn resolve_ty(
         ("String", []) => Ok(Ty::String),
         ("Bytes", []) => Ok(Ty::Bytes),
         ("Buffer", []) => Ok(Ty::Buffer),
-        // May / Trial are prelude generic unions (D118 cutover) — resolved via monomorphs.
+        // May / Trial are std/Fallible generic unions (D118) — resolved via monomorphs.
         ("Array", [TypeArg::Type(elem)]) => {
             let et = resolve_ty(elem, types, name_map)?;
             if !is_array_elem_ty(&et) {
@@ -2166,7 +2128,7 @@ fn seed_fallible_monos(
     generics: &HashMap<String, GenericDef>,
     per_mod_types: &HashMap<String, HashMap<String, String>>,
 ) -> Result<()> {
-    // Seed every module's May/Trial (prelude is injected into each).
+    // Seed monomorphs for every module that imported (or defined) May/Trial.
     let span = Span::new(0, 0);
     let inners = [Ty::Int64, Ty::String, Ty::Bool, Ty::Bytes, Ty::Void];
     let mut pending = Vec::new();
@@ -2324,7 +2286,7 @@ fn monomorphize_package(
 }
 
 fn is_builtin_generic(name: &str) -> bool {
-    // May/Trial are user generics from the fallible prelude (not builtins).
+    // May/Trial are user generics from std/Fallible (not builtins).
     matches!(
         name,
         "Array" | "Address" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte"
@@ -3350,7 +3312,7 @@ fn lower_method(
 
 /// Drop every noted heap local at function end except the returned place (moved out).
 /// Uses `drop_places` (from `assign` / `note_drop_place`), not every Assign — so
-/// `assign_no_drop` sum-payload intermediates are not double-freed (D118 prelude).
+/// `assign_no_drop` sum-payload intermediates are not double-freed (D118 Fallible).
 fn insert_function_drops(
     stmts: &mut Vec<Stmt>,
     ret: &Option<Place>,
@@ -5497,8 +5459,8 @@ fn lower_bytes_method(
                     args: all,
                 },
             );
-            // Wrap runtime -1 / index into prelude May<Int64>.
-            let may_ty = prelude_mono(ctx, "May", &[Ty::Int64], span)?;
+            // Wrap runtime -1 / index into May<Int64> (requires `import … from "std/Fallible"`).
+            let may_ty = fallible_mono(ctx, "May", &[Ty::Int64], span)?;
             let out = ctx.fresh("findm");
             init_place(ctx, &out, &may_ty)?;
             let zero = ctx.fresh("fz");
@@ -5850,7 +5812,7 @@ fn lower_arg_for_formal(
 
 fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)> {
     let (scrut_p, scrut_ty) = lower_expr(ctx, inner)?;
-    // May/Trial are residual-marked user unions (prelude); no builtin Ty::May/Trial.
+    // May/Trial are residual-marked user unions (std/Fallible); no builtin Ty::May/Trial.
     if let Ty::User(ref n) = &scrut_ty {
         if let Some(sum) = ctx.types.get(n).and_then(|i| i.sum.clone()) {
             return lower_try_sum(ctx, scrut_p, scrut_ty, sum, span);
@@ -6490,7 +6452,7 @@ fn lower_match(
     }
 
     let (scrut_p, scrut_ty) = lower_expr(ctx, scrutinee)?;
-    // Prelude May/Trial are residual-marked user unions — use general sum match.
+    // May/Trial are residual-marked user unions — use general sum match.
     if matches!(scrut_ty, Ty::String | Ty::Int64 | Ty::Bool) {
         return lower_match_value(ctx, scrut_p, scrut_ty, arms, span);
     }
@@ -7629,18 +7591,22 @@ fn lower_binary(
     }
 }
 
-/// Resolve prelude monomorph `Base__Arg…` if present in the type map.
-fn prelude_mono(ctx: &LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Result<Ty> {
-    let base = ctx
-        .name_to_type
-        .get(base_src)
-        .cloned()
-        .unwrap_or_else(|| base_src.to_string());
+/// Resolve a `std/Fallible` monomorph (`May`/`Trial`/…) if imported in this module.
+fn fallible_mono(ctx: &LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Result<Ty> {
+    let Some(base) = ctx.name_to_type.get(base_src).cloned() else {
+        return Err(Error::at(
+            format!(
+                "`{base_src}` is not in scope — import it from \"std/Fallible\" \
+                 (e.g. `import {{ Has, Not, May, Pass, Fail, Trial }} from \"std/Fallible\"`)"
+            ),
+            span,
+        ));
+    };
     let mono = mono_type_name(&base, args);
     if !ctx.types.contains_key(&mono) {
         return Err(Error::at(
             format!(
-                "prelude type `{base_src}` monomorph `{mono}` missing — add a type annotation using `{base_src}<…>`"
+                "type `{base_src}` monomorph `{mono}` missing — add a type annotation using `{base_src}<…>`"
             ),
             span,
         ));
@@ -7906,7 +7872,7 @@ fn lower_pass_fail(
         ctx.fn_ret.clone()
     } else {
         // Infer Trial<Int64, Int64> — monomorph must already exist from type annotations.
-        prelude_mono(ctx, "Trial", &[Ty::Int64, Ty::Int64], span)?
+        fallible_mono(ctx, "Trial", &[Ty::Int64, Ty::Int64], span)?
     };
     let arm_ty = union_arm_payload(&ctx.types, &trial_ty, callee).ok_or_else(|| {
         Error::at(
@@ -7943,7 +7909,7 @@ fn lower_has(
         ctx.fn_ret.clone()
     } else {
         // Infer May<Int64> when no annotation (historical Has(int) default).
-        prelude_mono(ctx, "May", &[Ty::Int64], span)?
+        fallible_mono(ctx, "May", &[Ty::Int64], span)?
     };
     let arm_ty = union_arm_payload(&ctx.types, &may_ty, "Has").ok_or_else(|| {
         Error::at(format!("`Has` is not an arm of {may_ty:?}"), span)
@@ -7976,7 +7942,7 @@ fn lower_not(
     } else if is_residual_union(&ctx.types, &ctx.fn_ret) {
         ctx.fn_ret.clone()
     } else {
-        prelude_mono(ctx, "May", &[Ty::Int64], span)?
+        fallible_mono(ctx, "May", &[Ty::Int64], span)?
     };
     let arm_ty = union_arm_payload(&ctx.types, &may_ty, "Not").ok_or_else(|| {
         Error::at(format!("`Not` is not an arm of {may_ty:?}"), span)

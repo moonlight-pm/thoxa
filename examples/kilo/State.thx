@@ -3,6 +3,7 @@
 import { Row, make } from "./Row"
 import fileio from "./FileIO"
 import { Hl, Matched, highlightRow, plainRow, selectSyntax } from "./Syntax"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 extern fn sysTime(tloc!: Bytes) -> Int64 from "c" "time"
 fn now() -> Int64 {

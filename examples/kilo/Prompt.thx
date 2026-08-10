@@ -3,6 +3,7 @@
 import { readKey, Press } from "./Keys"
 import screen from "./Screen"
 import state from "./State"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 let esc = 27
 let enter = 13

@@ -3,6 +3,8 @@
 ## Lives under `std/Shell.thx` (product std tree); the compiler also embeds a
 ## compile-time fallback copy for environments without a discoverable std root.
 
+import { Has, Not, May } from "std/Fallible"
+
 extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
 extern fn sysChdir(path!: String) -> Int32 from "c" "chdir"
 extern fn sysGetenv(name!: String) -> String from "c" "getenv"

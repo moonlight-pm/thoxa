@@ -2,6 +2,7 @@
 
 import state from "./State"
 import { color, Normal } from "./Syntax"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
 extern fn sysWrite(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "write"
 extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
