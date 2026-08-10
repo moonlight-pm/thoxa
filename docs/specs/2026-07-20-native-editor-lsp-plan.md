@@ -3,7 +3,8 @@
 **Date:** 2026-07-20  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** MIR lower on shared resolver (**deferred architecture**, not phase-2 polish); package-tree walk still capped (not arbitrary home-tree / multi-root folders). **Shipped:** nav multi-diag, typed-member stack, package-tree refs/rename, **`workspace/symbol`** package search.  
+**Gaps:** MIR lower on shared resolver (**deferred architecture**, not phase-2 polish); package-tree walk still capped (not arbitrary home-tree / multi-root folders); mid-expression parse recovery still limited.  
+**Shipped:** phase-1 diagnostics + multi-diag (soft block recover, multi undefined names, recovered entry AST for check/LSP); nav; typed-member stack; package-tree refs/rename; **`workspace/symbol`**; `thoxa version` / LSP identity stamp.
 
 
 
@@ -30,24 +31,28 @@
 
 ---
 
-## 0. Current baseline (do not re-implement)
+## 0. Baseline at plan write time (historical)
 
-| Area | Status | Notes |
-|------|--------|-------|
-| Lexer / parser / MIR lower (type errors as `Error`) | ✅ | First-error-only; spans are **byte offsets** |
-| `thoxa build\|run\|emit-c\|runtime` | ✅ | No `lsp` / `check` subcommands |
-| Multi-file `./` + `~/` loader | ✅ | Disk-based; no open-buffer overlay |
+> **As-built now:** see Implementation header + [`../capabilities.md`](../capabilities.md).
+> Several “soft spots” below are **shipped** (multi-diag, parse soft-recover,
+> `check`/`lsp`, overlays, navigation). Table kept for history only.
+
+| Area | At plan write | Notes |
+|------|---------------|-------|
+| Lexer / parser / MIR lower | ✅ | Spans are **byte offsets** |
+| CLI | ✅ build/run/emit-c/runtime | `check` / `lsp` / `version` added later |
+| Multi-file loader | ✅ `./` + `~/` | Open-buffer overlay + `std/…` later |
 | Conformance gate | ✅ | `cargo make test` |
-| Tree-sitter / Zed / LSP | ❌ | Only under apocrypha (Python-era) |
+| Tree-sitter / Zed / LSP | planned then | Product path under `extras/` + `thoxa lsp` |
 
-**Known soft spots this plan addresses or documents:**
+**Original soft spots (status as of 2026-08-09):**
 
-1. **CLI does not print spans** — `error: {message}` only; LSP needs span → line/col range.
-2. **First error only** — acceptable for phase 1; multi-diag deferred.
-3. **No parse recovery** — mid-edit → one lex/parse diagnostic (same as oracle).
-4. **No resolver / binding table** — blocks phase 2 navigation until extracted.
-5. **Lexer uses single `Ident(String)`** — casing is content-based (first char), not separate token kinds; semantic tokens must check casing themselves.
-6. **Compiler crate has zero deps today** — LSP needs JSON; add a small dependency (see decisions).
+1. ~~CLI does not print spans~~ — `thoxa check` / LSP use spans  
+2. ~~First error only~~ — multi-diag shipped (check/LSP)  
+3. ~~No parse recovery~~ — statement-level soft recover shipped; mid-expression still limited  
+4. ~~No resolver~~ — resolver ships for LSP nav; MIR still own env (deferred)  
+5. Lexer `Ident(String)` casing — still content-based  
+6. ~~Zero deps~~ — serde_json for LSP
 
 ---
 

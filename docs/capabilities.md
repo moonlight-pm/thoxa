@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-09 (D123 Fallible import; kilo user-tested + D122)
+**As of:** 2026-08-09 (D123 Fallible import; LSP multi-diag soft recovery; `thoxa version`)
 
 ---
 
@@ -98,8 +98,9 @@ change. See [`progress-model.md`](progress-model.md).
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| check-source | Typecheck API + overlays | shipped | unit / LSP | D71–D79 | — | yes |
-| lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1 | Multi-diag: bodies, type-reg, lex, parse (top-level + **mid-block** + type-body recovery; nested multi flattened) | yes |
+| check-source | Typecheck API + overlays | shipped | unit / LSP | D71–D79 | Soft-recovered entry AST + `load_package_with_entry_ast` so syntax errors do not hide later undefined-name diags | yes |
+| lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1 | Multi-diag: parse soft-recover (blocks + top-level), multi undefined names in one block, program top-level stmts with `main` (localized, plain wording); residual mid-expression recovery still limited | yes |
+| cli-version | `thoxa version` / LSP identity stamp | shipped | unit / CLI | build stamp | Git short hash (+`.dirty`) + binary path; LSP stderr + `window/logMessage` + `serverInfo.version` (no toast) | yes |
 | lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; residual rare untyped exprs | partial |
 | lsp-workspace | `workspace/symbol` package search | shipped | unit | editor plan | Open buffers + package-tree disk (Main.thx/`.git` root); query substring; cap 100 | yes |
 | lsp-xmodule | Cross-module jump (`./` `~/` / `std/`) | partial | unit | D78 | `std/` go-to-def covered; open buffer wins over disk | partial |

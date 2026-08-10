@@ -12,8 +12,11 @@ Product face: **bare `thoxa`** (not `extras/shell`).
 |------------|------|
 | `thoxa` / `thoxa repl` | Long-lived REPL |
 | `thoxa file.thx` without `fn main` | Session script (one-shot) |
-| `thoxa file.thx` with `fn main` | Ordinary program |
+| `thoxa file.thx` with `fn main` | Ordinary **program** (top-level statements illegal) |
 | `thoxa dir/` | `Main.thx` program entry |
+
+Session scripts use top-level statements as the body of `Shell.step`. Programs
+must keep the file top level to declarations only — put work inside `main`.
 
 ## Shell
 

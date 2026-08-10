@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-09 (Fallible import / D123; session deferred)
+**As of:** 2026-08-09 (LSP multi-diag + version stamp; Fallible D123; session deferred)
 
 ---
 
@@ -14,12 +14,12 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** **`std/Fallible` import required** (**D123** — no ambient
-May/Trial inject for programs); **`examples/kilo`** terminal editor
-(**user-tested** — empty buffer + typing OK after **D122** module-global RC
-fix); language forced by it (`Bytes.equals`, `String.count`, `\xHH`,
-`main(arguments)`, CLI args); **`examples/http`**; **`vendor/`** rename.
-Session residual deferred.
+**Shipped recently:** **LSP multi-diag soft recovery** (syntax + undefined names
+together; plain top-level-with-`main` wording); **`thoxa version`** / LSP
+identity stamp (git hash, no toasts); **`std/Fallible` import required**
+(**D123**); **`examples/kilo`** (**user-tested** after **D122**); language
+forced by kilo (`Bytes.equals`, `String.count`, `\xHH`, `main(arguments)`);
+**`examples/http`**. Session residual deferred.
 
 **In progress / next:** language gaps forced by samples; sample-driven std when
 forced; editor only when DX forces.

@@ -36,7 +36,7 @@ restart again.
 
 | Feature | Notes |
 |---------|--------|
-| Diagnostics | From native check / overlays; multi-diag for body/type-reg errors, unexpected lex chars, and parse recovery (top-level items + mid-block statements) |
+| Diagnostics | Same engine as `thoxa check`. **Multi-diag:** several parse errors, several undefined names in one block, and parse recovery that still typechecks the rest of a function after a bad token (e.g. keyword `as`). Programs with `fn main` reject bare top-level statements with a clear span (not “session jargon”). Mid-expression recovery is still limited. |
 | Syntax color | Tree-sitter Thoxa grammar |
 | Hover | Signature + contiguous `##` docs |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
@@ -55,9 +55,10 @@ Library buffers without `main` typecheck as libraries (no false “requires main
 - Typed member navigation still misses some **untyped** expressions (no recoverable type).
 - Package-tree refs/rename and **workspace symbols** use the same root walk
   (nearest `Main.thx` / `.git`; capped — not an unbounded home walk / multi-root).
-- Parse recovery covers top-level items and mid-block statements (not full mid-expression recovery).
+- Parse recovery is **statement-oriented** (top-level items + mid-block); not full mid-expression recovery.
 - MIR lower still uses its own env (shared-resolver migration is deferred architecture, not day-to-day polish).
 - **No Python** in the product editor path.
+- `build` / `run` still stop at errors (soft-recovered AST is for **check / LSP** multi-diag only).
 
 ## C runtime in editors (clangd)
 

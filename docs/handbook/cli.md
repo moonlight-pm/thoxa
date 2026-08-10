@@ -13,7 +13,7 @@ The product binary is **`thoxa`** (`cargo run -p thoxa -- …`, or via
 | `thoxa dir/` | Runs `dir/Main.thx` if present |
 | `thoxa run path [args…]` | Compile and run; trailing args go to `fn main(arguments: Array<String>)` (D121) |
 | `thoxa build path -o out` | Compile to a binary |
-| `thoxa check path` | Typecheck only (no C emit) |
+| `thoxa check path` | Typecheck only (no C emit); multi-diagnostic when possible |
 | `thoxa emit-c path` | Emit C under `target/thoxa/c/` |
 | `thoxa lsp` | Language server (stdio) |
 | `thoxa version` | Build identity: package + git hash (+`.dirty`) + binary path |

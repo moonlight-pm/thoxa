@@ -26,6 +26,17 @@ fn main(arguments: Array<String>) -> Int64 {
 
 Directory packages may use `Main.thx` as the entry file.
 
+### Program vs session script
+
+| Shape | Top level allows |
+|-------|------------------|
+| **Program** (`fn main` present) | Declarations only: `import`, `type`, `fn`, `let` / `mut`, `extern`, `export` |
+| **Session script** (no `main`) | Declarations **plus** bare statements (`println("hi")`, assignments, …) |
+
+A bare name like `FOOBAR` at file scope is a **statement**, not a declaration.
+In a program it is an error (clear span). In a session script it is the script
+body (and fails later if the name is undefined). See [session.md](session.md).
+
 ## Values and types (highlights)
 
 | Area | Shipped |

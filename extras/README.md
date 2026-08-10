@@ -71,6 +71,7 @@ cargo make zed --grammar
 | Fix error | squiggle clears |
 | LSP logs if broken | `zed: open language server logs`; look for `thoxa-lsp: thoxa 0.1.0+<hash>  path=…` |
 | Binary identity | `thoxa version` (same string as LSP start log / `serverInfo.version`) |
+| Multi-diag | Syntax + undefined names can show together after soft recovery; restart LS after rebuild |
 
 ## Layout decisions
 
