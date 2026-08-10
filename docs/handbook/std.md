@@ -16,8 +16,8 @@ import { branch } from "std/Git"
 
 | Module | Role |
 |--------|------|
-| `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts |
-| `Fallible` | Exported `May` / `Trial` / `Has` / `Not` / `Pass` / `Fail` — **import required** for programs |
+| `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts (pulls Fallible for its May/Has/Not) |
+| `Fallible` | Exported `May<T> = Has<T!> \| Not?`, `Trial<P,F> = Pass<P!> \| Fail<F?>` — **import required** for programs (D123; not ambient) |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `Str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`join`/`lines`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
 | `Path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |

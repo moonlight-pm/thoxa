@@ -53,6 +53,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md) | Zed + `thoxa lsp` | partial (phase 1–2 done) |
 | [`specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md) | Session / REPL / Shell | partial (core shipped; polish remains) |
 | [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | REPL step backend (libtcc memory) | shipped (D105, libtcc-only) |
+| [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Sum types, `?`/`!`, May/Trial via `std/Fallible` | shipped (D118–D120, D123) |
 
 ## Related trees (not under `docs/`)
 

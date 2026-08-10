@@ -52,5 +52,5 @@
 |--------|------------------------|
 | bare `thoxa` session / REPL | “run extras/shell” as the shell |
 | `status` field on `Shell` | bash `$?` as the core model |
-| `std/Module` imports | inventing a second prelude language |
+| `std/Module` imports (incl. `std/Fallible`) | inventing a second ambient prelude language |
 | conformance fixture names | informal “it works on my machine” |

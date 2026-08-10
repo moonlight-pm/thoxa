@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-09 (examples/http + examples/kilo; D121–D122)
+**As of:** 2026-08-09 (examples/http + kilo; D121–D123 Fallible import)
 
 ---
 
@@ -30,7 +30,7 @@ step `.so` on the happy path.
 | Frontend | `lexer`, `parser`, `ast`, `resolver` | Shared resolver used by LSP |
 | MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); module globals not end-of-fn dropped (D122) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars |
-| Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
+| Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104); loads `std/Fallible` when Shell injects (D123) |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
 | LSP | `lsp/` | stdio server; check overlays; nav (incl. package-tree refs/rename, `workspace/symbol`); multi-diag |
@@ -72,8 +72,10 @@ Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are gone.
 - **Scripts (no `main`):** splice + synthetic `main` → system `cc` executable
   (unchanged).
 - **Programs:** `fn main` or directory `Main.thx` — batch path unchanged.
-- **Prelude:** product `std/Shell.thx` preferred at inject time; compile-time
-  `include_str` fallback of the same file when std is not discoverable (D104).
+- **Shell prelude:** product `std/Shell.thx` preferred at inject time;
+  compile-time `include_str` fallback when std is not discoverable (D104).
+  Shell imports May/Has/Not; inject also ensures `std/Fallible` is in the
+  package (D123). Fallible has its own embed fallback for the same case.
 - **REPL steps:** vendored **libtcc only** (`TCC_OUTPUT_MEMORY`); feed
   `emit_session_combined` + `libthoxa_rt.a`; keep `TCCState` until superseded.
   No step `.so` / no session `cc` spawn. Optional debug: `THOXA_REPL_KEEP_C=1`.

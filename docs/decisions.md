@@ -110,7 +110,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | D101 | Session OS pipelines | Command sugar `a \| b` → `shell = shell.pipeline(blob)`; RT `thoxa_pipeline` (pipe/fork/execvp/wait); status = last stage | Blob: NUL-terminated argv words per stage, empty field (double-NUL) between stages. Helpers: `sessionEncodeArgv` + `sessionPipelineBytes`. Pure int BitOr (`1 \| 2`) stays Thoxa. Conformance: `session_pipe`. |
 | D102 | Session file redirections | Command sugar `>` / `>>` / `<` → `shell = shell.runIo(argv, in, out, append)`; RT `thoxa_spawn_wait_io` | Empty path strings inherit. Redir ops as separate words. Pure int comparison (`1 > 0`) stays Thoxa. No `2>`; no redir on pipeline stages yet. Conformance: `session_redir`. |
 | D103 | REPL pure step only | Remove host fast paths for `status` / `cd` / `\|`; all executable chunks use session step path | In-process `chdir` still updates host cwd. Unit: `repl::pure_step_*`. Step **backend** target → **D105**. |
-| D104 | Session Shell in product std | Default `Shell` + helpers live in `std/Shell.thx`; session inject prefers on-disk std, compile-time `include_str` fallback | Replaces compiler-only `session_prelude.thx`. Still auto-injected for session scripts (not required `import`). |
+| D104 | Session Shell in product std | Default `Shell` + helpers live in `std/Shell.thx`; session inject prefers on-disk std, compile-time `include_str` fallback | Replaces compiler-only `session_prelude.thx`. Still auto-injected for session scripts (not required `import`). Shell imports Fallible; inject loads `std/Fallible` into the package (**D123**). |
 
 ## 2026-07-25 — Session `path()` hook
 
@@ -156,8 +156,8 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D85 | `May<T>` | Surface `Has(x)` / `Not()`; match / `?` | **Refined by D118:** ambient prelude union `May<T> = Has<T!> \| Not?` (not a separate builtin layout). Nested Array/May → D113. No May↔Trial `?` mixing. |
-| D46′ | `Bytes.find` | `find(needle[, from]) -> May<Int64>` | **Supersedes D46** (`-1` sentinel). Runtime still returns -1; MIR wraps to `Has(i)` / `Not`. Empty needle → `Has(from)` (in range); missing → `Not`. Conformance: `mays`, `bytes`; Http call sites match. |
+| D85 | `May<T>` | Surface `Has(x)` / `Not()`; match / `?` | **Refined by D118 + D123:** `std/Fallible` union `May<T> = Has<T!> \| Not?` (import required; not a builtin layout). Nested Array/May → D113. No May↔Trial `?` mixing. |
+| D46′ | `Bytes.find` | `find(needle[, from]) -> May<Int64>` | **Supersedes D46** (`-1` sentinel). Runtime still returns -1; MIR wraps to `Has(i)` / `Not`. Caller needs `May` in scope (import `std/Fallible`). Empty needle → `Has(from)` (in range); missing → `Not`. Conformance: `mays`, `bytes`. |
 
 ## 2026-07-20 — Optional empty type body
 
@@ -322,7 +322,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D40 | Trial representation | Was `Ty::Trial` monomorph C structs | **Refined by D118:** ambient prelude `Trial<P,F> = Pass<P!> \| Fail<F?>` (tagged user union monomorphs) |
+| D40 | Trial representation | Was `Ty::Trial` monomorph C structs | **Refined by D118 + D123:** `std/Fallible` `Trial<P,F> = Pass<P!> \| Fail<F?>` (tagged user union monomorphs; import required) |
 | D41 | Trial payloads | Void, ints, Bool, String, Bytes, User | **Array + May → D113**; **nested Trial → D114**; Address still deferred |
 | D42 | Pass/Fail typing | Prefer enclosing `-> Trial<…>` annotation | Unannotated Pass/Fail(Int) still infers `Trial<Int64,Int64>` when that mono exists |
 | D43 | `?` across monomorphs | Same residual payload; rewrap into outer Trial/May | Cross-module Fail monomorphs rebuild by arm name (D118) |
@@ -428,7 +428,7 @@ Revisit D17 with Buffer / growable-buffer design; revisit D18 when more factorie
 |----|----------|--------|-------|
 | D1 | Growth model | Example ladder toward HTTP | Small kernel first |
 | D2 | Algebraic effects | Deferred | Revisit with async; may later interact with general `?` (D118) |
-| D3 | Error model | `May`/`Trial` + force-to-deal | Not effect-`exn`. **D118 shipped:** May/Trial as ambient prelude unions + general `?` via type marks — freeze `2026-08-07-sum-types-and-fallible` |
+| D3 | Error model | `May`/`Trial` + force-to-deal | Not effect-`exn`. **D118 + D123:** May/Trial as `std/Fallible` unions (import required) + general `?` via type marks — freeze `2026-08-07-sum-types-and-fallible` |
 | D4 | Value model | Hybrid (A) | Unboxed scalars; inline small sums; RC heap; C-layout FFI structs |
 | D5 | Phase A backend | Compile-to-C | No QBE yet |
 | D6 | Compiler host | Rust under `crates/compiler` | |

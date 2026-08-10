@@ -30,6 +30,12 @@ auto-injected when a session script has no user `type Shell`.
 **`status`** is the last outcome (0 = success). Process exit of a one-shot
 script is final `status`. There is no required bash-style `$?` core.
 
+Shell uses `May` / `Has` / `Not` from **`std/Fallible`**. When the product Shell
+is injected, Fallible is loaded into the package so those names resolve for the
+session entry (you do not need a separate Fallible import solely for Shell).
+Ordinary programs with `fn main` still **must** import Fallible themselves when
+they use May/Trial.
+
 ## Command sugar
 
 Familiar command lines desugar to Thoxa on `Shell`:

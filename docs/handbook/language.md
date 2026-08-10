@@ -115,8 +115,9 @@ println(c.n)            ## 15
 ## Modules
 
 ```thx
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import { readFile } from "./Io"
-import * as Net from "~/Net"
+import net from "./Net"
 export fn helper() -> Int64 { 1 }
 ```
 
@@ -125,6 +126,12 @@ export fn helper() -> Int64 { 1 }
 | `./…` | Relative to current file |
 | `~/…` | Relative to **entry** file directory |
 | `std/…` | Product standard library |
+
+Fallibility types are **not** ambient — import them from
+[`std/Fallible`](std.md#modules-current) (or selective subsets). Matching on a
+`Trial`/`May` value returned from another module does not by itself require the
+import; constructing, annotating, or calling builtins that produce May (e.g.
+`Bytes.find`) does.
 
 Module-level `let` / `mut` are supported (including heap types such as
 `Array` / `String`). Reassigning a module `mut` drops the previous value and
@@ -143,6 +150,10 @@ Marshals common scalars, `String`, `Bytes`, `Void`, `Address<T>`. String
 *returns* are copied via the runtime.
 
 ## I/O and HTTP (library shape)
+
+These live in sample/conformance libraries today (not a fat `std/Io`). Their
+return types use `Trial` / `May` from `std/Fallible` — import Fallible when you
+annotate or construct those values.
 
 - Free `readFile` / `writeFile` / `appendFile` (`Trial<…, String>`).
 - **OpenMode:** nullary union `Rdonly | Wronly | Rdwr` with `openModeBits(m)` for

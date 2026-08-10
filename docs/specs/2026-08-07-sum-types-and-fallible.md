@@ -1,24 +1,24 @@
 # Sum types, unions, and general fallibility (`?` / `!`)
 
 **Date:** 2026-08-07  
-**Status:** target (accepted product intent; **implemented** for v0)  
-**Implementation:** ladder §10 + **May/Trial as `std/Fallible`** — exported
-`Has`/`Not`/`May`/`Pass`/`Fail`/`Trial` generic unions (**import required**,
-**D123**; no ambient inject); monomorphs; methods on generic products; residual
-`?` rewrap; exhaustiveness names missing arms / rejects post-`else` arms;
-OpenMode sample (`file_openmode`); union match guards (**D120**,
-`sums_match_guard`); **no** builtin `Ty::May`/`Ty::Trial`. Gates green under
-`cargo make test`.  
-**Gaps:** none for v0
+**Status:** target (accepted product intent; implemented for v0)  
+**Implementation:** shipped  
+**Gaps:** none for v0  
 
-**As-built:** [`../capabilities.md`](../capabilities.md) · focus
+**As-built:** [`../capabilities.md`](../capabilities.md) ·
+[`../architecture.md`](../architecture.md) · focus
 [`../../CURRENT.md`](../../CURRENT.md)  
 
-> **For agentic workers:** Do **not** implement from this freeze until
-> `CURRENT.md` schedules a slice. When implementing, one ladder step at a time
-> with conformance; full cutover of tests/samples when May/Trial move to
-> prelude (no dual-stack migration). Assign D-ids in `docs/decisions.md` as
-> each step ships.
+**Shipped surface (v0):** user unions + marks + generics; **May/Trial as
+exported `std/Fallible` unions** (**import required**, **D123** — no ambient
+inject); monomorphs; methods on generic products; residual `?` rewrap;
+exhaustiveness names missing arms / rejects post-`else` arms; OpenMode sample
+(`file_openmode`); union match guards (**D120**, `sums_match_guard`); **no**
+builtin `Ty::May`/`Ty::Trial`. Gates green under `cargo make test`.
+
+> **For agentic workers:** Ladder and May/Trial cutover are **done**. Do not
+> re-open ambient inject. Further work only when `CURRENT.md` schedules a slice.
+> Assign D-ids in `docs/decisions.md` as each new step ships.
 
 **Oracle lean:** **TypeScript** (unions, literal types, assignability) for
 typespace; native product face stays Thoxa. Old Python SPEC M2 is historical
@@ -26,17 +26,18 @@ reference only where it agrees.
 
 **Related:** D3 (May/Trial error model — refined, not replaced by effects),
 D4 (hybrid values / small sums), D2 (effects deferred; may subsume some
-fallibility later), D81 (OpenMode ADT deferred here).
+fallibility later), D81 (OpenMode ADT deferred here), **D118–D120** (sums /
+guards), **D123** (Fallible import, no ambient).
 
 ---
 
 ## 0. Product thesis
 
 Thoxa should have **one** sum/union mechanism. Domain tags (`Key`, `Shape`),
-literal unions (`0 | 1`), and prelude fallibility (`May`, `Trial`) are the
-**same** feature. `?` is not hardwired to two magic types; it is defined by
-**marks on the union** that name what to extract on success and what to
-early-return on residual.
+literal unions (`0 | 1`), and fallibility (`May`, `Trial` from `std/Fallible`)
+are the **same** feature. `?` is not hardwired to two magic types; it is
+defined by **marks on the union** that name what to extract on success and
+what to early-return on residual.
 
 **One sentence:**  
 Unions are TypeScript-shaped; `!` / `?` on types mark extract and residual for
@@ -290,19 +291,21 @@ If a single success arm is marked for payload extract (`Pass<P!>`), unwrap to
 
 ---
 
-## 7. Worked prelude sketch (target)
+## 7. Worked Fallible sketch (shipped shape)
+
+Product source: **`std/Fallible.thx`** (import required — D123).
 
 ```thx
-type Has<T>(value: T)
-type Not
-type May<T> = Has<T!> | Not?
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
-type Pass<T>(value: T)
-type Fail<E>(error: E)
-type Trial<P, F> = Pass<P!> | Fail<F?>
-```
+## Defined in std/Fallible (exported):
+## type Has<T>(value: T)
+## type Not
+## type May<T> = Has<T!> | Not?
+## type Pass<T>(value: T)
+## type Fail<E>(error: E)
+## type Trial<P, F> = Pass<P!> | Fail<F?>
 
-```thx
 fn half(x: Int64) -> Trial<Int64, String> {
     if x % 2 == 0 { Pass(x / 2) } else { Fail("odd") }
 }
@@ -313,34 +316,30 @@ fn demo() -> Trial<Int64, String> {
 }
 ```
 
-Exact formal field names (`value` / `error`) may match oracle or stay
-implementation-chosen; marks and union shape are the lock.
+Exact formal field names (`value` / `error`) are product-chosen; marks and
+union shape are the lock.
 
 ---
 
-## 8. Interaction with today’s product
+## 8. Interaction with product (historical → shipped)
 
-| Today | After this freeze is implemented |
-|-------|----------------------------------|
-| Builtin `May` / `Trial` / `?` | Prelude unions + general `?` |
-| Value match literals | Still; + constructor match |
-| OpenMode Int32 lets (D81) | Optional later consumer of sums |
-| Nested Trial payloads (D114) | Same need; layout via general sums |
+| Was | Shipped |
+|-----|---------|
+| Builtin `May` / `Trial` / `?` | `std/Fallible` unions + general `?` (import, D123) |
+| Value match literals only | + constructor match on unions |
+| OpenMode Int32 lets (D81) | OpenMode as nullary union sample (`file_openmode`) |
+| Nested Trial payloads (D114) | Layout via general sum monomorphs |
 
 ---
 
-## 9. Decisions to mint when shipping (suggested)
+## 9. Decisions minted when shipping (record)
 
-| Topic | Suggested D-id slot |
-|-------|---------------------|
-| User unions + literal types + assignability | D11x |
-| Tagged vs pure-literal layout policy | with above |
-| Type-level `!` / `?` extract marks | with above |
-| General value `?` | with above |
-| May/Trial as prelude (remove builtins) | with above |
-| Match exhaustiveness for unions | with above |
-
-Do not mint until code lands or CURRENT promotes implementation.
+| Topic | D-id |
+|-------|------|
+| User unions + marks + general `?` + May/Trial as generics | **D118** |
+| Union identity (nominal atoms · transparent aliases) | **D119** |
+| Union-match guards | **D120** |
+| May/Trial not ambient — import from `std/Fallible` | **D123** |
 
 ---
 

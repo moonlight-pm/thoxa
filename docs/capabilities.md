@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-09 (examples/kilo user-tested + D122 global RC)
+**As of:** 2026-08-09 (D123 Fallible import; kilo user-tested + D122)
 
 ---
 
@@ -21,8 +21,8 @@ change. See [`progress-model.md`](progress-model.md).
 |----|------------|--------|------|--------------|------|----------|
 | driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | none for v0 | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
-| trial | `Trial` + `match` + `?` via `std/Fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | Import `Pass`/`Fail`/`Trial` from `std/Fallible`; cross-module residual rewrap | yes |
-| may | `May` / `Has` / `Not` + `?` via `std/Fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | Import `Has`/`Not`/`May` from `std/Fallible`; nested ok; `Bytes.find` needs `May` in scope | yes |
+| trial | `Trial` + `match` + `?` via `std/Fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | none for v0 — import `Pass`/`Fail`/`Trial` from `std/Fallible`; cross-module residual rewrap | yes |
+| may | `May` / `Has` / `Not` + `?` via `std/Fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | none for v0 — import `Has`/`Not`/`May` from `std/Fallible`; `Bytes.find` needs `May` in scope | yes |
 | sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | none for v0 | yes |
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
@@ -76,7 +76,6 @@ change. See [`progress-model.md`](progress-model.md).
 | session-redir | File `>` / `>>` / `<` → `Shell.runIo` | shipped | `session_redir`; `command::` | D102 | No `2>`; redir+pipe combo; ops need whitespace | yes |
 | session-host-pipe | Host OS `\|` fast path in REPL | shipped (removed) | `repl::pure_step_*` | D103 | Replaced by Thoxa-side pipeline (D101) | yes |
 | session-prelude | Shell API in product `std/Shell.thx` | shipped | `session::`; session scripts | D104, D123 | Still auto-injected (not `import` by default); compile-time embed fallback; inject loads `std/Fallible` for Shell | yes |
-| std-fallible | `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` in `std/Fallible` | shipped | `mays`, `trials*`, `stdlib` | D118, D123 | Programs import; not ambient | yes |
 | session-host-builtins | Drop host `cd`/`status`/`\|` for pure step | shipped | `repl::pure_step_*` | D103 | All session commands via step image (libtcc) | yes |
 | session-libtcc | In-process libtcc for REPL steps (no spawn / no step `.so`) | shipped | `tcc::`; `repl::pure_step_*` | D105; [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | Linux x86_64 only; later polish (base cache / license notice) not CURRENT | no |
 | extras-shell | Pure-Thoxa dogfood Shell | shipped | `cargo make run extras/shell` | D95 | **Not** product face | no |
@@ -86,6 +85,7 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | std-root | Named `std/…` resolution | shipped | `stdlib` | D97 | — | yes |
+| std-fallible | `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` in `std/Fallible` | shipped | `mays`, `trials*`, `bytes`, `stdlib` | D118, D123 | none for v0 — **import required** for programs (not ambient); session Shell inject loads Fallible | yes |
 | std-str | Str helpers | partial | `stdlib` | D97 | +remove/truncate/reverse/isAscii/ignore-case contains; still sample-driven thin | yes |
 | std-path | Path helpers | partial | `stdlib` | D97 | +`joinAll`/`stripTrailingSlash`/`ensureTrailingSlash`; sample-driven | yes |
 | std-ansi | 16 colors + hex SGR | shipped | `stdlib` | D99 | — | yes |
