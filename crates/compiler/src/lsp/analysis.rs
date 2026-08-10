@@ -4,6 +4,7 @@
 //! same frontend as `build`/`run` so diagnostics never drift.
 
 use crate::ast::{Item, Module};
+use crate::diagnostic::Diagnostic;
 use crate::error::{Error, Result};
 use crate::lexer::{Lexer, TokenKind};
 use crate::loader::{self, Package, SourceModule};
@@ -24,7 +25,16 @@ pub struct SemanticToken {
     pub modifiers: u32,
 }
 
-/// One diagnostic ready for LSP publish.
+/// Related location for a diagnostic (LSP `relatedInformation`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelatedInfo {
+    pub message: String,
+    pub range: Range,
+    pub span: Span,
+    pub filename: String,
+}
+
+/// One diagnostic ready for LSP publish / pretty CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckDiagnostic {
     pub message: String,
@@ -34,6 +44,43 @@ pub struct CheckDiagnostic {
     pub span: Span,
     /// Path / label passed to [`check_source`].
     pub filename: String,
+    /// Stable code when known (`THX001`, …).
+    pub code: Option<String>,
+    pub help: Vec<String>,
+    pub expected: Option<String>,
+    pub actual: Option<String>,
+    pub related: Vec<RelatedInfo>,
+}
+
+impl CheckDiagnostic {
+    /// Structured IR for pretty / JSON formatting.
+    pub fn to_diagnostic(&self) -> Diagnostic {
+        use crate::diagnostic::{Label, Severity};
+        use std::path::PathBuf;
+        Diagnostic {
+            code: self.code.clone(),
+            severity: Severity::Error,
+            message: self.message.clone(),
+            span: if self.span == Span::dummy() && self.range == Range::default() {
+                None
+            } else {
+                Some(self.span)
+            },
+            path: Some(PathBuf::from(&self.filename)),
+            labels: self
+                .related
+                .iter()
+                .map(|r| Label {
+                    span: r.span,
+                    path: Some(PathBuf::from(&r.filename)),
+                    message: r.message.clone(),
+                })
+                .collect(),
+            help: self.help.clone(),
+            expected: self.expected.clone(),
+            actual: self.actual.clone(),
+        }
+    }
 }
 
 /// Lex, parse, and type-check `text` without codegen.
@@ -281,41 +328,49 @@ fn first_import_span(module: &Module) -> Option<Span> {
 }
 
 fn errors_to_diagnostics(filename: &str, text: &str, e: Error) -> Vec<CheckDiagnostic> {
-    let mut out = Vec::with_capacity(1 + e.more.len());
-    out.push(error_parts_to_diagnostic(
-        filename,
-        text,
-        e.message,
-        e.span,
-    ));
-    for extra in e.more {
-        out.push(error_parts_to_diagnostic(
-            filename,
-            text,
-            extra.message,
-            extra.span,
-        ));
-    }
-    out
+    let path = Path::new(filename);
+    let structured = e.into_structured(Some(path));
+    structured
+        .into_iter()
+        .map(|d| structured_to_check(filename, text, d))
+        .collect()
 }
 
-fn error_parts_to_diagnostic(
-    filename: &str,
-    text: &str,
-    message: String,
-    span_opt: Option<Span>,
-) -> CheckDiagnostic {
-    let span = span_opt.unwrap_or_else(Span::dummy);
-    let range = if span_opt.is_some() {
+fn structured_to_check(filename: &str, text: &str, d: Diagnostic) -> CheckDiagnostic {
+    let span = d.span.unwrap_or_else(Span::dummy);
+    let range = if d.span.is_some() {
         span::span_to_range(text, span)
     } else {
         Range::default()
     };
+    let related = d
+        .labels
+        .into_iter()
+        .map(|lab| {
+            let fname = lab
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| filename.to_string());
+            let lab_src = if fname == filename { text } else { text };
+            RelatedInfo {
+                message: lab.message,
+                range: span::span_to_range(lab_src, lab.span),
+                span: lab.span,
+                filename: fname,
+            }
+        })
+        .collect();
     CheckDiagnostic {
-        message,
+        message: d.message,
         range,
         span,
         filename: filename.to_string(),
+        code: d.code,
+        help: d.help,
+        expected: d.expected,
+        actual: d.actual,
+        related,
     }
 }
 
@@ -376,6 +431,31 @@ mod tests {
     fn good_snippet_no_diagnostics() {
         let diags = check_source("<input>", "fn main() -> Int64 { 0 }\n");
         assert!(diags.is_empty(), "unexpected: {diags:?}");
+    }
+
+    #[test]
+    fn structured_codes_on_undefined_and_type_error() {
+        let src = "fn main() -> Int64 { x }\n";
+        let diags = check_source("<input>", src);
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].code.as_deref(), Some("THX001"));
+        assert!(!diags[0].help.is_empty());
+
+        let src = "fn main() -> Int64 { if 3 { 0 } 0 }\n";
+        let diags = check_source("<input>", src);
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].code.as_deref(), Some("THX002"));
+        assert!(!diags[0].help.is_empty());
+    }
+
+    #[test]
+    fn structured_code_top_level_with_main() {
+        let src = "FOOBAR\nfn main() -> Int64 { 0 }\n";
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some("THX005")),
+            "{diags:?}"
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-09 (LSP multi-diag + version stamp; Fallible D123; session deferred)
+**As of:** 2026-08-09 (D124 structured diagnostics shipped; Fallible D123; session deferred)
 
 ---
 
@@ -14,21 +14,25 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** **LSP multi-diag soft recovery** (syntax + undefined names
-together; plain top-level-with-`main` wording); **`thoxa version`** / LSP
-identity stamp (git hash, no toasts); **`std/Fallible` import required**
-(**D123**); **`examples/kilo`** (**user-tested** after **D122**); language
-forced by kilo (`Bytes.equals`, `String.count`, `\xHH`, `main(arguments)`);
-**`examples/http`**. Session residual deferred.
+**Shipped recently:** **structured diagnostics** (**D124**) — shared IR, pretty
+`thoxa check`, `check --json`, LSP codes/help/related; **LSP multi-diag soft
+recovery**; **`thoxa version`** / LSP identity stamp; **`std/Fallible` import
+required** (**D123**); **`examples/kilo`** (**user-tested** after **D122**);
+language forced by kilo; **`examples/http`**. Session residual deferred.
+Agent-only follow-ons still parked:
+[`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 
 **In progress / next:** language gaps forced by samples; sample-driven std when
-forced; editor only when DX forces.
+forced; editor only when DX forces (nav residual / recovery depth).
 
 ### Proceed order
 
 1. **Language / I/O / std** — next matrix gap (non-session); not free redesign.  
-2. **Editor depth** — only when DX forces it. Freeze:
-   [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md).
+2. **Editor depth** — only when DX forces it. Freezes:
+   [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
+   (recovery/nav residual);
+   [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
+   (**D124** shipped — polish codes opportunistically).  
 3. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
@@ -73,6 +77,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
+| Diagnostics | Structured IR → pretty check + `--json` + rich LSP (**D124** shipped); agent-only extras parked |
 | Oracle | `apocrypha/old/ThoxaPython` reference only — not the product |
 
 More D-ids: [`docs/decisions.md`](docs/decisions.md).

@@ -69,9 +69,13 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<bool> {
             let errors: Vec<Error> = session_stmts
                 .iter()
                 .map(|bi| {
-                    Error::at(
+                    Error::coded_at(
+                        crate::diagnostic::CODE_TOP_LEVEL_WITH_MAIN,
                         crate::parser::TOP_LEVEL_STMT_WITH_MAIN_MSG,
                         session_block_item_span(bi),
+                    )
+                    .with_help(
+                        "move the statement into `fn main` or remove `fn main` for a session script",
                     )
                 })
                 .collect();

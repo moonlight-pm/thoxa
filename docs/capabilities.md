@@ -99,7 +99,8 @@ change. See [`progress-model.md`](progress-model.md).
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | check-source | Typecheck API + overlays | shipped | unit / LSP | D71–D79 | Soft-recovered entry AST + `load_package_with_entry_ast` so syntax errors do not hide later undefined-name diags | yes |
-| lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1 | Multi-diag: parse soft-recover (blocks + top-level), multi undefined names in one block, program top-level stmts with `main` (localized, plain wording); residual mid-expression recovery still limited | yes |
+| lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1; **D124** | Multi-diag + structured codes/help/`relatedInformation` from shared IR; residual mid-expression recovery still limited | yes |
+| diag-structured | Structured diagnostic IR + pretty/`--json`/rich LSP | shipped | unit | **D124**; freeze `2026-08-09-structured-diagnostics` | Shared IR (`diagnostic.rs`); pretty `thoxa check`; `check --json` + version stamp; LSP `code` + help-in-message + `relatedInformation`. Classifier codes THX001–THX009; residual free-form sites still get codes when message patterns match. No `explain`/code actions yet | yes |
 | cli-version | `thoxa version` / LSP identity stamp | shipped | unit / CLI | build stamp | Git short hash (+`.dirty`) + binary path; LSP stderr + `window/logMessage` + `serverInfo.version` (no toast) | yes |
 | lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; residual rare untyped exprs | partial |
 | lsp-workspace | `workspace/symbol` package search | shipped | unit | editor plan | Open buffers + package-tree disk (Main.thx/`.git` root); query substring; cap 100 | yes |

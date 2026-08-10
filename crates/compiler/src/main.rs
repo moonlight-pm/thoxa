@@ -4,6 +4,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use thoxa::diagnostic;
 use thoxa::driver::{self, BuildOptions};
 use thoxa::error::Error;
 use thoxa::lsp;
@@ -12,7 +13,20 @@ fn main() -> ExitCode {
     match try_main() {
         Ok(code) => ExitCode::from(code as u8),
         Err(e) => {
-            eprintln!("error: {e}");
+            // Prefer structured pretty when we have a single primary error.
+            let diags = e.into_structured(None);
+            if diags.is_empty() {
+                eprintln!("error: unknown failure");
+            } else if diags.len() == 1 && diags[0].span.is_none() && diags[0].code.is_none() {
+                eprintln!("error: {}", diags[0].message);
+            } else {
+                for (i, d) in diags.iter().enumerate() {
+                    if i > 0 {
+                        eprintln!();
+                    }
+                    eprint!("{}", diagnostic::format_pretty(d, None));
+                }
+            }
             ExitCode::from(1)
         }
     }
@@ -56,10 +70,8 @@ fn try_main() -> Result<i32, Error> {
             Ok(lsp::run())
         }
         "check" => {
-            let path = args
-                .first()
-                .ok_or_else(|| Error::new("check requires a path (file.thx or directory)"))?;
-            run_check(PathBuf::from(path))
+            let (path, json) = parse_check_args(&args)?;
+            run_check(path, json)
         }
         "version" | "--version" | "-V" => {
             println!("{}", thoxa::version::identity_line());
@@ -95,17 +107,54 @@ fn looks_like_source_path(s: &str) -> bool {
         || s == ".."
 }
 
-fn run_check(path: PathBuf) -> Result<i32, Error> {
+fn parse_check_args(args: &[String]) -> Result<(PathBuf, bool), Error> {
+    let mut path: Option<PathBuf> = None;
+    let mut json = false;
+    for a in args {
+        match a.as_str() {
+            "--json" => json = true,
+            "-h" | "--help" => {
+                // fall through to usage via missing path if only flags
+            }
+            s if s.starts_with('-') => {
+                return Err(Error::new(format!("unknown check flag `{s}`")));
+            }
+            s => {
+                if path.is_none() {
+                    path = Some(PathBuf::from(s));
+                } else {
+                    return Err(Error::new("check accepts a single path"));
+                }
+            }
+        }
+    }
+    let path = path.ok_or_else(|| {
+        Error::new("check requires a path (file.thx or directory); optional --json")
+    })?;
+    Ok((path, json))
+}
+
+fn run_check(path: PathBuf, json: bool) -> Result<i32, Error> {
     let entry = thoxa::loader::resolve_entry(&path)?;
     let text = fs::read_to_string(&entry).map_err(|e| {
         Error::new(format!("cannot read {}: {e}", entry.display()))
     })?;
     let filename = entry.to_string_lossy();
     let diags = lsp::check_source(&filename, &text);
-    for d in &diags {
-        let line = d.range.start.line + 1;
-        let col = d.range.start.character + 1;
-        eprintln!("{}:{line}:{col}: {}", d.filename, d.message);
+    if json {
+        let structured: Vec<_> = diags.iter().map(|d| d.to_diagnostic()).collect();
+        let report = diagnostic::format_json_report(&structured, Some(&text));
+        println!("{}", serde_json::to_string_pretty(&report).unwrap_or_else(|e| {
+            format!(r#"{{"ok":false,"diagnostics":[],"error":"{e}"}}"#)
+        }));
+    } else {
+        for (i, d) in diags.iter().enumerate() {
+            if i > 0 {
+                eprintln!();
+            }
+            let structured = d.to_diagnostic();
+            eprint!("{}", diagnostic::format_pretty(&structured, Some(&text)));
+        }
     }
     if diags.is_empty() {
         Ok(0)
@@ -163,7 +212,7 @@ USAGE:
     thoxa run    <file.thx|dir>
     thoxa build  <file.thx|dir> [-o name]
     thoxa emit-c <file.thx|dir>
-    thoxa check  <file.thx|dir>
+    thoxa check  <file.thx|dir> [--json]
     thoxa runtime
     thoxa lsp
     thoxa version                Build identity (package + git hash + path)
@@ -177,7 +226,8 @@ Optional fn prompt() -> String customizes the primary prompt (THOXA_STATUS env).
 Optional fn path(parent: Array<String>) -> Array<String> replaces process PATH.
 import from \"std/…\" (Str Path Ansi Env Git Fallible); THOXA_STD overrides the tree.
 `thoxa lsp` speaks Language Server Protocol over stdio (for editors).
-`thoxa check` type-checks without codegen and prints path:line:col diagnostics.
+`thoxa check` type-checks without codegen; pretty diagnostics by default (codes,
+caret, help). Pass `--json` for a machine-readable report (D124).
 `thoxa version` prints package+git hash and the binary path (compare to LSP logs)."
     );
 }

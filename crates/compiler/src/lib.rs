@@ -3,6 +3,7 @@
 pub mod ast;
 pub mod cgen;
 pub mod command;
+pub mod diagnostic;
 pub mod driver;
 pub mod error;
 pub mod lexer;
@@ -19,6 +20,7 @@ pub mod version;
 #[cfg(thoxa_libtcc)]
 pub mod tcc;
 
+pub use diagnostic::{Diagnostic, Label, Severity};
 pub use driver::{build, emit_c, run, BuildOptions};
 pub use error::{Error, Result};
 pub use lsp::{check_source, CheckDiagnostic};

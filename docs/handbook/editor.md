@@ -36,7 +36,7 @@ restart again.
 
 | Feature | Notes |
 |---------|--------|
-| Diagnostics | Same engine as `thoxa check`. **Multi-diag:** several parse errors, several undefined names in one block, and parse recovery that still typechecks the rest of a function after a bad token (e.g. keyword `as`). Programs with `fn main` reject bare top-level statements with a clear span (not “session jargon”). Mid-expression recovery is still limited. |
+| Diagnostics | Same engine as `thoxa check` (**D124**). **Multi-diag** + **structured codes** (`THX…`), help text (folded into the LSP message), and `relatedInformation` when labels exist. Parse recovery still typechecks the rest of a function after a bad token. Programs with `fn main` reject bare top-level statements with a clear span. Mid-expression recovery is still limited. |
 | Syntax color | Tree-sitter Thoxa grammar |
 | Hover | Signature + contiguous `##` docs |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |

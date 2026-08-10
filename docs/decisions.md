@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-09 — Structured diagnostics (foundation)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D124 | Structured diagnostics | One **diagnostic IR** (code, severity, message, span, labels, help, expected/actual) drives **pretty `thoxa check`**, **`thoxa check --json`**, and **LSP** (`code` + `relatedInformation`). Editor/human clarity is the ship criterion; agent-only surfaces deferred | **Shipped:** `crates/compiler/src/diagnostic.rs` + enriched `Error`; codes THX001–THX009 (classifier + explicit emit for Fallible/top-level-with-main); pretty CLI; JSON report with `compiler.version`; LSP code/related/help-in-message. Freeze: [`specs/2026-08-09-structured-diagnostics.md`](specs/2026-08-09-structured-diagnostics.md). Parked agent ideas: [`ideas/2026-08-09-agent-dx-from-zerolang.md`](ideas/2026-08-09-agent-dx-from-zerolang.md). |
+
 ## 2026-08-09 — Fallible import (no ambient prelude)
 
 | ID | Decision | Choice | Notes |

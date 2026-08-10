@@ -1,8 +1,10 @@
-//! Compiler errors.
+//! Compiler errors (internal) + conversion into structured diagnostics.
 
 use crate::ast::Module;
+use crate::diagnostic::{self, Diagnostic, Label};
 use crate::span::Span;
 use std::fmt;
+use std::path::Path;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -10,8 +12,13 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Error {
     pub message: String,
     pub span: Option<Span>,
+    /// Stable diagnostic code when known at emit time (e.g. `THX001`).
+    pub code: Option<&'static str>,
+    pub help: Vec<String>,
+    pub labels: Vec<Label>,
+    pub expected: Option<String>,
+    pub actual: Option<String>,
     /// Additional independent diagnostics (e.g. other function body errors).
-    /// Primary is `message`/`span`; each entry is a full follow-on message.
     pub more: Vec<AdditionalDiagnostic>,
     /// Best-effort AST when parse recovered (LSP multi-diag can still lower).
     pub recovered_module: Option<Box<Module>>,
@@ -22,6 +29,37 @@ pub struct Error {
 pub struct AdditionalDiagnostic {
     pub message: String,
     pub span: Option<Span>,
+    pub code: Option<&'static str>,
+    pub help: Vec<String>,
+    pub labels: Vec<Label>,
+    pub expected: Option<String>,
+    pub actual: Option<String>,
+}
+
+impl AdditionalDiagnostic {
+    pub fn new(message: impl Into<String>, span: Option<Span>) -> Self {
+        Self {
+            message: message.into(),
+            span,
+            code: None,
+            help: Vec::new(),
+            labels: Vec::new(),
+            expected: None,
+            actual: None,
+        }
+    }
+
+    pub fn from_error_parts(e: Error) -> Self {
+        Self {
+            message: e.message,
+            span: e.span,
+            code: e.code,
+            help: e.help,
+            labels: e.labels,
+            expected: e.expected,
+            actual: e.actual,
+        }
+    }
 }
 
 impl Error {
@@ -29,6 +67,11 @@ impl Error {
         Self {
             message: message.into(),
             span: None,
+            code: None,
+            help: Vec::new(),
+            labels: Vec::new(),
+            expected: None,
+            actual: None,
             more: Vec::new(),
             recovered_module: None,
         }
@@ -38,9 +81,67 @@ impl Error {
         Self {
             message: message.into(),
             span: Some(span),
+            code: None,
+            help: Vec::new(),
+            labels: Vec::new(),
+            expected: None,
+            actual: None,
             more: Vec::new(),
             recovered_module: None,
         }
+    }
+
+    pub fn coded(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            span: None,
+            code: Some(code),
+            help: Vec::new(),
+            labels: Vec::new(),
+            expected: None,
+            actual: None,
+            more: Vec::new(),
+            recovered_module: None,
+        }
+    }
+
+    pub fn coded_at(code: &'static str, message: impl Into<String>, span: Span) -> Self {
+        Self {
+            message: message.into(),
+            span: Some(span),
+            code: Some(code),
+            help: Vec::new(),
+            labels: Vec::new(),
+            expected: None,
+            actual: None,
+            more: Vec::new(),
+            recovered_module: None,
+        }
+    }
+
+    pub fn with_code(mut self, code: &'static str) -> Self {
+        self.code = Some(code);
+        self
+    }
+
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help.push(help.into());
+        self
+    }
+
+    pub fn with_label(mut self, label: Label) -> Self {
+        self.labels.push(label);
+        self
+    }
+
+    pub fn with_expected_actual(
+        mut self,
+        expected: impl Into<String>,
+        actual: impl Into<String>,
+    ) -> Self {
+        self.expected = Some(expected.into());
+        self.actual = Some(actual.into());
+        self
     }
 
     pub fn with_more(mut self, more: Vec<AdditionalDiagnostic>) -> Self {
@@ -54,11 +155,18 @@ impl Error {
     }
 
     /// Flatten this error into independent diagnostics (no recovered AST).
+    ///
+    /// Preserves structured fields. Prefer [`into_structured`] for presentation.
     pub fn into_diagnostics(self) -> Vec<Error> {
         let mut out = Vec::with_capacity(1 + self.more.len());
         out.push(Error {
             message: self.message,
             span: self.span,
+            code: self.code,
+            help: self.help,
+            labels: self.labels,
+            expected: self.expected,
+            actual: self.actual,
             more: Vec::new(),
             recovered_module: None,
         });
@@ -66,6 +174,11 @@ impl Error {
             out.push(Error {
                 message: m.message,
                 span: m.span,
+                code: m.code,
+                help: m.help,
+                labels: m.labels,
+                expected: m.expected,
+                actual: m.actual,
                 more: Vec::new(),
                 recovered_module: None,
             });
@@ -73,30 +186,46 @@ impl Error {
         out
     }
 
+    /// Convert to structured [`Diagnostic`] list (enriched codes/help).
+    pub fn into_structured(self, path: Option<&Path>) -> Vec<Diagnostic> {
+        diagnostic::from_error(self, path)
+    }
+
     /// Fold independent errors into one primary + `more` (LSP multi-diag).
     /// Nested `more` on any input error is flattened (block recovery inside
     /// a function, then top-level multi, must not drop inner diagnostics).
-    /// Preserves the first non-empty `recovered_module`.
+    /// Preserves the first non-empty `recovered_module` and structured fields.
     pub fn multi(errors: Vec<Error>) -> Error {
         let mut recovered = None;
-        let mut flat: Vec<(String, Option<Span>)> = Vec::new();
+        let mut flat: Vec<AdditionalDiagnostic> = Vec::new();
         for e in errors {
             if recovered.is_none() {
                 recovered = e.recovered_module;
             }
-            flat.push((e.message, e.span));
+            flat.push(AdditionalDiagnostic {
+                message: e.message,
+                span: e.span,
+                code: e.code,
+                help: e.help,
+                labels: e.labels,
+                expected: e.expected,
+                actual: e.actual,
+            });
             for m in e.more {
-                flat.push((m.message, m.span));
+                flat.push(m);
             }
         }
         let mut it = flat.into_iter();
-        let (msg, span) = it.next().expect("Error::multi nonempty");
-        let more = it
-            .map(|(message, span)| AdditionalDiagnostic { message, span })
-            .collect();
+        let first = it.next().expect("Error::multi nonempty");
+        let more = it.collect();
         Error {
-            message: msg,
-            span,
+            message: first.message,
+            span: first.span,
+            code: first.code,
+            help: first.help,
+            labels: first.labels,
+            expected: first.expected,
+            actual: first.actual,
             more,
             recovered_module: recovered,
         }

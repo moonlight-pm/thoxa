@@ -110,14 +110,47 @@ fn position_to_json(pos: Position) -> Value {
     })
 }
 
-/// Compiler diagnostic → LSP Diagnostic object.
+/// Compiler diagnostic → LSP Diagnostic object (D124: code + relatedInformation).
 pub fn diagnostic_to_lsp(diag: &CheckDiagnostic) -> Value {
-    json!({
+    // LSP has no standard `help` field — fold help into the message.
+    let mut message = diag.message.clone();
+    for h in &diag.help {
+        message.push_str("\nhelp: ");
+        message.push_str(h);
+    }
+    if let (Some(exp), Some(act)) = (&diag.expected, &diag.actual) {
+        if !message.contains(exp) || !message.contains(act) {
+            message.push_str(&format!("\nexpected `{exp}`, found `{act}`"));
+        }
+    }
+
+    let mut obj = json!({
         "range": range_to_json(diag.range),
         "severity": SEVERITY_ERROR,
         "source": "thoxa",
-        "message": diag.message,
-    })
+        "message": message,
+    });
+    if let Some(code) = &diag.code {
+        obj["code"] = json!(code);
+    }
+    if !diag.related.is_empty() {
+        let related: Vec<Value> = diag
+            .related
+            .iter()
+            .map(|r| {
+                let uri = path_to_uri(&r.filename);
+                json!({
+                    "location": {
+                        "uri": uri,
+                        "range": range_to_json(r.range),
+                    },
+                    "message": r.message,
+                })
+            })
+            .collect();
+        obj["relatedInformation"] = json!(related);
+    }
+    obj
 }
 
 /// Encode semantic tokens as the LSP relative-delta `data` array.
@@ -310,11 +343,18 @@ mod tests {
             },
             span: Span::new(10, 13),
             filename: "x.thx".into(),
+            code: Some("THX001".into()),
+            help: vec!["try this".into()],
+            expected: None,
+            actual: None,
+            related: vec![],
         };
         let j = diagnostic_to_lsp(&d);
         assert_eq!(j["severity"], 1);
         assert_eq!(j["source"], "thoxa");
-        assert_eq!(j["message"], "boom");
+        assert!(j["message"].as_str().unwrap().contains("boom"));
+        assert!(j["message"].as_str().unwrap().contains("help: try this"));
+        assert_eq!(j["code"], "THX001");
         assert_eq!(j["range"]["start"]["line"], 1);
         assert_eq!(j["range"]["start"]["character"], 2);
     }

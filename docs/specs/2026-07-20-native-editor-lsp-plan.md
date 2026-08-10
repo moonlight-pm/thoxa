@@ -4,7 +4,7 @@
 **Status:** target (freeze)  
 **Implementation:** partial  
 **Gaps:** MIR lower on shared resolver (**deferred architecture**, not phase-2 polish); package-tree walk still capped (not arbitrary home-tree / multi-root folders); mid-expression parse recovery still limited.  
-**Shipped:** phase-1 diagnostics + multi-diag (soft block recover, multi undefined names, recovered entry AST for check/LSP); nav; typed-member stack; package-tree refs/rename; **`workspace/symbol`**; `thoxa version` / LSP identity stamp.
+**Shipped:** phase-1 diagnostics + multi-diag; **structured diagnostics D124** (codes/help/related, pretty/`--json` — sibling freeze [`2026-08-09-structured-diagnostics.md`](2026-08-09-structured-diagnostics.md)); nav; typed-member stack; package-tree refs/rename; **`workspace/symbol`**; `thoxa version` / LSP identity stamp.
 
 
 

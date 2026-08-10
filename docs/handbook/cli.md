@@ -13,16 +13,40 @@ The product binary is **`thoxa`** (`cargo run -p thoxa -- …`, or via
 | `thoxa dir/` | Runs `dir/Main.thx` if present |
 | `thoxa run path [args…]` | Compile and run; trailing args go to `fn main(arguments: Array<String>)` (D121) |
 | `thoxa build path -o out` | Compile to a binary |
-| `thoxa check path` | Typecheck only (no C emit); multi-diagnostic when possible |
+| `thoxa check path` | Typecheck only (no C emit); multi-diagnostic when possible; **pretty** codes/caret/help |
+| `thoxa check path --json` | Same check; machine-readable report (stable fields + compiler identity) |
 | `thoxa emit-c path` | Emit C under `target/thoxa/c/` |
 | `thoxa lsp` | Language server (stdio) |
 | `thoxa version` | Build identity: package + git hash (+`.dirty`) + binary path |
 
-Also accepted: `thoxa --version`, `thoxa -V`.
+Also accepted: `thoxa --version`, `thoxa -V`. Flag order for check is flexible:
+`thoxa check --json path` works too.
 
 Use `thoxa version` to confirm which binary is on `PATH` (what Zed launches after
 `cargo make zed`). After rebuilding, **restart the language server** so LSP
 picks up the new process.
+
+### `thoxa check` diagnostics
+
+Default output is human-oriented (D124):
+
+```text
+error[THX001]: undefined name `x`
+ --> Main.thx:1:22
+   |
+ 1 | fn main() -> Int64 { x }
+   |                      ^
+  = help: declare the name, import it, or fix the spelling
+```
+
+Stable codes when recognized include `THX001` (undefined / unknown name),
+`THX002` (type mismatch), `THX003` (unknown type), `THX004` (Fallible import),
+`THX005` (top-level statement with `fn main`), and a few others. Not every
+message is catalogued yet; free-form errors still print without a code.
+
+`--json` prints a single JSON object: `ok`, `compiler.version` / `compiler.path`,
+and `diagnostics[]` with `code`, `message`, `path`, 1-based `line`/`column`,
+byte spans, `help`, `expected`/`actual`, and `related`.
 
 Prefer **`cargo make`** helpers from a workspace checkout:
 

@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-09 (D121–D123; LSP multi-diag soft recovery; `thoxa version`)
+**As of:** 2026-08-09 (D124 structured diagnostics; D121–D123; LSP multi-diag; `thoxa version`)
 
 ---
 
@@ -26,15 +26,16 @@ step `.so` on the happy path.
 
 | Stage | Location | Notes |
 |-------|----------|--------|
-| CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` / `emit-c` / `lsp` / `version` / bare REPL |
+| CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL |
 | Frontend | `lexer`, `parser`, `ast`, `resolver` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag |
+| Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
 | MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104); loads `std/Fallible` when Shell injects (D123) |
 | Loader | `loader.rs` | `./` `~/` `std/…`; `load_package_with_entry_ast` for LSP buffer soft-recover |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; build stamps `THOXA_GIT_HASH` / dirty |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
-| LSP | `lsp/` | stdio server; check overlays; nav; multi-diag; identity log on start (`version` module) |
+| LSP | `lsp/` | stdio server; check overlays; nav; multi-diag + D124 codes/related; identity log (`version`) |
 
 ## Crates and trees
 

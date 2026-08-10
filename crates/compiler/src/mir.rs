@@ -7622,12 +7622,17 @@ fn lower_binary(
 /// Resolve a `std/Fallible` monomorph (`May`/`Trial`/…) if imported in this module.
 fn fallible_mono(ctx: &LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Result<Ty> {
     let Some(base) = ctx.name_to_type.get(base_src).cloned() else {
-        return Err(Error::at(
+        return Err(Error::coded_at(
+            crate::diagnostic::CODE_FALLIBLE_IMPORT,
             format!(
                 "`{base_src}` is not in scope — import it from \"std/Fallible\" \
                  (e.g. `import {{ Has, Not, May, Pass, Fail, Trial }} from \"std/Fallible\"`)"
             ),
             span,
+        )
+        .with_help(
+            "add `import { Has, Not, May, Pass, Fail, Trial } from \"std/Fallible\"` \
+             (or a selective subset)",
         ));
     };
     let mono = mono_type_name(&base, args);

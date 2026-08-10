@@ -1,6 +1,7 @@
 //! Recursive-descent + precedence parser (R0–R8).
 
 use crate::ast::*;
+use crate::diagnostic;
 use crate::error::{Error, Result};
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::Span;
@@ -60,7 +61,16 @@ impl Parser {
         if has_main {
             for it in &items {
                 if let Item::SessionStmt(bi) = it {
-                    errors.push(Error::at(TOP_LEVEL_STMT_WITH_MAIN_MSG, block_item_span(bi)));
+                    errors.push(
+                        Error::coded_at(
+                            diagnostic::CODE_TOP_LEVEL_WITH_MAIN,
+                            TOP_LEVEL_STMT_WITH_MAIN_MSG,
+                            block_item_span(bi),
+                        )
+                        .with_help(
+                            "move the statement into `fn main` or remove `fn main` for a session script",
+                        ),
+                    );
                 }
             }
         }
