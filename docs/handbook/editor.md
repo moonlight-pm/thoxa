@@ -38,7 +38,7 @@ restart again.
 |---------|--------|
 | Diagnostics | Same engine as `thoxa check` (**D124**). **Multi-diag** + **structured codes** (`THX…`), help text (folded into the LSP message), and `relatedInformation` when labels exist. **Unused imports** are **warnings** (`THX010`, severity Warning). Parse recovery still typechecks the rest of a function after a bad token. Programs with `fn main` reject bare top-level statements with a clear span. Mid-expression recovery is still limited. |
 | Syntax color | Tree-sitter Thoxa grammar |
-| Hover | Signature + contiguous `##` docs. **Call arguments** show the formal (`backlog: Int64` on `listen(16)`) when the callee is resolvable (local or cross-module) |
+| Hover | Signature + contiguous `##` docs. Unannotated `fn` / method / `extern` show the default return (**`-> Void`**, or **`-> Int64`** for `main`) so hover matches the compiler. **Call arguments** show the formal (`backlog: Int64` on `listen(16)`) when the callee is resolvable (local or cross-module) |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
 | Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, ctor, method/fn return (generic head + type-param subst), copy-let, match payload, if/else, block, **match**, **module-level let** inits, or **`?` on Trial/May** (success type) |
 | Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk. Namespace free fns (`net.createSocket`) and **typed methods on values from those calls after `?`** (`server.reuseAddr` → `Socket.reuseAddr` in `Net.thx`) |

@@ -141,23 +141,31 @@ impl DocumentIndex {
 }
 
 /// Signature line for hover: prefer the source line at the definition.
+///
+/// Unannotated free/`extern`/method returns default to **Void** (and `main` to
+/// **Int64**) in MIR (`resolve_return_ty`). Hover synthesizes that so the
+/// displayed type matches what the compiler uses, not only the written text.
 pub fn render_signature(binding: &Binding, text: &str) -> Option<String> {
     if let Some(span) = binding.def_span {
         let line = line_containing(text, span.start);
         let trimmed = line.trim();
         if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
+            return Some(enrich_fn_return_display(binding, trimmed));
         }
     }
     // Fallback by kind.
     let s = match binding.kind {
-        BindingKind::Fn | BindingKind::Extern => format!("fn {}", binding.name),
+        BindingKind::Fn | BindingKind::Extern => {
+            let ret = default_return_display(binding);
+            format!("fn {}() -> {ret}", binding.name)
+        }
         BindingKind::Type => format!("type {}", binding.name),
         BindingKind::Method => {
+            let ret = default_return_display(binding);
             if let Some(owner) = &binding.owner {
-                format!("fn {owner}.{}", binding.name)
+                format!("fn {owner}.{}() -> {ret}", binding.name)
             } else {
-                format!("fn {}", binding.name)
+                format!("fn {}() -> {ret}", binding.name)
             }
         }
         BindingKind::Field => {
@@ -176,6 +184,43 @@ pub fn render_signature(binding: &Binding, text: &str) -> Option<String> {
         BindingKind::Builtin => binding.name.clone(),
     };
     Some(s)
+}
+
+/// Default return type used when the source omits `-> …` (matches MIR).
+fn default_return_display(binding: &Binding) -> &'static str {
+    if binding.kind == BindingKind::Fn && binding.name == "main" {
+        "Int64"
+    } else {
+        "Void"
+    }
+}
+
+/// If this is a fn/method/extern source line without `->`, append the default
+/// return type (before a trailing `{` when present).
+fn enrich_fn_return_display(binding: &Binding, source_line: &str) -> String {
+    match binding.kind {
+        BindingKind::Fn | BindingKind::Extern | BindingKind::Method => {
+            if source_line.contains("->") {
+                return source_line.to_string();
+            }
+            // Only enrich true signature lines (`fn …` / `export fn …`).
+            let looks_fn = source_line.starts_with("fn ")
+                || source_line.starts_with("export fn ")
+                || source_line.contains(" fn ");
+            if !looks_fn {
+                return source_line.to_string();
+            }
+            let ret = default_return_display(binding);
+            if let Some(brace) = source_line.find('{') {
+                let head = source_line[..brace].trim_end();
+                let tail = &source_line[brace..];
+                format!("{head} -> {ret} {tail}")
+            } else {
+                format!("{source_line} -> {ret}")
+            }
+        }
+        _ => source_line.to_string(),
+    }
 }
 
 fn line_containing(text: &str, byte: usize) -> &str {
@@ -277,5 +322,40 @@ mod tests {
         let md = idx.hover_markdown(b).expect("hover");
         assert!(md.contains("helper"), "{md}");
         assert!(md.contains("```thoxa"), "{md}");
+    }
+
+    #[test]
+    fn hover_synthesizes_default_void_return() {
+        let src = "fn serveOne(x!: Int64) {\n    x\n}\nfn main() -> Int64 {\n    serveOne(1)\n    0\n}\n";
+        let idx = build_index(src, "<input>");
+        let call = src.rfind("serveOne").unwrap();
+        let p = byte_to_position(src, call);
+        let b = idx
+            .binding_at(p.line, p.character)
+            .or_else(|| {
+                // Def site if call ref not linked.
+                idx.resolution
+                    .module_definitions()
+                    .into_iter()
+                    .find(|b| b.name == "serveOne")
+            })
+            .expect("serveOne");
+        let md = idx.hover_markdown(b).expect("hover");
+        assert!(
+            md.contains("serveOne") && md.contains("-> Void"),
+            "expected synthesized Void return, got: {md}"
+        );
+    }
+
+    #[test]
+    fn hover_keeps_written_return_type() {
+        let src = "fn helper() -> Int64 { 1 }\nfn main() -> Int64 { helper() }\n";
+        let idx = build_index(src, "<input>");
+        let call = src.find("helper").unwrap();
+        let p = byte_to_position(src, call);
+        let b = idx.binding_at(p.line, p.character).expect("helper");
+        let md = idx.hover_markdown(b).expect("hover");
+        assert!(md.contains("-> Int64"), "{md}");
+        assert!(!md.contains("-> Void"), "{md}");
     }
 }

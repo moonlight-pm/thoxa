@@ -55,7 +55,6 @@ fn run() -> Trial<Void, String> {
             Pass(peer) {
                 serveOne(peer, router)
                 peer.close()
-                Void
             }
         }
     }
@@ -64,6 +63,7 @@ fn run() -> Trial<Void, String> {
 }
 
 ## One connection: read headers, route, write full response. Never fails the process.
+## (No `->` annotation ⇒ return type is Void.)
 fn serveOne(peer!: Socket, router!: Router) {
     match peer.receiveRequest() {
         Fail(e) {
@@ -72,7 +72,6 @@ fn serveOne(peer!: Socket, router!: Router) {
         Pass(raw) {
             if raw.count == 0 {
                 ## Peer closed without sending data — quiet.
-                Void
             } else {
                 let response = match http.parseRequest(raw) {
                     Pass(req) {
@@ -87,7 +86,7 @@ fn serveOne(peer!: Socket, router!: Router) {
                 }
                 let wire = http.writeResponse(response)
                 match peer.sendAll(wire) {
-                    Pass(_) { Void }
+                    Pass(_) { }
                     Fail(e) {
                         warn("send: {e}")
                     }
