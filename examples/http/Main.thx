@@ -17,6 +17,7 @@ import http from "./Http"
 import { Router } from "./Router"
 import { Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
+import { info } from "std/Logging"
 
 let listenPort = 9091
 let webRoot = "examples/http/web"
@@ -30,7 +31,7 @@ fn main() -> Int64 {
             0
         }
         Fail(e) {
-            logging.info("server error: {e}")
+            info("server error: {e}")
             1
         }
     }
@@ -41,8 +42,8 @@ fn run() -> Trial<Void, String> {
     server.reuseAddr()?
     server.bind(listenPort)?
     server.listen(16)?
-    logging.info("http server listening on 127.0.0.1:{listenPort}")
-    logging.info("serving files from {webRoot}/  (Ctrl-C to stop)")
+    info("http server listening on 127.0.0.1:{listenPort}")
+    info("serving files from {webRoot}/  (Ctrl-C to stop)")
     let router = Router(root: webRoot)
     loop {
         ## Accept errors fail the process; per-request send issues log and continue.
@@ -60,9 +61,9 @@ fn run() -> Trial<Void, String> {
             let wire = http.writeResponse(response)
             let ns = peer.send(wire)
             if ns < 0 {
-                logging.info("request error: send failed")
+                info("request error: send failed")
             } else {
-                logging.info("{response.status} {response.reason}")
+                info("{response.status} {response.reason}")
             }
         }
         peer.close()
