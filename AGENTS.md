@@ -76,6 +76,7 @@ cargo run -p thoxa --                 # session REPL
 cargo run -p thoxa -- path.thx        # program or session script
 cargo run -p thoxa -- run path.thx
 cargo run -p thoxa -- check path.thx
+cargo run -p thoxa -- check --json path.thx
 cargo run -p thoxa -- lsp
 ```
 
@@ -86,7 +87,7 @@ over ad-hoc scripts (D10).
 
 | Path | Role |
 |------|------|
-| `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; session/command/repl; lsp/ |
+| `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; `diagnostic`/`error`; session/command/repl; lsp/ |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `crates/make/` | xtask (`cargo make`) |
 | `std/` | Product standard library (`std/…`) |

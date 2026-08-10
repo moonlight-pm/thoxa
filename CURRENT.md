@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-09 (D124 structured diagnostics shipped; Fallible D123; session deferred)
+**As of:** 2026-08-10 (D124 structured diagnostics shipped; Fallible D123; session deferred)
 
 ---
 

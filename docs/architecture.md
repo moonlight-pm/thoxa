@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-09 (D124 structured diagnostics; D121–D123; LSP multi-diag; `thoxa version`)
+**As of:** 2026-08-10 (D124 structured diagnostics; D121–D123; LSP multi-diag; `thoxa version`)
 
 ---
 

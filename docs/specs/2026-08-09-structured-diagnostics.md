@@ -27,10 +27,10 @@
 Diagnostics should be **clear and actionable** for humans editing Thoxa —
 especially in **Zed via `thoxa lsp`** and at the **`thoxa check`** CLI.
 
-Today, errors are free-form strings with optional spans. Multi-diag recovery
-already finds more problems in one pass; what is missing is a **structured
-diagnostic product**: stable identity, help text, secondary locations, and one
-IR that drives every consumer so wording and spans never drift.
+**As-built (shipped):** one structured IR drives pretty CLI, `--json`, and LSP
+(codes, help, expected/actual when parseable, related labels). Multi-diag
+recovery still finds multiple issues in one check pass. Residual free-form
+emit sites are classified by message pattern when no explicit code was set.
 
 **One sentence:**  
 One structured diagnostic IR → pretty human CLI + optional JSON + rich LSP.

@@ -6,10 +6,11 @@ Personal, side-loaded Zed extension for editing `.thx` files against the
 - **Syntax highlighting** from [`extras/tree-sitter-thoxa`](../tree-sitter-thoxa)
   (keywords, casing-based types-vs-values, literals, comments).
 - **Language server** `thoxa lsp` (Rust, same binary as `build`/`run`) for live
-  **diagnostics** and **semantic-token** refinements (function vs variable).
+  **diagnostics** (structured codes/help when available; multi-diag) and
+  **semantic-token** refinements (function vs variable).
 
 No Python. The server *is* the native frontend, so squiggles cannot drift from
-`thoxa build`.
+`thoxa check` / `thoxa build`.
 
 ## Prerequisites
 

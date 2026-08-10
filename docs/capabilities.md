@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-09 (D123 Fallible import; LSP multi-diag soft recovery; `thoxa version`)
+**As of:** 2026-08-10 (D124 structured diagnostics; D123 Fallible import; LSP multi-diag; `thoxa version`)
 
 ---
 

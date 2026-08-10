@@ -39,20 +39,29 @@ HTTP plan (historical): [`specs/2026-07-19-post-r9-http-completion-plan.md`](spe
 
 ## Phase B — Editor DX (Zed + LSP)
 
-**Status: partial** (phase 1–2 shipped)
+**Status: partial** (phase 1–2 + structured diagnostics shipped)
 
 - Tree-sitter + Zed extras; `thoxa lsp` diagnostics (multi-diag on bodies,
   type-reg, lex, mid-block parse soft-recover; multi undefined names; check
   continues after recoverable syntax errors).
+- **Structured diagnostics (D124):** shared IR → pretty `thoxa check`,
+  `check --json` (compiler identity), LSP `code` / help / `relatedInformation`;
+  codes THX001–THX009 for high-traffic classes.
 - Navigation: hover, definition, references, outline, rename; cross-module jump;
   package-tree disk refs/rename; **`workspace/symbol`** package search.
 - **`thoxa version`** / LSP identity (git hash; no toasts).
 
 **Remaining:** MIR on shared resolver (**deferred architecture**); rare typed-member
 untyped-expr edges; multi-root workspace folders if forced; mid-expression
-parse recovery if forced.
+parse recovery if forced; opportunistic code-catalog growth; agent-only extras
+parked under [`ideas/2026-08-09-agent-dx-from-zerolang.md`](ideas/2026-08-09-agent-dx-from-zerolang.md).
 
-Freeze: [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md)
+Freezes:
+
+- [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md)
+  (editor / multi-diag recovery / nav)
+- [`specs/2026-08-09-structured-diagnostics.md`](specs/2026-08-09-structured-diagnostics.md)
+  (**D124** — shipped)
 
 ---
 
