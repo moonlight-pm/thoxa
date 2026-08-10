@@ -38,6 +38,24 @@ impl Parser {
                 }
             }
         }
+        // Programs with `fn main` cannot have top-level session statements
+        // (bare exprs like `FOOBAR`). Flag each with its own span even when
+        // other parse errors also exist (e.g. `as` keyword), so LSP multi-diag
+        // does not hide the stray name behind a later recovery error.
+        let has_main = items
+            .iter()
+            .any(|it| matches!(it, Item::Function(f) if f.name == "main"));
+        if has_main {
+            for it in &items {
+                if let Item::SessionStmt(bi) = it {
+                    errors.push(Error::at(
+                        "session statements cannot appear in a program that defines `fn main` \
+                         (use only declarations + main, or omit main for a session script)",
+                        block_item_span(bi),
+                    ));
+                }
+            }
+        }
         if !errors.is_empty() {
             return Err(Error::multi(errors));
         }
@@ -1791,6 +1809,22 @@ enum BlockElem {
     Let(LetBind),
     Assign(AssignStmt),
     Expr(Expr),
+}
+
+fn block_item_span(bi: &BlockItem) -> Span {
+    match bi {
+        BlockItem::Let { name_span, init, .. } => Span::new(name_span.start, init.span.end),
+        BlockItem::Assign { target, value } => {
+            let start = match target {
+                AssignTarget::Name { name_span, .. } => name_span.start,
+                AssignTarget::Field { base_span, .. } => base_span.start,
+                AssignTarget::Index { base_span, .. } => base_span.start,
+                AssignTarget::DynIndex { name_span, .. } => name_span.start,
+            };
+            Span::new(start, value.span.end)
+        }
+        BlockItem::Expr(e) => e.span,
+    }
 }
 
 fn block_elem_to_item(el: BlockElem) -> BlockItem {

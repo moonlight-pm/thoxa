@@ -64,10 +64,15 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<bool> {
 
     if has_main {
         if !session_stmts.is_empty() {
-            return Err(Error::new(
-                "session statements cannot appear in a program that defines `fn main` \
-                 (use only declarations + main, or omit main for a session script)",
-            ));
+            // Prefer one diagnostic per statement with a real span (parser also
+            // catches this; this path covers AST built without re-parse).
+            let msg = "session statements cannot appear in a program that defines `fn main` \
+                 (use only declarations + main, or omit main for a session script)";
+            let errors: Vec<Error> = session_stmts
+                .iter()
+                .map(|bi| Error::at(msg, session_block_item_span(bi)))
+                .collect();
+            return Err(Error::multi(errors));
         }
         return Ok(false);
     }
@@ -207,6 +212,22 @@ fn fallible_source() -> Result<(std::path::PathBuf, String)> {
         std::path::PathBuf::from("std/Fallible.thx"),
         FALLIBLE_EMBED.to_string(),
     ))
+}
+
+fn session_block_item_span(bi: &BlockItem) -> Span {
+    match bi {
+        BlockItem::Let { name_span, init, .. } => Span::new(name_span.start, init.span.end),
+        BlockItem::Assign { target, value } => {
+            let start = match target {
+                AssignTarget::Name { name_span, .. } => name_span.start,
+                AssignTarget::Field { base_span, .. } => base_span.start,
+                AssignTarget::Index { base_span, .. } => base_span.start,
+                AssignTarget::DynIndex { name_span, .. } => name_span.start,
+            };
+            Span::new(start, value.span.end)
+        }
+        BlockItem::Expr(e) => e.span,
+    }
 }
 
 fn ensure_shell_status_param(t: &TypeDef) -> Result<()> {
@@ -407,12 +428,36 @@ mod tests {
 println("nope")
 fn main() -> Int64 { 0 }
 "#;
+        // Localized at parse time (and still guarded in prepare for synthetic ASTs).
+        let tokens = Lexer::new(src).tokenize().expect("lex");
+        let err = Parser::new(tokens).parse_module().expect_err("expected session+main error");
+        assert!(
+            err.message.contains("session statements cannot appear"),
+            "{err}"
+        );
+        assert!(err.span.is_some(), "expected span on session stmt");
+    }
+
+    #[test]
+    fn prepare_rejects_session_stmt_with_main_on_synthetic_ast() {
+        // Bypass parse post-check: build AST that still has SessionStmt + main.
+        let tokens = Lexer::new("fn main() -> Int64 { 0 }").tokenize().expect("lex");
+        let mut ast = Parser::new(tokens).parse_module().expect("parse");
+        ast.items.insert(
+            0,
+            Item::SessionStmt(BlockItem::Expr(Expr {
+                kind: ExprKind::Name("FOOBAR".into()),
+                span: Span::new(0, 6),
+            })),
+        );
         let mut entry = SourceModule {
             id: "Main".into(),
             path: std::path::PathBuf::from("Main.thx"),
-            ast: parse(src),
+            ast,
             is_entry: true,
         };
-        assert!(prepare_entry(&mut entry).is_err());
+        let err = prepare_entry(&mut entry).expect_err("prepare should reject");
+        assert!(err.message.contains("session statements cannot appear"), "{err}");
+        assert_eq!(err.span, Some(Span::new(0, 6)));
     }
 }
