@@ -286,7 +286,8 @@ pub enum ExprKind {
         cond: Box<Expr>,
         body: Block,
     },
-    /// `loop { body }` — yields `Void`.
+    /// `loop { body }` — yields `Void` if `break` can exit; otherwise diverges
+    /// (Never / bottom type, D128) so it can be a function's last expression.
     Loop {
         body: Block,
     },

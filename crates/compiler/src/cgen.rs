@@ -504,14 +504,13 @@ fn emit_function(
     emit_stmts(out, &f.body, 1, types);
 
     match (&f.ret, &f.ret_ty) {
-        (Some(_), Ty::Void) => {}
+        (Some(_), Ty::Void) | (Some(_), Ty::Never) => {}
         (Some(p), _) => {
             let _ = writeln!(out, "    return {};", p.name);
         }
-        (None, Ty::Void) => {}
-        (None, _) => {
-            out.push_str("    return 0;\n");
-        }
+        // No value: Void return, or diverging body (`loop` with no break — D128).
+        // Do not emit `return 0` for non-scalar returns (invalid for User/Trial).
+        (None, _) => {}
     }
     out.push_str("}\n");
 }
@@ -1224,7 +1223,7 @@ fn c_ty(ty: &Ty) -> String {
         Ty::Bytes => "ThoxaBytes*".into(),
         Ty::Buffer => "ThoxaBuffer*".into(),
         Ty::Array { .. } => "ThoxaArray*".into(),
-        Ty::Void => "void".into(),
+        Ty::Void | Ty::Never => "void".into(),
         Ty::User(name) => c_type_name(name),
         Ty::FixedArray { elem, .. } => {
             // Locals of fixed-array type are not emitted; typedefs handle arrays.

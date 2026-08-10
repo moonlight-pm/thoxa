@@ -311,6 +311,10 @@ pub struct Place {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ty {
     Void,
+    /// Diverging control flow (`loop` with no `break`). Bottom type: unifies with
+    /// any expected type so a bare infinite loop can be a function's last expression
+    /// without a dummy `Pass(Void)` / `0` tail (D128).
+    Never,
     Int32,
     Int64,
     UInt32,
@@ -346,6 +350,11 @@ fn needs_drop(ty: &Ty) -> bool {
         ty,
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } | Ty::User(_)
     )
+}
+
+/// True when `ty` is the diverging bottom type (no value produced).
+fn is_never(ty: &Ty) -> bool {
+    matches!(ty, Ty::Never)
 }
 
 /// Element types supported in dynamic `Array<T>` (phase A).
@@ -2056,6 +2065,7 @@ fn mono_type_name(base: &str, args: &[Ty]) -> String {
 fn ty_mono_suffix(ty: &Ty) -> String {
     match ty {
         Ty::Void => "Void".into(),
+        Ty::Never => "Never".into(),
         Ty::Int32 => "Int32".into(),
         Ty::Int64 => "Int64".into(),
         Ty::UInt32 => "UInt32".into(),
@@ -2371,6 +2381,7 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
         Ty::Bytes => ("Bytes".into(), vec![]),
         Ty::Buffer => ("Buffer".into(), vec![]),
         Ty::Void => ("Void".into(), vec![]),
+        Ty::Never => ("Never".into(), vec![]),
         Ty::User(n) => (n.clone(), vec![]),
         Ty::Array { elem } => (
             "Array".into(),
@@ -3385,6 +3396,10 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
                 };
                 lower_expr_expect(ctx, tail, exp)?
             };
+            // Diverging tail (e.g. infinite `loop`) satisfies any expected type (D128).
+            if is_never(&ty) {
+                return Ok(None);
+            }
             let place = if *expect != Ty::Void && &ty != expect {
                 match try_sum_coerce(
                     ctx,
@@ -4172,7 +4187,121 @@ fn lower_loop(ctx: &mut LowerCtx, body: &Block, _span: Span) -> Result<(Place, T
     let body_stmts = std::mem::take(&mut ctx.stmts);
     ctx.stmts = outer;
     ctx.stmts.push(Stmt::Loop { body: body_stmts });
-    Ok(void_place(ctx))
+    // No `break` that can leave this loop ⇒ diverges (D128). Nested loops' breaks
+    // only exit the nested loop, so they do not count for the outer.
+    if block_has_break(body) {
+        Ok(void_place(ctx))
+    } else {
+        let (p, _) = void_place(ctx);
+        Ok((p, Ty::Never))
+    }
+}
+
+/// True if `break` can exit this block's enclosing `loop` (depth 0), not only a nested loop.
+fn block_has_break(block: &Block) -> bool {
+    block_items_have_break(&block.items, 0)
+        || block
+            .tail
+            .as_ref()
+            .map(|e| expr_has_break(e, 0))
+            .unwrap_or(false)
+}
+
+fn block_items_have_break(items: &[BlockItem], depth: u32) -> bool {
+    for item in items {
+        match item {
+            BlockItem::Expr(e) | BlockItem::Let { init: e, .. } => {
+                if expr_has_break(e, depth) {
+                    return true;
+                }
+            }
+            BlockItem::Assign { value, .. } => {
+                if expr_has_break(value, depth) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn expr_has_break(expr: &Expr, depth: u32) -> bool {
+    use crate::ast::{Arg, InterpPart};
+    match &expr.kind {
+        ExprKind::Break => depth == 0,
+        ExprKind::Loop { body } => block_has_break_at(body, depth + 1),
+        ExprKind::While { cond, body } => {
+            expr_has_break(cond, depth) || block_has_break_at(body, depth + 1)
+        }
+        ExprKind::For {
+            start, end, body, ..
+        } => {
+            expr_has_break(start, depth)
+                || end
+                    .as_ref()
+                    .map(|e| expr_has_break(e, depth))
+                    .unwrap_or(false)
+                || block_has_break_at(body, depth + 1)
+        }
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            expr_has_break(cond, depth)
+                || block_has_break_at(then_branch, depth)
+                || else_branch
+                    .as_ref()
+                    .map(|b| block_has_break_at(b, depth))
+                    .unwrap_or(false)
+        }
+        ExprKind::Match { scrutinee, arms } => {
+            expr_has_break(scrutinee, depth)
+                || arms.iter().any(|a| block_has_break_at(&a.body, depth))
+        }
+        ExprKind::Block(b) => block_has_break_at(b, depth),
+        ExprKind::Unary { expr, .. } => expr_has_break(expr, depth),
+        ExprKind::Binary { left, right, .. } => {
+            expr_has_break(left, depth) || expr_has_break(right, depth)
+        }
+        ExprKind::Call { args, .. } => args.iter().any(|a| match a {
+            Arg::Pos(e) | Arg::Named { value: e, .. } => expr_has_break(e, depth),
+        }),
+        ExprKind::MethodCall { receiver, args, .. } => {
+            expr_has_break(receiver, depth)
+                || args.iter().any(|a| match a {
+                    Arg::Pos(e) | Arg::Named { value: e, .. } => expr_has_break(e, depth),
+                })
+        }
+        ExprKind::Field { base, .. } => expr_has_break(base, depth),
+        ExprKind::Index { base, index } => {
+            expr_has_break(base, depth) || expr_has_break(index, depth)
+        }
+        ExprKind::Return { value } => value
+            .as_ref()
+            .map(|e| expr_has_break(e, depth))
+            .unwrap_or(false),
+        ExprKind::Try(e) => expr_has_break(e, depth),
+        ExprKind::ArrayLit(elems) => elems.iter().any(|e| expr_has_break(e, depth)),
+        ExprKind::Interpolate(parts) => parts.iter().any(|p| match p {
+            InterpPart::Expr(e) => expr_has_break(e, depth),
+            InterpPart::Lit(_) => false,
+        }),
+        ExprKind::Continue
+        | ExprKind::Name(_)
+        | ExprKind::Int(_)
+        | ExprKind::Bool(_)
+        | ExprKind::String(_) => false,
+    }
+}
+
+fn block_has_break_at(block: &Block, depth: u32) -> bool {
+    block_items_have_break(&block.items, depth)
+        || block
+            .tail
+            .as_ref()
+            .map(|e| expr_has_break(e, depth))
+            .unwrap_or(false)
 }
 
 fn lower_while(ctx: &mut LowerCtx, cond: &Expr, body: &Block, _span: Span) -> Result<(Place, Ty)> {
@@ -6210,6 +6339,10 @@ fn ty_eq(types: &HashMap<String, TypeInfo>, a: &Ty, b: &Ty) -> bool {
 
 /// Whether `from` can be coerced to `to` (equality, inject, or transparent remap).
 fn can_coerce_ty(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool {
+    // Bottom type flows into any expectation (diverging `loop`, D128).
+    if is_never(from) {
+        return true;
+    }
     if ty_eq(types, from, to) {
         return true;
     }
@@ -7114,7 +7247,7 @@ fn lower_match_value(
     }
     let result_ty = result_ty.unwrap_or(Ty::Void);
 
-    let out = if result_ty == Ty::Void {
+    let out = if result_ty == Ty::Void || is_never(&result_ty) {
         None
     } else {
         Some(ctx.fresh("m"))
@@ -7352,6 +7485,7 @@ fn lower_value_pattern_eq(
 
 fn unify_match_arm_tys(a: &Ty, b: &Ty, span: Span) -> Result<Ty> {
     match (a, b) {
+        (Ty::Never, x) | (x, Ty::Never) => Ok(x.clone()),
         (Ty::Void, Ty::Void) => Ok(Ty::Void),
         (x, y) if x == y => Ok(x.clone()),
         (x, y) => Err(Error::at(
@@ -7411,7 +7545,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                 value: RValue::Null,
             });
         }
-        Ty::Void => {}
+        Ty::Void | Ty::Never => {}
         Ty::FixedArray { .. } | Ty::Address(_) => {
             return Err(Error::new(format!("cannot allocate local of type {ty:?}")));
         }
@@ -8163,7 +8297,7 @@ fn lower_if(
         unify_if_branch_tys(ctx, &then_ty, &else_ty, else_branch.is_none(), span)?
     };
 
-    let out = if result_ty == Ty::Void {
+    let out = if result_ty == Ty::Void || is_never(&result_ty) {
         None
     } else {
         Some(ctx.fresh("if"))
@@ -8242,6 +8376,7 @@ fn unify_if_branch_tys(
     span: Span,
 ) -> Result<Ty> {
     match (then_ty, else_ty) {
+        (Ty::Never, x) | (x, Ty::Never) => Ok(x.clone()),
         (Ty::Void, Ty::Void) => Ok(Ty::Void),
         (a, Ty::Void) if else_absent => Ok(a.clone()),
         (a, b) if a == b => Ok(a.clone()),
@@ -8477,6 +8612,9 @@ fn lower_block_into(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Op
             None
         };
         let (place, ty) = lower_expr_expect(ctx, tail, exp)?;
+        if is_never(&ty) {
+            return Ok(None);
+        }
         if *expect != Ty::Void && &ty != expect {
             match try_sum_coerce(
                 ctx,

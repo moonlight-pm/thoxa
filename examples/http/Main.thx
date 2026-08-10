@@ -58,8 +58,6 @@ fn run() -> Trial<Void, String> {
             }
         }
     }
-    ## Unreachable; keeps Trial return shape if the loop ever breaks.
-    Pass(Void)
 }
 
 ## One connection: read headers, route, write full response. Never fails the process.

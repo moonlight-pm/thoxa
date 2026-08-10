@@ -1,0 +1,43 @@
+## Diverging `loop` (no `break`) is a bottom type (D128): valid as a function tail
+## for any return type (including Trial) without a dummy value after the loop.
+## `return` inside the loop still exits the function (for a finite conformance run).
+import logging from "std/Logging"
+import { Pass, Fail, Trial } from "std/Fallible"
+
+fn setup() -> Trial<Void, String> {
+    Pass(Void)
+}
+
+## Same shape as examples/http `run`: setup with `?`, then loop as the body tail.
+fn run() -> Trial<Void, String> {
+    setup()?
+    mut n = 0
+    loop {
+        n = n + 1
+        if n >= 3 {
+            return Pass(Void)
+        }
+    }
+}
+
+fn typedTail() -> Trial<Int64, String> {
+    setup()?
+    loop {
+        return Pass(7)
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    match run() {
+        Pass(_) { logging.info("run-ok") }
+        Fail(e) { logging.info("run-fail {e}") }
+    }
+    match typedTail() {
+        Pass(n) { logging.info("tail={n}") }
+        Fail(e) { logging.info("tail-fail {e}") }
+    }
+    0
+}

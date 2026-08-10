@@ -91,7 +91,9 @@ them (D122). Precise RC / Perceus is **not** shipped.
 
 ## Control flow
 
-`if`, `while`, `loop`, `for` (ranges and collections), `break`, `continue`,
+`if`, `while`, `loop`, `for` (ranges and collections), `break`, `continue`.
+A `loop` with no `break` **diverges** (bottom type): it may be the last
+expression of any function without a dummy value after it (**D128**).
 early `return` / `return expr`. Branch values may inject into an expected union
 (`-> Outcome` / `let x: U = if …`).
 

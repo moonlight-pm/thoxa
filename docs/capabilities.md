@@ -32,7 +32,7 @@ change. See [`progress-model.md`](progress-model.md).
 | bytes | Bytes API + slice + find→May + insertAt/removeAt + equals | shipped | `bytes`, `splice` | D14–D18, D36–D37, D46′/D85, D55 | String→Bytes is `fromString` only; **no** `"…" as Bytes` (D15 rejected) | yes |
 | buffer | Growable Buffer COW → freeze | shipped | `buffer` | D50–D52 | — | yes |
 | mut-assign | `mut` + assign + method field write-back | shipped | `bytes`, `method_field_writeback` | R5, D107 | — | yes |
-| control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops` | D47, D55 | — | yes |
+| control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops`, `loop_diverge` | D47, D55, **D128** | `loop` without `break` diverges (Never); `while`/`for` still Void | yes |
 | early-return | `return` / `return expr` | shipped | `early_return` | D63 | — | yes |
 | array-dyn | Dynamic `Array<T>` (incl. User) + insertAt/removeAt | shipped | `arrays`, `array_user`, `array_heap_elems`, `splice` | D53–D55, D62, D65 | — | yes |
 | array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | ABI scalar elems only (no User fixed-array elems) | yes |

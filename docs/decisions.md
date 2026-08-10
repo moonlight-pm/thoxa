@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-10 — Diverging loop (no break)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D128 | `loop` without `break` diverges | A bare `loop { … }` that contains no `break` targeting that loop is typed as bottom (**Never**): it unifies with any expected type, so it may be the last expression of a function returning `Trial` / `Int64` / … without a dummy tail (`Pass(Void)`, `0`, …). Nested loops' `break`s do not count for the outer. `while` / `for` still yield `Void` (they can end). | Forced by `examples/http` `run()`. Gate: `loop_diverge`. |
+
 ## 2026-08-10 — Combined namespace + selective import
 
 | ID | Decision | Choice | Notes |

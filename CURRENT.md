@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-10 (combined import **D127**; `std` Io/Net/Http **D126**; session deferred)
+**As of:** 2026-08-10 (diverging loop **D128**; combined import **D127**; std Io/Net/Http **D126**)
 
 ---
 
@@ -14,11 +14,10 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** **combined import** `import ns, { a } from "…"` (**D127**);
-**`std/Io` + `Net` + `Http` + `HttpStatic`** (**D126**); **`std/Logging`**
-(**D125**); **LSP call-arg hover**; **typed members after `?`**; **THX010**;
-**D124** diagnostics; **`thoxa version`**; **D123** Fallible import;
-**`examples/kilo`** / **`examples/http`**. Session residual deferred.
+**Shipped recently:** **diverging `loop`** (**D128** — no dummy `Pass(Void)`
+after infinite servers); **combined import** (**D127**); **`std/Io`+`Net`+`Http`**
+(**D126**); **`std/Logging`** (**D125**); LSP hover/nav; **D124** diagnostics;
+**`examples/http`**. Session residual deferred.
 Agent-only ideas parked:
 [`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 
