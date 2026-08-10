@@ -373,13 +373,22 @@ impl Server {
             return convert::hover(&md, range);
         }
 
-        let Some(binding) = binding else {
-            return Value::Null;
-        };
-        let Some(md) = idx.hover_markdown(binding) else {
-            return Value::Null;
-        };
-        convert::hover(&md, range)
+        if let Some(binding) = binding {
+            if let Some(md) = idx.hover_markdown(binding) {
+                return convert::hover(&md, range);
+            }
+        }
+
+        // Literals / expressions with no name binding: formal param at call site
+        // (e.g. hover `16` in `server.listen(16)` → `backlog: Int64`).
+        if let Some((md, arg_span)) =
+            crossmodule::hover_call_argument(&idx, line, character, &self.docs)
+        {
+            let r = span::span_to_range(&idx.text, arg_span);
+            return convert::hover(&md, Some(r));
+        }
+
+        Value::Null
     }
 
     fn document_symbol(&self, params: &Value) -> Value {

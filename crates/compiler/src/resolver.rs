@@ -221,6 +221,19 @@ struct Resolver<'a> {
     scopes: Vec<Scope>,
 }
 
+/// `Trial<T, E>?` / `May<T>?` → success head `T` (first type-arg head).
+/// Non-fallible nav types pass through unchanged.
+pub fn unwrap_fallible_nav_ty(t: NavTy) -> NavTy {
+    if (t.head == "Trial" || t.head == "May") && !t.args.is_empty() {
+        NavTy {
+            head: t.args[0].clone(),
+            args: Vec::new(),
+        }
+    } else {
+        t
+    }
+}
+
 /// Resolve a parsed module (single-file; imports are local bindings only).
 pub fn resolve_module(module: &Module) -> Resolution {
     let mut r = Resolver {
@@ -456,9 +469,12 @@ impl<'a> Resolver<'a> {
                 }
             }
             ExprKind::Block(b) => self.block_nav_ty(b, scope),
-            ExprKind::Try(inner) | ExprKind::Unary { expr: inner, .. } => {
-                self.expr_nav_ty(inner, scope)
+            // `x?` extracts the success arm of Trial/May (first type argument).
+            ExprKind::Try(inner) => {
+                let t = self.expr_nav_ty(inner, scope)?;
+                Some(unwrap_fallible_nav_ty(t))
             }
+            ExprKind::Unary { expr: inner, .. } => self.expr_nav_ty(inner, scope),
             // Value match: all arms must agree on a concrete nav type (pattern
             // binds not re-scoped here — constructor tails work).
             ExprKind::Match { arms, .. } => {
@@ -1298,6 +1314,31 @@ fn main() -> Int64 {
         let r = res.ref_at(src, p.line, p.character).expect("x in method");
         let b = res.binding_of(Some(r)).expect("field");
         assert_eq!(b.kind, BindingKind::Field);
+        assert_eq!(b.owner.as_deref(), Some("Point"));
+    }
+
+    #[test]
+    fn typed_member_via_try_unwrap() {
+        // `let p = make()?` where make() -> Trial<Point, String> links p.len.
+        let src = "\
+import { Pass, Fail, Trial } from \"std/Fallible\"
+type Point(x: Int64) {
+  export fn len() -> Int64 { x }
+}
+fn make() -> Trial<Point, String> { Pass(Point(x: 3)) }
+fn main() -> Trial<Int64, String> {
+  let p = make()?
+  p.len()
+  Pass(0)
+}
+";
+        let res = resolve_ok(src);
+        let len_call = src.find("p.len()").unwrap() + 2;
+        let p = byte_to_position(src, len_call);
+        let r = res.ref_at(src, p.line, p.character).expect("p.len");
+        let b = res.binding_of(Some(r)).expect("method via try unwrap");
+        assert_eq!(b.kind, BindingKind::Method);
+        assert_eq!(b.name, "len");
         assert_eq!(b.owner.as_deref(), Some("Point"));
     }
 

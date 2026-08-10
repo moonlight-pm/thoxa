@@ -36,12 +36,12 @@ restart again.
 
 | Feature | Notes |
 |---------|--------|
-| Diagnostics | Same engine as `thoxa check` (**D124**). **Multi-diag** + **structured codes** (`THX…`), help text (folded into the LSP message), and `relatedInformation` when labels exist. Parse recovery still typechecks the rest of a function after a bad token. Programs with `fn main` reject bare top-level statements with a clear span. Mid-expression recovery is still limited. |
+| Diagnostics | Same engine as `thoxa check` (**D124**). **Multi-diag** + **structured codes** (`THX…`), help text (folded into the LSP message), and `relatedInformation` when labels exist. **Unused imports** are **warnings** (`THX010`, severity Warning). Parse recovery still typechecks the rest of a function after a bad token. Programs with `fn main` reject bare top-level statements with a clear span. Mid-expression recovery is still limited. |
 | Syntax color | Tree-sitter Thoxa grammar |
-| Hover | Signature + contiguous `##` docs |
+| Hover | Signature + contiguous `##` docs. **Call arguments** show the formal (`backlog: Int64` on `listen(16)`) when the callee is resolvable (local or cross-module) |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
-| Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, ctor, method/fn return (generic head + type-param subst), copy-let, match payload, if/else, block, **match**, or **module-level let** inits |
-| Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk |
+| Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, ctor, method/fn return (generic head + type-param subst), copy-let, match payload, if/else, block, **match**, **module-level let** inits, or **`?` on Trial/May** (success type) |
+| Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk. Namespace free fns (`net.createSocket`) and **typed methods on values from those calls after `?`** (`server.reuseAddr` → `Socket.reuseAddr` in `Net.thx`) |
 | References | Local file + open buffers + **package-tree `.thx` on disk** (under nearest `Main.thx` / `.git` root; same-dir fallback) that selective-import the export |
 | Rename | Local + open buffers + **package-tree disk** selective-import renames when renaming an export |
 | Document symbols | Outline |
@@ -53,6 +53,7 @@ Library buffers without `main` typecheck as libraries (no false “requires main
 ## Limits (partial)
 
 - Typed member navigation still misses some **untyped** expressions (no recoverable type).
+- Call-arg hover needs a resolvable callee (local or import path on disk / open buffer).
 - Package-tree refs/rename and **workspace symbols** use the same root walk
   (nearest `Main.thx` / `.git`; capped — not an unbounded home walk / multi-root).
 - Parse recovery is **statement-oriented** (top-level items + mid-block); not full mid-expression recovery.

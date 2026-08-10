@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-10 (D124 structured diagnostics; D121–D123; LSP multi-diag; `thoxa version`)
+**As of:** 2026-08-10 (D124 + THX010 warnings; LSP nav depth: `?`/namespace members, call-arg hover)
 
 ---
 
@@ -35,7 +35,7 @@ step `.so` on the happy path.
 | Loader | `loader.rs` | `./` `~/` `std/…`; `load_package_with_entry_ast` for LSP buffer soft-recover |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; build stamps `THOXA_GIT_HASH` / dirty |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
-| LSP | `lsp/` | stdio server; check overlays; nav; multi-diag + D124 codes/related; identity log (`version`) |
+| LSP | `lsp/` | stdio server; check overlays; multi-diag + D124 codes/related/warnings; nav (typed members after `?`/namespace, call-arg formals); identity log (`version`) |
 
 ## Crates and trees
 

@@ -37,6 +37,8 @@ pub const TOKEN_TYPES: &[&str] = &[
 pub const TOKEN_MODIFIERS: &[&str] = &[];
 
 const SEVERITY_ERROR: i32 = 1;
+const SEVERITY_WARNING: i32 = 2;
+const SEVERITY_INFORMATION: i32 = 3;
 
 fn token_type_index(name: &str) -> Option<u32> {
     TOKEN_TYPES
@@ -124,9 +126,14 @@ pub fn diagnostic_to_lsp(diag: &CheckDiagnostic) -> Value {
         }
     }
 
+    let severity = match diag.severity {
+        crate::diagnostic::Severity::Error => SEVERITY_ERROR,
+        crate::diagnostic::Severity::Warning => SEVERITY_WARNING,
+        crate::diagnostic::Severity::Note => SEVERITY_INFORMATION,
+    };
     let mut obj = json!({
         "range": range_to_json(diag.range),
-        "severity": SEVERITY_ERROR,
+        "severity": severity,
         "source": "thoxa",
         "message": message,
     });
@@ -344,6 +351,7 @@ mod tests {
             span: Span::new(10, 13),
             filename: "x.thx".into(),
             code: Some("THX001".into()),
+            severity: crate::diagnostic::Severity::Error,
             help: vec!["try this".into()],
             expected: None,
             actual: None,

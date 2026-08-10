@@ -28,8 +28,10 @@ pub const CODE_LEX: &str = "THX007";
 pub const CODE_PARSE: &str = "THX008";
 /// Import / module resolution failure.
 pub const CODE_IMPORT: &str = "THX009";
+/// Imported name never referenced in this module.
+pub const CODE_UNUSED_IMPORT: &str = "THX010";
 
-/// Severity for a diagnostic (v0: mostly Error).
+/// Severity for a diagnostic (v0: Error primary; Warning for lints).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     Error,
@@ -101,6 +103,35 @@ impl Diagnostic {
             expected: None,
             actual: None,
         }
+    }
+
+    pub fn warning(message: impl Into<String>) -> Self {
+        Self {
+            code: None,
+            severity: Severity::Warning,
+            message: message.into(),
+            span: None,
+            path: None,
+            labels: Vec::new(),
+            help: Vec::new(),
+            expected: None,
+            actual: None,
+        }
+    }
+
+    pub fn with_code(mut self, code: impl Into<String>) -> Self {
+        self.code = Some(code.into());
+        self
+    }
+
+    pub fn with_span(mut self, span: Span) -> Self {
+        self.span = Some(span);
+        self
+    }
+
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help.push(help.into());
+        self
     }
 
     pub fn with_path(mut self, path: impl Into<PathBuf>) -> Self {
@@ -252,6 +283,9 @@ fn classify_code(msg: &str) -> Option<&'static str> {
     {
         return Some(CODE_IMPORT);
     }
+    if msg.starts_with("unused import") {
+        return Some(CODE_UNUSED_IMPORT);
+    }
     // Type mismatch: expected/found, "must be Bool", return type, condition types.
     if (msg.contains("expected") && msg.contains("found"))
         || msg.contains("type mismatch")
@@ -315,6 +349,9 @@ fn default_help(code: Option<&str>, msg: &str) -> Option<Vec<String>> {
         Some(CODE_PARSE) => Some(vec!["fix the syntax near this location".into()]),
         Some(CODE_IMPORT) => Some(vec![
             "check the import path (`./`, `~/`, `std/…`) and that the file exists".into(),
+        ]),
+        Some(CODE_UNUSED_IMPORT) => Some(vec![
+            "remove the unused name from the import list".into(),
         ]),
         _ => {
             if msg.contains("std/Fallible") {

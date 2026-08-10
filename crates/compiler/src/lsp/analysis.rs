@@ -4,12 +4,13 @@
 //! same frontend as `build`/`run` so diagnostics never drift.
 
 use crate::ast::{Item, Module};
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{self, Diagnostic, Severity};
 use crate::error::{Error, Result};
 use crate::lexer::{Lexer, TokenKind};
 use crate::loader::{self, Package, SourceModule};
 use crate::mir;
 use crate::parser::Parser;
+use crate::resolver::{self, BindingKind};
 use crate::span::{self, Range, Span};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -46,6 +47,7 @@ pub struct CheckDiagnostic {
     pub filename: String,
     /// Stable code when known (`THX001`, …).
     pub code: Option<String>,
+    pub severity: Severity,
     pub help: Vec<String>,
     pub expected: Option<String>,
     pub actual: Option<String>,
@@ -55,11 +57,11 @@ pub struct CheckDiagnostic {
 impl CheckDiagnostic {
     /// Structured IR for pretty / JSON formatting.
     pub fn to_diagnostic(&self) -> Diagnostic {
-        use crate::diagnostic::{Label, Severity};
+        use crate::diagnostic::Label;
         use std::path::PathBuf;
         Diagnostic {
             code: self.code.clone(),
-            severity: Severity::Error,
+            severity: self.severity,
             message: self.message.clone(),
             span: if self.span == Span::dummy() && self.range == Range::default() {
                 None
@@ -85,10 +87,10 @@ impl CheckDiagnostic {
 
 /// Lex, parse, and type-check `text` without codegen.
 ///
-/// Returns an empty vec on success, or one-or-more diagnostics. Independent
-/// function/method body errors are collected together; earlier pipeline
-/// failures (lex/parse/types) remain first-error only. Build/run still report
-/// the primary error only.
+/// Returns diagnostics (errors and warnings). Independent function/method body
+/// errors are collected together; earlier pipeline failures (lex/parse/types)
+/// remain first-error only. Build/run still report the primary error only.
+/// Warnings (e.g. unused imports) do not fail `thoxa check` exit status.
 ///
 /// **Entry vs library:**
 /// - Buffer defines `fn main` → program check (`require_main`).
@@ -114,10 +116,15 @@ pub fn check_source_with_overlays(
     text: &str,
     overlays: &HashMap<PathBuf, String>,
 ) -> Vec<CheckDiagnostic> {
-    match check_source_inner(filename, text, overlays) {
-        Ok(()) => Vec::new(),
-        Err(e) => errors_to_diagnostics(filename, text, e),
+    let (error, lint_module) = check_source_inner(filename, text, overlays);
+    let mut diags = Vec::new();
+    if let Some(e) = error {
+        diags.extend(errors_to_diagnostics(filename, text, e));
     }
+    if let Some(module) = lint_module {
+        diags.extend(lint_unused_imports(filename, text, &module));
+    }
+    diags
 }
 
 fn module_has_main(module: &Module) -> bool {
@@ -129,21 +136,31 @@ fn module_has_main(module: &Module) -> bool {
     })
 }
 
+/// Returns `(hard_error, module_for_lints)`.
+///
+/// The module is the open buffer AST when parse (soft or hard) produced one —
+/// used for unused-import lints even when lower failed.
 fn check_source_inner(
     filename: &str,
     text: &str,
     overlays: &HashMap<PathBuf, String>,
-) -> Result<()> {
+) -> (Option<Error>, Option<Module>) {
     // Session command sugar (same as loader entry path).
-    let text = crate::command::desugar_session_source(text)?;
-    let tokens = Lexer::new(&text).tokenize()?;
+    let text = match crate::command::desugar_session_source(text) {
+        Ok(t) => t,
+        Err(e) => return (Some(e), None),
+    };
+    let tokens = match Lexer::new(&text).tokenize() {
+        Ok(t) => t,
+        Err(e) => return (Some(e), None),
+    };
     // Soft parse: recover partial AST so we can still report undefined names
     // after a mid-file syntax error (e.g. keyword `as`).
     let (mut module, mut pre_errors) = match Parser::new(tokens).parse_module() {
         Ok(m) => (m, Vec::new()),
         Err(mut e) => match e.recovered_module.take() {
             Some(recovered) => (*recovered, e.into_diagnostics()),
-            None => return Err(e),
+            None => return (Some(e), None),
         },
     };
 
@@ -154,6 +171,9 @@ fn check_source_inner(
             .items
             .retain(|it| !matches!(it, Item::SessionStmt(_)));
     }
+
+    // Keep a copy for lints (lower may take ownership via package overlay).
+    let lint_module = module.clone();
 
     let has_imports = module
         .items
@@ -189,18 +209,28 @@ fn check_source_inner(
                 "checking imports requires a real file path (open the file on disk for multi-file check)",
                 span,
             ));
-            return Err(Error::multi(pre_errors));
+            return (Some(Error::multi(pre_errors)), Some(lint_module));
         }
 
         let has_main = module_has_main(&module);
         // Prefer the buffer AST so soft-recovered parse errors still lower.
         // Re-parsing the entry from disk would hard-fail on the same soft errors.
         let mut package = if pre_errors.is_empty() {
-            let mut p = loader::load_package(path)?;
-            overlay_open_ast(&mut p, module, path, has_main);
-            p
+            match loader::load_package(path) {
+                Ok(mut p) => {
+                    overlay_open_ast(&mut p, module, path, has_main);
+                    p
+                }
+                Err(e) => return (Some(e), Some(lint_module)),
+            }
         } else {
-            loader::load_package_with_entry_ast(path, module)?
+            match loader::load_package_with_entry_ast(path, module) {
+                Ok(p) => p,
+                Err(e) => {
+                    pre_errors.extend(e.into_diagnostics());
+                    return (Some(Error::multi(pre_errors)), Some(lint_module));
+                }
+            }
         };
         apply_open_overlays(&mut package, overlays, path);
         crate::session::prepare_package(&mut package).and_then(|_| {
@@ -215,15 +245,83 @@ fn check_source_inner(
         })
     };
 
-    match (pre_errors.is_empty(), lower_err) {
-        (true, Ok(())) => Ok(()),
-        (true, Err(e)) => Err(e),
-        (false, Ok(())) => Err(Error::multi(pre_errors)),
+    let error = match (pre_errors.is_empty(), lower_err) {
+        (true, Ok(())) => None,
+        (true, Err(e)) => Some(e),
+        (false, Ok(())) => Some(Error::multi(pre_errors)),
         (false, Err(e)) => {
             pre_errors.extend(e.into_diagnostics());
-            Err(Error::multi(pre_errors))
+            Some(Error::multi(pre_errors))
+        }
+    };
+    (error, Some(lint_module))
+}
+
+/// Warn on each imported local name that is never referenced in this module.
+///
+/// Fallible companions: `May` counts as used when `Has`/`Not` is referenced
+/// (patterns / ctors / `Bytes.find` wrap), and `Trial` when `Pass`/`Fail` is —
+/// those type names are required in scope even if never written as text.
+fn lint_unused_imports(filename: &str, text: &str, module: &Module) -> Vec<CheckDiagnostic> {
+    let has_import = module
+        .items
+        .iter()
+        .any(|item| matches!(item, Item::Import(_)));
+    if !has_import {
+        return Vec::new();
+    }
+
+    let res = resolver::resolve_module(module);
+    let mut import_by_name: HashMap<&str, (u32, Option<Span>)> = HashMap::new();
+    for b in res.module_definitions() {
+        if b.kind == BindingKind::Import {
+            import_by_name.insert(b.name.as_str(), (b.id, b.def_span));
         }
     }
+
+    let is_referenced = |name: &str| -> bool {
+        import_by_name
+            .get(name)
+            .map(|(id, _)| !res.refs_to(*id).is_empty())
+            .unwrap_or(false)
+    };
+
+    // Implicit type-name uses via constructors / match arms.
+    let may_live = is_referenced("Has") || is_referenced("Not");
+    let trial_live = is_referenced("Pass") || is_referenced("Fail");
+
+    let mut unused: Vec<(String, Span)> = Vec::new();
+    for b in res.module_definitions() {
+        if b.kind != BindingKind::Import {
+            continue;
+        }
+        if !res.refs_to(b.id).is_empty() {
+            continue;
+        }
+        // Keep parent type if a constructor is live (even with no direct name ref).
+        if b.name == "May" && may_live {
+            continue;
+        }
+        if b.name == "Trial" && trial_live {
+            continue;
+        }
+        let Some(span) = b.def_span else { continue };
+        unused.push((b.name.clone(), span));
+    }
+    // Stable report order: source order (def_span start).
+    unused.sort_by_key(|(_, span)| span.start);
+
+    unused
+        .into_iter()
+        .map(|(name, span)| {
+            let d = Diagnostic::warning(format!("unused import `{name}`"))
+                .with_code(diagnostic::CODE_UNUSED_IMPORT)
+                .with_span(span)
+                .with_path(filename)
+                .enrich();
+            structured_to_check(filename, text, d)
+        })
+        .collect()
 }
 
 /// Replace the open module's AST with the in-memory buffer parse.
@@ -367,6 +465,7 @@ fn structured_to_check(filename: &str, text: &str, d: Diagnostic) -> CheckDiagno
         span,
         filename: filename.to_string(),
         code: d.code,
+        severity: d.severity,
         help: d.help,
         expected: d.expected,
         actual: d.actual,
@@ -431,6 +530,84 @@ mod tests {
     fn good_snippet_no_diagnostics() {
         let diags = check_source("<input>", "fn main() -> Int64 { 0 }\n");
         assert!(diags.is_empty(), "unexpected: {diags:?}");
+    }
+
+    #[test]
+    fn unused_import_is_warning() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa-unused-imp-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("Helper.thx");
+        let main = dir.join("Main.thx");
+        fs::write(&helper, "export fn answer() -> Int64 { 42 }\nexport fn other() -> Int64 { 1 }\n")
+            .unwrap();
+        let src = "\
+import { answer, other } from \"./Helper\"
+fn main() -> Int64 { answer() }
+";
+        fs::write(&main, src).unwrap();
+        let diags = check_source(main.to_str().unwrap(), src);
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].severity, Severity::Warning);
+        assert_eq!(diags[0].code.as_deref(), Some("THX010"));
+        assert!(
+            diags[0].message.contains("unused import `other`"),
+            "{}",
+            diags[0].message
+        );
+        assert!(!diags[0].help.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unused_namespace_import_is_warning() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa-unused-ns-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("Helper.thx");
+        let main = dir.join("Main.thx");
+        fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
+        let src = "\
+import h from \"./Helper\"
+fn main() -> Int64 { 0 }
+";
+        fs::write(&main, src).unwrap();
+        let diags = check_source(main.to_str().unwrap(), src);
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].severity, Severity::Warning);
+        assert!(
+            diags[0].message.contains("unused import `h`"),
+            "{}",
+            diags[0].message
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn used_import_no_warning() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa-used-imp-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("Helper.thx");
+        let main = dir.join("Main.thx");
+        fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
+        let src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        fs::write(&main, src).unwrap();
+        let diags = check_source(main.to_str().unwrap(), src);
+        assert!(diags.is_empty(), "unexpected: {diags:?}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -588,15 +765,57 @@ fn main() -> Int64 {
 
     #[test]
     fn import_without_real_path_clear_diagnostic() {
-        let src = "import { foo } from \"./Helper\"\nfn main() -> Int64 { 0 }\n";
+        // Use the import so the only error is path-related (not unused-import).
+        let src = "import { foo } from \"./Helper\"\nfn main() -> Int64 { foo() }\n";
         let diags = check_source("<input>", src);
-        assert_eq!(diags.len(), 1);
         assert!(
-            diags[0].message.contains("real file path")
-                || diags[0].message.contains("multi-file"),
-            "{}",
-            diags[0].message
+            diags.iter().any(|d| {
+                d.message.contains("real file path") || d.message.contains("multi-file")
+            }),
+            "{diags:?}"
         );
+    }
+
+    #[test]
+    fn fallible_may_kept_when_has_used() {
+        // `May` is required in scope for `Has`/`Not` even when never written as text.
+        use std::fs;
+        let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let main = workspace.join("target/thoxa-test-may-live/Main.thx");
+        let _ = fs::create_dir_all(main.parent().unwrap());
+        // No `May` type annotation — only constructors; companion rule must keep May.
+        let src = "\
+import { Has, Not, May } from \"std/Fallible\"
+fn main() -> Int64 {
+  let m = Not()
+  match m {
+    Has(i) { i }
+    Not { 0 }
+  }
+}
+";
+        fs::write(&main, src).unwrap();
+        let diags = check_source(main.to_str().unwrap(), src);
+        let unused: Vec<_> = diags
+            .iter()
+            .filter(|d| d.code.as_deref() == Some("THX010"))
+            .map(|d| d.message.as_str())
+            .collect();
+        assert!(
+            !unused.iter().any(|m| m.contains("`May`")),
+            "May should be kept live via Has/Not: {unused:?} full={diags:?}"
+        );
+        // And no hard errors for this program shape.
+        assert!(
+            !diags.iter().any(|d| d.severity == Severity::Error),
+            "{diags:?}"
+        );
+        let _ = fs::remove_dir_all(main.parent().unwrap());
     }
 
     #[test]

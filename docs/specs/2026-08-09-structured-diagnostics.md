@@ -3,7 +3,7 @@
 **Date:** 2026-08-09  
 **Status:** target (freeze)  
 **Implementation:** shipped  
-**Gaps:** mid-expression parse recovery still limited (editor plan); not every free-form message has an explicit emit-site code (message classifier covers the high-traffic batch); build/run still primary-error only; no `explain` / code actions (parked ideas)  
+**Gaps:** mid-expression parse recovery still limited (editor plan); not every free-form message has an explicit emit-site code (message classifier covers the high-traffic batch); build/run still primary-error only; no `explain` / code actions (parked ideas); first warning lint is unused import (`THX010`) — more lints later 
 
 **As-built:** [`../capabilities.md`](../capabilities.md) ·
 [`../architecture.md`](../architecture.md) · focus

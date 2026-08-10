@@ -156,10 +156,11 @@ fn run_check(path: PathBuf, json: bool) -> Result<i32, Error> {
             eprint!("{}", diagnostic::format_pretty(&structured, Some(&text)));
         }
     }
-    if diags.is_empty() {
-        Ok(0)
-    } else {
+    // Errors fail the check; warnings alone still exit 0 (D124).
+    if diags.iter().any(|d| d.severity == diagnostic::Severity::Error) {
         Ok(1)
+    } else {
+        Ok(0)
     }
 }
 

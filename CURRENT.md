@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-10 (D124 structured diagnostics shipped; Fallible D123; session deferred)
+**As of:** 2026-08-10 (LSP arg hover + typed members after `?`; THX010; D124; session deferred)
 
 ---
 
@@ -14,11 +14,13 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** **structured diagnostics** (**D124**) — shared IR, pretty
-`thoxa check`, `check --json`, LSP codes/help/related; **LSP multi-diag soft
-recovery**; **`thoxa version`** / LSP identity stamp; **`std/Fallible` import
-required** (**D123**); **`examples/kilo`** (**user-tested** after **D122**);
-language forced by kilo; **`examples/http`**. Session residual deferred.
+**Shipped recently:** **LSP call-arg hover** (`listen(16)` → `backlog: Int64`);
+**typed members after namespace + `?`** (`server.reuseAddr` after
+`net.createSocket()?`); **unused import warning** (**THX010**); **structured
+diagnostics** (**D124**); **LSP multi-diag soft recovery**; **`thoxa version`**;
+**`std/Fallible` import required** (**D123**); **`examples/kilo`**
+(**user-tested** after **D122**); **`examples/http`** (tighter Fallible imports).
+Session residual deferred.
 Agent-only follow-ons still parked:
 [`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 

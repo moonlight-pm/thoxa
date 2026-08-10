@@ -41,12 +41,16 @@ error[THX001]: undefined name `x`
 
 Stable codes when recognized include `THX001` (undefined / unknown name),
 `THX002` (type mismatch), `THX003` (unknown type), `THX004` (Fallible import),
-`THX005` (top-level statement with `fn main`), and a few others. Not every
-message is catalogued yet; free-form errors still print without a code.
+`THX005` (top-level statement with `fn main`), `THX010` (unused import —
+**warning**), and a few others. Not every message is catalogued yet; free-form
+errors still print without a code.
+
+**Exit status:** `0` when there are no **errors** (warnings alone still succeed).
+`--json` sets `"ok": true` the same way.
 
 `--json` prints a single JSON object: `ok`, `compiler.version` / `compiler.path`,
-and `diagnostics[]` with `code`, `message`, `path`, 1-based `line`/`column`,
-byte spans, `help`, `expected`/`actual`, and `related`.
+and `diagnostics[]` with `code`, `severity`, `message`, `path`, 1-based
+`line`/`column`, byte spans, `help`, `expected`/`actual`, and `related`.
 
 Prefer **`cargo make`** helpers from a workspace checkout:
 

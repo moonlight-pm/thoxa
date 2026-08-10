@@ -46,8 +46,9 @@ HTTP plan (historical): [`specs/2026-07-19-post-r9-http-completion-plan.md`](spe
   continues after recoverable syntax errors).
 - **Structured diagnostics (D124):** shared IR → pretty `thoxa check`,
   `check --json` (compiler identity), LSP `code` / help / `relatedInformation`;
-  codes THX001–THX009 for high-traffic classes.
-- Navigation: hover, definition, references, outline, rename; cross-module jump;
+  codes THX001–THX010 (incl. unused-import **warning**).
+- Navigation: hover (incl. **call-arg formals**), definition, references,
+  outline, rename; cross-module jump (namespace + **typed members after `?`**);
   package-tree disk refs/rename; **`workspace/symbol`** package search.
 - **`thoxa version`** / LSP identity (git hash; no toasts).
 

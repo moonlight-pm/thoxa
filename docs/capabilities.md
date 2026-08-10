@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-10 (D124 structured diagnostics; D123 Fallible import; LSP multi-diag; `thoxa version`)
+**As of:** 2026-08-10 (LSP call-arg hover + typed members after `?`; THX010; D124)
 
 ---
 
@@ -58,7 +58,7 @@ change. See [`progress-model.md`](progress-model.md).
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err` | D69, R9 | Fail messages use errno/strerror (`netErr`); parse/write wire as before | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70 | — | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | — | yes |
-| examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; modules co-located (not yet `std/`); cwd-relative `web/` | yes |
+| examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; modules co-located (not yet `std/`); cwd-relative `web/`; Fallible imports selective (no blanket unused names) | yes |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 
@@ -100,11 +100,12 @@ change. See [`progress-model.md`](progress-model.md).
 |----|------------|--------|------|--------------|------|----------|
 | check-source | Typecheck API + overlays | shipped | unit / LSP | D71–D79 | Soft-recovered entry AST + `load_package_with_entry_ast` so syntax errors do not hide later undefined-name diags | yes |
 | lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1; **D124** | Multi-diag + structured codes/help/`relatedInformation` from shared IR; residual mid-expression recovery still limited | yes |
-| diag-structured | Structured diagnostic IR + pretty/`--json`/rich LSP | shipped | unit | **D124**; freeze `2026-08-09-structured-diagnostics` | Shared IR (`diagnostic.rs`); pretty `thoxa check`; `check --json` + version stamp; LSP `code` + help-in-message + `relatedInformation`. Classifier codes THX001–THX009; residual free-form sites still get codes when message patterns match. No `explain`/code actions yet | yes |
+| diag-structured | Structured diagnostic IR + pretty/`--json`/rich LSP | shipped | unit | **D124**; freeze `2026-08-09-structured-diagnostics` | Shared IR (`diagnostic.rs`); pretty `thoxa check`; `check --json` + version stamp; LSP `code` + help-in-message + `relatedInformation`. Codes THX001–THX010; **warnings** (unused import THX010) exit 0 / `ok: true`. Residual free-form sites still get codes when message patterns match. No `explain`/code actions yet | yes |
+| lint-unused-import | Unused selective/namespace import warning | shipped | unit | THX010 | Open-buffer only (not whole package). `May`/`Trial` stay live when `Has`/`Not` or `Pass`/`Fail` are referenced. No unused-local lint yet | yes |
 | cli-version | `thoxa version` / LSP identity stamp | shipped | unit / CLI | build stamp | Git short hash (+`.dirty`) + binary path; LSP stderr + `window/logMessage` + `serverInfo.version` (no toast) | yes |
-| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; residual rare untyped exprs | partial |
+| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; **`?` unwraps Trial/May**; **call-arg hover** (formal param type); residual rare untyped exprs | partial |
 | lsp-workspace | `workspace/symbol` package search | shipped | unit | editor plan | Open buffers + package-tree disk (Main.thx/`.git` root); query substring; cap 100 | yes |
-| lsp-xmodule | Cross-module jump (`./` `~/` / `std/`) | partial | unit | D78 | `std/` go-to-def covered; open buffer wins over disk | partial |
+| lsp-xmodule | Cross-module jump (`./` `~/` / `std/`) | partial | unit | D78 | `std/` go-to-def covered; open buffer wins over disk; **typed members after namespace + `?`** (e.g. `net.createSocket()?; server.reuseAddr`) | partial |
 | tree-sitter-zed | Grammar + Zed extension extras | shipped | `cargo make zed` | editor plan | Not full IDE | yes |
 | mir-on-resolver | MIR lower on shared resolver | planned | — | editor plan | **Deferred architecture** (PR5 resolver ships for LSP; MIR still own env — not polish residual) | no |
 

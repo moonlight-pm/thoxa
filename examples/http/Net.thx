@@ -1,7 +1,7 @@
 ## Net — TCP sockets for R9+ (closer to oracle examples/http/Net.thx).
 ## Errors are Trial<…, String> with errno/strerror polish (Io-style D80).
 
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import { Pass, Fail, Trial } from "std/Fallible"
 
 extern fn sysSocket(domain!: Int32, kind!: Int32, protocol!: Int32) -> Int32 from "c" "socket"
 extern fn sysSetsockopt(fd!: Int32, level!: Int32, optname!: Int32, optval!: Bytes, optlen!: UInt32) -> Int32 from "c" "setsockopt"

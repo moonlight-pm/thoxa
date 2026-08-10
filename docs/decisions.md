@@ -23,7 +23,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D124 | Structured diagnostics | One **diagnostic IR** (code, severity, message, span, labels, help, expected/actual) drives **pretty `thoxa check`**, **`thoxa check --json`**, and **LSP** (`code` + `relatedInformation`). Editor/human clarity is the ship criterion; agent-only surfaces deferred | **Shipped:** `crates/compiler/src/diagnostic.rs` + enriched `Error`; codes THX001–THX009 (classifier + explicit emit for Fallible/top-level-with-main); pretty CLI; JSON report with `compiler.version`; LSP code/related/help-in-message. Freeze: [`specs/2026-08-09-structured-diagnostics.md`](specs/2026-08-09-structured-diagnostics.md). Parked agent ideas: [`ideas/2026-08-09-agent-dx-from-zerolang.md`](ideas/2026-08-09-agent-dx-from-zerolang.md). |
+| D124 | Structured diagnostics | One **diagnostic IR** (code, severity, message, span, labels, help, expected/actual) drives **pretty `thoxa check`**, **`thoxa check --json`**, and **LSP** (`code` + `relatedInformation`). Editor/human clarity is the ship criterion; agent-only surfaces deferred | **Shipped:** `crates/compiler/src/diagnostic.rs` + enriched `Error`; codes THX001–THX010 (classifier + explicit emit; **THX010** unused-import **warning**); pretty CLI; JSON report with `compiler.version`; LSP code/related/help-in-message + warning severity. Exit/`ok` ignore warnings alone. Freeze: [`specs/2026-08-09-structured-diagnostics.md`](specs/2026-08-09-structured-diagnostics.md). Parked agent ideas: [`ideas/2026-08-09-agent-dx-from-zerolang.md`](ideas/2026-08-09-agent-dx-from-zerolang.md). |
 
 ## 2026-08-09 — Fallible import (no ambient prelude)
 
@@ -189,14 +189,14 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D78 | Cross-module hover/def | Lazy `lsp/crossmodule::resolve_remote` at hover/definition time | Selective imports (incl. `as`), namespace name (`module <spec>` + leading `##`), namespace member (`ns.x`). Jump URI = defining file; open buffer wins over disk (path-matched). Refs/rename stay single-file. Named roots (`std/`) still unsupported. Failures → local fallback (never crash). |
+| D78 | Cross-module hover/def | Lazy `lsp/crossmodule::resolve_remote` at hover/definition time | Selective imports (incl. `as`), namespace name (`module <spec>` + leading `##`), namespace member (`ns.x`); **typed members on values from namespace + `?`** (`server.reuseAddr` → remote `Socket` method). Jump URI = defining file; open buffer wins over disk (path-matched). Named roots (`std/`) covered for go-to-def. Failures → local fallback (never crash). |
 | D79 | Open-buffer package check | `check_source_with_overlays` re-parses any package module whose path is open | Entry buffer always overlaid; other open docs replace disk AST for `lower_package`. Parse fail on overlay → keep disk AST. Untitled/non-path still cannot check imports. |
 
 ## 2026-07-20 — Editor PR6: navigation handlers
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D77 | LSP navigation (single-file) | `hover` / `definition`≡`declaration` / `references` / `documentSymbol` / `prepareRename`+`rename` via `lsp/index` + resolver | Hover: source-line signature + contiguous `##` docs. Rename: binding-id keyed; rejects builtins; PascalCase types / camelCase values. Members without type link stay inert (pending). Cross-module jump: **D78**. |
+| D77 | LSP navigation (single-file) | `hover` / `definition`≡`declaration` / `references` / `documentSymbol` / `prepareRename`+`rename` via `lsp/index` + resolver | Hover: source-line signature + contiguous `##` docs; **call-arg formals** (`listen(16)` → `backlog: Int64`); `?` unwraps Trial/May for typed members. Rename: binding-id keyed; rejects builtins; PascalCase types / camelCase values. Cross-module jump: **D78**. |
 
 ## 2026-07-20 — Editor PR5: shared lexical resolver
 

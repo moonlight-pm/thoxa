@@ -4,7 +4,7 @@
 
 import { readFile } from "./Io"
 import { Request, Response, ok, notFound } from "./Http"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import { Pass, Fail } from "std/Fallible"
 
 ## Split URL path on `/` into non-empty segments.
 fn pathSegments(path!: String) -> Array<String> {
