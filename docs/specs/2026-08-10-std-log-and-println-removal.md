@@ -278,10 +278,10 @@ export fn getFormat() -> Int64
 
 | Old | New |
 |-----|-----|
-| `println("hi")` | `logging.info("hi")` (or selective `info`) with appropriate sink/format (§5) |
-| `println(x)` for Int64/Bool | `logging.info("{x}")` |
+| `println("hi")` | `info("hi")` (selective) or `logging.info("hi")` with sink/format (§5) |
+| `println(x)` for Int64/Bool | `info("{x}")` |
 | Diagnostics in apps | `info` / `warn` / `error` (default stderr, full format) |
-| Golden / data lines on stdout | `toStdout()` + `setFormat(formatPlain)` + `info("…")` |
+| Golden / data lines on stdout | `logging.toStdout()` + `setFormat(formatPlain)` + `info("…")` |
 
 Do **not** reintroduce a second ambient or compiler-known `print` under a new
 name. If a thinner “write this string to stdout” helper is needed later, it
@@ -299,20 +299,21 @@ goldens.
 
 ### 5.2 Migrating tests that used `println` for expected output
 
-Preferred (namespace):
+Preferred (namespace + selective, as in apps):
 
 ```thx
 import logging from "std/Logging"
+import { info } from "std/Logging"
 
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
-    logging.info("Hello, world!")
+    info("Hello, world!")
     0
 }
 ```
 
-Selective (also fine):
+Namespace-only or selective-only remain fine for tests:
 
 ```thx
 import { info, toStdout, setFormat, formatPlain } from "std/Logging"
