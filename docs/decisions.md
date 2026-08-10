@@ -19,11 +19,11 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
-## 2026-08-10 — std/Log + remove ambient println
+## 2026-08-10 — std/Logging + remove ambient println
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D125 | `std/Log` + no ambient print | Product logging is **`std/Log`**: five levels (Trace…Error), default **Info** + **stderr** + full line format; emit is void (no `?`); **`toFile` / path `setSink` → `Trial`**, emit write failures best-effort. Ambient **`println` / `print` removed** (not deprecated). Messages are `String` only (interpolate). Golden/data stdout: `toStdout` + `formatPlain` + level fn. Import required (no ambient Log). | **Target** until shipped. Freeze: [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md). Dogfood: migrate all conformance/examples/`std/Shell`/session snippets in the removal slice. |
+| D125 | `std/Logging` + no ambient print | Product logging is **`std/Logging`** (not `Log` — reserve **`log`** for logger *instances* later). v0 = **default logger**: five levels (Trace…Error), default **Info** + **stderr** + full format; emit void (no `?`); generic emit named **`emit`** (not `log`); **`toFile` / path `setSink` → `Trial`**; emit write failures best-effort. Multi named loggers / `initLog` **later** (structure only in freeze). Ambient **`println`/`print` removed**. Prefer `import logging from "std/Logging"`. Golden/data: `toStdout` + `formatPlain` + level fn. Import required. | **Target** until shipped. Freeze: [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md). Dogfood: migrate all conformance/examples/`std/Shell`/session snippets in the removal slice. |
 
 ## 2026-08-09 — Structured diagnostics (foundation)
 

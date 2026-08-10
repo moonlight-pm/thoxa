@@ -1,4 +1,4 @@
-# `std/Log` and removal of ambient `println`
+# `std/Logging` and removal of ambient `println`
 
 **Date:** 2026-08-10  
 **Status:** target (freeze)  
@@ -25,13 +25,29 @@ Program text emission is a **library** concern, not a compiler special case.
 switches (`String` / `Int64` / `Bool`) into `thoxa_println_*`. That is a
 one-off I/O channel: stdout only, no levels, no files, no filter.
 
-**Target:** a thin product module **`std/Log`** with the five standard levels,
-process-wide defaults, file sinks via **`Trial` on configure**, and
-**fire-and-forget emit** (no `?` on every `debug`/`info` call). Ambient
-`println` / `print` are **removed**.
+**Target:** a thin product module **`std/Logging`** with the five standard
+levels, process-wide **default logger** defaults, file sinks via **`Trial` on
+configure**, and **fire-and-forget emit** (no `?` on every `debug`/`info`
+call). Ambient `println` / `print` are **removed**.
+
+**Naming:** the module is **`Logging`**, not `Log`. Reserve **`log`** as a
+*logger instance* name for multi-stream work later:
+
+```thx
+import logging from "std/Logging"
+
+## v0 preferred: free functions / namespace = default logger
+logging.info("up")
+
+## later (not this freeze): named streams
+## let access = logging.initLog("access")
+## let audit  = logging.initLog("audit")
+## access.info("…")
+```
 
 **One sentence:**  
-`import { info } from "std/Log"` is how programs log; `println` is gone.
+`import logging from "std/Logging"` (or selective exports) is how programs log;
+`println` is gone.
 
 ---
 
@@ -43,7 +59,11 @@ process-wide defaults, file sinks via **`Trial` on configure**, and
 | 2 | Default min level | **Info** |
 | 3 | File open failure | **`toFile` / path `setSink` → `Trial<(), String>`**; emit path never forces `?` |
 | 4 | Dogfood | **All conformance tests + examples + product std (Shell, etc.)** migrate in the same program of work |
-| 5 | Module name | **`std/Log`** |
+| 5 | Module name | **`std/Logging`** (not `std/Log`; keep `log` free for instances) |
+
+**Import style (no language change):** prefer namespace
+`import logging from "std/Logging"`. Selective import stays valid; no
+import-mode dual names (see design discussion — leave as-is).
 
 ---
 
@@ -53,30 +73,48 @@ process-wide defaults, file sinks via **`Trial` on configure**, and
 
 | # | Deliverable |
 |---|-------------|
-| 1 | **`std/Log.thx`** — level API, process-wide config, format modes |
-| 2 | **RT write primitive** — write a line (or bytes) to fd 1 / 2 / open file; enough for Log without ambient print builtins |
-| 3 | **Remove ambient `println` / `print`** — resolver, MIR lower, cgen maps, unit fixtures that assume the builtin |
-| 4 | **Migrate dogfood** — every product `.thx` that used `println` (conformance, examples, `std/Shell`, session step sources, handbook samples) |
-| 5 | **Conformance gates** for Log (level filter, sinks, file Trial, plain format for golden stdout) |
-| 6 | **Docs** — capabilities, handbook `std.md` / language, architecture if RT surface changes |
+| 1 | **`std/Logging.thx`** — level API on the **default logger**, format modes |
+| 2 | **RT write primitive** — write a line (or bytes) to fd 1 / 2 / open file |
+| 3 | **Remove ambient `println` / `print`** — resolver, MIR lower, cgen maps, unit fixtures |
+| 4 | **Migrate dogfood** — every product `.thx` that used `println` |
+| 5 | **Conformance gates** for Logging (level filter, sinks, file Trial, plain format) |
+| 6 | **Docs** — capabilities, handbook, architecture if RT surface changes |
 
 ### Explicitly out of scope (this freeze)
 
 | Item | Notes |
 |------|--------|
+| **Multiple named loggers / streams** | later — see §3.0 trajectory; do not implement `initLog` yet |
 | Structured / JSON log lines | later |
-| Multiple handlers / per-module loggers | later |
 | Colors / TTY detect | later (`std/Ansi` optional) |
 | Source location in lines | needs compiler support; not free |
 | Log rotation | OS / ops concern |
-| Full product `std/Io` | still sample-driven idea; Log may use thin extern/RT, not block on Io promotion |
-| Language **panic** story | unchanged; Log is not panic |
+| Full product `std/Io` | still sample-driven idea; Logging may use thin extern/RT |
+| Language **panic** story | unchanged; Logging is not panic |
 | Removing other builtins (`Array`, `true`, …) | only print surface |
 | Changing harness to golden **stderr** by default | no — see §5 |
+| Import/export language changes | none — existing namespace / selective / `as` only |
 
 ---
 
-## 3. Public surface (`std/Log`)
+## 3. Public surface (`std/Logging`)
+
+### 3.0 Multi-logger trajectory (structure only — not v0)
+
+**Intent:** v0 is a single **default logger**. Later work adds multiple
+independent loggers without renaming the module or thrashing call sites more
+than necessary.
+
+| Horizon | Shape |
+|---------|--------|
+| **v0 (this freeze)** | Free functions + module state = the **default** logger. Prefer `import logging from "std/Logging"` then `logging.info(…)`. |
+| **Later** | A `Logger` (name TBD) value: own level, sink, format. Factory e.g. `initLog(name!: String) -> Logger` (exact API when scheduled). Free functions remain **sugar for the default logger**. |
+| **Naming** | Module path **`std/Logging`**. Namespace binding **`logging`**. Instance bindings **`log`**, `access`, `audit`, … — never use `Log` as the module leaf. |
+
+**Implementation note for v0:** keep default state in module `mut` (or an
+unexported singleton) so a later slice can reify the same fields onto a
+`Logger` type and point free functions at the default instance. Do **not**
+paint the API into “only ever one global with no name.”
 
 ### 3.1 Levels (five, ordered)
 
@@ -94,7 +132,7 @@ Export integer constants for compare/filter:
 | `levelWarn` | 3 |
 | `levelError` | 4 |
 
-### 3.2 Emit API (primary)
+### 3.2 Emit API (primary — default logger)
 
 ```thx
 export fn trace(msg!: String)
@@ -103,8 +141,13 @@ export fn info(msg!: String)
 export fn warn(msg!: String)
 export fn error(msg!: String)
 
-export fn log(level!: Int64, msg!: String)
+## Explicit level on the default logger (not an instance factory).
+export fn emit(level!: Int64, msg!: String)
 ```
+
+**Note:** the generic emit is named **`emit`**, not `log`, so the word `log`
+stays free for instance bindings later (`let log = …`) and for selective import
+without clashing.
 
 **Rules:**
 
@@ -116,7 +159,7 @@ export fn log(level!: Int64, msg!: String)
   (drop or ignore for v0). Do **not** turn every log site into fallible control
   flow. There is no panic story yet; logging must not invent one.
 
-### 3.3 Configuration (process-wide module mut)
+### 3.3 Configuration (default logger — process-wide for v0)
 
 ```thx
 export fn setLevel(level!: Int64)
@@ -142,22 +185,25 @@ export fn toFile(path!: String) -> Trial<(), String>
 - `toFile(path)` and `setSink("/some/path")` share that open path.
 - `setSink("stderr")` / `setSink("stdout")` / `toStderr` / `toStdout` →
   never Fail.
-- On **Pass**, switch the process-wide sink; close previous file fd if any.
+- On **Pass**, switch the default logger’s sink; close previous file fd if any.
 - On **Fail**, **leave the previous sink unchanged**.
 - Call sites that care:
 
 ```thx
-match toFile("/var/log/app.log") {
+import logging from "std/Logging"
+import { Pass, Fail, Trial } from "std/Fallible"
+
+match logging.toFile("/var/log/app.log") {
     Pass(_) { }
-    Fail(e) { error("log file: {e}") }   ## or return Fail(e) from main setup
+    Fail(e) { logging.error("log file: {e}") }
 }
 ```
 
 Programs that never call `toFile` never see this Trial.
 
-### 3.4 Line format
+### 3.4 Line format (default logger)
 
-Two modes (process-wide):
+Two modes:
 
 | Mode | Export | Line shape |
 |------|--------|------------|
@@ -177,7 +223,7 @@ export fn getFormat() -> Int64
   unless the test freezes time (out of scope). Conformance that goldens stdout
   uses **plain** (+ usually `toStdout`) — §5.
 
-### 3.5 Environment bootstrap (optional, first use)
+### 3.5 Environment bootstrap (optional, first use — default logger)
 
 | Variable | Effect |
 |----------|--------|
@@ -189,8 +235,10 @@ export fn getFormat() -> Int64
 - If env names a **path** and open fails: **keep stderr**, do not abort the
   process (env is best-effort bootstrap; programmatic `toFile` remains the
   strict Trial path).
+- Later multi-logger work may add per-name env rules; v0 only configures the
+  **default** logger.
 
-### 3.6 Defaults
+### 3.6 Defaults (default logger)
 
 | Knob | Default |
 |------|---------|
@@ -209,7 +257,7 @@ export fn getFormat() -> Int64
 | Resolver ambient names | Drop `println` (and `print` if listed) |
 | MIR `lower_call` | Delete `println` / `print` special case and type switches |
 | cgen | Drop maps to `thoxa_println_*` / `thoxa_print_*` as **user** builtins |
-| RT | Prefer a small **fd write** used by `std/Log` (and anything else that needs bytes on a fd). Old `thoxa_println*` may become internal helpers or be deleted once unused |
+| RT | Prefer a small **fd write** used by `std/Logging`. Old `thoxa_println*` may become internal helpers or be deleted once unused |
 
 ### 4.2 Language rule
 
@@ -222,14 +270,14 @@ export fn getFormat() -> Int64
 
 | Old | New |
 |-----|-----|
-| `println("hi")` | `info("hi")` with appropriate sink/format (see §5) |
-| `println(x)` for Int64/Bool | `info("{x}")` |
+| `println("hi")` | `logging.info("hi")` (or selective `info`) with appropriate sink/format (§5) |
+| `println(x)` for Int64/Bool | `logging.info("{x}")` |
 | Diagnostics in apps | `info` / `warn` / `error` (default stderr, full format) |
-| Golden / data lines on stdout | `toStdout()` + `setFormat(formatPlain)` + `info("…")` (or `debug` if level lowered) |
+| Golden / data lines on stdout | `toStdout()` + `setFormat(formatPlain)` + `info("…")` |
 
 Do **not** reintroduce a second ambient or compiler-known `print` under a new
 name. If a thinner “write this string to stdout” helper is needed later, it
-belongs in **std** (Log or future Io), not the resolver builtin table.
+belongs in **std** (Logging or future Io), not the resolver builtin table.
 
 ---
 
@@ -238,15 +286,28 @@ belongs in **std** (Log or future Io), not the resolver builtin table.
 ### 5.1 Harness unchanged
 
 `cargo make test` continues to compare **stdout** to sibling `.out` files.
-Default Log sink is **stderr**, so unconfigured Log does **not** affect
+Default logger sink is **stderr**, so unconfigured Logging does **not** affect
 goldens.
 
 ### 5.2 Migrating tests that used `println` for expected output
 
-Typical preamble in `main` (or module init pattern once available):
+Preferred (namespace):
 
 ```thx
-import { info, toStdout, setFormat, formatPlain } from "std/Log"
+import logging from "std/Logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    logging.info("Hello, world!")
+    0
+}
+```
+
+Selective (also fine):
+
+```thx
+import { info, toStdout, setFormat, formatPlain } from "std/Logging"
 
 fn main() -> Int64 {
     toStdout()
@@ -259,9 +320,8 @@ fn main() -> Int64 {
 - Level stays default **Info**, so `info` emits; `debug`/`trace` stay off unless
   the test calls `setLevel`.
 - Plain format keeps `.out` deterministic (no clock).
-- Tests **about Log itself** may assert full format with a **fixed** message
-  and either plain mode or sink stdout without checking the clock portion —
-  prefer testing filter/sink/Trial behavior over timestamp text.
+- Tests **about Logging itself** may assert filter/sink/Trial behavior; prefer
+  not golden-matching wall-clock full format.
 
 ### 5.3 Dogfood inventory (implementation checklist)
 
@@ -277,30 +337,34 @@ Rewrite all product uses of `println` / `print` as Thoxa source, including:
 Shell **user-visible** command output (`echo`, `pwd`, `status`, `help`) is
 still stdout data: use plain + stdout (or equivalent std write) so interactive
 behavior stays sane. Shell **diagnostics** (`command not found`, …) should use
-`warn` / `error` (stderr, full format by default once Log is default-config).
+`warn` / `error` (stderr, full format by default).
 
 ### 5.4 New gates (minimum)
 
 | Gate | Intent |
 |------|--------|
-| `log_levels` (name flexible) | filter: debug silent at Info; info/warn/error emit |
-| `log_sink` / file case | `toFile` Pass writes; bad path Fail; prior sink unchanged |
+| `logging_levels` (name flexible) | filter: debug silent at Info; info/warn/error emit |
+| `logging_sink` / file case | `toFile` Pass writes; bad path Fail; prior sink unchanged |
 | Existing suites | green after println migration |
 
 ---
 
 ## 6. Implementation slices (suggested order)
 
-1. **RT + Log skeleton** — fd write; `std/Log` with defaults, level filter,
-   stderr/stdout sinks, full/plain format; unit/conformance for Log only.
+1. **RT + Logging skeleton** — fd write; `std/Logging` default logger with
+   level filter, stderr/stdout sinks, full/plain format; conformance for
+   Logging only.
 2. **File sink** — `toFile` / path `setSink` → `Trial`; append writes.
-3. **Env bootstrap** — `THOXA_LOG_LEVEL` / `THOXA_LOG_SINK`.
+3. **Env bootstrap** — `THOXA_LOG_LEVEL` / `THOXA_LOG_SINK` on the default logger.
 4. **Remove builtins** + **mass migrate** conformance/examples/std/session —
    one coordinated change so tree never half-depends on ambient print.
 5. **Handbook + capabilities shipped**; freeze Implementation → shipped.
 
-Slices 1–3 may land before 4 if Log is additive; **slice 4 is atomic**
+Slices 1–3 may land before 4 if Logging is additive; **slice 4 is atomic**
 (println removal + rewrites together).
+
+**Later (not this freeze):** `Logger` type + `initLog` (or equivalent) + free
+functions as default-logger wrappers.
 
 ---
 
@@ -310,8 +374,12 @@ Slices 1–3 may land before 4 if Log is additive; **slice 4 is atomic**
 - **Panicking on log write failure** — rejected.
 - **Default sink stdout** — rejected (pipelines / data tools).
 - **Keeping `println` as deprecated alias** — rejected; delete the one-off.
-- **Ambient inject of `std/Log`** — rejected (same spirit as D123). Import
-  required. Session may import Log from Shell / step sources explicitly.
+- **Ambient inject of `std/Logging`** — rejected (same spirit as D123). Import
+  required. Session may import Logging from Shell / step sources explicitly.
+- **Module named `std/Log` or binding the module as `log` by convention in
+  docs** — rejected; module is **Logging** / **`logging`**, so `log` stays free
+  for instances.
+- **Implementing multi-logger in v0** — rejected; only leave room (§3.0).
 
 ---
 
@@ -319,12 +387,12 @@ Slices 1–3 may land before 4 if Log is additive; **slice 4 is atomic**
 
 This freeze is **done** when:
 
-1. `std/Log` matches §3 with defaults §3.6.  
+1. `std/Logging` matches §3 with defaults §3.6.  
 2. Ambient `println` / `print` are gone; no MIR special case.  
 3. `cargo make test` green with migrated goldens.  
 4. Examples and `std/Shell` compile without ambient print.  
-5. Capabilities `std-log` → **shipped**; handbook documents Log; language
-   handbook no longer teaches ambient `println`.  
+5. Capabilities `std-logging` → **shipped**; handbook documents Logging;
+   language handbook no longer teaches ambient `println`.  
 6. D125 recorded as shipped in `docs/decisions.md`.
 
 ---
@@ -333,8 +401,8 @@ This freeze is **done** when:
 
 | Doc | Update |
 |-----|--------|
-| `docs/capabilities.md` | add/ship `std-log`; note println removal under language/I-O if listed |
-| `docs/handbook/std.md` | `std/Log` module |
-| `docs/handbook/language.md` | drop ambient println; show Log / plain stdout pattern |
+| `docs/capabilities.md` | ship `std-logging`; note println removal |
+| `docs/handbook/std.md` | `std/Logging` module |
+| `docs/handbook/language.md` | drop ambient println; show Logging / plain stdout pattern |
 | `docs/architecture.md` | RT write / drop print builtins if map mentions them |
 | `CURRENT.md` | clear this freeze from **Now** when shipped |
