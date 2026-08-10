@@ -39,7 +39,7 @@ change. See [`progress-model.md`](progress-model.md).
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array ctor fields | shipped | `string_fields` | D48–D49, D69 | — | yes |
 | param-defaults | Formal defaults M3 (+ methods/ctors/`!`/extern) | shipped | `param_defaults`, `defaults_mod`, `param_bang_defaults` | D98, D106, D116 | `!` and extern formals may default (call-site fill); non-default cannot follow defaulted; free names use defining module | yes |
-| modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate` | D30–D35, D122 | Nested import/type in functions deferred (D91); module mut heap (Array/String) must not end-of-fn drop (D122) | yes |
+| modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate`, `import_combined` | D30–D35, D122, **D127** | Combined `import ns, { a } from "…"` shipped. Nested import/type in functions deferred (D91); module mut heap (Array/String) must not end-of-fn drop (D122) | yes |
 | pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |
 
 ## FFI and C layout
@@ -92,7 +92,7 @@ change. See [`progress-model.md`](progress-model.md).
 | std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`pathVar`/`pwd`/`shell`; sample-driven | yes |
 | std-git | branch helpers | partial | `stdlib` | D97 | +`headLine`/`isDetached`/`repoRoot`; sample-driven | yes |
 | std-prompt | `defaultPrompt` | shipped | `stdlib` | D97, D99 | — | yes |
-| std-logging | Leveled `std/Logging` + no ambient `println` | shipped | `logging_levels`, `logging_sink`, full suite | **D125**; [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | App face: `import logging` + selective `{ info, … }`. Multi named loggers / `initLog` later; structured/JSON; colors/TTY; source location | yes |
+| std-logging | Leveled `std/Logging` + no ambient `println` | shipped | `logging_levels`, `logging_sink`, full suite | **D125**; [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | App face: `import logging, { info, … }` (**D127**). Multi named loggers / `initLog` later; structured/JSON; colors/TTY; source location | yes |
 | std-io | File I/O in `std/Io` | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode`, `logging_sink` | **D126** | Linux `extern` open/read/write/lseek; Fail String; no Windows | yes |
 | std-net | TCP sockets in `std/Net` | shipped | `http`, `http_wire`, `http_net_err` | **D126** | IPv4 stream; `receiveRequest` / `sendAll`; Fail String; Linux sockaddr pack | yes |
 | std-http | HTTP/1.1 protocol in `std/Http` | shipped | `http_parse`, `http`, `http_wire` | **D126** | No body read yet; OWS trim; 400/403/404/405 helpers | yes |
@@ -105,7 +105,7 @@ change. See [`progress-model.md`](progress-model.md).
 | check-source | Typecheck API + overlays | shipped | unit / LSP | D71–D79 | Soft-recovered entry AST + `load_package_with_entry_ast` so syntax errors do not hide later undefined-name diags | yes |
 | lsp-diag | `thoxa lsp` diagnostics | shipped | manual + unit | phase 1; **D124** | Multi-diag + structured codes/help/`relatedInformation` from shared IR; residual mid-expression recovery still limited | yes |
 | diag-structured | Structured diagnostic IR + pretty/`--json`/rich LSP | shipped | unit | **D124**; freeze `2026-08-09-structured-diagnostics` | Shared IR (`diagnostic.rs`); pretty `thoxa check`; `check --json` + version stamp; LSP `code` + help-in-message + `relatedInformation`. Codes THX001–THX010; **warnings** (unused import THX010) exit 0 / `ok: true`. Residual free-form sites still get codes when message patterns match. No `explain`/code actions yet | yes |
-| lint-unused-import | Unused selective/namespace import warning | shipped | unit | THX010 | Open-buffer only (not whole package). `May`/`Trial` stay live when `Has`/`Not` or `Pass`/`Fail` are referenced. No unused-local lint yet | yes |
+| lint-unused-import | Unused selective/namespace import warning | shipped | unit | THX010 | Open-buffer only (not whole package). Combined imports lint each binding. `May`/`Trial` stay live when `Has`/`Not` or `Pass`/`Fail` are referenced. No unused-local lint yet | yes |
 | cli-version | `thoxa version` / LSP identity stamp | shipped | unit / CLI | build stamp | Git short hash (+`.dirty`) + binary path; LSP stderr + `window/logMessage` + `serverInfo.version` (no toast) | yes |
 | lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; **`?` unwraps Trial/May**; **call-arg hover** (formal param type); residual rare untyped exprs | partial |
 | lsp-workspace | `workspace/symbol` package search | shipped | unit | editor plan | Open buffers + package-tree disk (Main.thx/`.git` root); query substring; cap 100 | yes |

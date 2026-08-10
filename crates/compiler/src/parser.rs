@@ -168,36 +168,12 @@ impl Parser {
         }
     }
 
-    /// `import { a, b as c } from "…"` or `import ns from "…"`
+    /// `import { a, b as c } from "…"`, `import ns from "…"`, or
+    /// `import ns, { a, b as c } from "…"`.
     fn parse_import(&mut self) -> Result<Import> {
         self.expect_kind(&TokenKind::Import)?;
         let kind = if self.at(TokenKind::LBrace) {
-            self.bump();
-            let mut names = Vec::new();
-            if !self.at(TokenKind::RBrace) {
-                loop {
-                    let (name, name_span) = self.expect_ident()?;
-                    let alias = if self.at(TokenKind::As) {
-                        self.bump();
-                        let (a, aspan) = self.expect_ident()?;
-                        Some((a, aspan))
-                    } else {
-                        None
-                    };
-                    names.push(ImportName {
-                        name,
-                        name_span,
-                        alias,
-                    });
-                    if self.at(TokenKind::Comma) {
-                        self.bump();
-                        continue;
-                    }
-                    break;
-                }
-            }
-            self.expect_kind(&TokenKind::RBrace)?;
-            ImportKind::Selective(names)
+            ImportKind::Selective(self.parse_import_brace_list()?)
         } else {
             let (binding, binding_span) = self.expect_ident()?;
             // Namespace binding must be camelCase (value instance).
@@ -212,9 +188,26 @@ impl Parser {
                     binding_span,
                 ));
             }
-            ImportKind::Namespace {
-                binding,
-                binding_span,
+            if self.at(TokenKind::Comma) {
+                self.bump();
+                if !self.at(TokenKind::LBrace) {
+                    return Err(Error::at(
+                        "expected `{` after namespace binding in combined import \
+                         (`import ns, { name, … } from \"…\"`)",
+                        self.peek_span(),
+                    ));
+                }
+                let names = self.parse_import_brace_list()?;
+                ImportKind::Combined {
+                    binding,
+                    binding_span,
+                    names,
+                }
+            } else {
+                ImportKind::Namespace {
+                    binding,
+                    binding_span,
+                }
             }
         };
         self.expect_kind(&TokenKind::From)?;
@@ -224,6 +217,40 @@ impl Parser {
             path,
             path_span,
         })
+    }
+
+    /// `{ name [as alias], … }` — brace-delimited selective import names.
+    fn parse_import_brace_list(&mut self) -> Result<Vec<ImportName>> {
+        self.expect_kind(&TokenKind::LBrace)?;
+        let mut names = Vec::new();
+        if !self.at(TokenKind::RBrace) {
+            loop {
+                let (name, name_span) = self.expect_ident()?;
+                let alias = if self.at(TokenKind::As) {
+                    self.bump();
+                    let (a, aspan) = self.expect_ident()?;
+                    Some((a, aspan))
+                } else {
+                    None
+                };
+                names.push(ImportName {
+                    name,
+                    name_span,
+                    alias,
+                });
+                if self.at(TokenKind::Comma) {
+                    self.bump();
+                    // Trailing comma before `}` is fine.
+                    if self.at(TokenKind::RBrace) {
+                        break;
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        self.expect_kind(&TokenKind::RBrace)?;
+        Ok(names)
     }
 
     /// Top-level `let` / `mut name = expr`.
@@ -1981,6 +2008,37 @@ mod tests {
         "#,
         );
         assert_eq!(module.items.len(), 1);
+    }
+
+    #[test]
+    fn parse_combined_import() {
+        let module = parse(
+            r#"
+            import logging, { info, warn as w } from "std/Logging"
+            fn main() -> Int64 { 0 }
+        "#,
+        );
+        match &module.items[0] {
+            Item::Import(imp) => {
+                assert_eq!(imp.path, "std/Logging");
+                match &imp.kind {
+                    ImportKind::Combined {
+                        binding,
+                        names,
+                        ..
+                    } => {
+                        assert_eq!(binding, "logging");
+                        assert_eq!(names.len(), 2);
+                        assert_eq!(names[0].name, "info");
+                        assert!(names[0].alias.is_none());
+                        assert_eq!(names[1].name, "warn");
+                        assert_eq!(names[1].alias.as_ref().map(|(a, _)| a.as_str()), Some("w"));
+                    }
+                    other => panic!("expected Combined, got {other:?}"),
+                }
+            }
+            _ => panic!("expected import"),
+        }
     }
 
     #[test]

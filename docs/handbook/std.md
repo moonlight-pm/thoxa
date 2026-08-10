@@ -4,10 +4,9 @@ Import product modules with the **`std/…`** named root:
 
 ```thx
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
-import { info } from "std/Logging"
+import logging, { info, warn } from "std/Logging"   ## ns + selective (D127)
 import { readFile } from "std/Io"
-import net from "std/Net"
+import net, { Socket } from "std/Net"
 import http from "std/Http"
 import { Router } from "std/HttpStatic"
 import { defaultPrompt } from "std/Prompt"
@@ -42,8 +41,7 @@ import { branch } from "std/Git"
 for short call sites (see `examples/http`):
 
 ```thx
-import logging from "std/Logging"
-import { info, warn, error, debug } from "std/Logging"   ## pick what you emit
+import logging, { info, warn, error, debug } from "std/Logging"
 
 fn main() -> Int64 {
     info("listen")                   ## stderr, full format, min level Info
@@ -61,9 +59,9 @@ fn main() -> Int64 {
 }
 ```
 
-Either import alone is valid: only `import logging from …` (qualify every call)
-or only `import { info, toStdout, … }` (no `logging.` prefix). Combining both
-is the usual app face.
+Namespace-only (`import logging from …`) or selective-only
+(`import { info, toStdout, … }`) still work. Combined
+`import logging, { info, … } from "std/Logging"` is the usual app face (**D127**).
 
 | Knob | Default |
 |------|---------|

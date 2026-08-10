@@ -611,6 +611,39 @@ fn main() -> Int64 { 0 }
     }
 
     #[test]
+    fn combined_import_unused_selective_is_warning() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa-combined-imp-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("Helper.thx");
+        let main = dir.join("Main.thx");
+        fs::write(
+            &helper,
+            "export fn answer() -> Int64 { 42 }\nexport fn other() -> Int64 { 1 }\n",
+        )
+        .unwrap();
+        let src = "\
+import h, { answer, other } from \"./Helper\"
+fn main() -> Int64 { h.answer() + answer() }
+";
+        fs::write(&main, src).unwrap();
+        let diags = check_source(main.to_str().unwrap(), src);
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].severity, Severity::Warning);
+        assert_eq!(diags[0].code.as_deref(), Some("THX010"));
+        assert!(
+            diags[0].message.contains("unused import `other`"),
+            "{}",
+            diags[0].message
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn structured_codes_on_undefined_and_type_error() {
         let src = "fn main() -> Int64 { x }\n";
         let diags = check_source("<input>", src);

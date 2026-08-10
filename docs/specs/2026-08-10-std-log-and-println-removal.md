@@ -36,8 +36,7 @@ call). Ambient `println` / `print` are **removed**.
 **Preferred app import face** (shipped style; see `examples/http`):
 
 ```thx
-import logging from "std/Logging"
-import { info, warn, error } from "std/Logging"   ## short emits
+import logging, { info, warn, error } from "std/Logging"   ## ns + short emits (D127)
 
 logging.toStdout()                 ## configure via namespace
 logging.setFormat(logging.formatPlain)
@@ -52,7 +51,7 @@ Either import alone remains valid; combining both is the documented default for
 apps. No import-mode dual export names (language unchanged).
 
 **One sentence:**  
-`import logging` + selective `{ info, … }` from `"std/Logging"` is how programs
+`import logging, { info, … } from "std/Logging"` (D127) is how programs
 log; `println` is gone.
 
 ---
@@ -68,8 +67,8 @@ log; `println` is gone.
 | 5 | Module name | **`std/Logging`** (not `std/Log`; keep `log` free for instances) |
 
 **Import style (no language change):** prefer **both** —
-`import logging from "std/Logging"` (configure) **and**
-`import { info, warn, … } from "std/Logging"` (short emits). Either alone is
+`import logging, { info, warn, … } from "std/Logging"` (combined **D127**).
+Two separate import lines remain valid. Either form alone is
 valid. No import-mode dual export names.
 
 ---
@@ -100,7 +99,7 @@ valid. No import-mode dual export names.
 | Language **panic** story | unchanged; Logging is not panic |
 | Removing other builtins (`Array`, `true`, …) | only print surface |
 | Changing harness to golden **stderr** by default | no — see §5 |
-| Import/export language changes | none — existing namespace / selective / `as` only |
+| Import/export language changes | none required for Logging itself; combined `import ns, {…}` later as **D127** |
 
 ---
 
@@ -302,8 +301,7 @@ goldens.
 Preferred (namespace + selective, as in apps):
 
 ```thx
-import logging from "std/Logging"
-import { info } from "std/Logging"
+import logging, { info } from "std/Logging"
 
 fn main() -> Int64 {
     logging.toStdout()

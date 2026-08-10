@@ -7,8 +7,7 @@ As-built rows: [`docs/capabilities.md`](../docs/capabilities.md) (`std-*`).
 
 ```thx
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
-import { info } from "std/Logging"           ## short emit; keep `logging` for configure
+import logging, { info } from "std/Logging"  ## ns + short emit (D127)
 import { readFile } from "std/Io"
 import net from "std/Net"
 import http from "std/Http"

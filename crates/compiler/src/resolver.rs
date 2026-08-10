@@ -618,51 +618,78 @@ impl<'a> Resolver<'a> {
                 }
                 Item::Import(imp) => match &imp.kind {
                     ImportKind::Selective(names) => {
-                        for n in names {
-                            let (local, span) = match &n.alias {
-                                Some((a, sp)) => (a.as_str(), *sp),
-                                None => (n.name.as_str(), n.name_span),
-                            };
-                            let origin = ImportOrigin {
-                                spec: imp.path.clone(),
-                                original: Some(n.name.clone()),
-                                is_namespace: false,
-                            };
-                            let id = self.new_binding_full(
-                                local,
-                                BindingKind::Import,
-                                Some(span),
-                                false,
-                                None,
-                                true,
-                                Some(origin),
-                            );
-                            self.define(root, local, id);
-                        }
+                        self.declare_selective_imports(root, &imp.path, names);
                     }
                     ImportKind::Namespace {
                         binding,
                         binding_span,
                     } => {
-                        let origin = ImportOrigin {
-                            spec: imp.path.clone(),
-                            original: None,
-                            is_namespace: true,
-                        };
-                        let id = self.new_binding_full(
-                            binding,
-                            BindingKind::Import,
-                            Some(*binding_span),
-                            false,
-                            None,
-                            true,
-                            Some(origin),
-                        );
-                        self.define(root, binding, id);
+                        self.declare_namespace_import(root, &imp.path, binding, *binding_span);
+                    }
+                    ImportKind::Combined {
+                        binding,
+                        binding_span,
+                        names,
+                    } => {
+                        self.declare_namespace_import(root, &imp.path, binding, *binding_span);
+                        self.declare_selective_imports(root, &imp.path, names);
                     }
                 },
             }
         }
+    }
+
+    fn declare_selective_imports(
+        &mut self,
+        root: usize,
+        path: &str,
+        names: &[ast::ImportName],
+    ) {
+        for n in names {
+            let (local, span) = match &n.alias {
+                Some((a, sp)) => (a.as_str(), *sp),
+                None => (n.name.as_str(), n.name_span),
+            };
+            let origin = ImportOrigin {
+                spec: path.to_string(),
+                original: Some(n.name.clone()),
+                is_namespace: false,
+            };
+            let id = self.new_binding_full(
+                local,
+                BindingKind::Import,
+                Some(span),
+                false,
+                None,
+                true,
+                Some(origin),
+            );
+            self.define(root, local, id);
+        }
+    }
+
+    fn declare_namespace_import(
+        &mut self,
+        root: usize,
+        path: &str,
+        binding: &str,
+        binding_span: Span,
+    ) {
+        let origin = ImportOrigin {
+            spec: path.to_string(),
+            original: None,
+            is_namespace: true,
+        };
+        let id = self.new_binding_full(
+            binding,
+            BindingKind::Import,
+            Some(binding_span),
+            false,
+            None,
+            true,
+            Some(origin),
+        );
+        self.define(root, binding, id);
     }
 
     fn declare_members(&mut self, td: &ast::TypeDef) {
@@ -1610,6 +1637,28 @@ fn f(t: Trial<Int64, Int64>) -> Int64 {
             .into_iter()
             .find(|b| b.name == "ans")
             .expect("alias");
+        let o = ans.import_origin.as_ref().unwrap();
+        assert_eq!(o.original.as_deref(), Some("answer"));
+        assert!(!o.is_namespace);
+        let h = res
+            .module_definitions()
+            .into_iter()
+            .find(|b| b.name == "h")
+            .expect("ns");
+        let no = h.import_origin.as_ref().unwrap();
+        assert!(no.is_namespace);
+        assert!(no.original.is_none());
+    }
+
+    #[test]
+    fn import_combined_namespace_and_selective() {
+        let src = "import h, { answer as ans } from \"./Helper\"\nfn main() -> Int64 { 0 }\n";
+        let res = resolve_ok(src);
+        let ans = res
+            .module_definitions()
+            .into_iter()
+            .find(|b| b.name == "ans")
+            .expect("selective");
         let o = ans.import_origin.as_ref().unwrap();
         assert_eq!(o.original.as_deref(), Some("answer"));
         assert!(!o.is_namespace);

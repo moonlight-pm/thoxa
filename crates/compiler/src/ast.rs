@@ -21,7 +21,8 @@ pub enum Item {
     SessionStmt(BlockItem),
 }
 
-/// `import { a, b as c } from "…"` or `import ns from "…"`.
+/// `import { a, b as c } from "…"`, `import ns from "…"`, or
+/// `import ns, { a, b as c } from "…"`.
 #[derive(Debug, Clone)]
 pub struct Import {
     pub kind: ImportKind,
@@ -35,6 +36,12 @@ pub enum ImportKind {
     Selective(Vec<ImportName>),
     /// `import binding from "…"` — namespace, camelCase binding only.
     Namespace { binding: String, binding_span: Span },
+    /// `import ns, { name [as alias], … } from "…"` — namespace + selective in one clause.
+    Combined {
+        binding: String,
+        binding_span: Span,
+        names: Vec<ImportName>,
+    },
 }
 
 #[derive(Debug, Clone)]

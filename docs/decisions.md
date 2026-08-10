@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-10 — Combined namespace + selective import
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D127 | Combined import clause | `import ns, { a, b as c } from "…"` binds a camelCase **namespace** and **selective** names from the same module in one statement | Order is namespace first, then brace list (not `{…}, ns`). Same binding/export rules as two separate imports. Extends D32/D33. Gate: `import_combined`. Dogfood: `examples/http` Logging/Net. |
+
 ## 2026-08-10 — std Io / Net / Http (sample-driven)
 
 | ID | Decision | Choice | Notes |
@@ -29,7 +35,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D125 | `std/Logging` + no ambient print | Product logging is **`std/Logging`** (not `Log` — reserve **`log`** for logger *instances* later). v0 = **default logger**: five levels (Trace…Error), default **Info** + **stderr** + full format; emit void (no `?`); generic emit named **`emit`** (not `log`); **`toFile` / path `setSink` → `Trial`**; emit write failures best-effort. Multi named loggers / `initLog` **later**. Ambient **`println`/`print` removed**. **App import face:** `import logging from "std/Logging"` **plus** selective `import { info, warn, … }` for short emits (configure via `logging.*`). Golden/data: `toStdout` + `formatPlain` + level fn. Import required. | **Shipped:** `std/Logging.thx` + RT `thoxa_write_line_fd`; session Shell inject loads Logging (+ deps); gates `logging_levels`, `logging_sink` + full conformance dogfood; `examples/http` shows dual import. Freeze: [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md). |
+| D125 | `std/Logging` + no ambient print | Product logging is **`std/Logging`** (not `Log` — reserve **`log`** for logger *instances* later). v0 = **default logger**: five levels (Trace…Error), default **Info** + **stderr** + full format; emit void (no `?`); generic emit named **`emit`** (not `log`); **`toFile` / path `setSink` → `Trial`**; emit write failures best-effort. Multi named loggers / `initLog` **later**. Ambient **`println`/`print` removed**. **App import face:** `import logging, { info, warn, … } from "std/Logging"` (**D127** combined; two-line dual import still valid). Golden/data: `toStdout` + `formatPlain` + level fn. Import required. | **Shipped:** `std/Logging.thx` + RT `thoxa_write_line_fd`; session Shell inject loads Logging (+ deps); gates `logging_levels`, `logging_sink` + full conformance dogfood; `examples/http` uses combined import. Freeze: [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md). |
 
 ## 2026-08-09 — Structured diagnostics (foundation)
 

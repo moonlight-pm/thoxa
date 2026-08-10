@@ -143,12 +143,17 @@ info("{c.n}")            ## 15
 
 ```thx
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
-import { info } from "std/Logging"
+import logging, { info, warn } from "std/Logging"   ## namespace + selective (D127)
 import { readFile } from "std/Io"
-import net from "std/Net"
+import net, { Socket } from "std/Net"
 export fn helper() -> Int64 { 1 }
 ```
+
+| Form | Meaning |
+|------|---------|
+| `import { a, b as c } from "…"` | Selective — bind exported names (optional `as`) |
+| `import ns from "…"` | Namespace — camelCase instance; members via `ns.x` |
+| `import ns, { a, b } from "…"` | Combined — both in one clause (**D127**) |
 
 | Origin | Meaning |
 |--------|---------|

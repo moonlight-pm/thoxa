@@ -1,0 +1,13 @@
+## Combined import: namespace + selective in one clause (D127).
+## `import ns, { a, b as c } from "…"` binds both the namespace and named exports.
+import logging, { info } from "std/Logging"
+import mu, { double } from "./modlib/MathUtils"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    info("add = {mu.add(a: 2, b: 3)}")
+    info("double = {double(n: 21)}")
+    0
+}

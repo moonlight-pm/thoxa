@@ -10,6 +10,7 @@ use crate::ast::{self, Import, ImportKind, Item};
 use crate::error::{Error, Result};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::span::Span;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -518,6 +519,62 @@ pub enum BoundImport {
     Namespace { from_module: String },
 }
 
+fn insert_selective_import_names(
+    map: &mut HashMap<String, BoundImport>,
+    names: &[ast::ImportName],
+    from_module: &str,
+    export_set: &HashSet<String>,
+) -> Result<()> {
+    for n in names {
+        let local = n
+            .alias
+            .as_ref()
+            .map(|(a, _)| a.clone())
+            .unwrap_or_else(|| n.name.clone());
+        if !export_set.contains(&n.name) {
+            return Err(Error::at(
+                format!("`{}` is not exported from module `{from_module}`", n.name),
+                n.name_span,
+            ));
+        }
+        if map.contains_key(&local) {
+            return Err(Error::at(
+                format!("duplicate import binding `{local}`"),
+                n.name_span,
+            ));
+        }
+        map.insert(
+            local,
+            BoundImport::Name {
+                from_module: from_module.to_string(),
+                original: n.name.clone(),
+            },
+        );
+    }
+    Ok(())
+}
+
+fn insert_namespace_import(
+    map: &mut HashMap<String, BoundImport>,
+    binding: &str,
+    binding_span: Span,
+    from_module: &str,
+) -> Result<()> {
+    if map.contains_key(binding) {
+        return Err(Error::at(
+            format!("duplicate import binding `{binding}`"),
+            binding_span,
+        ));
+    }
+    map.insert(
+        binding.to_string(),
+        BoundImport::Namespace {
+            from_module: from_module.to_string(),
+        },
+    );
+    Ok(())
+}
+
 /// Build per-module import maps (local binding → source).
 pub fn build_import_maps(
     package: &Package,
@@ -574,52 +631,41 @@ pub fn build_import_maps(
 
             match &imp.kind {
                 ImportKind::Selective(names) => {
-                    for n in names {
-                        let local = n
-                            .alias
-                            .as_ref()
-                            .map(|(a, _)| a.clone())
-                            .unwrap_or_else(|| n.name.clone());
-                        if !export_set.contains(&n.name) {
-                            return Err(Error::at(
-                                format!(
-                                    "`{}` is not exported from module `{from_module}`",
-                                    n.name
-                                ),
-                                n.name_span,
-                            ));
-                        }
-                        if map.contains_key(&local) {
-                            return Err(Error::at(
-                                format!("duplicate import binding `{local}`"),
-                                n.name_span,
-                            ));
-                        }
-                        map.insert(
-                            local,
-                            BoundImport::Name {
-                                from_module: from_module.clone(),
-                                original: n.name.clone(),
-                            },
-                        );
-                    }
+                    insert_selective_import_names(
+                        &mut map,
+                        names,
+                        &from_module,
+                        &export_set,
+                    )?;
                 }
                 ImportKind::Namespace {
                     binding,
                     binding_span,
                 } => {
-                    if map.contains_key(binding) {
-                        return Err(Error::at(
-                            format!("duplicate import binding `{binding}`"),
-                            *binding_span,
-                        ));
-                    }
-                    map.insert(
-                        binding.clone(),
-                        BoundImport::Namespace {
-                            from_module: from_module.clone(),
-                        },
-                    );
+                    insert_namespace_import(
+                        &mut map,
+                        binding,
+                        *binding_span,
+                        &from_module,
+                    )?;
+                }
+                ImportKind::Combined {
+                    binding,
+                    binding_span,
+                    names,
+                } => {
+                    insert_namespace_import(
+                        &mut map,
+                        binding,
+                        *binding_span,
+                        &from_module,
+                    )?;
+                    insert_selective_import_names(
+                        &mut map,
+                        names,
+                        &from_module,
+                        &export_set,
+                    )?;
                 }
             }
         }
