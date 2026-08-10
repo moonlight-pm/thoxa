@@ -1,5 +1,5 @@
 ## OpenMode union (D81 polish): nullary access modes + openModeBits → openFile.
-import { OpenMode, Rdonly, Wronly, Rdwr, openModeBits, openFile, oRdonly } from "./iolib/Io"
+import { OpenMode, Rdonly, Wronly, Rdwr, openModeBits, openFile, oRdonly } from "std/Io"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 

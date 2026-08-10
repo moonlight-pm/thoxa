@@ -1,6 +1,6 @@
 ## R9+: HTTP subset — Net/Http modules, Trial monomorphs, offline protocol + socket lifecycle.
-import net from "./httplib/Net"
-import http from "./httplib/Http"
+import net from "std/Net"
+import http from "std/Http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 

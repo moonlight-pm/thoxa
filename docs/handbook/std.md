@@ -6,6 +6,10 @@ Import product modules with the **`std/…`** named root:
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 import { info } from "std/Logging"
+import { readFile } from "std/Io"
+import net from "std/Net"
+import http from "std/Http"
+import { Router } from "std/HttpStatic"
 import { defaultPrompt } from "std/Prompt"
 import { startsWith, dropPrefix } from "std/Str"
 import { cwdShort, shortPath } from "std/Path"
@@ -21,6 +25,10 @@ import { branch } from "std/Git"
 | `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts (pulls Fallible + Logging) |
 | `Fallible` | Exported `May<T> = Has<T!> \| Not?`, `Trial<P,F> = Pass<P!> \| Fail<F?>` — **import required** for programs (D123; not ambient) |
 | `Logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
+| `Io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
+| `Net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
+| `Http` | HTTP/1.1 protocol (**D126**): parse/write + status helpers |
+| `HttpStatic` | Static-file `Router` (**D126**); depends on Io + Http |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `Str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`join`/`lines`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
 | `Path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |
@@ -66,6 +74,55 @@ is the usual app face.
 Env (applied once on first use): `THOXA_LOG_LEVEL`, `THOXA_LOG_SINK`. Multiple
 named loggers (`initLog`) are **not** shipped yet.
 
+### Io (`std/Io`)
+
+Linux file I/O. Fail payloads are **String** (`"op: strerror"` or a short
+message).
+
+| Surface | Notes |
+|---------|--------|
+| `readFile` / `writeFile` / `appendFile` | Whole-file helpers; close on both success and failure after open |
+| `openFile(path, flags = oRdonly, mode = oMode644)` | Returns `File` |
+| `File` | `readAll`, `write`, `seek`, `position`, `close`, `isOpen` |
+| `OpenMode` | `Rdonly \| Wronly \| Rdwr` + `openModeBits` |
+| Flag lets | `oRdonly` / `oWronly` / `oRdwr` / `oCreat` / `oTrunc` / `oAppend` / `oMode644` |
+| Seek | `seekSet` / `seekCur` / `seekEnd` |
+
+### Net (`std/Net`)
+
+IPv4 TCP (`AF_INET` stream). Fail payloads are String.
+
+| Surface | Notes |
+|---------|--------|
+| `createSocket()` | `Trial<Socket, String>` |
+| `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close` |
+| `receive()` | One `recv` chunk (empty on close/error) |
+| `receiveRequest()` | Until `\r\n\r\n` or 64 KiB cap / peer close |
+| `send` / `sendAll` | One write vs drain partial writes |
+
+### Http (`std/Http`)
+
+Pure protocol (no syscalls). Request bodies are always empty until body reading
+lands.
+
+| Surface | Notes |
+|---------|--------|
+| `Header` / `Request` / `Response` | Constructor-param products |
+| `parseRequest` | `Trial<Request, String>`; requires `\r\n\r\n`; strips query from path |
+| `writeResponse` | Status line + headers + body → `Bytes` |
+| Helpers | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `response` / `responseHead` |
+
+### HttpStatic (`std/HttpStatic`)
+
+| Surface | Notes |
+|---------|--------|
+| `Router(root: String)` | `handle(req) -> Response` — always a Response (never Trial) |
+| Methods | **GET** and **HEAD** only; else **405** + `Allow` |
+| Paths | Absolute (`/…`); `.` / `..` → 404; directories serve `index.html` |
+| Errors | Permission denied → **403** (logged); missing → **404**; other Io → log + 404 |
+
+Runnable demo: `cargo make run examples/http` (`Main.thx` + `web/` only).
+
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
 hex → black SGR.
 
@@ -78,10 +135,11 @@ hex → black SGR.
 
 ## Limits
 
-This is a **thin** library for session prompts and shared helpers. Fallibility
-types live in `std/Fallible` and are imported like other std modules. Named
-**`ffi`** root is deferred. File I/O for programs often lives in conformance
-helpers (`iolib`) / free `readFile` rather than a large `std/Io` yet.
+This is a **thin** library grown from real samples. Fallibility types live in
+`std/Fallible` and are imported like other std modules. Named **`ffi`** root is
+deferred. I/O and HTTP are **Linux product track** (x86_64 sockaddr pack, Linux
+open flags). Windows is out of scope. No request-body reading yet; Fail payloads
+are String (not an `Error` protocol).
 
 New helpers land when real samples need them — not via a free-floating
 “expand the stdlib” backlog.

@@ -1,9 +1,10 @@
-## Router — map an HTTP Request onto files under a root directory. Directories serve
-## `index.html`; path traversal (`..` / `.` segments) is rejected as 404. Content-Type
-## comes from the final file extension. GET and HEAD only.
+## std/HttpStatic — map an HTTP Request onto files under a root directory.
+## Directories serve `index.html`; path traversal (`..` / `.` segments) → 404.
+## Content-Type from the final file extension. GET and HEAD only.
+## Depends on std/Io + std/Http. Logs unexpected Io / permission issues via std/Logging.
 
-import { readFile } from "./Io"
-import { Request, Response, ok, okHead, notFound, forbidden, methodNotAllowed } from "./Http"
+import { readFile } from "std/Io"
+import { Request, Response, ok, okHead, notFound, forbidden, methodNotAllowed } from "std/Http"
 import { Pass, Fail } from "std/Fallible"
 import { contains } from "std/Str"
 import { warn } from "std/Logging"

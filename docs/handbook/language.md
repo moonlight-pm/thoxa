@@ -145,8 +145,8 @@ info("{c.n}")            ## 15
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 import { info } from "std/Logging"
-import { readFile } from "./Io"
-import net from "./Net"
+import { readFile } from "std/Io"
+import net from "std/Net"
 export fn helper() -> Int64 { 1 }
 ```
 
@@ -178,20 +178,21 @@ extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
 Marshals common scalars, `String`, `Bytes`, `Void`, `Address<T>`. String
 *returns* are copied via the runtime.
 
-## I/O and HTTP (library shape)
+## I/O and HTTP (`std/`)
 
-These live in sample/conformance libraries today (not a fat `std/Io`). Their
-return types use `Trial` / `May` from `std/Fallible` — import Fallible when you
-annotate or construct those values.
+Product modules (**D126**). Return types use `Trial` / `May` from
+`std/Fallible` — import Fallible when you annotate or construct those values.
+Full surface: [`std.md`](std.md).
 
-- Free `readFile` / `writeFile` / `appendFile` (`Trial<…, String>`).
-- **OpenMode:** nullary union `Rdonly | Wronly | Rdwr` with `openModeBits(m)` for
-  `openFile` flags; Int32 lets `oRdonly` / `oCreat` / … still compose with `|`.
-- **`File` type:** `openFile` / `readAll` / `write` / `seek` / `position` /
-  `close` / `isOpen` (see conformance `file_type`, `file_write`, `file_seek`,
-  `file_openmode` / `iolib/Io.thx`).
-- HTTP: `Request` / `Response` / `Header`, parse/write helpers, Router, bounded
-  static server (`http_server` conformance).
+- **`std/Io`:** free `readFile` / `writeFile` / `appendFile`; `File` +
+  `openFile` / `readAll` / `write` / `seek` / `position` / `close`; OpenMode
+  union + Int32 flag lets.
+- **`std/Net`:** TCP `Socket` (`createSocket`, bind/listen/accept/connect,
+  `receiveRequest`, `sendAll`).
+- **`std/Http`:** `Request` / `Response` / `Header`, `parseRequest` /
+  `writeResponse`, status helpers (`ok`, `notFound`, `badRequest`,
+  `forbidden`, `methodNotAllowed`).
+- **`std/HttpStatic`:** static-file `Router` (`handle` → Response; GET/HEAD).
 
 ## Not shipped (do not expect)
 

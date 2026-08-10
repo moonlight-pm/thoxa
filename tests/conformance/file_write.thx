@@ -1,5 +1,5 @@
 ## File write/create (D112): writeFile, appendFile, File.write.
-import { writeFile, appendFile, readFile, oCreat, oWronly, oTrunc } from "./iolib/Io"
+import { writeFile, appendFile, readFile, oCreat, oWronly, oTrunc } from "std/Io"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 

@@ -54,11 +54,11 @@ change. See [`progress-model.md`](progress-model.md).
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| file-io | `readFile` / `writeFile` / `appendFile` + OpenMode + **File** (seek/position) | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode` | D56, D80–D82, D109, D112, D115 | OpenMode nullary union + `openModeBits`; Int32 flag lets for creat/trunc/append | yes |
-| net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err` | D69, R9 | Fail messages use errno/strerror (`netErr`); parse/write wire as before | yes |
-| router | Router type `handle(Request) -> Response` | shipped | `router` | D70 | — | yes |
-| http-server | Bounded multi-request static server | shipped | `http_server` | D67 | — | yes |
-| examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; modules co-located (not yet `std/`); cwd-relative `web/`; resilient accept/recv-until-headers/sendAll; GET+HEAD; 403/405; Fail stays String | yes |
+| file-io | `readFile` / `writeFile` / `appendFile` + OpenMode + **File** (seek/position) | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode` | D56, D80–D82, D109, D112, D115, **D126** | Product **`std/Io`**; OpenMode + `openModeBits`; Int32 creat/trunc/append flags; Fail is String | yes |
+| net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err` | D69, R9, **D126** | Product **`std/Net`** + **`std/Http`**; `receiveRequest` / `sendAll`; 403/405 helpers; Fail is String | yes |
+| router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126** | Product **`std/HttpStatic`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
+| http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/Net` + `std/Http` + `std/HttpStatic` | yes |
+| examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; **`Main.thx` + `web/` only** (std for Io/Net/Http/HttpStatic); resilient accept loop | yes |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 
@@ -93,7 +93,10 @@ change. See [`progress-model.md`](progress-model.md).
 | std-git | branch helpers | partial | `stdlib` | D97 | +`headLine`/`isDetached`/`repoRoot`; sample-driven | yes |
 | std-prompt | `defaultPrompt` | shipped | `stdlib` | D97, D99 | — | yes |
 | std-logging | Leveled `std/Logging` + no ambient `println` | shipped | `logging_levels`, `logging_sink`, full suite | **D125**; [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | App face: `import logging` + selective `{ info, … }`. Multi named loggers / `initLog` later; structured/JSON; colors/TTY; source location | yes |
-| std-io | Richer Io in `std/` | idea | — | sample-driven | Free `readFile` / iolib tests only; not a CURRENT todo | no |
+| std-io | File I/O in `std/Io` | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode`, `logging_sink` | **D126** | Linux `extern` open/read/write/lseek; Fail String; no Windows | yes |
+| std-net | TCP sockets in `std/Net` | shipped | `http`, `http_wire`, `http_net_err` | **D126** | IPv4 stream; `receiveRequest` / `sendAll`; Fail String; Linux sockaddr pack | yes |
+| std-http | HTTP/1.1 protocol in `std/Http` | shipped | `http_parse`, `http`, `http_wire` | **D126** | No body read yet; OWS trim; 400/403/404/405 helpers | yes |
+| std-http-static | Static-file `Router` in `std/HttpStatic` | shipped | `router`, `http_server` | **D126** | GET+HEAD; small MIME table; depends on Io+Http+Logging | yes |
 
 ## Editor / LSP
 

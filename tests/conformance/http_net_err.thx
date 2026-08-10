@@ -1,5 +1,5 @@
 ## Net Fail messages include strerror (errno polish, Io-style D80).
-import { createSocket } from "./httplib/Net"
+import { createSocket } from "std/Net"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 

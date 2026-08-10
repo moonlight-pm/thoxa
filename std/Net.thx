@@ -1,6 +1,6 @@
-## Net — TCP sockets for the HTTP example.
+## std/Net — TCP sockets (IPv4 stream; Linux product track).
 ## Errors are Trial<…, String> with errno/strerror polish (Io-style D80).
-## Request read accumulates until the header terminator; send drains partial writes.
+## `receiveRequest` accumulates until the header terminator; `sendAll` drains partial writes.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 

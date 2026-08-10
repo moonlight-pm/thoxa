@@ -1,8 +1,9 @@
-## Io — file open/read/write/seek/close (R9+ / D109 / D112 / D115).
+## std/Io — file open/read/write/seek/close (D109 / D112 / D115 → product std).
 ## Free `readFile` / `writeFile` plus `File` type with method field write-back.
 ## Access modes: nullary union `OpenMode` + `openModeBits` (D81 ADT); Int32
 ## flag lets remain for bitwise OR with oCreat/oTrunc/oAppend.
 ## errno/strerror: `thoxa_errno` RT helper + libc `strerror` via `extern … from "c"`.
+## Linux product track. Fail payloads are String (context + strerror).
 
 import { Pass, Fail, Trial } from "std/Fallible"
 

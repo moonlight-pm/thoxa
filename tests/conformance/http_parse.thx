@@ -1,5 +1,5 @@
 ## PR5: Request / Response / Header + parseRequest + writeResponse.
-import http from "./httplib/Http"
+import http from "std/Http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 

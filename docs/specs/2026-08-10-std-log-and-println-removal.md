@@ -12,7 +12,7 @@
 **Decision:** **D125** (assign on ship; locked here as product intent).
 
 **Related:** D97 (`std/…` root); D123 (import-required std surface, no ambient
-prelude for Fallible); file I/O still primarily `iolib` / free Io (D56+);
+prelude for Fallible); file I/O is product `std/Io` (**D126**; was iolib);
 session Shell in `std/Shell.thx` (D104).
 
 ---

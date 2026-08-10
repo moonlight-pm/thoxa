@@ -1,7 +1,7 @@
 ## One-shot HTTP over the wire: listen → connect → accept → send/recv → close.
 ## No infinite accept loop; deterministic for conformance.
-import net from "./httplib/Net"
-import http from "./httplib/Http"
+import net from "std/Net"
+import http from "std/Http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 

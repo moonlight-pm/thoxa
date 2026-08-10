@@ -1,7 +1,7 @@
 # examples/http — static file server
 
-Minimal HTTP/1.1 server in pure Thoxa: bind, accept, parse request, map path
-to files under `web/`, write response.
+Minimal HTTP/1.1 server in pure Thoxa. Application code is just `Main.thx` +
+`web/`; sockets, protocol, files, and static routing come from product **`std/`**.
 
 ## Run
 
@@ -26,34 +26,27 @@ Stop with Ctrl-C. Port is **9091** (`SO_REUSEADDR` on).
 
 ## Layout
 
-| File | Role |
+| Path | Role |
 |------|------|
-| `Main.thx` | Listen loop |
-| `Net.thx` | TCP sockets (`extern` libc) |
-| `Http.thx` | Request/Response parse + write |
-| `Router.thx` | Path → file under `web/` |
-| `Io.thx` | `readFile` for static bodies |
+| `Main.thx` | Listen loop + per-connection serve |
 | `web/` | Demo assets |
+| `std/Net` | TCP sockets |
+| `std/Http` | Request/Response parse + write |
+| `std/HttpStatic` | Path → file under a root (`Router`) |
+| `std/Io` | `readFile` (used by the router) |
+| `std/Logging` | Request / error logs |
 
-Modules are packaged next to `Main.thx` (same surface as the `httplib` /
-`iolib` conformance helpers; not yet product `std/`).
-
-## Robustness notes
-
-What this example models (and what it still simplifies):
+## Behavior (product std)
 
 | Concern | Behavior |
 |---------|----------|
 | Setup (`socket` / `bind` / `listen`) | Fail → process exit with log |
-| `accept` errors | Log and continue (do not kill the server) |
-| Request read | Loop until `\r\n\r\n` (or peer close / 64 KiB header cap) |
-| Response write | `sendAll` drains partial `send`s |
-| Methods | `GET` and `HEAD` only; others → **405** + `Allow` |
-| Path traversal | `.` / `..` segments → **404** |
-| Missing file | **404**; permission denied → **403** (logged) |
-| Unexpected Io errors | Log + **404** (still a Response, not process death) |
-| Parse errors | **400** + log |
-| Request bodies | Ignored (static server; headers only) |
+| `accept` errors | Log and continue |
+| Request read | `Socket.receiveRequest` until `\r\n\r\n` (64 KiB cap) |
+| Response write | `Socket.sendAll` drains partial sends |
+| Methods | `GET` and `HEAD`; others → **405** |
+| Path traversal | `.` / `..` → **404** |
+| Missing file | **404**; permission denied → **403** |
+| Parse errors | **400** |
 
-Fail payloads stay `String` (same as product Io/Net convention). Domain
-structure is in control flow (Response vs Trial), not an `Error` hierarchy.
+Handbook: [`docs/handbook/std.md`](../../docs/handbook/std.md).

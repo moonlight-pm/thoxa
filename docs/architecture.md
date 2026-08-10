@@ -45,7 +45,7 @@ step `.so` on the happy path.
 | `crates/make` | xtask (`cargo make …`) |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
-| `std/` | Product std (`Shell`, `Fallible`, `Logging`, Str/Path/Env/…) |
+| `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http`/`HttpStatic`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate |
 | `examples/` | Runnable demos (`http` static server, `kilo` terminal editor); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |

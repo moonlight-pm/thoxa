@@ -1,5 +1,5 @@
-## File I/O — `readFile` via iolib/Io (R9+; PR9 errno/OpenMode polish).
-import { readFile, oRdonly } from "./iolib/Io"
+## File I/O — `readFile` via std/Io (D126; errno/OpenMode polish).
+import { readFile, oRdonly } from "std/Io"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 

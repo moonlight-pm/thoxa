@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-10 — std Io / Net / Http (sample-driven)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D126 | Product `std/Io` + `std/Net` + `std/Http` + `std/HttpStatic` | Promote the mature sample/conformance I/O and HTTP surface into product **`std/`**. **`std/Io`:** `File`, `openFile`/`readFile`/`writeFile`/`appendFile`, OpenMode, seek. **`std/Net`:** TCP `Socket` + `receiveRequest`/`sendAll`. **`std/Http`:** parse/write Request/Response + status helpers. **`std/HttpStatic`:** static-file `Router` (GET/HEAD). Fail payloads remain **String**. Linux product track. | **Shipped:** modules under `std/`; conformance gates retargeted (removed `tests/conformance/{iolib,httplib}/`); `examples/http` is `Main.thx` + `web/` only. Extends D56/D69/D70/D97/D109+. Named `ffi` root still deferred. |
+
 ## 2026-08-10 — std/Logging + remove ambient println
 
 | ID | Decision | Choice | Notes |

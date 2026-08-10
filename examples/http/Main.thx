@@ -1,5 +1,5 @@
 ## Minimal HTTP/1.1 static file server (real listen loop).
-## Modules: Net (sockets), Http (protocol), Io (files), Router (web/ map).
+## Uses product std: Net, Http, HttpStatic (static Router), Logging.
 ##
 ##   cargo make run examples/http
 ##   # or: cargo run -p thoxa -- run examples/http
@@ -14,10 +14,10 @@
 ## Ctrl-C to stop. Port 9091; SO_REUSEADDR enabled.
 ## Setup failures (bind/listen) exit the process; accept/recv/send issues log and continue.
 
-import net from "./Net"
-import { Socket } from "./Net"
-import http from "./Http"
-import { Router } from "./Router"
+import net from "std/Net"
+import { Socket } from "std/Net"
+import http from "std/Http"
+import { Router } from "std/HttpStatic"
 import { Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
 import { info, warn } from "std/Logging"

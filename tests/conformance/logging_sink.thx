@@ -1,7 +1,7 @@
 ## std/Logging — file sink Trial + sink leave-on-fail (D125).
 import logging from "std/Logging"
 import { Pass, Fail, Trial } from "std/Fallible"
-import { readFile, writeFile } from "./iolib/Io"
+import { readFile, writeFile } from "std/Io"
 
 fn main() -> Int64 {
     let path = "/tmp/thoxa_logging_sink_conformance.log"

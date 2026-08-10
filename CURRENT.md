@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-10 (`std/Logging` **D125** shipped; session deferred)
+**As of:** 2026-08-10 (`std/Io`+`Net`+`Http`+`HttpStatic` **D126**; session deferred)
 
 ---
 
@@ -14,10 +14,11 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** **`std/Logging` + remove ambient `println`/`print`**
-(**D125**); **LSP call-arg hover**; **typed members after `?`**; **THX010**;
-**D124** structured diagnostics; **`thoxa version`**; **D123** Fallible import;
-**`examples/kilo`** / **`examples/http`**. Session residual deferred.
+**Shipped recently:** **`std/Io` + `std/Net` + `std/Http` + `std/HttpStatic`**
+(**D126**, sample-driven from http); **`std/Logging`** (**D125**); **LSP
+call-arg hover**; **typed members after `?`**; **THX010**; **D124** diagnostics;
+**`thoxa version`**; **D123** Fallible import; **`examples/kilo`** /
+**`examples/http`** (now Main+web only). Session residual deferred.
 Agent-only ideas parked:
 [`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 
@@ -73,7 +74,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
-| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; `ffi` deferred |
+| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); `ffi` deferred |
 | Logging / print | **`std/Logging` only** (**D125** shipped); ambient **`println`/`print` removed**; app face `import logging` + `import { info, … }`; no ambient Logging inject; multi-logger later |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
