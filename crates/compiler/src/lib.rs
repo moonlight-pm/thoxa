@@ -14,6 +14,7 @@ pub mod repl;
 pub mod resolver;
 pub mod session;
 pub mod span;
+pub mod version;
 
 #[cfg(thoxa_libtcc)]
 pub mod tcc;

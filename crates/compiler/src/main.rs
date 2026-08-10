@@ -52,7 +52,7 @@ fn try_main() -> Result<i32, Error> {
             Ok(0)
         }
         "lsp" => {
-            // Language server: stdio JSON-RPC. Logs go to stderr only.
+            // Language server: stdio JSON-RPC. Identity on stderr; protocol on stdout.
             Ok(lsp::run())
         }
         "check" => {
@@ -60,6 +60,10 @@ fn try_main() -> Result<i32, Error> {
                 .first()
                 .ok_or_else(|| Error::new("check requires a path (file.thx or directory)"))?;
             run_check(PathBuf::from(path))
+        }
+        "version" | "--version" | "-V" => {
+            println!("{}", thoxa::version::identity_line());
+            Ok(0)
         }
         "repl" => thoxa::repl::run_repl(),
         "-h" | "--help" | "help" => {
@@ -162,6 +166,7 @@ USAGE:
     thoxa check  <file.thx|dir>
     thoxa runtime
     thoxa lsp
+    thoxa version                Build identity (package + git hash + path)
 
 A directory argument resolves to <dir>/Main.thx (project root for ~/ is that dir).
 Build products land under target/ (rust/, c/, thoxa/).
@@ -170,8 +175,9 @@ Session scripts omit `fn main`; top-level statements become Shell.step.
 Interactive REPL loads ~/.config/thoxa/shell.thx (THOXA_SHELL_RC / THOXA_NORC).
 Optional fn prompt() -> String customizes the primary prompt (THOXA_STATUS env).
 Optional fn path(parent: Array<String>) -> Array<String> replaces process PATH.
-import from \"std/…\" (Str Path Ansi Env Git); THOXA_STD overrides the tree.
+import from \"std/…\" (Str Path Ansi Env Git Fallible); THOXA_STD overrides the tree.
 `thoxa lsp` speaks Language Server Protocol over stdio (for editors).
-`thoxa check` type-checks without codegen and prints path:line:col diagnostics."
+`thoxa check` type-checks without codegen and prints path:line:col diagnostics.
+`thoxa version` prints package+git hash and the binary path (compare to LSP logs)."
     );
 }

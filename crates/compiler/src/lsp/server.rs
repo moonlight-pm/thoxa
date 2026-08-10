@@ -22,6 +22,8 @@ const INTERNAL_ERROR: i64 = -32603;
 
 /// Run the language server on stdin/stdout. Returns process exit code.
 pub fn run() -> i32 {
+    // Always identify this process (Zed language-server logs often show stderr).
+    eprintln!("thoxa-lsp: {}", crate::version::identity_line());
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut reader = stdin.lock();
@@ -128,7 +130,22 @@ impl Server {
             )?;
         } else {
             match method {
-                Some("initialized") => {}
+                Some("initialized") => {
+                    // Protocol log (shows in editor LS logs when stderr is empty).
+                    // Not a toast — window/logMessage only.
+                    let msg = format!("thoxa-lsp: {}", crate::version::identity_line());
+                    write_message(
+                        writer,
+                        &json!({
+                            "jsonrpc": "2.0",
+                            "method": "window/logMessage",
+                            "params": {
+                                "type": 3, // Info
+                                "message": msg,
+                            },
+                        }),
+                    )?;
+                }
                 Some("textDocument/didOpen") => self.did_open(&params, writer)?,
                 Some("textDocument/didChange") => self.did_change(&params, writer)?,
                 Some("textDocument/didClose") => self.did_close(&params, writer)?,
@@ -159,7 +176,7 @@ impl Server {
             },
             "serverInfo": {
                 "name": "thoxa-lsp",
-                "version": env!("CARGO_PKG_VERSION"),
+                "version": crate::version::version_string(),
             },
         })
     }
@@ -1055,9 +1072,18 @@ mod tests {
                 "params": {}
             }),
         ]);
-        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs.len(), 2, "initialize result + window/logMessage");
         let result = &msgs[0]["result"];
         assert_eq!(result["serverInfo"]["name"], "thoxa-lsp");
+        let ver = result["serverInfo"]["version"].as_str().unwrap_or("");
+        assert!(
+            ver.starts_with(env!("CARGO_PKG_VERSION")) && ver.contains('+'),
+            "expected stamped version, got {ver:?}"
+        );
+        assert_eq!(msgs[1]["method"], "window/logMessage");
+        let log = msgs[1]["params"]["message"].as_str().unwrap_or("");
+        assert!(log.contains("thoxa-lsp:"), "{log}");
+        assert!(log.contains(&crate::version::version_string()), "{log}");
         assert_eq!(result["capabilities"]["textDocumentSync"], 1);
         assert_eq!(
             result["capabilities"]["semanticTokensProvider"]["full"],

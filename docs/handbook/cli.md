@@ -16,6 +16,13 @@ The product binary is **`thoxa`** (`cargo run -p thoxa -- …`, or via
 | `thoxa check path` | Typecheck only (no C emit) |
 | `thoxa emit-c path` | Emit C under `target/thoxa/c/` |
 | `thoxa lsp` | Language server (stdio) |
+| `thoxa version` | Build identity: package + git hash (+`.dirty`) + binary path |
+
+Also accepted: `thoxa --version`, `thoxa -V`.
+
+Use `thoxa version` to confirm which binary is on `PATH` (what Zed launches after
+`cargo make zed`). After rebuilding, **restart the language server** so LSP
+picks up the new process.
 
 Prefer **`cargo make`** helpers from a workspace checkout:
 

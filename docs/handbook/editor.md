@@ -15,6 +15,23 @@ cargo make zed --all      # also rebuild extension WASM shim
 See [`../../extras/README.md`](../../extras/README.md). After sync, restart the
 language server (grammar color changes may need a full quit/restart).
 
+## Which `thoxa` is Zed using?
+
+Zed launches **`thoxa` on PATH** (after `cargo make zed`, usually
+`~/.local/bin/thoxa` → `target/rust/debug/thoxa`).
+
+1. Rebuild: `cargo build -p thoxa` or `cargo make zed`
+2. In Zed: **`editor: restart language server`**
+3. Confirm identity:
+   - Shell: `thoxa version` → `thoxa 0.1.0+<hash>[.dirty]  path=…`
+   - Zed: **`zed: open language server logs`** — look for  
+     `thoxa-lsp: thoxa 0.1.0+<hash>  path=…`  
+     (stderr on start + `window/logMessage` after initialize; **no toast**)
+
+If the hash in logs does not match `git rev-parse --short=12 HEAD` (or
+`thoxa version` after a rebuild), the running LSP process is still old —
+restart again.
+
 ## What works
 
 | Feature | Notes |

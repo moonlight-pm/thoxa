@@ -69,7 +69,8 @@ cargo make zed --grammar
 | Color on `.thx` | keywords, PascalCase types, strings, `#` comments |
 | Type error (`if 3 { … }`) | squiggle from `thoxa lsp` |
 | Fix error | squiggle clears |
-| LSP logs if broken | `zed: open language server logs`; confirm `thoxa` on PATH or `target/rust/debug/thoxa` |
+| LSP logs if broken | `zed: open language server logs`; look for `thoxa-lsp: thoxa 0.1.0+<hash>  path=…` |
+| Binary identity | `thoxa version` (same string as LSP start log / `serverInfo.version`) |
 
 ## Layout decisions
 
