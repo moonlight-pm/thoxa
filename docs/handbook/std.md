@@ -59,8 +59,7 @@ fn main() -> Int64 {
 }
 ```
 
-Namespace-only (`import logging from …`) or selective-only
-(`import { info, toStdout, … }`) still work. Combined
+Namespace-only or selective-only still work. Combined
 `import logging, { info, … } from "std/Logging"` is the usual app face (**D127**).
 
 | Knob | Default |

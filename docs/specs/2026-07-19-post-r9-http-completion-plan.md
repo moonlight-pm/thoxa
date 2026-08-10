@@ -9,10 +9,14 @@
 > **Historical plan.** Bounded HTTP path shipped. Living priority:
 > [`../../CURRENT.md`](../../CURRENT.md). Progress updates:
 > capabilities + CURRENT (+ handbook when user-visible), not this file as a changelog.
+>
+> **Later product promotion (not part of this freeze):** Io/Net/Http/Router live in
+> product **`std/`** (**D126**); example is `Main.thx` + `web/` only. Conformance
+> no longer uses `iolib/` / `httplib/` trees. Prefer this note over body paths below.
 
 **Goal:** Close the gap from today’s subset to a **bounded multi-request static HTTP server** that matches the oracle `examples/http` *shape* (Net + Http + Io + Router + Main), without taking on deferred language megawork (M4, Perceus, effects, full stdlib roots).
 
-**Architecture:** Keep the phase-A pipeline (`.thx` → MIR → cgen → `cc` + `libthoxa_rt`). Grow only what the oracle HTTP example forces. Each PR ships a conformance fixture (`.thx` + `.out`) or extends an existing one. Prefer small language surface + library modules under `tests/conformance/httplib/` and `iolib/`.
+**Architecture:** Keep the phase-A pipeline (`.thx` → MIR → cgen → `cc` + `libthoxa_rt`). Grow only what the oracle HTTP example forces. Each PR ships a conformance fixture (`.thx` + `.out`) or extends an existing one. Prefer small language surface + library modules under `tests/conformance/httplib/` and `iolib/` *(historical layout; superseded by `std/` — **D126**)*.
 
 **Tech stack:** Rust compiler (`crates/compiler`), C runtime (`runtime/`), `cargo make test` gate.
 

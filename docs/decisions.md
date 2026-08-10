@@ -96,7 +96,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D115 | File seek / position | `File.seek(offset, whence = seekSet)` and `File.position()` → `Trial<Int64, String>`; export `seekSet`/`seekCur`/`seekEnd` | Same `iolib/Io.thx`. Closed file → Fail. Conformance: `file_seek`. |
+| D115 | File seek / position | `File.seek(offset, whence = seekSet)` and `File.position()` → `Trial<Int64, String>`; export `seekSet`/`seekCur`/`seekEnd` | Was `iolib/Io.thx`; product home **`std/Io`** (**D126**). Closed file → Fail. Conformance: `file_seek`. |
 
 ## 2026-08-07 — Nested Trial as payload
 
@@ -114,7 +114,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D112 | File write/create | Free `writeFile` / `appendFile`; `File.write`; open flags `oCreat`/`oTrunc`/`oAppend` + `sysOpenMode` (3-arg open) | Same `iolib/Io.thx` as D109. `openFile` takes optional `mode` (default 0644 literal — call-site default resolution). Int32 open fd widens to `File(fd: Int64)` via ctor arg coerce (**D21**). Conformance: `file_write`. |
+| D112 | File write/create | Free `writeFile` / `appendFile`; `File.write`; open flags `oCreat`/`oTrunc`/`oAppend` + `sysOpenMode` (3-arg open) | Was iolib; product **`std/Io`** (**D126**). `openFile` optional `mode` (default 0644). Int32 fd → `File(fd: Int64)` (**D21**). Conformance: `file_write`. |
 
 ## 2026-08-06 — Language: match guards/binds/or, File, write-back, defaults
 
@@ -122,7 +122,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 |----|----------|--------|-------|
 | D111 | Value-match guards | `pattern if bool_expr { … }` on literal/or arms; cond = pattern match **and** guard | Not on catch-all (`else`/bare bind). Not on Trial/May. Same lit may repeat when guards differ. Conformance: `match_guard`. Extends D87. |
 | D110 | Value-match bare bind | Final catch-all arm may be a bare name `n { … }` binding the scrutinee (instead of `else`) | `_` as bare pattern is discard catch-all (same as `else`). Not for Trial/May. Conformance: `match_bind`. Extends D87. |
-| D109 | File type (product Io) | `export type File(fd: Int64)` + `openFile` / `readAll` / `close` / `isOpen`; `readFile` reuses File | Lives in conformance `iolib/Io.thx` (same as free `readFile`). `fd` is Int64 (ctor-param field rules). Close write-backs `fd = -1` (**D107**). Conformance: `file_type`. **Write surface → D112**. |
+| D109 | File type (product Io) | `export type File(fd: Int64)` + `openFile` / `readAll` / `close` / `isOpen`; `readFile` reuses File | Product **`std/Io`** (**D126**; was conformance iolib). `fd` Int64; close write-backs `fd = -1` (**D107**). Conformance: `file_type`. **Write → D112**. |
 | D108 | Value-match or-patterns | `0 \| 1 \| 2 { … }` of string/int/bool literals; required `else` still | Lowers to `||` of equality tests. Not for Trial/May arms. Duplicate leaf lits rejected across arms. Conformance: `match_or`. Extends D87. |
 | D107 | Method mut-field write-back | In methods, bare assign to a ctor-param field (or C-layout `mut` field) updates the **receiver** | C ABI: User method receivers are pointers (`Type *`). Name receivers pass the binding place (not a `needs_drop` temp). Heap FieldAssign drops old field + dups new. Unlocks File-type style `fd = …` in methods. Conformance: `method_field_writeback`. |
 | D106 | Defaults on methods and ctors | Same rules as free-function defaults (D98): `name: T = expr`; omit at call; lowered at **call site** | Constructor params and methods. Ordering: no required formal after a defaulted one. **`!` / extern defaults allowed** (call-site fill; C still receives all args). **Name scope → D116**. Gates: `param_defaults`, `param_bang_defaults`. |
@@ -199,14 +199,14 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D83 | Check `require_main` | Buffer defines `fn main` → require it; else library check (`LowerOptions.require_main = false`) | Fixes false “program requires `fn main`” on `iolib/`/`httplib/` etc. Build/run still always require main via `lower_package`. Open library demotes `is_entry` so names mangle as a library. |
+| D83 | Check `require_main` | Buffer defines `fn main` → require it; else library check (`LowerOptions.require_main = false`) | Fixes false “program requires `fn main`” on library modules (was iolib/httplib; now `std/` libs + open buffers). Build/run still require main via `lower_package`. |
 
 ## 2026-07-20 — post-R9 PR9: Io OpenMode + errno polish
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D80 | errno / strerror without `ffi` root | `thoxa_errno()` in `thoxa_rt` + `extern fn … from "c" "strerror"`; Fail via `fileErr` / **`netErr`** (`"{what}: {strerror(errno)}"`) | No named `import { errno, strerror } from "ffi"` (D30 still deferred). Path included in open/seek/read tags. Net socket Fail tags: `http_net_err`. Conformance expects English ENOENT / EBADF text. |
-| D81 | OpenMode (native) | Was Int32 lets only | **Refined:** nullary union `OpenMode = Rdonly \| Wronly \| Rdwr` + `openModeBits` in `iolib/Io.thx`; Int32 `oRdonly`/`oWronly`/`oRdwr` kept for bitwise OR with creat/trunc/append. Gate: `file_openmode`. |
+| D81 | OpenMode (native) | Was Int32 lets only | **Refined:** nullary union `OpenMode = Rdonly \| Wronly \| Rdwr` + `openModeBits` in **`std/Io`** (**D126**); Int32 `oRdonly`/`oWronly`/`oRdwr` for bitwise OR with creat/trunc/append. Gate: `file_openmode`. |
 | D82 | Extern String return | C `char*` → `thoxa_string_from_cstr(…)` in cgen | Completes D20 marshal for String *returns* (args already used `thoxa_string_cstr`). |
 
 ## 2026-07-20 — Editor PR7: cross-module + open-buffer overlay
@@ -281,7 +281,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D70 | Router type | `export type Router(root: String) { export fn handle(req: Request) -> Response }` | Replaces free `handle(root, path) -> Bytes` (D61). Segments + `..`/`.` reject + index.html + Content-Type via `ok`/`notFound`; early `return` (D63). Absolute path required (`/` first byte). Import `readFile` from `~/iolib/Io`. Conformance: `router` (typed `status`/headers + `writeResponse` status line). MIME table is a small subset of oracle (`.html`/`.css`/`.txt`/octet-stream); expand when fixtures need more. |
+| D70 | Router type | `export type Router(root: String) { export fn handle(req: Request) -> Response }` | Replaces free `handle(root, path) -> Bytes` (D61). Segments + `..`/`.` reject + index.html + Content-Type. Absolute `/` path. Product home **`std/HttpStatic`** (**D126**; was httplib). Conformance: `router`. MIME subset `.html`/`.css`/`.txt`/octet-stream. |
 
 ## 2026-07-20 — Request / Response / Header (PR5)
 
@@ -383,7 +383,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | D30 | Import origins (R8) | `./…` and `~/…` only at ship; **D97** adds `std/…` | `ffi` still deferred |
 | D31 | Resolution | No `..` segments; `~/` = entry file’s directory | Matches oracle “never climb” |
 | D32 | Export surface | `export` on top-level `fn` / `type` / `let` / `extern`; `mut` never exported | Selective + namespace imports |
-| D33 | Namespace import | `import ns from "…"` camelCase binding; members via `ns.x` | Not a first-class value |
+| D33 | Namespace import | `import ns from "…"` camelCase binding; members via `ns.x` | Not a first-class value. Combined form → **D127** |
 | D34 | Module-level values | Static C globals + `thoxa_module_init()` before main | Dep-order init; private mut state |
 | D35 | Name mangling | Non-entry: `{Module}_{name}` types/fns; globals `g_{Module}_{name}` | Entry keeps unprefixed names; `main` special |
 

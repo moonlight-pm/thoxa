@@ -11,7 +11,8 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-10 (LSP call-arg hover + typed members after `?`; THX010; D124)
+**As of:** 2026-08-10 (D128 diverging loop; D127 combined import; D126 std Io/Net/Http;
+D125 Logging; D124 diagnostics; LSP hover defaults)
 
 ---
 
@@ -58,7 +59,7 @@ change. See [`progress-model.md`](progress-model.md).
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err` | D69, R9, **D126** | Product **`std/Net`** + **`std/Http`**; `receiveRequest` / `sendAll`; 403/405 helpers; Fail is String | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126** | Product **`std/HttpStatic`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/Net` + `std/Http` + `std/HttpStatic` | yes |
-| examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; **`Main.thx` + `web/` only** (std for Io/Net/Http/HttpStatic); resilient accept loop | yes |
+| examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; **Main+web only** on **std/** (**D126**); combined Logging import (**D127**); accept `loop` diverges (**D128**); resilient accept/recv/send | yes |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 

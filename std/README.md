@@ -24,7 +24,7 @@ import { branch } from "std/Git"
 |--------|------|
 | `Shell` | Session `type Shell` + builtins (`echo`/`cd`/`run`/`runIo`/`pipeline`/…); auto-injected for session scripts |
 | `Fallible` | Exported `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` — **import required** for programs (D123; not ambient) |
-| `Logging` | Default logger: levels, sinks, formats; prefer `import logging` + `import { info, … }` (**D125**); no ambient `println` |
+| `Logging` | Default logger: levels, sinks, formats; prefer `import logging, { info, … }` (**D125**/**D127**); no ambient `println` |
 | `Io` | Files: `readFile`/`writeFile`/`appendFile`, `File`, OpenMode (**D126**) |
 | `Net` | TCP sockets: `Socket`, `receiveRequest`, `sendAll` (**D126**) |
 | `Http` | HTTP/1.1 parse/write + status helpers (**D126**) |

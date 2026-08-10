@@ -1,7 +1,8 @@
 # Idea: postfix `having` / `else` for `May` (and maybe `Trial`)
 
 **Status:** sleeping — do not implement yet.  
-**Sparked by:** nested `match` on `Bytes.find` → `May<Int64>` in `parseRequest` (`tests/conformance/httplib/Http.thx`).  
+**Sparked by:** nested `match` on `Bytes.find` → `May<Int64>` in `parseRequest`
+(was `tests/conformance/httplib/Http.thx`; product surface is now **`std/Http`**).  
 **Related:** D85 (`May` / `Has` / `Not` / `?`), D63 (early `return`), D69 (`parseRequest`).
 
 ---

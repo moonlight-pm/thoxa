@@ -72,7 +72,8 @@ Freezes:
 
 - No-main scripts, command sugar, bare `thoxa` REPL, **libtcc** session steps
   (D105), rc/prompt/path, pipes/redirs, pure-step builtins, `std/Shell.thx`.
-- Thin `std/` for prompts and helpers (sample-driven only).
+- Thin `std/` sample-driven: prompts/helpers plus **Io/Net/Http/HttpStatic**
+  (**D126**) and Logging (**D125**).
 
 **Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first;
 crude line editor. Resume only when CURRENT says so.
@@ -115,9 +116,14 @@ Freezes:
   methods, pure-lit scalar, **May/Trial as `std/Fallible` (import, D123)**, dead
   `Ty::May`/`Trial` removed (freeze
   [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md))
+- ~~`std/Logging` + no ambient println~~ (**D125**)
+- ~~Product `std/Io` + `Net` + `Http` + `HttpStatic`~~ (**D126**; sample-driven)
+- ~~Combined import `import ns, { a } from "…"`~~ (**D127**)
+- ~~Diverging `loop` (Never / no dummy tail)~~ (**D128**)
 
-**Sample dogfood (not a phase flip):** `examples/http`, `examples/kilo` shipped
-and exercised; continue matrix gaps when samples force them.
+**Sample dogfood (not a phase flip):** `examples/http` (Main+web on std; infinite
+accept loop uses **D128**), `examples/kilo` shipped and exercised; continue
+matrix gaps when samples force them.
 
 **Horizon / deferred until CURRENT says so:**
 

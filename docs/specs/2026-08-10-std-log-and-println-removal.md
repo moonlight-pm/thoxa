@@ -196,8 +196,7 @@ export fn toFile(path!: String) -> Trial<(), String>
 - Call sites that care:
 
 ```thx
-import logging from "std/Logging"
-import { error } from "std/Logging"
+import logging, { error } from "std/Logging"
 import { Pass, Fail, Trial } from "std/Fallible"
 
 match logging.toFile("/var/log/app.log") {

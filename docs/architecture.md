@@ -5,7 +5,8 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-10 (D125 `std/Logging` + no ambient println; D124 diagnostics; LSP nav)
+**As of:** 2026-08-10 (D128 diverging loop; D127 combined import; D126 std Io/Net/Http;
+D125 Logging; D124 diagnostics; LSP nav)
 
 ---
 
@@ -29,13 +30,13 @@ step `.so` on the happy path.
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL |
 | Frontend | `lexer`, `parser`, `ast`, `resolver` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
-| MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122) |
-| Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars |
+| MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128) |
+| Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/Fallible` + `std/Logging` (+ deps) |
-| Loader | `loader.rs` | `./` `~/` `std/…`; `load_package_with_entry_ast`; `ensure_module_in_package` for post-load inject deps |
+| Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast`; inject deps |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; build stamps `THOXA_GIT_HASH` / dirty |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
-| LSP | `lsp/` | stdio server; check overlays; multi-diag + D124 codes/related/warnings; nav (typed members after `?`/namespace, call-arg formals); identity log (`version`) |
+| LSP | `lsp/` | stdio server; multi-diag + D124; nav; hover synthesizes default `-> Void` / main `-> Int64`; call-arg formals; identity log |
 
 ## Crates and trees
 

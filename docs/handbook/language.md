@@ -6,8 +6,7 @@ implements with conformance**, not the full oracle SPEC.
 ## Programs
 
 ```thx
-import logging from "std/Logging"
-import { info } from "std/Logging"
+import logging, { info } from "std/Logging"
 
 fn main() -> Int64 {
     logging.toStdout()
@@ -18,16 +17,16 @@ fn main() -> Int64 {
 ```
 
 There is **no** ambient `println` / `print` (**D125**). Use
-[`std/Logging`](std.md): namespace for configure (`logging.toStdout`, …) and
-selective imports for short emits (`info`, `warn`, `error`, …). Default sink is
-**stderr** with full timestamps; for golden/stdout data lines use
-`toStdout()` + `setFormat(formatPlain)` as above.
+[`std/Logging`](std.md): preferred face is **combined**
+`import logging, { info, … } from "std/Logging"` (**D127**) — namespace for
+configure, selective names for short emits. Default sink is **stderr** with full
+timestamps; for golden/stdout data lines use `toStdout()` +
+`setFormat(formatPlain)` as above.
 
 Optional CLI arguments:
 
 ```thx
-import logging from "std/Logging"
-import { info } from "std/Logging"
+import logging, { info } from "std/Logging"
 
 fn main(arguments: Array<String>) -> Int64 {
     logging.toStdout()
@@ -91,11 +90,15 @@ them (D122). Precise RC / Perceus is **not** shipped.
 
 ## Control flow
 
-`if`, `while`, `loop`, `for` (ranges and collections), `break`, `continue`.
-A `loop` with no `break` **diverges** (bottom type): it may be the last
-expression of any function without a dummy value after it (**D128**).
+`if`, `while`, `loop`, `for` (ranges and collections), `break`, `continue`,
 early `return` / `return expr`. Branch values may inject into an expected union
 (`-> Outcome` / `let x: U = if …`).
+
+**Diverging loop (**D128**):** a `loop { … }` with no `break` that exits *that*
+loop is bottom-typed (Never). It unifies with any expected return type, so an
+infinite server loop can be the last expression of `-> Trial<…>` / `-> Int64`
+without a dummy `Pass(Void)` or `0` after it. Nested loops' breaks do not count
+for the outer. `while` / `for` still yield `Void` (they can finish).
 
 ## Match
 
