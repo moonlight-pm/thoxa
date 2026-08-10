@@ -7,17 +7,19 @@ implements with conformance**, not the full oracle SPEC.
 
 ```thx
 import logging from "std/Logging"
+import { info } from "std/Logging"
 
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
-    logging.info("hello")
+    info("hello")
     0
 }
 ```
 
 There is **no** ambient `println` / `print` (**D125**). Use
-[`std/Logging`](std.md) (`info` / `warn` / `error` / …). Default sink is
+[`std/Logging`](std.md): namespace for configure (`logging.toStdout`, …) and
+selective imports for short emits (`info`, `warn`, `error`, …). Default sink is
 **stderr** with full timestamps; for golden/stdout data lines use
 `toStdout()` + `setFormat(formatPlain)` as above.
 
@@ -25,13 +27,14 @@ Optional CLI arguments:
 
 ```thx
 import logging from "std/Logging"
+import { info } from "std/Logging"
 
 fn main(arguments: Array<String>) -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
     ## arguments[0] is the program path; further entries are user args
     if arguments.count > 1 {
-        logging.info("{arguments[1]}")
+        info("{arguments[1]}")
     }
     0
 }
@@ -44,7 +47,7 @@ Directory packages may use `Main.thx` as the entry file.
 | Shape | Top level allows |
 |-------|------------------|
 | **Program** (`fn main` present) | Declarations only: `import`, `type`, `fn`, `let` / `mut`, `extern`, `export` |
-| **Session script** (no `main`) | Declarations **plus** bare statements (`logging.info("hi")`, assignments, …) |
+| **Session script** (no `main`) | Declarations **plus** bare statements (`info("hi")`, assignments, …) |
 
 A bare name like `FOOBAR` at file scope is a **statement**, not a declaration.
 In a program it is an error (clear span). In a session script it is the script
@@ -132,8 +135,8 @@ type Counter(n: Int64) {
 }
 
 mut c = Counter(n: 10)
-logging.info("{c.add(by: 5)}")   ## 15 (after toStdout + formatPlain)
-logging.info("{c.n}")            ## 15
+info("{c.add(by: 5)}")   ## 15 (after import { info } + toStdout + formatPlain)
+info("{c.n}")            ## 15
 ```
 
 ## Modules
@@ -141,6 +144,7 @@ logging.info("{c.n}")            ## 15
 ```thx
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
+import { info } from "std/Logging"
 import { readFile } from "./Io"
 import net from "./Net"
 export fn helper() -> Int64 { 1 }

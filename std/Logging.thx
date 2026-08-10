@@ -1,5 +1,8 @@
 ## std/Logging — default process logger (D125).
-## Prefer: `import logging from "std/Logging"` then `logging.info(...)`.
+## Prefer apps:
+##   import logging from "std/Logging"
+##   import { info, warn, error } from "std/Logging"
+## Namespace for configure (toStdout/setLevel/…); selective names for short emits.
 ## Multi named loggers (`initLog`) are later; free functions target the default.
 
 import { Pass, Fail, Trial } from "std/Fallible"

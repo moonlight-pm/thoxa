@@ -74,7 +74,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
 | `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; `ffi` deferred |
-| Logging / print | **`std/Logging` only** (**D125** shipped); ambient **`println`/`print` removed**; no ambient Logging inject; multi-logger later |
+| Logging / print | **`std/Logging` only** (**D125** shipped); ambient **`println`/`print` removed**; app face `import logging` + `import { info, … }`; no ambient Logging inject; multi-logger later |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |

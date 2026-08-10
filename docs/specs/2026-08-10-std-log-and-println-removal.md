@@ -31,23 +31,29 @@ configure**, and **fire-and-forget emit** (no `?` on every `debug`/`info`
 call). Ambient `println` / `print` are **removed**.
 
 **Naming:** the module is **`Logging`**, not `Log`. Reserve **`log`** as a
-*logger instance* name for multi-stream work later:
+*logger instance* name for multi-stream work later.
+
+**Preferred app import face** (shipped style; see `examples/http`):
 
 ```thx
 import logging from "std/Logging"
+import { info, warn, error } from "std/Logging"   ## short emits
 
-## v0 preferred: free functions / namespace = default logger
-logging.info("up")
+logging.toStdout()                 ## configure via namespace
+logging.setFormat(logging.formatPlain)
+info("up")                         ## emit via selective import
 
 ## later (not this freeze): named streams
 ## let access = logging.initLog("access")
-## let audit  = logging.initLog("audit")
 ## access.info("…")
 ```
 
+Either import alone remains valid; combining both is the documented default for
+apps. No import-mode dual export names (language unchanged).
+
 **One sentence:**  
-`import logging from "std/Logging"` (or selective exports) is how programs log;
-`println` is gone.
+`import logging` + selective `{ info, … }` from `"std/Logging"` is how programs
+log; `println` is gone.
 
 ---
 
@@ -61,9 +67,10 @@ logging.info("up")
 | 4 | Dogfood | **All conformance tests + examples + product std (Shell, etc.)** migrate in the same program of work |
 | 5 | Module name | **`std/Logging`** (not `std/Log`; keep `log` free for instances) |
 
-**Import style (no language change):** prefer namespace
-`import logging from "std/Logging"`. Selective import stays valid; no
-import-mode dual names (see design discussion — leave as-is).
+**Import style (no language change):** prefer **both** —
+`import logging from "std/Logging"` (configure) **and**
+`import { info, warn, … } from "std/Logging"` (short emits). Either alone is
+valid. No import-mode dual export names.
 
 ---
 
@@ -107,7 +114,7 @@ than necessary.
 
 | Horizon | Shape |
 |---------|--------|
-| **v0 (this freeze)** | Free functions + module state = the **default** logger. Prefer `import logging from "std/Logging"` then `logging.info(…)`. |
+| **v0 (this freeze)** | Free functions + module state = the **default** logger. Prefer `import logging` + selective `{ info, … }`. |
 | **Later** | A `Logger` (name TBD) value: own level, sink, format. Factory e.g. `initLog(name!: String) -> Logger` (exact API when scheduled). Free functions remain **sugar for the default logger**. |
 | **Naming** | Module path **`std/Logging`**. Namespace binding **`logging`**. Instance bindings **`log`**, `access`, `audit`, … — never use `Log` as the module leaf. |
 
@@ -191,11 +198,12 @@ export fn toFile(path!: String) -> Trial<(), String>
 
 ```thx
 import logging from "std/Logging"
+import { error } from "std/Logging"
 import { Pass, Fail, Trial } from "std/Fallible"
 
 match logging.toFile("/var/log/app.log") {
     Pass(_) { }
-    Fail(e) { logging.error("log file: {e}") }
+    Fail(e) { error("log file: {e}") }
 }
 ```
 

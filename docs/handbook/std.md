@@ -5,6 +5,7 @@ Import product modules with the **`std/…`** named root:
 ```thx
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import logging from "std/Logging"
+import { info } from "std/Logging"
 import { defaultPrompt } from "std/Prompt"
 import { startsWith, dropPrefix } from "std/Str"
 import { cwdShort, shortPath } from "std/Path"
@@ -19,7 +20,7 @@ import { branch } from "std/Git"
 |--------|------|
 | `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts (pulls Fallible + Logging) |
 | `Fallible` | Exported `May<T> = Has<T!> \| Not?`, `Trial<P,F> = Pass<P!> \| Fail<F?>` — **import required** for programs (D123; not ambient) |
-| `Logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; `setLevel`/`toStderr`/`toStdout`/`toFile`→`Trial`; full/plain format. Prefer `import logging from "std/Logging"`. No ambient `println` |
+| `Logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `Str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`join`/`lines`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
 | `Path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |
@@ -29,24 +30,32 @@ import { branch } from "std/Git"
 
 ### Logging (default logger)
 
+**Preferred import style** (apps): namespace for configure + selective level names
+for short call sites (see `examples/http`):
+
 ```thx
 import logging from "std/Logging"
+import { info, warn, error, debug } from "std/Logging"   ## pick what you emit
 
 fn main() -> Int64 {
-    logging.info("listen")           ## stderr, full format, min level Info
+    info("listen")                   ## stderr, full format, min level Info
     logging.setLevel(logging.levelDebug)
-    logging.debug("detail")
+    debug("detail")
     match logging.toFile("/tmp/app.log") {
         Pass(_) { }
-        Fail(e) { logging.error("log file: {e}") }
+        Fail(e) { error("log file: {e}") }
     }
     ## Golden / data on stdout:
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
-    logging.info("payload")
+    info("payload")
     0
 }
 ```
+
+Either import alone is valid: only `import logging from …` (qualify every call)
+or only `import { info, toStdout, … }` (no `logging.` prefix). Combining both
+is the usual app face.
 
 | Knob | Default |
 |------|---------|

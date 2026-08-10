@@ -92,7 +92,7 @@ change. See [`progress-model.md`](progress-model.md).
 | std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`pathVar`/`pwd`/`shell`; sample-driven | yes |
 | std-git | branch helpers | partial | `stdlib` | D97 | +`headLine`/`isDetached`/`repoRoot`; sample-driven | yes |
 | std-prompt | `defaultPrompt` | shipped | `stdlib` | D97, D99 | — | yes |
-| std-logging | Leveled `std/Logging` + no ambient `println` | shipped | `logging_levels`, `logging_sink`, full suite | **D125**; [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | Multi named loggers / `initLog` later; structured/JSON; colors/TTY; source location | yes |
+| std-logging | Leveled `std/Logging` + no ambient `println` | shipped | `logging_levels`, `logging_sink`, full suite | **D125**; [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | App face: `import logging` + selective `{ info, … }`. Multi named loggers / `initLog` later; structured/JSON; colors/TTY; source location | yes |
 | std-io | Richer Io in `std/` | idea | — | sample-driven | Free `readFile` / iolib tests only; not a CURRENT todo | no |
 
 ## Editor / LSP
