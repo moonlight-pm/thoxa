@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-09 (`examples/http` + `vendor/`; session deferred)
+**As of:** 2026-08-09 (`examples/kilo` shipped; session deferred)
 
 ---
 
@@ -14,13 +14,13 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** **`examples/http`** static server demo; **`third_party` →
-`vendor`** rename (TinyCC); **`insertAt`/`removeAt`** (D55); workspace/symbol;
-union match guards. Session residual deferred.
+**Shipped recently:** **`examples/kilo`** terminal editor; language for it
+(`Bytes.equals`, `String.count`, `\xHH` escapes, `main(arguments)`, CLI
+program args); **`examples/http`**; **`vendor/`** rename. Session residual
+deferred.
 
-**In progress / next:** real-world examples (kilo staged when ready); language
-gaps forced by samples; sample-driven std when forced; editor only when DX
-forces.
+**In progress / next:** language gaps forced by samples; sample-driven std when
+forced; editor only when DX forces.
 
 ### Proceed order
 

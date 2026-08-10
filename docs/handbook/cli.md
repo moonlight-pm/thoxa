@@ -23,6 +23,7 @@ Prefer **`cargo make`** helpers from a workspace checkout:
 cargo make test              # conformance suite
 cargo make run path.thx
 cargo make run examples/http # static file server demo (port 9091)
+cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt  # TTY editor
 cargo make shell             # bare thoxa REPL
 cargo make shell --login     # clean login-like env
 cargo make emit-c path.thx

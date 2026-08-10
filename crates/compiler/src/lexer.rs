@@ -252,6 +252,26 @@ impl<'a> Lexer<'a> {
                     ));
                 }
                 let esc = self.bytes[self.pos];
+                // `\xHH` — two hex digits → one byte (needed for VT100 / kilo).
+                if esc == b'x' {
+                    self.pos += 1;
+                    let hi = self.bytes.get(self.pos).copied();
+                    let lo = self.bytes.get(self.pos + 1).copied();
+                    match (hi, lo) {
+                        (Some(h), Some(l)) if h.is_ascii_hexdigit() && l.is_ascii_hexdigit() => {
+                            let byte = (hex_nibble(h) << 4) | hex_nibble(l);
+                            out.push(byte as char);
+                            self.pos += 2;
+                        }
+                        _ => {
+                            return Err(Error::at(
+                                "invalid \\xHH escape (need two hex digits)",
+                                Span::new(self.pos.saturating_sub(1), self.pos + 1),
+                            ));
+                        }
+                    }
+                    continue;
+                }
                 out.push(match esc {
                     b'n' => '\n',
                     b't' => '\t',
@@ -373,6 +393,15 @@ fn is_ident_start(b: u8) -> bool {
 
 fn is_ident_continue(b: u8) -> bool {
     b.is_ascii_alphanumeric()
+}
+
+fn hex_nibble(b: u8) -> u8 {
+    match b {
+        b'0'..=b'9' => b - b'0',
+        b'a'..=b'f' => b - b'a' + 10,
+        b'A'..=b'F' => b - b'A' + 10,
+        _ => 0,
+    }
 }
 
 #[cfg(test)]

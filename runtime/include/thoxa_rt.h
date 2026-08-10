@@ -165,6 +165,8 @@ ThoxaBytes *thoxa_bytes_slice(const ThoxaBytes *b, int64_t start, int64_t end);
 int64_t thoxa_bytes_find(const ThoxaBytes *hay, const ThoxaBytes *needle, int64_t from);
 /* Fresh owned String with the same bytes (not necessarily valid UTF-8). */
 ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b);
+/* Content equality: same length and same bytes (embedded-NUL safe). */
+int thoxa_bytes_equals(const ThoxaBytes *a, const ThoxaBytes *b);
 /* Functional: new Bytes with `byte` (masked 0–255) inserted at `at`.
  * Bounds: 0 ≤ at ≤ count (at == count appends). Source unchanged. */
 ThoxaBytes *thoxa_bytes_insert_at(const ThoxaBytes *b, int64_t at, int64_t byte);
@@ -299,6 +301,8 @@ ThoxaArray *thoxa_array_insert_at_elem(
 /* Functional removeAt: 0 ≤ at < count. */
 ThoxaArray *thoxa_array_remove_at(const ThoxaArray *a, int64_t at);
 ThoxaArray *thoxa_array_remove_at_ex(const ThoxaArray *a, int64_t at, ThoxaArrayElemFn elem_dup);
+/* Build argv as Array<String> for `fn main(arguments: Array<String>)`. */
+ThoxaArray *thoxa_argv_to_array(int argc, char **argv);
 /* Display as `[a, b, c]` for Int64 arrays. */
 ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a);
 /* Display as `["a", "b"]` for String arrays. */

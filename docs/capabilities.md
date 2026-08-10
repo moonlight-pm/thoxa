@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-09 (examples/http + vendor/)
+**As of:** 2026-08-09 (examples/kilo)
 
 ---
 
@@ -27,9 +27,9 @@ change. See [`progress-model.md`](progress-model.md).
 | value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |
-| string | String, interpolation, simple RC | shipped | `strings` | R4 | Perceus later | yes |
+| string | String, interpolation, `.count`, simple RC | shipped | `strings` | R4 | Perceus later; `\xHH` string escapes | yes |
 | string-eq | String `==` / `!=` | shipped | `router` (uses) | D60 | — | yes |
-| bytes | Bytes API + slice + find→May + insertAt/removeAt | shipped | `bytes`, `splice` | D14–D18, D36–D37, D46′/D85, D55 | String→Bytes is `fromString` only; **no** `"…" as Bytes` (D15 rejected) | yes |
+| bytes | Bytes API + slice + find→May + insertAt/removeAt + equals | shipped | `bytes`, `splice` | D14–D18, D36–D37, D46′/D85, D55 | String→Bytes is `fromString` only; **no** `"…" as Bytes` (D15 rejected) | yes |
 | buffer | Growable Buffer COW → freeze | shipped | `buffer` | D50–D52 | — | yes |
 | mut-assign | `mut` + assign + method field write-back | shipped | `bytes`, `method_field_writeback` | R5, D107 | — | yes |
 | control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops` | D47, D55 | — | yes |
@@ -59,6 +59,8 @@ change. See [`progress-model.md`](progress-model.md).
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70 | — | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | — | yes |
 | examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; modules co-located (not yet `std/`); cwd-relative `web/` | yes |
+| examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY) | examples | Raw mode via Bytes termios; needs TTY; no Array of User-with-Array-fields cache | yes |
+| main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | CLI | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 
 ## Session / shell
 

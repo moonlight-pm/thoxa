@@ -4616,6 +4616,24 @@ fn lower_field(
 
     let (base_p, base_ty) = lower_expr(ctx, base)?;
     match &base_ty {
+        Ty::String => {
+            if name != "count" {
+                return Err(Error::at(
+                    format!("no field `{name}` on String (use .count)"),
+                    name_span,
+                ));
+            }
+            let p = ctx.fresh("scnt");
+            ctx.assign(
+                p.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::Builtin("string_len".into()),
+                    args: vec![base_p],
+                },
+            );
+            Ok((p, Ty::Int64))
+        }
         Ty::Bytes => {
             if name != "count" {
                 return Err(Error::at(
@@ -5543,6 +5561,33 @@ fn lower_bytes_method(
                 Ty::String,
             )
         }
+        "equals" => {
+            let formal = vec![("other".into(), Ty::Bytes)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut all = vec![recv];
+            all.extend(places);
+            // Runtime returns int (0/1); cast to Bool.
+            let raw = ctx.fresh("beq");
+            ctx.assign(
+                raw.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::Builtin("bytes_equals".into()),
+                    args: all,
+                },
+            );
+            let p = ctx.fresh("beqb");
+            ctx.assign(
+                p.clone(),
+                Ty::Bool,
+                RValue::Cast {
+                    value: raw,
+                    from: Ty::Int64,
+                    to: Ty::Bool,
+                },
+            );
+            Ok((p, Ty::Bool))
+        }
         "insertAt" => {
             let formal = vec![("at".into(), Ty::Int64), ("byte".into(), Ty::Int64)];
             let places = resolve_call_args(ctx, &formal, args, span)?;
@@ -5569,7 +5614,7 @@ fn lower_bytes_method(
         }
         other => Err(Error::at(
             format!(
-                "no method `{other}` on Bytes (use .get, .set, .slice, .find, .toString, .insertAt, .removeAt)"
+                "no method `{other}` on Bytes (use .get, .set, .slice, .find, .toString, .equals, .insertAt, .removeAt)"
             ),
             span,
         )),

@@ -1,0 +1,192 @@
+## Find — incremental search (Ctrl-F).
+
+import { readKey, Press, Up, Down, Left, Right } from "./Keys"
+import { Row } from "./Row"
+import screen from "./Screen"
+import state from "./State"
+
+let hint = " (ESC cancel | Arrows next/prev | Enter confirm)"
+let esc = 27
+let enter = 13
+let backspace = 127
+let ctrlH = 8
+let none = 0 - 1
+
+export type Match(r: Int64, c: Int64)
+
+fn isPrintable(b: Int64) -> Bool {
+    if b < 32 {
+        false
+    } else {
+        b < 127
+    }
+}
+
+fn emptyMayMatch() -> May<Match> {
+    mut m: May<Match> = Not()
+    m
+}
+
+export fn searchFrom(
+    rows!: Array<Row>,
+    query!: Bytes,
+    lastMatchRow: Int64,
+    direction: Int64
+) -> May<Match> {
+    if rows.count == 0 {
+        return emptyMayMatch()
+    }
+    mut dir = direction
+    if lastMatchRow == none {
+        dir = 1
+    }
+    mut current = lastMatchRow
+    mut i = 0
+    mut result = emptyMayMatch()
+    mut found = false
+    loop {
+        if found {
+            break
+        }
+        if i >= rows.count {
+            break
+        }
+        current = current + dir
+        if current == none {
+            current = rows.count - 1
+        }
+        if current == rows.count {
+            current = 0
+        }
+        match rows[current].bytes().find(query) {
+            Has(col) {
+                result = Has(Match(r: current, c: col))
+                found = true
+            }
+            Not {
+                Void
+            }
+        }
+        i = i + 1
+    }
+    result
+}
+
+fn onHit(rr: Int64, cc: Int64, len: Int64) -> Int64 {
+    state.jumpTo(cc, rr)
+    state.setMatch(rr, cc, len)
+    rr
+}
+
+fn applySearch(query!: Bytes, lastMatch: Int64, direction: Int64) -> Int64 {
+    if query.count == 0 {
+        state.clearMatch()
+        return none
+    }
+    match searchFrom(state.allRows(), query, lastMatch, direction) {
+        Has(m) {
+            onHit(m.r, m.c, query.count)
+        }
+        Not {
+            state.clearMatch()
+            none
+        }
+    }
+}
+
+export fn run() -> Void {
+    let savedCx = state.cursorX()
+    let savedCy = state.cursorY()
+    let savedColoff = state.colOff()
+    let savedRowoff = state.rowOff()
+
+    mut query = Bytes(0)
+    mut lastMatch = none
+    mut direction = 1
+    mut done = false
+    loop {
+        if done {
+            break
+        }
+        state.setStatusMessage("Search: {query.toString()}{hint}")
+        match screen.refresh() {
+            Fail(e) {
+                state.clearMatch()
+                done = true
+            }
+            Pass(_) {
+                Void
+            }
+        }
+        if done {
+            break
+        }
+        match readKey() {
+            Fail(e) {
+                state.clearMatch()
+                done = true
+            }
+            Pass(k) {
+                mut rescan = false
+                match k {
+                    Press(b) {
+                        if b == esc {
+                            state.restoreView(savedCx, savedCy, savedColoff, savedRowoff)
+                            state.clearMatch()
+                            state.setStatusMessage("")
+                            done = true
+                        } else if b == enter {
+                            state.clearMatch()
+                            state.setStatusMessage("")
+                            done = true
+                        } else if b == backspace {
+                            if query.count > 0 {
+                                query = query.slice(0, query.count - 1)
+                                lastMatch = none
+                                direction = 1
+                                rescan = true
+                            }
+                        } else if b == ctrlH {
+                            if query.count > 0 {
+                                query = query.slice(0, query.count - 1)
+                                lastMatch = none
+                                direction = 1
+                                rescan = true
+                            }
+                        } else if isPrintable(b) {
+                            query = query.insertAt(query.count, b)
+                            lastMatch = none
+                            direction = 1
+                            rescan = true
+                        }
+                    }
+                    Up {
+                        direction = none
+                        rescan = true
+                    }
+                    Down {
+                        direction = 1
+                        rescan = true
+                    }
+                    Left {
+                        direction = none
+                        rescan = true
+                    }
+                    Right {
+                        direction = 1
+                        rescan = true
+                    }
+                    else {
+                        Void
+                    }
+                }
+                if rescan {
+                    if not done {
+                        lastMatch = applySearch(query, lastMatch, direction)
+                    }
+                }
+            }
+        }
+    }
+    Void
+}

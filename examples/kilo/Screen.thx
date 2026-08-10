@@ -1,0 +1,201 @@
+## Screen — paint one frame into a Buffer and write(2) once.
+
+import state from "./State"
+import { color, Normal } from "./Syntax"
+
+extern fn sysWrite(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "write"
+extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
+extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
+
+let stdoutFileno = 1
+let hideCursor = "\x1b[?25l"
+let showCursor = "\x1b[?25h"
+let cursorHome = "\x1b[H"
+let clearLine = "\x1b[K"
+let clearScreen = "\x1b[2J"
+let invertOn = "\x1b[7m"
+let invertOff = "\x1b[m"
+let sgrReset = "\x1b[39m"
+let welcome = "Kilo editor -- version 0.0.1"
+let tilde = 126
+let spaceByte = 32
+
+fn screenErr(what!: String) -> String {
+    "{what}: {sysStrerror(sysErrno())}"
+}
+
+fn flush(frame!: Bytes) -> Trial<Void, String> {
+    if sysWrite(stdoutFileno, frame, frame.count) < 0 {
+        return Fail(screenErr("write"))
+    }
+    Pass(Void)
+}
+
+fn drawRowBytes(filerow: Int64, coloff: Int64, cols: Int64) -> Bytes {
+    let r = state.row(filerow)
+    let visible = r.window(coloff, cols)
+    let cells = state.rowCells(filerow)
+    let count = r.renderCount()
+    let begin = if coloff > count {
+        count
+    } else {
+        coloff
+    }
+
+    mut out = Buffer()
+    mut currentColor = -1
+    mut j = 0
+    loop {
+        if j >= visible.count {
+            break
+        }
+        let hl = cells[begin + j]
+        match hl {
+            Normal {
+                if currentColor != -1 {
+                    out.appendBytes(Bytes.fromString(sgrReset))
+                    currentColor = -1
+                }
+            }
+            else {
+                let col = color(hl)
+                if col != currentColor {
+                    out.appendBytes(Bytes.fromString("\x1b[{col}m"))
+                    currentColor = col
+                }
+            }
+        }
+        out.append(visible.get(j))
+        j = j + 1
+    }
+    out.appendBytes(Bytes.fromString(sgrReset))
+    out.freeze()
+}
+
+fn statusBarBytes(cols: Int64, numRows: Int64) -> Bytes {
+    let fname = state.currentFilename()
+    let name = if fname.count == 0 {
+        "[No Name]"
+    } else {
+        fname
+    }
+    let modified = if state.isDirty() {
+        " (modified)"
+    } else {
+        ""
+    }
+    let left = Bytes.fromString("{name}, {numRows} lines{modified}")
+    let cy1 = state.cursorY() + 1
+    let right = Bytes.fromString("{cy1}/{numRows}")
+
+    mut bar = Buffer()
+    bar.appendBytes(Bytes.fromString(invertOn))
+    let leftLen = if left.count > cols {
+        cols
+    } else {
+        left.count
+    }
+    bar.appendBytes(left.slice(0, leftLen))
+    mut col = leftLen
+    loop {
+        if col >= cols {
+            break
+        }
+        if cols - col == right.count {
+            bar.appendBytes(right)
+            break
+        }
+        bar.append(spaceByte)
+        col = col + 1
+    }
+    bar.appendBytes(Bytes.fromString(invertOff))
+    bar.appendBytes(Bytes.fromString("\r\n"))
+    bar.freeze()
+}
+
+fn messageBarBytes(cols: Int64) -> Bytes {
+    mut bar = Buffer()
+    bar.appendBytes(Bytes.fromString(clearLine))
+    let msg = Bytes.fromString(state.currentMessage())
+    let msgLen = if msg.count > cols {
+        cols
+    } else {
+        msg.count
+    }
+    bar.appendBytes(msg.slice(0, msgLen))
+    bar.freeze()
+}
+
+export fn refresh() -> Trial<Void, String> {
+    state.scroll()
+
+    let textRows = state.textHeight()
+    let cols = state.screenCols()
+    let numRows = state.numRows()
+    let rowoff = state.rowOff()
+    let coloff = state.colOff()
+
+    mut buf = Buffer()
+    buf.appendBytes(Bytes.fromString(hideCursor))
+    buf.appendBytes(Bytes.fromString(cursorHome))
+
+    let welcomeRow = textRows / 3
+    mut y = 0
+    loop {
+        if y >= textRows {
+            break
+        }
+        let filerow = y + rowoff
+        if filerow >= numRows {
+            if numRows == 0 {
+                if y == welcomeRow {
+                    let banner = Bytes.fromString(welcome)
+                    let len = if banner.count > cols {
+                        cols
+                    } else {
+                        banner.count
+                    }
+                    let pad = (cols - len) / 2
+                    if pad > 0 {
+                        buf.append(tilde)
+                        mut sp = pad - 1
+                        loop {
+                            if sp <= 0 {
+                                break
+                            }
+                            buf.append(spaceByte)
+                            sp = sp - 1
+                        }
+                    }
+                    buf.appendBytes(banner.slice(0, len))
+                } else {
+                    buf.append(tilde)
+                }
+            } else {
+                buf.append(tilde)
+            }
+        } else {
+            buf.appendBytes(drawRowBytes(filerow, coloff, cols))
+        }
+        buf.appendBytes(Bytes.fromString(clearLine))
+        buf.appendBytes(Bytes.fromString("\r\n"))
+        y = y + 1
+    }
+
+    buf.appendBytes(statusBarBytes(cols, numRows))
+    buf.appendBytes(messageBarBytes(cols))
+
+    let curRow = state.cursorY() - rowoff + 1
+    let curCol = state.renderX() - coloff + 1
+    buf.appendBytes(Bytes.fromString("\x1b[{curRow};{curCol}H"))
+    buf.appendBytes(Bytes.fromString(showCursor))
+
+    flush(buf.freeze())
+}
+
+export fn clear() -> Trial<Void, String> {
+    mut buf = Buffer()
+    buf.appendBytes(Bytes.fromString(clearScreen))
+    buf.appendBytes(Bytes.fromString(cursorHome))
+    flush(buf.freeze())
+}

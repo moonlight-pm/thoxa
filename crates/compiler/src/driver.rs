@@ -80,6 +80,8 @@ pub struct BuildOptions {
     pub output_name: Option<String>,
     /// If set, only write generated C under `target/thoxa/c/`.
     pub emit_c_only: bool,
+    /// Args after the source path, forwarded to the program (`fn main(arguments)`).
+    pub program_args: Vec<String>,
 }
 
 pub struct BuildArtifacts {
@@ -373,6 +375,7 @@ pub fn run(opts: &BuildOptions) -> Result<i32> {
         .bin_path
         .ok_or_else(|| Error::new("no binary produced"))?;
     let status = Command::new(&bin)
+        .args(&opts.program_args)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())

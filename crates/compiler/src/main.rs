@@ -72,6 +72,7 @@ fn try_main() -> Result<i32, Error> {
                 source: PathBuf::from(other),
                 output_name: None,
                 emit_c_only: false,
+                program_args: args,
             };
             driver::run(&opts)
         }
@@ -112,6 +113,7 @@ fn run_check(path: PathBuf) -> Result<i32, Error> {
 fn parse_build_args(args: &[String]) -> Result<BuildOptions, Error> {
     let mut source: Option<PathBuf> = None;
     let mut output_name: Option<String> = None;
+    let mut program_args: Vec<String> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -122,14 +124,16 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, Error> {
                     .ok_or_else(|| Error::new("-o requires a name"))?;
                 output_name = Some(name.clone());
             }
-            s if s.starts_with('-') => {
+            s if s.starts_with('-') && source.is_none() => {
                 return Err(Error::new(format!("unknown flag `{s}`")));
             }
             s => {
-                if source.is_some() {
-                    return Err(Error::new("multiple source files not supported yet"));
+                if source.is_none() {
+                    source = Some(PathBuf::from(s));
+                } else {
+                    // Everything after the source is forwarded to the program.
+                    program_args.push(s.to_string());
                 }
-                source = Some(PathBuf::from(s));
             }
         }
         i += 1;
@@ -139,6 +143,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, Error> {
         source,
         output_name,
         emit_c_only: false,
+        program_args,
     })
 }
 

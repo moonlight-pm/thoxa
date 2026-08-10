@@ -275,6 +275,22 @@ ThoxaString *thoxa_bytes_to_string(const ThoxaBytes *b) {
     return thoxa_string_new((const char *)b->data, b->len);
 }
 
+int thoxa_bytes_equals(const ThoxaBytes *a, const ThoxaBytes *b) {
+    if (a == b) {
+        return 1;
+    }
+    if (!a || !b) {
+        return 0;
+    }
+    if (a->len != b->len) {
+        return 0;
+    }
+    if (a->len == 0) {
+        return 1;
+    }
+    return memcmp(a->data, b->data, a->len) == 0;
+}
+
 ThoxaBytes *thoxa_bytes_insert_at(const ThoxaBytes *b, int64_t at, int64_t byte) {
     size_t old_len = b ? b->len : 0;
     if (at < 0 || (size_t)at > old_len) {
@@ -743,6 +759,19 @@ ThoxaArray *thoxa_array_drop_last(const ThoxaArray *a) {
     ThoxaArray *n = array_alloc(new_len, new_len, a->flags, a->elem_size);
     array_copy_items(n, a, new_len);
     return n;
+}
+
+/* argv → Array<String> for `fn main(arguments: Array<String>)`. */
+ThoxaArray *thoxa_argv_to_array(int argc, char **argv) {
+    size_t n = argc > 0 ? (size_t)argc : 0;
+    ThoxaArray *a =
+        array_alloc(n, n, THOXA_ARRAY_FLAG_HEAP_ELEMS, (uint32_t)sizeof(int64_t));
+    for (size_t i = 0; i < n; i++) {
+        const char *s = (argv && argv[i]) ? argv[i] : "";
+        ThoxaString *str = thoxa_string_new(s, strlen(s));
+        *array_i64(a, i) = (int64_t)(intptr_t)str;
+    }
+    return a;
 }
 
 ThoxaArray *thoxa_array_drop_last_ex(const ThoxaArray *a, ThoxaArrayElemFn elem_dup) {

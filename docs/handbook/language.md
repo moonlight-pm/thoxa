@@ -12,6 +12,18 @@ fn main() -> Int64 {
 }
 ```
 
+Optional CLI arguments:
+
+```thx
+fn main(arguments: Array<String>) -> Int64 {
+    ## arguments[0] is the program path; further entries are user args
+    if arguments.count > 1 {
+        println(arguments[1])
+    }
+    0
+}
+```
+
 Directory packages may use `Main.thx` as the entry file.
 
 ## Values and types (highlights)
@@ -19,7 +31,7 @@ Directory packages may use `Main.thx` as the entry file.
 | Area | Shipped |
 |------|---------|
 | Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Bool`, `Void` |
-| Heap | `String` (interpolation), `Bytes` (incl. functional `insertAt`/`removeAt`), growable `Buffer`, dynamic `Array<T>` (`.append` / `.dropLast` / `.insertAt` / `.removeAt`) |
+| Heap | `String` (interpolation, `.count`, `\xHH` escapes), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (`.append` / `.dropLast` / `.insertAt` / `.removeAt`) |
 | User types | `type Name(fields) { methods }` — including heap fields; method field write-back |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
 | Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?` |

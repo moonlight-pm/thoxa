@@ -81,6 +81,8 @@ pub fn emit_program_with(
         out.push_str("#include <time.h>\n");
         out.push_str("#include <sys/socket.h>\n");
         out.push_str("#include <netinet/in.h>\n");
+        out.push_str("#include <termios.h>\n");
+        out.push_str("#include <sys/ioctl.h>\n");
     }
     out.push_str("#include \"thoxa_rt.h\"\n\n");
     let _ = program.externs; // used for include selection above
@@ -210,12 +212,31 @@ pub fn emit_program_with(
 
     match entry {
         EntryPoint::Main => {
-            out.push_str("int main(void) {\n");
-            if has_init {
-                out.push_str("    thoxa_module_init();\n");
+            let main_takes_args = program
+                .functions
+                .iter()
+                .find(|f| f.is_main || (f.name == "main" && f.receiver.is_none()))
+                .map(|f| !f.params.is_empty())
+                .unwrap_or(false);
+            if main_takes_args {
+                // `fn main(arguments: Array<String>)` — pass process argv.
+                out.push_str("int main(int argc, char **argv) {\n");
+                if has_init {
+                    out.push_str("    thoxa_module_init();\n");
+                }
+                out.push_str("    ThoxaArray *thoxa_args = thoxa_argv_to_array(argc, argv);\n");
+                out.push_str("    int64_t thoxa_rc = thoxa_fn_main(thoxa_args);\n");
+                out.push_str("    thoxa_array_drop(thoxa_args);\n");
+                out.push_str("    return (int)thoxa_rc;\n");
+                out.push_str("}\n");
+            } else {
+                out.push_str("int main(void) {\n");
+                if has_init {
+                    out.push_str("    thoxa_module_init();\n");
+                }
+                out.push_str("    return (int)thoxa_fn_main();\n");
+                out.push_str("}\n");
             }
-            out.push_str("    return (int)thoxa_fn_main();\n");
-            out.push_str("}\n");
         }
         EntryPoint::SessionBase => {
             emit_session_init_fn(&mut out, has_init);
@@ -889,6 +910,7 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     "println_bool" => "thoxa_println_bool",
                     "print_bool" => "thoxa_print_bool",
                     "string_eq" => "thoxa_string_eq",
+                    "string_len" => "(int64_t)thoxa_string_len",
                     "bytes_from_string" => "thoxa_bytes_from_string",
                     "bytes_new" => "thoxa_bytes_new",
                     "bytes_count" => "(int64_t)thoxa_bytes_count",
@@ -897,6 +919,7 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     "bytes_slice" => "thoxa_bytes_slice",
                     "bytes_find" => "thoxa_bytes_find",
                     "bytes_to_string" => "thoxa_bytes_to_string",
+                    "bytes_equals" => "thoxa_bytes_equals",
                     "bytes_insert_at" => "thoxa_bytes_insert_at",
                     "bytes_remove_at" => "thoxa_bytes_remove_at",
                     "buffer_new" => "thoxa_buffer_new",

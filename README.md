@@ -30,6 +30,9 @@ cargo make run tests/conformance/hello.thx
 # Example: static HTTP server (Ctrl-C to stop; port 9091)
 cargo make run examples/http
 
+# Example: kilo editor (needs a real TTY)
+cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
+
 # Session REPL (product shell)
 cargo make shell
 # or: cargo run -p thoxa --

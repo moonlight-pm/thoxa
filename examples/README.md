@@ -13,6 +13,7 @@ cargo make run examples/http
 | Path | What |
 |------|------|
 | [`http/`](http/) | Static HTTP/1.1 file server (Net + Http + Router + Io) |
+| [`kilo/`](kilo/) | Terminal text editor (raw mode, edit, save, find, highlight) |
 
 Oracle reference copies (history only):
 `apocrypha/old/ThoxaPython/examples/`.
