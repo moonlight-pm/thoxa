@@ -742,10 +742,25 @@ impl LowerCtx {
     }
 
     /// Record a place that owns a heap / Trial-with-heap value (for early-return drops).
+    /// Module globals (`g_…`) are never end-of-fn dropped — they outlive the function.
+    /// Registering them here double-frees after `mut g = new_array` (kilo textRows crash).
     fn note_drop_place(&mut self, place: &Place, ty: &Ty) {
-        if needs_drop(ty) {
-            self.drop_places.push((place.name.clone(), ty.clone()));
+        if !needs_drop(ty) {
+            return;
         }
+        if self.is_global_place(place) {
+            return;
+        }
+        self.drop_places.push((place.name.clone(), ty.clone()));
+    }
+
+    fn is_global_place(&self, place: &Place) -> bool {
+        // Module-mangled globals are `g_<Module>_<name>` (see `mangle_global`).
+        place.name.starts_with("g_")
+            || self
+                .name_to_global
+                .values()
+                .any(|g| g.place.name == place.name)
     }
 
     /// Bind a name to an already-lowered value (fresh ownership from `place`).
