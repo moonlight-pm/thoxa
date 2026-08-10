@@ -26,6 +26,7 @@ roadmap live under [`../capabilities.md`](../capabilities.md),
 cargo make test
 cargo make run tests/conformance/hello.thx
 cargo make run examples/http          # static file server (port 9091)
+cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt  # TTY editor
 cargo run -p thoxa --                 # session REPL
 cargo run -p thoxa -- run path.thx    # program or session script
 ```

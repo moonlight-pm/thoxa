@@ -57,7 +57,8 @@ compatible Trial monomorphs, including across modules). User unions with a
 residual mark use the same `?` operator.
 
 **Reference counting:** simple single-threaded RC (dup on copy, drop at function
-end). Precise RC / Perceus is **not** shipped.
+end for **locals**). Module-level heap bindings outlive the function that wrote
+them (D122). Precise RC / Perceus is **not** shipped.
 
 ## Control flow
 
@@ -123,7 +124,10 @@ export fn helper() -> Int64 { 1 }
 | `~/…` | Relative to **entry** file directory |
 | `std/…` | Product standard library |
 
-Module-level `let` / `mut` are supported. General in-function `import`/`type`
+Module-level `let` / `mut` are supported (including heap types such as
+`Array` / `String`). Reassigning a module `mut` drops the previous value and
+keeps the new one for the rest of the process — the binding is **not** dropped
+when the assigning function returns (D122). General in-function `import`/`type`
 is **not** a language feature (session host may lift decls).
 
 ## Extern

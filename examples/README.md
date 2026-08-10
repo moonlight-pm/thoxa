@@ -7,13 +7,13 @@ Run from the **workspace root** so relative asset paths resolve:
 
 ```bash
 cargo make run examples/http
-# or: cargo run -p thoxa -- run examples/http
+cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt   # needs a TTY
 ```
 
 | Path | What |
 |------|------|
-| [`http/`](http/) | Static HTTP/1.1 file server (Net + Http + Router + Io) |
-| [`kilo/`](kilo/) | Terminal text editor (raw mode, edit, save, find, highlight) |
+| [`http/`](http/) | Static HTTP/1.1 file server (Net + Http + Router + Io), port **9091** |
+| [`kilo/`](kilo/) | Terminal text editor — **Ctrl-Q** quit (3× if dirty); real TTY required |
 
 Oracle reference copies (history only):
 `apocrypha/old/ThoxaPython/examples/`.

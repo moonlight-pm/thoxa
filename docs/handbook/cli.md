@@ -11,7 +11,7 @@ The product binary is **`thoxa`** (`cargo run -p thoxa -- …`, or via
 | `thoxa repl` | Same as bare REPL |
 | `thoxa path.thx` | Program if `fn main` exists; else **session script** |
 | `thoxa dir/` | Runs `dir/Main.thx` if present |
-| `thoxa run path` | Compile and run (program or session script) |
+| `thoxa run path [args…]` | Compile and run; trailing args go to `fn main(arguments: Array<String>)` (D121) |
 | `thoxa build path -o out` | Compile to a binary |
 | `thoxa check path` | Typecheck only (no C emit) |
 | `thoxa emit-c path` | Emit C under `target/thoxa/c/` |
@@ -23,7 +23,9 @@ Prefer **`cargo make`** helpers from a workspace checkout:
 cargo make test              # conformance suite
 cargo make run path.thx
 cargo make run examples/http # static file server demo (port 9091)
-cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt  # TTY editor
+# kilo editor (real TTY; Ctrl-Q quit, 3× if dirty)
+cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
+cargo run -p thoxa -- run examples/kilo   # empty buffer
 cargo make shell             # bare thoxa REPL
 cargo make shell --login     # clean login-like env
 cargo make emit-c path.thx

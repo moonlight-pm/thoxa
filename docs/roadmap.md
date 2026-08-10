@@ -95,11 +95,16 @@ Freezes:
 - ~~Default-arg defining-module scope~~ (**D116** shipped)
 - ~~First-class fixed Array locals~~ (**D117** shipped)
 - ~~Array/Bytes `insertAt`/`removeAt`~~ (**D55** splice shipped)
+- ~~Program argv + CLI forward~~ (**D121** shipped; `examples/kilo`)
+- ~~Module-global RC end-of-fn drop~~ (**D122** shipped; kilo empty-buffer fix)
 
 - ~~Sum types + general fallibility (D118–D119)~~ — user unions, generics +
   methods, pure-lit scalar, **May/Trial prelude cutover**, dead
   `Ty::May`/`Trial` removed (freeze
   [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md))
+
+**Sample dogfood (not a phase flip):** `examples/http`, `examples/kilo` shipped
+and exercised; continue matrix gaps when samples force them.
 
 **Horizon / deferred until CURRENT says so:**
 

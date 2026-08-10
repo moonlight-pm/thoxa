@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-08 (sum types + May/Trial prelude)
+**As of:** 2026-08-09 (examples/http + examples/kilo; D121–D122)
 
 ---
 
@@ -28,7 +28,7 @@ step `.so` on the happy path.
 |-------|----------|--------|
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` / `emit-c` / `lsp` / bare REPL |
 | Frontend | `lexer`, `parser`, `ast`, `resolver` | Shared resolver used by LSP |
-| MIR | `mir.rs` | RC; generic monomorphs; ambient Fallible prelude inject (D118) |
+| MIR | `mir.rs` | RC; generic monomorphs; ambient Fallible prelude inject (D118); module globals not end-of-fn dropped (D122) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104) |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile |
@@ -45,7 +45,7 @@ step `.so` on the happy path.
 | `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
 | `std/` | Product std (`Shell.thx`, `Fallible.thx` surface, …) |
 | `tests/conformance/` | `.thx` + `.out` gate |
-| `examples/` | Runnable demos (e.g. static HTTP server); not the gate |
+| `examples/` | Runnable demos (`http` static server, `kilo` terminal editor); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
 | `apocrypha/` | Historical + Python oracle |
 

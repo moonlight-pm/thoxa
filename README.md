@@ -30,7 +30,7 @@ cargo make run tests/conformance/hello.thx
 # Example: static HTTP server (Ctrl-C to stop; port 9091)
 cargo make run examples/http
 
-# Example: kilo editor (needs a real TTY)
+# Example: kilo editor (needs a real TTY; Ctrl-Q to quit)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
 
 # Session REPL (product shell)
@@ -59,7 +59,7 @@ crates/make       xtask (cargo make …)
 runtime/          C runtime (thoxa_rt)
 std/              product standard library (std/… imports)
 tests/conformance definition of done (.thx + .out)
-examples/         runnable demos (e.g. static HTTP server)
+examples/         runnable demos (http server, kilo editor)
 vendor/           vendored upstream (TinyCC for session libtcc)
 docs/             canonical engineering + handbook
 CURRENT.md        living session handoff

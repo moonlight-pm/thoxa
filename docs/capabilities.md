@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-09 (examples/kilo)
+**As of:** 2026-08-09 (examples/kilo user-tested + D122 global RC)
 
 ---
 
@@ -39,7 +39,7 @@ change. See [`progress-model.md`](progress-model.md).
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array ctor fields | shipped | `string_fields` | D48–D49, D69 | — | yes |
 | param-defaults | Formal defaults M3 (+ methods/ctors/`!`/extern) | shipped | `param_defaults`, `defaults_mod`, `param_bang_defaults` | D98, D106, D116 | `!` and extern formals may default (call-site fill); non-default cannot follow defaulted; free names use defining module | yes |
-| modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate` | D30–D35 | Nested import/type in functions deferred (D91) | yes |
+| modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate` | D30–D35, D122 | Nested import/type in functions deferred (D91); module mut heap (Array/String) must not end-of-fn drop (D122) | yes |
 | pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |
 
 ## FFI and C layout
@@ -59,8 +59,8 @@ change. See [`progress-model.md`](progress-model.md).
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70 | — | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | — | yes |
 | examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; modules co-located (not yet `std/`); cwd-relative `web/` | yes |
-| examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY) | examples | Raw mode via Bytes termios; needs TTY; no Array of User-with-Array-fields cache | yes |
-| main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | CLI | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
+| examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
+| main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 
 ## Session / shell
 
@@ -109,7 +109,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| simple-rc | Single-threaded RC String/Bytes/Array | partial | strings/bytes/arrays | kernel D4-ish | Perceus precision later | partial |
+| simple-rc | Single-threaded RC String/Bytes/Array | partial | strings/bytes/arrays | kernel D4-ish; **D122** | Module mut heap not end-of-fn dropped (D122). Perceus precision later | partial |
 | spawn-wait | `thoxa_spawn_wait` for session | shipped | session / extras | D86 | Not a general language spawn surface | no |
 | perceus | Precise RC / Perceus | idea | — | kernel | Deferred megawork | no |
 | effects | Algebraic effects | idea | — | kernel | Out until forced | no |

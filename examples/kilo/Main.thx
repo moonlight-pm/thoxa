@@ -1,9 +1,9 @@
 ## kilo — terminal text editor (native port of the Python-oracle examples/kilo).
 ##
-##   cargo make run examples/kilo -- examples/kilo/sample.txt
-##   # or: cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
+##   cargo run -p thoxa -- run examples/kilo
+##   cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
 ##
-## Needs a real TTY. Ctrl-S save, Ctrl-F find, Ctrl-Q quit.
+## Needs a real TTY. Ctrl-S save, Ctrl-F find, Ctrl-Q quit (3× if dirty).
 
 import terminal from "./Terminal"
 import state from "./State"
