@@ -62,14 +62,26 @@ impl DocumentIndex {
     }
 
     /// Hover markdown for a binding (signature fence + optional docs).
+    ///
+    /// `inferred_ret` is the MIR-resolved return type display (D129) when known.
     pub fn hover_markdown(&self, binding: &Binding) -> Option<String> {
+        self.hover_markdown_with_ret(binding, None)
+    }
+
+    /// Like [`hover_markdown`], with an optional inferred/annotated return type
+    /// from typecheck (`Trial<Void, String>`, `Int64`, …).
+    pub fn hover_markdown_with_ret(
+        &self,
+        binding: &Binding,
+        inferred_ret: Option<&str>,
+    ) -> Option<String> {
         if binding.kind == BindingKind::Builtin {
             return Some(format!(
                 "```thoxa\n{}\n```\n\nBuilt-in.",
                 binding.name
             ));
         }
-        let sig = render_signature(binding, &self.text)?;
+        let sig = render_signature_with_ret(binding, &self.text, inferred_ret)?;
         let mut parts = vec![format!("```thoxa\n{sig}\n```")];
         if let Some(span) = binding.def_span {
             let doc = self.doc_above(span);
@@ -142,26 +154,34 @@ impl DocumentIndex {
 
 /// Signature line for hover: prefer the source line at the definition.
 ///
-/// Unannotated free/`extern`/method returns default to **Void** (and `main` to
-/// **Int64**) in MIR (`resolve_return_ty`). Hover synthesizes that so the
-/// displayed type matches what the compiler uses, not only the written text.
+/// When the source omits `-> …`, prefer `inferred_ret` from typecheck (D129).
+/// Fallback: **`main` → Int64**, other fn/method/extern → **Void**.
 pub fn render_signature(binding: &Binding, text: &str) -> Option<String> {
+    render_signature_with_ret(binding, text, None)
+}
+
+/// Like [`render_signature`], with optional MIR-resolved return type display.
+pub fn render_signature_with_ret(
+    binding: &Binding,
+    text: &str,
+    inferred_ret: Option<&str>,
+) -> Option<String> {
     if let Some(span) = binding.def_span {
         let line = line_containing(text, span.start);
         let trimmed = line.trim();
         if !trimmed.is_empty() {
-            return Some(enrich_fn_return_display(binding, trimmed));
+            return Some(enrich_fn_return_display(binding, trimmed, inferred_ret));
         }
     }
     // Fallback by kind.
     let s = match binding.kind {
         BindingKind::Fn | BindingKind::Extern => {
-            let ret = default_return_display(binding);
+            let ret = return_display(binding, inferred_ret);
             format!("fn {}() -> {ret}", binding.name)
         }
         BindingKind::Type => format!("type {}", binding.name),
         BindingKind::Method => {
-            let ret = default_return_display(binding);
+            let ret = return_display(binding, inferred_ret);
             if let Some(owner) = &binding.owner {
                 format!("fn {owner}.{}() -> {ret}", binding.name)
             } else {
@@ -186,18 +206,27 @@ pub fn render_signature(binding: &Binding, text: &str) -> Option<String> {
     Some(s)
 }
 
-/// Default return type used when the source omits `-> …` (matches MIR).
-fn default_return_display(binding: &Binding) -> &'static str {
+/// Return type for hover: inferred (D129) > main/Int64 > Void.
+fn return_display(binding: &Binding, inferred_ret: Option<&str>) -> String {
+    if let Some(r) = inferred_ret {
+        if !r.is_empty() {
+            return r.to_string();
+        }
+    }
     if binding.kind == BindingKind::Fn && binding.name == "main" {
-        "Int64"
+        "Int64".into()
     } else {
-        "Void"
+        "Void".into()
     }
 }
 
-/// If this is a fn/method/extern source line without `->`, append the default
-/// return type (before a trailing `{` when present).
-fn enrich_fn_return_display(binding: &Binding, source_line: &str) -> String {
+/// If this is a fn/method/extern source line without `->`, append the return type
+/// (before a trailing `{` when present).
+fn enrich_fn_return_display(
+    binding: &Binding,
+    source_line: &str,
+    inferred_ret: Option<&str>,
+) -> String {
     match binding.kind {
         BindingKind::Fn | BindingKind::Extern | BindingKind::Method => {
             if source_line.contains("->") {
@@ -210,7 +239,7 @@ fn enrich_fn_return_display(binding: &Binding, source_line: &str) -> String {
             if !looks_fn {
                 return source_line.to_string();
             }
-            let ret = default_return_display(binding);
+            let ret = return_display(binding, inferred_ret);
             if let Some(brace) = source_line.find('{') {
                 let head = source_line[..brace].trim_end();
                 let tail = &source_line[brace..];
@@ -326,7 +355,8 @@ mod tests {
 
     #[test]
     fn hover_synthesizes_default_void_return() {
-        let src = "fn serveOne(x!: Int64) {\n    x\n}\nfn main() -> Int64 {\n    serveOne(1)\n    0\n}\n";
+        // Empty body → Void when no inferred ret is supplied.
+        let src = "fn serveOne() {\n}\nfn main() -> Int64 {\n    serveOne()\n    0\n}\n";
         let idx = build_index(src, "<input>");
         let call = src.rfind("serveOne").unwrap();
         let p = byte_to_position(src, call);
@@ -345,6 +375,23 @@ mod tests {
             md.contains("serveOne") && md.contains("-> Void"),
             "expected synthesized Void return, got: {md}"
         );
+    }
+
+    #[test]
+    fn hover_uses_inferred_return_type() {
+        let src = "fn fortyTwo() {\n    42\n}\nfn main() -> Int64 {\n    fortyTwo()\n    0\n}\n";
+        let idx = build_index(src, "<input>");
+        let call = src.find("fortyTwo").unwrap();
+        let p = byte_to_position(src, call);
+        let b = idx.binding_at(p.line, p.character).expect("fortyTwo");
+        let md = idx
+            .hover_markdown_with_ret(b, Some("Int64"))
+            .expect("hover");
+        assert!(
+            md.contains("fortyTwo") && md.contains("-> Int64"),
+            "expected inferred Int64, got: {md}"
+        );
+        assert!(!md.contains("-> Void"), "{md}");
     }
 
     #[test]

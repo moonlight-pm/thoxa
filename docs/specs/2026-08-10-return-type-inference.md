@@ -90,16 +90,16 @@ No fixed-point solver in v0.
 ### 7. Hover / UX
 
 - Explicit `-> T` → show `T`.
-- Inferred → show the inferred type (compiler/check path; LSP index may
-  approximate until deep types are wired).
+- Inferred → show the inferred type (compiler + LSP: last successful lower
+  on open/change caches free-fn and `Type.method` returns for hover).
 - `main` unannotated → `Int64`.
+- If lower fails, hover falls back to `Void` / `main`→`Int64`.
 
 ## Non-goals (v0)
 
 - Full Hindley–Milner / polymorphic let generalization
 - Inferring union *names* from constructors alone (`Pass`/`Fail` → `Trial`)
 - Recursive return inference without annotation
-- Perfect LSP hover without MIR (may lag compiler)
 
 ## Worked example
 

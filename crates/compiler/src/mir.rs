@@ -343,6 +343,129 @@ pub enum Ty {
     User(String),
 }
 
+/// User-facing display of a MIR type (for hover / diagnostics).
+///
+/// Monomorphs like `Fallible_Trial__Void__String` render as `Trial<Void, String>`.
+pub fn display_ty(ty: &Ty) -> String {
+    match ty {
+        Ty::Void => "Void".into(),
+        Ty::Never => "Never".into(),
+        Ty::Int32 => "Int32".into(),
+        Ty::Int64 => "Int64".into(),
+        Ty::UInt32 => "UInt32".into(),
+        Ty::UInt64 => "UInt64".into(),
+        Ty::Byte => "Byte".into(),
+        Ty::Bool => "Bool".into(),
+        Ty::String => "String".into(),
+        Ty::Bytes => "Bytes".into(),
+        Ty::Buffer => "Buffer".into(),
+        Ty::Array { elem } => format!("Array<{}>", display_ty(elem)),
+        Ty::FixedArray { elem, len } => format!("Array<{}, {len}>", display_ty(elem)),
+        Ty::Address(inner) => format!("Address<{}>", display_ty(inner)),
+        Ty::User(n) => display_user_ty(n),
+    }
+}
+
+fn display_user_ty(mangled: &str) -> String {
+    // Mono: Base__Arg1__Arg2… (args may themselves contain `__` only if nested User
+    // was flattened via ty_mono_suffix, which replaces `-`/`$` but keeps `__`).
+    let parts: Vec<&str> = mangled.split("__").collect();
+    let base = display_type_base(parts[0]);
+    if parts.len() == 1 {
+        return base;
+    }
+    let args: Vec<String> = parts[1..].iter().map(|a| display_mono_arg(a)).collect();
+    format!("{base}<{}>", args.join(", "))
+}
+
+fn display_type_base(mangled_base: &str) -> String {
+    // Entry types are bare names; non-entry are `{mod}_{Name}`. Prefer last
+    // PascalCase segment.
+    mangled_base
+        .rsplit('_')
+        .find(|s| {
+            s.chars()
+                .next()
+                .map(|c| c.is_ascii_uppercase())
+                .unwrap_or(false)
+        })
+        .unwrap_or(mangled_base)
+        .to_string()
+}
+
+fn display_mono_arg(arg: &str) -> String {
+    match arg {
+        "Void" | "Never" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte" | "Bool"
+        | "String" | "Bytes" | "Buffer" => arg.to_string(),
+        a if a.starts_with("Array_") => {
+            format!("Array<{}>", display_mono_arg(&a["Array_".len()..]))
+        }
+        a if a.starts_with("Fixed_") => {
+            // Fixed_{elem}_{len}
+            let rest = &a["Fixed_".len()..];
+            if let Some((elem, len)) = rest.rsplit_once('_') {
+                format!("Array<{}, {len}>", display_mono_arg(elem))
+            } else {
+                a.to_string()
+            }
+        }
+        a if a.starts_with("Addr_") => {
+            format!("Address<{}>", display_mono_arg(&a["Addr_".len()..]))
+        }
+        a if a.contains("__") => display_user_ty(a),
+        a => display_type_base(a),
+    }
+}
+
+/// Map free-function / method keys to return-type display strings (D129 hover).
+///
+/// Keys:
+/// - free function: source/mangled entry name (`run`, `main`)
+/// - method: `TypeName.method` using the demangled type base
+pub fn function_return_displays(program: &Program) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for f in &program.functions {
+        let ret = display_ty(&f.ret_ty);
+        if let Some((_, recv_ty)) = &f.receiver {
+            if let Ty::User(ty_name) = recv_ty {
+                let method = f
+                    .name
+                    .strip_prefix(&format!("{ty_name}__"))
+                    .unwrap_or(f.name.as_str());
+                let owner = display_type_base(ty_name);
+                out.insert(format!("{owner}.{method}"), ret);
+            }
+        } else {
+            // Entry free fns: source name. Non-entry: `{mod}_{name}` → trailing camelCase.
+            out.insert(free_fn_display_key(&f.name, f.is_main), ret);
+        }
+    }
+    out
+}
+
+fn free_fn_display_key(mangled: &str, is_main: bool) -> String {
+    if is_main || mangled == "main" {
+        return "main".into();
+    }
+    // Entry free fns keep their source name (no module prefix).
+    if !mangled.contains('_') {
+        return mangled.to_string();
+    }
+    // Non-entry: `{modId}_{name}` — modId may contain `_`. Prefer longest camelCase suffix.
+    if let Some((head, tail)) = mangled.rsplit_once('_') {
+        if tail
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_lowercase())
+            .unwrap_or(false)
+        {
+            let _ = head;
+            return tail.to_string();
+        }
+    }
+    mangled.to_string()
+}
+
 /// True when a local of this type needs an end-of-scope drop.
 /// User types always participate (cgen walks fields; no-op when none are heap).
 fn needs_drop(ty: &Ty) -> bool {

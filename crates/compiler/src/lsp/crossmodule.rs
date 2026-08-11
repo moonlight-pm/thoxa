@@ -8,6 +8,7 @@
 use crate::ast::{self, Expr, ExprKind, Item, Module, TypeArg, TypeExpr};
 use crate::lexer::Lexer;
 use crate::loader;
+use crate::lsp::analysis;
 use crate::lsp::convert;
 use crate::lsp::index::{self, DocumentIndex};
 use crate::parser::Parser;
@@ -664,7 +665,8 @@ fn lookup_type_member(
     let text = module_text(&path, docs)?;
     let res = resolve_text(&text)?;
     let b = type_member_binding(&res, type_name, member)?;
-    let sig = index::render_signature(b, &text)?;
+    let inferred = remote_inferred_ret(&path, &text, docs, b);
+    let sig = index::render_signature_with_ret(b, &text, inferred.as_deref())?;
     let doc = b
         .def_span
         .map(|s| index::doc_above(&text, s.start))
@@ -940,7 +942,8 @@ fn lookup_member(
     let text = module_text(&path, docs)?;
     let res = resolve_text(&text)?;
     let b = exported_binding(&res, imported)?;
-    let sig = index::render_signature(b, &text)?;
+    let inferred = remote_inferred_ret(&path, &text, docs, b);
+    let sig = index::render_signature_with_ret(b, &text, inferred.as_deref())?;
     let doc = b
         .def_span
         .map(|s| index::doc_above(&text, s.start))
@@ -952,6 +955,41 @@ fn lookup_member(
         def_span: b.def_span,
         text,
     })
+}
+
+/// MIR return type for a remote binding (free fn or Type.method).
+fn remote_inferred_ret(
+    path: &Path,
+    text: &str,
+    docs: &HashMap<String, String>,
+    b: &Binding,
+) -> Option<String> {
+    if !matches!(
+        b.kind,
+        BindingKind::Fn | BindingKind::Extern | BindingKind::Method
+    ) {
+        return None;
+    }
+    let path_str = path.to_string_lossy();
+    let mut overlays = HashMap::new();
+    for (uri, buf) in docs {
+        let p = convert::uri_to_path(uri);
+        if !p.as_os_str().is_empty() {
+            overlays.insert(p, buf.clone());
+        }
+    }
+    let rets = analysis::return_types_with_overlays(&path_str, text, &overlays);
+    let key = match b.kind {
+        BindingKind::Method => {
+            if let Some(owner) = &b.owner {
+                format!("{owner}.{}", b.name)
+            } else {
+                b.name.clone()
+            }
+        }
+        _ => b.name.clone(),
+    };
+    rets.get(&key).cloned()
 }
 
 fn lookup_module(

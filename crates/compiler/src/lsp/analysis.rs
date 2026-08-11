@@ -116,7 +116,17 @@ pub fn check_source_with_overlays(
     text: &str,
     overlays: &HashMap<PathBuf, String>,
 ) -> Vec<CheckDiagnostic> {
-    let (error, lint_module) = check_source_inner(filename, text, overlays);
+    check_and_returns_with_overlays(filename, text, overlays).0
+}
+
+/// Diagnostics plus MIR return-type map (one lower). Keys: free fn name or
+/// `Type.method` (D129 hover cache).
+pub fn check_and_returns_with_overlays(
+    filename: &str,
+    text: &str,
+    overlays: &HashMap<PathBuf, String>,
+) -> (Vec<CheckDiagnostic>, HashMap<String, String>) {
+    let (error, lint_module, program) = check_source_inner(filename, text, overlays);
     let mut diags = Vec::new();
     if let Some(e) = error {
         diags.extend(errors_to_diagnostics(filename, text, e));
@@ -124,7 +134,19 @@ pub fn check_source_with_overlays(
     if let Some(module) = lint_module {
         diags.extend(lint_unused_imports(filename, text, &module));
     }
-    diags
+    let rets = program
+        .map(|p| mir::function_return_displays(&p))
+        .unwrap_or_default();
+    (diags, rets)
+}
+
+/// Inferred / resolved return types only (same lower path as diagnostics).
+pub fn return_types_with_overlays(
+    filename: &str,
+    text: &str,
+    overlays: &HashMap<PathBuf, String>,
+) -> HashMap<String, String> {
+    check_and_returns_with_overlays(filename, text, overlays).1
 }
 
 fn module_has_main(module: &Module) -> bool {
@@ -136,7 +158,7 @@ fn module_has_main(module: &Module) -> bool {
     })
 }
 
-/// Returns `(hard_error, module_for_lints)`.
+/// Returns `(hard_error, module_for_lints, program_if_lower_ok)`.
 ///
 /// The module is the open buffer AST when parse (soft or hard) produced one —
 /// used for unused-import lints even when lower failed.
@@ -144,15 +166,15 @@ fn check_source_inner(
     filename: &str,
     text: &str,
     overlays: &HashMap<PathBuf, String>,
-) -> (Option<Error>, Option<Module>) {
+) -> (Option<Error>, Option<Module>, Option<mir::Program>) {
     // Session command sugar (same as loader entry path).
     let text = match crate::command::desugar_session_source(text) {
         Ok(t) => t,
-        Err(e) => return (Some(e), None),
+        Err(e) => return (Some(e), None, None),
     };
     let tokens = match Lexer::new(&text).tokenize() {
         Ok(t) => t,
-        Err(e) => return (Some(e), None),
+        Err(e) => return (Some(e), None, None),
     };
     // Soft parse: recover partial AST so we can still report undefined names
     // after a mid-file syntax error (e.g. keyword `as`).
@@ -160,7 +182,7 @@ fn check_source_inner(
         Ok(m) => (m, Vec::new()),
         Err(mut e) => match e.recovered_module.take() {
             Some(recovered) => (*recovered, e.into_diagnostics()),
-            None => return (Some(e), None),
+            None => return (Some(e), None, None),
         },
     };
 
@@ -180,7 +202,7 @@ fn check_source_inner(
         .iter()
         .any(|item| matches!(item, Item::Import(_)));
 
-    let lower_err = if !has_imports {
+    let lower_result: Result<mir::Program> = if !has_imports {
         // Single-file: session prepare (no-main scripts) then lower.
         let mut package = Package {
             project_root: PathBuf::from("."),
@@ -199,7 +221,7 @@ fn check_source_inner(
             let opts = mir::LowerOptions {
                 require_main: has_main,
             };
-            mir::lower_package_with(&package, opts).map(|_| ())
+            mir::lower_package_with(&package, opts)
         })
     } else {
         let path = Path::new(filename);
@@ -209,7 +231,7 @@ fn check_source_inner(
                 "checking imports requires a real file path (open the file on disk for multi-file check)",
                 span,
             ));
-            return (Some(Error::multi(pre_errors)), Some(lint_module));
+            return (Some(Error::multi(pre_errors)), Some(lint_module), None);
         }
 
         let has_main = module_has_main(&module);
@@ -221,14 +243,14 @@ fn check_source_inner(
                     overlay_open_ast(&mut p, module, path, has_main);
                     p
                 }
-                Err(e) => return (Some(e), Some(lint_module)),
+                Err(e) => return (Some(e), Some(lint_module), None),
             }
         } else {
             match loader::load_package_with_entry_ast(path, module) {
                 Ok(p) => p,
                 Err(e) => {
                     pre_errors.extend(e.into_diagnostics());
-                    return (Some(Error::multi(pre_errors)), Some(lint_module));
+                    return (Some(Error::multi(pre_errors)), Some(lint_module), None);
                 }
             }
         };
@@ -241,20 +263,20 @@ fn check_source_inner(
             let opts = mir::LowerOptions {
                 require_main: has_main_after,
             };
-            mir::lower_package_with(&package, opts).map(|_| ())
+            mir::lower_package_with(&package, opts)
         })
     };
 
-    let error = match (pre_errors.is_empty(), lower_err) {
-        (true, Ok(())) => None,
-        (true, Err(e)) => Some(e),
-        (false, Ok(())) => Some(Error::multi(pre_errors)),
+    let (error, program) = match (pre_errors.is_empty(), lower_result) {
+        (true, Ok(p)) => (None, Some(p)),
+        (true, Err(e)) => (Some(e), None),
+        (false, Ok(p)) => (Some(Error::multi(pre_errors)), Some(p)),
         (false, Err(e)) => {
             pre_errors.extend(e.into_diagnostics());
-            Some(Error::multi(pre_errors))
+            (Some(Error::multi(pre_errors)), None)
         }
     };
-    (error, Some(lint_module))
+    (error, Some(lint_module), program)
 }
 
 /// Warn on each imported local name that is never referenced in this module.
@@ -1112,6 +1134,72 @@ fn main() -> Int64 {
 }
 
     
+
+#[cfg(test)]
+mod return_type_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn return_types_include_inferred_int64() {
+        let src = "\
+fn fortyTwo() {
+    42
+}
+fn main() -> Int64 {
+    fortyTwo()
+    0
+}
+";
+        let rets = return_types_with_overlays("<input>", src, &HashMap::new());
+        assert_eq!(
+            rets.get("fortyTwo").map(String::as_str),
+            Some("Int64"),
+            "got {rets:?}"
+        );
+        assert_eq!(rets.get("main").map(String::as_str), Some("Int64"));
+    }
+
+    #[test]
+    fn return_types_include_inferred_trial_from_try() {
+        use std::fs;
+        // Imports need a real path so package load can find std/.
+        let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let main = workspace.join("target/thoxa-test-return-infer/Main.thx");
+        let _ = fs::create_dir_all(main.parent().unwrap());
+        let src = "\
+import { Pass, Fail, Trial } from \"std/Fallible\"
+fn setup() -> Trial<Void, String> {
+    Pass(Void)
+}
+fn runServer() {
+    setup()?
+    loop {
+        return Pass(Void)
+    }
+}
+fn main() -> Int64 {
+    match runServer() {
+        Pass(_) { 0 }
+        Fail(_) { 1 }
+    }
+}
+";
+        fs::write(&main, src).unwrap();
+        let rets = return_types_with_overlays(main.to_str().unwrap(), src, &HashMap::new());
+        let run = rets.get("runServer").map(String::as_str);
+        assert!(
+            matches!(run, Some("Trial<Void, String>")),
+            "expected Trial<Void, String>, got {run:?} full={rets:?}"
+        );
+        let _ = fs::remove_file(&main);
+    }
+}
 
 #[cfg(test)]
 mod recover_tests {

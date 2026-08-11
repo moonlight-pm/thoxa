@@ -36,7 +36,7 @@ step `.so` on the happy path.
 | Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast`; inject deps |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; build stamps `THOXA_GIT_HASH` / dirty |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
-| LSP | `lsp/` | stdio server; multi-diag + D124; nav; hover synthesizes cheap `-> Void` / main `-> Int64` (full D129 inference at typecheck); call-arg formals; identity log |
+| LSP | `lsp/` | stdio server; multi-diag + D124; nav; hover shows D129 inferred return types (cached on publish); call-arg formals; identity log |
 
 ## Crates and trees
 

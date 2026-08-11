@@ -3,12 +3,12 @@
 //! Full-document sync. Analysis failures log to stderr and never tear down the
 //! message loop (handlers use `catch_unwind` around check/token work).
 
-use crate::lsp::analysis::{self, check_source_with_overlays};
+use crate::lsp::analysis::{self, check_and_returns_with_overlays};
 use crate::lsp::convert::{self, TOKEN_MODIFIERS, TOKEN_TYPES};
 use crate::lsp::crossmodule::{self, resolve_remote};
 use crate::lsp::index::{self, build_index, DocumentIndex};
 use crate::lsp::protocol::{read_message, write_message};
-use crate::resolver::BindingKind;
+use crate::resolver::{Binding, BindingKind};
 use crate::span::{self, Span};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -39,6 +39,8 @@ pub fn run() -> i32 {
 
 pub struct Server {
     docs: HashMap<String, String>,
+    /// URI → free-fn / `Type.method` → return type display (from last successful lower).
+    return_types: HashMap<String, HashMap<String, String>>,
     shutdown_requested: bool,
 }
 
@@ -52,6 +54,7 @@ impl Server {
     pub fn new() -> Self {
         Self {
             docs: HashMap::new(),
+            return_types: HashMap::new(),
             shutdown_requested: false,
         }
     }
@@ -374,7 +377,8 @@ impl Server {
         }
 
         if let Some(binding) = binding {
-            if let Some(md) = idx.hover_markdown(binding) {
+            let inferred = self.lookup_return_type(uri, binding);
+            if let Some(md) = idx.hover_markdown_with_ret(binding, inferred.as_deref()) {
                 return convert::hover(&md, range);
             }
         }
@@ -645,24 +649,42 @@ impl Server {
         json!({ "data": data })
     }
 
-    fn publish<W: Write>(&self, uri: &str, writer: &mut W) -> io::Result<()> {
+    fn publish<W: Write>(&mut self, uri: &str, writer: &mut W) -> io::Result<()> {
         let text = self.docs.get(uri).map(|s| s.as_str()).unwrap_or("");
         let path = convert::check_filename(uri);
         let overlays = self.open_overlays(uri);
-        let diags = match catch_unwind(AssertUnwindSafe(|| {
-            check_source_with_overlays(&path, text, &overlays)
+        let (diags, rets) = match catch_unwind(AssertUnwindSafe(|| {
+            check_and_returns_with_overlays(&path, text, &overlays)
         })) {
-            Ok(d) => d,
+            Ok(pair) => pair,
             Err(panic) => {
                 eprintln!(
                     "thoxa-lsp: diagnostics failed: {}",
                     panic_message(&panic)
                 );
-                Vec::new()
+                (Vec::new(), HashMap::new())
             }
         };
+        self.return_types.insert(uri.to_string(), rets);
         let lsp_diags: Vec<Value> = diags.iter().map(convert::diagnostic_to_lsp).collect();
         self.send_diagnostics(uri, &lsp_diags, writer)
+    }
+
+    /// Look up MIR-resolved return type for a local fn/method binding.
+    fn lookup_return_type(&self, uri: &str, binding: &Binding) -> Option<String> {
+        let map = self.return_types.get(uri)?;
+        let key = match binding.kind {
+            BindingKind::Fn | BindingKind::Extern => binding.name.clone(),
+            BindingKind::Method => {
+                if let Some(owner) = &binding.owner {
+                    format!("{owner}.{}", binding.name)
+                } else {
+                    binding.name.clone()
+                }
+            }
+            _ => return None,
+        };
+        map.get(&key).cloned()
     }
 
     /// Path → buffer text for every open document except `except_uri` (the
