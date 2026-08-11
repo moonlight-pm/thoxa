@@ -1,6 +1,7 @@
 ## Application router — manual method+path dispatch (Topcoat manual-router spirit).
 ## Dynamic pages and API first; static files via std/HttpStatic fallback.
 ## HEAD: handlers return full responses; Wire.finalize strips the body.
+## Query: recovered from raw wire (std Request.path is query-stripped).
 ## All logic stays in examples/http — no std growth.
 
 import pages from "./Pages"
@@ -10,6 +11,7 @@ import wire from "./Wire"
 import { Router } from "std/HttpStatic"
 import { Request, Response, methodNotAllowed, notFound } from "std/Http"
 import { startsWith, dropPrefix, contains, isEmpty } from "std/Str"
+import { Has, Not } from "std/Fallible"
 
 ## True for GET or HEAD.
 fn isReadMethod(method!: String) -> Bool {
@@ -20,14 +22,15 @@ fn isReadMethod(method!: String) -> Bool {
     }
 }
 
-## Dispatch one request to a Response. `body` is the raw request body
-## (example-completed; std Request.body stays empty).
-export fn handle(req!: Request, body!: Bytes) -> Response {
+## Dispatch one request to a Response.
+## `body` — completed request body (example-only; std Request.body empty).
+## `query` — raw query string without `?` (example-only; std strips it).
+export fn handle(req!: Request, body!: Bytes, query!: String) -> Response {
     let res = if req.method == "POST" {
         routePost(req, body)
     } else {
         if isReadMethod(req.method) {
-            routeRead(req)
+            routeRead(req, query)
         } else {
             methodNotAllowed("GET, HEAD, POST")
         }
@@ -43,7 +46,7 @@ fn routePost(req!: Request, body!: Bytes) -> Response {
     }
 }
 
-fn routeRead(req!: Request) -> Response {
+fn routeRead(req!: Request, query!: String) -> Response {
     let who = customer.greeting(req)
     let p = req.path
     if p == "/api/health" {
@@ -53,7 +56,11 @@ fn routeRead(req!: Request) -> Response {
         return pages.home(who)
     }
     if p == "/menu" {
-        return pages.menu(who)
+        let q = match wire.queryParam(query, "q") {
+            Not => ""
+            Has(v) { v }
+        }
+        return pages.menu(who, q)
     }
     if startsWith(p, "/menu/") {
         let slug = dropPrefix(p, "/menu/")

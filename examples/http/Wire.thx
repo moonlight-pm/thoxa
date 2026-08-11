@@ -1,6 +1,6 @@
-## Example-only HTTP helpers (Phase B). Not product std.
-## Body completion after receiveRequest, header lookup, form decode,
-## redirects, response header append.
+## Example-only HTTP helpers (Phase B/C). Not product std.
+## Body completion after receiveRequest, query string (std strips it),
+## header lookup, form decode, redirects, HEAD finalize.
 
 import { Socket } from "std/Net"
 import { Request, Response, Header } from "std/Http"
@@ -99,6 +99,45 @@ fn readUntil(peer!: Socket, start!: Bytes, need!: Int64) -> Trial<Bytes, String>
         acc = buf.freeze()
     }
     Fail("readUntil: internal")
+}
+
+## Query string from the raw request buffer (without leading `?`).
+## Product `parseRequest` strips `?…` from `Request.path` — recover it here.
+## Empty string when missing or malformed request line.
+export fn rawQuery(raw!: Bytes) -> String {
+    let crlf = Bytes.fromString("\r\n")
+    let lineEnd = match raw.find(crlf) {
+        Not => raw.count
+        Has(at) { at }
+    }
+    if lineEnd <= 0 {
+        return ""
+    }
+    let reqLine = raw.slice(0, lineEnd)
+    let sp = Bytes.fromString(" ")
+    match reqLine.find(sp) {
+        Not => ""
+        Has(sp1) {
+            match reqLine.find(sp, sp1 + 1) {
+                Not => ""
+                Has(sp2) {
+                    let target = reqLine.slice(sp1 + 1, sp2)
+                    match target.find(Bytes.fromString("?")) {
+                        Not => ""
+                        Has(q) {
+                            target.slice(q + 1, target.count).toString()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+## First value for `key` in a raw query string (`a=1&b=2`), or Not.
+## Reuses urlencoded rules (+ / %XX).
+export fn queryParam(query!: String, key!: String) -> May<String> {
+    formField(Bytes.fromString(query), key)
 }
 
 ## Complete the request body using Content-Length (example-only; does not

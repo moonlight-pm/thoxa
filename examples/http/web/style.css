@@ -228,3 +228,45 @@ h1 {
   color: var(--fg);
   border: 1px solid var(--border);
 }
+
+.search {
+  margin: 1.25rem 0 0.5rem;
+}
+
+.search label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.search-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.search input[type="search"] {
+  flex: 1 1 12rem;
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: var(--card);
+  color: var(--fg);
+}
+
+.search button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border: none;
+  border-radius: 0.35rem;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  .search button { color: #1c1713; }
+}

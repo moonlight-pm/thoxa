@@ -7,7 +7,7 @@ import customer from "./Customer"
 import wire from "./Wire"
 import { Response, notFound } from "std/Http"
 import { Has, Not } from "std/Fallible"
-import { isEmpty, trim } from "std/Str"
+import { isEmpty, trim, replaceAll } from "std/Str"
 
 export fn home(who!: String) -> Response {
     let n = models.drinkCount()
@@ -24,18 +24,38 @@ fn homeCard(who!: String) -> String {
     }
 }
 
-fn drinkListItems() -> String {
+fn drinkCards(drinks!: Array<Drink>) -> String {
     mut items = ""
-    for d in models.allDrinks() {
+    for d in drinks {
         let price = formatPrice(d.priceCents)
         items = "{items}<li class=\"card\">\n<a href=\"/menu/{d.slug}\">\n<span class=\"name\">{d.name}</span>\n<span class=\"meta\">{d.roast} · {price}</span>\n<span class=\"notes\">{d.notes}</span>\n</a>\n</li>\n"
     }
     items
 }
 
-export fn menu(who!: String) -> Response {
-    let items = drinkListItems()
-    let body = "<h1>The menu</h1>\n<ul class=\"menu\">\n{items}</ul>\n"
+## Minimal attribute escape for value="…".
+fn escapeAttr(s!: String) -> String {
+    replaceAll(replaceAll(s, "&", "&amp;"), "\"", "&quot;")
+}
+
+## Menu with optional `q` query filter (server-side; no client JS).
+export fn menu(who!: String, q!: String) -> Response {
+    let needle = trim(q)
+    let drinks = models.searchDrinks(needle)
+    let items = drinkCards(drinks)
+    let qAttr = escapeAttr(needle)
+    let search = "<form class=\"search\" method=\"get\" action=\"/menu\">\n<label for=\"q\">Search the menu</label>\n<div class=\"search-row\">\n<input id=\"q\" name=\"q\" type=\"search\" value=\"{qAttr}\" placeholder=\"espresso, chocolate, light…\">\n<button type=\"submit\">Search</button>\n</div>\n</form>\n"
+    let emptyNote = if drinks.count == 0 {
+        "<p class=\"muted\">Nothing matches. The barista suggests an espresso.</p>\n"
+    } else {
+        ""
+    }
+    let clear = if isEmpty(needle) {
+        ""
+    } else {
+        "<p class=\"muted\"><a href=\"/menu\">Clear search</a> · showing {drinks.count} of {models.drinkCount()}</p>\n"
+    }
+    let body = "<h1>The menu</h1>\n{search}{clear}{emptyNote}<ul class=\"menu\">\n{items}</ul>\n"
     layout.page("Menu", body, who)
 }
 

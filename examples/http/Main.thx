@@ -6,6 +6,7 @@
 ## From the workspace root (cwd-relative web root):
 ##   curl -s  http://127.0.0.1:9091/
 ##   curl -s  http://127.0.0.1:9091/menu
+##   curl -s  'http://127.0.0.1:9091/menu?q=mocha'
 ##   curl -s -c /tmp/crema.ck -b /tmp/crema.ck -X POST -d 'name=Ada' http://127.0.0.1:9091/
 ##
 ## Ctrl-C to stop. Port 9091; SO_REUSEADDR enabled.
@@ -39,7 +40,7 @@ fn run() {
     server.bind(listenPort)?
     server.listen(16)?
     info("http server listening on 127.0.0.1:{listenPort}")
-    info("Little Crema — pages, forms, cookies (Ctrl-C to stop)")
+    info("Little Crema — pages, forms, cookies, search (Ctrl-C to stop)")
     loop {
         match server.accept() {
             Fail(e) {
@@ -72,7 +73,8 @@ fn serveOne(peer!: Socket) {
                                 http.badRequest(e)
                             }
                             Pass(body) {
-                                let res = app.handle(req, body)
+                                let query = wire.rawQuery(raw)
+                                let res = app.handle(req, body, query)
                                 info("{req.method} {req.path} -> {res.status} {res.reason}")
                                 res
                             }

@@ -3,6 +3,7 @@
 ## (Roast is a String: user sum types are not yet legal constructor-param fields.)
 
 import { Has, Not, May } from "std/Fallible"
+import { containsIgnoreCaseAscii, isEmpty, trim } from "std/Str"
 
 export type Drink(
     slug: String,
@@ -80,4 +81,37 @@ export fn findBySlug(slug!: String) -> May<Drink> {
 
 export fn drinkCount() -> Int64 {
     allDrinks().count
+}
+
+## Case-insensitive substring match on name, notes, roast, or slug.
+## Empty needle → all drinks.
+export fn searchDrinks(needle!: String) -> Array<Drink> {
+    let q = trim(needle)
+    if isEmpty(q) {
+        allDrinks()
+    } else {
+        mut out: Array<Drink> = []
+        for d in allDrinks() {
+            if drinkMatches(d, q) {
+                out = out.append(d)
+            }
+        }
+        out
+    }
+}
+
+fn drinkMatches(d!: Drink, q!: String) -> Bool {
+    if containsIgnoreCaseAscii(d.name, q) {
+        true
+    } else {
+        if containsIgnoreCaseAscii(d.notes, q) {
+            true
+        } else {
+            if containsIgnoreCaseAscii(d.roast, q) {
+                true
+            } else {
+                containsIgnoreCaseAscii(d.slug, q)
+            }
+        }
+    }
 }

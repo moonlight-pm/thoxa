@@ -20,6 +20,7 @@ Then:
 ```bash
 curl -s  http://127.0.0.1:9091/
 curl -s  http://127.0.0.1:9091/menu
+curl -s  'http://127.0.0.1:9091/menu?q=mocha'
 curl -s  http://127.0.0.1:9091/menu/espresso
 curl -s  http://127.0.0.1:9091/api/health
 curl -sD- http://127.0.0.1:9091/style.css

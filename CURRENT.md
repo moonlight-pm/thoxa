@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-10 (**examples/http Crema-lite experiment** Phase A;
+**As of:** 2026-08-11 (**examples/http Crema-lite** Phase A–C done;
 match arm sugar **D130**; return inference **D129**; diverging loop **D128**;
 combined import **D127**; std Io/Net/Http **D126**)
 
@@ -13,9 +13,9 @@ combined import **D127**; std Io/Net/Http **D126**)
 ## Now
 
 **Active experiment — `examples/http` Crema-lite:** multi-route app
-(Topcoat-shaped) **entirely under `examples/http/`**. **Phase A + B done**
-(dynamic pages, path params, health API, static CSS, **POST form + cookies +
-PRG** via example-only body completion; no `std/` growth). Charter + checklist:
+(Topcoat-shaped) **entirely under `examples/http/`**. **Phase A–C done**
+(dynamic pages, path params, health, static CSS, forms/cookies/PRG, **menu
+`?q=` search** via example-only query recovery; no `std/` growth). Charter:
 [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 
 **Hard rule for this experiment:** **do not add to `std/`**. App helpers stay
@@ -25,7 +25,7 @@ language (conformance + docs), then resume the experiment.
 **Session / shell remains deferred.** Prefer finishing this experiment’s open
 phase steps (or forced language fixes) over free redesign or expand-std sprints.
 
-**Shipped recently:** Crema-lite **Phase A+B**; **match arm sugar** (**D130**);
+**Shipped recently:** Crema-lite **Phase A–C**; **match arm sugar** (**D130**);
 **return-type inference** (**D129** + LSP hover); **diverging `loop`**
 (**D128**); **combined import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**);
 **`std/Logging`** (**D125**); LSP nav; **D124** diagnostics. Session residual
@@ -34,8 +34,8 @@ deferred. Agent-only ideas parked:
 
 **In progress / next:**
 
-1. **Crema-lite Phase C** (optional query search) when desired — still example
-   only; may need raw query on the request (parse wire in example or product).  
+1. **Crema-lite Phase D+** only if wanted (htmx-ish partials, persistence, …)
+   — still example only.  
 2. Language gaps forced by this sample (or other samples).  
 3. Editor only when DX forces it.
 

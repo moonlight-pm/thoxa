@@ -129,8 +129,19 @@ curl -sD- -b /tmp/c.ck -c /tmp/c.ck -X POST -d 'name=' http://127.0.0.1:9091/
 
 | Step | Status | Notes |
 |------|--------|--------|
-| C1 Keep raw query on request (product or parse raw in example) | parked | |
-| C2 `GET /menu?q=` filter | parked | |
+| C1 Keep raw query on request (product or parse raw in example) | **done** | Example-only: `Wire.rawQuery` / `queryParam` (std still strips `?` from path) |
+| C2 `GET /menu?q=` filter | **done** | Server-side filter + GET form; `Models.searchDrinks` |
+
+**C1 resolution (no product break):** Query recovered from the raw request-line
+in `Wire.rawQuery`; passed into `App.handle` as a third `query: String` arg.
+
+**Phase C smoke**
+
+```bash
+curl -s  'http://127.0.0.1:9091/menu?q=mocha'     # Mocha
+curl -s  'http://127.0.0.1:9091/menu?q=chocolate' # Cold Brew + Mocha
+curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
+```
 
 ### Phase D+ — Parked
 
