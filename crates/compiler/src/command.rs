@@ -12,7 +12,10 @@ use crate::parser::Parser;
 /// commands become `shell = shell.<builtin|run>(…)`.
 ///
 /// Leaves programs that define `fn main` untouched (batch path).
-/// Only rewrites at brace-depth 0 so method/type bodies are not mangled.
+/// Only rewrites at nesting-depth 0 so method/type bodies and multi-line
+/// constructor / call / array argument lists are not mangled. Nesting tracks
+/// `{}`, `()`, and `[]` (not only braces) — otherwise `type Drink(\n  slug:
+/// String,\n)` is treated as shell lines when a library file is the entry.
 pub fn desugar_session_source(src: &str) -> Result<String> {
     if source_has_fn_main(src) {
         return Ok(src.to_string());
@@ -28,7 +31,7 @@ pub fn desugar_session_source(src: &str) -> Result<String> {
         } else {
             out.push_str(line);
         }
-        depth += brace_delta(line);
+        depth += nesting_delta(line);
         if depth < 0 {
             depth = 0;
         }
@@ -39,8 +42,10 @@ pub fn desugar_session_source(src: &str) -> Result<String> {
     Ok(out)
 }
 
-/// Approximate `{` / `}` depth change on a line (ignores strings — good enough for desugar).
-fn brace_delta(line: &str) -> i32 {
+/// Approximate `{}` / `()` / `[]` depth change on a line (ignores strings —
+/// good enough for desugar). Must track parens so multi-line type constructors
+/// and calls are not rewritten as session commands.
+fn nesting_delta(line: &str) -> i32 {
     let mut d = 0i32;
     let mut in_str = false;
     let mut quote = b'\0';
@@ -61,8 +66,8 @@ fn brace_delta(line: &str) -> i32 {
                 in_str = true;
                 quote = b;
             }
-            b'{' => d += 1,
-            b'}' => d -= 1,
+            b'{' | b'(' | b'[' => d += 1,
+            b'}' | b')' | b']' => d -= 1,
             _ => {}
         }
     }
@@ -577,6 +582,28 @@ mod tests {
     fn desugar_session_echo_line() {
         let src = desugar_session_source("echo hello\n").unwrap();
         assert!(src.contains(r#"shell = shell.echo(["hello"])"#));
+    }
+
+    /// Multi-line `type T(field: Type)` must not rewrite field lines as shell
+    /// (paren depth, not only braces). Library entry / no `fn main` path.
+    #[test]
+    fn desugar_keeps_multiline_type_ctor_fields() {
+        let src = r#"
+export type Drink(
+    slug: String,
+    name: String
+)
+export fn n() -> Int64 { 1 }
+"#;
+        let out = desugar_session_source(src).unwrap();
+        assert!(
+            out.contains("slug: String"),
+            "field line must stay Thoxa, got:\n{out}"
+        );
+        assert!(
+            !out.contains("shell ="),
+            "must not session-desugar type fields:\n{out}"
+        );
     }
 
     #[test]

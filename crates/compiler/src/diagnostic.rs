@@ -293,6 +293,18 @@ fn classify_code(msg: &str) -> Option<&'static str> {
     if msg.starts_with("unused import") {
         return Some(CODE_UNUSED_IMPORT);
     }
+    // Parse `expect_kind` format first: `expected Colon, found Eq` (TokenKind
+    // Debug). Must not fall into type-mismatch (which also says expected/found).
+    if is_token_expect_found(msg)
+        || lower.contains("unexpected token")
+        || lower.contains("expected `")
+        || lower.contains("unclosed")
+        || msg.starts_with("expected identifier")
+        || msg.starts_with("expected expression")
+        || msg.starts_with("expected string literal")
+    {
+        return Some(CODE_PARSE);
+    }
     // Type mismatch: expected/found, "must be Bool", return type, condition types.
     if (msg.contains("expected") && msg.contains("found"))
         || msg.contains("type mismatch")
@@ -304,14 +316,59 @@ fn classify_code(msg: &str) -> Option<&'static str> {
     {
         return Some(CODE_TYPE_MISMATCH);
     }
-    if lower.contains("unexpected token")
-        || lower.starts_with("expected ")
-        || lower.contains("expected `")
-        || lower.contains("unclosed")
-    {
+    if lower.starts_with("expected ") {
         return Some(CODE_PARSE);
     }
     None
+}
+
+/// `expected Colon, found Eq` / `expected Ident("x"), found Int(1)` from the parser.
+fn is_token_expect_found(msg: &str) -> bool {
+    let Some(rest) = msg.strip_prefix("expected ") else {
+        return false;
+    };
+    let Some((exp, found)) = rest.split_once(", found ") else {
+        return false;
+    };
+    is_token_kind_debug(exp.trim()) && is_token_kind_debug(found.trim())
+}
+
+fn is_token_kind_debug(s: &str) -> bool {
+    // TokenKind Debug: bare variant (`Colon`) or with payload (`Ident("a")`, `Int(1)`).
+    if s.is_empty() {
+        return false;
+    }
+    // Payload form: Ident("…"), String("…"), Int(…), UInt(…), Float(…), …
+    if let Some(i) = s.find('(') {
+        let name = &s[..i];
+        return name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_uppercase())
+            && name.chars().all(|c| c.is_ascii_alphanumeric());
+    }
+    // Bare TokenKind names are PascalCase; exclude common type names that use the
+    // same expected/found shape in MIR (`expected Int64, found Bool`).
+    if matches!(
+        s,
+        "Int64"
+            | "Int32"
+            | "UInt32"
+            | "UInt64"
+            | "Bool"
+            | "String"
+            | "Bytes"
+            | "Void"
+            | "Byte"
+            | "Float64"
+    ) {
+        return false;
+    }
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_uppercase() => chars.all(|c| c.is_ascii_alphanumeric()),
+        _ => false,
+    }
 }
 
 fn default_help(code: Option<&str>, msg: &str) -> Option<Vec<String>> {
@@ -616,6 +673,17 @@ mod tests {
         let d = Diagnostic::error("undefined name `fooo`").enrich();
         assert_eq!(d.code.as_deref(), Some(CODE_UNDEFINED));
         assert!(!d.help.is_empty());
+    }
+
+    #[test]
+    fn classify_parse_token_expect_not_type_mismatch() {
+        let d = Diagnostic::error("expected Colon, found Eq").enrich();
+        assert_eq!(d.code.as_deref(), Some(CODE_PARSE), "{d:?}");
+        assert!(
+            d.help.iter().any(|h| h.contains("syntax")),
+            "parse help, got {:?}",
+            d.help
+        );
     }
 
     #[test]
