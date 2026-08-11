@@ -1,5 +1,6 @@
-## App — route table for Little Crema (what a user writes).
-## Builds a framework Router, then dispatches Hits to page/api handlers.
+## App — routes and dispatch only (what a user writes).
+## No listen/accept/parse/send. Framework host + Main composition own plumbing.
+## HEAD stripping is in framework writeResponse — handlers return full bodies.
 
 import pages from "./Pages"
 import api from "./Api"
@@ -11,7 +12,7 @@ import { Has, Not } from "std/Fallible"
 
 let staticRoot = "examples/http/web"
 
-## Register named routes on the framework router.
+## Configure the framework router (path table only).
 export fn buildRouter() -> Router {
     router.newRouter(staticRoot)
         .get("/", "home")
@@ -21,19 +22,17 @@ export fn buildRouter() -> Router {
         .post("/", "signIn")
 }
 
-## App entry: package-root Handler.thx (and thus framework/Server) calls this.
+## Map an HTTP request to a Response (views + domain).
 export fn handle(req!: Request, body!: Bytes, query!: String) -> Response {
     let r = buildRouter()
-    let res = match r.resolve(req.method, req.path) {
+    match r.resolve(req.method, req.path) {
         Has(hit) {
             dispatch(hit, req, body, query)
         }
         Not {
-            ## No named route → static files (or 404 from the static router).
             r.serveStatic(req)
         }
     }
-    wire.finalize(req.method, res)
 }
 
 fn dispatch(hit!: Hit, req!: Request, body!: Bytes, query!: String) -> Response {

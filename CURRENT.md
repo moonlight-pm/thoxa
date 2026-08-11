@@ -12,14 +12,14 @@ combined import **D127**; std Io/Net/Http **D126**)
 
 ## Now
 
-**Active experiment — `examples/http` Crema-lite:** **`framework/`** is a closed
-host library (std only); **`app/Listen`** owns the accept loop; **Main** boots.
-**Phase A–C done.** Charter:
+**Active experiment — `examples/http` Crema-lite:** **`framework/`** closed host
+library; **`app/`** routes/views only; **Main** composition root (wires host to
+`routes.handle` until fn values exist). **Phase A–C done.** Charter:
 [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 
 **Hard rule for this experiment:** **do not add to `std/`**. Grow
-`framework/`; it imports **only `std/` + `framework/*`** (no app, no package
-root mounts). Language gaps → break, fix language, resume.
+`framework/` (imports **only `std/` + `framework/*`**). App stays free of
+plumbing. Language gaps → break, fix language, resume.
 
 **Session / shell remains deferred.** Prefer finishing this experiment’s open
 phase steps (or forced language fixes) over free redesign or expand-std sprints.

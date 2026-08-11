@@ -53,20 +53,19 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  Main.thx                 # entry: logging + app/Listen.run
-  framework/               # candidate std — imports std + framework only
-    Server.thx             # bindListen, readIncoming, writeResponse
-    Wire.thx Router.thx
-  app/
-    Listen.thx             # accept loop (composition root)
-    Routes.thx             # buildRouter + handle + dispatch
-    Pages.thx Layout.thx Api.thx Models.thx Customer.thx
+  Main.thx                 # composition root (host loop + routes.handle)
+  framework/               # closed library: std + framework/* only
+    Server.thx Wire.thx Router.thx
+  app/                     # routes, views, domain only (no Listen)
+    Routes.thx Pages.thx Layout.thx Api.thx Models.thx Customer.thx
   web/
   README.md
 ```
 
-**Layers:** `framework/` is closed (no `app/`, no package-root mounts). `app/Listen`
-wires the host to `Routes`. `Main` is boot only.
+**Layers:** `framework/` never reaches outside itself except `std/`. `app/` is
+routes/views/domain only. **Main** is the process composition root (not domain):
+without fn values it is the only place that can call both framework I/O and
+`app/Routes.handle`. Ideal later: `server.run(port, handle)`.
 
 **Router:** app registers `.get/.post(pattern, name)`; path params are `:slug`.
 
