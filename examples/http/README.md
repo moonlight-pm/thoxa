@@ -66,6 +66,14 @@ Product `std/Http.parseRequest` still leaves `Request.body` empty.
 satisfied. The completed body is passed as a separate `Bytes` into
 `App.handle` — **not** a `std/` change.
 
+## HEAD (framework-level)
+
+Handlers always build a full response (as for GET). `App.handle` ends with
+`Wire.finalize`: on `HEAD`, status and headers (including `Content-Length`)
+are kept and the body is dropped. Handlers do not take a `headOnly` flag or
+call `okHead`. Same idea as common servers: run the GET path, strip content
+on the way out (RFC 9110 §9.3.2).
+
 ## Rules
 
 - **No `std/` additions** for this experiment.

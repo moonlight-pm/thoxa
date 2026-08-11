@@ -1,18 +1,19 @@
 ## Dynamic pages — home (with sign-in form), menu, drink detail; POST sign-in.
+## HEAD is applied by App/Wire.finalize — handlers only build full responses.
 
 import layout from "./Layout"
 import models, { Drink, formatPrice } from "./Models"
 import customer from "./Customer"
 import wire from "./Wire"
-import { Response, notFound, badRequest } from "std/Http"
+import { Response, notFound } from "std/Http"
 import { Has, Not } from "std/Fallible"
 import { isEmpty, trim } from "std/Str"
 
-export fn home(headOnly: Bool, who!: String) -> Response {
+export fn home(who!: String) -> Response {
     let n = models.drinkCount()
     let card = homeCard(who)
     let body = "<section class=\"hero\">\n<h1>Little Crema</h1>\n<p class=\"lede\">Six drinks, one tiny counter, and a Thoxa feature in every pour.</p>\n<p><a class=\"button\" href=\"/menu\">Browse the menu</a></p>\n<p class=\"muted\">{n} drinks brewed fresh daily.</p>\n</section>\n{card}"
-    layout.page("Home", body, headOnly, who)
+    layout.page("Home", body, who)
 }
 
 fn homeCard(who!: String) -> String {
@@ -32,25 +33,25 @@ fn drinkListItems() -> String {
     items
 }
 
-export fn menu(headOnly: Bool, who!: String) -> Response {
+export fn menu(who!: String) -> Response {
     let items = drinkListItems()
     let body = "<h1>The menu</h1>\n<ul class=\"menu\">\n{items}</ul>\n"
-    layout.page("Menu", body, headOnly, who)
+    layout.page("Menu", body, who)
 }
 
-export fn drink(slug!: String, headOnly: Bool, who!: String) -> Response {
+export fn drink(slug!: String, who!: String) -> Response {
     match models.findBySlug(slug) {
         Not => notFound()
         Has(d) {
-            drinkPage(d, headOnly, who)
+            drinkPage(d, who)
         }
     }
 }
 
-fn drinkPage(d!: Drink, headOnly: Bool, who!: String) -> Response {
+fn drinkPage(d!: Drink, who!: String) -> Response {
     let price = formatPrice(d.priceCents)
     let body = "<p class=\"back\"><a href=\"/menu\">← Back to the menu</a></p>\n<article class=\"drink\">\n<h1>{d.name}</h1>\n<p class=\"badge\">{d.roast}</p>\n<p class=\"notes\">{d.notes}</p>\n<p class=\"price\">{price}</p>\n</article>\n"
-    layout.page(d.name, body, headOnly, who)
+    layout.page(d.name, body, who)
 }
 
 ## POST / — form field `name`; empty name forgets. Always 303 to `/`.

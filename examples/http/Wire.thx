@@ -262,3 +262,20 @@ export fn withHeader(res!: Response, name!: String, value!: String) -> Response 
         body: res.body
     )
 }
+
+## Framework-level HEAD handling (RFC 9110 §9.3.2).
+## Handlers always build a full GET-shaped Response (with body). For HEAD, keep
+## status/headers (including Content-Length of the entity) and drop the body.
+## Same pattern as many servers: run the GET path, strip content on the way out.
+export fn finalize(method!: String, res!: Response) -> Response {
+    if method == "HEAD" {
+        Response(
+            status: res.status,
+            reason: res.reason,
+            headers: res.headers,
+            body: Bytes(0)
+        )
+    } else {
+        res
+    }
+}

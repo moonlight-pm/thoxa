@@ -1,10 +1,12 @@
 ## Application router — manual method+path dispatch (Topcoat manual-router spirit).
 ## Dynamic pages and API first; static files via std/HttpStatic fallback.
+## HEAD: handlers return full responses; Wire.finalize strips the body.
 ## All logic stays in examples/http — no std growth.
 
 import pages from "./Pages"
 import api from "./Api"
 import customer from "./Customer"
+import wire from "./Wire"
 import { Router } from "std/HttpStatic"
 import { Request, Response, methodNotAllowed, notFound } from "std/Http"
 import { startsWith, dropPrefix, contains, isEmpty } from "std/Str"
@@ -21,7 +23,7 @@ fn isReadMethod(method!: String) -> Bool {
 ## Dispatch one request to a Response. `body` is the raw request body
 ## (example-completed; std Request.body stays empty).
 export fn handle(req!: Request, body!: Bytes) -> Response {
-    if req.method == "POST" {
+    let res = if req.method == "POST" {
         routePost(req, body)
     } else {
         if isReadMethod(req.method) {
@@ -30,6 +32,7 @@ export fn handle(req!: Request, body!: Bytes) -> Response {
             methodNotAllowed("GET, HEAD, POST")
         }
     }
+    wire.finalize(req.method, res)
 }
 
 fn routePost(req!: Request, body!: Bytes) -> Response {
@@ -41,17 +44,16 @@ fn routePost(req!: Request, body!: Bytes) -> Response {
 }
 
 fn routeRead(req!: Request) -> Response {
-    let headOnly = req.method == "HEAD"
     let who = customer.greeting(req)
     let p = req.path
     if p == "/api/health" {
-        return api.health(headOnly)
+        return api.health()
     }
     if p == "/" {
-        return pages.home(headOnly, who)
+        return pages.home(who)
     }
     if p == "/menu" {
-        return pages.menu(headOnly, who)
+        return pages.menu(who)
     }
     if startsWith(p, "/menu/") {
         let slug = dropPrefix(p, "/menu/")
@@ -64,9 +66,10 @@ fn routeRead(req!: Request) -> Response {
         if contains(slug, "..") {
             return notFound()
         }
-        return pages.drink(slug, headOnly, who)
+        return pages.drink(slug, who)
     }
     ## CSS and any leftover static files under web/ (cwd-relative).
+    ## HttpStatic already handles HEAD; finalize is a no-op on empty body.
     let files = Router(root: "examples/http/web")
     files.handle(req)
 }
