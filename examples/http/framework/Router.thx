@@ -1,0 +1,152 @@
+## Framework — named-route table + static fallback (candidate std surface).
+## App registers GET/POST patterns; resolve returns a Hit for app dispatch.
+## Path params use `:name` (not `{name}`) so patterns are ordinary strings.
+## Never imports app/.
+
+import httpStatic from "std/HttpStatic"
+import { Request, Response } from "std/Http"
+import { Has, Not, May } from "std/Fallible"
+import { startsWith, isEmpty, contains, dropPrefix } from "std/Str"
+
+## One registered route. `pattern` is exact (`/menu`) or one param (`/menu/:slug`).
+export type Route(method: String, pattern: String, name: String)
+
+## Result of matching a request path to a registered route.
+## `param` is the `:…` capture, or "" when the pattern has no param.
+export type Hit(name: String, param: String)
+
+export type Router(routes: Array<Route>, staticRoot: String) {
+    export fn get(pattern!: String, name!: String) -> Router {
+        Router(
+            routes: routes.append(Route(method: "GET", pattern: pattern, name: name)),
+            staticRoot: staticRoot
+        )
+    }
+
+    export fn post(pattern!: String, name!: String) -> Router {
+        Router(
+            routes: routes.append(Route(method: "POST", pattern: pattern, name: name)),
+            staticRoot: staticRoot
+        )
+    }
+
+    ## First matching route, or Not. GET routes also match HEAD.
+    export fn resolve(method!: String, path!: String) -> May<Hit> {
+        mut found: May<Hit> = Not()
+        for r in routes {
+            match found {
+                Has(_) {
+                    ## already matched — skip remaining routes
+                }
+                Not {
+                    if methodOk(r.method, method) {
+                        match matchPattern(r.pattern, path) {
+                            Has(param) {
+                                found = Has(Hit(name: r.name, param: param))
+                            }
+                            Not {
+                                Void
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    ## Static files under `staticRoot` (cwd-relative).
+    export fn serveStatic(req!: Request) -> Response {
+        let files = httpStatic.Router(root: staticRoot)
+        files.handle(req)
+    }
+}
+
+export fn newRouter(staticRoot!: String) -> Router {
+    mut empty: Array<Route> = []
+    Router(routes: empty, staticRoot: staticRoot)
+}
+
+fn methodOk(routeMethod!: String, reqMethod!: String) -> Bool {
+    if routeMethod == reqMethod {
+        true
+    } else {
+        if routeMethod == "GET" {
+            reqMethod == "HEAD"
+        } else {
+            false
+        }
+    }
+}
+
+## Split path on `/` into non-empty segments.
+fn segments(path!: String) -> Array<String> {
+    let data = Bytes.fromString(path)
+    mut segs: Array<String> = []
+    mut start = 0
+    mut i = 0
+    let n = data.count
+    loop {
+        if i >= n {
+            break
+        }
+        if data.get(i) == 47 {
+            if i > start {
+                segs = segs.append(data.slice(start, i).toString())
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < n {
+        segs = segs.append(data.slice(start, n).toString())
+    }
+    segs
+}
+
+## Param segment starts with `:` (e.g. `:slug`).
+fn isParamSeg(seg!: String) -> Bool {
+    startsWith(seg, ":")
+}
+
+## Has("") for exact match; Has(value) for a `:param` capture; Not if no match.
+fn matchPattern(pattern!: String, path!: String) -> May<String> {
+    let ps = segments(pattern)
+    let xs = segments(path)
+    if ps.count != xs.count {
+        Not()
+    } else {
+        mut param = ""
+        mut i = 0
+        mut ok = true
+        loop {
+            if i >= ps.count {
+                break
+            }
+            let p = ps[i]
+            let x = xs[i]
+            if isParamSeg(p) {
+                if isEmpty(x) {
+                    ok = false
+                    break
+                }
+                if contains(x, "..") {
+                    ok = false
+                    break
+                }
+                param = x
+            } else {
+                if p != x {
+                    ok = false
+                    break
+                }
+            }
+            i = i + 1
+        }
+        if ok {
+            Has(param)
+        } else {
+            Not()
+        }
+    }
+}

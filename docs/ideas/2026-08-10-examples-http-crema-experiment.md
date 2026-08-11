@@ -53,22 +53,23 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  Main.thx                 # entry glue only (logging + Framework.Server.run)
-  Framework/               # host pipeline — candidate future std
-    Server.thx             # accept loop, parse, body/query, send; mounts app
+  Main.thx                 # entry glue: accept loop + app.Routes.handle
+  framework/               # lowercase — candidate future std; never imports app/
+    Server.thx             # bindListen only
     Wire.thx               # body, query, form, headers, 303, HEAD finalize
-  App/                     # Little Crema — what a user writes
-    Routes.thx             # method+path table (mount: ~/App/Routes)
+    Router.thx             # named routes, :param, serveStatic
+  app/                     # lowercase — Little Crema (user code)
+    Routes.thx             # buildRouter() + handle() + name→handler dispatch
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
-  web/                     # static assets
+  web/
   README.md
 ```
 
-**Layers:** Framework may import App only at the Server→Routes mount (no fn
-values yet). App may import Framework.Wire. Main imports Framework only.
+**Layers:** `framework/` never imports `app/`. `app/` uses `framework/{Wire,Router}`.
+`Main` is the only place that ties them (accept loop → `routes.handle`).
 
-**Dispatch order (in App/Routes):** exact dynamic routes → path-param pages →
-static `HttpStatic.Router` → 404 from static path.
+**Router:** app registers `.get/.post(pattern, name)`; path params are `:slug`
+(not `{slug}` — string interpolation). Unmatched → static files.
 
 ---
 

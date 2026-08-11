@@ -1,0 +1,15 @@
+## Framework — bind/listen helper (candidate std surface).
+## Does not import app/. The process entry (Main) owns the accept loop and
+## calls the app handler so dependency arrows stay framework ← app ← Main.
+
+import net, { Socket } from "std/Net"
+import { Pass, Fail, Trial } from "std/Fallible"
+
+## Create a listening TCP socket on 0.0.0.0:`port` (SO_REUSEADDR on).
+export fn bindListen(port!: Int64) -> Trial<Socket, String> {
+    let server = net.createSocket()?
+    server.reuseAddr()?
+    server.bind(port)?
+    server.listen(16)?
+    Pass(server)
+}

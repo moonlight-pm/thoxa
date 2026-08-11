@@ -1,6 +1,6 @@
 ## App layer — returning customer via Cookie (domain helper over Framework.Wire).
 
-import wire from "~/Framework/Wire"
+import wire from "~/framework/Wire"
 import { Request, Response } from "std/Http"
 import { Has, Not, May } from "std/Fallible"
 import { trim, split, isEmpty, startsWith, dropPrefix } from "std/Str"

@@ -1,0 +1,66 @@
+## App — route table for Little Crema (what a user writes).
+## Builds a framework Router, then dispatches Hits to page/api handlers.
+
+import pages from "./Pages"
+import api from "./Api"
+import customer from "./Customer"
+import wire from "~/framework/Wire"
+import router, { Router, Hit } from "~/framework/Router"
+import { Request, Response, methodNotAllowed } from "std/Http"
+import { Has, Not } from "std/Fallible"
+
+let staticRoot = "examples/http/web"
+
+## Register named routes on the framework router.
+export fn buildRouter() -> Router {
+    router.newRouter(staticRoot)
+        .get("/", "home")
+        .get("/menu", "menu")
+        .get("/menu/:slug", "drink")
+        .get("/api/health", "health")
+        .post("/", "signIn")
+}
+
+## App entry: Main calls this after the framework reads the request.
+export fn handle(req!: Request, body!: Bytes, query!: String) -> Response {
+    let r = buildRouter()
+    let res = match r.resolve(req.method, req.path) {
+        Has(hit) {
+            dispatch(hit, req, body, query)
+        }
+        Not {
+            ## No named route → static files (or 404 from the static router).
+            r.serveStatic(req)
+        }
+    }
+    wire.finalize(req.method, res)
+}
+
+fn dispatch(hit!: Hit, req!: Request, body!: Bytes, query!: String) -> Response {
+    let who = customer.greeting(req)
+    if hit.name == "home" {
+        pages.home(who)
+    } else {
+        if hit.name == "menu" {
+            let q = match wire.queryParam(query, "q") {
+                Not => ""
+                Has(v) { v }
+            }
+            pages.menu(who, q)
+        } else {
+            if hit.name == "drink" {
+                pages.drink(hit.param, who)
+            } else {
+                if hit.name == "health" {
+                    api.health()
+                } else {
+                    if hit.name == "signIn" {
+                        pages.signIn(body)
+                    } else {
+                        methodNotAllowed("GET, HEAD, POST")
+                    }
+                }
+            }
+        }
+    }
+}

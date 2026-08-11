@@ -3,7 +3,7 @@
 import layout from "./Layout"
 import models, { Drink, formatPrice } from "./Models"
 import customer from "./Customer"
-import wire from "~/Framework/Wire"
+import wire from "~/framework/Wire"
 import { Response, notFound } from "std/Http"
 import { Has, Not } from "std/Fallible"
 import { isEmpty, trim, replaceAll } from "std/Str"

@@ -1,6 +1,6 @@
-## Framework layer — HTTP request/response helpers (candidate std surface).
+## Framework — HTTP request/response helpers (candidate std surface).
 ## Body completion, query recovery, headers, form decode, redirects, HEAD finalize.
-## Not product std yet; lives under examples/http for the Crema experiment.
+## Never imports app/.
 
 import { Socket } from "std/Net"
 import { Request, Response, Header } from "std/Http"
@@ -11,7 +11,6 @@ let maxBodyBytes = 65536
 
 type Kv(key: String, val: String)
 
-## Case-insensitive header value, or Not.
 export fn headerGet(req!: Request, name!: String) -> May<String> {
     let want = toLowerAscii(name)
     for h in req.headers {
@@ -22,7 +21,6 @@ export fn headerGet(req!: Request, name!: String) -> May<String> {
     Not()
 }
 
-## Parse an unsigned decimal integer (ASCII digits only).
 export fn parseUInt(s!: String) -> May<Int64> {
     let n = length(s)
     if n == 0 {
@@ -55,7 +53,6 @@ export fn parseUInt(s!: String) -> May<Int64> {
     }
 }
 
-## Content-Length header as Int64, or Not if missing/invalid.
 export fn contentLength(req!: Request) -> May<Int64> {
     match headerGet(req, "Content-Length") {
         Not => Not()
@@ -65,7 +62,6 @@ export fn contentLength(req!: Request) -> May<Int64> {
     }
 }
 
-## Bytes after the header terminator in a raw request buffer.
 fn bodyPrefix(raw!: Bytes) -> Bytes {
     let sep = Bytes.fromString("\r\n\r\n")
     match raw.find(sep) {
@@ -76,7 +72,6 @@ fn bodyPrefix(raw!: Bytes) -> Bytes {
     }
 }
 
-## Read until `acc` has at least `need` bytes (cap maxBodyBytes).
 fn readUntil(peer!: Socket, start!: Bytes, need!: Int64) -> Trial<Bytes, String> {
     if need > maxBodyBytes {
         return Fail("request body too large")
@@ -101,8 +96,7 @@ fn readUntil(peer!: Socket, start!: Bytes, need!: Int64) -> Trial<Bytes, String>
     Fail("readUntil: internal")
 }
 
-## Query string from the raw request buffer (without leading `?`).
-## Product `parseRequest` strips `?…` from `Request.path` — recover it here.
+## Query string without leading `?` (std Request.path is query-stripped).
 export fn rawQuery(raw!: Bytes) -> String {
     let crlf = Bytes.fromString("\r\n")
     let lineEnd = match raw.find(crlf) {
@@ -133,12 +127,10 @@ export fn rawQuery(raw!: Bytes) -> String {
     }
 }
 
-## First value for `key` in a raw query string (`a=1&b=2`), or Not.
 export fn queryParam(query!: String, key!: String) -> May<String> {
     formField(Bytes.fromString(query), key)
 }
 
-## Complete the request body using Content-Length.
 export fn readBody(peer!: Socket, raw!: Bytes, req!: Request) -> Trial<Bytes, String> {
     let have = bodyPrefix(raw)
     match contentLength(req) {
@@ -159,7 +151,6 @@ export fn readBody(peer!: Socket, raw!: Bytes, req!: Request) -> Trial<Bytes, St
     }
 }
 
-## Decode application/x-www-form-urlencoded (+ and %XX).
 export fn urlDecode(s!: String) -> String {
     let b = Bytes.fromString(s)
     mut out = Buffer()
@@ -233,7 +224,6 @@ fn hexByte(hi!: Int64, lo!: Int64) -> May<Int64> {
     }
 }
 
-## First value for `key` in a urlencoded body, or Not.
 export fn formField(body!: Bytes, key!: String) -> May<String> {
     let raw = body.toString()
     if isEmpty(raw) {
@@ -272,7 +262,6 @@ fn splitOnce(s!: String, sep!: String) -> May<Kv> {
     }
 }
 
-## 303 See Other (Post/Redirect/Get).
 export fn seeOther(location!: String) -> Response {
     Response(
         status: 303,
@@ -286,7 +275,6 @@ export fn seeOther(location!: String) -> Response {
     )
 }
 
-## Append one header field (new Response; arrays are immutable).
 export fn withHeader(res!: Response, name!: String, value!: String) -> Response {
     Response(
         status: res.status,
@@ -296,7 +284,7 @@ export fn withHeader(res!: Response, name!: String, value!: String) -> Response 
     )
 }
 
-## HEAD: keep status/headers (incl. Content-Length), drop body (RFC 9110 §9.3.2).
+## HEAD: keep headers (incl. Content-Length), drop body (RFC 9110 §9.3.2).
 export fn finalize(method!: String, res!: Response) -> Response {
     if method == "HEAD" {
         Response(

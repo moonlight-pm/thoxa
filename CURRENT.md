@@ -13,12 +13,12 @@ combined import **D127**; std Io/Net/Http **D126**)
 ## Now
 
 **Active experiment — `examples/http` Crema-lite:** multi-route app under
-`examples/http/` with a clear **`Framework/`** (host pipeline) vs **`App/`**
-(Little Crema) split. **Phase A–C done.** Charter:
+`examples/http/` with **`framework/`** (no app imports; Router+Wire) vs
+**`app/`** (uses framework Router). **Phase A–C done.** Charter:
 [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 
 **Hard rule for this experiment:** **do not add to `std/`**. Grow
-`Framework/` instead; keep `App/` free of listen/parse/send. Language gaps →
+`framework/` instead; `framework/` must not import `app/`. Language gaps →
 break, fix language, resume.
 
 **Session / shell remains deferred.** Prefer finishing this experiment’s open
