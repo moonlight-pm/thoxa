@@ -4,9 +4,10 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-11 (**examples/http Crema-lite** Phase A–C done;
-match arm sugar **D130**; return inference **D129**; diverging loop **D128**;
-combined import **D127**; std Io/Net/Http **D126**)
+**As of:** 2026-08-11 (**examples/http Crema-lite** Phase A–C +
+`server.serve(routes.app())`; match arm sugar **D130**; return inference
+**D129**; diverging loop **D128**; combined import **D127**; std Io/Net/Http
+**D126**)
 
 ---
 

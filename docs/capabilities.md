@@ -11,8 +11,8 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-10 (Crema-lite examples/http experiment Phase A; D130 match arm
-sugar; D129 return inference; D128 loop; D127 combined import; D126 std Io/Net/Http)
+**As of:** 2026-08-11 (Crema-lite `server.serve(routes.app())` Phase A–C; D130 match
+arm sugar; D129 return inference; D128 loop; D127 combined import; D126 Io/Net/Http)
 
 ---
 

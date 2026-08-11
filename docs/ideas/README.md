@@ -11,7 +11,7 @@ locked and (if needed) scheduled. Living priority never lives here — see root
 | [immutable values / structural sharing](2026-07-21-immutable-values.md) | sleeping | No refs; COW/persistent DS; peers (Clojure/Swift/…); impact + design spectra vs D4/D54/D50/D8 |
 | [webapp SSR / components](2026-07-21-webapp-ssr-components.md) | sleeping | HTML `Node` tree + optional tag sugar; SSR-first; sum not `is`; desugar to library |
 | [agent DX from Zerolang](2026-08-09-agent-dx-from-zerolang.md) | sleeping | Parked agent patterns; **promoted** slice is structured diagnostics freeze (D124) |
-| [examples/http Crema-lite](2026-08-10-examples-http-crema-experiment.md) | **active experiment** | Multi-route app dogfood under `examples/http` only; **no `std/` growth**; Topcoat-shaped; living phase checklist |
+| [examples/http Crema-lite](2026-08-10-examples-http-crema-experiment.md) | **active experiment** | `server.serve(routes.app())`; `framework/` + `app/`; Phase A–C; no product `std/` growth; living checklist |
 
 **Rules of thumb**
 

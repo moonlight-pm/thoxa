@@ -86,7 +86,7 @@ Update status in place: `pending` | `in progress` | `done` | `blocked` | `parked
 | A0 Charter + CURRENT pointer + hard rules | **done** | this file |
 | A1 Multi-module skeleton; listen loop thin | **done** | `Main` + `App` + modules |
 | A2 Layout + dynamic `/` and `/menu` | **done** | string HTML |
-| A3 Models + `/menu/{slug}` path param | **done** | in-memory catalog; roast is `String` (see language notes) |
+| A3 Models + `/menu/:slug` path param | **done** | in-memory catalog; roast is `String`; `:param` not `{braces}` (interp) |
 | A4 `GET /api/health` + README polish | **done** | no layout shell |
 | A5 Smoke matrix (curl) green | **done** | `/` `/menu` `/menu/{slug}` `/api/health` CSS HEAD 404 405 |
 
@@ -114,11 +114,12 @@ curl -s  http://127.0.0.1:9091/menu/nope   # 404
 | B4 Cookie set/read (example) | **done** | `Customer.thx` |
 | B5 POST `/` sign-in + forget + nav greeting | **done** | PRG; empty name forgets |
 
-**B1 resolution (no product break):** Body is completed in `examples/http/Wire.thx`
-using the raw header buffer + optional further `receive()` for
-`Content-Length`. Product `std/Http.parseRequest` still leaves `Request.body`
-empty — the app passes `body: Bytes` separately into `App.handle`. Promote to
-std only if a product slice is scheduled later.
+**B1 resolution (no product break):** Body is completed in
+`framework/Wire.thx` / `Server.readIncoming` using the raw header buffer +
+optional further `receive()` for `Content-Length`. Product
+`std/Http.parseRequest` still leaves `Request.body` empty — body is passed
+separately into `App.handle`. Promote to std only if a product slice is
+scheduled later.
 
 **Phase B smoke**
 
@@ -136,7 +137,8 @@ curl -sD- -b /tmp/c.ck -c /tmp/c.ck -X POST -d 'name=' http://127.0.0.1:9091/
 | C2 `GET /menu?q=` filter | **done** | Server-side filter + GET form; `Models.searchDrinks` |
 
 **C1 resolution (no product break):** Query recovered from the raw request-line
-in `Wire.rawQuery`; passed into `App.handle` as a third `query: String` arg.
+in `framework/Wire.rawQuery`; passed into `App.handle` as a third `query: String`
+arg.
 
 **Phase C smoke**
 
@@ -177,13 +179,16 @@ after A–C.
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
-**As of last update:** **Phase A–C complete** + **App/Framework layer split**
-under `examples/http/`. Next is Phase D+ only if wanted — still no `std/`
-growth (grow `Framework/` instead).
+**As of last update:** **Phase A–C complete** + layered **`framework/` / `app/`**
+with **`server.serve(routes.app())`**. Next is Phase D+ only if wanted — still
+no `std/` growth (grow `framework/` instead).
 
-### Language notes hit during Phase A
+### Language / design notes (experiment)
 
 | Gap | Workaround | Product break? |
 |-----|------------|----------------|
-| Constructor-param fields must be Int64 / Bool / String / Bytes / Array — **not** user sum types | `Drink.roast: String` instead of `Roast` union | Optional later language slice; not blocking experiment |
-| Module-level `Router(root: …)` typed oddly (`Void` for root) | Construct `Router` inside `routeRead` | Investigate only if it bites again |
+| Constructor-param fields must be Int64 / Bool / String / Bytes / Array — **not** user sum types | `Drink.roast: String` instead of `Roast` union | Optional later language slice |
+| String interp treats `{…}` as interpolation | Path params use `:slug` not `{slug}` | Document; escape story later if needed |
+| Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
+| Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
+| `server.serve(app)` needs typed `App` without fn values | Framework imports **`App` type only** from `app/Routes` | Ideal: fn values / trait so framework stays std-only |
