@@ -176,8 +176,9 @@ after A–C.
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
-**As of last update:** **Phase A + B + C complete** (query search smoke green).
-Next is Phase D+ only if wanted — still no `std/` growth.
+**As of last update:** **Phase A–C complete** + **App/Framework layer split**
+under `examples/http/`. Next is Phase D+ only if wanted — still no `std/`
+growth (grow `Framework/` instead).
 
 ### Language notes hit during Phase A
 
