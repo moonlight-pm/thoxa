@@ -4,50 +4,69 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-10 (match arm sugar **D130**; return inference **D129** + LSP hover; diverging loop **D128**; combined import **D127**; std Io/Net/Http **D126**)
+**As of:** 2026-08-10 (**examples/http Crema-lite experiment** Phase A;
+match arm sugar **D130**; return inference **D129**; diverging loop **D128**;
+combined import **D127**; std Io/Net/Http **D126**)
 
 ---
 
 ## Now
 
-**Session / shell is deferred** — do not resume residual session polish unless
-this file says so. Prefer **finishing started frozen surfaces** over free
-redesign or expand-std sprints.
+**Active experiment — `examples/http` Crema-lite:** multi-route app
+(Topcoat-shaped) **entirely under `examples/http/`**. **Phase A done** (dynamic
+pages + path params + `/api/health` + static CSS; smoke green). Charter +
+checklist:
+[`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 
-**Shipped recently:** **match arm sugar** (**D130** — tag-only bare ctors +
-`Pat => expr`; dogfood `examples/http` `main`); **return-type inference**
-(**D129** — unannotated free fns from body exits; `?` residual collapse;
-bare Pass/Fail *as returns* / recursion need `->`; **LSP hover** shows inferred
-returns); **diverging `loop`** (**D128**); **combined import** (**D127**);
-**`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`** (**D125**); LSP nav;
-**D124** diagnostics. Session residual deferred.
-Agent-only ideas parked:
+**Hard rule for this experiment:** **do not add to `std/`**. App helpers stay
+in the example package. If blocked by a **language** gap, break out, fix the
+language (conformance + docs), then resume the experiment.
+
+**Session / shell remains deferred.** Prefer finishing this experiment’s open
+phase steps (or forced language fixes) over free redesign or expand-std sprints.
+
+**Shipped recently:** Crema-lite **Phase A**; **match arm sugar** (**D130**);
+**return-type inference** (**D129** + LSP hover); **diverging `loop`**
+(**D128**); **combined import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**);
+**`std/Logging`** (**D125**); LSP nav; **D124** diagnostics. Session residual
+deferred. Agent-only ideas parked:
 [`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 
-**In progress / next:** language gaps forced by samples; sample-driven std when
-forced; editor only when DX forces (nav residual / recovery depth).
+**In progress / next:**
+
+1. **Crema-lite Phase B** when ready — body / forms / cookies still **in
+   `examples/http` only** (no `std/`); may force a language break for request
+   bodies.  
+2. Language gaps forced by this sample (or other samples).  
+3. Editor only when DX forces it.
 
 ### Proceed order
 
-1. **Language / I/O / std** — next matrix gap (non-session); not free redesign.  
-2. **Editor depth** — only when DX forces it. Freezes:
+1. **Crema-lite experiment** — next open checklist step in
+   [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
+   (all work under `examples/http/`; no `std/`).  
+2. **Language** — only when the sample (or conformance) forces a gap; not free
+   redesign.  
+3. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).  
-3. **Deferred: all session / shell residual** — redir polish, line editor,
+4. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+5. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
-conformance green-ups; **opportunistic `std/` helpers** proven by a real sample
-in the same change (not a free-floating “grow std” sprint).
+conformance green-ups. **`std/` growth is on hold for the Crema experiment** —
+helpers go in `examples/http/`. (Other product slices may still grow std when
+CURRENT explicitly allows it outside this experiment.)
 
 **Explicit holds:**
 
+- **`std/` growth for the Crema-lite experiment** (user lock — example-only)
 - **All session / shell residual** (parked by user direction)
 - Inventing shell dialect (`if`/`for`/full `$` forest)
 - Tree-walk product interpreter or QBE path (phase A)
@@ -99,6 +118,7 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 3. [`docs/capabilities.md`](docs/capabilities.md) — rows for the slice  
 4. One freeze if building that domain  
 5. [`docs/decisions.md`](docs/decisions.md) only when reopening surface  
+6. If Crema experiment: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.
@@ -110,8 +130,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 ```bash
 cargo make test
 cargo test -p thoxa --lib
+cargo make run examples/http
 cargo run -p thoxa -- tests/conformance/param_defaults.thx
-cargo run -p thoxa -- tests/conformance/user_rc.thx
 printf 'echo hi\nexit\n' | cargo run -p thoxa --
 ```
 

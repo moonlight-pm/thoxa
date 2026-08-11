@@ -1,0 +1,57 @@
+## Application router — manual method+path dispatch (Topcoat manual-router spirit).
+## Dynamic pages and API first; static files via std/HttpStatic fallback.
+## All logic stays in examples/http — no std growth.
+
+import pages from "./Pages"
+import api from "./Api"
+import { Router } from "std/HttpStatic"
+import { Request, Response, methodNotAllowed, notFound } from "std/Http"
+import { startsWith, dropPrefix, contains, isEmpty } from "std/Str"
+
+## True for GET or HEAD.
+fn isReadMethod(method!: String) -> Bool {
+    if method == "GET" {
+        true
+    } else {
+        method == "HEAD"
+    }
+}
+
+## Dispatch one request to a Response. Never fails the process.
+export fn handle(req!: Request) -> Response {
+    if isReadMethod(req.method) {
+        routeRead(req)
+    } else {
+        methodNotAllowed("GET, HEAD")
+    }
+}
+
+fn routeRead(req!: Request) -> Response {
+    let headOnly = req.method == "HEAD"
+    let p = req.path
+    if p == "/api/health" {
+        return api.health(headOnly)
+    }
+    if p == "/" {
+        return pages.home(headOnly)
+    }
+    if p == "/menu" {
+        return pages.menu(headOnly)
+    }
+    if startsWith(p, "/menu/") {
+        let slug = dropPrefix(p, "/menu/")
+        if isEmpty(slug) {
+            return notFound()
+        }
+        if contains(slug, "/") {
+            return notFound()
+        }
+        if contains(slug, "..") {
+            return notFound()
+        }
+        return pages.drink(slug, headOnly)
+    }
+    ## CSS and any leftover static files under web/ (cwd-relative).
+    let files = Router(root: "examples/http/web")
+    files.handle(req)
+}

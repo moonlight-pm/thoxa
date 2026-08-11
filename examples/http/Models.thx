@@ -1,0 +1,83 @@
+## In-memory drink catalog for the Crema-lite experiment.
+## No std growth — pure example data.
+## (Roast is a String: user sum types are not yet legal constructor-param fields.)
+
+import { Has, Not, May } from "std/Fallible"
+
+export type Drink(
+    slug: String,
+    name: String,
+    notes: String,
+    priceCents: Int64,
+    roast: String
+)
+
+export fn formatPrice(cents!: Int64) -> String {
+    let dollars = cents / 100
+    let rem = cents % 100
+    if rem < 10 {
+        "${dollars}.0{rem}"
+    } else {
+        "${dollars}.{rem}"
+    }
+}
+
+export fn allDrinks() -> Array<Drink> {
+    [
+        Drink(
+            slug: "espresso",
+            name: "Espresso",
+            notes: "A quick, syrupy shot under a hazelnut crema.",
+            priceCents: 300,
+            roast: "Dark roast"
+        ),
+        Drink(
+            slug: "cold-brew",
+            name: "Cold Brew",
+            notes: "Steeped overnight: chocolate, cherry, no acidity.",
+            priceCents: 400,
+            roast: "Dark roast"
+        ),
+        Drink(
+            slug: "cappuccino",
+            name: "Cappuccino",
+            notes: "Equal parts espresso, steamed milk, and foam.",
+            priceCents: 500,
+            roast: "Medium roast"
+        ),
+        Drink(
+            slug: "flat-white",
+            name: "Flat White",
+            notes: "Two ristretto shots under velvet microfoam.",
+            priceCents: 500,
+            roast: "Medium roast"
+        ),
+        Drink(
+            slug: "pour-over",
+            name: "Pour Over",
+            notes: "A single-origin Ethiopian, bright and floral.",
+            priceCents: 600,
+            roast: "Light roast"
+        ),
+        Drink(
+            slug: "mocha",
+            name: "Mocha",
+            notes: "Espresso and dark chocolate under whipped cream.",
+            priceCents: 600,
+            roast: "Dark roast"
+        ),
+    ]
+}
+
+export fn findBySlug(slug!: String) -> May<Drink> {
+    for d in allDrinks() {
+        if d.slug == slug {
+            return Has(d)
+        }
+    }
+    Not()
+}
+
+export fn drinkCount() -> Int64 {
+    allDrinks().count
+}

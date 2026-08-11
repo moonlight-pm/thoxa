@@ -57,7 +57,7 @@ Prefer **`cargo make`** helpers from a workspace checkout:
 ```bash
 cargo make test              # conformance suite
 cargo make run path.thx
-cargo make run examples/http # static file server (port 9091; product std/)
+cargo make run examples/http # Crema-lite HTTP example (port 9091; experiment)
 # kilo editor (real TTY; Ctrl-Q quit, 3× if dirty)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
 cargo run -p thoxa -- run examples/kilo   # empty buffer

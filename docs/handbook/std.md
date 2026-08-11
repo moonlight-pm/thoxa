@@ -118,7 +118,9 @@ lands.
 | Paths | Absolute (`/…`); `.` / `..` → 404; directories serve `index.html` |
 | Errors | Permission denied → **403** (logged); missing → **404**; other Io → log + 404 |
 
-Runnable demo: `cargo make run examples/http` (`Main.thx` + `web/` only).
+Runnable demo: `cargo make run examples/http` (Crema-lite multi-module
+**example** on product Net/Http/HttpStatic — experiment, not a std router
+framework; see `examples/http/README.md`).
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
 hex → black SGR.

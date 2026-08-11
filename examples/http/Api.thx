@@ -1,0 +1,13 @@
+## Non-page HTTP routes (skip the HTML layout shell).
+
+import { Response, ok, okHead } from "std/Http"
+
+## GET/HEAD /api/health — plain text body, no layout.
+export fn health(headOnly: Bool) -> Response {
+    let body = Bytes.fromString("ok\n")
+    if headOnly {
+        okHead(body.count, "text/plain; charset=utf-8")
+    } else {
+        ok(body, "text/plain; charset=utf-8")
+    }
+}

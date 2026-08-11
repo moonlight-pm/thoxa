@@ -11,8 +11,8 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-10 (D130 match arm sugar; D129 return inference + LSP hover; D128
-diverging loop; D127 combined import; D126 std Io/Net/Http; D125 Logging; D124 diagnostics)
+**As of:** 2026-08-10 (Crema-lite examples/http experiment Phase A; D130 match arm
+sugar; D129 return inference; D128 loop; D127 combined import; D126 std Io/Net/Http)
 
 ---
 
@@ -60,7 +60,7 @@ diverging loop; D127 combined import; D126 std Io/Net/Http; D125 Logging; D124 d
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err` | D69, R9, **D126** | Product **`std/Net`** + **`std/Http`**; `receiveRequest` / `sendAll`; 403/405 helpers; Fail is String | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126** | Product **`std/HttpStatic`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/Net` + `std/Http` + `std/HttpStatic` | yes |
-| examples-http | Runnable static file server demo | shipped | manual (`cargo make run examples/http`) | examples | Port 9091; **Main+web only** on **std/** (**D126**); combined Logging import (**D127**); accept `loop` diverges (**D128**); **`run()` unannotated** (**D129**); resilient accept/recv/send | yes |
+| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; multi-module under **`examples/http/` only** (no `std/` growth); **Phase A done:** dynamic `/` `/menu` `/menu/{slug}` + `/api/health` + static CSS; Net/Http/HttpStatic/Logging. **Gaps:** Phase B+ (body/forms/cookies) not started; not product framework; handbook must not over-claim. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 

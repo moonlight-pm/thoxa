@@ -1,0 +1,42 @@
+## Dynamic pages (GET/HEAD) — home, menu list, drink detail.
+
+import layout from "./Layout"
+import models, { Drink, formatPrice } from "./Models"
+import { Response, notFound } from "std/Http"
+import { Has, Not } from "std/Fallible"
+
+export fn home(headOnly: Bool) -> Response {
+    let n = models.drinkCount()
+    let body = "<section class=\"hero\">\n<h1>Little Crema</h1>\n<p class=\"lede\">Six drinks, one tiny counter, and a Thoxa feature in every pour.</p>\n<p><a class=\"button\" href=\"/menu\">Browse the menu</a></p>\n<p class=\"muted\">{n} drinks brewed fresh daily.</p>\n</section>\n"
+    layout.page("Home", body, headOnly)
+}
+
+fn drinkListItems() -> String {
+    mut items = ""
+    for d in models.allDrinks() {
+        let price = formatPrice(d.priceCents)
+        items = "{items}<li class=\"card\">\n<a href=\"/menu/{d.slug}\">\n<span class=\"name\">{d.name}</span>\n<span class=\"meta\">{d.roast} · {price}</span>\n<span class=\"notes\">{d.notes}</span>\n</a>\n</li>\n"
+    }
+    items
+}
+
+export fn menu(headOnly: Bool) -> Response {
+    let items = drinkListItems()
+    let body = "<h1>The menu</h1>\n<ul class=\"menu\">\n{items}</ul>\n"
+    layout.page("Menu", body, headOnly)
+}
+
+export fn drink(slug!: String, headOnly: Bool) -> Response {
+    match models.findBySlug(slug) {
+        Not => notFound()
+        Has(d) {
+            drinkPage(d, headOnly)
+        }
+    }
+}
+
+fn drinkPage(d!: Drink, headOnly: Bool) -> Response {
+    let price = formatPrice(d.priceCents)
+    let body = "<p class=\"back\"><a href=\"/menu\">← Back to the menu</a></p>\n<article class=\"drink\">\n<h1>{d.name}</h1>\n<p class=\"badge\">{d.roast}</p>\n<p class=\"notes\">{d.notes}</p>\n<p class=\"price\">{price}</p>\n</article>\n"
+    layout.page(d.name, body, headOnly)
+}

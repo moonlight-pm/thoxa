@@ -1,33 +1,30 @@
-## Minimal HTTP/1.1 static file server (real listen loop).
-## Uses product std: Net, Http, HttpStatic (static Router), Logging.
+## Little Crema — multi-route HTTP/1.1 example (experiment; not product std).
+## Listen loop only; routing lives in App.thx.
 ##
 ##   cargo make run examples/http
-##   # or: cargo run -p thoxa -- run examples/http
 ##
 ## From the workspace root (cwd-relative web root):
 ##   curl -s  http://127.0.0.1:9091/
-##   curl -s  http://127.0.0.1:9091/about/
+##   curl -s  http://127.0.0.1:9091/menu
+##   curl -s  http://127.0.0.1:9091/menu/espresso
+##   curl -s  http://127.0.0.1:9091/api/health
 ##   curl -sD- http://127.0.0.1:9091/style.css
-##   curl -s  http://127.0.0.1:9091/nope.html   # 404
-##   curl -sI http://127.0.0.1:9091/            # HEAD
 ##
 ## Ctrl-C to stop. Port 9091; SO_REUSEADDR enabled.
-## Setup failures (bind/listen) exit the process; accept/recv/send issues log and continue.
+## Experiment charter: docs/ideas/2026-08-10-examples-http-crema-experiment.md
 
 import net, { Socket } from "std/Net"
 import http from "std/Http"
-import { Router } from "std/HttpStatic"
-import { Pass, Fail, Trial } from "std/Fallible"
+import app from "./App"
+import { Pass, Fail } from "std/Fallible"
 import logging, { info, warn } from "std/Logging"
 
 let listenPort = 9091
-let webRoot = "examples/http/web"
 
 fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
 
-    ## Tag-only Pass + single-expr `=>`; multi-stmt Fail stays a block (D130).
     match run() {
         Pass => 0
         Fail(e) {
@@ -43,25 +40,23 @@ fn run() {
     server.bind(listenPort)?
     server.listen(16)?
     info("http server listening on 127.0.0.1:{listenPort}")
-    info("serving files from {webRoot}/  (Ctrl-C to stop)")
-    let router = Router(root: webRoot)
+    info("Little Crema — dynamic pages + static assets (Ctrl-C to stop)")
     loop {
         match server.accept() {
             Fail(e) {
-                ## Transient accept errors (EINTR, ECONNABORTED, ...) must not kill the server.
+                ## Transient accept errors must not kill the server.
                 warn("accept: {e}")
             }
             Pass(peer) {
-                serveOne(peer, router)
+                serveOne(peer)
                 peer.close()
             }
         }
     }
 }
 
-## One connection: read headers, route, write full response. Never fails the process.
-## (Unannotated; inferred Void — no value exits.)
-fn serveOne(peer!: Socket, router!: Router) {
+## One connection: read headers, dispatch, write full response.
+fn serveOne(peer!: Socket) {
     match peer.receiveRequest() {
         Fail(e) {
             warn("recv: {e}")
@@ -72,7 +67,7 @@ fn serveOne(peer!: Socket, router!: Router) {
             } else {
                 let response = match http.parseRequest(raw) {
                     Pass(req) {
-                        let res = router.handle(req)
+                        let res = app.handle(req)
                         info("{req.method} {req.path} -> {res.status} {res.reason}")
                         res
                     }

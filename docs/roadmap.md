@@ -121,7 +121,11 @@ Freezes:
 - ~~Combined import `import ns, { a } from "…"`~~ (**D127**)
 - ~~Diverging `loop` (Never / no dummy tail)~~ (**D128**)
 
-**Sample dogfood (not a phase flip):** `examples/http` (Main+web on std; infinite
+**Sample dogfood (not a phase flip):** `examples/http` Crema-lite **experiment**
+(multi-module app under `examples/http/` only; no `std/` growth for the
+experiment; charter
+[`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md);
+was Main+web static demo; infinite
 accept loop uses **D128**), `examples/kilo` shipped and exercised; continue
 matrix gaps when samples force them.
 
