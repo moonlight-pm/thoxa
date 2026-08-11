@@ -1,0 +1,68 @@
+## Returning customer via Cookie — functions, not middleware (Topcoat spirit).
+## Example-only; no std cookie jar.
+
+import wire from "./Wire"
+import { Request, Response } from "std/Http"
+import { Has, Not, May } from "std/Fallible"
+import { trim, split, isEmpty, startsWith, dropPrefix } from "std/Str"
+
+let cookieName = "customer"
+## 30 days
+let maxAgeSecs = 2592000
+
+## Name from the Cookie header, if present and non-empty.
+export fn current(req!: Request) -> May<String> {
+    match wire.headerGet(req, "Cookie") {
+        Not => Not()
+        Has(raw) {
+            findCookie(raw, cookieName)
+        }
+    }
+}
+
+fn findCookie(header!: String, name!: String) -> May<String> {
+    let parts = split(header, ";")
+    let prefix = "{name}="
+    for part in parts {
+        let p = trim(part)
+        if startsWith(p, prefix) {
+            let val = trim(dropPrefix(p, prefix))
+            if isEmpty(val) {
+                return Not()
+            } else {
+                return Has(val)
+            }
+        }
+    }
+    Not()
+}
+
+## Set-Cookie value that remembers `name` for a month.
+export fn rememberHeader(name!: String) -> String {
+    "{cookieName}={name}; Path=/; HttpOnly; SameSite=Lax; Max-Age={maxAgeSecs}"
+}
+
+## Set-Cookie value that clears the customer cookie.
+export fn forgetHeader() -> String {
+    "{cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+}
+
+## Attach a remember cookie to a response.
+export fn withRemember(res!: Response, name!: String) -> Response {
+    wire.withHeader(res, "Set-Cookie", rememberHeader(name))
+}
+
+## Attach a clear-cookie header to a response.
+export fn withForget(res!: Response) -> Response {
+    wire.withHeader(res, "Set-Cookie", forgetHeader())
+}
+
+## Display string for the nav (empty when signed out).
+export fn greeting(req!: Request) -> String {
+    match current(req) {
+        Not => ""
+        Has(name) {
+            name
+        }
+    }
+}

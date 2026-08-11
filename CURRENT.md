@@ -13,9 +13,9 @@ combined import **D127**; std Io/Net/Http **D126**)
 ## Now
 
 **Active experiment — `examples/http` Crema-lite:** multi-route app
-(Topcoat-shaped) **entirely under `examples/http/`**. **Phase A done** (dynamic
-pages + path params + `/api/health` + static CSS; smoke green). Charter +
-checklist:
+(Topcoat-shaped) **entirely under `examples/http/`**. **Phase A + B done**
+(dynamic pages, path params, health API, static CSS, **POST form + cookies +
+PRG** via example-only body completion; no `std/` growth). Charter + checklist:
 [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 
 **Hard rule for this experiment:** **do not add to `std/`**. App helpers stay
@@ -25,7 +25,7 @@ language (conformance + docs), then resume the experiment.
 **Session / shell remains deferred.** Prefer finishing this experiment’s open
 phase steps (or forced language fixes) over free redesign or expand-std sprints.
 
-**Shipped recently:** Crema-lite **Phase A**; **match arm sugar** (**D130**);
+**Shipped recently:** Crema-lite **Phase A+B**; **match arm sugar** (**D130**);
 **return-type inference** (**D129** + LSP hover); **diverging `loop`**
 (**D128**); **combined import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**);
 **`std/Logging`** (**D125**); LSP nav; **D124** diagnostics. Session residual
@@ -34,9 +34,8 @@ deferred. Agent-only ideas parked:
 
 **In progress / next:**
 
-1. **Crema-lite Phase B** when ready — body / forms / cookies still **in
-   `examples/http` only** (no `std/`); may force a language break for request
-   bodies.  
+1. **Crema-lite Phase C** (optional query search) when desired — still example
+   only; may need raw query on the request (parse wire in example or product).  
 2. Language gaps forced by this sample (or other samples).  
 3. Editor only when DX forces it.
 

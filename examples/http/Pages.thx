@@ -1,14 +1,26 @@
-## Dynamic pages (GET/HEAD) — home, menu list, drink detail.
+## Dynamic pages — home (with sign-in form), menu, drink detail; POST sign-in.
 
 import layout from "./Layout"
 import models, { Drink, formatPrice } from "./Models"
-import { Response, notFound } from "std/Http"
+import customer from "./Customer"
+import wire from "./Wire"
+import { Response, notFound, badRequest } from "std/Http"
 import { Has, Not } from "std/Fallible"
+import { isEmpty, trim } from "std/Str"
 
-export fn home(headOnly: Bool) -> Response {
+export fn home(headOnly: Bool, who!: String) -> Response {
     let n = models.drinkCount()
-    let body = "<section class=\"hero\">\n<h1>Little Crema</h1>\n<p class=\"lede\">Six drinks, one tiny counter, and a Thoxa feature in every pour.</p>\n<p><a class=\"button\" href=\"/menu\">Browse the menu</a></p>\n<p class=\"muted\">{n} drinks brewed fresh daily.</p>\n</section>\n"
-    layout.page("Home", body, headOnly)
+    let card = homeCard(who)
+    let body = "<section class=\"hero\">\n<h1>Little Crema</h1>\n<p class=\"lede\">Six drinks, one tiny counter, and a Thoxa feature in every pour.</p>\n<p><a class=\"button\" href=\"/menu\">Browse the menu</a></p>\n<p class=\"muted\">{n} drinks brewed fresh daily.</p>\n</section>\n{card}"
+    layout.page("Home", body, headOnly, who)
+}
+
+fn homeCard(who!: String) -> String {
+    if isEmpty(who) {
+        "<section class=\"card-form\">\n<h2>Are you a regular?</h2>\n<p class=\"muted\">Leave your name and the counter remembers you.</p>\n<form method=\"post\" action=\"/\">\n<label for=\"name\">Your name</label>\n<input id=\"name\" name=\"name\" type=\"text\" placeholder=\"Ada\" required>\n<button type=\"submit\">Remember me</button>\n</form>\n</section>\n"
+    } else {
+        "<section class=\"card-form\">\n<h2>Welcome back, {who}</h2>\n<p class=\"muted\">Your usual table is free.</p>\n<form method=\"post\" action=\"/\">\n<input type=\"hidden\" name=\"name\" value=\"\">\n<button type=\"submit\" class=\"outline\">Not {who}?</button>\n</form>\n</section>\n"
+    }
 }
 
 fn drinkListItems() -> String {
@@ -20,23 +32,42 @@ fn drinkListItems() -> String {
     items
 }
 
-export fn menu(headOnly: Bool) -> Response {
+export fn menu(headOnly: Bool, who!: String) -> Response {
     let items = drinkListItems()
     let body = "<h1>The menu</h1>\n<ul class=\"menu\">\n{items}</ul>\n"
-    layout.page("Menu", body, headOnly)
+    layout.page("Menu", body, headOnly, who)
 }
 
-export fn drink(slug!: String, headOnly: Bool) -> Response {
+export fn drink(slug!: String, headOnly: Bool, who!: String) -> Response {
     match models.findBySlug(slug) {
         Not => notFound()
         Has(d) {
-            drinkPage(d, headOnly)
+            drinkPage(d, headOnly, who)
         }
     }
 }
 
-fn drinkPage(d!: Drink, headOnly: Bool) -> Response {
+fn drinkPage(d!: Drink, headOnly: Bool, who!: String) -> Response {
     let price = formatPrice(d.priceCents)
     let body = "<p class=\"back\"><a href=\"/menu\">← Back to the menu</a></p>\n<article class=\"drink\">\n<h1>{d.name}</h1>\n<p class=\"badge\">{d.roast}</p>\n<p class=\"notes\">{d.notes}</p>\n<p class=\"price\">{price}</p>\n</article>\n"
-    layout.page(d.name, body, headOnly)
+    layout.page(d.name, body, headOnly, who)
+}
+
+## POST / — form field `name`; empty name forgets. Always 303 to `/`.
+export fn signIn(body!: Bytes) -> Response {
+    let redirect = wire.seeOther("/")
+    match wire.formField(body, "name") {
+        Not {
+            ## No field — still redirect; do not change cookie.
+            redirect
+        }
+        Has(raw) {
+            let name = trim(raw)
+            if isEmpty(name) {
+                customer.withForget(redirect)
+            } else {
+                customer.withRemember(redirect, name)
+            }
+        }
+    }
 }

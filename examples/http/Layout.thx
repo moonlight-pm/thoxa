@@ -1,6 +1,7 @@
 ## Shared HTML shell — Topcoat layout spirit without a view macro.
 
 import { Response, ok, okHead } from "std/Http"
+import { isEmpty } from "std/Str"
 
 export fn htmlResponse(body!: String, headOnly: Bool) -> Response {
     let bytes = Bytes.fromString(body)
@@ -11,8 +12,18 @@ export fn htmlResponse(body!: String, headOnly: Bool) -> Response {
     }
 }
 
+fn navExtra(customer!: String) -> String {
+    if isEmpty(customer) {
+        ""
+    } else {
+        "<p class=\"nav-hi\">Hi, {customer}</p>"
+    }
+}
+
 ## Wrap page body in a shared document + nav.
-export fn page(title!: String, body!: String, headOnly: Bool) -> Response {
-    let html = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title} · Little Crema</title>\n<link rel=\"stylesheet\" href=\"/style.css\">\n</head>\n<body>\n<header>\n<nav>\n<a class=\"brand\" href=\"/\">Little Crema</a>\n<a href=\"/menu\">Menu</a>\n<a href=\"/api/health\">Health</a>\n</nav>\n</header>\n<main>\n{body}\n</main>\n<footer>\n<p>Six drinks · example-only server · not product std.</p>\n</footer>\n</body>\n</html>\n"
+## `customer` is the remembered name, or "" when signed out.
+export fn page(title!: String, body!: String, headOnly: Bool, customer!: String) -> Response {
+    let hi = navExtra(customer)
+    let html = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title} · Little Crema</title>\n<link rel=\"stylesheet\" href=\"/style.css\">\n</head>\n<body>\n<header>\n<nav>\n<a class=\"brand\" href=\"/\">Little Crema</a>\n<a href=\"/menu\">Menu</a>\n<a href=\"/api/health\">Health</a>\n{hi}\n</nav>\n</header>\n<main>\n{body}\n</main>\n<footer>\n<p>Six drinks · example-only server · not product std.</p>\n</footer>\n</body>\n</html>\n"
     htmlResponse(html, headOnly)
 }

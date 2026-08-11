@@ -165,3 +165,66 @@ h1 {
   font-weight: 700;
   margin-top: 1.25rem;
 }
+
+.nav-hi {
+  margin: 0 0 0 auto;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.card-form {
+  margin: 2.5rem auto 0;
+  max-width: 22rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1.25rem 1.35rem;
+  text-align: left;
+}
+
+.card-form h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+
+.card-form form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.card-form label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.card-form input[type="text"] {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.card-form button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  border: none;
+  border-radius: 0.35rem;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  .card-form button { color: #1c1713; }
+}
+
+.card-form button.outline {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+}

@@ -4,6 +4,7 @@
 
 import pages from "./Pages"
 import api from "./Api"
+import customer from "./Customer"
 import { Router } from "std/HttpStatic"
 import { Request, Response, methodNotAllowed, notFound } from "std/Http"
 import { startsWith, dropPrefix, contains, isEmpty } from "std/Str"
@@ -17,10 +18,23 @@ fn isReadMethod(method!: String) -> Bool {
     }
 }
 
-## Dispatch one request to a Response. Never fails the process.
-export fn handle(req!: Request) -> Response {
-    if isReadMethod(req.method) {
-        routeRead(req)
+## Dispatch one request to a Response. `body` is the raw request body
+## (example-completed; std Request.body stays empty).
+export fn handle(req!: Request, body!: Bytes) -> Response {
+    if req.method == "POST" {
+        routePost(req, body)
+    } else {
+        if isReadMethod(req.method) {
+            routeRead(req)
+        } else {
+            methodNotAllowed("GET, HEAD, POST")
+        }
+    }
+}
+
+fn routePost(req!: Request, body!: Bytes) -> Response {
+    if req.path == "/" {
+        pages.signIn(body)
     } else {
         methodNotAllowed("GET, HEAD")
     }
@@ -28,15 +42,16 @@ export fn handle(req!: Request) -> Response {
 
 fn routeRead(req!: Request) -> Response {
     let headOnly = req.method == "HEAD"
+    let who = customer.greeting(req)
     let p = req.path
     if p == "/api/health" {
         return api.health(headOnly)
     }
     if p == "/" {
-        return pages.home(headOnly)
+        return pages.home(headOnly, who)
     }
     if p == "/menu" {
-        return pages.menu(headOnly)
+        return pages.menu(headOnly, who)
     }
     if startsWith(p, "/menu/") {
         let slug = dropPrefix(p, "/menu/")
@@ -49,7 +64,7 @@ fn routeRead(req!: Request) -> Response {
         if contains(slug, "..") {
             return notFound()
         }
-        return pages.drink(slug, headOnly)
+        return pages.drink(slug, headOnly, who)
     }
     ## CSS and any leftover static files under web/ (cwd-relative).
     let files = Router(root: "examples/http/web")

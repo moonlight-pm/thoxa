@@ -104,17 +104,25 @@ curl -s  http://127.0.0.1:9091/menu/nope   # 404
 
 | Step | Status | Notes |
 |------|--------|--------|
-| B1 Request body available to the app | pending | Prefer language/Net/Http **if forced** — else example-only hacks; **still no std API expansion unless CURRENT promotes a product slice** |
-| B2 Form urldecode in example package | pending | `examples/http` only |
-| B3 303 + Location helper (example) | pending | |
-| B4 Cookie set/read (example) | pending | `Customer.thx` |
-| B5 POST `/` sign-in + forget + nav greeting | pending | |
+| B1 Request body available to the app | **done** | Example-only: `Wire.readBody` after `receiveRequest` + `Content-Length` + `Socket.receive` (std `Request.body` still empty) |
+| B2 Form urldecode in example package | **done** | `Wire.formField` / `urlDecode` |
+| B3 303 + Location helper (example) | **done** | `Wire.seeOther` |
+| B4 Cookie set/read (example) | **done** | `Customer.thx` |
+| B5 POST `/` sign-in + forget + nav greeting | **done** | PRG; empty name forgets |
 
-**Note on B1:** product `Request.body` is always empty and `receiveRequest`
-stops at headers today. Phase B may require a **language / product** break
-(e.g. body after `Content-Length`) — that break is scheduled only when Phase A
-is done and CURRENT says so. Until then, do not half-implement bodies in
-`std/`.
+**B1 resolution (no product break):** Body is completed in `examples/http/Wire.thx`
+using the raw header buffer + optional further `receive()` for
+`Content-Length`. Product `std/Http.parseRequest` still leaves `Request.body`
+empty — the app passes `body: Bytes` separately into `App.handle`. Promote to
+std only if a product slice is scheduled later.
+
+**Phase B smoke**
+
+```bash
+curl -sD- -c /tmp/c.ck -X POST -d 'name=Ada' http://127.0.0.1:9091/
+curl -s -b /tmp/c.ck http://127.0.0.1:9091/   # Hi, Ada
+curl -sD- -b /tmp/c.ck -c /tmp/c.ck -X POST -d 'name=' http://127.0.0.1:9091/
+```
 
 ### Phase C — Query string search (optional)
 

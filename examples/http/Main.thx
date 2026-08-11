@@ -6,9 +6,7 @@
 ## From the workspace root (cwd-relative web root):
 ##   curl -s  http://127.0.0.1:9091/
 ##   curl -s  http://127.0.0.1:9091/menu
-##   curl -s  http://127.0.0.1:9091/menu/espresso
-##   curl -s  http://127.0.0.1:9091/api/health
-##   curl -sD- http://127.0.0.1:9091/style.css
+##   curl -s -c /tmp/crema.ck -b /tmp/crema.ck -X POST -d 'name=Ada' http://127.0.0.1:9091/
 ##
 ## Ctrl-C to stop. Port 9091; SO_REUSEADDR enabled.
 ## Experiment charter: docs/ideas/2026-08-10-examples-http-crema-experiment.md
@@ -16,6 +14,7 @@
 import net, { Socket } from "std/Net"
 import http from "std/Http"
 import app from "./App"
+import wire from "./Wire"
 import { Pass, Fail } from "std/Fallible"
 import logging, { info, warn } from "std/Logging"
 
@@ -40,7 +39,7 @@ fn run() {
     server.bind(listenPort)?
     server.listen(16)?
     info("http server listening on 127.0.0.1:{listenPort}")
-    info("Little Crema — dynamic pages + static assets (Ctrl-C to stop)")
+    info("Little Crema — pages, forms, cookies (Ctrl-C to stop)")
     loop {
         match server.accept() {
             Fail(e) {
@@ -55,7 +54,7 @@ fn run() {
     }
 }
 
-## One connection: read headers, dispatch, write full response.
+## One connection: headers + optional body, dispatch, write full response.
 fn serveOne(peer!: Socket) {
     match peer.receiveRequest() {
         Fail(e) {
@@ -67,17 +66,25 @@ fn serveOne(peer!: Socket) {
             } else {
                 let response = match http.parseRequest(raw) {
                     Pass(req) {
-                        let res = app.handle(req)
-                        info("{req.method} {req.path} -> {res.status} {res.reason}")
-                        res
+                        match wire.readBody(peer, raw, req) {
+                            Fail(e) {
+                                warn("body: {e}")
+                                http.badRequest(e)
+                            }
+                            Pass(body) {
+                                let res = app.handle(req, body)
+                                info("{req.method} {req.path} -> {res.status} {res.reason}")
+                                res
+                            }
+                        }
                     }
                     Fail(msg) {
                         warn("parse: {msg}")
                         http.badRequest(msg)
                     }
                 }
-                let wire = http.writeResponse(response)
-                match peer.sendAll(wire) {
+                let wireBytes = http.writeResponse(response)
+                match peer.sendAll(wireBytes) {
                     Pass(_) { }
                     Fail(e) {
                         warn("send: {e}")

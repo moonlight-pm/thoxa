@@ -1,0 +1,264 @@
+## Example-only HTTP helpers (Phase B). Not product std.
+## Body completion after receiveRequest, header lookup, form decode,
+## redirects, response header append.
+
+import net, { Socket } from "std/Net"
+import { Request, Response, Header } from "std/Http"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import { toLowerAscii, trim, split, isEmpty, byteAt, length } from "std/Str"
+
+let maxBodyBytes = 65536
+
+type Kv(key: String, val: String)
+
+## Case-insensitive header value, or Not.
+export fn headerGet(req!: Request, name!: String) -> May<String> {
+    let want = toLowerAscii(name)
+    for h in req.headers {
+        if toLowerAscii(h.name) == want {
+            return Has(h.value)
+        }
+    }
+    Not()
+}
+
+## Parse an unsigned decimal integer (ASCII digits only).
+export fn parseUInt(s!: String) -> May<Int64> {
+    let n = length(s)
+    if n == 0 {
+        Not()
+    } else {
+        mut val = 0
+        mut i = 0
+        mut ok = true
+        loop {
+            if i >= n {
+                break
+            }
+            let c = byteAt(s, i)
+            if c < 48 {
+                ok = false
+                break
+            }
+            if c > 57 {
+                ok = false
+                break
+            }
+            val = val * 10 + (c - 48)
+            i = i + 1
+        }
+        if ok {
+            Has(val)
+        } else {
+            Not()
+        }
+    }
+}
+
+## Content-Length header as Int64, or Not if missing/invalid.
+export fn contentLength(req!: Request) -> May<Int64> {
+    match headerGet(req, "Content-Length") {
+        Not => Not()
+        Has(v) {
+            parseUInt(trim(v))
+        }
+    }
+}
+
+## Bytes after the header terminator in a raw request buffer.
+fn bodyPrefix(raw!: Bytes) -> Bytes {
+    let sep = Bytes.fromString("\r\n\r\n")
+    match raw.find(sep) {
+        Not => Bytes(0)
+        Has(at) {
+            raw.slice(at + 4, raw.count)
+        }
+    }
+}
+
+## Read until `acc` has at least `need` bytes (cap maxBodyBytes).
+fn readUntil(peer!: Socket, start!: Bytes, need!: Int64) -> Trial<Bytes, String> {
+    if need > maxBodyBytes {
+        return Fail("request body too large")
+    }
+    mut acc = start
+    loop {
+        if acc.count >= need {
+            return Pass(acc.slice(0, need))
+        }
+        let chunk = peer.receive()
+        if chunk.count == 0 {
+            return Fail("incomplete request body")
+        }
+        if acc.count + chunk.count > maxBodyBytes {
+            return Fail("request body too large")
+        }
+        mut buf = Buffer()
+        buf.appendBytes(acc)
+        buf.appendBytes(chunk)
+        acc = buf.freeze()
+    }
+    Fail("readUntil: internal")
+}
+
+## Complete the request body using Content-Length (example-only; does not
+## mutate std Request.body). Empty body when no Content-Length / zero length.
+export fn readBody(peer!: Socket, raw!: Bytes, req!: Request) -> Trial<Bytes, String> {
+    let have = bodyPrefix(raw)
+    match contentLength(req) {
+        Not {
+            ## No length — return whatever already arrived after headers.
+            Pass(have)
+        }
+        Has(n) {
+            if n == 0 {
+                Pass(Bytes(0))
+            } else {
+                if n > maxBodyBytes {
+                    Fail("request body too large")
+                } else {
+                    readUntil(peer, have, n)
+                }
+            }
+        }
+    }
+}
+
+## Decode application/x-www-form-urlencoded (+ and %XX). Invalid % → leave as-is.
+export fn urlDecode(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    mut out = Buffer()
+    mut i = 0
+    loop {
+        if i >= b.count {
+            break
+        }
+        let c = b.get(i)
+        if c == 43 {
+            ## +
+            out.appendBytes(Bytes.fromString(" "))
+            i = i + 1
+        } else {
+            if c == 37 {
+                ## %
+                if i + 2 < b.count {
+                    match hexByte(b.get(i + 1), b.get(i + 2)) {
+                        Not {
+                            out.appendBytes(b.slice(i, i + 1))
+                            i = i + 1
+                        }
+                        Has(byte) {
+                            let one = Bytes(1)
+                            one.set(0, byte)
+                            out.appendBytes(one)
+                            i = i + 3
+                        }
+                    }
+                } else {
+                    out.appendBytes(b.slice(i, i + 1))
+                    i = i + 1
+                }
+            } else {
+                out.appendBytes(b.slice(i, i + 1))
+                i = i + 1
+            }
+        }
+    }
+    out.freeze().toString()
+}
+
+fn hexNibble(c!: Int64) -> May<Int64> {
+    if c >= 48 {
+        if c <= 57 {
+            return Has(c - 48)
+        }
+    }
+    if c >= 65 {
+        if c <= 70 {
+            return Has(c - 55)
+        }
+    }
+    if c >= 97 {
+        if c <= 102 {
+            return Has(c - 87)
+        }
+    }
+    Not()
+}
+
+fn hexByte(hi!: Int64, lo!: Int64) -> May<Int64> {
+    match hexNibble(hi) {
+        Not => Not()
+        Has(h) {
+            match hexNibble(lo) {
+                Not => Not()
+                Has(l) {
+                    Has(h * 16 + l)
+                }
+            }
+        }
+    }
+}
+
+## First value for `key` in a urlencoded body, or Not.
+export fn formField(body!: Bytes, key!: String) -> May<String> {
+    let raw = body.toString()
+    if isEmpty(raw) {
+        Not()
+    } else {
+        let pairs = split(raw, "&")
+        for pair in pairs {
+            match splitOnce(pair, "=") {
+                Not {
+                    if pair == key {
+                        return Has("")
+                    }
+                }
+                Has(kv) {
+                    if kv.key == key {
+                        return Has(urlDecode(kv.val))
+                    }
+                }
+            }
+        }
+        Not()
+    }
+}
+
+fn splitOnce(s!: String, sep!: String) -> May<Kv> {
+    let b = Bytes.fromString(s)
+    let needle = Bytes.fromString(sep)
+    match b.find(needle) {
+        Not => Not()
+        Has(at) {
+            Has(Kv(
+                key: b.slice(0, at).toString(),
+                val: b.slice(at + needle.count, b.count).toString()
+            ))
+        }
+    }
+}
+
+## 303 See Other (Post/Redirect/Get).
+export fn seeOther(location!: String) -> Response {
+    Response(
+        status: 303,
+        reason: "See Other",
+        headers: [
+            Header(name: "Location", value: location),
+            Header(name: "Content-Length", value: "0"),
+            Header(name: "Connection", value: "close"),
+        ],
+        body: Bytes(0)
+    )
+}
+
+## Append one header field (new Response; arrays are immutable).
+export fn withHeader(res!: Response, name!: String, value!: String) -> Response {
+    Response(
+        status: res.status,
+        reason: res.reason,
+        headers: res.headers.append(Header(name: name, value: value)),
+        body: res.body
+    )
+}
