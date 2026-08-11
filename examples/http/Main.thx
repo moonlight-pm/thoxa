@@ -1,11 +1,11 @@
 ## Little Crema — process entry only.
-## framework/Server owns the accept loop; app lives under app/ + Handler.thx.
+## framework/ is a pure host library (std only); app/Listen wires it to Routes.
 ##
 ##   cargo make run examples/http
 ##
 ## Charter: docs/ideas/2026-08-10-examples-http-crema-experiment.md
 
-import server from "./framework/Server"
+import listen from "./app/Listen"
 import { Pass, Fail } from "std/Fallible"
 import logging, { warn } from "std/Logging"
 
@@ -15,7 +15,7 @@ fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
 
-    match server.run(listenPort) {
+    match listen.run(listenPort) {
         Pass => 0
         Fail(e) {
             warn("server error: {e}")

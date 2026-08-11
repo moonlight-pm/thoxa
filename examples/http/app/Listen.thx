@@ -1,0 +1,54 @@
+## App wiring — accept loop that plugs this app into the framework host.
+## framework/ never imports this module; Main starts via Listen.run.
+
+import { Socket } from "std/Net"
+import server from "~/framework/Server"
+import routes from "./Routes"
+import { Pass, Fail, Trial } from "std/Fallible"
+import logging, { info, warn } from "std/Logging"
+
+export fn run(port!: Int64) -> Trial<Void, String> {
+    let listener = server.bindListen(port)?
+    info("http server listening on 127.0.0.1:{port}")
+    info("app Listen — framework host + app Routes (Ctrl-C to stop)")
+    loop {
+        match listener.accept() {
+            Fail(e) {
+                warn("accept: {e}")
+            }
+            Pass(peer) {
+                serveOne(peer)
+                peer.close()
+            }
+        }
+    }
+}
+
+fn serveOne(peer!: Socket) {
+    match server.readIncoming(peer) {
+        Fail(e) {
+            warn("recv: {e}")
+            match server.writeBadRequest(peer, e) {
+                Pass(_) { }
+                Fail(se) {
+                    warn("send: {se}")
+                }
+            }
+        }
+        Pass(inc) {
+            if server.isQuietClose(inc) {
+                ## Peer closed without data — quiet.
+            } else {
+                let req = server.requestOf(inc)
+                let res = routes.handle(req, inc.body, inc.query)
+                info("{inc.method} {inc.path} -> {res.status} {res.reason}")
+                match server.writeResponse(peer, inc.method, res) {
+                    Pass(_) { }
+                    Fail(se) {
+                        warn("send: {se}")
+                    }
+                }
+            }
+        }
+    }
+}

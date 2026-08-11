@@ -1,72 +1,156 @@
-## Framework — TCP server loop (candidate std surface).
-## Never imports app/. Calls the package mount `~/Handler` (app-owned shim).
+## Framework — TCP listen + one-connection HTTP I/O (candidate std).
+## Imports only std/ and sibling framework modules — never app/ or package root.
+##
+## Incoming is a plain product (not a union member) so header data can be
+## carried as Bytes; quiet peer-close is an empty method/path sentinel.
 
 import net, { Socket } from "std/Net"
-import http from "std/Http"
+import http, { Request, Response, Header } from "std/Http"
 import wire from "./Wire"
-import handler from "~/Handler"
-import { Pass, Fail, Trial } from "std/Fallible"
-import logging, { info, warn } from "std/Logging"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import { split } from "std/Str"
 
-## Bind, listen, accept forever. Setup Fail → process error; accept errors log.
-export fn run(port!: Int64) -> Trial<Void, String> {
+## Full request entity. Headers packed as `name\\tvalue\\n` lines (union limits).
+export type Incoming(
+    method: String,
+    path: String,
+    version: String,
+    headersWire: Bytes,
+    body: Bytes,
+    query: String
+)
+
+## True when readIncoming saw a quiet peer close (no bytes).
+export fn isQuietClose(inc!: Incoming) -> Bool {
+    if inc.method == "" {
+        inc.path == ""
+    } else {
+        false
+    }
+}
+
+export fn bindListen(port!: Int64) -> Trial<Socket, String> {
     let server = net.createSocket()?
     server.reuseAddr()?
     server.bind(port)?
     server.listen(16)?
-    info("http server listening on 127.0.0.1:{port}")
-    info("framework Server — mount ~/Handler (Ctrl-C to stop)")
-    loop {
-        match server.accept() {
-            Fail(e) {
-                warn("accept: {e}")
+    Pass(server)
+}
+
+fn packHeaders(headers!: Array<Header>) -> Bytes {
+    mut buf = Buffer()
+    for h in headers {
+        buf.appendBytes(Bytes.fromString("{h.name}\t{h.value}\n"))
+    }
+    buf.freeze()
+}
+
+fn unpackHeaders(packed!: Bytes) -> Array<Header> {
+    ## Split on newlines via String helpers (keeps this free of May binds in a loop).
+    let text = packed.toString()
+    let lines = splitLines(text)
+    mut headers: Array<Header> = []
+    for line in lines {
+        match splitOnceTab(line) {
+            Not { }
+            Has(kv) {
+                headers = headers.append(Header(name: kv.name, value: kv.value))
             }
-            Pass(peer) {
-                serveOne(peer)
-                peer.close()
+        }
+    }
+    headers
+}
+
+type NameVal(name: String, value: String)
+
+fn splitOnceTab(line!: String) -> May<NameVal> {
+    let b = Bytes.fromString(line)
+    let tab = Bytes.fromString("\t")
+    match b.find(tab) {
+        Not {
+            Not()
+        }
+        Has(t) {
+            Has(NameVal(
+                name: b.slice(0, t).toString(),
+                value: b.slice(t + 1, b.count).toString()
+            ))
+        }
+    }
+}
+
+fn splitLines(s!: String) -> Array<String> {
+    split(s, "\n")
+}
+
+## Read headers + body + query. Quiet close → empty Incoming (isQuietClose).
+export fn readIncoming(peer!: Socket) -> Trial<Incoming, String> {
+    match peer.receiveRequest() {
+        Fail(e) {
+            Fail(e)
+        }
+        Pass(raw) {
+            if raw.count == 0 {
+                Pass(Incoming(
+                    method: "",
+                    path: "",
+                    version: "",
+                    headersWire: Bytes(0),
+                    body: Bytes(0),
+                    query: ""
+                ))
+            } else {
+                match http.parseRequest(raw) {
+                    Fail(msg) {
+                        Fail(msg)
+                    }
+                    Pass(req) {
+                        match wire.readBody(peer, raw, req) {
+                            Fail(e) {
+                                Fail(e)
+                            }
+                            Pass(body) {
+                                let query = wire.rawQuery(raw)
+                                Pass(Incoming(
+                                    method: req.method,
+                                    path: req.path,
+                                    version: req.version,
+                                    headersWire: packHeaders(req.headers),
+                                    body: body,
+                                    query: query
+                                ))
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-## One connection: parse → body → query → Handler.handle → write.
-fn serveOne(peer!: Socket) {
-    match peer.receiveRequest() {
-        Fail(e) {
-            warn("recv: {e}")
+export fn requestOf(inc!: Incoming) -> Request {
+    Request(
+        method: inc.method,
+        path: inc.path,
+        version: inc.version,
+        headers: unpackHeaders(inc.headersWire),
+        body: Bytes(0)
+    )
+}
+
+export fn writeResponse(peer!: Socket, method!: String, res!: Response) -> Trial<Void, String> {
+    let final = wire.finalize(method, res)
+    let wireBytes = http.writeResponse(final)
+    match peer.sendAll(wireBytes) {
+        Pass(_) {
+            Pass(Void)
         }
-        Pass(raw) {
-            if raw.count == 0 {
-                ## Peer closed without sending data — quiet.
-            } else {
-                let response = match http.parseRequest(raw) {
-                    Pass(req) {
-                        match wire.readBody(peer, raw, req) {
-                            Fail(e) {
-                                warn("body: {e}")
-                                http.badRequest(e)
-                            }
-                            Pass(body) {
-                                let query = wire.rawQuery(raw)
-                                let res = handler.handle(req, body, query)
-                                info("{req.method} {req.path} -> {res.status} {res.reason}")
-                                res
-                            }
-                        }
-                    }
-                    Fail(msg) {
-                        warn("parse: {msg}")
-                        http.badRequest(msg)
-                    }
-                }
-                let wireBytes = http.writeResponse(response)
-                match peer.sendAll(wireBytes) {
-                    Pass(_) { }
-                    Fail(e) {
-                        warn("send: {e}")
-                    }
-                }
-            }
+        Fail(e) {
+            Fail(e)
         }
     }
+}
+
+export fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
+    writeResponse(peer, "GET", http.badRequest(msg))
 }

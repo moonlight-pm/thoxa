@@ -53,24 +53,22 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  Main.thx                 # entry: logging + framework.Server.run(port)
-  Handler.thx              # app mount shim (only package root framework imports)
-  framework/               # candidate std; never imports app/*
-    Server.thx             # accept loop → ~/Handler.handle
-    Wire.thx               # body, query, form, headers, 303, HEAD
-    Router.thx             # named routes, :param, serveStatic
-  app/                     # Little Crema
-    Routes.thx             # buildRouter() + handle() + dispatch
+  Main.thx                 # entry: logging + app/Listen.run
+  framework/               # candidate std — imports std + framework only
+    Server.thx             # bindListen, readIncoming, writeResponse
+    Wire.thx Router.thx
+  app/
+    Listen.thx             # accept loop (composition root)
+    Routes.thx             # buildRouter + handle + dispatch
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
   web/
   README.md
 ```
 
-**Layers:** `framework/` never imports `app/*` — only `~/Handler`. `app/` uses
-`framework/{Wire,Router}`. `Main` is boot only.
+**Layers:** `framework/` is closed (no `app/`, no package-root mounts). `app/Listen`
+wires the host to `Routes`. `Main` is boot only.
 
 **Router:** app registers `.get/.post(pattern, name)`; path params are `:slug`.
-Unmatched → static files.
 
 ---
 

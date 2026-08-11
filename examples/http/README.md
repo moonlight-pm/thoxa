@@ -4,13 +4,10 @@ Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std.**
 
 | Layer | Path | Role |
 |-------|------|------|
-| **framework** | `framework/` | Host pipeline — candidate `std/` (**never imports `app/`**) |
-| **app** | `app/` | Little Crema — routes, pages, domain |
-| **mount** | `Handler.thx` | App-owned shim; only thing framework imports for handlers |
-| **entry** | `Main.thx` | Boot: logging + `server.run(port)` |
+| **framework** | `framework/` | Pure host library — **only imports `std/` + itself** |
+| **app** | `app/` | Little Crema + accept-loop wiring (`Listen`) |
+| **entry** | `Main.thx` | Boot: logging + `app/Listen.run` |
 | **assets** | `web/` | Static files |
-
-Product **`std/Net` + `std/Http` + `std/HttpStatic` + `std/Logging`** as-shipped.
 
 Charter: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](../../docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 
@@ -28,14 +25,14 @@ Port **9091**. Ctrl-C to stop.
 
 ```text
 examples/http/
-  Main.thx                 # entry: logging + framework.Server.run
-  Handler.thx              # mount: re-exports app/Routes.handle
-  framework/
-    Server.thx             # accept loop, parse, body/query, write → Handler
+  Main.thx                 # entry only
+  framework/               # candidate std — closed world
+    Server.thx             # bindListen, readIncoming, writeResponse
     Wire.thx               # body, query, form, headers, 303, HEAD
     Router.thx             # named routes, :param, serveStatic
   app/
-    Routes.thx             # buildRouter() + handle() + dispatch
+    Listen.thx             # accept loop (wires framework → Routes)
+    Routes.thx             # buildRouter + handle + dispatch
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
   web/
   README.md
@@ -44,16 +41,25 @@ examples/http/
 ### Dependency direction
 
 ```text
-Main → framework/Server → Handler.thx → app/Routes → app/*
-                       ↘ framework/Wire
-app  → framework/{Wire, Router}
-framework ↛ app/*          (only ~/Handler at package root)
+Main → app/Listen → framework/Server + app/Routes
+app  → framework/{Server, Wire, Router}
+framework → std only     (never app/, never package-root mounts)
 ```
 
-`Handler.thx` is the app mount until Thoxa has first-class function values
-(`server.run(port, app.handle)`).
+Composition root is **app/Listen** (application owns “run the host with my handler”). Framework stays a library.
 
-### Framework router (app-facing)
+### Framework API (host)
+
+| API | Role |
+|-----|------|
+| `Server.bindListen(port)` | Listening socket |
+| `Server.readIncoming(peer)` | `Incoming` (or quiet-close sentinel) |
+| `Server.requestOf(inc)` | Rebuild `std/Http.Request` |
+| `Server.writeResponse(peer, method, res)` | HEAD finalize + send |
+| `Router.newRouter` / `.get` / `.post` / `.resolve` / `.serveStatic` | App-facing routing |
+| `Wire.*` | Body, query, form, cookies helpers |
+
+### App router setup
 
 ```thx
 router.newRouter("examples/http/web")
@@ -64,11 +70,8 @@ router.newRouter("examples/http/web")
     .post("/", "signIn")
 ```
 
-`resolve` → `May<Hit(name, param)>`. Unmatched → `serveStatic`.
-GET also matches HEAD; `Wire.finalize` strips the body.
-
 ## Rules
 
 - **No `std/` growth** — grow `framework/` instead.
-- **`framework/` never imports `app/*`** — only `~/Handler`.
-- Directory names are **lowercase**.
+- **`framework/` imports only `std/` and `framework/*`.**
+- Directory names **lowercase**.
