@@ -1545,6 +1545,10 @@ fn remote_type_method_params(
 }
 
 fn format_type_expr(te: &TypeExpr) -> String {
+    if let Some(members) = &te.union_members {
+        let parts: Vec<String> = members.iter().map(format_type_expr).collect();
+        return with_type_mark(parts.join(" | "), te.mark);
+    }
     if let Some(lit) = &te.lit {
         let s = match lit {
             ast::TypeLit::Int(n) => n.to_string(),

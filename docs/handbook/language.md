@@ -60,7 +60,9 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Heap | `String` (interpolation, `.count`, `\xHH` escapes), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (`.append` / `.dropLast` / `.insertAt` / `.removeAt`) |
 | User types | `type Name(fields) { methods }` — including heap fields; method field write-back |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
-| Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?` |
+| Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"` |
+| Literal types | Bare `"home"`, `0`, `true` are types in formals / returns / annotations; inline `"a" \| "b"` in those positions too (**D131**) |
+| Multi-clause fns | Same name, different formal types → one function (type-driven match sugar, **D131**) |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/Fallible` with `?` / `match` (ok/err may nest) |
 | Equality | String `==` / `!=`; usual scalar compares |
@@ -144,6 +146,41 @@ when possible:
 
 Unannotated `main` still defaults to **`Int64`**. Unannotated **methods** still
 default to **`Void`** (annotate if they return a value).
+
+**Multi-clause functions (**D131**):** several `fn` definitions with the **same
+name** in one scope (module free function **or** methods on one type) are **one
+function** — sugar for an ordered `match` on formals whose types differ.
+Formals stay `name: Type` (not pattern formals). Dispatch may use **any** types,
+including bare singleton literals (`"home"`, `0`, `true`).
+
+```thx
+fn page(path: "home") -> String {
+    "home-page"
+}
+fn page(path: "admin") -> String {
+    "admin-page"
+}
+
+type Router {
+    export fn get(path: "home", req: Request) -> String { "home" }
+    export fn get(path: "admin", req: Request) -> String { "admin" }
+}
+```
+
+Rules (v0):
+
+- Equal arity; **no parameter defaults** on multi-clause sets
+- Source order = first match wins
+- Domain is the join of clause types (as specific as possible — not forced to
+  `String`); call sites must assign into that closed domain
+- Duplicate domains, later unreachable clauses, and export mismatch (`export`
+  on some clauses only) are **errors**
+- One runtime entry; returns join like a match (per-clause `->` is a local
+  expect; free-fn return inference applies to the merged body)
+
+Bare literal types and inline member-sets (`"a" | "b"`) are also valid in
+formals, returns, and annotations in general. Singleton alias:
+`type Home = "home"`.
 
 ## Methods and field write-back
 

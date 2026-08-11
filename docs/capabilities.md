@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-11 (D131 multi-clause **spec’d**; Crema-lite Phase A–C; D130
+**As of:** 2026-08-11 (D131 multi-clause **shipped**; Crema-lite Phase A–C; D130
 match arm sugar; D129 return inference; D128 loop; D127 combined import)
 
 ---
@@ -22,7 +22,7 @@ match arm sugar; D129 return inference; D128 loop; D127 combined import)
 |----|------------|--------|------|--------------|------|----------|
 | driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | none for v0 | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
-| multi-clause | Same-name multi-clause fn/method = match sugar on formal types | spec’d | `multi_clause` (planned) | **D131**; [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | **Not implemented.** Needs: bare singleton literal types in all type positions; `\|` in formal/general type position; merge free+method clauses; unreachable/export errors; return join. Pattern formals / cross-arity / composition out of v0. D16 std overload still separate. | no |
+| multi-clause | Same-name multi-clause fn/method = match sugar on formal types | shipped | `multi_clause` | **D131**; [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | Pattern formals / cross-arity / composition / `extern` multi-clause out of v0. D16 std factories still separate. Bare singleton lit types + inline `\|` in formals shipped as typespace substrate. | yes |
 | trial | `Trial` + `match` + `?` via `std/Fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | none for v0 — import `Pass`/`Fail`/`Trial` from `std/Fallible`; cross-module residual rewrap | yes |
 | may | `May` / `Has` / `Not` + `?` via `std/Fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | none for v0 — import `Has`/`Not`/`May` from `std/Fallible`; `Bytes.find` needs `May` in scope | yes |
 | sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | none for v0 | yes |

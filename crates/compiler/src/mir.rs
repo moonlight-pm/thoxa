@@ -367,6 +367,15 @@ pub fn display_ty(ty: &Ty) -> String {
 }
 
 fn display_user_ty(mangled: &str) -> String {
+    // D131 synthetic singleton literal types.
+    if let Some(rest) = mangled.strip_prefix("$lit$") {
+        return display_lit_key(rest);
+    }
+    // D131 / D119 synthetic member-set unions.
+    if let Some(rest) = mangled.strip_prefix("$union$") {
+        let parts: Vec<String> = rest.split('$').map(display_lit_key).collect();
+        return parts.join(" | ");
+    }
     // Mono: Base__Arg1__Arg2… (args may themselves contain `__` only if nested User
     // was flattened via ty_mono_suffix, which replaces `-`/`$` but keeps `__`).
     let parts: Vec<&str> = mangled.split("__").collect();
@@ -376,6 +385,23 @@ fn display_user_ty(mangled: &str) -> String {
     }
     let args: Vec<String> = parts[1..].iter().map(|a| display_mono_arg(a)).collect();
     format!("{base}<{}>", args.join(", "))
+}
+
+/// Display helper for synthetic lit/union keys (`liti_0`, `litb_true`, `lits_home`, `ty_…`).
+fn display_lit_key(key: &str) -> String {
+    if let Some(n) = key.strip_prefix("liti_") {
+        return n.to_string();
+    }
+    if let Some(b) = key.strip_prefix("litb_") {
+        return b.to_string();
+    }
+    if let Some(s) = key.strip_prefix("lits_") {
+        return format!("\"{s}\"");
+    }
+    if let Some(t) = key.strip_prefix("ty_") {
+        return display_type_base(t);
+    }
+    key.to_string()
 }
 
 fn display_type_base(mangled_base: &str) -> String {
@@ -588,6 +614,22 @@ struct MethodSig {
     exported: bool,
     /// Module of the enclosing type — default exprs resolve here (D116).
     def_mod: String,
+}
+
+/// One clause of a multi-clause function/method (D131).
+#[derive(Clone)]
+struct MultiClause {
+    /// Formal names (source order) for this clause's body.
+    param_names: Vec<String>,
+    /// Formal types for this clause (refinement under the arm).
+    param_tys: Vec<Ty>,
+    /// Positional `!` markers (must match across clauses).
+    positional: Vec<bool>,
+    /// Optional per-clause `-> T` local expect.
+    return_type: Option<TypeExpr>,
+    body: Block,
+    name_span: Span,
+    exported: bool,
 }
 
 #[derive(Clone)]
@@ -1190,51 +1232,42 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         return Err(errors_to_multi(type_reg_errors));
     }
 
-    // Methods (signature type-reg; collect independent failures).
+    // D131: bare singleton literal types + inline `A | B` in formals / annotations.
+    materialize_package_typespace(package, &mut types_info, &mut type_layouts, &per_mod_types)?;
+
+    // Methods (signature type-reg; multi-clause merge — D131).
     let mut method_reg_errors: Vec<Error> = Vec::new();
+    // (type_mangled, method_name) → clause bodies for multi-clause lower
+    let mut multi_methods: HashMap<(String, String), Vec<MultiClause>> = HashMap::new();
     for (mod_id, mangled, td) in &type_defs {
         let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
+        // Group methods by name (source order).
+        let mut groups: HashMap<String, Vec<&Method>> = HashMap::new();
+        let mut group_order: Vec<String> = Vec::new();
         for m in &td.methods {
-            match (|| -> Result<MethodSig> {
-                let ret = match m.return_type.as_ref() {
-                    Some(t) => resolve_ty(t, &types_info, &name_map)?,
-                    None => Ty::Void,
-                };
-                let mut params = Vec::new();
-                let mut defaults = Vec::new();
-                for p in &m.params {
-                    params.push((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?));
-                    defaults.push(p.default.clone());
-                }
-                // Same ordering rule as free functions (D98/D106).
-                let mut seen_default = false;
-                for (i, d) in defaults.iter().enumerate() {
-                    if d.is_some() {
-                        seen_default = true;
-                    } else if seen_default {
-                        return Err(Error::at(
-                            format!(
-                                "parameter `{}` without a default follows a defaulted parameter",
-                                params[i].0
-                            ),
-                            m.params[i].name_span,
-                        ));
-                    }
-                }
-                Ok(MethodSig {
-                    params,
-                    defaults,
-                    ret,
-                    exported: m.exported,
-                    def_mod: mod_id.clone(),
-                })
-            })() {
-                Ok(sig) => {
+            if !groups.contains_key(&m.name) {
+                group_order.push(m.name.clone());
+            }
+            groups.entry(m.name.clone()).or_default().push(m);
+        }
+        for method_name in group_order {
+            let clauses = groups.get(&method_name).unwrap();
+            match merge_method_clauses(
+                clauses,
+                mod_id,
+                &mut types_info,
+                &mut type_layouts,
+                &name_map,
+            ) {
+                Ok((sig, multi)) => {
                     types_info
                         .get_mut(mangled)
                         .unwrap()
                         .methods
-                        .insert(m.name.clone(), sig);
+                        .insert(method_name.clone(), sig);
+                    if let Some(mc) = multi {
+                        multi_methods.insert((mangled.clone(), method_name), mc);
+                    }
                 }
                 Err(e) => method_reg_errors.push(e),
             }
@@ -1249,151 +1282,147 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     let mut extern_decls: Vec<ExternDecl> = Vec::new();
     // (module, mangled, &Function, is_entry)
     let mut free_fns: Vec<(String, String, &ast::Function, bool)> = Vec::new();
+    // mangled free-fn name → multi-clause bodies (D131)
+    let mut multi_free: HashMap<String, Vec<MultiClause>> = HashMap::new();
 
     for m in &package.modules {
         let name_map = per_mod_types.get(&m.id).cloned().unwrap_or_default();
+        // Collect free functions by name for multi-clause merge (D131).
+        let mut free_groups: HashMap<String, Vec<&ast::Function>> = HashMap::new();
+        let mut free_order: Vec<String> = Vec::new();
         for item in &m.ast.items {
-            match item {
-                Item::Extern(e) => {
-                    if e.library != "c" {
+            if let Item::Function(f) = item {
+                if !free_groups.contains_key(&f.name) {
+                    free_order.push(f.name.clone());
+                }
+                free_groups.entry(f.name.clone()).or_default().push(f);
+            }
+        }
+        for fname in free_order {
+            let clauses = free_groups.get(&fname).unwrap();
+            let mangled = if m.is_entry && fname == "main" {
+                "main".to_string()
+            } else {
+                mangle_fn(&m.id, &fname, m.is_entry)
+            };
+            match merge_free_clauses(
+                clauses,
+                m.is_entry,
+                &m.id,
+                &mut types_info,
+                &mut type_layouts,
+                &name_map,
+            ) {
+                Ok((mut sig, multi)) => {
+                    let exported = multi
+                        .as_ref()
+                        .map(|c| c.iter().any(|x| x.exported))
+                        .unwrap_or(clauses[0].exported);
+                    sig.mangled = mangled.clone();
+                    if fns.insert(mangled.clone(), sig).is_some() {
                         return Err(Error::at(
-                            format!("only library \"c\" is supported (got \"{}\")", e.library),
-                            e.library_span,
+                            format!("duplicate function `{fname}`"),
+                            clauses[0].name_span,
                         ));
                     }
-                    let ret = match e.return_type.as_ref() {
-                        Some(t) => resolve_ty(t, &types_info, &name_map)?,
-                        None => Ty::Void,
-                    };
-                    if !is_ffi_ty(&ret) {
-                        return Err(Error::at(
-                            format!("type {ret:?} is not FFI-marshalable"),
-                            e.return_type
-                                .as_ref()
-                                .map(|t| t.span)
-                                .unwrap_or(e.name_span),
-                        ));
-                    }
-                    let mut params = Vec::new();
-                    let mut defaults = Vec::new();
-                    for p in &e.params {
-                        let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
-                        if matches!(ty, Ty::Void) || !is_ffi_ty(&ty) {
-                            return Err(Error::at(
-                                format!("type {ty:?} is not FFI-marshalable as a parameter"),
-                                p.ty.span,
-                            ));
-                        }
-                        params.push((p.name.clone(), ty));
-                        defaults.push(p.default.clone());
-                    }
-                    // Same ordering rule as free functions (call-site defaults).
-                    let mut seen_default = false;
-                    for (i, d) in defaults.iter().enumerate() {
-                        if d.is_some() {
-                            seen_default = true;
-                        } else if seen_default {
-                            return Err(Error::at(
-                                format!(
-                                    "parameter `{}` without a default follows a defaulted parameter",
-                                    params[i].0
-                                ),
-                                e.params[i].name_span,
-                            ));
-                        }
-                    }
-                    let c_symbol = e.c_symbol.clone().unwrap_or_else(|| e.name.clone());
-                    let mangled = mangle_fn(&m.id, &e.name, m.is_entry);
-                    if fns
-                        .insert(
-                            mangled.clone(),
-                            FnSig {
-                                params: params.clone(),
-                                defaults,
-                                ret: ret.clone(),
-                                extern_symbol: Some(c_symbol.clone()),
-                                mangled: mangled.clone(),
-                                def_mod: m.id.clone(),
-                            },
-                        )
-                        .is_some()
-                    {
-                        return Err(Error::at(
-                            format!("duplicate function `{}`", e.name),
-                            e.name_span,
-                        ));
-                    }
-                    if e.exported {
+                    if exported {
                         module_exports
                             .get_mut(&m.id)
                             .unwrap()
                             .fns
-                            .insert(e.name.clone(), mangled);
+                            .insert(fname.clone(), mangled.clone());
                     }
-                    extern_decls.push(ExternDecl {
-                        thoxa_name: e.name.clone(),
-                        c_symbol,
-                        params,
-                        ret,
-                    });
+                    if let Some(mc) = multi {
+                        multi_free.insert(mangled.clone(), mc);
+                    }
+                    free_fns.push((m.id.clone(), mangled, clauses[0], m.is_entry));
                 }
-                Item::Function(f) => {
-                    let mangled = if m.is_entry && f.name == "main" {
-                        "main".to_string()
-                    } else {
-                        mangle_fn(&m.id, &f.name, m.is_entry)
-                    };
-                    let ret = resolve_return_ty(f, m.is_entry, &types_info, &name_map)?;
-                    let mut params = Vec::new();
-                    let mut defaults = Vec::new();
-                    for p in &f.params {
-                        params.push((p.name.clone(), resolve_ty(&p.ty, &types_info, &name_map)?));
-                        defaults.push(p.default.clone());
-                    }
-                    // Non-defaulted params may not follow a defaulted one (positional omit rule).
-                    let mut seen_default = false;
-                    for (i, d) in defaults.iter().enumerate() {
-                        if d.is_some() {
-                            seen_default = true;
-                        } else if seen_default {
-                            return Err(Error::at(
-                                format!(
-                                    "parameter `{}` without a default follows a defaulted parameter",
-                                    params[i].0
-                                ),
-                                f.params[i].name_span,
-                            ));
-                        }
-                    }
-                    if fns
-                        .insert(
-                            mangled.clone(),
-                            FnSig {
-                                params,
-                                defaults,
-                                ret,
-                                extern_symbol: None,
-                                mangled: mangled.clone(),
-                                def_mod: m.id.clone(),
-                            },
-                        )
-                        .is_some()
-                    {
+                Err(e) => return Err(e),
+            }
+        }
+        for item in &m.ast.items {
+            if let Item::Extern(e) = item {
+                if e.library != "c" {
+                    return Err(Error::at(
+                        format!("only library \"c\" is supported (got \"{}\")", e.library),
+                        e.library_span,
+                    ));
+                }
+                let ret = match e.return_type.as_ref() {
+                    Some(t) => resolve_ty(t, &types_info, &name_map)?,
+                    None => Ty::Void,
+                };
+                if !is_ffi_ty(&ret) {
+                    return Err(Error::at(
+                        format!("type {ret:?} is not FFI-marshalable"),
+                        e.return_type
+                            .as_ref()
+                            .map(|t| t.span)
+                            .unwrap_or(e.name_span),
+                    ));
+                }
+                let mut params = Vec::new();
+                let mut defaults = Vec::new();
+                for p in &e.params {
+                    let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
+                    if matches!(ty, Ty::Void) || !is_ffi_ty(&ty) {
                         return Err(Error::at(
-                            format!("duplicate function `{}`", f.name),
-                            f.name_span,
+                            format!("type {ty:?} is not FFI-marshalable as a parameter"),
+                            p.ty.span,
                         ));
                     }
-                    if f.exported {
-                        module_exports
-                            .get_mut(&m.id)
-                            .unwrap()
-                            .fns
-                            .insert(f.name.clone(), mangled.clone());
-                    }
-                    free_fns.push((m.id.clone(), mangled, f, m.is_entry));
+                    params.push((p.name.clone(), ty));
+                    defaults.push(p.default.clone());
                 }
-                _ => {}
+                // Same ordering rule as free functions (call-site defaults).
+                let mut seen_default = false;
+                for (i, d) in defaults.iter().enumerate() {
+                    if d.is_some() {
+                        seen_default = true;
+                    } else if seen_default {
+                        return Err(Error::at(
+                            format!(
+                                "parameter `{}` without a default follows a defaulted parameter",
+                                params[i].0
+                            ),
+                            e.params[i].name_span,
+                        ));
+                    }
+                }
+                let c_symbol = e.c_symbol.clone().unwrap_or_else(|| e.name.clone());
+                let mangled = mangle_fn(&m.id, &e.name, m.is_entry);
+                if fns
+                    .insert(
+                        mangled.clone(),
+                        FnSig {
+                            params: params.clone(),
+                            defaults,
+                            ret: ret.clone(),
+                            extern_symbol: Some(c_symbol.clone()),
+                            mangled: mangled.clone(),
+                            def_mod: m.id.clone(),
+                        },
+                    )
+                    .is_some()
+                {
+                    return Err(Error::at(
+                        format!("duplicate function `{}`", e.name),
+                        e.name_span,
+                    ));
+                }
+                if e.exported {
+                    module_exports
+                        .get_mut(&m.id)
+                        .unwrap()
+                        .fns
+                        .insert(e.name.clone(), mangled);
+                }
+                extern_decls.push(ExternDecl {
+                    thoxa_name: e.name.clone(),
+                    c_symbol,
+                    params,
+                    ret,
+                });
             }
         }
     }
@@ -1526,6 +1555,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         &mut type_layouts,
         &generics,
         &free_fns,
+        &multi_free,
         &package_maps,
         &module_exports,
         &synthetics,
@@ -1538,29 +1568,55 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     for (mod_id, mangled_ty, td) in &type_defs {
         let m = package.modules.iter().find(|x| x.id == *mod_id).unwrap();
         let maps = package_maps.get(mod_id).unwrap();
+        let mut seen_methods: HashSet<String> = HashSet::new();
         for method in &td.methods {
-            match lower_method(
-                mangled_ty,
-                method,
-                &fns,
-                &types_info,
-                &maps.name_to_type,
-                &maps.name_to_fn,
-                &maps.name_to_global,
-                &maps.namespaces,
-                &module_exports,
-                &package_maps,
-                mod_id,
-                m.is_entry,
-                &synthetics,
-            ) {
+            if !seen_methods.insert(method.name.clone()) {
+                continue; // multi-clause: lower once per name
+            }
+            let result = if let Some(clauses) =
+                multi_methods.get(&(mangled_ty.clone(), method.name.clone()))
+            {
+                lower_multi_method(
+                    mangled_ty,
+                    &method.name,
+                    clauses,
+                    &fns,
+                    &types_info,
+                    &maps.name_to_type,
+                    &maps.name_to_fn,
+                    &maps.name_to_global,
+                    &maps.namespaces,
+                    &module_exports,
+                    &package_maps,
+                    mod_id,
+                    m.is_entry,
+                    &synthetics,
+                )
+            } else {
+                lower_method(
+                    mangled_ty,
+                    method,
+                    &fns,
+                    &types_info,
+                    &maps.name_to_type,
+                    &maps.name_to_fn,
+                    &maps.name_to_global,
+                    &maps.namespaces,
+                    &module_exports,
+                    &package_maps,
+                    mod_id,
+                    m.is_entry,
+                    &synthetics,
+                )
+            };
+            match result {
                 Ok(f) => functions.push(f),
                 Err(e) => body_errors.push(e),
             }
         }
     }
 
-    // Monomorphized methods on generic products.
+    // Monomorphized methods on generic products (no multi-clause on generic templates in v0).
     for job in &mono_method_jobs {
         let m = package
             .modules
@@ -1591,21 +1647,41 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
 
     for (mod_id, mangled, f, is_entry) in &free_fns {
         let maps = package_maps.get(mod_id).unwrap();
-        match lower_function(
-            f,
-            mangled,
-            *is_entry,
-            &fns,
-            &types_info,
-            &maps.name_to_type,
-            &maps.name_to_fn,
-            &maps.name_to_global,
-            &maps.namespaces,
-            &module_exports,
-            &package_maps,
-            mod_id,
-            &synthetics,
-        ) {
+        let result = if let Some(clauses) = multi_free.get(mangled) {
+            lower_multi_free(
+                f,
+                mangled,
+                clauses,
+                *is_entry,
+                &fns,
+                &types_info,
+                &maps.name_to_type,
+                &maps.name_to_fn,
+                &maps.name_to_global,
+                &maps.namespaces,
+                &module_exports,
+                &package_maps,
+                mod_id,
+                &synthetics,
+            )
+        } else {
+            lower_function(
+                f,
+                mangled,
+                *is_entry,
+                &fns,
+                &types_info,
+                &maps.name_to_type,
+                &maps.name_to_fn,
+                &maps.name_to_global,
+                &maps.namespaces,
+                &module_exports,
+                &package_maps,
+                mod_id,
+                &synthetics,
+            )
+        };
+        match result {
             Ok(fun) => functions.push(fun),
             Err(e) => body_errors.push(e),
         }
@@ -2035,6 +2111,527 @@ fn resolve_return_ty(
     }
 }
 
+// ── D131 multi-clause functions ────────────────────────────────────────────
+
+fn merge_free_clauses(
+    clauses: &[&ast::Function],
+    is_entry: bool,
+    mod_id: &str,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+) -> Result<(FnSig, Option<Vec<MultiClause>>)> {
+    debug_assert!(!clauses.is_empty());
+    if clauses.len() == 1 {
+        let f = clauses[0];
+        let ret = resolve_return_ty(f, is_entry, types, name_map)?;
+        let mut params = Vec::new();
+        let mut defaults = Vec::new();
+        for p in &f.params {
+            params.push((p.name.clone(), resolve_ty(&p.ty, types, name_map)?));
+            defaults.push(p.default.clone());
+        }
+        let mut seen_default = false;
+        for (i, d) in defaults.iter().enumerate() {
+            if d.is_some() {
+                seen_default = true;
+            } else if seen_default {
+                return Err(Error::at(
+                    format!(
+                        "parameter `{}` without a default follows a defaulted parameter",
+                        params[i].0
+                    ),
+                    f.params[i].name_span,
+                ));
+            }
+        }
+        return Ok((
+            FnSig {
+                params,
+                defaults,
+                ret,
+                extern_symbol: None,
+                mangled: String::new(), // filled by caller insert key
+                def_mod: mod_id.to_string(),
+            },
+            None,
+        ));
+    }
+
+    // Multi-clause: no defaults; equal arity; export consistency; any-type dispatch.
+    if is_entry && clauses[0].name == "main" {
+        return Err(Error::at(
+            "multi-clause `main` is not supported",
+            clauses[0].name_span,
+        ));
+    }
+
+    let arity = clauses[0].params.len();
+    let mut export_any = false;
+    let mut export_all = true;
+    let mut resolved: Vec<MultiClause> = Vec::new();
+
+    for f in clauses {
+        if f.params.len() != arity {
+            return Err(Error::at(
+                format!(
+                    "multi-clause function `{}` clauses must have the same arity (found {} and {})",
+                    f.name,
+                    arity,
+                    f.params.len()
+                ),
+                f.name_span,
+            ));
+        }
+        if f.exported {
+            export_any = true;
+        } else {
+            export_all = false;
+        }
+        for p in &f.params {
+            if p.default.is_some() {
+                return Err(Error::at(
+                    format!(
+                        "multi-clause function `{}` cannot use parameter defaults (clause `{}`)",
+                        f.name, p.name
+                    ),
+                    p.name_span,
+                ));
+            }
+        }
+        let mut param_names = Vec::new();
+        let mut param_tys = Vec::new();
+        let mut positional = Vec::new();
+        for p in &f.params {
+            param_names.push(p.name.clone());
+            param_tys.push(resolve_ty(&p.ty, types, name_map)?);
+            positional.push(p.positional);
+        }
+        resolved.push(MultiClause {
+            param_names,
+            param_tys,
+            positional,
+            return_type: f.return_type.clone(),
+            body: f.body.clone(),
+            name_span: f.name_span,
+            exported: f.exported,
+        });
+    }
+
+    if export_any && !export_all {
+        return Err(Error::at(
+            format!(
+                "multi-clause function `{}`: if any clause is `export`, all must be",
+                clauses[0].name
+            ),
+            clauses[0].name_span,
+        ));
+    }
+
+    // Positional `!` consistency.
+    let pos0 = &resolved[0].positional;
+    for c in &resolved[1..] {
+        if &c.positional != pos0 {
+            return Err(Error::at(
+                format!(
+                    "multi-clause function `{}`: positional `!` markers must match across clauses",
+                    clauses[0].name
+                ),
+                c.name_span,
+            ));
+        }
+    }
+
+    // Domain cover / duplicate checks (source order).
+    for i in 0..resolved.len() {
+        for j in 0..i {
+            if domain_equivalent(types, &resolved[j].param_tys, &resolved[i].param_tys) {
+                return Err(Error::at(
+                    format!(
+                        "duplicate multi-clause for `{}` (equivalent parameter types)",
+                        clauses[0].name
+                    ),
+                    resolved[i].name_span,
+                ));
+            }
+            if domain_covers(types, &resolved[j].param_tys, &resolved[i].param_tys) {
+                return Err(Error::at(
+                    format!(
+                        "unreachable multi-clause for `{}` (earlier clause covers this domain)",
+                        clauses[0].name
+                    ),
+                    resolved[i].name_span,
+                ));
+            }
+        }
+    }
+
+    // Merged domain: per-index join.
+    let mut domain_params: Vec<(String, Ty)> = Vec::new();
+    for i in 0..arity {
+        let name = resolved[0].param_names[i].clone();
+        let tys: Vec<Ty> = resolved.iter().map(|c| c.param_tys[i].clone()).collect();
+        // Shared if all equivalent.
+        let first = tys[0].clone();
+        if tys.iter().all(|t| ty_eq(types, t, &first)) {
+            domain_params.push((name, first));
+        } else {
+            let joined = join_domain_tys(types, layouts, &tys, resolved[0].name_span, mod_id)?;
+            domain_params.push((name, joined));
+        }
+    }
+
+    // Return type: placeholder Void; D129 / annotations applied later for free fns.
+    // If every clause has an explicit `->`, join those annotations as an initial ret.
+    let mut ret = Ty::Void;
+    let mut has_ann = false;
+    let mut ann_tys = Vec::new();
+    for c in &resolved {
+        if let Some(rt) = &c.return_type {
+            has_ann = true;
+            ann_tys.push(resolve_ty(rt, types, name_map)?);
+        }
+    }
+    if has_ann {
+        if ann_tys.len() == resolved.len() {
+            ret = ann_tys[0].clone();
+            for t in &ann_tys[1..] {
+                ret = join_return_tys(types, layouts, &ret, t, resolved[0].name_span, mod_id)?;
+            }
+        }
+        // Mixed annotate/unannotate: leave Void for D129-style probe of merged body.
+    }
+
+    Ok((
+        FnSig {
+            params: domain_params,
+            defaults: vec![None; arity],
+            ret,
+            extern_symbol: None,
+            mangled: String::new(),
+            def_mod: mod_id.to_string(),
+        },
+        Some(resolved),
+    ))
+}
+
+fn merge_method_clauses(
+    clauses: &[&Method],
+    mod_id: &str,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+) -> Result<(MethodSig, Option<Vec<MultiClause>>)> {
+    debug_assert!(!clauses.is_empty());
+    if clauses.len() == 1 {
+        let m = clauses[0];
+        let ret = match m.return_type.as_ref() {
+            Some(t) => resolve_ty(t, types, name_map)?,
+            None => Ty::Void,
+        };
+        let mut params = Vec::new();
+        let mut defaults = Vec::new();
+        for p in &m.params {
+            params.push((p.name.clone(), resolve_ty(&p.ty, types, name_map)?));
+            defaults.push(p.default.clone());
+        }
+        let mut seen_default = false;
+        for (i, d) in defaults.iter().enumerate() {
+            if d.is_some() {
+                seen_default = true;
+            } else if seen_default {
+                return Err(Error::at(
+                    format!(
+                        "parameter `{}` without a default follows a defaulted parameter",
+                        params[i].0
+                    ),
+                    m.params[i].name_span,
+                ));
+            }
+        }
+        return Ok((
+            MethodSig {
+                params,
+                defaults,
+                ret,
+                exported: m.exported,
+                def_mod: mod_id.to_string(),
+            },
+            None,
+        ));
+    }
+
+    let arity = clauses[0].params.len();
+    let mut export_any = false;
+    let mut export_all = true;
+    let mut resolved: Vec<MultiClause> = Vec::new();
+
+    for m in clauses {
+        if m.params.len() != arity {
+            return Err(Error::at(
+                format!(
+                    "multi-clause method `{}` clauses must have the same arity (found {} and {})",
+                    m.name,
+                    arity,
+                    m.params.len()
+                ),
+                m.name_span,
+            ));
+        }
+        if m.exported {
+            export_any = true;
+        } else {
+            export_all = false;
+        }
+        for p in &m.params {
+            if p.default.is_some() {
+                return Err(Error::at(
+                    format!(
+                        "multi-clause method `{}` cannot use parameter defaults",
+                        m.name
+                    ),
+                    p.name_span,
+                ));
+            }
+        }
+        let mut param_names = Vec::new();
+        let mut param_tys = Vec::new();
+        let mut positional = Vec::new();
+        for p in &m.params {
+            param_names.push(p.name.clone());
+            param_tys.push(resolve_ty(&p.ty, types, name_map)?);
+            positional.push(p.positional);
+        }
+        resolved.push(MultiClause {
+            param_names,
+            param_tys,
+            positional,
+            return_type: m.return_type.clone(),
+            body: m.body.clone(),
+            name_span: m.name_span,
+            exported: m.exported,
+        });
+    }
+
+    if export_any && !export_all {
+        return Err(Error::at(
+            format!(
+                "multi-clause method `{}`: if any clause is `export`, all must be",
+                clauses[0].name
+            ),
+            clauses[0].name_span,
+        ));
+    }
+
+    let pos0 = &resolved[0].positional;
+    for c in &resolved[1..] {
+        if &c.positional != pos0 {
+            return Err(Error::at(
+                format!(
+                    "multi-clause method `{}`: positional `!` markers must match across clauses",
+                    clauses[0].name
+                ),
+                c.name_span,
+            ));
+        }
+    }
+
+    for i in 0..resolved.len() {
+        for j in 0..i {
+            if domain_equivalent(types, &resolved[j].param_tys, &resolved[i].param_tys) {
+                return Err(Error::at(
+                    format!(
+                        "duplicate multi-clause for method `{}` (equivalent parameter types)",
+                        clauses[0].name
+                    ),
+                    resolved[i].name_span,
+                ));
+            }
+            if domain_covers(types, &resolved[j].param_tys, &resolved[i].param_tys) {
+                return Err(Error::at(
+                    format!(
+                        "unreachable multi-clause for method `{}` (earlier clause covers this domain)",
+                        clauses[0].name
+                    ),
+                    resolved[i].name_span,
+                ));
+            }
+        }
+    }
+
+    let mut domain_params: Vec<(String, Ty)> = Vec::new();
+    for i in 0..arity {
+        let name = resolved[0].param_names[i].clone();
+        let first = resolved[0].param_tys[i].clone();
+        if resolved.iter().all(|c| ty_eq(types, &c.param_tys[i], &first)) {
+            domain_params.push((name, first));
+        } else {
+            let tys: Vec<Ty> = resolved.iter().map(|c| c.param_tys[i].clone()).collect();
+            let joined = join_domain_tys(types, layouts, &tys, resolved[0].name_span, mod_id)?;
+            domain_params.push((name, joined));
+        }
+    }
+
+    // Methods: default Void unless all clauses annotate (then join).
+    let mut ret = Ty::Void;
+    let mut ann_tys = Vec::new();
+    for c in &resolved {
+        if let Some(rt) = &c.return_type {
+            ann_tys.push(resolve_ty(rt, types, name_map)?);
+        }
+    }
+    if ann_tys.len() == resolved.len() && !ann_tys.is_empty() {
+        ret = ann_tys[0].clone();
+        for t in &ann_tys[1..] {
+            ret = join_return_tys(types, layouts, &ret, t, resolved[0].name_span, mod_id)?;
+        }
+    } else if !ann_tys.is_empty() {
+        // Some annotated: join annotated + Void for unannotated → keep join of annotated only
+        // (bodies still checked against local expects during lower).
+        ret = ann_tys[0].clone();
+        for t in &ann_tys[1..] {
+            ret = join_return_tys(types, layouts, &ret, t, resolved[0].name_span, mod_id)?;
+        }
+    }
+
+    Ok((
+        MethodSig {
+            params: domain_params,
+            defaults: vec![None; arity],
+            ret,
+            exported: export_any,
+            def_mod: mod_id.to_string(),
+        },
+        Some(resolved),
+    ))
+}
+
+/// True when `general` covers `specific` for multi-clause reachability (D131).
+fn ty_covers(types: &HashMap<String, TypeInfo>, general: &Ty, specific: &Ty) -> bool {
+    if ty_eq(types, general, specific) {
+        return true;
+    }
+    // Wide bases cover their literal singletons / pure-lit sums.
+    if matches!(general, Ty::String) && is_pure_lit_sum_of_kind(types, specific, LitKind::String) {
+        return true;
+    }
+    if matches!(general, Ty::Int64) && is_pure_lit_sum_of_kind(types, specific, LitKind::Int) {
+        return true;
+    }
+    if matches!(general, Ty::Bool) && is_pure_lit_sum_of_kind(types, specific, LitKind::Bool) {
+        return true;
+    }
+    // Specific injects into general (subset sum / atom into union).
+    can_coerce_ty(types, specific, general)
+}
+
+fn domain_covers(types: &HashMap<String, TypeInfo>, earlier: &[Ty], later: &[Ty]) -> bool {
+    earlier.len() == later.len()
+        && earlier
+            .iter()
+            .zip(later)
+            .all(|(e, l)| ty_covers(types, e, l))
+}
+
+fn domain_equivalent(types: &HashMap<String, TypeInfo>, a: &[Ty], b: &[Ty]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| ty_eq(types, x, y))
+}
+
+#[derive(Clone, Copy)]
+enum LitKind {
+    Int,
+    Bool,
+    String,
+}
+
+fn is_pure_lit_sum_of_kind(
+    types: &HashMap<String, TypeInfo>,
+    ty: &Ty,
+    kind: LitKind,
+) -> bool {
+    let Some(sum) = sum_info_of(types, ty) else {
+        return false;
+    };
+    if sum.variants.is_empty() {
+        return false;
+    }
+    sum.variants.iter().all(|v| match (&v.lit, kind) {
+        (Some(TypeLit::Int(_)), LitKind::Int) => true,
+        (Some(TypeLit::Bool(_)), LitKind::Bool) => true,
+        (Some(TypeLit::String(_)), LitKind::String) => true,
+        _ => false,
+    })
+}
+
+fn join_domain_tys(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    tys: &[Ty],
+    span: Span,
+    def_mod: &str,
+) -> Result<Ty> {
+    let mut acc = tys[0].clone();
+    for t in &tys[1..] {
+        if ty_eq(types, &acc, t) {
+            continue;
+        }
+        if ty_covers(types, &acc, t) {
+            continue; // acc already general
+        }
+        if ty_covers(types, t, &acc) {
+            acc = t.clone();
+            continue;
+        }
+        // Member-set join when both are union-compatible.
+        if collect_union_members(types, &acc).is_some() && collect_union_members(types, t).is_some()
+        {
+            acc = ensure_member_set_type(types, layouts, &[acc.clone(), t.clone()], span, def_mod)?;
+            continue;
+        }
+        // Wide + lit already handled by ty_covers; remaining → error.
+        return Err(Error::at(
+            format!(
+                "cannot join multi-clause parameter types {} and {} (annotate or simplify)",
+                display_ty(&acc),
+                display_ty(t)
+            ),
+            span,
+        ));
+    }
+    Ok(acc)
+}
+
+fn join_return_tys(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    a: &Ty,
+    b: &Ty,
+    span: Span,
+    def_mod: &str,
+) -> Result<Ty> {
+    if ty_eq(types, a, b) {
+        return Ok(a.clone());
+    }
+    if is_never(a) {
+        return Ok(b.clone());
+    }
+    if is_never(b) {
+        return Ok(a.clone());
+    }
+    if collect_union_members(types, a).is_some() && collect_union_members(types, b).is_some() {
+        return ensure_member_set_type(types, layouts, &[a.clone(), b.clone()], span, def_mod);
+    }
+    // Scalar lub not supported for multi-clause returns without annotation.
+    Err(Error::at(
+        format!(
+            "cannot join multi-clause return types {} and {}; annotate each clause with compatible `->`",
+            display_ty(a),
+            display_ty(b)
+        ),
+        span,
+    ))
+}
+
 // ── D129 return-type inference ─────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2440,13 +3037,53 @@ fn infer_unannotated_free_returns(
     layouts: &mut Vec<TypeLayout>,
     generics: &HashMap<String, GenericDef>,
     free_fns: &[(String, String, &ast::Function, bool)],
+    multi_free: &HashMap<String, Vec<MultiClause>>,
     package_maps: &HashMap<String, ModuleNameMaps>,
     module_exports: &HashMap<String, ModuleExports>,
     synthetics: &Rc<RefCell<SyntheticRegistry>>,
 ) -> Result<()> {
-    // Candidates: unannotated non-main free functions.
+    // D131 multi-clause: join clause body exits when overall ret still Void placeholder.
+    for (mod_id, mangled, f, is_entry) in free_fns {
+        let Some(clauses) = multi_free.get(mangled) else {
+            continue;
+        };
+        if *is_entry && f.name == "main" {
+            continue;
+        }
+        // Skip if all clauses annotated (merge already joined).
+        if clauses.iter().all(|c| c.return_type.is_some()) {
+            continue;
+        }
+        let maps = package_maps.get(mod_id).unwrap();
+        match probe_multi_clause_return(
+            clauses,
+            mangled,
+            *is_entry,
+            fns,
+            types,
+            layouts,
+            generics,
+            maps,
+            module_exports,
+            package_maps,
+            mod_id,
+            synthetics,
+        ) {
+            Ok(ret) => {
+                if let Some(sig) = fns.get_mut(mangled) {
+                    sig.ret = ret;
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    // Candidates: unannotated non-main free functions (single-clause).
     let mut candidates: Vec<(String, String, &ast::Function, bool)> = Vec::new();
     for (mod_id, mangled, f, is_entry) in free_fns {
+        if multi_free.contains_key(mangled) {
+            continue;
+        }
         if f.return_type.is_some() {
             continue;
         }
@@ -2586,6 +3223,91 @@ fn infer_unannotated_free_returns(
     Ok(())
 }
 
+/// Probe each multi-clause body and join exit types (D131 + D129).
+fn probe_multi_clause_return(
+    clauses: &[MultiClause],
+    mangled: &str,
+    is_entry: bool,
+    fns: &HashMap<String, FnSig>,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+    maps: &ModuleNameMaps,
+    module_exports: &HashMap<String, ModuleExports>,
+    package_maps: &HashMap<String, ModuleNameMaps>,
+    module_id: &str,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
+) -> Result<Ty> {
+    let mut joined: Option<Ty> = None;
+    for clause in clauses {
+        let mut ctx = LowerCtx::new(
+            fns.clone(),
+            types.clone(),
+            maps.name_to_type.clone(),
+            maps.name_to_fn.clone(),
+            maps.name_to_global.clone(),
+            maps.namespaces.clone(),
+            module_exports.clone(),
+            package_maps.clone(),
+            Ty::Void,
+            module_id.to_string(),
+            is_entry,
+            Rc::clone(synthetics),
+        );
+        ctx.inferring = true;
+        ctx.infer_self = Some(mangled.to_string());
+        ctx.generics = generics.clone();
+
+        for (name, ty) in clause.param_names.iter().zip(clause.param_tys.iter()) {
+            let place = Place {
+                name: sanitize_name(name),
+            };
+            ctx.define(name, ty.clone(), false, place);
+        }
+
+        let local_expect = if let Some(rt) = &clause.return_type {
+            resolve_ty(rt, &ctx.types, &ctx.name_to_type)?
+        } else {
+            Ty::Void
+        };
+        let _ = lower_block_value(&mut ctx, &clause.body, &local_expect)?;
+
+        // Merge monomorphs / synthetics back.
+        for (name, info) in ctx.types.iter() {
+            if !types.contains_key(name) {
+                types.insert(name.clone(), info.clone());
+            }
+        }
+        for (name, (info, layout)) in ctx.synthetics.borrow().entries.iter() {
+            if !types.contains_key(name) {
+                types.insert(name.clone(), info.clone());
+                layouts.push(layout.clone());
+            }
+        }
+
+        let clause_ret = if let Some(rt) = &clause.return_type {
+            resolve_ty(rt, types, &maps.name_to_type)?
+        } else {
+            combine_inferred_return(
+                types,
+                layouts,
+                generics,
+                &ctx.infer_residuals,
+                &ctx.infer_values,
+                clause.name_span,
+            )?
+        };
+
+        joined = Some(match joined {
+            None => clause_ret,
+            Some(prev) => {
+                join_return_tys(types, layouts, &prev, &clause_ret, clause.name_span, module_id)?
+            }
+        });
+    }
+    Ok(joined.unwrap_or(Ty::Void))
+}
+
 fn probe_function_return(
     f: &ast::Function,
     mangled: &str,
@@ -2659,6 +3381,41 @@ fn resolve_ty(
     types: &HashMap<String, TypeInfo>,
     name_map: &HashMap<String, String>,
 ) -> Result<Ty> {
+    // Inline member-set `A | B` (D131) — must be pre-materialized.
+    if let Some(members) = &t.union_members {
+        if members.is_empty() {
+            return Err(Error::at("empty union type", t.span));
+        }
+        if members.len() == 1 {
+            return resolve_ty(&members[0], types, name_map);
+        }
+        let mut mem_tys = Vec::new();
+        for m in members {
+            mem_tys.push(resolve_ty(m, types, name_map)?);
+        }
+        let name = member_set_type_name(types, &mem_tys);
+        if types.contains_key(&name) {
+            return Ok(Ty::User(name));
+        }
+        return Err(Error::at(
+            "internal: inline union type was not materialized",
+            t.span,
+        ));
+    }
+    // Bare singleton literal type (D131).
+    if let Some(lit) = &t.lit {
+        let name = lit_type_name(lit);
+        if types.contains_key(&name) {
+            return Ok(Ty::User(name));
+        }
+        return Err(Error::at(
+            format!(
+                "internal: literal type `{}` was not materialized",
+                display_type_lit(lit)
+            ),
+            t.span,
+        ));
+    }
     match (t.name.as_str(), t.args.as_slice()) {
         ("Int32", []) => Ok(Ty::Int32),
         ("Int64", []) => Ok(Ty::Int64),
@@ -3140,6 +3897,11 @@ fn collect_type_apps(te: &TypeExpr, out: &mut Vec<(TypeExpr, Span)>) {
             collect_type_apps(inner, out);
         }
     }
+    if let Some(members) = &te.union_members {
+        for m in members {
+            collect_type_apps(m, out);
+        }
+    }
 }
 
 fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
@@ -3168,12 +3930,28 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
         span,
         lit: None,
         mark: None,
+        union_members: None,
     }
 }
 
 fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
     if te.lit.is_some() {
         return te.clone();
+    }
+    if let Some(members) = &te.union_members {
+        return TypeExpr {
+            name: String::new(),
+            args: Vec::new(),
+            span: te.span,
+            lit: None,
+            mark: te.mark,
+            union_members: Some(
+                members
+                    .iter()
+                    .map(|m| subst_type_expr(m, subst))
+                    .collect(),
+            ),
+        };
     }
     if te.args.is_empty() {
         if let Some(ty) = subst.get(&te.name) {
@@ -3199,6 +3977,7 @@ fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
         span: te.span,
         lit: None,
         mark: te.mark,
+        union_members: None,
     }
 }
 
@@ -3760,6 +4539,585 @@ fn lower_function(
         ret,
         ret_ty,
     })
+}
+
+/// Lower a multi-clause free function as a first-match cascade on dispatch formals (D131).
+fn lower_multi_free(
+    f: &ast::Function,
+    mangled: &str,
+    clauses: &[MultiClause],
+    is_entry: bool,
+    fns: &HashMap<String, FnSig>,
+    types: &HashMap<String, TypeInfo>,
+    name_to_type: &HashMap<String, String>,
+    name_to_fn: &HashMap<String, String>,
+    name_to_global: &HashMap<String, GlobalInfo>,
+    namespaces: &HashMap<String, String>,
+    module_exports: &HashMap<String, ModuleExports>,
+    package_maps: &HashMap<String, ModuleNameMaps>,
+    module_id: &str,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
+) -> Result<Function> {
+    let is_main = is_entry && f.name == "main";
+    let sig = fns.get(mangled).ok_or_else(|| {
+        Error::at(
+            format!("internal: missing FnSig for multi-clause `{mangled}`"),
+            f.name_span,
+        )
+    })?;
+    let ret_ty = sig.ret.clone();
+    let domain_params = sig.params.clone();
+
+    let mut ctx = LowerCtx::new(
+        fns.clone(),
+        types.clone(),
+        name_to_type.clone(),
+        name_to_fn.clone(),
+        name_to_global.clone(),
+        namespaces.clone(),
+        module_exports.clone(),
+        package_maps.clone(),
+        ret_ty.clone(),
+        module_id.to_string(),
+        is_entry,
+        Rc::clone(synthetics),
+    );
+
+    // Domain formals (merged names from first clause / FnSig).
+    let mut domain_places: Vec<(String, Place, Ty)> = Vec::new();
+    for (name, ty) in &domain_params {
+        let place = Place {
+            name: sanitize_name(name),
+        };
+        ctx.define(name, ty.clone(), false, place.clone());
+        domain_places.push((name.clone(), place, ty.clone()));
+    }
+
+    let ret = lower_multi_clause_cascade(&mut ctx, clauses, &domain_places, &ret_ty)?;
+    insert_function_drops(&mut ctx.stmts, &ret, &ret_ty, &ctx.drop_places);
+
+    let params: Vec<(String, Ty)> = domain_params
+        .iter()
+        .map(|(n, t)| (sanitize_name(n), t.clone()))
+        .collect();
+
+    Ok(Function {
+        name: mangled.to_string(),
+        is_main,
+        receiver: None,
+        params,
+        body: ctx.stmts,
+        ret,
+        ret_ty,
+    })
+}
+
+/// Lower a multi-clause method (D131).
+fn lower_multi_method(
+    mangled_type: &str,
+    method_name: &str,
+    clauses: &[MultiClause],
+    fns: &HashMap<String, FnSig>,
+    types: &HashMap<String, TypeInfo>,
+    name_to_type: &HashMap<String, String>,
+    name_to_fn: &HashMap<String, String>,
+    name_to_global: &HashMap<String, GlobalInfo>,
+    namespaces: &HashMap<String, String>,
+    module_exports: &HashMap<String, ModuleExports>,
+    package_maps: &HashMap<String, ModuleNameMaps>,
+    module_id: &str,
+    is_entry: bool,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
+) -> Result<Function> {
+    let info = types.get(mangled_type).ok_or_else(|| {
+        Error::new(format!("internal: missing type `{mangled_type}` for multi-method"))
+    })?;
+    let sig = info.methods.get(method_name).ok_or_else(|| {
+        Error::new(format!(
+            "internal: missing MethodSig for `{mangled_type}.{method_name}`"
+        ))
+    })?;
+    let ret_ty = sig.ret.clone();
+    let domain_params = sig.params.clone();
+    let recv_ty = Ty::User(mangled_type.to_string());
+    let recv_place = "_self".to_string();
+
+    let mut ctx = LowerCtx::new(
+        fns.clone(),
+        types.clone(),
+        name_to_type.clone(),
+        name_to_fn.clone(),
+        name_to_global.clone(),
+        namespaces.clone(),
+        module_exports.clone(),
+        package_maps.clone(),
+        ret_ty.clone(),
+        module_id.to_string(),
+        is_entry,
+        Rc::clone(synthetics),
+    );
+
+    // Bind fields from receiver (same as lower_method).
+    let recv = Place {
+        name: recv_place.clone(),
+    };
+    for f in &info.fields {
+        if matches!(f.ty, Ty::FixedArray { .. }) {
+            continue;
+        }
+        let p = Place {
+            name: sanitize_name(&f.name),
+        };
+        ctx.assign(
+            p.clone(),
+            f.ty.clone(),
+            RValue::Field {
+                base: recv.clone(),
+                field: sanitize_field(&f.name),
+            },
+        );
+        if needs_drop(&f.ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: p.clone(),
+                ty: f.ty.clone(),
+            });
+        }
+        let mutable = f.mutable;
+        ctx.define(&f.name, f.ty.clone(), mutable, p);
+    }
+
+    let mut domain_places: Vec<(String, Place, Ty)> = Vec::new();
+    for (name, ty) in &domain_params {
+        let place = Place {
+            name: sanitize_name(name),
+        };
+        ctx.define(name, ty.clone(), false, place.clone());
+        domain_places.push((name.clone(), place, ty.clone()));
+    }
+
+    let ret = lower_multi_clause_cascade(&mut ctx, clauses, &domain_places, &ret_ty)?;
+    insert_function_drops(&mut ctx.stmts, &ret, &ret_ty, &ctx.drop_places);
+
+    let params: Vec<(String, Ty)> = domain_params
+        .iter()
+        .map(|(n, t)| (sanitize_name(n), t.clone()))
+        .collect();
+
+    Ok(Function {
+        name: format!("{mangled_type}__{method_name}"),
+        is_main: false,
+        receiver: Some((recv_place, recv_ty)),
+        params,
+        body: ctx.stmts,
+        ret,
+        ret_ty,
+    })
+}
+
+/// First-match cascade: for each clause, if domain formals match clause types, run body.
+fn lower_multi_clause_cascade(
+    ctx: &mut LowerCtx,
+    clauses: &[MultiClause],
+    domain_places: &[(String, Place, Ty)],
+    ret_ty: &Ty,
+) -> Result<Option<Place>> {
+    let result_place = if *ret_ty != Ty::Void && !is_never(ret_ty) {
+        let p = ctx.fresh("mcret");
+        init_place(ctx, &p, ret_ty)?;
+        Some(p)
+    } else {
+        None
+    };
+
+    // Build cascade from last clause to first (last is the final else).
+    let mut acc: Vec<Stmt> = Vec::new();
+    for (ci, clause) in clauses.iter().enumerate().rev() {
+        let is_last = ci == clauses.len() - 1;
+        let outer = std::mem::take(&mut ctx.stmts);
+        ctx.push_scope();
+
+        // Refine each formal to the clause type when needed.
+        for (i, ((dom_name, dom_place, dom_ty), clause_ty)) in domain_places
+            .iter()
+            .zip(clause.param_tys.iter())
+            .enumerate()
+        {
+            let clause_name = &clause.param_names[i];
+            let refined = refine_formal_to_clause(
+                ctx,
+                dom_place.clone(),
+                dom_ty,
+                clause_ty,
+                clause.name_span,
+            )?;
+            // Bind under this clause's formal name (may differ from domain name).
+            ctx.define(clause_name, clause_ty.clone(), false, refined);
+            let _ = dom_name;
+        }
+
+        // Local return expect for this clause.
+        let local_expect = if let Some(rt) = &clause.return_type {
+            resolve_ty(rt, &ctx.types, &ctx.name_to_type)?
+        } else {
+            ret_ty.clone()
+        };
+
+        let arm_val = lower_block_value(ctx, &clause.body, &local_expect)?;
+        if let (Some(rp), Some(av)) = (&result_place, &arm_val) {
+            // Coerce arm value into overall ret_ty when needed.
+            let (av_place, av_ty) = {
+                // lower_block_value returns Option<Place>; recover type from expect.
+                (av.clone(), local_expect.clone())
+            };
+            let coerced = if ty_eq(&ctx.types, &av_ty, ret_ty) {
+                av_place
+            } else if let Some(p) =
+                try_sum_coerce(ctx, av_place.clone(), &av_ty, ret_ty, None, clause.name_span)?
+            {
+                p
+            } else if can_coerce_ty(&ctx.types, &av_ty, ret_ty) {
+                av_place
+            } else {
+                // Last resort: assign if equal after display / force for Void
+                if *ret_ty == Ty::Void {
+                    av_place
+                } else {
+                    return Err(Error::at(
+                        format!(
+                            "multi-clause body type {} is not assignable to {}",
+                            display_ty(&av_ty),
+                            display_ty(ret_ty)
+                        ),
+                        clause.name_span,
+                    ));
+                }
+            };
+            if needs_drop(ret_ty) {
+                ctx.stmts.push(Stmt::Dup {
+                    place: coerced.clone(),
+                    ty: ret_ty.clone(),
+                });
+            }
+            ctx.assign(rp.clone(), ret_ty.clone(), RValue::Use(coerced));
+        }
+        let body = std::mem::take(&mut ctx.stmts);
+        ctx.pop_scope();
+        ctx.stmts = outer;
+
+        if is_last {
+            acc = body;
+        } else {
+            // Build condition: all dispatch formals match this clause.
+            let mut cond_place: Option<Place> = None;
+            let cond_outer = std::mem::take(&mut ctx.stmts);
+            for ((_, dom_place, dom_ty), clause_ty) in
+                domain_places.iter().zip(clause.param_tys.iter())
+            {
+                if ty_eq(&ctx.types, dom_ty, clause_ty) {
+                    continue; // shared formal — always matches
+                }
+                let c = emit_clause_match_cond(ctx, dom_place.clone(), dom_ty, clause_ty, clause.name_span)?;
+                cond_place = Some(match cond_place {
+                    None => c,
+                    Some(prev) => {
+                        let both = ctx.fresh("mcand");
+                        ctx.assign(
+                            both.clone(),
+                            Ty::Bool,
+                            RValue::Binary {
+                                op: BinaryOp::And,
+                                left: prev,
+                                right: c,
+                            },
+                        );
+                        both
+                    }
+                });
+            }
+            let cond_setup = std::mem::take(&mut ctx.stmts);
+            ctx.stmts = cond_outer;
+
+            if let Some(cond) = cond_place {
+                // Cond setup must run *before* the if (cond place is read by Stmt::If).
+                let mut wrapped = cond_setup;
+                wrapped.push(Stmt::If {
+                    cond,
+                    then_body: body,
+                    else_body: acc,
+                });
+                acc = wrapped;
+            } else {
+                // All formals shared / equivalent — this clause always matches when reached.
+                acc = body;
+            }
+        }
+    }
+    ctx.stmts.extend(acc);
+    Ok(result_place)
+}
+
+/// Coerce / view a domain formal as the clause's refined type.
+/// Called under a match gate that already established membership in `clause_ty`.
+fn refine_formal_to_clause(
+    ctx: &mut LowerCtx,
+    place: Place,
+    domain_ty: &Ty,
+    clause_ty: &Ty,
+    span: Span,
+) -> Result<Place> {
+    if ty_eq(&ctx.types, domain_ty, clause_ty) {
+        return Ok(place);
+    }
+    // Equal member-set aliases (transparent remap).
+    if let Some(p) = try_sum_coerce(ctx, place.clone(), domain_ty, clause_ty, None, span)? {
+        return Ok(p);
+    }
+
+    // Clause is a pure-lit singleton: inject that literal (value known by match gate).
+    if let Ty::User(cn) = clause_ty {
+        let lit_opt = ctx
+            .types
+            .get(cn)
+            .and_then(|i| i.sum.as_ref())
+            .and_then(|s| {
+                if s.variants.len() == 1 {
+                    s.variants[0].lit.clone()
+                } else {
+                    None
+                }
+            });
+        if let Some(lit) = lit_opt {
+            if let Some(p) = try_sum_inject_lit(ctx, &lit, clause_ty, span)? {
+                let _ = place;
+                let _ = domain_ty;
+                return Ok(p);
+            }
+        }
+    }
+
+    // Clause is a product atom: extract matching payload from domain sum.
+    if let (Ty::User(dn), Ty::User(cn)) = (domain_ty, clause_ty) {
+        if let Some(ds) = ctx.types.get(dn).and_then(|i| i.sum.clone()) {
+            if let Some(v) = ds.variants.iter().find(|v| match &v.ty {
+                Ty::User(n) => n == cn,
+                _ => false,
+            }) {
+                if v.ty != Ty::Void {
+                    let pp = ctx.fresh("mcref");
+                    ctx.assign_no_drop(
+                        pp.clone(),
+                        v.ty.clone(),
+                        RValue::SumPayload {
+                            base: place,
+                            tag: v.tag,
+                            payload_ty: v.ty.clone(),
+                        },
+                    );
+                    if needs_drop(&v.ty) {
+                        ctx.stmts.push(Stmt::Dup {
+                            place: pp.clone(),
+                            ty: v.ty.clone(),
+                        });
+                    }
+                    return Ok(pp);
+                }
+            }
+        }
+    }
+
+    // Last resort: alias domain place (typing uses clause_ty via define).
+    let _ = span;
+    Ok(place)
+}
+
+/// Bool place: does `place: domain` match `clause_ty`?
+fn emit_clause_match_cond(
+    ctx: &mut LowerCtx,
+    place: Place,
+    domain_ty: &Ty,
+    clause_ty: &Ty,
+    span: Span,
+) -> Result<Place> {
+    if ty_eq(&ctx.types, domain_ty, clause_ty) {
+        let t = ctx.fresh("mctrue");
+        ctx.assign(t.clone(), Ty::Bool, RValue::Bool(true));
+        return Ok(t);
+    }
+
+    // Domain sum + clause sum/atom: tag is one of clause's members.
+    if let Ty::User(dn) = domain_ty {
+        if let Some(ds) = ctx.types.get(dn).and_then(|i| i.sum.clone()) {
+            let clause_keys: HashSet<String> = if let Some(members) =
+                collect_union_members(&ctx.types, clause_ty)
+            {
+                members
+                    .iter()
+                    .map(|(n, ty, lit)| {
+                        if let Some(l) = lit {
+                            match l {
+                                TypeLit::Int(v) => format!("liti_{v}"),
+                                TypeLit::Bool(b) => format!("litb_{b}"),
+                                TypeLit::String(s) => {
+                                    let safe: String = s
+                                        .chars()
+                                        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                                        .collect();
+                                    format!("lits_{safe}")
+                                }
+                            }
+                        } else if let Ty::User(un) = ty {
+                            format!("ty_{un}")
+                        } else {
+                            n.clone()
+                        }
+                    })
+                    .collect()
+            } else {
+                HashSet::new()
+            };
+
+            let matching_tags: Vec<u32> = ds
+                .variants
+                .iter()
+                .filter(|v| clause_keys.contains(&sum_variant_key(v)))
+                .map(|v| v.tag)
+                .collect();
+
+            if !matching_tags.is_empty() {
+                let tag_p = ctx.fresh("mctag");
+                ctx.assign(
+                    tag_p.clone(),
+                    Ty::Int64,
+                    RValue::SumTag {
+                        place: place.clone(),
+                        sum_type: dn.clone(),
+                    },
+                );
+                let mut cond: Option<Place> = None;
+                for tag in matching_tags {
+                    let expected = ctx.fresh("mcex");
+                    ctx.assign(expected.clone(), Ty::Int64, RValue::Int(tag as i64));
+                    let eq = ctx.fresh("mceq");
+                    ctx.assign(
+                        eq.clone(),
+                        Ty::Bool,
+                        RValue::Binary {
+                            op: BinaryOp::Eq,
+                            left: tag_p.clone(),
+                            right: expected,
+                        },
+                    );
+                    cond = Some(match cond {
+                        None => eq,
+                        Some(prev) => {
+                            let both = ctx.fresh("mcor");
+                            ctx.assign(
+                                both.clone(),
+                                Ty::Bool,
+                                RValue::Binary {
+                                    op: BinaryOp::Or,
+                                    left: prev,
+                                    right: eq,
+                                },
+                            );
+                            both
+                        }
+                    });
+                }
+                return Ok(cond.unwrap());
+            }
+        }
+    }
+
+    // Wide String/Int64/Bool domain vs lit singleton clause.
+    if let Ty::User(cn) = clause_ty {
+        let lit_opt = ctx
+            .types
+            .get(cn)
+            .and_then(|i| i.sum.as_ref())
+            .and_then(|s| {
+                if s.variants.len() == 1 {
+                    s.variants[0].lit.clone()
+                } else {
+                    None
+                }
+            });
+        if let Some(lit) = lit_opt {
+            return emit_lit_eq_cond(ctx, place, domain_ty, &lit, span);
+        }
+    }
+
+    Err(Error::at(
+        format!(
+            "cannot discriminate multi-clause types {} vs {}",
+            display_ty(domain_ty),
+            display_ty(clause_ty)
+        ),
+        span,
+    ))
+}
+
+fn emit_lit_eq_cond(
+    ctx: &mut LowerCtx,
+    place: Place,
+    domain_ty: &Ty,
+    lit: &TypeLit,
+    span: Span,
+) -> Result<Place> {
+    match (domain_ty, lit) {
+        (Ty::String, TypeLit::String(s)) => {
+            let lit_p = ctx.fresh("mcsl");
+            ctx.assign(lit_p.clone(), Ty::String, RValue::StringLit(s.clone()));
+            let eq = ctx.fresh("mcseq");
+            ctx.assign(
+                eq.clone(),
+                Ty::Bool,
+                RValue::Binary {
+                    op: BinaryOp::Eq,
+                    left: place,
+                    right: lit_p,
+                },
+            );
+            Ok(eq)
+        }
+        (Ty::Int64, TypeLit::Int(n)) => {
+            let lit_p = ctx.fresh("mcil");
+            ctx.assign(lit_p.clone(), Ty::Int64, RValue::Int(*n));
+            let eq = ctx.fresh("mcieq");
+            ctx.assign(
+                eq.clone(),
+                Ty::Bool,
+                RValue::Binary {
+                    op: BinaryOp::Eq,
+                    left: place,
+                    right: lit_p,
+                },
+            );
+            Ok(eq)
+        }
+        (Ty::Bool, TypeLit::Bool(b)) => {
+            let lit_p = ctx.fresh("mcbl");
+            ctx.assign(lit_p.clone(), Ty::Bool, RValue::Bool(*b));
+            let eq = ctx.fresh("mcbeq");
+            ctx.assign(
+                eq.clone(),
+                Ty::Bool,
+                RValue::Binary {
+                    op: BinaryOp::Eq,
+                    left: place,
+                    right: lit_p,
+                },
+            );
+            Ok(eq)
+        }
+        _ => Err(Error::at(
+            format!(
+                "literal match condition unsupported for domain {}",
+                display_ty(domain_ty)
+            ),
+            span,
+        )),
+    }
 }
 
 fn subst_method(m: &Method, subst: &HashMap<String, Ty>) -> Method {
@@ -7089,6 +8447,480 @@ fn pure_lit_scalar_ty(n_arms: usize) -> Ty {
         257..=65536 => Ty::UInt32,
         _ => Ty::UInt64,
     }
+}
+
+fn display_type_lit(lit: &TypeLit) -> String {
+    match lit {
+        TypeLit::Int(n) => n.to_string(),
+        TypeLit::Bool(b) => b.to_string(),
+        TypeLit::String(s) => format!("\"{s}\""),
+    }
+}
+
+/// Stable mangled name for a bare singleton literal type (D131).
+fn lit_type_name(lit: &TypeLit) -> String {
+    match lit {
+        TypeLit::Int(n) => format!("$lit$liti_{n}"),
+        TypeLit::Bool(b) => format!("$lit$litb_{b}"),
+        TypeLit::String(s) => {
+            let safe: String = s
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                .collect();
+            format!("$lit$lits_{safe}")
+        }
+    }
+}
+
+/// Ensure a single-member pure-literal sum type exists; return its `Ty::User`.
+fn ensure_lit_type(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    lit: &TypeLit,
+    def_mod: &str,
+) -> Ty {
+    let name = lit_type_name(lit);
+    if types.contains_key(&name) {
+        return Ty::User(name);
+    }
+    let vname = display_type_lit(lit);
+    let sum = SumInfo {
+        variants: vec![SumVariant {
+            tag: 0,
+            name: vname.clone(),
+            ty: Ty::Void,
+            lit: Some(lit.clone()),
+            mark: None,
+            unwrap_payload: false,
+        }],
+        residual_tag: None,
+        extract_tag: None,
+    };
+    let info = TypeInfo {
+        fields: Vec::new(),
+        methods: HashMap::new(),
+        zero_init: false,
+        def_mod: def_mod.to_string(),
+        sum: Some(sum),
+    };
+    let layout = TypeLayout {
+        name: name.clone(),
+        fields: Vec::new(),
+        sum: Some(vec![SumVariantLayout {
+            tag: 0,
+            name: vname,
+            payload_ty: Ty::Void,
+        }]),
+        sum_scalar: Some(pure_lit_scalar_ty(1)),
+    };
+    types.insert(name.clone(), info);
+    layouts.push(layout);
+    Ty::User(name)
+}
+
+/// Canonical synthetic name for a member-set union of already-resolved member tys.
+fn member_set_type_name(types: &HashMap<String, TypeInfo>, mem_tys: &[Ty]) -> String {
+    let mut keys: Vec<String> = Vec::new();
+    for ty in mem_tys {
+        if let Some(members) = collect_union_members(types, ty) {
+            for (name, mty, lit) in members {
+                let key = if let Some(ref l) = lit {
+                    match l {
+                        TypeLit::Int(n) => format!("liti_{n}"),
+                        TypeLit::Bool(b) => format!("litb_{b}"),
+                        TypeLit::String(s) => {
+                            let safe: String = s
+                                .chars()
+                                .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                                .collect();
+                            format!("lits_{safe}")
+                        }
+                    }
+                } else if let Ty::User(n) = &mty {
+                    format!("ty_{n}")
+                } else {
+                    format!(
+                        "other_{}",
+                        format!("{mty:?}").replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+                    )
+                };
+                let _ = name;
+                keys.push(key);
+            }
+        } else {
+            keys.push(format!(
+                "atom_{}",
+                format!("{ty:?}").replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+            ));
+        }
+    }
+    keys.sort();
+    keys.dedup();
+    format!("$union${}", keys.join("$"))
+}
+
+/// Ensure a member-set union type for `mem_tys` exists (flattens nested sums).
+fn ensure_member_set_type(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    mem_tys: &[Ty],
+    span: Span,
+    def_mod: &str,
+) -> Result<Ty> {
+    // Expand to atoms/lits.
+    let mut flat: Vec<(String, Ty, Option<TypeLit>)> = Vec::new();
+    let mut seen = HashSet::new();
+    for ty in mem_tys {
+        if let Some(members) = collect_union_members(types, ty) {
+            for (name, mty, lit) in members {
+                let key = if let Some(ref l) = lit {
+                    lit_type_name(l)
+                } else if let Ty::User(n) = &mty {
+                    format!("ty_{n}")
+                } else {
+                    format!("{mty:?}")
+                };
+                if seen.insert(key) {
+                    flat.push((name, mty, lit));
+                }
+            }
+        } else {
+            return Err(Error::at(
+                format!("cannot form union member from {ty:?}"),
+                span,
+            ));
+        }
+    }
+    if flat.is_empty() {
+        return Err(Error::at("empty union type", span));
+    }
+    if flat.len() == 1 {
+        let (name, ty, lit) = &flat[0];
+        if let Some(lit) = lit {
+            return Ok(ensure_lit_type(types, layouts, lit, def_mod));
+        }
+        let _ = name;
+        return Ok(ty.clone());
+    }
+
+    let name = member_set_type_name(types, mem_tys);
+    if types.contains_key(&name) {
+        return Ok(Ty::User(name));
+    }
+
+    let mut variants = Vec::new();
+    let mut layout_vars = Vec::new();
+    for (i, (vname, ty, lit)) in flat.iter().enumerate() {
+        let tag = i as u32;
+        let payload_ty = if lit.is_some() {
+            Ty::Void
+        } else {
+            ty.clone()
+        };
+        variants.push(SumVariant {
+            tag,
+            name: vname.clone(),
+            ty: payload_ty.clone(),
+            lit: lit.clone(),
+            mark: None,
+            unwrap_payload: false,
+        });
+        layout_vars.push(SumVariantLayout {
+            tag,
+            name: vname.clone(),
+            payload_ty,
+        });
+    }
+    let pure_lit = variants.iter().all(|v| v.lit.is_some());
+    let sum = SumInfo {
+        variants,
+        residual_tag: None,
+        extract_tag: None,
+    };
+    let info = TypeInfo {
+        fields: Vec::new(),
+        methods: HashMap::new(),
+        zero_init: false,
+        def_mod: def_mod.to_string(),
+        sum: Some(sum),
+    };
+    let layout = TypeLayout {
+        name: name.clone(),
+        fields: Vec::new(),
+        sum: Some(layout_vars),
+        sum_scalar: if pure_lit {
+            Some(pure_lit_scalar_ty(flat.len()))
+        } else {
+            None
+        },
+    };
+    types.insert(name.clone(), info);
+    layouts.push(layout);
+    Ok(Ty::User(name))
+}
+
+/// Walk package TypeExprs and materialize bare lit / inline union types (D131).
+fn materialize_package_typespace(
+    package: &Package,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    per_mod_types: &HashMap<String, HashMap<String, String>>,
+) -> Result<()> {
+    for m in &package.modules {
+        let name_map = per_mod_types.get(&m.id).cloned().unwrap_or_default();
+        for item in &m.ast.items {
+            materialize_item_typespace(item, types, layouts, &name_map, &m.id)?;
+        }
+    }
+    Ok(())
+}
+
+fn materialize_item_typespace(
+    item: &Item,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+    def_mod: &str,
+) -> Result<()> {
+    match item {
+        Item::Function(f) => {
+            for p in &f.params {
+                materialize_type_expr(&p.ty, types, layouts, name_map, def_mod)?;
+            }
+            if let Some(rt) = &f.return_type {
+                materialize_type_expr(rt, types, layouts, name_map, def_mod)?;
+            }
+            materialize_block_typespace(&f.body, types, layouts, name_map, def_mod)?;
+        }
+        Item::Type(td) => {
+            for p in &td.params {
+                materialize_type_expr(&p.ty, types, layouts, name_map, def_mod)?;
+            }
+            for f in &td.fields {
+                materialize_type_expr(&f.ty, types, layouts, name_map, def_mod)?;
+            }
+            if let Some(members) = &td.union_members {
+                for mem in members {
+                    materialize_type_expr(mem, types, layouts, name_map, def_mod)?;
+                }
+            }
+            for method in &td.methods {
+                for p in &method.params {
+                    materialize_type_expr(&p.ty, types, layouts, name_map, def_mod)?;
+                }
+                if let Some(rt) = &method.return_type {
+                    materialize_type_expr(rt, types, layouts, name_map, def_mod)?;
+                }
+                materialize_block_typespace(&method.body, types, layouts, name_map, def_mod)?;
+            }
+        }
+        Item::Extern(e) => {
+            for p in &e.params {
+                materialize_type_expr(&p.ty, types, layouts, name_map, def_mod)?;
+            }
+            if let Some(rt) = &e.return_type {
+                materialize_type_expr(rt, types, layouts, name_map, def_mod)?;
+            }
+        }
+        Item::Global(g) => {
+            materialize_expr_typespace(&g.init, types, layouts, name_map, def_mod)?;
+        }
+        Item::SessionStmt(bi) => {
+            materialize_block_item_typespace(bi, types, layouts, name_map, def_mod)?;
+        }
+        Item::Import(_) => {}
+    }
+    Ok(())
+}
+
+fn materialize_block_typespace(
+    block: &Block,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+    def_mod: &str,
+) -> Result<()> {
+    for it in &block.items {
+        materialize_block_item_typespace(it, types, layouts, name_map, def_mod)?;
+    }
+    if let Some(t) = &block.tail {
+        materialize_expr_typespace(t, types, layouts, name_map, def_mod)?;
+    }
+    Ok(())
+}
+
+fn materialize_block_item_typespace(
+    it: &BlockItem,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+    def_mod: &str,
+) -> Result<()> {
+    match it {
+        BlockItem::Let { ty, init, .. } => {
+            if let Some(ann) = ty {
+                materialize_type_expr(ann, types, layouts, name_map, def_mod)?;
+            }
+            materialize_expr_typespace(init, types, layouts, name_map, def_mod)?;
+        }
+        BlockItem::Assign { value, .. } => {
+            materialize_expr_typespace(value, types, layouts, name_map, def_mod)?;
+        }
+        BlockItem::Expr(e) => materialize_expr_typespace(e, types, layouts, name_map, def_mod)?,
+    }
+    Ok(())
+}
+
+fn materialize_expr_typespace(
+    expr: &Expr,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+    def_mod: &str,
+) -> Result<()> {
+    match &expr.kind {
+        ExprKind::Int(_)
+        | ExprKind::Bool(_)
+        | ExprKind::String(_)
+        | ExprKind::Name(_)
+        | ExprKind::Break
+        | ExprKind::Continue => {}
+        ExprKind::Interpolate(parts) => {
+            for p in parts {
+                if let InterpPart::Expr(e) = p {
+                    materialize_expr_typespace(e, types, layouts, name_map, def_mod)?;
+                }
+            }
+        }
+        ExprKind::Unary { expr: inner, .. } => {
+            materialize_expr_typespace(inner, types, layouts, name_map, def_mod)?;
+        }
+        ExprKind::Binary { left, right, .. } => {
+            materialize_expr_typespace(left, types, layouts, name_map, def_mod)?;
+            materialize_expr_typespace(right, types, layouts, name_map, def_mod)?;
+        }
+        ExprKind::Call { args, .. } => {
+            for a in args {
+                materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
+            }
+        }
+        ExprKind::MethodCall {
+            receiver, args, ..
+        } => {
+            materialize_expr_typespace(receiver, types, layouts, name_map, def_mod)?;
+            for a in args {
+                materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
+            }
+        }
+        ExprKind::Field { base, .. } => {
+            materialize_expr_typespace(base, types, layouts, name_map, def_mod)?;
+        }
+        ExprKind::Index { base, index } => {
+            materialize_expr_typespace(base, types, layouts, name_map, def_mod)?;
+            materialize_expr_typespace(index, types, layouts, name_map, def_mod)?;
+        }
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            materialize_expr_typespace(cond, types, layouts, name_map, def_mod)?;
+            materialize_block_typespace(then_branch, types, layouts, name_map, def_mod)?;
+            if let Some(eb) = else_branch {
+                materialize_block_typespace(eb, types, layouts, name_map, def_mod)?;
+            }
+        }
+        ExprKind::While { cond, body } => {
+            materialize_expr_typespace(cond, types, layouts, name_map, def_mod)?;
+            materialize_block_typespace(body, types, layouts, name_map, def_mod)?;
+        }
+        ExprKind::Loop { body } => {
+            materialize_block_typespace(body, types, layouts, name_map, def_mod)?;
+        }
+        ExprKind::For {
+            start, end, body, ..
+        } => {
+            materialize_expr_typespace(start, types, layouts, name_map, def_mod)?;
+            if let Some(e) = end {
+                materialize_expr_typespace(e, types, layouts, name_map, def_mod)?;
+            }
+            materialize_block_typespace(body, types, layouts, name_map, def_mod)?;
+        }
+        ExprKind::Match { scrutinee, arms } => {
+            materialize_expr_typespace(scrutinee, types, layouts, name_map, def_mod)?;
+            for arm in arms {
+                if let Some(g) = &arm.guard {
+                    materialize_expr_typespace(g, types, layouts, name_map, def_mod)?;
+                }
+                materialize_block_typespace(&arm.body, types, layouts, name_map, def_mod)?;
+            }
+        }
+        ExprKind::Return { value } => {
+            if let Some(v) = value {
+                materialize_expr_typespace(v, types, layouts, name_map, def_mod)?;
+            }
+        }
+        ExprKind::Try(inner) => {
+            materialize_expr_typespace(inner, types, layouts, name_map, def_mod)?;
+        }
+        ExprKind::ArrayLit(elems) => {
+            for e in elems {
+                materialize_expr_typespace(e, types, layouts, name_map, def_mod)?;
+            }
+        }
+        ExprKind::Block(b) => {
+            materialize_block_typespace(b, types, layouts, name_map, def_mod)?;
+        }
+    }
+    Ok(())
+}
+
+fn materialize_arg_typespace(
+    arg: &ast::Arg,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+    def_mod: &str,
+) -> Result<()> {
+    match arg {
+        ast::Arg::Pos(e) | ast::Arg::Named { value: e, .. } => {
+            materialize_expr_typespace(e, types, layouts, name_map, def_mod)
+        }
+    }
+}
+
+fn materialize_type_expr(
+    te: &TypeExpr,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+    def_mod: &str,
+) -> Result<()> {
+    if let Some(lit) = &te.lit {
+        ensure_lit_type(types, layouts, lit, def_mod);
+        return Ok(());
+    }
+    if let Some(members) = &te.union_members {
+        for m in members {
+            materialize_type_expr(m, types, layouts, name_map, def_mod)?;
+        }
+        if members.len() >= 2 {
+            let mut mem_tys = Vec::new();
+            for m in members {
+                mem_tys.push(resolve_ty(m, types, name_map)?);
+            }
+            ensure_member_set_type(types, layouts, &mem_tys, te.span, def_mod)?;
+        } else if members.len() == 1 {
+            materialize_type_expr(&members[0], types, layouts, name_map, def_mod)?;
+        }
+        return Ok(());
+    }
+    for a in &te.args {
+        if let TypeArg::Type(inner) = a {
+            materialize_type_expr(inner, types, layouts, name_map, def_mod)?;
+        }
+    }
+    Ok(())
 }
 
 /// Stable key for a union arm (D119 member-set equality).

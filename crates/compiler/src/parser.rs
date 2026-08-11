@@ -356,13 +356,13 @@ impl Parser {
             Vec::new()
         };
 
-        // Union alias: `type Name = A | B | …` or `type Opt<T> = …` (D118).
+        // Union / singleton alias: `type Name = A | B | …`, `type Home = "home"` (D118/D131).
         if self.at(TokenKind::Eq) {
             self.bump();
             let members = self.parse_union_members()?;
-            if members.len() < 2 {
+            if members.is_empty() {
                 return Err(Error::at(
-                    "union type requires at least two members (`A | B`)",
+                    "type alias requires at least one member",
                     name_span,
                 ));
             }
@@ -516,11 +516,11 @@ impl Parser {
         Ok(params)
     }
 
-    /// `A | B | C` type members (each may carry trailing `!` / `?` marks).
+    /// `A | B | C` type members (atoms only — each may carry trailing `!` / `?` marks).
     fn parse_union_members(&mut self) -> Result<Vec<TypeExpr>> {
         let mut members = Vec::new();
         loop {
-            members.push(self.parse_type()?);
+            members.push(self.parse_type_atom()?);
             if self.at(TokenKind::Pipe) {
                 self.bump();
                 continue;
@@ -651,8 +651,32 @@ impl Parser {
         })
     }
 
+    /// Type in any position: atom or inline member-set `A | B` (D131).
     fn parse_type(&mut self) -> Result<TypeExpr> {
-        // Literal types (D118): `0`, `true`, `"x"` in type position (union members).
+        let first = self.parse_type_atom()?;
+        if !self.at(TokenKind::Pipe) {
+            return Ok(first);
+        }
+        let start = first.span.start;
+        let mut members = vec![first];
+        while self.at(TokenKind::Pipe) {
+            self.bump();
+            members.push(self.parse_type_atom()?);
+        }
+        let end = members.last().map(|m| m.span.end).unwrap_or(start);
+        Ok(TypeExpr {
+            name: String::new(),
+            args: Vec::new(),
+            span: Span::new(start, end),
+            lit: None,
+            mark: None,
+            union_members: Some(members),
+        })
+    }
+
+    /// Single type atom: named, generic app, or literal (`0`, `true`, `"x"`).
+    fn parse_type_atom(&mut self) -> Result<TypeExpr> {
+        // Literal types (D118/D131): `0`, `true`, `"x"` in any type position.
         if let TokenKind::Int(n) = self.current().kind {
             let n = n;
             let span = self.current().span;
@@ -665,6 +689,7 @@ impl Parser {
                 span: Span::new(span.start, end),
                 lit: Some(TypeLit::Int(n)),
                 mark,
+                union_members: None,
             });
         }
         if self.at(TokenKind::True) || self.at(TokenKind::False) {
@@ -679,6 +704,7 @@ impl Parser {
                 span: Span::new(span.start, end),
                 lit: Some(TypeLit::Bool(value)),
                 mark,
+                union_members: None,
             });
         }
         if let TokenKind::String(ref s) = self.current().kind.clone() {
@@ -693,6 +719,7 @@ impl Parser {
                 span: Span::new(span.start, end),
                 lit: Some(TypeLit::String(s)),
                 mark,
+                union_members: None,
             });
         }
 
@@ -726,6 +753,7 @@ impl Parser {
             span: Span::new(start_span.start, end),
             lit: None,
             mark,
+            union_members: None,
         })
     }
 

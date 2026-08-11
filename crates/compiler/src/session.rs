@@ -321,6 +321,7 @@ fn make_step_method(stmts: Vec<BlockItem>) -> Method {
             span: Span::dummy(),
             lit: None,
             mark: None,
+            union_members: None,
         }),
         body: Block {
             items,
@@ -363,6 +364,7 @@ fn make_session_main() -> Function {
             span: Span::dummy(),
             lit: None,
             mark: None,
+            union_members: None,
         }),
         body: Block {
             items: vec![],

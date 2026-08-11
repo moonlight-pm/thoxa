@@ -1,8 +1,8 @@
 # Freeze: Multi-clause functions (type-driven match sugar)
 
-**Status:** spec’d (v0 — not implemented)  
+**Status:** shipped (v0)  
 **Decision:** D131  
-**Gate:** `multi_clause` (plus typespace coverage under existing `sums_*` as needed)  
+**Gate:** `multi_clause`  
 **As of:** 2026-08-11  
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D131 in
 [`decisions.md`](../decisions.md)
@@ -212,16 +212,17 @@ Per-clause `->` is **not** a separate ABI per clause.
 - [x] Capability row **spec’d**  
 - [x] `CURRENT.md` points here as next language implement slice  
 
-**Code acceptance (later):**
+**Code acceptance:**
 
-- [ ] `cargo make test` green with multi-clause conformance  
-- [ ] Bare singleton + formal `|` typespace gaps closed as needed  
-- [ ] Handbook updated only when **shipped**
+- [x] `cargo make test` green with multi-clause conformance (`multi_clause`)  
+- [x] Bare singleton + formal `|` typespace gaps closed  
+- [x] Handbook updated (shipped)
 
 ---
 
-## Changelog (design only)
+## Changelog
 
 | Date | Note |
 |------|------|
 | 2026-08-11 | Initial freeze from design lock (A-core type formals, any-type dispatch, match-order sugar, errors for overlap/export, match-like return join) |
+| 2026-08-11 | **Shipped:** typespace substrate + free/method multi-clause merge + cascade lower; gate `multi_clause` |

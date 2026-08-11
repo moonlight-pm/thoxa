@@ -1189,6 +1189,15 @@ impl<'a> Resolver<'a> {
     }
 
     fn walk_type_expr(&mut self, ty: &TypeExpr, scope: usize) {
+        if let Some(members) = &ty.union_members {
+            for m in members {
+                self.walk_type_expr(m, scope);
+            }
+            return;
+        }
+        if ty.lit.is_some() {
+            return;
+        }
         // Type name is a prefix of ty.span.
         let name_end = ty.span.start + ty.name.len().min(ty.span.end.saturating_sub(ty.span.start));
         let name_span = Span::new(ty.span.start, name_end);

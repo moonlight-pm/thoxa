@@ -146,6 +146,8 @@ pub struct TypeExpr {
     pub lit: Option<TypeLit>,
     /// Trailing extract mark on this type as a whole: `Has<T>!` or `Not?` (D118).
     pub mark: Option<TypeMark>,
+    /// Inline member-set union `A | B` (D131). When set, `name`/`lit` are unused.
+    pub union_members: Option<Vec<TypeExpr>>,
 }
 
 /// Literal types in typespace (D118): `type Flag = 0 | 1`.
