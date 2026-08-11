@@ -53,13 +53,14 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  Main.thx       # listen / accept / parse / send only
+  Main.thx       # listen / accept / parse / body / send
   App.thx        # method+path dispatch → page | api | static fallback
-  Layout.thx     # shared HTML shell (nav, title)
-  Pages.thx      # GET/HEAD pages: / , /menu , /menu/{slug}
+  Layout.thx     # shared HTML shell (nav, title, greeting)
+  Pages.thx      # GET/HEAD pages + POST / sign-in
   Api.thx        # non-page routes (e.g. GET /api/health)
   Models.thx     # in-memory drink catalog
-  Customer.thx   # (Phase B) cookie helpers
+  Wire.thx       # body, form, redirect, header helpers (example-only)
+  Customer.thx   # Cookie remember / forget / current
   web/           # static assets only (CSS, optional leftover files)
   README.md      # run instructions + architecture (as-built example)
 ```
@@ -162,8 +163,9 @@ after A–C.
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
-**As of last update:** **Phase A complete** (smoke matrix green). Next open work
-is Phase B when the user/CURRENT says so — still no `std/` growth.
+**As of last update:** **Phase A + Phase B complete** (forms/cookies/PRG smoke
+green). Next open work is Phase C (query search) when desired — still no
+`std/` growth.
 
 ### Language notes hit during Phase A
 
