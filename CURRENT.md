@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-10 (diverging loop **D128**; combined import **D127**; std Io/Net/Http **D126**)
+**As of:** 2026-08-10 (return inference **D129**; diverging loop **D128**; combined import **D127**; std Io/Net/Http **D126**)
 
 ---
 
@@ -14,10 +14,12 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 this file says so. Prefer **finishing started frozen surfaces** over free
 redesign or expand-std sprints.
 
-**Shipped recently:** **diverging `loop`** (**D128** — no dummy `Pass(Void)`
-after infinite servers); **combined import** (**D127**); **`std/Io`+`Net`+`Http`**
-(**D126**); **`std/Logging`** (**D125**); LSP hover/nav; **D124** diagnostics;
-**`examples/http`**. Session residual deferred.
+**Shipped recently:** **return-type inference** (**D129** — unannotated non-`main`
+from body exits; `?` residual collapse; bare Pass/Fail / recursion need `->`);
+**diverging `loop`** (**D128**); **combined import** (**D127**); **`std/Io`+`Net`+`Http`**
+(**D126**); **`std/Logging`** (**D125**, `-> Void` on emit face); LSP hover/nav;
+**D124** diagnostics; **`examples/http`** (`run()` unannotated). Session residual
+deferred.
 Agent-only ideas parked:
 [`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 
@@ -76,6 +78,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); `ffi` deferred |
 | Logging / print | **`std/Logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
+| Return inference | Unannotated non-`main` returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |

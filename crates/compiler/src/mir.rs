@@ -592,6 +592,18 @@ struct LowerCtx {
     drop_places: Vec<(String, Ty)>,
     /// Shared synthetic union types for unannotated if lub (D119).
     synthetics: Rc<RefCell<SyntheticRegistry>>,
+    /// D129: body probe collecting exit types (discard MIR; no packaging checks).
+    inferring: bool,
+    /// Mangled name of the function being inferred (self-recursion detect).
+    infer_self: Option<String>,
+    /// Other unannotated functions still awaiting inference (cycle detect).
+    infer_blocked: HashSet<String>,
+    /// Residual `?` exits collapsed to success-Void form.
+    infer_residuals: Vec<Ty>,
+    /// Normal `return` / block-tail value exits (not Never).
+    infer_values: Vec<Ty>,
+    /// Generic templates for residual collapse (D129).
+    generics: HashMap<String, GenericDef>,
 }
 
 #[derive(Clone, Default)]
@@ -640,6 +652,12 @@ impl LowerCtx {
             loop_depth: 0,
             drop_places: Vec::new(),
             synthetics,
+            inferring: false,
+            infer_self: None,
+            infer_blocked: HashSet::new(),
+            infer_residuals: Vec::new(),
+            infer_values: Vec::new(),
+            generics: HashMap::new(),
         }
     }
 
@@ -1378,6 +1396,18 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         );
     }
 
+    // D129: infer unannotated free-function returns before body lower.
+    infer_unannotated_free_returns(
+        &mut fns,
+        &mut types_info,
+        &mut type_layouts,
+        &generics,
+        &free_fns,
+        &package_maps,
+        &module_exports,
+        &synthetics,
+    )?;
+
     let mut functions = Vec::new();
     // Collect independent body-lower errors so LSP can show more than one (E7+).
     let mut body_errors: Vec<Error> = Vec::new();
@@ -1870,6 +1900,7 @@ fn resolve_return_ty(
     let is_main = is_entry && f.name == "main";
     match f.return_type.as_ref() {
         None if is_main => Ok(Ty::Int64),
+        // D129: unannotated non-main is inferred later; placeholder Void until then.
         None => Ok(Ty::Void),
         Some(t) => {
             let ty = resolve_ty(t, types, name_map)?;
@@ -1879,6 +1910,625 @@ fn resolve_return_ty(
             Ok(ty)
         }
     }
+}
+
+// ── D129 return-type inference ─────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TypeParamRole {
+    Success,
+    Residual,
+    /// Appears in both marks, or unmarked only — cannot collapse.
+    Ambiguous,
+}
+
+fn type_param_role(param: &str, members: &[TypeExpr]) -> TypeParamRole {
+    let mut success = false;
+    let mut residual = false;
+    for m in members {
+        walk_type_param_marks(m, param, &mut success, &mut residual);
+    }
+    match (success, residual) {
+        (true, false) => TypeParamRole::Success,
+        (false, true) => TypeParamRole::Residual,
+        (false, false) | (true, true) => TypeParamRole::Ambiguous,
+    }
+}
+
+/// Walk union member type exprs; note `!` / `?` marks on type-param leaves (`P!`, `F?`).
+fn walk_type_param_marks(te: &TypeExpr, param: &str, success: &mut bool, residual: &mut bool) {
+    if te.name == param && te.args.is_empty() {
+        match te.mark {
+            Some(TypeMark::Extract) => *success = true,
+            Some(TypeMark::Residual) => *residual = true,
+            None => {}
+        }
+    }
+    for arg in &te.args {
+        if let TypeArg::Type(inner) = arg {
+            walk_type_param_marks(inner, param, success, residual);
+        }
+    }
+}
+
+fn residual_extract_of_sum(types: &HashMap<String, TypeInfo>, sum: &SumInfo, span: Span) -> Result<Ty> {
+    let tag = sum.residual_tag.ok_or_else(|| {
+        Error::at("`?` requires a residual mark (`?`) on one union member", span)
+    })?;
+    let v = sum
+        .variants
+        .iter()
+        .find(|v| v.tag == tag)
+        .ok_or_else(|| Error::at("internal: bad residual tag", span))?;
+    if v.unwrap_payload {
+        match &v.ty {
+            Ty::User(n) => {
+                let fields = types.get(n).map(|i| i.fields.as_slice()).unwrap_or(&[]);
+                if fields.len() == 1 {
+                    Ok(fields[0].ty.clone())
+                } else if fields.is_empty() {
+                    Ok(Ty::Void)
+                } else {
+                    Err(Error::at(
+                        "type-arg residual extract requires a single-field product arm",
+                        span,
+                    ))
+                }
+            }
+            other => Ok(other.clone()),
+        }
+    } else {
+        match &v.ty {
+            Ty::User(n) => {
+                let fields = types.get(n).map(|i| i.fields.as_slice()).unwrap_or(&[]);
+                if fields.is_empty() {
+                    Ok(Ty::Void)
+                } else if fields.len() == 1 {
+                    Ok(fields[0].ty.clone())
+                } else {
+                    Ok(v.ty.clone())
+                }
+            }
+            Ty::Void => Ok(Ty::Void),
+            other => Ok(other.clone()),
+        }
+    }
+}
+
+/// Residual `?` exit contribution: success type-args → Void, residual extract kept (D129).
+fn collapse_residual_exit(
+    types: &mut HashMap<String, TypeInfo>,
+    generics: &HashMap<String, GenericDef>,
+    layouts: &mut Vec<TypeLayout>,
+    scrut_ty: &Ty,
+    span: Span,
+) -> Result<Ty> {
+    let Ty::User(mono) = scrut_ty else {
+        return Err(Error::at(
+            "`?` expects a Trial, May, or residual-marked union value",
+            span,
+        ));
+    };
+    let sum = types
+        .get(mono)
+        .and_then(|i| i.sum.clone())
+        .ok_or_else(|| {
+            Error::at(
+                "`?` expects a Trial, May, or residual-marked union value",
+                span,
+            )
+        })?;
+    if sum.residual_tag.is_none() {
+        return Err(Error::at(
+            "`?` requires a residual mark (`?`) on one union member",
+            span,
+        ));
+    }
+    let f_ty = residual_extract_of_sum(types, &sum, span)?;
+
+    // Prefer generic residual union monomorph: Void success params, residual = F.
+    let mut bases: Vec<(&String, &GenericDef)> = generics
+        .iter()
+        .filter(|(b, g)| is_mono_of_base(b, mono) && matches!(g.kind, GenericKind::Union { .. }))
+        .collect();
+    // Longest base prefix wins (more specific mangled base).
+    bases.sort_by_key(|(b, _)| std::cmp::Reverse(b.len()));
+    if let Some((base, gdef)) = bases.first() {
+        if let GenericKind::Union { members } = &gdef.kind {
+            let mut args = Vec::with_capacity(gdef.type_params.len());
+            for p in &gdef.type_params {
+                match type_param_role(p, members) {
+                    TypeParamRole::Success => args.push(Ty::Void),
+                    TypeParamRole::Residual => args.push(f_ty.clone()),
+                    TypeParamRole::Ambiguous => {
+                        return Err(Error::at(
+                            format!(
+                                "cannot infer return type from `?` on `{mono}` \
+                                 (type parameter `{p}` is not a clear success/residual slot); \
+                                 add an explicit `->` annotation"
+                            ),
+                            span,
+                        ));
+                    }
+                }
+            }
+            let collapsed = mono_type_name(base, &args);
+            ensure_union_mono(
+                types,
+                layouts,
+                generics,
+                base,
+                &args,
+                &gdef.def_mod,
+                span,
+            )?;
+            return Ok(Ty::User(collapsed));
+        }
+    }
+    // Non-generic residual union: whole type.
+    Ok(scrut_ty.clone())
+}
+
+fn ensure_union_mono(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+    base: &str,
+    args: &[Ty],
+    def_mod: &str,
+    span: Span,
+) -> Result<()> {
+    let mono = mono_type_name(base, args);
+    if types.contains_key(&mono) {
+        return Ok(());
+    }
+    // Name map: identity for monomorph resolve of nested builtins.
+    let name_map = HashMap::new();
+    let pending = vec![(base.to_string(), args.to_vec(), name_map, span)];
+    let mut ignore_methods = Vec::new();
+    monomorphize_pending(pending, types, layouts, generics, &mut ignore_methods)?;
+    if !types.contains_key(&mono) {
+        // Retry with def_mod empty map still — seed may need Fallible inners only.
+        let _ = def_mod;
+        return Err(Error::at(
+            format!(
+                "cannot materialize monomorph `{mono}` for return-type inference; \
+                 add an explicit `->` annotation"
+            ),
+            span,
+        ));
+    }
+    Ok(())
+}
+
+fn unify_infer_tys(tys: &[Ty], span: Span) -> Result<Ty> {
+    let mut acc = Ty::Never;
+    for t in tys {
+        acc = match (&acc, t) {
+            (Ty::Never, x) => x.clone(),
+            (x, Ty::Never) => x.clone(),
+            (x, y) if x == y => x.clone(),
+            (x, y) => {
+                return Err(Error::at(
+                    format!(
+                        "cannot infer a single return type from exits ({x:?} vs {y:?}); \
+                         add an explicit `->` annotation"
+                    ),
+                    span,
+                ));
+            }
+        };
+    }
+    if is_never(&acc) {
+        Ok(Ty::Void)
+    } else {
+        Ok(acc)
+    }
+}
+
+fn refine_residual_with_success(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+    residual_ty: &Ty,
+    success_ty: &Ty,
+    span: Span,
+) -> Result<Ty> {
+    if is_never(success_ty) || *success_ty == Ty::Void {
+        return Ok(residual_ty.clone());
+    }
+    let Ty::User(mono) = residual_ty else {
+        return unify_infer_tys(&[residual_ty.clone(), success_ty.clone()], span);
+    };
+    let sum = match types.get(mono).and_then(|i| i.sum.clone()) {
+        Some(s) if s.residual_tag.is_some() => s,
+        _ => return unify_infer_tys(&[residual_ty.clone(), success_ty.clone()], span),
+    };
+    let f_ty = residual_extract_of_sum(types, &sum, span)?;
+
+    let mut bases: Vec<(&String, &GenericDef)> = generics
+        .iter()
+        .filter(|(b, g)| is_mono_of_base(b, mono) && matches!(g.kind, GenericKind::Union { .. }))
+        .collect();
+    bases.sort_by_key(|(b, _)| std::cmp::Reverse(b.len()));
+    if let Some((base, gdef)) = bases.first() {
+        if let GenericKind::Union { members } = &gdef.kind {
+            let mut args = Vec::with_capacity(gdef.type_params.len());
+            for p in &gdef.type_params {
+                match type_param_role(p, members) {
+                    TypeParamRole::Success => args.push(success_ty.clone()),
+                    TypeParamRole::Residual => args.push(f_ty.clone()),
+                    TypeParamRole::Ambiguous => {
+                        return Err(Error::at(
+                            "cannot refine inferred residual return type; add an explicit `->` annotation",
+                            span,
+                        ));
+                    }
+                }
+            }
+            let refined = mono_type_name(base, &args);
+            ensure_union_mono(types, layouts, generics, base, &args, &gdef.def_mod, span)?;
+            return Ok(Ty::User(refined));
+        }
+    }
+    unify_infer_tys(&[residual_ty.clone(), success_ty.clone()], span)
+}
+
+fn combine_inferred_return(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+    residuals: &[Ty],
+    values: &[Ty],
+    span: Span,
+) -> Result<Ty> {
+    let values: Vec<Ty> = values
+        .iter()
+        .filter(|t| !is_never(t))
+        .cloned()
+        .collect();
+    if residuals.is_empty() {
+        return unify_infer_tys(&values, span);
+    }
+    let r = unify_infer_tys(residuals, span)?;
+    if values.is_empty() {
+        return Ok(r);
+    }
+    let s = unify_infer_tys(&values, span)?;
+    // Full residual-union value exits (e.g. `return Pass(…)`) unify with residual
+    // collapses — do not treat the whole Trial as a success *payload*.
+    if is_residual_union(types, &s) {
+        return unify_infer_tys(&[r, s], span);
+    }
+    refine_residual_with_success(types, layouts, generics, &r, &s, span)
+}
+
+/// Local free-function names called from `block` (for recursion graph).
+fn collect_local_fn_calls(block: &Block, out: &mut HashSet<String>) {
+    for it in &block.items {
+        match it {
+            BlockItem::Let { init, .. } => collect_local_fn_calls_expr(init, out),
+            BlockItem::Assign { value, .. } => collect_local_fn_calls_expr(value, out),
+            BlockItem::Expr(e) => collect_local_fn_calls_expr(e, out),
+        }
+    }
+    if let Some(t) = &block.tail {
+        collect_local_fn_calls_expr(t, out);
+    }
+}
+
+fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
+    match &expr.kind {
+        ExprKind::Call { callee, args } => {
+            out.insert(callee.clone());
+            for a in args {
+                match a {
+                    Arg::Pos(e) | Arg::Named { value: e, .. } => {
+                        collect_local_fn_calls_expr(e, out)
+                    }
+                }
+            }
+        }
+        ExprKind::MethodCall { receiver, args, .. } => {
+            collect_local_fn_calls_expr(receiver, out);
+            for a in args {
+                match a {
+                    Arg::Pos(e) | Arg::Named { value: e, .. } => {
+                        collect_local_fn_calls_expr(e, out)
+                    }
+                }
+            }
+        }
+        ExprKind::Field { base, .. } => collect_local_fn_calls_expr(base, out),
+        ExprKind::Index { base, index } => {
+            collect_local_fn_calls_expr(base, out);
+            collect_local_fn_calls_expr(index, out);
+        }
+        ExprKind::Unary { expr: inner, .. } => collect_local_fn_calls_expr(inner, out),
+        ExprKind::Binary { left, right, .. } => {
+            collect_local_fn_calls_expr(left, out);
+            collect_local_fn_calls_expr(right, out);
+        }
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            collect_local_fn_calls_expr(cond, out);
+            collect_local_fn_calls(then_branch, out);
+            if let Some(e) = else_branch {
+                collect_local_fn_calls(e, out);
+            }
+        }
+        ExprKind::While { cond, body } => {
+            collect_local_fn_calls_expr(cond, out);
+            collect_local_fn_calls(body, out);
+        }
+        ExprKind::Loop { body } => collect_local_fn_calls(body, out),
+        ExprKind::For {
+            start, end, body, ..
+        } => {
+            collect_local_fn_calls_expr(start, out);
+            if let Some(e) = end {
+                collect_local_fn_calls_expr(e, out);
+            }
+            collect_local_fn_calls(body, out);
+        }
+        ExprKind::Return { value } => {
+            if let Some(v) = value {
+                collect_local_fn_calls_expr(v, out);
+            }
+        }
+        ExprKind::Try(inner) => collect_local_fn_calls_expr(inner, out),
+        ExprKind::Block(b) => collect_local_fn_calls(b, out),
+        ExprKind::Match { scrutinee, arms } => {
+            collect_local_fn_calls_expr(scrutinee, out);
+            for arm in arms {
+                collect_local_fn_calls(&arm.body, out);
+                if let Some(g) = &arm.guard {
+                    collect_local_fn_calls_expr(g, out);
+                }
+            }
+        }
+        ExprKind::ArrayLit(elems) => {
+            for e in elems {
+                collect_local_fn_calls_expr(e, out);
+            }
+        }
+        ExprKind::Interpolate(parts) => {
+            for p in parts {
+                if let InterpPart::Expr(e) = p {
+                    collect_local_fn_calls_expr(e, out);
+                }
+            }
+        }
+        ExprKind::Int(_)
+        | ExprKind::Bool(_)
+        | ExprKind::String(_)
+        | ExprKind::Name(_)
+        | ExprKind::Break
+        | ExprKind::Continue => {}
+    }
+}
+
+fn infer_unannotated_free_returns(
+    fns: &mut HashMap<String, FnSig>,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+    free_fns: &[(String, String, &ast::Function, bool)],
+    package_maps: &HashMap<String, ModuleNameMaps>,
+    module_exports: &HashMap<String, ModuleExports>,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
+) -> Result<()> {
+    // Candidates: unannotated non-main free functions.
+    let mut candidates: Vec<(String, String, &ast::Function, bool)> = Vec::new();
+    for (mod_id, mangled, f, is_entry) in free_fns {
+        if f.return_type.is_some() {
+            continue;
+        }
+        if *is_entry && f.name == "main" {
+            continue;
+        }
+        candidates.push((mod_id.clone(), mangled.clone(), *f, *is_entry));
+    }
+    if candidates.is_empty() {
+        return Ok(());
+    }
+
+    let cand_set: HashSet<String> = candidates.iter().map(|c| c.1.clone()).collect();
+
+    // Call graph among candidates (local free-fn names → mangled).
+    let mut edges: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut self_or_cycle: HashSet<String> = HashSet::new();
+    for (mod_id, mangled, f, _) in &candidates {
+        let maps = package_maps.get(mod_id).unwrap();
+        let mut locals = HashSet::new();
+        collect_local_fn_calls(&f.body, &mut locals);
+        let entry = edges.entry(mangled.clone()).or_default();
+        for name in locals {
+            if let Some(callee) = maps.name_to_fn.get(&name) {
+                if callee == mangled {
+                    self_or_cycle.insert(mangled.clone());
+                } else if cand_set.contains(callee) {
+                    entry.insert(callee.clone());
+                }
+            }
+        }
+    }
+    // Mutual cycles (simple DFS).
+    for start in cand_set.iter() {
+        let mut stack = vec![start.clone()];
+        let mut seen = HashSet::new();
+        while let Some(n) = stack.pop() {
+            if !seen.insert(n.clone()) {
+                continue;
+            }
+            if let Some(succ) = edges.get(&n) {
+                for s in succ {
+                    if s == start {
+                        self_or_cycle.insert(start.clone());
+                    }
+                    stack.push(s.clone());
+                }
+            }
+        }
+    }
+
+    // Topo: process functions with no pending candidate callees first.
+    let mut remaining: HashSet<String> = cand_set
+        .iter()
+        .filter(|m| !self_or_cycle.contains(*m))
+        .cloned()
+        .collect();
+    let by_mangled: HashMap<String, (String, &ast::Function, bool)> = candidates
+        .iter()
+        .map(|(m, mang, f, e)| (mang.clone(), (m.clone(), *f, *e)))
+        .collect();
+
+    let mut infer_errors: Vec<Error> = Vec::new();
+
+    for mangled in &self_or_cycle {
+        let (mod_id, f, _) = by_mangled.get(mangled).unwrap();
+        infer_errors.push(Error::at(
+            format!(
+                "cannot infer return type of `{}` (recursive or mutually recursive); \
+                 add an explicit `->` annotation",
+                f.name
+            ),
+            f.name_span,
+        ));
+        let _ = mod_id;
+    }
+
+    while !remaining.is_empty() {
+        let ready: Vec<String> = remaining
+            .iter()
+            .filter(|m| {
+                edges
+                    .get(*m)
+                    .map(|s| s.iter().all(|c| !remaining.contains(c)))
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
+        if ready.is_empty() {
+            // Residual cycle not caught above.
+            for m in &remaining {
+                let (_, f, _) = by_mangled.get(m).unwrap();
+                infer_errors.push(Error::at(
+                    format!(
+                        "cannot infer return type of `{}` (dependency cycle); \
+                         add an explicit `->` annotation",
+                        f.name
+                    ),
+                    f.name_span,
+                ));
+            }
+            break;
+        }
+        for mangled in ready {
+            remaining.remove(&mangled);
+            let (mod_id, f, is_entry) = by_mangled.get(&mangled).unwrap();
+            let maps = package_maps.get(mod_id).unwrap();
+            let blocked: HashSet<String> = remaining.iter().cloned().collect();
+            match probe_function_return(
+                f,
+                &mangled,
+                *is_entry,
+                fns,
+                types,
+                layouts,
+                generics,
+                maps,
+                module_exports,
+                package_maps,
+                mod_id,
+                synthetics,
+                &blocked,
+            ) {
+                Ok(ret) => {
+                    if let Some(sig) = fns.get_mut(&mangled) {
+                        sig.ret = ret;
+                    }
+                }
+                Err(e) => infer_errors.push(e),
+            }
+        }
+    }
+
+    if !infer_errors.is_empty() {
+        return Err(errors_to_multi(infer_errors));
+    }
+    Ok(())
+}
+
+fn probe_function_return(
+    f: &ast::Function,
+    mangled: &str,
+    is_entry: bool,
+    fns: &HashMap<String, FnSig>,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+    maps: &ModuleNameMaps,
+    module_exports: &HashMap<String, ModuleExports>,
+    package_maps: &HashMap<String, ModuleNameMaps>,
+    module_id: &str,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
+    blocked: &HashSet<String>,
+) -> Result<Ty> {
+    let mut ctx = LowerCtx::new(
+        fns.clone(),
+        types.clone(),
+        maps.name_to_type.clone(),
+        maps.name_to_fn.clone(),
+        maps.name_to_global.clone(),
+        maps.namespaces.clone(),
+        module_exports.clone(),
+        package_maps.clone(),
+        Ty::Void,
+        module_id.to_string(),
+        is_entry,
+        Rc::clone(synthetics),
+    );
+    ctx.inferring = true;
+    ctx.infer_self = Some(mangled.to_string());
+    ctx.infer_blocked = blocked.clone();
+    ctx.generics = generics.clone();
+
+    for p in &f.params {
+        let ty = resolve_ty(&p.ty, &ctx.types, &ctx.name_to_type)?;
+        let place = Place {
+            name: sanitize_name(&p.name),
+        };
+        ctx.define(&p.name, ty, false, place);
+    }
+
+    // Probe body; capture exits. Errors (bare Pass/Fail, etc.) surface here.
+    let _ = lower_block_value(&mut ctx, &f.body, &Ty::Void)?;
+
+    // Merge any monomorphs / synthetics created during probe back.
+    for (name, info) in ctx.types.iter() {
+        if !types.contains_key(name) {
+            types.insert(name.clone(), info.clone());
+        }
+    }
+    for (name, (info, layout)) in ctx.synthetics.borrow().entries.iter() {
+        if !types.contains_key(name) {
+            types.insert(name.clone(), info.clone());
+            layouts.push(layout.clone());
+        }
+    }
+
+    combine_inferred_return(
+        types,
+        layouts,
+        generics,
+        &ctx.infer_residuals,
+        &ctx.infer_values,
+        f.name_span,
+    )
 }
 
 fn resolve_ty(
@@ -2938,7 +3588,13 @@ fn lower_function(
     synthetics: &Rc<RefCell<SyntheticRegistry>>,
 ) -> Result<Function> {
     let is_main = is_entry && f.name == "main";
-    let ret_ty = resolve_return_ty(f, is_entry, types, name_to_type)?;
+    // Prefer FnSig.ret (includes D129 inference); fall back to annotation defaults.
+    let ret_ty = fns
+        .get(mangled)
+        .map(|s| s.ret.clone())
+        .unwrap_or_else(|| {
+            resolve_return_ty(f, is_entry, types, name_to_type).unwrap_or(Ty::Void)
+        });
     let mut params = Vec::new();
     for p in &f.params {
         let ty = resolve_ty(&p.ty, types, name_to_type)?;
@@ -3396,6 +4052,10 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
                 };
                 lower_expr_expect(ctx, tail, exp)?
             };
+            // D129: record non-Never tail as a value exit during inference probe.
+            if ctx.inferring && !is_never(&ty) {
+                ctx.infer_values.push(ty.clone());
+            }
             // Diverging tail (e.g. infinite `loop`) satisfies any expected type (D128).
             if is_never(&ty) {
                 return Ok(None);
@@ -4087,6 +4747,21 @@ fn lower_continue(ctx: &mut LowerCtx, span: Span) -> Result<(Place, Ty)> {
 /// `return` / `return expr` — type-check against `fn_ret`, drop live heap locals, emit C return.
 /// The expression types as `fn_ret` so it unifies with sibling if/match arms.
 fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<(Place, Ty)> {
+    // D129 probe: collect exit types only.
+    if ctx.inferring {
+        match value {
+            None => ctx.infer_values.push(Ty::Void),
+            Some(e) => {
+                let (_, ty) = lower_expr(ctx, e)?;
+                if !is_never(&ty) {
+                    ctx.infer_values.push(ty);
+                }
+            }
+        }
+        let (p, _) = void_place(ctx);
+        return Ok((p, Ty::Never));
+    }
+
     let fn_ret = ctx.fn_ret.clone();
     let ret_place = match value {
         None => {
@@ -5995,6 +6670,25 @@ fn lower_try_sum(
             span,
         )
     })?;
+
+    // D129 probe: record collapsed residual exit; yield success type for continuation.
+    if ctx.inferring {
+        let mut layouts_tmp: Vec<TypeLayout> = Vec::new();
+        let collapsed = collapse_residual_exit(
+            &mut ctx.types,
+            &ctx.generics,
+            &mut layouts_tmp,
+            &scrut_ty,
+            span,
+        )?;
+        ctx.infer_residuals.push(collapsed);
+        let success_ty = sum_success_extract_ty(ctx, &sum, span)?;
+        let _ = (scrut_p, residual_tag);
+        let p = ctx.fresh("isok");
+        init_place(ctx, &p, &success_ty)?;
+        return Ok((p, success_ty));
+    }
+
     let fn_ret = ctx.fn_ret.clone();
     let same_ret = fn_ret == scrut_ty;
     let rewrap = !same_ret && is_residual_union(&ctx.types, &fn_ret);
@@ -8026,6 +8720,8 @@ fn lower_pass_fail(
     if args.len() != 1 {
         return Err(Error::at(format!("`{callee}` expects 1 argument"), span));
     }
+    // D129: bare Pass/Fail need a residual-union expect. Prefer annotation / fn_ret /
+    // residual collapses already seen from `?` in this probe; else require `->`.
     let trial_ty = if let Some(exp) = expect {
         if is_residual_union(&ctx.types, exp) {
             exp.clone()
@@ -8037,6 +8733,23 @@ fn lower_pass_fail(
         }
     } else if is_residual_union(&ctx.types, &ctx.fn_ret) {
         ctx.fn_ret.clone()
+    } else if ctx.inferring {
+        if let Some(r) = ctx
+            .infer_residuals
+            .iter()
+            .find(|t| is_residual_union(&ctx.types, t))
+        {
+            r.clone()
+        } else {
+            return Err(Error::at(
+                format!(
+                    "cannot infer return type from bare `{callee}(…)` \
+                     (constructors alone do not select Trial or another union); \
+                     add an explicit `->` annotation"
+                ),
+                span,
+            ));
+        }
     } else {
         // Infer Trial<Int64, Int64> — monomorph must already exist from type annotations.
         fallible_mono(ctx, "Trial", &[Ty::Int64, Ty::Int64], span)?
@@ -8212,6 +8925,19 @@ fn lower_call(
                 .get(other)
                 .cloned()
                 .unwrap_or_else(|| other.to_string());
+            if ctx.inferring {
+                if ctx.infer_self.as_deref() == Some(mangled.as_str())
+                    || ctx.infer_blocked.contains(&mangled)
+                {
+                    return Err(Error::at(
+                        format!(
+                            "cannot infer return type of recursive call to `{other}`; \
+                             add an explicit `->` annotation"
+                        ),
+                        span,
+                    ));
+                }
+            }
             let sig = ctx
                 .fns
                 .get(&mangled)
@@ -8663,6 +9389,13 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         loop_depth: ctx.loop_depth,
         drop_places: ctx.drop_places.clone(),
         synthetics: Rc::clone(&ctx.synthetics),
+        inferring: ctx.inferring,
+        infer_self: ctx.infer_self.clone(),
+        infer_blocked: ctx.infer_blocked.clone(),
+        // Share residual collapses so bare Pass/Fail inside `if` can resolve (D129).
+        infer_residuals: ctx.infer_residuals.clone(),
+        infer_values: Vec::new(),
+        generics: ctx.generics.clone(),
     };
     if block.tail.is_none() {
         return Ok(Ty::Void);

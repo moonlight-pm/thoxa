@@ -38,7 +38,7 @@ fn main() -> Int64 {
     }
 }
 
-fn run() -> Trial<Void, String> {
+fn run() {
     let server = net.createSocket()?
     server.reuseAddr()?
     server.bind(listenPort)?
@@ -61,7 +61,7 @@ fn run() -> Trial<Void, String> {
 }
 
 ## One connection: read headers, route, write full response. Never fails the process.
-## (No `->` annotation ⇒ return type is Void.)
+## (Unannotated; inferred Void — no value exits.)
 fn serveOne(peer!: Socket, router!: Router) {
     match peer.receiveRequest() {
         Fail(e) {

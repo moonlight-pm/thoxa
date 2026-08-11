@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-10 — Return-type inference
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D129 | Body-inferred return types | Unannotated non-`main` `fn`/method return types are **inferred** from exit types when possible; explicit `-> T` is authoritative and checked. Missing `->` is **no longer** default `Void`. Unannotated `main` still **`Int64`**. | Residual `?`: structural collapse of success type-args to `Void`, keep residual extract; sum with value exits. Bare `Pass`/`Fail` alone cannot pick a union → annotate. Self/mutual recursion unannotated → annotate (no fixed-point v0). No special-casing the name `Trial`. Freeze: [`specs/2026-08-10-return-type-inference.md`](specs/2026-08-10-return-type-inference.md). Gate: `return_infer`. Dogfood: `examples/http` `run()`. Supersedes “unannotated ⇒ Void” default (hover/LSP index may lag full MIR). |
+
 ## 2026-08-10 — Diverging loop (no break)
 
 | ID | Decision | Choice | Notes |

@@ -1,0 +1,42 @@
+## D129: body-inferred return types (unannotated non-main).
+import logging from "std/Logging"
+import { Pass, Fail, Trial } from "std/Fallible"
+
+fn setup() -> Trial<Void, String> {
+    Pass(Void)
+}
+
+## `?` residual collapse + diverging loop → Trial<Void, String> (like examples/http run).
+fn runServer() {
+    setup()?
+    mut n = 0
+    loop {
+        n = n + 1
+        if n >= 2 {
+            return Pass(Void)
+        }
+    }
+}
+
+## Value returns only → Int64.
+fn fortyTwo() {
+    42
+}
+
+## Explicit annotation still checked.
+fn annotated() -> Int64 {
+    7
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    match runServer() {
+        Pass(_) { logging.info("run-ok") }
+        Fail(e) { logging.info("run-fail {e}") }
+    }
+    logging.info("n={fortyTwo()}")
+    logging.info("a={annotated()}")
+    0
+}
