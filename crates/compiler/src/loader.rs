@@ -524,6 +524,7 @@ fn insert_selective_import_names(
     names: &[ast::ImportName],
     from_module: &str,
     export_set: &HashSet<String>,
+    importer_path: &Path,
 ) -> Result<()> {
     for n in names {
         let local = n
@@ -535,13 +536,15 @@ fn insert_selective_import_names(
             return Err(Error::at(
                 format!("`{}` is not exported from module `{from_module}`", n.name),
                 n.name_span,
-            ));
+            )
+            .with_path(importer_path));
         }
         if map.contains_key(&local) {
             return Err(Error::at(
                 format!("duplicate import binding `{local}`"),
                 n.name_span,
-            ));
+            )
+            .with_path(importer_path));
         }
         map.insert(
             local,
@@ -559,12 +562,14 @@ fn insert_namespace_import(
     binding: &str,
     binding_span: Span,
     from_module: &str,
+    importer_path: &Path,
 ) -> Result<()> {
     if map.contains_key(binding) {
         return Err(Error::at(
             format!("duplicate import binding `{binding}`"),
             binding_span,
-        ));
+        )
+        .with_path(importer_path));
     }
     map.insert(
         binding.to_string(),
@@ -617,7 +622,8 @@ pub fn build_import_maps(
         let mut map = HashMap::new();
         for item in &m.ast.items {
             let Item::Import(imp) = item else { continue };
-            let dep_path = resolve_specifier(&imp.path, dir, &package.project_root, imp.path_span)?;
+            let dep_path = resolve_specifier(&imp.path, dir, &package.project_root, imp.path_span)
+                .map_err(|e| e.with_path(&m.path))?;
             let from_module = path_to_id
                 .get(&dep_path)
                 .cloned()
@@ -626,6 +632,7 @@ pub fn build_import_maps(
                         format!("internal: module {} not loaded", dep_path.display()),
                         imp.path_span,
                     )
+                    .with_path(&m.path)
                 })?;
             let export_set = exports.get(&from_module).cloned().unwrap_or_default();
 
@@ -636,6 +643,7 @@ pub fn build_import_maps(
                         names,
                         &from_module,
                         &export_set,
+                        &m.path,
                     )?;
                 }
                 ImportKind::Namespace {
@@ -647,6 +655,7 @@ pub fn build_import_maps(
                         binding,
                         *binding_span,
                         &from_module,
+                        &m.path,
                     )?;
                 }
                 ImportKind::Combined {
@@ -659,12 +668,14 @@ pub fn build_import_maps(
                         binding,
                         *binding_span,
                         &from_module,
+                        &m.path,
                     )?;
                     insert_selective_import_names(
                         &mut map,
                         names,
                         &from_module,
                         &export_set,
+                        &m.path,
                     )?;
                 }
             }

@@ -41,6 +41,8 @@ pub struct Server {
     docs: HashMap<String, String>,
     /// URI → free-fn / `Type.method` → return type display (from last successful lower).
     return_types: HashMap<String, HashMap<String, String>>,
+    /// URIs we last published diagnostics for (so multi-file package diags can clear).
+    last_diag_uris: HashSet<String>,
     shutdown_requested: bool,
 }
 
@@ -55,6 +57,7 @@ impl Server {
         Self {
             docs: HashMap::new(),
             return_types: HashMap::new(),
+            last_diag_uris: HashSet::new(),
             shutdown_requested: false,
         }
     }
@@ -666,8 +669,37 @@ impl Server {
             }
         };
         self.return_types.insert(uri.to_string(), rets);
-        let lsp_diags: Vec<Value> = diags.iter().map(convert::diagnostic_to_lsp).collect();
-        self.send_diagnostics(uri, &lsp_diags, writer)
+        // Group by source file so dependency-module errors are not painted on
+        // the open buffer with stolen byte spans (wrong underline / wrong token).
+        let mut by_uri: HashMap<String, Vec<Value>> = HashMap::new();
+        by_uri.insert(uri.to_string(), Vec::new());
+        for d in &diags {
+            let target = if d.filename.is_empty() {
+                uri.to_string()
+            } else {
+                convert::path_to_uri(&d.filename)
+            };
+            by_uri
+                .entry(target)
+                .or_default()
+                .push(convert::diagnostic_to_lsp(d));
+        }
+        // Clear URIs that previously had package diags but are clean now.
+        let next_uris: HashSet<String> = by_uri.keys().cloned().collect();
+        let stale: Vec<String> = self
+            .last_diag_uris
+            .iter()
+            .filter(|u| !next_uris.contains(*u))
+            .cloned()
+            .collect();
+        for old in stale {
+            self.send_diagnostics(&old, &[], writer)?;
+        }
+        for (target, lsp_diags) in &by_uri {
+            self.send_diagnostics(target, lsp_diags, writer)?;
+        }
+        self.last_diag_uris = next_uris;
+        Ok(())
     }
 
     /// Look up MIR-resolved return type for a local fn/method binding.

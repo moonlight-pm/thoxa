@@ -4,7 +4,7 @@ use crate::ast::Module;
 use crate::diagnostic::{self, Diagnostic, Label};
 use crate::span::Span;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -12,6 +12,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Error {
     pub message: String,
     pub span: Option<Span>,
+    /// Source file this span is relative to (multi-file packages / LSP).
+    pub path: Option<PathBuf>,
     /// Stable diagnostic code when known at emit time (e.g. `THX001`).
     pub code: Option<&'static str>,
     pub help: Vec<String>,
@@ -29,6 +31,7 @@ pub struct Error {
 pub struct AdditionalDiagnostic {
     pub message: String,
     pub span: Option<Span>,
+    pub path: Option<PathBuf>,
     pub code: Option<&'static str>,
     pub help: Vec<String>,
     pub labels: Vec<Label>,
@@ -41,6 +44,7 @@ impl AdditionalDiagnostic {
         Self {
             message: message.into(),
             span,
+            path: None,
             code: None,
             help: Vec::new(),
             labels: Vec::new(),
@@ -53,12 +57,18 @@ impl AdditionalDiagnostic {
         Self {
             message: e.message,
             span: e.span,
+            path: e.path,
             code: e.code,
             help: e.help,
             labels: e.labels,
             expected: e.expected,
             actual: e.actual,
         }
+    }
+
+    pub fn with_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.path = Some(path.into());
+        self
     }
 }
 
@@ -67,6 +77,7 @@ impl Error {
         Self {
             message: message.into(),
             span: None,
+            path: None,
             code: None,
             help: Vec::new(),
             labels: Vec::new(),
@@ -81,6 +92,7 @@ impl Error {
         Self {
             message: message.into(),
             span: Some(span),
+            path: None,
             code: None,
             help: Vec::new(),
             labels: Vec::new(),
@@ -95,6 +107,7 @@ impl Error {
         Self {
             message: message.into(),
             span: None,
+            path: None,
             code: Some(code),
             help: Vec::new(),
             labels: Vec::new(),
@@ -109,6 +122,7 @@ impl Error {
         Self {
             message: message.into(),
             span: Some(span),
+            path: None,
             code: Some(code),
             help: Vec::new(),
             labels: Vec::new(),
@@ -121,6 +135,12 @@ impl Error {
 
     pub fn with_code(mut self, code: &'static str) -> Self {
         self.code = Some(code);
+        self
+    }
+
+    /// Attach the source file this error's span is measured in.
+    pub fn with_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.path = Some(path.into());
         self
     }
 
@@ -162,6 +182,7 @@ impl Error {
         out.push(Error {
             message: self.message,
             span: self.span,
+            path: self.path,
             code: self.code,
             help: self.help,
             labels: self.labels,
@@ -174,6 +195,7 @@ impl Error {
             out.push(Error {
                 message: m.message,
                 span: m.span,
+                path: m.path,
                 code: m.code,
                 help: m.help,
                 labels: m.labels,
@@ -205,6 +227,7 @@ impl Error {
             flat.push(AdditionalDiagnostic {
                 message: e.message,
                 span: e.span,
+                path: e.path,
                 code: e.code,
                 help: e.help,
                 labels: e.labels,
@@ -221,6 +244,7 @@ impl Error {
         Error {
             message: first.message,
             span: first.span,
+            path: first.path,
             code: first.code,
             help: first.help,
             labels: first.labels,

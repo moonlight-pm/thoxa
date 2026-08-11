@@ -129,7 +129,7 @@ pub fn check_and_returns_with_overlays(
     let (error, lint_module, program) = check_source_inner(filename, text, overlays);
     let mut diags = Vec::new();
     if let Some(e) = error {
-        diags.extend(errors_to_diagnostics(filename, text, e));
+        diags.extend(errors_to_diagnostics(filename, text, e, overlays));
     }
     if let Some(module) = lint_module {
         diags.extend(lint_unused_imports(filename, text, &module));
@@ -341,7 +341,7 @@ fn lint_unused_imports(filename: &str, text: &str, module: &Module) -> Vec<Check
                 .with_span(span)
                 .with_path(filename)
                 .enrich();
-            structured_to_check(filename, text, d)
+            structured_to_check(filename, text, d, &HashMap::new())
         })
         .collect()
 }
@@ -447,19 +447,52 @@ fn first_import_span(module: &Module) -> Option<Span> {
     })
 }
 
-fn errors_to_diagnostics(filename: &str, text: &str, e: Error) -> Vec<CheckDiagnostic> {
+fn errors_to_diagnostics(
+    filename: &str,
+    text: &str,
+    e: Error,
+    overlays: &HashMap<PathBuf, String>,
+) -> Vec<CheckDiagnostic> {
     let path = Path::new(filename);
     let structured = e.into_structured(Some(path));
     structured
         .into_iter()
-        .map(|d| structured_to_check(filename, text, d))
+        .map(|d| structured_to_check(filename, text, d, overlays))
         .collect()
 }
 
-fn structured_to_check(filename: &str, text: &str, d: Diagnostic) -> CheckDiagnostic {
+/// Source text for a diagnostic path: open entry buffer, other open overlays, else disk.
+fn source_for_diag_path(
+    open_filename: &str,
+    open_text: &str,
+    diag_path: &Path,
+    overlays: &HashMap<PathBuf, String>,
+) -> String {
+    let open = Path::new(open_filename);
+    if paths_equal(open, diag_path, canonicalize_soft(diag_path).as_ref()) {
+        return open_text.to_string();
+    }
+    if let Some(t) = overlay_text_for(diag_path, overlays) {
+        return t.to_string();
+    }
+    std::fs::read_to_string(diag_path).unwrap_or_default()
+}
+
+fn structured_to_check(
+    open_filename: &str,
+    open_text: &str,
+    d: Diagnostic,
+    overlays: &HashMap<PathBuf, String>,
+) -> CheckDiagnostic {
+    let fname = d
+        .path
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| open_filename.to_string());
+    let text = source_for_diag_path(open_filename, open_text, Path::new(&fname), overlays);
     let span = d.span.unwrap_or_else(Span::dummy);
     let range = if d.span.is_some() {
-        span::span_to_range(text, span)
+        span::span_to_range(&text, span)
     } else {
         Range::default()
     };
@@ -467,17 +500,18 @@ fn structured_to_check(filename: &str, text: &str, d: Diagnostic) -> CheckDiagno
         .labels
         .into_iter()
         .map(|lab| {
-            let fname = lab
+            let lab_fname = lab
                 .path
                 .as_ref()
                 .map(|p| p.display().to_string())
-                .unwrap_or_else(|| filename.to_string());
-            let lab_src = if fname == filename { text } else { text };
+                .unwrap_or_else(|| fname.clone());
+            let lab_src =
+                source_for_diag_path(open_filename, open_text, Path::new(&lab_fname), overlays);
             RelatedInfo {
                 message: lab.message,
-                range: span::span_to_range(lab_src, lab.span),
+                range: span::span_to_range(&lab_src, lab.span),
                 span: lab.span,
-                filename: fname,
+                filename: lab_fname,
             }
         })
         .collect();
@@ -485,7 +519,7 @@ fn structured_to_check(filename: &str, text: &str, d: Diagnostic) -> CheckDiagno
         message: d.message,
         range,
         span,
-        filename: filename.to_string(),
+        filename: fname,
         code: d.code,
         severity: d.severity,
         help: d.help,
@@ -894,6 +928,64 @@ fn main() -> Int64 {
         overlays.insert(helper.clone(), edited.to_string());
         let diags = check_source_with_overlays(main.to_str().unwrap(), main_src, &overlays);
         assert_eq!(diags.len(), 1, "expected type error from overlay: {diags:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Dependency-module import errors must keep the dependency file path and
+    /// span — not paint the open buffer at the same byte offset (wrong token).
+    #[test]
+    fn dep_import_error_keeps_foreign_path_and_span() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa-dep-span-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let helper = dir.join("Helper.thx");
+        let app = dir.join("App.thx");
+        // Helper imports a name that does not exist on std/Fallible.
+        fs::write(
+            &helper,
+            "import { NotARealExport } from \"std/Fallible\"\nexport fn hi() -> Int64 { 1 }\n",
+        )
+        .unwrap();
+        // App is longer / different so a stolen span would underline the wrong token.
+        let app_src = "\
+## filler so offsets diverge from Helper
+import { hi } from \"./Helper\"
+fn isReadMethod(method!: String) -> Bool {
+    if method == \"GET\" {
+        true
+    } else {
+        method == \"HEAD\"
+    }
+}
+fn main() -> Int64 {
+    hi()
+}
+";
+        fs::write(&app, app_src).unwrap();
+        let diags = check_source(app.to_str().unwrap(), app_src);
+        let err = diags
+            .iter()
+            .find(|d| d.message.contains("NotARealExport"))
+            .unwrap_or_else(|| panic!("expected not-exported diag: {diags:?}"));
+        assert!(
+            err.filename.contains("Helper.thx"),
+            "diag must stay on Helper, got filename={}",
+            err.filename
+        );
+        // Span text in Helper is the bad import name — not App's `String`.
+        let helper_src = fs::read_to_string(&helper).unwrap();
+        let slice = helper_src
+            .get(err.span.start..err.span.end)
+            .unwrap_or("");
+        assert_eq!(
+            slice, "NotARealExport",
+            "span must cover the import name, got {slice:?} range={:?}",
+            err.range
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

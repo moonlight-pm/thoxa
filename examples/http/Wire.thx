@@ -2,7 +2,7 @@
 ## Body completion after receiveRequest, header lookup, form decode,
 ## redirects, response header append.
 
-import net, { Socket } from "std/Net"
+import { Socket } from "std/Net"
 import { Request, Response, Header } from "std/Http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import { toLowerAscii, trim, split, isEmpty, byteAt, length } from "std/Str"

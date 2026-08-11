@@ -167,8 +167,13 @@ impl Diagnostic {
 // ── Error → Diagnostic ──────────────────────────────────────────────────────
 
 /// Flatten an [`Error`] into independent structured diagnostics.
-pub fn from_error(err: Error, path: Option<&Path>) -> Vec<Diagnostic> {
+///
+/// Each error / `more` entry may carry its own `path` (span file). When set, it
+/// wins over `path_fallback` so multi-file package errors are not attributed to
+/// the open buffer.
+pub fn from_error(err: Error, path_fallback: Option<&Path>) -> Vec<Diagnostic> {
     let mut out = Vec::with_capacity(1 + err.more.len());
+    let primary_path = err.path.as_deref().or(path_fallback);
     out.push(diag_from_parts(
         err.message,
         err.span,
@@ -177,10 +182,12 @@ pub fn from_error(err: Error, path: Option<&Path>) -> Vec<Diagnostic> {
         err.labels,
         err.expected,
         err.actual,
-        path,
+        primary_path,
     ));
     for m in err.more {
-        out.push(from_additional(m, path));
+        let owned = m.path.clone();
+        let p = owned.as_deref().or(path_fallback);
+        out.push(from_additional(m, p));
     }
     out
 }
@@ -682,6 +689,7 @@ mod tests {
             AdditionalDiagnostic {
                 message: "undefined name `b`".into(),
                 span: Some(Span::new(2, 3)),
+                path: None,
                 code: None,
                 help: vec![],
                 labels: vec![],
