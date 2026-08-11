@@ -1,15 +1,72 @@
-## Framework — bind/listen helper (candidate std surface).
-## Does not import app/. The process entry (Main) owns the accept loop and
-## calls the app handler so dependency arrows stay framework ← app ← Main.
+## Framework — TCP server loop (candidate std surface).
+## Never imports app/. Calls the package mount `~/Handler` (app-owned shim).
 
 import net, { Socket } from "std/Net"
+import http from "std/Http"
+import wire from "./Wire"
+import handler from "~/Handler"
 import { Pass, Fail, Trial } from "std/Fallible"
+import logging, { info, warn } from "std/Logging"
 
-## Create a listening TCP socket on 0.0.0.0:`port` (SO_REUSEADDR on).
-export fn bindListen(port!: Int64) -> Trial<Socket, String> {
+## Bind, listen, accept forever. Setup Fail → process error; accept errors log.
+export fn run(port!: Int64) -> Trial<Void, String> {
     let server = net.createSocket()?
     server.reuseAddr()?
     server.bind(port)?
     server.listen(16)?
-    Pass(server)
+    info("http server listening on 127.0.0.1:{port}")
+    info("framework Server — mount ~/Handler (Ctrl-C to stop)")
+    loop {
+        match server.accept() {
+            Fail(e) {
+                warn("accept: {e}")
+            }
+            Pass(peer) {
+                serveOne(peer)
+                peer.close()
+            }
+        }
+    }
+}
+
+## One connection: parse → body → query → Handler.handle → write.
+fn serveOne(peer!: Socket) {
+    match peer.receiveRequest() {
+        Fail(e) {
+            warn("recv: {e}")
+        }
+        Pass(raw) {
+            if raw.count == 0 {
+                ## Peer closed without sending data — quiet.
+            } else {
+                let response = match http.parseRequest(raw) {
+                    Pass(req) {
+                        match wire.readBody(peer, raw, req) {
+                            Fail(e) {
+                                warn("body: {e}")
+                                http.badRequest(e)
+                            }
+                            Pass(body) {
+                                let query = wire.rawQuery(raw)
+                                let res = handler.handle(req, body, query)
+                                info("{req.method} {req.path} -> {res.status} {res.reason}")
+                                res
+                            }
+                        }
+                    }
+                    Fail(msg) {
+                        warn("parse: {msg}")
+                        http.badRequest(msg)
+                    }
+                }
+                let wireBytes = http.writeResponse(response)
+                match peer.sendAll(wireBytes) {
+                    Pass(_) { }
+                    Fail(e) {
+                        warn("send: {e}")
+                    }
+                }
+            }
+        }
+    }
 }

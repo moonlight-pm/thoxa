@@ -1,0 +1,10 @@
+## App mount for the framework Server.
+## framework/ imports only this package-root shim — never app/* internals.
+## Until Thoxa has first-class function values, this is the handler hook.
+
+import routes from "./app/Routes"
+import { Request, Response } from "std/Http"
+
+export fn handle(req!: Request, body!: Bytes, query!: String) -> Response {
+    routes.handle(req, body, query)
+}

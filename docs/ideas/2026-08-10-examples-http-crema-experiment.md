@@ -53,23 +53,24 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  Main.thx                 # entry glue: accept loop + app.Routes.handle
-  framework/               # lowercase — candidate future std; never imports app/
-    Server.thx             # bindListen only
-    Wire.thx               # body, query, form, headers, 303, HEAD finalize
+  Main.thx                 # entry: logging + framework.Server.run(port)
+  Handler.thx              # app mount shim (only package root framework imports)
+  framework/               # candidate std; never imports app/*
+    Server.thx             # accept loop → ~/Handler.handle
+    Wire.thx               # body, query, form, headers, 303, HEAD
     Router.thx             # named routes, :param, serveStatic
-  app/                     # lowercase — Little Crema (user code)
-    Routes.thx             # buildRouter() + handle() + name→handler dispatch
+  app/                     # Little Crema
+    Routes.thx             # buildRouter() + handle() + dispatch
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
   web/
   README.md
 ```
 
-**Layers:** `framework/` never imports `app/`. `app/` uses `framework/{Wire,Router}`.
-`Main` is the only place that ties them (accept loop → `routes.handle`).
+**Layers:** `framework/` never imports `app/*` — only `~/Handler`. `app/` uses
+`framework/{Wire,Router}`. `Main` is boot only.
 
-**Router:** app registers `.get/.post(pattern, name)`; path params are `:slug`
-(not `{slug}` — string interpolation). Unmatched → static files.
+**Router:** app registers `.get/.post(pattern, name)`; path params are `:slug`.
+Unmatched → static files.
 
 ---
 

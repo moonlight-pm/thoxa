@@ -21,7 +21,7 @@ export fn buildRouter() -> Router {
         .post("/", "signIn")
 }
 
-## App entry: Main calls this after the framework reads the request.
+## App entry: package-root Handler.thx (and thus framework/Server) calls this.
 export fn handle(req!: Request, body!: Bytes, query!: String) -> Response {
     let r = buildRouter()
     let res = match r.resolve(req.method, req.path) {

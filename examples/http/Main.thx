@@ -1,21 +1,13 @@
-## Little Crema — process entry (glue only).
-## Owns the accept loop so framework/ never imports app/.
+## Little Crema — process entry only.
+## framework/Server owns the accept loop; app lives under app/ + Handler.thx.
 ##
 ##   cargo make run examples/http
 ##
-##   framework/  — host helpers (Wire, Router, bindListen)
-##   app/        — Little Crema (Routes, pages, domain)
-##   web/        — static assets
-##
 ## Charter: docs/ideas/2026-08-10-examples-http-crema-experiment.md
 
-import { Socket } from "std/Net"
-import http from "std/Http"
 import server from "./framework/Server"
-import wire from "./framework/Wire"
-import routes from "./app/Routes"
 import { Pass, Fail } from "std/Fallible"
-import logging, { info, warn } from "std/Logging"
+import logging, { warn } from "std/Logging"
 
 let listenPort = 9091
 
@@ -23,70 +15,11 @@ fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
 
-    match run() {
+    match server.run(listenPort) {
         Pass => 0
         Fail(e) {
             warn("server error: {e}")
             1
-        }
-    }
-}
-
-fn run() {
-    let listener = server.bindListen(listenPort)?
-    info("http server listening on 127.0.0.1:{listenPort}")
-    info("Main glue: framework bind + app Routes (Ctrl-C to stop)")
-    loop {
-        match listener.accept() {
-            Fail(e) {
-                warn("accept: {e}")
-            }
-            Pass(peer) {
-                serveOne(peer)
-                peer.close()
-            }
-        }
-    }
-}
-
-## Framework reads the wire; app produces a Response; framework finalizes HEAD in app.handle.
-fn serveOne(peer!: Socket) {
-    match peer.receiveRequest() {
-        Fail(e) {
-            warn("recv: {e}")
-        }
-        Pass(raw) {
-            if raw.count == 0 {
-                ## Peer closed without sending data — quiet.
-            } else {
-                let response = match http.parseRequest(raw) {
-                    Pass(req) {
-                        match wire.readBody(peer, raw, req) {
-                            Fail(e) {
-                                warn("body: {e}")
-                                http.badRequest(e)
-                            }
-                            Pass(body) {
-                                let query = wire.rawQuery(raw)
-                                let res = routes.handle(req, body, query)
-                                info("{req.method} {req.path} -> {res.status} {res.reason}")
-                                res
-                            }
-                        }
-                    }
-                    Fail(msg) {
-                        warn("parse: {msg}")
-                        http.badRequest(msg)
-                    }
-                }
-                let wireBytes = http.writeResponse(response)
-                match peer.sendAll(wireBytes) {
-                    Pass(_) { }
-                    Fail(e) {
-                        warn("send: {e}")
-                    }
-                }
-            }
         }
     }
 }
