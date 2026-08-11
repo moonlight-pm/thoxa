@@ -42,7 +42,7 @@ Stop with Ctrl-C. Port is **9091** (`SO_REUSEADDR` on).
 | Concern | Behavior |
 |---------|----------|
 | Setup (`socket` / `bind` / `listen`) | Fail → process exit with log |
-| Accept loop | Infinite `loop` is last expr of `run()` — diverges (**D128**), no `Pass(Void)` tail |
+| Accept loop | Infinite `loop` is last expr of unannotated `run()` — diverges (**D128**); return inferred as fallible (**D129**), no `Pass(Void)` tail |
 | `accept` errors | Log and continue |
 | Request read | `Socket.receiveRequest` until `\r\n\r\n` (64 KiB cap) |
 | Response write | `Socket.sendAll` drains partial sends |
