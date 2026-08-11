@@ -53,7 +53,7 @@ Stop with Ctrl-C. Port **9091** (`SO_REUSEADDR` on).
 |--------|------|---------|
 | GET/HEAD | `/` | Home + sign-in card |
 | POST | `/` | Form `name` → Set-Cookie + **303** `/` |
-| GET/HEAD | `/menu` | Drink list |
+| GET/HEAD | `/menu` | Drink list (`?q=` filters) |
 | GET/HEAD | `/menu/{slug}` | Drink detail or 404 |
 | GET/HEAD | `/api/health` | Plain `ok` |
 | GET/HEAD | other | `std/HttpStatic` under `web/` |
@@ -74,6 +74,11 @@ Handlers always build a full response (as for GET). `App.handle` ends with
 are kept and the body is dropped. Handlers do not take a `headOnly` flag or
 call `okHead`. Same idea as common servers: run the GET path, strip content
 on the way out (RFC 9110 §9.3.2).
+
+## Query string (example-only)
+
+Product `Request.path` is query-stripped. `Wire.rawQuery` re-reads `?…` from
+the raw request line; `Wire.queryParam` picks fields. Menu uses `GET /menu?q=`.
 
 ## Rules
 

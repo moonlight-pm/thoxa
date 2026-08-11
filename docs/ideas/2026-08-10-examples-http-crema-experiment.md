@@ -174,9 +174,8 @@ after A–C.
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
-**As of last update:** **Phase A + Phase B complete** (forms/cookies/PRG smoke
-green). Next open work is Phase C (query search) when desired — still no
-`std/` growth.
+**As of last update:** **Phase A + B + C complete** (query search smoke green).
+Next is Phase D+ only if wanted — still no `std/` growth.
 
 ### Language notes hit during Phase A
 
