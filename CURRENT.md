@@ -4,48 +4,48 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-11 (**examples/http Crema-lite** Phase A–C +
-`server.serve(routes.app())`; match arm sugar **D130**; return inference
-**D129**; diverging loop **D128**; combined import **D127**; std Io/Net/Http
-**D126**)
+**As of:** 2026-08-11 (**D131** multi-clause functions **spec’d** — implement
+next; Crema-lite Phase A–C; D130 match arm sugar; D129 return inference)
 
 ---
 
 ## Now
 
-**Active experiment — `examples/http` Crema-lite:** `server.serve(routes.app())`
-— framework owns host loop; app owns `App.handle` + routes/views. Framework
-imports only the `App` type for serve (until fn values). **Phase A–C done.**
-Charter:
+**Next implement slice — multi-clause functions (**D131**):** type-driven
+match sugar; formals stay `name: Type`; bare singleton literal types + any-type
+dispatch; one runtime fn per name/scope. Freeze:
+[`docs/specs/2026-08-11-multi-clause-functions.md`](docs/specs/2026-08-11-multi-clause-functions.md).
+Sketch: `scratch/sample.thx`. Gate: `multi_clause`.
+
+**Active experiment — `examples/http` Crema-lite:** Phase A–C done
+(`server.serve(routes.app())`). Charter:
 [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
+**Hard rule:** **do not add to `std/`** for this experiment.
 
-**Hard rule for this experiment:** **do not add to `std/`**. Grow `framework/`.
-App = routes/views/domain only. Language gaps → break, fix language, resume.
-
-**Session / shell remains deferred.** Prefer finishing this experiment’s open
-phase steps (or forced language fixes) over free redesign or expand-std sprints.
+**Session / shell remains deferred.**
 
 **Shipped recently:** Crema-lite **Phase A–C**; **match arm sugar** (**D130**);
 **return-type inference** (**D129** + LSP hover); **diverging `loop`**
 (**D128**); **combined import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**);
-**`std/Logging`** (**D125**); LSP nav; **D124** diagnostics. Session residual
-deferred. Agent-only ideas parked:
+**`std/Logging`** (**D125**); LSP nav; **D124** diagnostics. Agent-only ideas
+parked:
 [`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 
 **In progress / next:**
 
-1. **Crema-lite Phase D+** only if wanted (htmx-ish partials, persistence, …)
-   — still example only.  
-2. Language gaps forced by this sample (or other samples).  
+1. **Implement D131** multi-clause (typespace substrate + free + methods +
+   conformance).  
+2. **Crema-lite Phase D+** only if wanted — still example only; no `std/`.  
 3. Editor only when DX forces it.
 
 ### Proceed order
 
-1. **Crema-lite experiment** — next open checklist step in
+1. **Language — D131 multi-clause** — freeze
+   [`docs/specs/2026-08-11-multi-clause-functions.md`](docs/specs/2026-08-11-multi-clause-functions.md);
+   one slice at a time until `multi_clause` green.  
+2. **Crema-lite experiment** — next open checklist step in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    (all work under `examples/http/`; no `std/`).  
-2. **Language** — only when the sample (or conformance) forces a gap; not free
-   redesign.  
 3. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
@@ -99,6 +99,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
 | Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
 | Match arms | Bare ctor = tag-only; `=>` single-expr body or `{ }` multi-stmt (**D130**); `->` types only |
+| Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **spec’d**, implement next). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |

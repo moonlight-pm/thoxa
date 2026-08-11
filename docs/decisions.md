@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-11 — Multi-clause functions
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D131 | Multi-clause functions as type-driven match sugar | Same name in one scope (module free fn **or** type method) → **one** function; formals stay `name: Type`; **any** types may discriminate; **source order** = match order; sugar only (one runtime entry). Bare **singleton literal types** + member-set `\|` in general type positions (formals included). Equal arity; **no defaults** on multi-clause v0; non-adjacent clauses OK. Domain = specific join of clause domains (no forced widen). Unreachable / duplicate domain / export mismatch → **errors**. Returns: **one** merged return via match/D129-style join; per-clause `-> T` is local expect on that arm. If any clause `export`, all must be. | **Not** C++ overload rank; **not** pattern formals (later optional). Cross-arity, composition order, `extern` multi-clause, fn values — out of v0. **D16** unchanged (std factories separate). Freeze: [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md). Gate: `multi_clause`. Sample sketch: `scratch/sample.thx`. |
+
 ## 2026-08-10 — Match arm sugar
 
 | ID | Decision | Choice | Notes |
@@ -434,7 +440,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 |----|----------|--------|-------|
 | D14 | String → Bytes surface (now) | Keep `Bytes.fromString(s)` | Matches `apocrypha/old/ThoxaPython` SPEC §9.1; R5 ship shape |
 | D15 | `"…" as Bytes` | **Rejected** (not deferred) | Encode/copy is not a cast. Named `fromString` is the product surface forever for String→UTF-8 Bytes. Do not reintroduce as sugar under M4 either. |
-| D16 | Overloaded `Bytes.from(…)` | Reject (for now) | No ad-hoc overloading story; prefer explicit names if more factories appear |
+| D16 | Overloaded `Bytes.from(…)` | Reject (for now) | No ad-hoc overloading story; prefer explicit names if more factories appear. **D131** is the deliberate multi-clause language feature — does **not** by itself reopen std `from` overloads; revisit factories only in a separate decision after D131 ships. |
 | D17 | Multi-byte / dynamic build | Prefer `Buffer` path later | `append` / `freeze` → `Bytes`; not `from([1,2,3])` as the main story |
 | D18 | Extra factories | Only when forced | e.g. `Bytes(n)` zero buffer for FFI (R6 pressure); maybe `fromArray` when arrays exist |
 
