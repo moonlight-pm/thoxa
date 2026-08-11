@@ -2,60 +2,69 @@
 
 Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std.**
 
+## Main (what you write to boot)
+
+```thx
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match server.serve(routes.app()) {
+        Pass => 0
+        Fail(e) {
+            warn("server error: {e}")
+            1
+        }
+    }
+}
+```
+
 ## Layers
 
-| Layer | Path | Responsibility |
-|-------|------|----------------|
-| **framework** | `framework/` | All host plumbing (library). **Imports only `std/` + `framework/*`.** |
-| **app** | `app/` | Routes, views, domain only. **No listen/accept/parse/send.** |
-| **entry** | `Main.thx` | Process composition root: run the host, call `app` once per request. |
+| Layer | Path | Role |
+|-------|------|------|
+| **framework** | `framework/` | Host: accept loop, wire I/O, router, HEAD |
+| **app** | `app/` | Routes, views, domain — builds `App` with `handle` |
+| **entry** | `Main.thx` | Logging + `server.serve(routes.app())` |
 | **assets** | `web/` | Static files |
 
-Until Thoxa has first-class function values (`server.run(port, app.handle)`),
-**only Main can see both sides**. That is not “application logic”; it is the
-binary’s wiring. Putting that wiring under `app/` was the wrong place.
-
 ```text
-Main (composition)
-  ├── framework/Server   bindListen · readIncoming · writeResponse
-  ├── framework/Wire     body · query · form · HEAD · redirects
-  ├── framework/Router   .get/.post · :param · serveStatic
-  └── app/Routes.handle  routes + views + domain
+Main → server.serve(app)
+         framework owns accept / parse / body / query / write
+         app.handle(req, body, query) per request
+
+app → framework/{Wire, Router}     configure router, use helpers
+framework → std + framework/*
+framework → app/Routes only for `App` type (serve signature)
 ```
 
-```text
-framework  ↛  app     (never)
-app        →  framework
-Main       →  framework + app
-```
+The `App` type import is the monorepo stand-in for a future
+`server.serve(port, handle)` with first-class functions (or a trait). Domain
+modules (Pages, Models, …) are never imported by framework.
 
 ## Run
-
-From the **workspace root**:
 
 ```bash
 cargo make run examples/http
 ```
 
-Port **9091**. Ctrl-C to stop.
+Port **9091** (from `App.port` / `routes.app()`).
 
 ## Layout
 
 ```text
 examples/http/
-  Main.thx                 # composition root (plumbing glue only)
+  Main.thx
   framework/
-    Server.thx             # bindListen, readIncoming, writeResponse, …
-    Wire.thx               # body, query, form, headers, 303, HEAD
-    Router.thx             # named routes, :param, static fallback
+    Server.thx    # serve(app), bindListen, readIncoming, writeResponse
+    Wire.thx
+    Router.thx    # .get/.post, :param, serveStatic
   app/
-    Routes.thx             # buildRouter() + handle() + dispatch
+    Routes.thx    # type App { handle }, app(), buildRouter, dispatch
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
   web/
-  README.md
 ```
 
-### App configures the framework router
+### App configures the router
 
 ```thx
 router.newRouter("examples/http/web")
@@ -66,21 +75,8 @@ router.newRouter("examples/http/web")
     .post("/", "signIn")
 ```
 
-`handle` maps Hits to page/api functions. No sockets, no HEAD special cases
-(HEAD is applied in `framework` `writeResponse`).
-
-### Ideal shape (needs language support)
-
-```thx
-server.run(9091, routes.handle)   ## fn values / handlers as values
-```
-
-Then Main shrinks to logging + that call, and the accept loop lives entirely
-inside `framework/Server` with zero knowledge of `app/`’s module path.
-
 ## Rules
 
-- **No `std/` growth** — grow `framework/`.
-- **`framework/` imports only `std/` and `framework/*`.**
-- **`app/` is routes/views/domain only.**
-- Directory names **lowercase**.
+- Grow `framework/`, not `std/`, for this experiment.
+- App code = routes/views/domain only.
+- Ideal later: fn values → zero framework→app imports.

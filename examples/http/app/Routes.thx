@@ -1,6 +1,5 @@
-## App — routes and dispatch only (what a user writes).
-## No listen/accept/parse/send. Framework host + Main composition own plumbing.
-## HEAD stripping is in framework writeResponse — handlers return full bodies.
+## App — routes, views dispatch, and the App value passed to framework.serve.
+## No listen/accept/parse/send.
 
 import pages from "./Pages"
 import api from "./Api"
@@ -11,9 +10,10 @@ import { Request, Response, methodNotAllowed } from "std/Http"
 import { Has, Not } from "std/Fallible"
 
 let staticRoot = "examples/http/web"
+let defaultPort = 9091
 
-## Configure the framework router (path table only).
-export fn buildRouter() -> Router {
+## Configure the framework router.
+fn buildRouter() -> Router {
     router.newRouter(staticRoot)
         .get("/", "home")
         .get("/menu", "menu")
@@ -22,17 +22,24 @@ export fn buildRouter() -> Router {
         .post("/", "signIn")
 }
 
-## Map an HTTP request to a Response (views + domain).
-export fn handle(req!: Request, body!: Bytes, query!: String) -> Response {
-    let r = buildRouter()
-    match r.resolve(req.method, req.path) {
-        Has(hit) {
-            dispatch(hit, req, body, query)
-        }
-        Not {
-            r.serveStatic(req)
+## Application object the host receives. Framework calls `handle` per request.
+export type App(port: Int64) {
+    export fn handle(req!: Request, body!: Bytes, query!: String) -> Response {
+        let r = buildRouter()
+        match r.resolve(req.method, req.path) {
+            Has(hit) {
+                dispatch(hit, req, body, query)
+            }
+            Not {
+                r.serveStatic(req)
+            }
         }
     }
+}
+
+## Construct the app (port is host configuration).
+export fn app() -> App {
+    App(port: defaultPort)
 }
 
 fn dispatch(hit!: Hit, req!: Request, body!: Bytes, query!: String) -> Response {

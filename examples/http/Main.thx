@@ -1,75 +1,22 @@
-## Process entry + composition root (not application domain).
-## Wires a closed framework/ host to app/ routes. Without first-class function
-## values, only this package entry can see both sides.
+## Little Crema — process entry.
 ##
 ##   cargo make run examples/http
 ##
 ## Charter: docs/ideas/2026-08-10-examples-http-crema-experiment.md
 
-import { Socket } from "std/Net"
 import server from "./framework/Server"
 import routes from "./app/Routes"
-import { Pass, Fail, Trial } from "std/Fallible"
-import logging, { info, warn } from "std/Logging"
-
-let listenPort = 9091
+import { Pass, Fail } from "std/Fallible"
+import logging, { warn } from "std/Logging"
 
 fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
-
-    match run() {
+    match server.serve(routes.app()) {
         Pass => 0
         Fail(e) {
             warn("server error: {e}")
             1
-        }
-    }
-}
-
-fn run() {
-    let listener = server.bindListen(listenPort)?
-    info("http server listening on 127.0.0.1:{listenPort}")
-    info("composition: framework host + app Routes (Ctrl-C to stop)")
-    loop {
-        match listener.accept() {
-            Fail(e) {
-                warn("accept: {e}")
-            }
-            Pass(peer) {
-                serveOne(peer)
-                peer.close()
-            }
-        }
-    }
-}
-
-## Framework does all wire I/O; app only answers with a Response.
-fn serveOne(peer!: Socket) {
-    match server.readIncoming(peer) {
-        Fail(e) {
-            warn("recv: {e}")
-            match server.writeBadRequest(peer, e) {
-                Pass(_) { }
-                Fail(se) {
-                    warn("send: {se}")
-                }
-            }
-        }
-        Pass(inc) {
-            if server.isQuietClose(inc) {
-                ## Peer closed without data — quiet.
-            } else {
-                let req = server.requestOf(inc)
-                let res = routes.handle(req, inc.body, inc.query)
-                info("{inc.method} {inc.path} -> {res.status} {res.reason}")
-                match server.writeResponse(peer, inc.method, res) {
-                    Pass(_) { }
-                    Fail(se) {
-                        warn("send: {se}")
-                    }
-                }
-            }
         }
     }
 }

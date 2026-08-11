@@ -53,19 +53,21 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  Main.thx                 # composition root (host loop + routes.handle)
-  framework/               # closed library: std + framework/* only
-    Server.thx Wire.thx Router.thx
-  app/                     # routes, views, domain only (no Listen)
-    Routes.thx Pages.thx Layout.thx Api.thx Models.thx Customer.thx
+  Main.thx                 # server.serve(routes.app())
+  framework/
+    Server.thx             # serve(app) — full host loop
+    Wire.thx Router.thx
+  app/
+    Routes.thx             # type App { handle }, app(), router config
+    Pages.thx Layout.thx Api.thx Models.thx Customer.thx
   web/
   README.md
 ```
 
-**Layers:** `framework/` never reaches outside itself except `std/`. `app/` is
-routes/views/domain only. **Main** is the process composition root (not domain):
-without fn values it is the only place that can call both framework I/O and
-`app/Routes.handle`. Ideal later: `server.run(port, handle)`.
+**Layers:** App is routes/views/domain (`App` value with `handle`). Framework owns
+all plumbing via `serve(app)`. Framework imports **only** the `App` type from
+`app/Routes` for the serve signature (stand-in for future fn values / traits);
+it does not import pages or models. Main is boot only.
 
 **Router:** app registers `.get/.post(pattern, name)`; path params are `:slug`.
 

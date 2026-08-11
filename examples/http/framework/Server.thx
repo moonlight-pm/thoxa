@@ -1,16 +1,17 @@
-## Framework — TCP listen + one-connection HTTP I/O (candidate std).
-## Imports only std/ and sibling framework modules — never app/ or package root.
-##
-## Incoming is a plain product (not a union member) so header data can be
-## carried as Bytes; quiet peer-close is an empty method/path sentinel.
+## Framework — HTTP server host (candidate std).
+## Imports only std/, framework/*, and the app's App *type* for serve(app).
+## (That type dependency is the monorepo stand-in for a future trait / fn value.)
+## Does not import app pages, models, or other domain modules.
 
 import net, { Socket } from "std/Net"
 import http, { Request, Response, Header } from "std/Http"
 import wire from "./Wire"
+import { App } from "~/app/Routes"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import { split } from "std/Str"
+import logging, { info, warn } from "std/Logging"
 
-## Full request entity. Headers packed as `name\\tvalue\\n` lines (union limits).
+## Full request entity. Headers packed as `name\\tvalue\\n` lines.
 export type Incoming(
     method: String,
     path: String,
@@ -20,7 +21,6 @@ export type Incoming(
     query: String
 )
 
-## True when readIncoming saw a quiet peer close (no bytes).
 export fn isQuietClose(inc!: Incoming) -> Bool {
     if inc.method == "" {
         inc.path == ""
@@ -46,9 +46,8 @@ fn packHeaders(headers!: Array<Header>) -> Bytes {
 }
 
 fn unpackHeaders(packed!: Bytes) -> Array<Header> {
-    ## Split on newlines via String helpers (keeps this free of May binds in a loop).
     let text = packed.toString()
-    let lines = splitLines(text)
+    let lines = split(text, "\n")
     mut headers: Array<Header> = []
     for line in lines {
         match splitOnceTab(line) {
@@ -79,11 +78,6 @@ fn splitOnceTab(line!: String) -> May<NameVal> {
     }
 }
 
-fn splitLines(s!: String) -> Array<String> {
-    split(s, "\n")
-}
-
-## Read headers + body + query. Quiet close → empty Incoming (isQuietClose).
 export fn readIncoming(peer!: Socket) -> Trial<Incoming, String> {
     match peer.receiveRequest() {
         Fail(e) {
@@ -153,4 +147,52 @@ export fn writeResponse(peer!: Socket, method!: String, res!: Response) -> Trial
 
 export fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
     writeResponse(peer, "GET", http.badRequest(msg))
+}
+
+## Run the host forever. `app` is the application object (handle per request).
+export fn serve(app!: App) -> Trial<Void, String> {
+    let port = app.port
+    let listener = bindListen(port)?
+    info("http server listening on 127.0.0.1:{port}")
+    info("framework Server.serve (Ctrl-C to stop)")
+    loop {
+        match listener.accept() {
+            Fail(e) {
+                warn("accept: {e}")
+            }
+            Pass(peer) {
+                serveOne(peer, app)
+                peer.close()
+            }
+        }
+    }
+}
+
+fn serveOne(peer!: Socket, app!: App) {
+    match readIncoming(peer) {
+        Fail(e) {
+            warn("recv: {e}")
+            match writeBadRequest(peer, e) {
+                Pass(_) { }
+                Fail(se) {
+                    warn("send: {se}")
+                }
+            }
+        }
+        Pass(inc) {
+            if isQuietClose(inc) {
+                ## quiet close
+            } else {
+                let req = requestOf(inc)
+                let res = app.handle(req, inc.body, inc.query)
+                info("{inc.method} {inc.path} -> {res.status} {res.reason}")
+                match writeResponse(peer, inc.method, res) {
+                    Pass(_) { }
+                    Fail(se) {
+                        warn("send: {se}")
+                    }
+                }
+            }
+        }
+    }
 }
