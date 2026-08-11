@@ -69,7 +69,9 @@ all plumbing via `serve(app)`. Framework imports **only** the `App` type from
 `app/Routes` for the serve signature (stand-in for future fn values / traits);
 it does not import pages or models. Main is boot only.
 
-**Router:** app registers `.get/.post(pattern, name)`; path params are `:slug`.
+**Router:** app registers `.get/.post(pattern)` (no string route names). Path
+params are `:slug`. App maps `Hit` → typed `Route` sum, then multi-clause
+`handleRoute` (**D131**) for dispatch.
 
 ---
 
@@ -162,8 +164,8 @@ after A–C.
 | `#[layout]` | `Layout.thx` function wrapping body HTML |
 | `#[page]` | functions in `Pages.thx` |
 | `#[route]` | functions in `Api.thx` |
-| Manual `Router::builder` | `App.handle` if-chain |
-| `path_param` | path prefix + slug segment in `App` / `Pages` |
+| Manual `Router::builder` | `Router.get/post(pattern)` + typed `Route` + multi-clause `handleRoute` |
+| `path_param` | `:slug` capture → `Drink(slug)` (and friends) on the route value |
 | Models / seed | `Models.thx` constants |
 | `current_customer(cx)` | Phase B `Customer.thx` |
 | `view!` | string templates with `{interp}` |
@@ -180,8 +182,10 @@ after A–C.
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
 **As of last update:** **Phase A–C complete** + layered **`framework/` / `app/`**
-with **`server.serve(routes.app())`**. Next is Phase D+ only if wanted — still
-no `std/` growth (grow `framework/` instead).
+with **`server.serve(routes.app())`** + **typed `Route` + multi-clause
+`handleRoute` (D131)**. Next is Phase D+ only if wanted — still no `std/`
+growth (grow `framework/` instead). Language discussion next: traits / free fn
+pointers for the host boundary (FCF parked).
 
 ### Language / design notes (experiment)
 
@@ -191,4 +195,5 @@ no `std/` growth (grow `framework/` instead).
 | String interp treats `{…}` as interpolation | Path params use `:slug` not `{slug}` | Document; escape story later if needed |
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
-| `server.serve(app)` needs typed `App` without fn values | Framework imports **`App` type only** from `app/Routes` | Ideal: fn values / trait so framework stays std-only |
+| `server.serve(app)` needs typed `App` without fn values | Framework imports **`App` type only** from `app/Routes` | Ideal: **trait** or free **fn pointer** (no capture); full FCF parked |
+| String path table → dispatch | **Typed `Route` sum** + multi-clause `handleRoute` (**D131**); small `routeOf` maps `Hit` → `Route` | Path engine still string patterns; host boundary still `App` |

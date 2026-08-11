@@ -12,7 +12,8 @@ Phase A–C; D130 match arm sugar; D129 return inference)
 ## Now
 
 **Active experiment — `examples/http` Crema-lite:** Phase A–C done
-(`server.serve(routes.app())`). Charter:
+(`server.serve(routes.app())`); routing cleaned to typed `Route` + multi-clause
+`handleRoute` (**D131**). Charter:
 [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 **Hard rule:** **do not add to `std/`** for this experiment.
 

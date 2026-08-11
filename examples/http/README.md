@@ -23,7 +23,7 @@ fn main() {
 | Layer | Path | Role |
 |-------|------|------|
 | **framework** | `framework/` | Host: accept loop, wire I/O, router, HEAD |
-| **app** | `app/` | Routes, views, domain — builds `App` with `handle` |
+| **app** | `app/` | Typed `Route` sum, multi-clause dispatch, `App.handle` |
 | **entry** | `Main.thx` | Logging + `server.serve(routes.app())` |
 | **assets** | `web/` | Static files |
 
@@ -32,14 +32,19 @@ Main → server.serve(app)
          framework owns accept / parse / body / query / write
          app.handle(req, body, query) per request
 
-app → framework/{Wire, Router}     configure router, use helpers
+app → framework/{Wire, Router}     path table + helpers
 framework → std + framework/*
 framework → app/Routes only for `App` type (serve signature)
 ```
 
-The `App` type import is the monorepo stand-in for a future
-`server.serve(port, handle)` with first-class functions (or a trait). Domain
-modules (Pages, Models, …) are never imported by framework.
+**Routing shape (what you have now):**
+
+1. Framework `Router` — method + path **patterns** → `Hit` (pattern string + capture)  
+2. App `routeOf` — `Hit` → typed `Route` sum (`Home | Menu | Drink | …`)  
+3. App multi-clause `handleRoute(route: Home | Menu | …)` — **D131** type-driven dispatch  
+4. Host still takes concrete `App` (stand-in for a future trait / fn pointer)
+
+Domain modules (Pages, Models, …) are never imported by framework.
 
 ## Run
 
@@ -59,21 +64,24 @@ examples/http/
     Wire.thx
     Router.thx    # .get/.post, :param, serveStatic
   app/
-    Routes.thx    # type App { handle }, app(), buildRouter, dispatch
+    Routes.thx    # Route sum, multi-clause handleRoute, App, buildRouter
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
   web/
 ```
 
-### App configures the router
+### App configures the path table
 
 ```thx
 router.newRouter("examples/http/web")
-    .get("/", "home")
-    .get("/menu", "menu")
-    .get("/menu/:slug", "drink")
-    .get("/api/health", "health")
-    .post("/", "signIn")
+    .get("/")
+    .get("/menu")
+    .get("/menu/:slug")
+    .get("/api/health")
+    .post("/")
 ```
+
+Hits become typed routes (`Home`, `Menu(q)`, `Drink(slug)`, …); dispatch is
+multi-clause `handleRoute` rather than `match hit.name { "home" => … }`.
 
 ## Rules
 
