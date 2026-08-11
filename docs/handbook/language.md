@@ -126,8 +126,8 @@ in the **defining** module (so importers need not re-export constants used
 only as defaults). A non-default formal may not follow a defaulted one.
 
 **Return types (**D129**):** an explicit `-> T` is the contract (body must match).
-Unannotated non-`main` functions **infer** the return type from exits when
-possible:
+Unannotated non-`main` **free functions** **infer** the return type from exits
+when possible:
 
 - value `return` / block tail → that type (`42` ⇒ `Int64`; empty ⇒ `Void`)
 - residual `?` → structural collapse of residual-marked monomorphs (success
@@ -135,7 +135,8 @@ possible:
 - bare `Pass`/`Fail` alone cannot pick a union name → write `-> …`
 - self/mutual recursion unannotated → write `-> …`
 
-Unannotated `main` still defaults to **`Int64`**.
+Unannotated `main` still defaults to **`Int64`**. Unannotated **methods** still
+default to **`Void`** (annotate if they return a value).
 
 ## Methods and field write-back
 

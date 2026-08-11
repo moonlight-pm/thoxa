@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-10 (D129 return inference; D128 diverging loop; D127 combined import; D126 std Io/Net/Http;
+**As of:** 2026-08-11 (D129 return inference + LSP hover; D128 diverging loop; D127 combined import; D126 std Io/Net/Http;
 D125 Logging; D124 diagnostics; LSP nav)
 
 ---

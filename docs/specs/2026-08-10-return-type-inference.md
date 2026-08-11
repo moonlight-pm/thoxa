@@ -1,17 +1,17 @@
 # Freeze: Function return-type inference (D129)
 
-**Status:** shipped (v0)  
+**Status:** shipped (v0 — free functions; methods still default `Void`)  
 **Decision:** D129  
 **Gate:** `return_infer`  
-**As of:** 2026-08-10
+**As of:** 2026-08-11
 
 ## Intent
 
-Unannotated free functions and methods get a return type from their body
-exits when inference succeeds. An explicit `-> T` remains the authoritative
-contract and is checked against the body (lint / type error when the body
-does not match). This replaces the old default “missing `->` ⇒ `Void`”
-(except `main` ⇒ `Int64`).
+Unannotated **free functions** get a return type from their body exits when
+inference succeeds. An explicit `-> T` remains the authoritative contract and
+is checked against the body (lint / type error when the body does not match).
+This replaces the old default “missing `->` ⇒ `Void`” for free fns (except
+`main` ⇒ `Int64`). **Unannotated methods** still default to `Void` in v0.
 
 ## Rules (v0)
 
@@ -124,11 +124,14 @@ fn half(x: Int64) {           ## error: annotate
 
 ## Implementation notes
 
-- Infer free-function (and method) return types after signature tables exist
-  and before body MIR lower, so callees with known/`->` types are available.
-- Update `FnSig` / `MethodSig` `ret` with the inferred type; second path is
-  normal lower with that `fn_ret` (existing `?` rewrap / D128).
+- Infer **free-function** return types after signature tables exist and before
+  body MIR lower, so callees with known/`->` types are available.
+- Update `FnSig.ret` with the inferred type; body lower uses that `fn_ret`
+  (existing `?` rewrap / D128). Methods: unannotated still `Void` until a
+  follow-up.
 - Ensure collapsed monomorphs exist (seed / monomorphize on demand).
+- LSP: `check_and_returns_with_overlays` caches free-fn / `Type.method` displays
+  on publish; hover uses them (local + remote).
 
 ## Related
 
