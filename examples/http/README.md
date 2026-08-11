@@ -1,11 +1,19 @@
 # examples/http — Little Crema (experiment)
 
-Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std** —
-all app logic lives in this folder; product **`std/Net` + `std/Http` +
-`std/HttpStatic` + `std/Logging`** are used as-shipped.
+Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std.**
 
-Charter + living checklist:
-[`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](../../docs/ideas/2026-08-10-examples-http-crema-experiment.md).
+Two layers under this package:
+
+| Layer | Path | Role |
+|-------|------|------|
+| **Framework** | `Framework/` | Host pipeline that may grow into `std/` later |
+| **App** | `App/` | Little Crema — what an application author writes |
+| **Entry** | `Main.thx` | Boot only (logging + `Framework.Server.run`) |
+| **Assets** | `web/` | Static files |
+
+Product **`std/Net` + `std/Http` + `std/HttpStatic` + `std/Logging`** are used as-shipped.
+
+Charter: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](../../docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 
 ## Run
 
@@ -15,79 +23,86 @@ From the **workspace root**:
 cargo make run examples/http
 ```
 
-Then:
-
 ```bash
 curl -s  http://127.0.0.1:9091/
 curl -s  http://127.0.0.1:9091/menu
 curl -s  'http://127.0.0.1:9091/menu?q=mocha'
 curl -s  http://127.0.0.1:9091/menu/espresso
 curl -s  http://127.0.0.1:9091/api/health
-curl -sD- http://127.0.0.1:9091/style.css
-
-# Remember me (PRG + cookie)
 curl -sD- -c /tmp/crema.ck -X POST -d 'name=Ada' http://127.0.0.1:9091/
-curl -s -b /tmp/crema.ck http://127.0.0.1:9091/          # Hi, Ada
-curl -sD- -b /tmp/crema.ck -c /tmp/crema.ck -X POST -d 'name=' http://127.0.0.1:9091/
+curl -s -b /tmp/crema.ck http://127.0.0.1:9091/
 ```
 
-Stop with Ctrl-C. Port **9091** (`SO_REUSEADDR` on).
+Port **9091**. Ctrl-C to stop.
 
-## Layout (as-built)
+## Layout
 
-| Path | Role |
-|------|------|
-| `Main.thx` | Listen / accept / parse / **body** / send |
-| `App.thx` | Method+path dispatch (pages, API, static fallback) |
-| `Layout.thx` | Shared HTML shell + optional greeting |
-| `Pages.thx` | `/`, `/menu`, `/menu/{slug}`, **POST `/` sign-in** |
-| `Api.thx` | `/api/health` (no layout) |
-| `Models.thx` | In-memory drink catalog |
-| `Wire.thx` | Example-only: body, form, 303, header helpers |
-| `Customer.thx` | Cookie remember / forget / current |
-| `web/` | Static assets (`style.css`) |
+```text
+examples/http/
+  Main.thx                 # entry glue
+  Framework/
+    Server.thx             # accept loop, parse, body/query, send
+    Wire.thx               # body, query, form, cookies helpers, HEAD, 303
+  App/
+    Routes.thx             # method+path table (app mount)
+    Pages.thx              # HTML pages + POST sign-in
+    Layout.thx             # HTML shell
+    Api.thx                # /api/health
+    Models.thx             # drink catalog
+    Customer.thx           # cookie remember/forget
+  web/                     # style.css, …
+  README.md
+```
+
+### Dependency direction
+
+```text
+Main → Framework.Server → App.Routes → App.{Pages,Api,…}
+                       ↘ Framework.Wire
+App.* may import Framework.Wire
+Framework must not import App except Server → Routes (mount hook)
+```
+
+`Server` mounts the app at `~/App/Routes.handle` — the only Framework→App edge
+(Thoxa has no first-class function values to pass a handler in).
+
+### Framework (`Framework/`) — candidate std
+
+| Module | Responsibility |
+|--------|----------------|
+| `Server` | Bind/listen/accept; parse request; complete body; recover query; call app; HEAD finalize; write response |
+| `Wire` | `readBody`, `rawQuery`, `queryParam`, `formField`, `headerGet`, `seeOther`, `withHeader`, `finalize` (HEAD) |
+
+Handlers always return full GET-shaped responses. `Wire.finalize` strips the body on HEAD (RFC 9110).
+
+### App (`App/`) — user code
+
+| Module | Responsibility |
+|--------|----------------|
+| `Routes` | Dispatch: `/`, `/menu`, `/menu/{slug}`, `POST /`, `/api/health`, static fallback |
+| `Pages` / `Layout` | HTML |
+| `Api` | Health |
+| `Models` | Domain data + search |
+| `Customer` | Cookie session-ish name (uses `Wire` for headers) |
 
 ## Routes
 
 | Method | Path | Handler |
 |--------|------|---------|
 | GET/HEAD | `/` | Home + sign-in card |
-| POST | `/` | Form `name` → Set-Cookie + **303** `/` |
-| GET/HEAD | `/menu` | Drink list (`?q=` filters) |
-| GET/HEAD | `/menu/{slug}` | Drink detail or 404 |
-| GET/HEAD | `/api/health` | Plain `ok` |
-| GET/HEAD | other | `std/HttpStatic` under `web/` |
+| POST | `/` | Form `name` → cookie + 303 `/` |
+| GET/HEAD | `/menu` | List (`?q=` filters) |
+| GET/HEAD | `/menu/{slug}` | Detail or 404 |
+| GET/HEAD | `/api/health` | `ok` |
+| GET/HEAD | other | static under `web/` |
 | other | * | 405 |
-
-## Body handling (example-only)
-
-Product `std/Http.parseRequest` still leaves `Request.body` empty.
-`Main` calls `Wire.readBody` after headers: uses bytes already after
-`\r\n\r\n` in the buffer, then `Socket.receive` until `Content-Length` is
-satisfied. The completed body is passed as a separate `Bytes` into
-`App.handle` — **not** a `std/` change.
-
-## HEAD (framework-level)
-
-Handlers always build a full response (as for GET). `App.handle` ends with
-`Wire.finalize`: on `HEAD`, status and headers (including `Content-Length`)
-are kept and the body is dropped. Handlers do not take a `headOnly` flag or
-call `okHead`. Same idea as common servers: run the GET path, strip content
-on the way out (RFC 9110 §9.3.2).
-
-## Query string (example-only)
-
-Product `Request.path` is query-stripped. `Wire.rawQuery` re-reads `?…` from
-the raw request line; `Wire.queryParam` picks fields. Menu uses `GET /menu?q=`.
 
 ## Rules
 
-- **No `std/` additions** for this experiment.
-- Language gaps → break, fix language, resume (see experiment charter).
-- Phase C+ (query search) is checklist-only until CURRENT says so.
+- **No `std/` additions** for this experiment — grow `Framework/` instead.
+- Keep **App** free of listen/accept/parse/send details.
+- Language gaps → fix language, then resume.
 
 ## Inspiration
 
-Topcoat coffee-shop + manual-router patterns (layout, pages vs routes, models,
-path params, form POST + cookie) — **not** a port of signals, `view!`, or
-middleware.
+Topcoat coffee-shop shape (layout, pages, models, forms) — not signals/`view!`.

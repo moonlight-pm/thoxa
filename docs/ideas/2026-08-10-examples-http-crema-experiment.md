@@ -49,24 +49,26 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ---
 
-## Target shape (app layout)
+## Target shape (app vs framework)
 
 ```text
 examples/http/
-  Main.thx       # listen / accept / parse / body / send
-  App.thx        # method+path dispatch → page | api | static fallback
-  Layout.thx     # shared HTML shell (nav, title, greeting)
-  Pages.thx      # GET/HEAD pages + POST / sign-in
-  Api.thx        # non-page routes (e.g. GET /api/health)
-  Models.thx     # in-memory drink catalog
-  Wire.thx       # body, form, redirect, header helpers (example-only)
-  Customer.thx   # Cookie remember / forget / current
-  web/           # static assets only (CSS, optional leftover files)
-  README.md      # run instructions + architecture (as-built example)
+  Main.thx                 # entry glue only (logging + Framework.Server.run)
+  Framework/               # host pipeline — candidate future std
+    Server.thx             # accept loop, parse, body/query, send; mounts app
+    Wire.thx               # body, query, form, headers, 303, HEAD finalize
+  App/                     # Little Crema — what a user writes
+    Routes.thx             # method+path table (mount: ~/App/Routes)
+    Pages.thx Layout.thx Api.thx Models.thx Customer.thx
+  web/                     # static assets
+  README.md
 ```
 
-**Dispatch order:** exact dynamic routes → path-param pages → static
-`HttpStatic.Router` → 404 from static path.
+**Layers:** Framework may import App only at the Server→Routes mount (no fn
+values yet). App may import Framework.Wire. Main imports Framework only.
+
+**Dispatch order (in App/Routes):** exact dynamic routes → path-param pages →
+static `HttpStatic.Router` → 404 from static path.
 
 ---
 

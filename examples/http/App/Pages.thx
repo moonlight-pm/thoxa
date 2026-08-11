@@ -1,10 +1,9 @@
-## Dynamic pages — home (with sign-in form), menu, drink detail; POST sign-in.
-## HEAD is applied by App/Wire.finalize — handlers only build full responses.
+## App layer — HTML pages for Little Crema.
 
 import layout from "./Layout"
 import models, { Drink, formatPrice } from "./Models"
 import customer from "./Customer"
-import wire from "./Wire"
+import wire from "~/Framework/Wire"
 import { Response, notFound } from "std/Http"
 import { Has, Not } from "std/Fallible"
 import { isEmpty, trim, replaceAll } from "std/Str"
@@ -33,12 +32,10 @@ fn drinkCards(drinks!: Array<Drink>) -> String {
     items
 }
 
-## Minimal attribute escape for value="…".
 fn escapeAttr(s!: String) -> String {
     replaceAll(replaceAll(s, "&", "&amp;"), "\"", "&quot;")
 }
 
-## Menu with optional `q` query filter (server-side; no client JS).
 export fn menu(who!: String, q!: String) -> Response {
     let needle = trim(q)
     let drinks = models.searchDrinks(needle)
@@ -74,12 +71,10 @@ fn drinkPage(d!: Drink, who!: String) -> Response {
     layout.page(d.name, body, who)
 }
 
-## POST / — form field `name`; empty name forgets. Always 303 to `/`.
 export fn signIn(body!: Bytes) -> Response {
     let redirect = wire.seeOther("/")
     match wire.formField(body, "name") {
         Not {
-            ## No field — still redirect; do not change cookie.
             redirect
         }
         Has(raw) {

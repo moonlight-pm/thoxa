@@ -1,9 +1,0 @@
-## Non-page HTTP routes (skip the HTML layout shell).
-## HEAD is applied by App/Wire.finalize — handlers only build full responses.
-
-import { Response, ok } from "std/Http"
-
-## GET /api/health — plain text body, no layout.
-export fn health() -> Response {
-    ok(Bytes.fromString("ok\n"), "text/plain; charset=utf-8")
-}

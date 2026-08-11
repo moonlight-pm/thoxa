@@ -12,15 +12,14 @@ combined import **D127**; std Io/Net/Http **D126**)
 
 ## Now
 
-**Active experiment — `examples/http` Crema-lite:** multi-route app
-(Topcoat-shaped) **entirely under `examples/http/`**. **Phase A–C done**
-(dynamic pages, path params, health, static CSS, forms/cookies/PRG, **menu
-`?q=` search** via example-only query recovery; no `std/` growth). Charter:
+**Active experiment — `examples/http` Crema-lite:** multi-route app under
+`examples/http/` with a clear **`Framework/`** (host pipeline) vs **`App/`**
+(Little Crema) split. **Phase A–C done.** Charter:
 [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 
-**Hard rule for this experiment:** **do not add to `std/`**. App helpers stay
-in the example package. If blocked by a **language** gap, break out, fix the
-language (conformance + docs), then resume the experiment.
+**Hard rule for this experiment:** **do not add to `std/`**. Grow
+`Framework/` instead; keep `App/` free of listen/parse/send. Language gaps →
+break, fix language, resume.
 
 **Session / shell remains deferred.** Prefer finishing this experiment’s open
 phase steps (or forced language fixes) over free redesign or expand-std sprints.

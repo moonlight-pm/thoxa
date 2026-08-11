@@ -1,6 +1,4 @@
-## In-memory drink catalog for the Crema-lite experiment.
-## No std growth — pure example data.
-## (Roast is a String: user sum types are not yet legal constructor-param fields.)
+## App layer — in-memory drink catalog (domain data).
 
 import { Has, Not, May } from "std/Fallible"
 import { containsIgnoreCaseAscii, isEmpty, trim } from "std/Str"
@@ -83,8 +81,6 @@ export fn drinkCount() -> Int64 {
     allDrinks().count
 }
 
-## Case-insensitive substring match on name, notes, roast, or slug.
-## Empty needle → all drinks.
 export fn searchDrinks(needle!: String) -> Array<Drink> {
     let q = trim(needle)
     if isEmpty(q) {

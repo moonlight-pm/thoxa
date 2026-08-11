@@ -1,23 +1,18 @@
-## Little Crema — multi-route HTTP/1.1 example (experiment; not product std).
-## Listen loop only; routing lives in App.thx.
+## Little Crema — process entry (glue only).
+## Framework owns the server loop; App owns routes and domain.
 ##
 ##   cargo make run examples/http
 ##
-## From the workspace root (cwd-relative web root):
-##   curl -s  http://127.0.0.1:9091/
-##   curl -s  http://127.0.0.1:9091/menu
-##   curl -s  'http://127.0.0.1:9091/menu?q=mocha'
-##   curl -s -c /tmp/crema.ck -b /tmp/crema.ck -X POST -d 'name=Ada' http://127.0.0.1:9091/
+## Layout:
+##   Framework/  — host pipeline (candidate std)
+##   App/        — Little Crema application
+##   web/        — static assets
 ##
-## Ctrl-C to stop. Port 9091; SO_REUSEADDR enabled.
-## Experiment charter: docs/ideas/2026-08-10-examples-http-crema-experiment.md
+## Charter: docs/ideas/2026-08-10-examples-http-crema-experiment.md
 
-import net, { Socket } from "std/Net"
-import http from "std/Http"
-import app from "./App"
-import wire from "./Wire"
+import server from "./Framework/Server"
 import { Pass, Fail } from "std/Fallible"
-import logging, { info, warn } from "std/Logging"
+import logging, { warn } from "std/Logging"
 
 let listenPort = 9091
 
@@ -25,74 +20,11 @@ fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
 
-    match run() {
+    match server.run(listenPort) {
         Pass => 0
         Fail(e) {
             warn("server error: {e}")
             1
-        }
-    }
-}
-
-fn run() {
-    let server = net.createSocket()?
-    server.reuseAddr()?
-    server.bind(listenPort)?
-    server.listen(16)?
-    info("http server listening on 127.0.0.1:{listenPort}")
-    info("Little Crema — pages, forms, cookies, search (Ctrl-C to stop)")
-    loop {
-        match server.accept() {
-            Fail(e) {
-                ## Transient accept errors must not kill the server.
-                warn("accept: {e}")
-            }
-            Pass(peer) {
-                serveOne(peer)
-                peer.close()
-            }
-        }
-    }
-}
-
-## One connection: headers + optional body, dispatch, write full response.
-fn serveOne(peer!: Socket) {
-    match peer.receiveRequest() {
-        Fail(e) {
-            warn("recv: {e}")
-        }
-        Pass(raw) {
-            if raw.count == 0 {
-                ## Peer closed without sending data — quiet.
-            } else {
-                let response = match http.parseRequest(raw) {
-                    Pass(req) {
-                        match wire.readBody(peer, raw, req) {
-                            Fail(e) {
-                                warn("body: {e}")
-                                http.badRequest(e)
-                            }
-                            Pass(body) {
-                                let query = wire.rawQuery(raw)
-                                let res = app.handle(req, body, query)
-                                info("{req.method} {req.path} -> {res.status} {res.reason}")
-                                res
-                            }
-                        }
-                    }
-                    Fail(msg) {
-                        warn("parse: {msg}")
-                        http.badRequest(msg)
-                    }
-                }
-                let wireBytes = http.writeResponse(response)
-                match peer.sendAll(wireBytes) {
-                    Pass(_) { }
-                    Fail(e) {
-                        warn("send: {e}")
-                    }
-                }
-            }
         }
     }
 }

@@ -1,5 +1,4 @@
-## Shared HTML shell — Topcoat layout spirit without a view macro.
-## HEAD stripping is framework-level (`Wire.finalize`); pages always build full HTML.
+## App layer — shared HTML shell for Little Crema pages.
 
 import { Response, ok } from "std/Http"
 import { isEmpty } from "std/Str"
@@ -16,8 +15,6 @@ fn navExtra(customer!: String) -> String {
     }
 }
 
-## Wrap page body in a shared document + nav.
-## `customer` is the remembered name, or "" when signed out.
 export fn page(title!: String, body!: String, customer!: String) -> Response {
     let hi = navExtra(customer)
     let html = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title} · Little Crema</title>\n<link rel=\"stylesheet\" href=\"/style.css\">\n</head>\n<body>\n<header>\n<nav>\n<a class=\"brand\" href=\"/\">Little Crema</a>\n<a href=\"/menu\">Menu</a>\n<a href=\"/api/health\">Health</a>\n{hi}\n</nav>\n</header>\n<main>\n{body}\n</main>\n<footer>\n<p>Six drinks · example-only server · not product std.</p>\n</footer>\n</body>\n</html>\n"

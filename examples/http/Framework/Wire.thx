@@ -1,6 +1,6 @@
-## Example-only HTTP helpers (Phase B/C). Not product std.
-## Body completion after receiveRequest, query string (std strips it),
-## header lookup, form decode, redirects, HEAD finalize.
+## Framework layer — HTTP request/response helpers (candidate std surface).
+## Body completion, query recovery, headers, form decode, redirects, HEAD finalize.
+## Not product std yet; lives under examples/http for the Crema experiment.
 
 import { Socket } from "std/Net"
 import { Request, Response, Header } from "std/Http"
@@ -103,7 +103,6 @@ fn readUntil(peer!: Socket, start!: Bytes, need!: Int64) -> Trial<Bytes, String>
 
 ## Query string from the raw request buffer (without leading `?`).
 ## Product `parseRequest` strips `?…` from `Request.path` — recover it here.
-## Empty string when missing or malformed request line.
 export fn rawQuery(raw!: Bytes) -> String {
     let crlf = Bytes.fromString("\r\n")
     let lineEnd = match raw.find(crlf) {
@@ -135,18 +134,15 @@ export fn rawQuery(raw!: Bytes) -> String {
 }
 
 ## First value for `key` in a raw query string (`a=1&b=2`), or Not.
-## Reuses urlencoded rules (+ / %XX).
 export fn queryParam(query!: String, key!: String) -> May<String> {
     formField(Bytes.fromString(query), key)
 }
 
-## Complete the request body using Content-Length (example-only; does not
-## mutate std Request.body). Empty body when no Content-Length / zero length.
+## Complete the request body using Content-Length.
 export fn readBody(peer!: Socket, raw!: Bytes, req!: Request) -> Trial<Bytes, String> {
     let have = bodyPrefix(raw)
     match contentLength(req) {
         Not {
-            ## No length — return whatever already arrived after headers.
             Pass(have)
         }
         Has(n) {
@@ -163,7 +159,7 @@ export fn readBody(peer!: Socket, raw!: Bytes, req!: Request) -> Trial<Bytes, St
     }
 }
 
-## Decode application/x-www-form-urlencoded (+ and %XX). Invalid % → leave as-is.
+## Decode application/x-www-form-urlencoded (+ and %XX).
 export fn urlDecode(s!: String) -> String {
     let b = Bytes.fromString(s)
     mut out = Buffer()
@@ -174,12 +170,10 @@ export fn urlDecode(s!: String) -> String {
         }
         let c = b.get(i)
         if c == 43 {
-            ## +
             out.appendBytes(Bytes.fromString(" "))
             i = i + 1
         } else {
             if c == 37 {
-                ## %
                 if i + 2 < b.count {
                     match hexByte(b.get(i + 1), b.get(i + 2)) {
                         Not {
@@ -302,10 +296,7 @@ export fn withHeader(res!: Response, name!: String, value!: String) -> Response 
     )
 }
 
-## Framework-level HEAD handling (RFC 9110 §9.3.2).
-## Handlers always build a full GET-shaped Response (with body). For HEAD, keep
-## status/headers (including Content-Length of the entity) and drop the body.
-## Same pattern as many servers: run the GET path, strip content on the way out.
+## HEAD: keep status/headers (incl. Content-Length), drop body (RFC 9110 §9.3.2).
 export fn finalize(method!: String, res!: Response) -> Response {
     if method == "HEAD" {
         Response(
