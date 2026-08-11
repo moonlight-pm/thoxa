@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-10 — Match arm sugar
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D130 | Tag-only bare ctors + `=>` arm bodies | (1) Bare constructor pattern (`Pass`, `Fail`, `Has`, user tags, …) matches **by tag only** — no payload destructure (same as all-`_` binds; heap payload stays on the scrutinee). Payload binds still use `Name(x)` / `Name(_)`. (2) Arm body may be **`=> expr`** (one expression; sugar for a single-expr block) or **`{ … }`** (multi-stmt; newlines). Guards work on both: `Pat if g => e` / `Pat if g { … }`. No commas between arms. **`->` stays type-level**; `=>` is match-arm only. | Supersedes D66 “no bare Fail/Pass without parens (deferred)”. Gate: `match_arm_sugar`. Dogfood: `examples/http` `main` (`Pass => 0` / block `Fail`). |
+
 ## 2026-08-10 — Return-type inference
 
 | ID | Decision | Choice | Notes |
@@ -317,7 +323,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D66 | Match discard `_` | `Pass(_)` / `Fail(_)` — pattern `_` does not introduce a binding | Standalone `_` lexes as ordinary `Ident("_")` (usable as a normal name in `let`/params/etc.); **only match patterns special-case it** (`bind: None`). A `_` in the arm body is ordinary name lookup (error if unbound; resolves an outer `let _` if present — discard does not shadow). Payload still extracted + RC-owned for end-of-fn drop; no bare `Fail`/`Pass` without parens (grammar churn deferred); `_foo` still rejected (not an ident start) |
+| D66 | Match discard `_` | `Pass(_)` / `Fail(_)` — pattern `_` does not introduce a binding | Standalone `_` lexes as ordinary `Ident("_")` (usable as a normal name in `let`/params/etc.); **only match patterns special-case it** (`bind: None`). A `_` in the arm body is ordinary name lookup (error if unbound; resolves an outer `let _` if present — discard does not shadow). Payload still extracted + RC-owned for end-of-fn drop; **bare tag without parens → D130** (was deferred grammar churn); `_foo` still rejected (not an ident start) |
 
 ## 2026-07-19 — R9+ file I/O + Router
 

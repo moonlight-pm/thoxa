@@ -43,7 +43,10 @@ pub enum TokenKind {
     RBracket,
     LAngle,
     RAngle,
+    /// Thin arrow `->` (return types, etc.).
     Arrow,
+    /// Fat arrow `=>` (single-expression match arm body).
+    FatArrow,
     Colon,
     Comma,
     Dot,
@@ -174,6 +177,7 @@ impl<'a> Lexer<'a> {
             b'~' => self.simple(TokenKind::Tilde, start, 1),
             b'-' if self.peek(1) == Some(b'>') => self.simple(TokenKind::Arrow, start, 2),
             b'-' => self.simple(TokenKind::Minus, start, 1),
+            b'=' if self.peek(1) == Some(b'>') => self.simple(TokenKind::FatArrow, start, 2),
             b'=' if self.peek(1) == Some(b'=') => self.simple(TokenKind::EqEq, start, 2),
             b'=' => self.simple(TokenKind::Eq, start, 1),
             b'!' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Ne, start, 2),
@@ -466,6 +470,19 @@ mod tests {
             .tokenize()
             .unwrap();
         assert!(tokens.iter().any(|t| t.kind == TokenKind::Return));
+    }
+
+    #[test]
+    fn fat_arrow_token() {
+        let tokens = Lexer::new("Pass => 0").tokenize().unwrap();
+        assert!(
+            tokens.iter().any(|t| t.kind == TokenKind::FatArrow),
+            "expected FatArrow token for `=>`"
+        );
+        assert!(
+            !tokens.iter().any(|t| t.kind == TokenKind::Eq),
+            "`=>` must not split into Eq + RAngle"
+        );
     }
 
     #[test]

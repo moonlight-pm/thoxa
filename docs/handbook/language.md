@@ -106,10 +106,17 @@ for the outer. `while` / `for` still yield `Void` (they can finish).
   `Has(x)` / `Not`, custom tags), discard `_`, optional **`if` guards**
   (`Pos(n) if n > 0 { … }` — binds visible to the guard; guarded arms do not
   exhaust a tag).
+- **Tag-only bare ctors:** bare `Pass` / `Fail` / `Has` / user tags match the
+  tag **without** binding the payload (same idea as `Pass(_)` when you ignore
+  the value). Use `Name(x)` when you need the payload.
+- **Arm bodies:** `{ … }` for multi-statement arms (one statement per line), or
+  **`=> expr`** for a single-expression arm (sugar for a one-expr block).
+  Guards work with both: `Pat if g => e` / `Pat if g { … }`. No commas between
+  arms. `->` is only for types; `=>` is only for match arms.
 - **Value match:** String / Int64 / Bool **literal** arms, **or-patterns**
-  (`0 | 1 { … }`), optional **`if` guards** on those arms, and a final
-  catch-all: `else` or a **bare bind** (`n { … }` binds the scrutinee; bare
-  `_` discards).
+  (`0 | 1 { … }` or `0 | 1 => …`), optional **`if` guards** on those arms, and
+  a final catch-all: `else` or a **bare bind** (`n { … }` / `n => …` binds the
+  scrutinee; bare `_` discards).
 
 ## Functions
 

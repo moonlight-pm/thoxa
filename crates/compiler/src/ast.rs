@@ -341,19 +341,20 @@ pub enum Arg {
 #[derive(Debug, Clone)]
 pub struct MatchArm {
     pub pattern: Pattern,
-    /// Optional `if expr` after the pattern (D111). Value-match only for now.
+    /// Optional `if expr` after the pattern (D111 / D120).
     pub guard: Option<Expr>,
+    /// Arm body: block `{ … }` or sugar `=> expr` (desugared to a one-expr block, D130).
     pub body: Block,
 }
 
 #[derive(Debug, Clone)]
 pub enum Pattern {
     /// `Pass(name)` / `Fail(name)` / `Has(name)` / `Rect(w, h)` — payload binds in field order.
-    /// Empty `binds` = nullary (`Not`, `Up`). Entry `None` = discard `_` (D66).
-    /// Body `_` is not special — ordinary name lookup (no pattern binding is introduced).
+    /// Empty `binds` = tag-only: nullary members, or payload members with no destructure (D130).
+    /// Entry `None` = discard `_` (D66). Body `_` is ordinary name lookup.
     Variant {
         name: String,
-        /// One entry per constructor field; empty = nullary pattern.
+        /// One entry per constructor field; empty = tag-only (nullary or discard-all payload).
         binds: Vec<Option<String>>,
         bind_span: Span,
         span: Span,

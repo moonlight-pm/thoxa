@@ -30,7 +30,7 @@ step `.so` on the happy path.
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL |
 | Frontend | `lexer`, `parser`, `ast`, `resolver` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
-| MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**) |
+| MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/Fallible` + `std/Logging` (+ deps) |
 | Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast`; inject deps |

@@ -7589,23 +7589,9 @@ fn lower_match_sum(
                 });
             }
             Pattern::Bind { name, span: bspan } => {
-                // Bare `Up` is a nullary variant if it names a union member (D118);
-                // otherwise catch-all bind of the whole sum value.
+                // Bare name that is a union member: tag-only (nullary or discard payload, D130).
+                // Otherwise catch-all bind of the whole sum value (D110).
                 if let Some(variant) = sum.variants.iter().find(|v| v.name == *name).cloned() {
-                    let member_fields = match &variant.ty {
-                        Ty::User(mn) => ctx
-                            .types
-                            .get(mn)
-                            .map(|i| i.fields.clone())
-                            .unwrap_or_default(),
-                        _ => Vec::new(),
-                    };
-                    if !member_fields.is_empty() {
-                        return Err(Error::at(
-                            format!("`{name}` has a payload; use `{name}(x)` pattern"),
-                            *bspan,
-                        ));
-                    }
                     let guarded = arm.guard.is_some();
                     if !guarded && !covered.insert(variant.tag) {
                         return Err(Error::at(
@@ -7613,6 +7599,7 @@ fn lower_match_sum(
                             *bspan,
                         ));
                     }
+                    // Payload stays in the scrutinee; no field binds (≡ all `_` discards).
                     let (prefix, guard, body) = lower_union_arm_body(
                         ctx,
                         arm,
@@ -7704,12 +7691,8 @@ fn lower_match_sum(
                 };
                 let outer = std::mem::take(&mut ctx.stmts);
                 if binds.is_empty() {
-                    if !member_fields.is_empty() {
-                        return Err(Error::at(
-                            format!("`{name}` has a payload; use `{name}(…)` pattern"),
-                            *pspan,
-                        ));
-                    }
+                    // Tag-only: nullary member, or payload member with no destructure (D130).
+                    // Heap payloads remain owned by the scrutinee sum (dropped with it).
                 } else {
                     if member_fields.is_empty() {
                         return Err(Error::at(

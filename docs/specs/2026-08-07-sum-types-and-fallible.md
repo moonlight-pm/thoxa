@@ -13,8 +13,9 @@
 exported `std/Fallible` unions** (**import required**, **D123** — no ambient
 inject); monomorphs; methods on generic products; residual `?` rewrap;
 exhaustiveness names missing arms / rejects post-`else` arms; OpenMode sample
-(`file_openmode`); union match guards (**D120**, `sums_match_guard`); **no**
-builtin `Ty::May`/`Ty::Trial`. Gates green under `cargo make test`.
+(`file_openmode`); union match guards (**D120**, `sums_match_guard`); tag-only
+bare ctors + `=>` arm bodies (**D130**, `match_arm_sugar`); **no** builtin
+`Ty::May`/`Ty::Trial`. Gates green under `cargo make test`.
 
 > **For agentic workers:** Ladder and May/Trial cutover are **done**. Do not
 > re-open ambient inject. Further work only when `CURRENT.md` schedules a slice.
@@ -27,7 +28,7 @@ reference only where it agrees.
 **Related:** D3 (May/Trial error model — refined, not replaced by effects),
 D4 (hybrid values / small sums), D2 (effects deferred; may subsume some
 fallibility later), D81 (OpenMode ADT deferred here), **D118–D120** (sums /
-guards), **D123** (Fallible import, no ambient).
+guards), **D123** (Fallible import, no ambient), **D130** (tag-only / `=>`).
 
 ---
 
@@ -259,8 +260,11 @@ If a single success arm is marked for payload extract (`Pass<P!>`), unwrap to
 
 ## 4. Match
 
-- Constructor patterns: nullary bare name; payload **positional and named**
-  (function rules).
+- Constructor patterns: bare name = **tag-only** (nullary **or** discard payload
+  without destructure — **D130**); payload binds **positional** (function rules)
+  via `Name(x)` / `Name(_)`.
+- Arm body: **`=> expr`** (single expression) or **`{ … }`** (block); optional
+  `if` guard before either form (**D130** / D111 / D120).
 - **Exhaustiveness:** `else` required unless every member of the scrutinee
   union is covered (**E1**).
 - Residual/`!` marks do not change pattern syntax.

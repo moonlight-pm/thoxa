@@ -23,14 +23,13 @@ import logging, { info, warn } from "std/Logging"
 let listenPort = 9091
 let webRoot = "examples/http/web"
 
-fn main() -> Int64 {
+fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
 
+    ## Tag-only Pass + single-expr `=>`; multi-stmt Fail stays a block (D130).
     match run() {
-        Pass(_) {
-            0
-        }
+        Pass => 0
         Fail(e) {
             warn("server error: {e}")
             1

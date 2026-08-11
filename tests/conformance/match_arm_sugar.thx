@@ -1,0 +1,115 @@
+## Match arm sugar (D130): bare tag-only ctors + `=>` single-expression arms.
+## `Pat => expr` ≡ one-expr block. Multi-stmt arms still use `{ }` + newlines.
+## Bare `Pass` / `Fail` / product tags match by tag without destructuring (≡ all `_`).
+
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/Logging"
+
+type Box(n: Int64)
+
+fn half(x: Int64) -> Trial<Int64, String> {
+    if x % 2 == 0 {
+        Pass(x / 2)
+    } else {
+        Fail("odd")
+    }
+}
+
+fn asMsg(ok!: Bool) -> Trial<String, String> {
+    if ok {
+        Pass("ok")
+    } else {
+        Fail("err")
+    }
+}
+
+fn asBox(n!: Int64) -> Trial<Box, String> {
+    if n < 0 {
+        Fail("neg")
+    } else {
+        Pass(Box(n: n))
+    }
+}
+
+fn voidOk() -> Trial<Void, String> {
+    Pass(Void)
+}
+
+fn label(t!: Trial<Int64, String>) -> Int64 {
+    match t {
+        Pass => 0
+        Fail => 1
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## Tag-only + arrow (no payload binds).
+    logging.info("{label(half(20))}")
+    logging.info("{label(half(7))}")
+
+    ## Bind still works with `=>`.
+    match half(20) {
+        Pass(v) => logging.info("v={v}")
+        Fail(e) => logging.info("e={e}")
+    }
+    match half(7) {
+        Pass(v) => logging.info("v={v}")
+        Fail(e) => logging.info("e={e}")
+    }
+
+    ## Heap discard via bare tags (payload stays on scrutinee).
+    match asMsg(true) {
+        Pass => logging.info("pass-tag")
+        Fail => logging.info("fail-tag")
+    }
+    match asMsg(false) {
+        Pass => logging.info("pass-tag")
+        Fail => logging.info("fail-tag")
+    }
+    match asBox(3) {
+        Pass => logging.info("box-tag")
+        Fail => logging.info("box-fail-tag")
+    }
+    match asBox(-1) {
+        Pass => logging.info("box-tag")
+        Fail => logging.info("box-fail-tag")
+    }
+
+    ## Trial<Void, _> bare Pass + block multi-stmt Fail (http-shaped).
+    let code = match voidOk() {
+        Pass => 0
+        Fail(e) {
+            logging.info("setup:{e}")
+            1
+        }
+    }
+    logging.info("void-code={code}")
+
+    ## Value-match arrow + guard + arrow.
+    match 2 {
+        0 => logging.info("zero")
+        1 | 2 if true => logging.info("one-two")
+        else => logging.info("other")
+    }
+    match 9 {
+        9 if false => logging.info("skip")
+        else => logging.info("else-arrow")
+    }
+
+    ## May bare Has/Not.
+    let m: May<Int64> = Has(3)
+    match m {
+        Has => logging.info("has-tag")
+        Not => logging.info("not-tag")
+    }
+    let n: May<Int64> = Not()
+    match n {
+        Has => logging.info("has-tag")
+        Not => logging.info("not-tag")
+    }
+
+    0
+}

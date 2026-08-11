@@ -11,8 +11,8 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-11 (D129 return inference + LSP hover; D128 diverging loop; D127 combined
-import; D126 std Io/Net/Http; D125 Logging; D124 diagnostics)
+**As of:** 2026-08-10 (D130 match arm sugar; D129 return inference + LSP hover; D128
+diverging loop; D127 combined import; D126 std Io/Net/Http; D125 Logging; D124 diagnostics)
 
 ---
 
@@ -25,8 +25,8 @@ import; D126 std Io/Net/Http; D125 Logging; D124 diagnostics)
 | trial | `Trial` + `match` + `?` via `std/Fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | none for v0 — import `Pass`/`Fail`/`Trial` from `std/Fallible`; cross-module residual rewrap | yes |
 | may | `May` / `Has` / `Not` + `?` via `std/Fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | none for v0 — import `Has`/`Not`/`May` from `std/Fallible`; `Bytes.find` needs `May` in scope | yes |
 | sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | none for v0 | yes |
-| value-match | Literals + or + bind/`else` + guards | shipped | `match_value`, `match_or`, `match_bind`, `match_guard` | D87, D108, D110, D111 | — | yes |
-| match-discard | `Pass(_)` / `Fail(_)` | shipped | `match_discard` | D66 | — | yes |
+| value-match | Literals + or + bind/`else` + guards + `=>` | shipped | `match_value`, `match_or`, `match_bind`, `match_guard`, `match_arm_sugar` | D87, D108, D110, D111, **D130** | — | yes |
+| match-discard | `Pass(_)` / `Fail(_)` + bare tag-only | shipped | `match_discard`, `match_arm_sugar` | D66, **D130** | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |
 | string | String, interpolation, `.count`, simple RC | shipped | `strings` | R4 | Perceus later; `\xHH` string escapes | yes |
 | string-eq | String `==` / `!=` | shipped | `router` (uses) | D60 | — | yes |

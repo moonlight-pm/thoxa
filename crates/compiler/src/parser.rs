@@ -1595,14 +1595,31 @@ impl Parser {
 
     fn parse_match_arm(&mut self) -> Result<MatchArm> {
         let pattern = self.parse_pattern()?;
-        // Optional `if guard` before the arm body (D111).
+        // Optional `if guard` before the arm body (D111 / D130).
         let guard = if self.at(TokenKind::If) {
             self.bump();
             Some(self.parse_expr()?)
         } else {
             None
         };
-        let body = self.parse_block()?;
+        // `Pat => expr` is sugar for a one-expression block (D130). Multi-stmt arms use `{ }`.
+        let body = if self.at(TokenKind::FatArrow) {
+            self.bump();
+            let expr = self.parse_expr()?;
+            let span = expr.span;
+            Block {
+                items: Vec::new(),
+                tail: Some(Box::new(expr)),
+                span,
+            }
+        } else if self.at(TokenKind::LBrace) {
+            self.parse_block()?
+        } else {
+            return Err(Error::at(
+                "expected `=>` or `{` after match pattern",
+                self.peek_span(),
+            ));
+        };
         Ok(MatchArm {
             pattern,
             guard,
@@ -1680,11 +1697,9 @@ impl Parser {
             }
             TokenKind::Ident(_) => {
                 let (name, name_span) = self.expect_ident()?;
-                // Nullary `Not` (May): no parentheses. Payload variants require `(bind)`.
-                // Bare name with following `{` is a value-match bind pattern (D110),
-                // not a nullary variant — match arms always parse pattern then block.
+                // Bare `Not` / `Pass` / `Fail` / `Has`: empty binds = tag-only (D130).
+                // Payload binds still use `Name(x)` / `Name(_)`. Arm body is `=>` or `{ }`.
                 if !self.at(TokenKind::LParen) {
-                    // `Not` remains a nullary variant for May match.
                     if name == "Not" || name == "Pass" || name == "Fail" || name == "Has" {
                         return Ok(Pattern::Variant {
                             name,
