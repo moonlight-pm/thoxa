@@ -4,8 +4,12 @@
 //! Handlers are module-level `fn __{Type}_route_N` (not type methods) because
 //! Thoxa cannot call private methods via `Type().m()` from another method.
 //!
-//! Branch `experiment/router-clause-syntax`. No std lang-items — only normal
-//! Thoxa (`String` equality, `Bytes` for trailing capture).
+//! `route` returns `May<String>`: hit is `Has(handler(…))`, miss is `Not()`.
+//! Those names come from `std/Fallible` — the module must import them (no
+//! ambient inject). Handlers themselves still return `String`.
+//!
+//! Branch `experiment/router-clause-syntax`. No HTTP lang-items — only normal
+//! Thoxa (`String` equality, `Bytes` for trailing capture, `Has`/`Not`).
 
 use crate::ast::*;
 use crate::error::{Error, Result};
@@ -13,7 +17,7 @@ use crate::loader::Package;
 use crate::span::Span;
 
 /// Rewrite every type that has `routes` into handler free functions plus
-/// `route(method: String, path: String) -> String` on the type. Clears `routes`.
+/// `route(method: String, path: String) -> May<String>` on the type. Clears `routes`.
 pub fn desugar_package(package: &mut Package) -> Result<()> {
     for m in &mut package.modules {
         desugar_module(&mut m.ast)?;
@@ -216,14 +220,14 @@ fn validate_formals(r: &RouteClause, pat: &PathPattern) -> Result<()> {
 }
 
 fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Method> {
-    // Build nested ifs as statements with early return; tail is `""`.
+    // Build nested ifs as statements with early return; tail is `Not()`.
     let mut items: Vec<BlockItem> = Vec::new();
     for h in handlers {
         items.push(BlockItem::Expr(handler_try_if(h)?));
     }
     let body = Block {
         items,
-        tail: Some(Box::new(str_lit(""))),
+        tail: Some(Box::new(call("Not", vec![]))),
         span: name_span,
     };
     Ok(Method {
@@ -234,7 +238,7 @@ fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Metho
             param("method", ty_string()),
             param("path", ty_string()),
         ],
-        return_type: Some(ty_string()),
+        return_type: Some(ty_may_string()),
         body,
     })
 }
@@ -380,17 +384,11 @@ fn trailing_capture_block(handler_name: &str, prefix: &str) -> Result<Expr> {
 }
 
 fn return_handler_call(handler: &str, args: Vec<Arg>) -> Expr {
-    // return __Type_route_N(args)
-    let call = Expr {
-        kind: ExprKind::Call {
-            callee: handler.into(),
-            args,
-        },
-        span: dummy(),
-    };
+    // return Has(__Type_route_N(args))
+    let inner = call(handler, args);
     Expr {
         kind: ExprKind::Return {
-            value: Some(Box::new(call)),
+            value: Some(Box::new(call("Has", vec![Arg::Pos(inner)]))),
         },
         span: dummy(),
     }
@@ -410,6 +408,27 @@ fn ty_string() -> TypeExpr {
         lit: None,
         mark: None,
         union_members: None,
+    }
+}
+
+fn ty_may_string() -> TypeExpr {
+    TypeExpr {
+        name: "May".into(),
+        args: vec![TypeArg::Type(ty_string())],
+        span: dummy(),
+        lit: None,
+        mark: None,
+        union_members: None,
+    }
+}
+
+fn call(callee: &str, args: Vec<Arg>) -> Expr {
+    Expr {
+        kind: ExprKind::Call {
+            callee: callee.into(),
+            args,
+        },
+        span: dummy(),
     }
 }
 
@@ -556,6 +575,9 @@ mod tests {
                 assert_eq!(td.methods.len(), 1);
                 assert_eq!(td.methods[0].name, "route");
                 assert_eq!(td.methods[0].params.len(), 2);
+                let ret = td.methods[0].return_type.as_ref().expect("route ret");
+                assert_eq!(ret.name, "May");
+                assert_eq!(ret.args.len(), 1);
             }
             _ => panic!("expected type"),
         }

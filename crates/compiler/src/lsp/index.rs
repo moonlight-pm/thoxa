@@ -240,7 +240,7 @@ fn typed_local_name(binding: &Binding) -> String {
 /// Hover for `let`/`mut`/`param` when we know a type head from resolve nav.
 ///
 /// Examples:
-/// - `let a = r.route(…)` with ty_hint String → `let a: String`
+/// - `let a = r.route(…)` with ty_hint May + args String → `let a: May<String>`
 /// - `let a: Int64 = 1` (already annotated in source) → keep source if it has `: Type`
 fn local_hover_line(binding: &Binding, source_line: &str) -> Option<String> {
     let ty = binding.ty_hint.as_deref().filter(|t| !t.is_empty())?;
@@ -280,7 +280,13 @@ fn synthetic_route_signature(
     if !is_http {
         return None;
     }
-    let ret = return_display(binding, inferred_ret.or(Some("String")));
+    let default_ret = if binding.kind == BindingKind::Method && binding.name == "route"
+    {
+        route_return_display(binding)
+    } else {
+        "String".into()
+    };
+    let ret = return_display(binding, inferred_ret.or(Some(default_ret.as_str())));
     match binding.kind {
         BindingKind::Method if binding.name == "route" => {
             let owner = binding.owner.as_deref().unwrap_or("?");
@@ -298,6 +304,21 @@ fn synthetic_route_signature(
             binding.name
         )),
         _ => None,
+    }
+}
+
+/// Generated `route` returns `May<String>` (nav ty_hint when resolve saw the
+/// annotated return; otherwise the experiment default).
+fn route_return_display(binding: &Binding) -> String {
+    match binding.ty_hint.as_deref() {
+        Some(head) if !head.is_empty() => {
+            if binding.ty_args.is_empty() {
+                head.to_string()
+            } else {
+                format!("{head}<{}>", binding.ty_args.join(", "))
+            }
+        }
+        _ => "May<String>".into(),
     }
 }
 
@@ -465,11 +486,12 @@ fn main() -> Int64 {
         let use_a = src.rfind("\n    a\n").unwrap() + 5;
         let p = byte_to_position(src, use_a);
         let b = idx.binding_at(p.line, p.character).expect("a");
-        assert_eq!(b.ty_hint.as_deref(), Some("String"));
+        assert_eq!(b.ty_hint.as_deref(), Some("May"));
+        assert_eq!(b.ty_args, vec!["String".to_string()]);
         let md = idx.hover_markdown(b).expect("hover");
         assert!(
-            md.contains("a: String") || md.contains("let a: String"),
-            "expected typed local hover, got: {md}"
+            md.contains("a: May<String>") || md.contains("let a: May<String>"),
+            "expected typed local hover May<String>, got: {md}"
         );
     }
 
@@ -499,10 +521,10 @@ fn main() -> Int64 {
         let b = idx.binding_at(p.line, p.character).expect("route ref");
         assert_eq!(b.name, "route");
         let md = idx
-            .hover_markdown_with_ret(b, Some("String"))
+            .hover_markdown_with_ret(b, Some("May<String>"))
             .expect("hover");
         assert!(md.contains("route"), "{md}");
-        assert!(md.contains("String"), "{md}");
+        assert!(md.contains("May<String>"), "{md}");
         assert!(
             md.contains("generated") || md.contains("method: String"),
             "{md}"
