@@ -175,6 +175,15 @@ pub fn render_signature_with_ret(
             if let Some(syn) = synthetic_route_signature(binding, trimmed, inferred_ret) {
                 return Some(syn);
             }
+            // Locals: prefer `let a: String` (nav ty_hint) over a long init line.
+            if matches!(
+                binding.kind,
+                BindingKind::Let | BindingKind::Mut | BindingKind::Param | BindingKind::ForVar
+            ) {
+                if let Some(annotated) = local_hover_line(binding, trimmed) {
+                    return Some(annotated);
+                }
+            }
             return Some(enrich_fn_return_display(binding, trimmed, inferred_ret));
         }
     }
@@ -200,15 +209,61 @@ pub fn render_signature_with_ret(
                 binding.name.clone()
             }
         }
-        BindingKind::Param => format!("param {}", binding.name),
-        BindingKind::Let => format!("let {}", binding.name),
-        BindingKind::Mut => format!("mut {}", binding.name),
-        BindingKind::ForVar => format!("for {}", binding.name),
-        BindingKind::Pattern => format!("pattern {}", binding.name),
+        BindingKind::Param => format!(
+            "param {}",
+            typed_local_name(binding)
+        ),
+        BindingKind::Let => format!("let {}", typed_local_name(binding)),
+        BindingKind::Mut => format!("mut {}", typed_local_name(binding)),
+        BindingKind::ForVar => format!("for {}", typed_local_name(binding)),
+        BindingKind::Pattern => format!("pattern {}", typed_local_name(binding)),
         BindingKind::Import => format!("import {}", binding.name),
         BindingKind::Builtin => binding.name.clone(),
     };
     Some(s)
+}
+
+/// `a` or `a: String` when nav has a type head (from annotation or init inference).
+fn typed_local_name(binding: &Binding) -> String {
+    match binding.ty_hint.as_deref() {
+        Some(ty) if !ty.is_empty() => {
+            if binding.ty_args.is_empty() {
+                format!("{}: {ty}", binding.name)
+            } else {
+                format!("{}: {ty}<{}>", binding.name, binding.ty_args.join(", "))
+            }
+        }
+        _ => binding.name.clone(),
+    }
+}
+
+/// Hover for `let`/`mut`/`param` when we know a type head from resolve nav.
+///
+/// Examples:
+/// - `let a = r.route(…)` with ty_hint String → `let a: String`
+/// - `let a: Int64 = 1` (already annotated in source) → keep source if it has `: Type`
+fn local_hover_line(binding: &Binding, source_line: &str) -> Option<String> {
+    let ty = binding.ty_hint.as_deref().filter(|t| !t.is_empty())?;
+    // Source already has an explicit annotation after the name — keep it.
+    let name = &binding.name;
+    if let Some(after_name) = source_line.find(name).map(|i| &source_line[i + name.len()..]) {
+        let rest = after_name.trim_start();
+        if rest.starts_with(':') {
+            return None; // use enrich path / raw line
+        }
+    }
+    let ty_disp = if binding.ty_args.is_empty() {
+        ty.to_string()
+    } else {
+        format!("{ty}<{}>", binding.ty_args.join(", "))
+    };
+    let kw = match binding.kind {
+        BindingKind::Mut => "mut",
+        BindingKind::Param => "param",
+        BindingKind::ForVar => "for",
+        _ => "let",
+    };
+    Some(format!("{kw} {name}: {ty_disp}"))
 }
 
 /// Hover text when a binding's def span sits on a route clause (`GET "/…"`), not `fn`.
@@ -391,6 +446,31 @@ mod tests {
         let md = idx.hover_markdown(b).expect("hover");
         assert!(md.contains("helper"), "{md}");
         assert!(md.contains("```thoxa"), "{md}");
+    }
+
+    #[test]
+    fn hover_let_from_route_shows_string_type() {
+        let src = r#"
+type MyRouter {
+    GET "/home" { "Home" }
+}
+fn main() -> Int64 {
+    let r = MyRouter()
+    let a = r.route(method: "GET", path: "/home")
+    a
+    0
+}
+"#;
+        let idx = build_index(src, "<input>");
+        let use_a = src.rfind("\n    a\n").unwrap() + 5;
+        let p = byte_to_position(src, use_a);
+        let b = idx.binding_at(p.line, p.character).expect("a");
+        assert_eq!(b.ty_hint.as_deref(), Some("String"));
+        let md = idx.hover_markdown(b).expect("hover");
+        assert!(
+            md.contains("a: String") || md.contains("let a: String"),
+            "expected typed local hover, got: {md}"
+        );
     }
 
     #[test]

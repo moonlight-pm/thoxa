@@ -1701,4 +1701,30 @@ fn f(t: Trial<Int64, Int64>) -> Int64 {
     fn parse_error_propagates() {
         assert!(resolve_source("fn main() {").is_err());
     }
+
+    #[test]
+    fn let_from_route_call_has_string_ty_hint() {
+        let src = r#"
+type MyRouter {
+    GET "/home" { "Home" }
+}
+fn main() -> Int64 {
+    let r = MyRouter()
+    let a = r.route(method: "GET", path: "/home")
+    a
+    0
+}
+"#;
+        let res = resolve_ok(src);
+        let use_a = src.rfind("\n    a\n").unwrap() + 5;
+        let p = byte_to_position(src, use_a);
+        let r = res.ref_at(src, p.line, p.character).expect("ref a");
+        let b = res.binding_of(Some(r)).expect("binding a");
+        assert_eq!(
+            b.ty_hint.as_deref(),
+            Some("String"),
+            "expected String ty_hint on let a from r.route(), got {:?}",
+            b.ty_hint
+        );
+    }
 }
