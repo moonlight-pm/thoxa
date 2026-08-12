@@ -21,6 +21,15 @@ pub const TOP_LEVEL_STMT_WITH_MAIN_MSG: &str =
     "unexpected top-level statement in a program with `fn main` \
      (only import / type / fn / let allowed here; omit `main` for a session script)";
 
+/// HTTP method idents recognized as route clauses inside a type body only
+/// (experiment/router-clause-syntax). Not reserved keywords elsewhere.
+fn is_route_http_method(s: &str) -> bool {
+    matches!(
+        s,
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+    )
+}
+
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
@@ -374,6 +383,7 @@ impl Parser {
                 params: Vec::new(),
                 fields: Vec::new(),
                 methods: Vec::new(),
+                routes: Vec::new(),
                 union_members: Some(members),
             });
         }
@@ -402,6 +412,7 @@ impl Parser {
         // when there are no fields or methods. Empty `{}` still accepted.
         let mut fields = Vec::new();
         let mut methods = Vec::new();
+        let mut routes = Vec::new();
         if self.at(TokenKind::LBrace) {
             self.bump();
             let mut type_body_errors: Vec<Error> = Vec::new();
@@ -416,9 +427,14 @@ impl Parser {
                     self.parse_field_decl().map(|f| {
                         fields.push(f);
                     })
+                } else if self.at_route_method() {
+                    self.parse_route_clause().map(|r| {
+                        routes.push(r);
+                    })
                 } else {
                     Err(Error::at(
-                        "expected field (`mut`/`let name: Type`) or method in type body",
+                        "expected field (`mut`/`let name: Type`), method, or route \
+                         (`GET \"/…\" { … }`) in type body",
                         self.peek_span(),
                     ))
                 };
@@ -432,12 +448,13 @@ impl Parser {
                         {
                             self.bump();
                         }
-                        // Seek next method/field or closing brace.
+                        // Seek next method/field/route or closing brace.
                         while !self.at(TokenKind::Eof) && !self.at(TokenKind::RBrace) {
                             if self.at(TokenKind::Fn)
                                 || self.at(TokenKind::Export)
                                 || self.at(TokenKind::Mut)
                                 || self.at(TokenKind::Let)
+                                || self.at_route_method()
                             {
                                 break;
                             }
@@ -481,7 +498,66 @@ impl Parser {
             params,
             fields,
             methods,
+            routes,
             union_members: None,
+        })
+    }
+
+    /// Fixed set of HTTP method identifiers recognized only in type bodies.
+    fn at_route_method(&self) -> bool {
+        match &self.current().kind {
+            TokenKind::Ident(s) => is_route_http_method(s),
+            _ => false,
+        }
+    }
+
+    /// `GET "/path" { … }` / `PUT "/p/:id" (id: Int64) -> T { … }`
+    fn parse_route_clause(&mut self) -> Result<RouteClause> {
+        let (method, method_span) = match &self.current().kind {
+            TokenKind::Ident(s) if is_route_http_method(s) => {
+                let m = s.clone();
+                let sp = self.current().span;
+                self.bump();
+                (m, sp)
+            }
+            _ => {
+                return Err(Error::at(
+                    "expected HTTP method (GET, POST, PUT, …)",
+                    self.peek_span(),
+                ));
+            }
+        };
+        let (pattern, pattern_span) = self.expect_string()?;
+        let mut params = Vec::new();
+        if self.at(TokenKind::LParen) {
+            self.bump();
+            if !self.at(TokenKind::RParen) {
+                loop {
+                    params.push(self.parse_param()?);
+                    if self.at(TokenKind::Comma) {
+                        self.bump();
+                        continue;
+                    }
+                    break;
+                }
+            }
+            self.expect_kind(&TokenKind::RParen)?;
+        }
+        let return_type = if self.at(TokenKind::Arrow) {
+            self.bump();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        let body = self.parse_block()?;
+        Ok(RouteClause {
+            method,
+            method_span,
+            pattern,
+            pattern_span,
+            params,
+            return_type,
+            body,
         })
     }
 
@@ -2040,6 +2116,12 @@ mod tests {
         Parser::new(tokens).parse_module().unwrap()
     }
 
+    fn parse_err(src: &str) -> String {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let err = Parser::new(tokens).parse_module().unwrap_err();
+        format!("{err}")
+    }
+
     #[test]
     fn parse_hello() {
         let module = parse(
@@ -2225,9 +2307,69 @@ mod tests {
                 assert!(t.fields.is_empty());
                 assert_eq!(t.methods.len(), 2);
                 assert!(t.methods[0].exported);
+                assert!(t.routes.is_empty());
             }
             _ => panic!("expected type"),
         }
+    }
+
+    #[test]
+    fn parse_route_clauses_in_type_body() {
+        // Path patterns may use `:userId`; formals are camelCase (no `_` in idents).
+        let module = parse(
+            r#"
+            type MyRouter {
+                GET "/home" {
+                    "Home"
+                }
+
+                PUT "/user/:userId" (userId: Int64) -> String {
+                    "user {userId}"
+                }
+
+                export fn ping() -> Int64 {
+                    1
+                }
+            }
+            fn main() -> Int64 { 0 }
+        "#,
+        );
+        match &module.items[0] {
+            Item::Type(t) => {
+                assert_eq!(t.name, "MyRouter");
+                assert_eq!(t.routes.len(), 2);
+                assert_eq!(t.methods.len(), 1);
+                assert_eq!(t.routes[0].method, "GET");
+                assert_eq!(t.routes[0].pattern, "/home");
+                assert!(t.routes[0].params.is_empty());
+                assert!(t.routes[0].return_type.is_none());
+                assert_eq!(t.routes[1].method, "PUT");
+                assert_eq!(t.routes[1].pattern, "/user/:userId");
+                assert_eq!(t.routes[1].params.len(), 1);
+                assert_eq!(t.routes[1].params[0].name, "userId");
+                assert_eq!(
+                    t.routes[1].return_type.as_ref().map(|ty| ty.name.as_str()),
+                    Some("String")
+                );
+            }
+            _ => panic!("expected type"),
+        }
+    }
+
+    #[test]
+    fn parse_route_clause_rejects_unknown_method_word() {
+        // Lowercase / non-HTTP idents are not route methods; bare ident is an error.
+        let err = parse_err(
+            r#"
+            type R {
+                get "/home" { 0 }
+            }
+        "#,
+        );
+        assert!(
+            err.contains("expected field") || err.contains("route"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

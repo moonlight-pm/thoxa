@@ -91,8 +91,27 @@ pub struct TypeDef {
     /// Empty when using constructor params (R3).
     pub fields: Vec<FieldDecl>,
     pub methods: Vec<Method>,
+    /// Experiment: HTTP-style route clauses in the type body (`GET "/…" { … }`).
+    /// Branch `experiment/router-clause-syntax` — parse only until lowered.
+    pub routes: Vec<RouteClause>,
     /// `type Name = A | B | …` (D118). When set, params/fields/methods must be empty.
     pub union_members: Option<Vec<TypeExpr>>,
+}
+
+/// `GET "/home" { … }` / `PUT "/user/:id" (id: Int64) -> T { … }` inside a type body.
+/// Experiment only — not product surface.
+#[derive(Debug, Clone)]
+pub struct RouteClause {
+    /// HTTP method as written (`GET`, `PUT`, …).
+    pub method: String,
+    pub method_span: Span,
+    /// Path pattern string literal (e.g. `"/user/:user_id"`).
+    pub pattern: String,
+    pub pattern_span: Span,
+    /// Optional formals after the pattern (path captures, etc.).
+    pub params: Vec<Param>,
+    pub return_type: Option<TypeExpr>,
+    pub body: Block,
 }
 
 /// A field declared in a type body: `mut a: UInt32` or `let cLine: Byte`.
