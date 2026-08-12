@@ -13,6 +13,7 @@ pub mod mir;
 pub mod parser;
 pub mod repl;
 pub mod resolver;
+pub mod route_desugar;
 pub mod session;
 pub mod span;
 pub mod version;

@@ -1048,6 +1048,11 @@ pub fn lower_package(package: &Package) -> Result<Program> {
 
 /// Lower a multi-file package with explicit options.
 pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Program> {
+    // Experiment: type-body `GET "/…"` → private methods + `route` (no std coupling).
+    let mut package = package.clone();
+    crate::route_desugar::desugar_package(&mut package)?;
+    let package = &package;
+
     // May/Trial live in `std/Fallible` and must be imported (no ambient inject).
     let import_maps = loader::build_import_maps(package)?;
 

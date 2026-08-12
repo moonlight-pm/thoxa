@@ -49,23 +49,29 @@ userland or std — not lang-items in v0 of this experiment.
 
 ---
 
-## Target desugar (spirit)
+## Target desugar (as-built v0)
 
 ```thx
 type MyRouter {
-    ## private table field shape TBD (Array of records, or const data)
-
-    fn __route_0() -> String { "Home" }
-    fn __route_1(userId: Int64) -> String { "user {userId}" }
-
-    fn route(method: String, path: String) -> … {
-        ## for each table row: method eq + path_match → call __route_N
+    export fn route(method: String, path: String) -> String {
+        ## ordered if method == … { if path match { return __MyRouter_route_N(…) } }
+        ""
     }
 }
+
+fn __MyRouter_route_0() -> String { "Home" }
+fn __MyRouter_route_1(userId: String) -> String { "user {userId}" }
 ```
 
-Exact `route` signature and table type are chosen when lowering is implemented.
-v0 may return a simple `String` / `May<String>` so no HTTP types are required.
+Notes:
+
+- Handlers are **module free functions** (not type methods): private methods cannot
+  be called via `Type().m()` from another method.
+- **No runtime table field** — the ordered if-ladder *is* the table (visible in
+  `emit-c`).
+- Path match: exact `path == pattern`, or trailing `:capture` via `Bytes` prefix
+  compare + `slice`/`toString` (capture formal must be `String`).
+- Handler / `route` return type: **String** only in v0.
 
 ---
 
@@ -88,8 +94,8 @@ source of truth for “what the compiler produced.” Parser step uses unit test
 | 0 Branch `experiment/router-clause-syntax` | **done** | same worktree |
 | 1 This idea note | **done** | |
 | 2 Parse + AST only | **done** | `RouteClause` on `TypeDef`; unit tests `parse_route_*` |
-| 3 Desugar → private methods + table + `route` | pending | |
-| 4 Scratch/conformance sample + `emit-c` | pending | |
+| 3 Desugar → handlers + `route` | **done** | `route_desugar.rs`; free-fn handlers + `route` ladder; exact + trailing `:cap` |
+| 4 Scratch sample + `emit-c` | **done** (with 3) | `scratch/router_clause.thx` |
 | 5 Optional path-match helper (userland/std) | pending | only if needed |
 
 ---
