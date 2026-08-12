@@ -235,6 +235,12 @@ pub fn unwrap_fallible_nav_ty(t: NavTy) -> NavTy {
 
 /// Resolve a parsed module (single-file; imports are local bindings only).
 pub fn resolve_module(module: &Module) -> Resolution {
+    // Experiment: expand type-body route clauses so LSP sees `route` + handlers.
+    let mut desugared = module.clone();
+    let module = match crate::route_desugar::desugar_module(&mut desugared) {
+        Ok(()) => &desugared,
+        Err(_) => module,
+    };
     let mut r = Resolver {
         module,
         res: Resolution::default(),

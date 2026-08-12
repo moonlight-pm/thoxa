@@ -21,7 +21,8 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
     Ok(())
 }
 
-fn desugar_module(module: &mut Module) -> Result<()> {
+/// Public for LSP resolve / tests (also invoked from package lower).
+pub fn desugar_module(module: &mut Module) -> Result<()> {
     let mut extra_fns: Vec<Function> = Vec::new();
     for item in &mut module.items {
         if let Item::Type(td) = item {
@@ -83,6 +84,7 @@ fn desugar_type(td: &mut TypeDef) -> Result<Vec<Function>> {
             http_method: r.method.clone(),
             pattern: pat,
             handler_name: handler_name.clone(),
+            def_span: r.method_span,
         });
 
         free_fns.push(Function {
@@ -95,7 +97,11 @@ fn desugar_type(td: &mut TypeDef) -> Result<Vec<Function>> {
         });
     }
 
-    td.methods.push(build_route_method(&handlers)?);
+    let route_span = handlers
+        .first()
+        .map(|h| h.def_span)
+        .unwrap_or(td.name_span);
+    td.methods.push(build_route_method(&handlers, route_span)?);
     Ok(free_fns)
 }
 
@@ -103,6 +109,8 @@ struct HandlerMeta {
     http_method: String,
     pattern: PathPattern,
     handler_name: String,
+    /// Source span of the HTTP method token (for go-to-def / outline).
+    def_span: Span,
 }
 
 enum PathPattern {
@@ -207,7 +215,7 @@ fn validate_formals(r: &RouteClause, pat: &PathPattern) -> Result<()> {
     Ok(())
 }
 
-fn build_route_method(handlers: &[HandlerMeta]) -> Result<Method> {
+fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Method> {
     // Build nested ifs as statements with early return; tail is `""`.
     let mut items: Vec<BlockItem> = Vec::new();
     for h in handlers {
@@ -216,12 +224,12 @@ fn build_route_method(handlers: &[HandlerMeta]) -> Result<Method> {
     let body = Block {
         items,
         tail: Some(Box::new(str_lit(""))),
-        span: dummy(),
+        span: name_span,
     };
     Ok(Method {
         exported: true,
         name: "route".into(),
-        name_span: dummy(),
+        name_span,
         params: vec![
             param("method", ty_string()),
             param("path", ty_string()),

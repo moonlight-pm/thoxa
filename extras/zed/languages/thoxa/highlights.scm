@@ -1,7 +1,9 @@
 ; Thoxa syntax highlighting (lexer-level).
 ;
-; Kept in sync with extras/tree-sitter-thoxa/queries/highlights.scm.
-; LSP semantic tokens refine function vs variable in combined mode.
+; The grammar is deliberately thin, so this colours the lexical layer only:
+; keywords, casing-based types-vs-values, literals, comments, operators. The
+; Thoxa LSP refines identifiers (function / parameter) via semantic tokens in
+; Zed's `combined` highlighting mode — do not duplicate that logic here.
 
 (keyword) @keyword
 (boolean) @constant.builtin

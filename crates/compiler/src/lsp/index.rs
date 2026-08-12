@@ -170,6 +170,11 @@ pub fn render_signature_with_ret(
         let line = line_containing(text, span.start);
         let trimmed = line.trim();
         if !trimmed.is_empty() {
+            // Desugared route clauses point def spans at `GET "/…"` lines — not
+            // `fn …` syntax. Prefer a synthetic signature for those.
+            if let Some(syn) = synthetic_route_signature(binding, trimmed, inferred_ret) {
+                return Some(syn);
+            }
             return Some(enrich_fn_return_display(binding, trimmed, inferred_ret));
         }
     }
@@ -204,6 +209,41 @@ pub fn render_signature_with_ret(
         BindingKind::Builtin => binding.name.clone(),
     };
     Some(s)
+}
+
+/// Hover text when a binding's def span sits on a route clause (`GET "/…"`), not `fn`.
+fn synthetic_route_signature(
+    binding: &Binding,
+    source_line: &str,
+    inferred_ret: Option<&str>,
+) -> Option<String> {
+    let first = source_line.split_whitespace().next()?;
+    let is_http = matches!(
+        first,
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+    );
+    if !is_http {
+        return None;
+    }
+    let ret = return_display(binding, inferred_ret.or(Some("String")));
+    match binding.kind {
+        BindingKind::Method if binding.name == "route" => {
+            let owner = binding.owner.as_deref().unwrap_or("?");
+            Some(format!(
+                "fn {owner}.route(method: String, path: String) -> {ret}\n\
+                 // generated from route clauses"
+            ))
+        }
+        BindingKind::Fn if binding.name.contains("_route_") => Some(format!(
+            "fn {}(…) -> {ret}\n// desugared route handler ({first} …)",
+            binding.name
+        )),
+        BindingKind::Method => Some(format!(
+            "fn {}(…) -> {ret}\n// desugared route handler ({first} …)",
+            binding.name
+        )),
+        _ => None,
+    }
 }
 
 /// Return type for hover: inferred (D129) > main/Int64 > Void.
@@ -351,6 +391,50 @@ mod tests {
         let md = idx.hover_markdown(b).expect("hover");
         assert!(md.contains("helper"), "{md}");
         assert!(md.contains("```thoxa"), "{md}");
+    }
+
+    #[test]
+    fn hover_route_method_from_type_body_clauses() {
+        let src = r#"
+type MyRouter {
+    GET "/home" { "Home" }
+}
+fn main() -> Int64 {
+    let r = MyRouter()
+    r.route(method: "GET", path: "/home")
+    0
+}
+"#;
+        let idx = build_index(src, "<input>");
+        assert!(idx.ok);
+        // Members of MyRouter include generated `route`.
+        let members = idx.resolution.members_of("MyRouter");
+        assert!(
+            members.iter().any(|m| m.name == "route"),
+            "expected route method member, got {:?}",
+            members.iter().map(|m| &m.name).collect::<Vec<_>>()
+        );
+        let call = src.rfind("route").unwrap();
+        let p = byte_to_position(src, call);
+        let b = idx.binding_at(p.line, p.character).expect("route ref");
+        assert_eq!(b.name, "route");
+        let md = idx
+            .hover_markdown_with_ret(b, Some("String"))
+            .expect("hover");
+        assert!(md.contains("route"), "{md}");
+        assert!(md.contains("String"), "{md}");
+        assert!(
+            md.contains("generated") || md.contains("method: String"),
+            "{md}"
+        );
+        // Free handler from desugar is indexed.
+        assert!(
+            idx.resolution
+                .module_definitions()
+                .iter()
+                .any(|d| d.name.starts_with("__MyRouter_route_")),
+            "expected desugared handler fn in definitions"
+        );
     }
 
     #[test]

@@ -153,6 +153,34 @@
         {
           "type": "STRING",
           "value": "is"
+        },
+        {
+          "type": "STRING",
+          "value": "GET"
+        },
+        {
+          "type": "STRING",
+          "value": "POST"
+        },
+        {
+          "type": "STRING",
+          "value": "PUT"
+        },
+        {
+          "type": "STRING",
+          "value": "PATCH"
+        },
+        {
+          "type": "STRING",
+          "value": "DELETE"
+        },
+        {
+          "type": "STRING",
+          "value": "HEAD"
+        },
+        {
+          "type": "STRING",
+          "value": "OPTIONS"
         }
       ]
     },
@@ -292,6 +320,10 @@
         {
           "type": "STRING",
           "value": "/="
+        },
+        {
+          "type": "STRING",
+          "value": "=>"
         },
         {
           "type": "STRING",
