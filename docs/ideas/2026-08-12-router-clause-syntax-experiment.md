@@ -2,14 +2,15 @@
 
 **Status:** **active experiment** — branch `experiment/router-clause-syntax` only.  
 **Date:** 2026-08-12  
-**Not** a freeze, **not** CURRENT product work, **not** handbook surface.  
+**Not** a freeze, **not** CURRENT product work, **not** handbook / capabilities
+“shipped.”  
 **Toss:** delete the branch if the tact fails.
 
 ---
 
 ## Goal
 
-Try a **thin** desugar for route-looking clauses inside a type body, with **minimal
+Thin desugar for route-looking clauses inside a type body, with **minimal
 compiler knowledge of `std/`**:
 
 ```thx
@@ -18,24 +19,24 @@ type MyRouter {
         "Home"
     }
 
-    PUT "/user/:userId" (userId: Int64) {
+    PUT "/user/:userId" (userId: String) -> String {
         "user {userId}"
     }
 }
 
 let router = MyRouter()
-## later: router.route(method, path) or similar
+let a = router.route(method: "GET", path: "/home")  ## a: String (LSP)
 ```
 
-Compiler responsibilities (target end state of this experiment):
+Compiler (as built):
 
 1. Parse route clauses in a **type body** only.  
-2. Lower each clause to a **private method**.  
-3. Build a **private table** (method string + pattern string + clause id) on the type.  
-4. Emit a **`route` method** that walks the table and calls the private methods.
+2. Lower each clause to a **module free-function** handler.  
+3. Emit **`route(method: String, path: String) -> String`** on the type
+   (ordered if-ladder = logical table).  
+4. Resolve/LSP desugars the same way so hover/outline see generated symbols.
 
-Everything else (`Request`, body codecs, HTTP server) stays **normal Thoxa** in
-userland or std — not lang-items in v0 of this experiment.
+HTTP types stay userland. No lang-items.
 
 ---
 
@@ -44,12 +45,12 @@ userland or std — not lang-items in v0 of this experiment.
 - General macros / attribute macros  
 - Compiler-hardcoded `Request<T>` / `Response<T>`  
 - Lang-items for path matching  
-- Shipping handbook / capabilities “shipped” / product `examples/http` rewrite  
-- First-class function values for the table (ladder or simple data is enough)
+- Shipping handbook / capabilities / product `examples/http` rewrite  
+- First-class function values for a runtime route table  
 
 ---
 
-## Target desugar (as-built v0)
+## As-built desugar (v0)
 
 ```thx
 type MyRouter {
@@ -63,27 +64,29 @@ fn __MyRouter_route_0() -> String { "Home" }
 fn __MyRouter_route_1(userId: String) -> String { "user {userId}" }
 ```
 
-Notes:
+| Choice | Why |
+|--------|-----|
+| Free-fn handlers, not private methods | Private methods cannot be called via `Type().m()` from another method |
+| No Array table field | Ladder is the table (`emit-c` shows it) |
+| Exact path or **trailing** `:capture` only | Capture formal must be `String` |
+| `route` / handlers return **String** only | No May/404 sum yet |
+| Nullary product types only | No ctor params / body fields on the router type |
 
-- Handlers are **module free functions** (not type methods): private methods cannot
-  be called via `Type().m()` from another method.
-- **No runtime table field** — the ordered if-ladder *is* the table (visible in
-  `emit-c`).
-- Path match: exact `path == pattern`, or trailing `:capture` via `Bytes` prefix
-  compare + `slice`/`toString` (capture formal must be `String`).
-- Handler / `route` return type: **String** only in v0.
+**Hooks:** `mir::lower_package_with` and `resolver::resolve_module` both run
+`route_desugar::desugar_module` (idempotent once `routes` cleared).
+
+**Editor:** tree-sitter colors HTTP verbs as keywords; LSP hover shows
+`route` / handlers and `let a: String` when ty_hint is known.
 
 ---
 
 ## Inspecting generated code
 
 ```bash
-cargo make emit-c path.thx
-# → path under target/thoxa/c/
+cargo run -p thoxa -- run scratch/router_clause.thx   # local; scratch/ gitignored
+cargo run -p thoxa -- emit-c scratch/router_clause.thx
+# → target/thoxa/c/router_clause.c
 ```
-
-No `dump-ast` / expanded-`.thx` CLI yet. After lowering works, **`emit-c`** is the
-source of truth for “what the compiler produced.” Parser step uses unit tests.
 
 ---
 
@@ -92,47 +95,52 @@ source of truth for “what the compiler produced.” Parser step uses unit test
 | Step | Status | Notes |
 |------|--------|--------|
 | 0 Branch `experiment/router-clause-syntax` | **done** | same worktree |
-| 1 This idea note | **done** | |
-| 2 Parse + AST only | **done** | `RouteClause` on `TypeDef`; unit tests `parse_route_*` |
-| 3 Desugar → handlers + `route` | **done** | `route_desugar.rs`; free-fn handlers + `route` ladder; exact + trailing `:cap` |
-| 4 Scratch sample + `emit-c` | **done** (with 3) | `scratch/router_clause.thx` |
-| 5 Optional path-match helper (userland/std) | pending | only if needed |
+| 1 Idea note | **done** | this file |
+| 2 Parse + AST | **done** | `RouteClause` on `TypeDef` |
+| 3 Desugar → handlers + `route` | **done** | `route_desugar.rs` |
+| 4 Scratch + `emit-c` | **done** | `scratch/router_clause.thx` (gitignored) |
+| 5 LSP hover/outline for desugared symbols | **done** | resolve desugar + synthetic hover |
+| 6 Typed local hover (`let a: String`) | **done** | general LSP; helps this sample |
+| 7 Path-match helper in std | **pending** | only if Bytes ladder hurts |
+| 8 Decision: keep / reshape / toss | **open** | not a freeze yet |
 
 ---
 
 ## Surface (parse v0)
 
-Inside `type Name { … }` (not top-level, not free functions):
-
 ```text
 METHOD string_lit [ ( params ) ] [ -> type ] block
 ```
 
-- `METHOD` is an **identifier** in the fixed set:  
-  `GET` `POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS`  
-  (not reserved keywords elsewhere — only recognized in this position.)
-- `string_lit` is the path pattern (e.g. `"/user/:userId"`). Captures are
-  **not** validated against formals until a later step. Formals use normal
-  Thoxa idents (no `_` — prefer camelCase).
-- Optional param list and return type use the same grammar as methods.
-- Body is a normal block.
-
-Mix with normal `fn` methods and `let`/`mut` fields is allowed by the parser;
-semantics of mixing are TBD at lower time.
+- `METHOD` ∈ `GET` `POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS` (idents in
+  type body only; also tree-sitter keywords).  
+- Formals: normal Thoxa idents (**no `_`** — use camelCase).  
+- Mix with `fn` methods / fields: parse OK; desugar rejects fields/ctor params.
 
 ---
 
-## Open questions (later steps)
+## Open questions / next experiment slices
 
-- Table representation without fn values  
-- How `path_match` is called (generated `if`s vs helper)  
-- 404 / first-match / HEAD≡GET policy  
-- Whether `type MyRouter: Router` marker is needed (v0: **no** — any type body)  
-- Multi-clause interaction if user also writes `fn route` by hand  
+1. Typed miss path (`May<String>` or sum) instead of `""`  
+2. `Int64` captures / multi-segment `:id`  
+3. Optional request formal (still userland types)  
+4. Crema dogfood one route (example-only)  
+5. Promote freeze only if keep  
+
+---
+
+## Commits on this branch (checkpoint)
+
+- `dbf2a19` parse + idea note  
+- `9df5760` desugar  
+- `e344190` LSP resolve desugar + tree-sitter HTTP keywords  
+- `8f857a7` let hover shows inferred type  
+
+Base: master at FCF park note (`969b6d7` lineage).
 
 ---
 
 ## Pickup
 
-Branch + this file. Do **not** promote to `docs/specs/` until the experiment
-earns a freeze.
+Branch + this file + `docs/ideas/README.md` row. Do **not** promote to
+`docs/specs/` or capabilities until a keep decision.

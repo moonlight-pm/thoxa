@@ -4,8 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-11 (**D131** multi-clause functions **shipped**; Crema-lite
-Phase A–C; D130 match arm sugar; D129 return inference)
+**As of:** 2026-08-12 (**D131** multi-clause **shipped**; Crema-lite Phase A–C;
+optional branch experiment: type-body route clauses — not product)
 
 ---
 
@@ -30,7 +30,12 @@ import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
 
 1. **Crema-lite Phase D+** only if wanted — still example only; no `std/`.  
 2. Editor only when DX forces it.  
-3. Sample-driven language polish (no open CURRENT language slice).
+3. Sample-driven language polish (no open CURRENT language slice).  
+4. **Optional:** branch `experiment/router-clause-syntax` — type-body
+   `GET "/…"` desugar + LSP (idea
+   [`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md)).
+   **Not** merged / not freeze; keep-or-toss open. Default product path remains
+   Crema + locks above.
 
 ### Proceed order
 
