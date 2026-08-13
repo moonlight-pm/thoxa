@@ -1,10 +1,8 @@
 # Experiment: router clause syntax (type-body `GET` / `PUT` …)
 
-**Status:** **active experiment** — branch `experiment/router-clause-syntax` only.  
+**Status:** **landed on master** (2026-08-13) — compiler surface complete.  
 **Date:** 2026-08-12  
-**Not** a freeze, **not** CURRENT product work, **not** handbook / capabilities
-“shipped.”  
-**Toss:** delete the branch if the tact fails.
+**Not** a freeze, **not** handbook / capabilities “shipped.” No D-id yet.
 
 ---
 
@@ -124,8 +122,8 @@ cargo run -p thoxa -- emit-c scratch/router_clause.thx
 | 9 String/`Response` wrap | **done** | `ok` / pass-through / `notFound` |
 | 10 `Int64` + multi-segment + `req` | **done** | generated helpers; 400 on bad int |
 | 11 Path-match helper in std | **n/a** | generated `__routeSegments` instead |
-| 12 Compiler surface | **done** | ready to merge when wanted |
-| 13 Crema dogfood / freeze | **open** | not compiler; after merge |
+| 12 Compiler surface | **done** | merged to master |
+| 13 Crema dogfood / freeze | **open** | not compiler; not handbook |
 
 ---
 
@@ -170,5 +168,5 @@ Base: master at FCF park note (`969b6d7` lineage).
 
 ## Pickup
 
-Branch + this file + `docs/ideas/README.md` row. Do **not** promote to
+On master. This file + `docs/ideas/README.md` row. Do **not** promote to
 `docs/specs/` or capabilities until a keep decision.
