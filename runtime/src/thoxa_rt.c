@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <ucontext.h>
 #include <unistd.h>
 
 int32_t thoxa_errno(void) {
@@ -1699,4 +1700,221 @@ ThoxaString *thoxa_html_render(const ThoxaHtml *n) {
     ThoxaString *s = thoxa_string_new(b.data ? b.data : "", b.len);
     free(b.data);
     return s;
+}
+
+/* --- Cooperative tasks (M:1 fibers) ------------------------------------ */
+
+#define THOXA_FIBER_STACK (128u * 1024u)
+
+typedef struct ThoxaFiber {
+    ucontext_t ctx;
+    void *stack;
+    void (*fn)(void *);
+    void *data;
+    int64_t wake_at_ns;
+    int done;
+    struct ThoxaFiber *next;
+} ThoxaFiber;
+
+static ucontext_t thoxa_sched_ctx;
+static ThoxaFiber *thoxa_current;
+static ThoxaFiber *thoxa_ready_head;
+static ThoxaFiber *thoxa_ready_tail;
+static ThoxaFiber *thoxa_sleeping;
+static int thoxa_pumping;
+
+static void thoxa_pump(void);
+static void thoxa_wake_due(int64_t now);
+static int64_t thoxa_next_wake_ns(void);
+
+static int64_t thoxa_now_ns(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        thoxa_panic("clock_gettime failed");
+    }
+    return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+}
+
+static void thoxa_nsleep(int64_t ns) {
+    if (ns <= 0) {
+        return;
+    }
+    struct timespec ts;
+    ts.tv_sec = (time_t)(ns / 1000000000LL);
+    ts.tv_nsec = (long)(ns % 1000000000LL);
+    while (nanosleep(&ts, &ts) != 0) {
+        if (errno != EINTR) {
+            break;
+        }
+    }
+}
+
+static void thoxa_enqueue_ready(ThoxaFiber *f) {
+    f->next = NULL;
+    f->wake_at_ns = 0;
+    if (!thoxa_ready_tail) {
+        thoxa_ready_head = thoxa_ready_tail = f;
+    } else {
+        thoxa_ready_tail->next = f;
+        thoxa_ready_tail = f;
+    }
+}
+
+static ThoxaFiber *thoxa_dequeue_ready(void) {
+    ThoxaFiber *f = thoxa_ready_head;
+    if (!f) {
+        return NULL;
+    }
+    thoxa_ready_head = f->next;
+    if (!thoxa_ready_head) {
+        thoxa_ready_tail = NULL;
+    }
+    f->next = NULL;
+    return f;
+}
+
+static void thoxa_fiber_free(ThoxaFiber *f) {
+    free(f->stack);
+    free(f);
+}
+
+static void thoxa_fiber_entry(void) {
+    ThoxaFiber *f = thoxa_current;
+    f->fn(f->data);
+    f->done = 1;
+    swapcontext(&f->ctx, &thoxa_sched_ctx);
+}
+
+static void thoxa_pump(void) {
+    for (;;) {
+        ThoxaFiber *f = thoxa_dequeue_ready();
+        if (!f) {
+            break;
+        }
+        thoxa_current = f;
+        swapcontext(&thoxa_sched_ctx, &f->ctx);
+        thoxa_current = NULL;
+        if (f->done) {
+            thoxa_fiber_free(f);
+        }
+    }
+}
+
+void *thoxa_task_alloc(size_t nbytes) {
+    void *p = malloc(nbytes ? nbytes : 1);
+    if (!p) {
+        thoxa_panic("out of memory");
+    }
+    return p;
+}
+
+void thoxa_task_free(void *ptr) {
+    free(ptr);
+}
+
+void thoxa_task_start(void (*fn)(void *), void *data) {
+    ThoxaFiber *f = (ThoxaFiber *)calloc(1, sizeof(ThoxaFiber));
+    if (!f) {
+        thoxa_panic("out of memory");
+    }
+    f->stack = malloc(THOXA_FIBER_STACK);
+    if (!f->stack) {
+        thoxa_panic("out of memory");
+    }
+    f->fn = fn;
+    f->data = data;
+    if (getcontext(&f->ctx) != 0) {
+        thoxa_panic("getcontext failed");
+    }
+    f->ctx.uc_stack.ss_sp = f->stack;
+    f->ctx.uc_stack.ss_size = THOXA_FIBER_STACK;
+    f->ctx.uc_link = &thoxa_sched_ctx;
+    makecontext(&f->ctx, thoxa_fiber_entry, 0);
+    thoxa_enqueue_ready(f);
+    if (!thoxa_pumping) {
+        thoxa_pumping = 1;
+        thoxa_pump();
+        thoxa_pumping = 0;
+    }
+}
+
+void thoxa_wait_ms(int64_t ms) {
+    if (ms < 0) {
+        ms = 0;
+    }
+    if (!thoxa_current) {
+        /* Host stack: sleep, but keep started tasks moving. */
+        int64_t until = thoxa_now_ns() + ms * 1000000LL;
+        int saved = thoxa_pumping;
+        thoxa_pumping = 1;
+        for (;;) {
+            int64_t now = thoxa_now_ns();
+            thoxa_wake_due(now);
+            thoxa_pump();
+            now = thoxa_now_ns();
+            if (now >= until) {
+                break;
+            }
+            int64_t next = thoxa_next_wake_ns();
+            int64_t slice = until - now;
+            if (next >= 0 && next < until) {
+                slice = next - now;
+            }
+            thoxa_nsleep(slice);
+        }
+        thoxa_pumping = saved;
+        return;
+    }
+    if (ms == 0) {
+        thoxa_enqueue_ready(thoxa_current);
+    } else {
+        thoxa_current->wake_at_ns = thoxa_now_ns() + ms * 1000000LL;
+        thoxa_current->next = thoxa_sleeping;
+        thoxa_sleeping = thoxa_current;
+    }
+    swapcontext(&thoxa_current->ctx, &thoxa_sched_ctx);
+}
+
+static void thoxa_wake_due(int64_t now) {
+    ThoxaFiber *keep = NULL;
+    ThoxaFiber *f = thoxa_sleeping;
+    while (f) {
+        ThoxaFiber *next = f->next;
+        if (f->wake_at_ns <= now) {
+            thoxa_enqueue_ready(f);
+        } else {
+            f->next = keep;
+            keep = f;
+        }
+        f = next;
+    }
+    thoxa_sleeping = keep;
+}
+
+static int64_t thoxa_next_wake_ns(void) {
+    int64_t best = -1;
+    for (ThoxaFiber *f = thoxa_sleeping; f; f = f->next) {
+        if (best < 0 || f->wake_at_ns < best) {
+            best = f->wake_at_ns;
+        }
+    }
+    return best;
+}
+
+void thoxa_sched_drain(void) {
+    int saved = thoxa_pumping;
+    thoxa_pumping = 1;
+    for (;;) {
+        thoxa_wake_due(thoxa_now_ns());
+        thoxa_pump();
+        if (!thoxa_sleeping) {
+            break;
+        }
+        int64_t wake = thoxa_next_wake_ns();
+        int64_t now = thoxa_now_ns();
+        if (wake > now) {
+            thoxa_nsleep(wake - now);
+        }
+    }
+    thoxa_pumping = saved;
 }

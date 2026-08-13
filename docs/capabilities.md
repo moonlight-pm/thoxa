@@ -13,7 +13,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **As of:** 2026-08-13 (D131 multi-clause **shipped**; Crema-lite Phase A–C
 + JSX pages; type-body route clauses + JSX/`Node` **partial** on master — not
-freeze)
+freeze; **`start` tasks** partial on `experiment/implicit-async`)
 
 ---
 
@@ -37,6 +37,7 @@ freeze)
 | mut-assign | `mut` + assign + method field write-back | shipped | `bytes`, `method_field_writeback` | R5, D107 | — | yes |
 | control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops`, `loop_diverge` | D47, D55, **D128** | `loop` without `break` diverges (Never); `while`/`for` still Void | yes |
 | early-return | `return` / `return expr` | shipped | `early_return` | D63 | — | yes |
+| start-tasks | `start name(args)` — begin a call; do not wait | partial | `start_tasks` | experiment/`implicit-async` | No Future / `async` / `run`. Contextual `start` (not a keyword). Free Thoxa fns only (not extern/methods/ctors). Wait primitive is `thoxa_wait_ms` (scratch `extern`), not Net. Accept-loop demo still TARGET. No handbook | no |
 | return-infer | Unannotated free-fn return from body exits | shipped | `return_infer` | **D129**; [`specs/2026-08-10-return-type-inference.md`](specs/2026-08-10-return-type-inference.md) | Unannotated **methods** still default `Void` (not body-inferred yet); recursive/mutual unannotated free fns → annotate; bare Pass/Fail alone → annotate; LSP hover shows free-fn inferred types after lower | yes |
 | array-dyn | Dynamic `Array<T>` (incl. User) + insertAt/removeAt | shipped | `arrays`, `array_user`, `array_heap_elems`, `splice` | D53–D55, D62, D65 | — | yes |
 | array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | ABI scalar elems only (no User fixed-array elems) | yes |

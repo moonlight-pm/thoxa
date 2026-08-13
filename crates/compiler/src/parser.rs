@@ -1460,6 +1460,26 @@ impl Parser {
                 self.bump();
                 parse_string_literal(s, span)
             }
+            TokenKind::Ident(name) if name == "start" && self.at_start_call() => {
+                self.bump(); // `start`
+                let callee = match &self.current().kind {
+                    TokenKind::Ident(n) => n.clone(),
+                    _ => {
+                        return Err(Error::at(
+                            "`start` requires a named call (`start name(args)`)",
+                            self.peek_span(),
+                        ));
+                    }
+                };
+                self.bump();
+                self.expect_kind(&TokenKind::LParen)?;
+                let args = self.parse_arg_list()?;
+                self.expect_kind(&TokenKind::RParen)?;
+                Ok(Expr {
+                    kind: ExprKind::Start { callee, args },
+                    span: Span::new(start.start, self.prev_span().end),
+                })
+            }
             TokenKind::Ident(name) => {
                 let name = name.clone();
                 self.bump();
@@ -2048,6 +2068,17 @@ impl Parser {
 
     fn at(&self, kind: TokenKind) -> bool {
         std::mem::discriminant(&self.current().kind) == std::mem::discriminant(&kind)
+    }
+
+    /// Contextual `start name(` — `start` stays a normal ident otherwise.
+    fn at_start_call(&self) -> bool {
+        matches!(
+            (
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                self.tokens.get(self.pos + 2).map(|t| &t.kind),
+            ),
+            (Some(TokenKind::Ident(_)), Some(TokenKind::LParen))
+        )
     }
 
     /// Whether the current token can begin an expression (for optional `return` value).
@@ -2793,6 +2824,50 @@ mod tests {
         "#,
         );
         assert_eq!(module.items.len(), 1);
+    }
+
+    #[test]
+    fn parse_start_call() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                start slow("A")
+                0
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        match &f.body.items[0] {
+            BlockItem::Expr(e) => match &e.kind {
+                ExprKind::Start { callee, args } => {
+                    assert_eq!(callee, "slow");
+                    assert_eq!(args.len(), 1);
+                }
+                other => panic!("expected start, got {other:?}"),
+            },
+            other => panic!("expected expr stmt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_start_as_name_still_works() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let start = 1
+                start
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        match &f.body.items[0] {
+            BlockItem::Let { name, .. } => assert_eq!(name, "start"),
+            other => panic!("expected let start, got {other:?}"),
+        }
     }
 
     #[test]

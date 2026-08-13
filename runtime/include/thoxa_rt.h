@@ -88,6 +88,17 @@ typedef struct ThoxaShellState {
 /* pipe(2) wrapper — low-level; prefer thoxa_pipeline for session pipelines. */
 int32_t thoxa_pipe(int32_t fds_out[2]);
 
+/*
+ * Cooperative tasks (experiment/implicit-async). One OS thread; `start` enqueues
+ * a thunk; `thoxa_wait_ms` parks the current task; `thoxa_sched_drain` runs
+ * until idle. Generated `main` drains after `thoxa_fn_main`.
+ */
+void thoxa_task_start(void (*fn)(void *), void *data);
+void *thoxa_task_alloc(size_t nbytes);
+void thoxa_task_free(void *ptr);
+void thoxa_wait_ms(int64_t ms);
+void thoxa_sched_drain(void);
+
 /* --- Heap header (RC) --------------------------------------------------- */
 
 typedef struct ThoxaHeader {

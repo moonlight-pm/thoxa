@@ -4,28 +4,33 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-13 (**D131** multi-clause **shipped**; Crema-lite Phase A–C
-+ pages on **JSX `Node`**; type-body route clauses + **JSX / builtin `Node`**
-**on master**, not freeze / not handbook)
+**As of:** 2026-08-13 (**branch `experiment/implicit-async`** — colorless
+wait + `start`; Crema-lite and D131 remain as on master)
 
 ---
 
 ## Now
 
-**Active experiment — `examples/http` Crema-lite:** Phase A–C done
-(`server.serve(routes.app())`); routing is type-body `GET`/`POST` on `Routes`
-+ `App.handle` static fallback; pages are JSX `Node`. Charter:
-[`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
-**Hard rule:** **do not add to `std/`** for this experiment.
+**Active experiment — implicit wait + `start`** (this branch). User model:
+JS with `async`/`await` erased; calls stay sequential; `start name(args)` is
+the omitted `await`. No Future values, no `run()`, no FCF. Living review
+(gitignored, run locally):
 
+```bash
+cargo run -p thoxa -- run scratch/async.thx
+```
+
+**Hard rules for this experiment:** keep the review in **one** `scratch/async.thx`
+(flip TARGET → live there; do not add a second demo). Do **not** grow `std/`
+until the scratch file forces it. No D-id / freeze / handbook until we say so.
+
+**Parked on this branch:** Crema-lite Phase D+ (still example-only on master).
 **Session / shell remains deferred.**
 
-**Shipped recently:** **multi-clause functions** (**D131** + `multi_clause`);
-Crema-lite **Phase A–C**; **match arm sugar** (**D130**); **return-type
-inference** (**D129** + LSP hover); **diverging `loop`** (**D128**); **combined
-import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
-(**D125**); LSP nav; **D124** diagnostics. Agent-only ideas parked:
-[`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
+**Shipped on master (unchanged):** **multi-clause functions** (**D131**);
+Crema-lite **Phase A–C**; JSX `Node` + route clauses (not freeze); **D130**
+match arms; **D129** return inference; **D128** diverging `loop`; **D127**
+combined import; **D126** Io/Net/Http; **D125** Logging; **D124** diagnostics.
 
 **On master, not product:**
 
@@ -41,16 +46,18 @@ import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
 
 **In progress / next:**
 
-1. **Crema-lite** — pages are on `Node` tags. Phase D+ only if useful. Still
-   example only; no `std/`.  
-2. Editor only when DX forces it.  
-3. Sample-driven language polish (no open CURRENT language slice).
+1. **Implicit wait + `start`** — section 2 of `scratch/async.thx` is **live**
+   (`start slow("A")` / `start slow("B")` overlap). Next: section 3 accept-loop
+   shape (started `serveOne` with a waiting recv), then Net park if the file
+   forces it.  
+2. Crema-lite Phase D+ only if useful (parked while this branch is Now).  
+3. Editor only when DX forces it.
 
 ### Proceed order
 
-1. **Crema-lite experiment** — next open checklist step in
-   [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   (all work under `examples/http/`; no `std/`).  
+1. **This experiment** — next slice is whatever makes the next TARGET
+   block in `scratch/async.thx` live. Scratch-only until that file needs
+   `std/` or a wait primitive in `thoxa_rt`.  
 2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
@@ -64,13 +71,14 @@ import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
    a CURRENT line until samples force it.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
-conformance green-ups. **`std/` growth is on hold for the Crema experiment** —
-helpers go in `examples/http/`. (Other product slices may still grow std when
-CURRENT explicitly allows it outside this experiment.)
+conformance green-ups. **`std/` growth is on hold** for Crema *and* for this
+async experiment — helpers stay in `scratch/async.thx` (or `examples/http/`
+for Crema) until CURRENT allows otherwise.
 
 **Explicit holds:**
 
-- **`std/` growth for the Crema-lite experiment** (user lock — example-only)
+- **`std/` growth** for Crema-lite and for this async experiment (scratch-only
+  until the review file forces a primitive)
 - **All session / shell residual** (parked by user direction)
 - Inventing shell dialect (`if`/`for`/full `$` forest)
 - Tree-walk product interpreter or QBE path (phase A)
@@ -123,7 +131,7 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 3. [`docs/capabilities.md`](docs/capabilities.md) — rows for the slice  
 4. One freeze if building that domain  
 5. [`docs/decisions.md`](docs/decisions.md) only when reopening surface  
-6. If Crema experiment: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
+6. If this branch: `scratch/async.thx` (living review; gitignored)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.
