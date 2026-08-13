@@ -8,6 +8,7 @@
 ; tokens in Zed's `combined` highlighting mode.
 
 (keyword) @keyword
+((operator) @keyword (#eq? @keyword "-->"))
 (boolean) @constant.builtin
 (type_identifier) @type
 (identifier) @variable

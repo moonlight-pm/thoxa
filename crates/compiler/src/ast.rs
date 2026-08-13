@@ -277,6 +277,12 @@ pub enum ExprKind {
         callee: String,
         args: Vec<Arg>,
     },
+    /// `--> name(args)` — begin the call; do not wait (experiment/implicit-async).
+    Start {
+        callee: String,
+        callee_span: Span,
+        args: Vec<Arg>,
+    },
     /// `recv.field` or `recv.method(…)` after postfix lowering.
     Field {
         base: Box<Expr>,

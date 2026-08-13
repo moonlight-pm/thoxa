@@ -4,31 +4,28 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-13 (**D131** multi-clause **shipped**; Crema-lite Phase A–C
-+ pages on **JSX `Node`**; type-body route clauses + **JSX / builtin `Node`**
-**on master**, not freeze / not handbook)
+**As of:** 2026-08-13 (`-->` nowait **on master**, not freeze / not handbook;
+Crema-lite Phase A–C + JSX `Node`; D131 multi-clause)
 
 ---
 
 ## Now
 
-**Active experiment — `examples/http` Crema-lite:** Phase A–C done
-(`server.serve(routes.app())`); routing is type-body `GET`/`POST` on `Routes`
-+ `App.handle` static fallback; pages are JSX `Node`. Charter:
-[`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
-**Hard rule:** **do not add to `std/`** for this experiment.
-
 **Session / shell remains deferred.**
 
-**Shipped recently:** **multi-clause functions** (**D131** + `multi_clause`);
+**Shipped recently:** **`-->` nowait** (colorless wait; Net parks; Crema
+`--> serveOne` + keep-alive); **multi-clause functions** (**D131**);
 Crema-lite **Phase A–C**; **match arm sugar** (**D130**); **return-type
-inference** (**D129** + LSP hover); **diverging `loop`** (**D128**); **combined
-import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
-(**D125**); LSP nav; **D124** diagnostics. Agent-only ideas parked:
-[`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
+inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
+**combined import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**);
+**`std/Logging`** (**D125**); LSP nav; **D124** diagnostics.
 
 **On master, not product:**
 
+- Colorless wait + **`--> name(args)`** (capability `start-tasks` **partial**).
+  No Future / `async` / `run`. Token only (not a word). `--> { }` later.
+  No D-id / handbook. Crema dogfoods it. Review: `scratch/async.thx`
+  (gitignored).
 - Type-body `GET "/…"` desugar + LSP (idea
   [`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md);
   capability `route-clauses` **partial**). No D-id / handbook. Crema dogfoods
@@ -41,8 +38,7 @@ import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
 
 **In progress / next:**
 
-1. **Crema-lite** — pages are on `Node` tags. Phase D+ only if useful. Still
-   example only; no `std/`.  
+1. **Crema-lite** — Phase D+ only if useful. Still example only; no `std/`.  
 2. Editor only when DX forces it.  
 3. Sample-driven language polish (no open CURRENT language slice).
 

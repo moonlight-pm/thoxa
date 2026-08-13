@@ -567,6 +567,17 @@ pub fn semantic_tokens(text: &str) -> Vec<SemanticToken> {
                 tag_name_pending = false;
                 continue;
             }
+            TokenKind::Nowait => {
+                let range = span::span_to_range(text, tokens[i].span);
+                out.push(SemanticToken {
+                    line: range.start.line,
+                    character: range.start.character,
+                    length: 3,
+                    token_type: "keyword".into(),
+                    modifiers: 0,
+                });
+                continue;
+            }
             TokenKind::Ident(_) => {}
             _ => continue,
         }
@@ -1287,6 +1298,21 @@ fn main() -> Int64 {
             diags[0].message.contains("unreachable"),
             "{}",
             diags[0].message
+        );
+    }
+
+    #[test]
+    fn semantic_tokens_nowait_is_keyword() {
+        let src = "fn main() { --> serveOne(peer) }\n";
+        let toks = semantic_tokens(src);
+        assert!(
+            toks.iter().any(|t| t.token_type == "keyword" && t.length == 3),
+            "--> should be keyword: {toks:?}"
+        );
+        assert!(
+            toks.iter()
+                .any(|t| t.token_type == "function" && t.length == 8),
+            "serveOne should stay a function: {toks:?}"
         );
     }
 

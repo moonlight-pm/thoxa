@@ -218,7 +218,15 @@ pub fn emit_program_with(
             }
             emit_local_decl(&mut out, name, ty);
         }
-        emit_stmts(&mut out, &program.init, 1, &program.types);
+        let mut init_start = 0usize;
+        emit_stmts(
+            &mut out,
+            &program.init,
+            1,
+            &program.types,
+            &mut init_start,
+            "module_init",
+        );
         out.push_str("}\n\n");
     }
 
@@ -251,6 +259,7 @@ pub fn emit_program_with(
                 out.push_str("    ThoxaArray *thoxa_args = thoxa_argv_to_array(argc, argv);\n");
                 out.push_str("    int64_t thoxa_rc = thoxa_fn_main(thoxa_args);\n");
                 out.push_str("    thoxa_array_drop(thoxa_args);\n");
+                out.push_str("    thoxa_sched_drain();\n");
                 out.push_str("    return (int)thoxa_rc;\n");
                 out.push_str("}\n");
             } else {
@@ -258,7 +267,9 @@ pub fn emit_program_with(
                 if has_init {
                     out.push_str("    thoxa_module_init();\n");
                 }
-                out.push_str("    return (int)thoxa_fn_main();\n");
+                out.push_str("    int64_t thoxa_rc = thoxa_fn_main();\n");
+                out.push_str("    thoxa_sched_drain();\n");
+                out.push_str("    return (int)thoxa_rc;\n");
                 out.push_str("}\n");
             }
         }
@@ -297,6 +308,7 @@ fn emit_session_step_fn(out: &mut String) {
     out.push_str("    shell.f_status = state->status;\n");
     // D107: method receivers are pointers.
     out.push_str("    shell = thoxa_m_Shell_step(&shell);\n");
+    out.push_str("    thoxa_sched_drain();\n");
     out.push_str("    state->status = shell.f_status;\n");
     out.push_str("    return state->status;\n");
     out.push_str("}\n");
@@ -490,6 +502,20 @@ fn emit_function(
     global_names: &HashSet<String>,
     types: &[TypeLayout],
 ) {
+    let mut starts: Vec<&Stmt> = Vec::new();
+    collect_starts(&f.body, &mut starts);
+    for (i, s) in starts.iter().enumerate() {
+        if let Stmt::Start {
+            callee,
+            arg_tys,
+            ret_ty,
+            ..
+        } = s
+        {
+            emit_start_thunk(out, &f.name, i, callee, arg_tys, ret_ty, types);
+        }
+    }
+
     let c_name = c_fn_name(f);
     let ret = c_ty(&f.ret_ty);
     let _ = write!(out, "{ret} {c_name}(");
@@ -522,7 +548,8 @@ fn emit_function(
         emit_local_decl(out, name, ty);
     }
 
-    emit_stmts(out, &f.body, 1, types);
+    let mut start_id = 0usize;
+    emit_stmts(out, &f.body, 1, types, &mut start_id, &f.name);
 
     match (&f.ret, &f.ret_ty) {
         (Some(_), Ty::Void) | (Some(_), Ty::Never) => {}
@@ -592,7 +619,8 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
             | Stmt::IndexAssign { .. }
             | Stmt::DynIndexAssign { .. }
             | Stmt::FixedIndexAssign { .. }
-            | Stmt::Eval(_) => {}
+            | Stmt::Eval(_)
+            | Stmt::Start { .. } => {}
             Stmt::If {
                 then_body,
                 else_body,
@@ -614,7 +642,164 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
 
 // Note: FieldAssign/IndexAssign do not introduce new locals.
 
-fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayout]) {
+fn start_label(fn_name: &str) -> String {
+    fn_name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+fn emit_start_thunk(
+    out: &mut String,
+    fn_name: &str,
+    id: usize,
+    callee: &Callee,
+    arg_tys: &[Ty],
+    ret_ty: &Ty,
+    types: &[TypeLayout],
+) {
+    let label = start_label(fn_name);
+    let pack = format!("thoxa_pack_{label}_{id}");
+    let thunk = format!("thoxa_thunk_{label}_{id}");
+    let _ = writeln!(out, "typedef struct {pack} {{");
+    for (i, ty) in arg_tys.iter().enumerate() {
+        let _ = writeln!(out, "    {} a{i};", c_ty(ty));
+    }
+    if arg_tys.is_empty() {
+        out.push_str("    int unused;\n");
+    }
+    let _ = writeln!(out, "}} {pack};");
+    let _ = writeln!(out, "static void {thunk}(void *data) {{");
+    if arg_tys.is_empty() {
+        out.push_str("    (void)data;\n");
+    } else {
+        let _ = writeln!(out, "    {pack} *p = ({pack} *)data;");
+    }
+    match callee {
+        Callee::User(name) => {
+            let cfn = c_free_fn_name(name);
+            if *ret_ty == Ty::Void || *ret_ty == Ty::Never {
+                let _ = write!(out, "    {cfn}(");
+                for i in 0..arg_tys.len() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    let _ = write!(out, "p->a{i}");
+                }
+                out.push_str(");\n");
+            } else {
+                let _ = writeln!(out, "    {} ret;", c_ty(ret_ty));
+                let _ = write!(out, "    ret = {cfn}(");
+                for i in 0..arg_tys.len() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    let _ = write!(out, "p->a{i}");
+                }
+                out.push_str(");\n");
+                if needs_drop_ty(ret_ty) {
+                    emit_rc(
+                        out,
+                        "    ",
+                        &crate::mir::Place {
+                            name: "ret".into(),
+                        },
+                        ret_ty,
+                        false,
+                        types,
+                    );
+                }
+            }
+        }
+        _ => {
+            out.push_str("    (void)data;\n");
+        }
+    }
+    for (i, ty) in arg_tys.iter().enumerate() {
+        if needs_drop_ty(ty) {
+            emit_rc(
+                out,
+                "    ",
+                &crate::mir::Place {
+                    name: format!("p->a{i}"),
+                },
+                ty,
+                false,
+                types,
+            );
+        }
+    }
+    if !arg_tys.is_empty() {
+        out.push_str("    thoxa_task_free(p);\n");
+    }
+    out.push_str("}\n\n");
+}
+
+fn emit_start_site(
+    out: &mut String,
+    pad: &str,
+    fn_name: &str,
+    id: usize,
+    args: &[crate::mir::Place],
+    arg_tys: &[Ty],
+    types: &[TypeLayout],
+) {
+    let label = start_label(fn_name);
+    let pack = format!("thoxa_pack_{label}_{id}");
+    let thunk = format!("thoxa_thunk_{label}_{id}");
+    if arg_tys.is_empty() {
+        let _ = writeln!(out, "{pad}thoxa_task_start({thunk}, NULL);");
+        return;
+    }
+    let _ = writeln!(
+        out,
+        "{pad}{pack} *thoxa_p{id} = ({pack} *)thoxa_task_alloc(sizeof({pack}));"
+    );
+    for (i, (arg, ty)) in args.iter().zip(arg_tys.iter()).enumerate() {
+        let _ = writeln!(out, "{pad}thoxa_p{id}->a{i} = {};", arg.name);
+        if needs_drop_ty(ty) {
+            emit_rc(
+                out,
+                pad,
+                &crate::mir::Place {
+                    name: format!("thoxa_p{id}->a{i}"),
+                },
+                ty,
+                true,
+                types,
+            );
+        }
+    }
+    let _ = writeln!(out, "{pad}thoxa_task_start({thunk}, thoxa_p{id});");
+}
+
+fn collect_starts<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
+    for s in stmts {
+        match s {
+            Stmt::Start { .. } => out.push(s),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_starts(then_body, out);
+                collect_starts(else_body, out);
+            }
+            Stmt::Loop { body } => collect_starts(body, out),
+            Stmt::ForRange { body, .. } => collect_starts(body, out),
+            _ => {}
+        }
+    }
+}
+
+fn emit_stmts(
+    out: &mut String,
+    stmts: &[Stmt],
+    indent: usize,
+    types: &[TypeLayout],
+    start_id: &mut usize,
+    fn_label: &str,
+) {
     let pad = "    ".repeat(indent);
     for s in stmts {
         match s {
@@ -798,24 +983,30 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                 emit_rvalue(out, rv, types);
                 out.push_str(";\n");
             }
+            Stmt::Start {
+                args, arg_tys, ..
+            } => {
+                emit_start_site(out, &pad, fn_label, *start_id, args, arg_tys, types);
+                *start_id += 1;
+            }
             Stmt::If {
                 cond,
                 then_body,
                 else_body,
             } => {
                 let _ = writeln!(out, "{pad}if ({}) {{", cond.name);
-                emit_stmts(out, then_body, indent + 1, types);
+                emit_stmts(out, then_body, indent + 1, types, start_id, fn_label);
                 if else_body.is_empty() {
                     let _ = writeln!(out, "{pad}}}");
                 } else {
                     let _ = writeln!(out, "{pad}}} else {{");
-                    emit_stmts(out, else_body, indent + 1, types);
+                    emit_stmts(out, else_body, indent + 1, types, start_id, fn_label);
                     let _ = writeln!(out, "{pad}}}");
                 }
             }
             Stmt::Loop { body } => {
                 let _ = writeln!(out, "{pad}while (1) {{");
-                emit_stmts(out, body, indent + 1, types);
+                emit_stmts(out, body, indent + 1, types, start_id, fn_label);
                 let _ = writeln!(out, "{pad}}}");
             }
             Stmt::ForRange {
@@ -831,7 +1022,7 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                     "{pad}for (; {} {} {}; {} = {} + INT64_C(1)) {{",
                     index.name, cmp, end.name, index.name, index.name
                 );
-                emit_stmts(out, body, indent + 1, types);
+                emit_stmts(out, body, indent + 1, types, start_id, fn_label);
                 let _ = writeln!(out, "{pad}}}");
             }
             Stmt::Break => {

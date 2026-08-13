@@ -1,0 +1,15 @@
+## `--> name(args)` runs the call as a task; process waits until idle.
+## No wait points here, so each task runs to completion when started.
+import logging, { info } from "std/Logging"
+
+fn tick(label!: String) {
+    info(label)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    --> tick("a")
+    --> tick("b")
+    0
+}

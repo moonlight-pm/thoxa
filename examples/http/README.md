@@ -91,5 +91,7 @@ Path captures (`:slug`) are clause formals. HTML handlers return `Response`
 - Grow `framework/`, not `std/`, for this experiment.
 - App code = routes/views/domain only.
 - Ideal later: fn values → zero framework→app imports.
-- Host is **one accept at a time**. Accepted sockets get a 200ms recv
-  timeout so a browser’s idle extra connection cannot stall every other tab.
+- Host **`--> serveOne` per accept**. An idle browser socket parks in
+  `recv` and does not stall other tabs (experiment/implicit-async). HTTP/1.1
+  keep-alive: one started peer can serve several requests. Routes and
+  `App.handle` stay ordinary functions.

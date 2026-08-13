@@ -1,0 +1,4 @@
+recv A
+send A
+recv B
+send B

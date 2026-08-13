@@ -77,6 +77,21 @@ let c = 'a'
   (char))
 
 ==================
+nowait call
+==================
+
+--> serveOne(peer)
+
+---
+
+(source_file
+  (operator)
+  (identifier)
+  (bracket)
+  (identifier)
+  (bracket))
+
+==================
 bitwise operators
 ==================
 

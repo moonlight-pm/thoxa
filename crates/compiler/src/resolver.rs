@@ -525,6 +525,7 @@ impl<'a> Resolver<'a> {
                 Self::binding_nav_ty(self.res.bindings.get(&id)?)
             }
             ExprKind::Call { callee, .. } => self.call_result_nav_ty(callee, scope),
+            ExprKind::Start { .. } => None,
             // `p.moved().x` / `b.get().x` — method return after type-param subst.
             ExprKind::MethodCall {
                 receiver, method, ..
@@ -934,6 +935,15 @@ impl<'a> Resolver<'a> {
                 let callee_span = Span::new(expr.span.start, expr.span.start + callee.len());
                 let bid = self.lookup(scope, callee);
                 self.add_ref(callee_span, bid, RefCtx::Call);
+                self.walk_args(args, scope, bid);
+            }
+            ExprKind::Start {
+                callee,
+                callee_span,
+                args,
+            } => {
+                let bid = self.lookup(scope, callee);
+                self.add_ref(*callee_span, bid, RefCtx::Call);
                 self.walk_args(args, scope, bid);
             }
             ExprKind::Field {

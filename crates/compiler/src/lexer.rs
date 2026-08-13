@@ -48,6 +48,8 @@ pub enum TokenKind {
     RAngle,
     /// Thin arrow `->` (return types, etc.).
     Arrow,
+    /// Nowait `-->` (begin a call; do not wait).
+    Nowait,
     /// Fat arrow `=>` (single-expression match arm body).
     FatArrow,
     Colon,
@@ -178,6 +180,9 @@ impl<'a> Lexer<'a> {
             b'|' => self.simple(TokenKind::Pipe, start, 1),
             b'^' => self.simple(TokenKind::Caret, start, 1),
             b'~' => self.simple(TokenKind::Tilde, start, 1),
+            b'-' if self.peek(1) == Some(b'-') && self.peek(2) == Some(b'>') => {
+                self.simple(TokenKind::Nowait, start, 3)
+            }
             b'-' if self.peek(1) == Some(b'>') => self.simple(TokenKind::Arrow, start, 2),
             b'-' => self.simple(TokenKind::Minus, start, 1),
             b'=' if self.peek(1) == Some(b'>') => self.simple(TokenKind::FatArrow, start, 2),
@@ -425,6 +430,17 @@ mod tests {
         let tokens = Lexer::new(src).tokenize().unwrap();
         assert!(matches!(tokens[0].kind, TokenKind::Fn));
         assert!(matches!(tokens[1].kind, TokenKind::Ident(ref s) if s == "main"));
+    }
+
+    #[test]
+    fn nowait_is_not_arrow() {
+        let tokens = Lexer::new("--> foo() -> Int64").tokenize().unwrap();
+        assert!(matches!(tokens[0].kind, TokenKind::Nowait));
+        assert!(matches!(tokens[1].kind, TokenKind::Ident(ref s) if s == "foo"));
+        assert!(matches!(
+            tokens.iter().find(|t| matches!(t.kind, TokenKind::Arrow)),
+            Some(_)
+        ));
     }
 
     #[test]

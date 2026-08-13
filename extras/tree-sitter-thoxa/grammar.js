@@ -152,6 +152,7 @@ module.exports = grammar({
 
     operator: _ => choice(
       // Longer forms first so the lexer prefers them over prefixes.
+      '-->',
       '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '=>', '->', '..=', '...',
       '..', '<<', '>>',
       '+', '-', '*', '/', '%', '<', '>', '=', '?', '|', '&', '^', '~', '!', '.',

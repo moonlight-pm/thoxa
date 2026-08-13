@@ -158,6 +158,13 @@ pub enum Stmt {
         place: Place,
         ty: Ty,
     },
+    /// `--> name(args)` — enqueue a task; do not wait for the result.
+    Start {
+        callee: Callee,
+        args: Vec<Place>,
+        arg_tys: Vec<Ty>,
+        ret_ty: Ty,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -2966,7 +2973,7 @@ fn collect_local_fn_calls(block: &Block, out: &mut HashSet<String>) {
 
 fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
     match &expr.kind {
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args } | ExprKind::Start { callee, args, .. } => {
             out.insert(callee.clone());
             for a in args {
                 match a {
@@ -5310,6 +5317,11 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
             callee: callee.clone(),
             args: args.iter().map(|a| subst_arg(a, subst)).collect(),
         },
+        ExprKind::Start { callee, callee_span, args } => ExprKind::Start {
+            callee: callee.clone(),
+            callee_span: *callee_span,
+            args: args.iter().map(|a| subst_arg(a, subst)).collect(),
+        },
         ExprKind::Field {
             base,
             name,
@@ -6198,6 +6210,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         }
         ExprKind::Binary { op, left, right } => lower_binary(ctx, *op, left, right, expr.span),
         ExprKind::Call { callee, args } => lower_call(ctx, callee, args, expr.span, expect),
+        ExprKind::Start { callee, args, .. } => lower_start(ctx, callee, args, expr.span),
         ExprKind::Field {
             base,
             name,
@@ -6473,9 +6486,11 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
         ExprKind::Binary { left, right, .. } => {
             expr_has_break(left, depth) || expr_has_break(right, depth)
         }
-        ExprKind::Call { args, .. } => args.iter().any(|a| match a {
-            Arg::Pos(e) | Arg::Named { value: e, .. } => expr_has_break(e, depth),
-        }),
+        ExprKind::Call { args, .. } | ExprKind::Start { args, .. } => {
+            args.iter().any(|a| match a {
+                Arg::Pos(e) | Arg::Named { value: e, .. } => expr_has_break(e, depth),
+            })
+        }
         ExprKind::MethodCall { receiver, args, .. } => {
             expr_has_break(receiver, depth)
                 || args.iter().any(|a| match a {
@@ -8898,7 +8913,7 @@ fn materialize_expr_typespace(
             materialize_expr_typespace(left, types, layouts, name_map, def_mod)?;
             materialize_expr_typespace(right, types, layouts, name_map, def_mod)?;
         }
-        ExprKind::Call { args, .. } => {
+        ExprKind::Call { args, .. } | ExprKind::Start { args, .. } => {
             for a in args {
                 materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
             }
@@ -10981,6 +10996,49 @@ fn lower_call(
             emit_call_result(ctx, callee, arg_places, sig.ret)
         }
     }
+}
+
+fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    if ctx.resolve_type_name(callee).is_some() {
+        return Err(Error::at(
+            format!("`-->` requires a function, not type `{callee}`"),
+            span,
+        ));
+    }
+    let mangled = ctx
+        .name_to_fn
+        .get(callee)
+        .cloned()
+        .unwrap_or_else(|| callee.to_string());
+    let sig = ctx
+        .fns
+        .get(&mangled)
+        .ok_or_else(|| Error::at(format!("unknown function `{callee}`"), span))?
+        .clone();
+    if sig.extern_symbol.is_some() {
+        return Err(Error::at(
+            format!("`-->` requires a Thoxa function (not extern `{callee}`)"),
+            span,
+        ));
+    }
+    let arg_places = resolve_call_args_with_defaults(
+        ctx,
+        &sig.params,
+        &sig.defaults,
+        args,
+        span,
+        &sig.def_mod,
+    )?;
+    let arg_tys: Vec<Ty> = sig.params.iter().map(|(_, t)| t.clone()).collect();
+    ctx.stmts.push(Stmt::Start {
+        callee: Callee::User(sig.mangled.clone()),
+        args: arg_places,
+        arg_tys,
+        ret_ty: sig.ret,
+    });
+    let p = ctx.fresh("u");
+    ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
+    Ok((p, Ty::Void))
 }
 
 /// Coerce a place to a target type when a conversion is defined (FFI integer widths).
