@@ -158,7 +158,7 @@ pub enum Stmt {
         place: Place,
         ty: Ty,
     },
-    /// `start name(args)` — enqueue a task; do not wait for the result.
+    /// `--> name(args)` — enqueue a task; do not wait for the result.
     Start {
         callee: Callee,
         args: Vec<Place>,
@@ -2973,7 +2973,7 @@ fn collect_local_fn_calls(block: &Block, out: &mut HashSet<String>) {
 
 fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
     match &expr.kind {
-        ExprKind::Call { callee, args } | ExprKind::Start { callee, args } => {
+        ExprKind::Call { callee, args } | ExprKind::Start { callee, args, .. } => {
             out.insert(callee.clone());
             for a in args {
                 match a {
@@ -5317,8 +5317,9 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
             callee: callee.clone(),
             args: args.iter().map(|a| subst_arg(a, subst)).collect(),
         },
-        ExprKind::Start { callee, args } => ExprKind::Start {
+        ExprKind::Start { callee, callee_span, args } => ExprKind::Start {
             callee: callee.clone(),
+            callee_span: *callee_span,
             args: args.iter().map(|a| subst_arg(a, subst)).collect(),
         },
         ExprKind::Field {
@@ -6209,7 +6210,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         }
         ExprKind::Binary { op, left, right } => lower_binary(ctx, *op, left, right, expr.span),
         ExprKind::Call { callee, args } => lower_call(ctx, callee, args, expr.span, expect),
-        ExprKind::Start { callee, args } => lower_start(ctx, callee, args, expr.span),
+        ExprKind::Start { callee, args, .. } => lower_start(ctx, callee, args, expr.span),
         ExprKind::Field {
             base,
             name,
@@ -11000,7 +11001,7 @@ fn lower_call(
 fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
     if ctx.resolve_type_name(callee).is_some() {
         return Err(Error::at(
-            format!("`start` requires a function, not type `{callee}`"),
+            format!("`-->` requires a function, not type `{callee}`"),
             span,
         ));
     }
@@ -11016,7 +11017,7 @@ fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Re
         .clone();
     if sig.extern_symbol.is_some() {
         return Err(Error::at(
-            format!("`start` requires a Thoxa function (not extern `{callee}`)"),
+            format!("`-->` requires a Thoxa function (not extern `{callee}`)"),
             span,
         ));
     }

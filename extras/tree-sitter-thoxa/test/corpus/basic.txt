@@ -77,15 +77,15 @@ let c = 'a'
   (char))
 
 ==================
-start call
+nowait call
 ==================
 
-start serveOne(peer)
+--> serveOne(peer)
 
 ---
 
 (source_file
-  (keyword)
+  (operator)
   (identifier)
   (bracket)
   (identifier)

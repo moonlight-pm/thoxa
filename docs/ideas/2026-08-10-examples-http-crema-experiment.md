@@ -186,7 +186,7 @@ after A–C.
 **As of last update:** **Phase A–C complete** + layered **`framework/` / `app/`**
 with **`server.serve(routes.app())`**. Routing is type-body **`GET`/`POST`
 clauses** on `Routes` + **`App.handle`** static fallback. **Pages are JSX
-`Node`**. Host **`start serveOne`** + HTTP/1.1 keep-alive (implicit-async; no recv timeout).
+`Node`**. Host **`--> serveOne`** + HTTP/1.1 keep-alive (implicit-async; no recv timeout).
 Next is Phase D+ only if wanted — still no `std/` growth.
 
 ### Language / design notes (experiment)
@@ -198,5 +198,5 @@ Next is Phase D+ only if wanted — still no `std/` growth.
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
 | `server.serve(app)` needs typed `App` without fn values | Framework imports **`App` type only** from `app/Routes` | Ideal: **trait** or free **fn pointer** (no capture); full FCF parked |
-| Single-threaded `accept` + blocking `recv` | **`start serveOne`** + HTTP/1.1 keep-alive loop (implicit-async); 200ms `SO_RCVTIMEO` removed | — |
+| Single-threaded `accept` + blocking `recv` | **`--> serveOne`** + HTTP/1.1 keep-alive loop (implicit-async); 200ms `SO_RCVTIMEO` removed | — |
 | String path table → dispatch | **Type-body `GET`/`POST` clauses** → generated `route(req)` | Miss is `notFound()` (no fallthrough); `handle` treats 404 as static try. Query/body still example-stitched onto `Request`. Host boundary still `App` |

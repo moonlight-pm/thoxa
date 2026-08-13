@@ -1,4 +1,4 @@
-## `start name(args)` runs the call as a task; process waits until idle.
+## `--> name(args)` runs the call as a task; process waits until idle.
 ## No wait points here, so each task runs to completion when started.
 import logging, { info } from "std/Logging"
 
@@ -9,7 +9,7 @@ fn tick(label!: String) {
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
-    start tick("a")
-    start tick("b")
+    --> tick("a")
+    --> tick("b")
     0
 }

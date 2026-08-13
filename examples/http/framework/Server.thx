@@ -164,7 +164,7 @@ export fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
 }
 
 ## Run the host forever. `app` is the application object (handle per request).
-## `start serveOne` is the omitted await: an idle peer parks in recv without
+## `--> serveOne` is the omitted await: an idle peer parks in recv without
 ## stalling accept (experiment/implicit-async). `handle` stays ordinary.
 export fn serve(app!: App) -> Trial<Void, String> {
     let port = app.port
@@ -177,7 +177,7 @@ export fn serve(app!: App) -> Trial<Void, String> {
                 warn("accept: {e}")
             }
             Pass(peer) {
-                start serveOne(peer, app)
+                --> serveOne(peer, app)
             }
         }
     }

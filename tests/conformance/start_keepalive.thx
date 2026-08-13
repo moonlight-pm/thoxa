@@ -21,7 +21,7 @@ fn run() -> Trial<Void, String> {
     listener.bind(0)?
     listener.listen(4)?
     let port = listener.localPort()?
-    start acceptEcho(listener)
+    --> acceptEcho(listener)
     let c = createSocket()?
     c.connect(port)?
     c.sendAll(Bytes.fromString("a"))?

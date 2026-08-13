@@ -937,12 +937,13 @@ impl<'a> Resolver<'a> {
                 self.add_ref(callee_span, bid, RefCtx::Call);
                 self.walk_args(args, scope, bid);
             }
-            ExprKind::Start { callee, args } => {
-                // `start name(` — callee starts after the `start ` prefix.
-                let name_start = expr.span.start + "start ".len();
-                let callee_span = Span::new(name_start, name_start + callee.len());
+            ExprKind::Start {
+                callee,
+                callee_span,
+                args,
+            } => {
                 let bid = self.lookup(scope, callee);
-                self.add_ref(callee_span, bid, RefCtx::Call);
+                self.add_ref(*callee_span, bid, RefCtx::Call);
                 self.walk_args(args, scope, bid);
             }
             ExprKind::Field {

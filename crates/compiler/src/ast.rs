@@ -277,10 +277,10 @@ pub enum ExprKind {
         callee: String,
         args: Vec<Arg>,
     },
-    /// `start name(args)` — begin the call; do not wait (experiment/implicit-async).
-    /// Contextual: `start` is not a keyword; only this form is special.
+    /// `--> name(args)` — begin the call; do not wait (experiment/implicit-async).
     Start {
         callee: String,
+        callee_span: Span,
         args: Vec<Arg>,
     },
     /// `recv.field` or `recv.method(…)` after postfix lowering.

@@ -5,15 +5,16 @@
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-08-13 (**branch `experiment/implicit-async`** — colorless
-wait + `start`; Crema-lite and D131 remain as on master)
+wait + `-->`; Crema-lite and D131 remain as on master)
 
 ---
 
 ## Now
 
-**Active experiment — implicit wait + `start`** (this branch). User model:
-JS with `async`/`await` erased; calls stay sequential; `start name(args)` is
-the omitted `await`. No Future values, no `run()`, no FCF. Living review
+**Active experiment — implicit wait + `-->`** (this branch). User model:
+JS with `async`/`await` erased; calls stay sequential; `--> name(args)` is
+the omitted `await` (send it away). No Future values, no `run()`, no FCF.
+Living review
 (gitignored, run locally):
 
 ```bash
@@ -46,8 +47,8 @@ combined import; **D126** Io/Net/Http; **D125** Logging; **D124** diagnostics.
 
 **In progress / next:**
 
-1. **Implicit wait + `start`** — scratch §§1–5 **live**; Crema
-   `start serveOne` + HTTP/1.1 keep-alive. Experiment dogfood-complete
+1. **Implicit wait + `-->`** — scratch §§1–5 **live**; Crema
+   `--> serveOne` + HTTP/1.1 keep-alive. Experiment dogfood-complete
    unless poking finds a hole.  
 2. Crema-lite Phase D+ only if useful (parked while this branch is Now).  
 3. Editor only when DX forces it.

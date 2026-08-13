@@ -1004,6 +1004,7 @@ impl Parser {
                 | TokenKind::Break
                 | TokenKind::Continue
                 | TokenKind::Ident(_)
+                | TokenKind::Nowait
         )
     }
 
@@ -1460,13 +1461,19 @@ impl Parser {
                 self.bump();
                 parse_string_literal(s, span)
             }
-            TokenKind::Ident(name) if name == "start" && self.at_start_call() => {
-                self.bump(); // `start`
-                let callee = match &self.current().kind {
-                    TokenKind::Ident(n) => n.clone(),
+            TokenKind::Nowait => {
+                self.bump(); // `-->`
+                if self.at(TokenKind::LBrace) {
+                    return Err(Error::at(
+                        "`--> { … }` is not implemented yet; use `--> name(args)`",
+                        self.peek_span(),
+                    ));
+                }
+                let (callee, callee_span) = match &self.current().kind {
+                    TokenKind::Ident(n) => (n.clone(), self.current().span),
                     _ => {
                         return Err(Error::at(
-                            "`start` requires a named call (`start name(args)`)",
+                            "`-->` requires a named call (`--> name(args)`)",
                             self.peek_span(),
                         ));
                     }
@@ -1476,7 +1483,11 @@ impl Parser {
                 let args = self.parse_arg_list()?;
                 self.expect_kind(&TokenKind::RParen)?;
                 Ok(Expr {
-                    kind: ExprKind::Start { callee, args },
+                    kind: ExprKind::Start {
+                        callee,
+                        callee_span,
+                        args,
+                    },
                     span: Span::new(start.start, self.prev_span().end),
                 })
             }
@@ -2070,17 +2081,6 @@ impl Parser {
         std::mem::discriminant(&self.current().kind) == std::mem::discriminant(&kind)
     }
 
-    /// Contextual `start name(` — `start` stays a normal ident otherwise.
-    fn at_start_call(&self) -> bool {
-        matches!(
-            (
-                self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                self.tokens.get(self.pos + 2).map(|t| &t.kind),
-            ),
-            (Some(TokenKind::Ident(_)), Some(TokenKind::LParen))
-        )
-    }
-
     /// Whether the current token can begin an expression (for optional `return` value).
     fn at_expr_start(&self) -> bool {
         matches!(
@@ -2090,6 +2090,7 @@ impl Parser {
                 | TokenKind::False
                 | TokenKind::String(_)
                 | TokenKind::Ident(_)
+                | TokenKind::Nowait
                 | TokenKind::If
                 | TokenKind::Match
                 | TokenKind::While
@@ -2827,11 +2828,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_start_call() {
+    fn parse_nowait_call() {
         let module = parse(
             r#"
             fn main() -> Int64 {
-                start slow("A")
+                --> slow("A")
                 0
             }
         "#,
@@ -2841,11 +2842,11 @@ mod tests {
         };
         match &f.body.items[0] {
             BlockItem::Expr(e) => match &e.kind {
-                ExprKind::Start { callee, args } => {
+                ExprKind::Start { callee, args, .. } => {
                     assert_eq!(callee, "slow");
                     assert_eq!(args.len(), 1);
                 }
-                other => panic!("expected start, got {other:?}"),
+                other => panic!("expected -->, got {other:?}"),
             },
             other => panic!("expected expr stmt, got {other:?}"),
         }

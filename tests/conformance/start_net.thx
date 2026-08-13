@@ -1,4 +1,4 @@
-## `start` + real Net: accept/recv park; host connect/send unblocks them.
+## `-->` + real Net: accept/recv park; host connect/send unblocks them.
 import net, { Socket, createSocket } from "std/Net"
 import { Pass, Fail, Trial } from "std/Fallible"
 import logging, { info } from "std/Logging"
@@ -29,7 +29,7 @@ fn run() -> Trial<Void, String> {
     listener.bind(0)?
     listener.listen(4)?
     let port = listener.localPort()?
-    start serve(listener)
+    --> serve(listener)
     let client = createSocket()?
     client.connect(port)?
     client.sendAll(Bytes.fromString("hi"))?

@@ -315,6 +315,10 @@
     "named": false
   },
   {
+    "type": "-->",
+    "named": false
+  },
+  {
     "type": "-=",
     "named": false
   },
@@ -541,10 +545,6 @@
   },
   {
     "type": "return",
-    "named": false
-  },
-  {
-    "type": "start",
     "named": false
   },
   {

@@ -6,7 +6,7 @@ Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
 **As of:** 2026-08-13 (route-clause + JSX/`Node` on master, not freeze;
-`start` tasks on `experiment/implicit-async`; program `run`/`build` reuse
+`-->` tasks on `experiment/implicit-async`; program `run`/`build` reuse
 stamped binaries; D131 multi-clause; D129 return inference; D126 Io/Net/Http)
 
 ---
