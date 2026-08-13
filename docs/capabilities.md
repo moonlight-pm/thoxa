@@ -11,8 +11,8 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-11 (D131 multi-clause **shipped**; Crema-lite Phase A–C; D130
-match arm sugar; D129 return inference; D128 loop; D127 combined import)
+**As of:** 2026-08-13 (D131 multi-clause **shipped**; Crema-lite Phase A–C;
+type-body route clauses **partial** on master — not freeze)
 
 ---
 
@@ -44,6 +44,7 @@ match arm sugar; D129 return inference; D128 loop; D127 combined import)
 | param-defaults | Formal defaults M3 (+ methods/ctors/`!`/extern) | shipped | `param_defaults`, `defaults_mod`, `param_bang_defaults` | D98, D106, D116 | `!` and extern formals may default (call-site fill); non-default cannot follow defaulted; free names use defining module | yes |
 | modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate`, `import_combined` | D30–D35, D122, **D127** | Combined `import ns, { a } from "…"` shipped. Nested import/type in functions deferred (D91); module mut heap (Array/String) must not end-of-fn drop (D122) | yes |
 | pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |
+| route-clauses | Type-body `GET "/…"` → `route(req) -> Response` | partial | unit (`route_desugar`, LSP) | idea [`ideas/2026-08-12-router-clause-syntax-experiment.md`](ideas/2026-08-12-router-clause-syntax-experiment.md) | **On master, not freeze / no D-id.** String wrap + `Response` pass-through; `Int64`/`String` captures; multi-segment; optional `req`. **Gaps:** no conformance `.thx`; no handbook; no JSON/form; no Crema dogfood; miss is `notFound()` (no fallthrough). | no |
 
 ## FFI and C layout
 
@@ -110,7 +111,7 @@ match arm sugar; D129 return inference; D128 loop; D127 combined import)
 | diag-structured | Structured diagnostic IR + pretty/`--json`/rich LSP | shipped | unit | **D124**; freeze `2026-08-09-structured-diagnostics` | Shared IR (`diagnostic.rs`); pretty `thoxa check`; `check --json` + version stamp; LSP `code` + help-in-message + `relatedInformation`. Codes THX001–THX010; **warnings** (unused import THX010) exit 0 / `ok: true`. Residual free-form sites still get codes when message patterns match. No `explain`/code actions yet | yes |
 | lint-unused-import | Unused selective/namespace import warning | shipped | unit | THX010 | Open-buffer only (not whole package). Combined imports lint each binding. `May`/`Trial` stay live when `Has`/`Not` or `Pass`/`Fail` are referenced. No unused-local lint yet | yes |
 | cli-version | `thoxa version` / LSP identity stamp | shipped | unit / CLI | build stamp | Git short hash (+`.dirty`) + binary path; LSP stderr + `window/logMessage` + `serverInfo.version` (no toast) | yes |
-| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; **`?` unwraps Trial/May**; **call-arg hover** (formal param type); hover shows **D129** inferred/`->` return types from last successful lower (local + remote); residual rare untyped exprs | partial |
+| lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; **`?` unwraps Trial/May**; **call-arg hover**; hover shows **D129** inferred/`->` returns; **`let`/`mut` hover prefers nav `ty_hint`** (`let a: Response`). Residual rare untyped exprs | partial |
 | lsp-workspace | `workspace/symbol` package search | shipped | unit | editor plan | Open buffers + package-tree disk (Main.thx/`.git` root); query substring; cap 100 | yes |
 | lsp-xmodule | Cross-module jump (`./` `~/` / `std/`) | partial | unit | D78 | `std/` go-to-def covered; open buffer wins over disk; **typed members after namespace + `?`** (e.g. `net.createSocket()?; server.reuseAddr`) | partial |
 | tree-sitter-zed | Grammar + Zed extension extras | shipped | `cargo make zed` | editor plan | Not full IDE | yes |

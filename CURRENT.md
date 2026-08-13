@@ -4,8 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-12 (**D131** multi-clause **shipped**; Crema-lite Phase A–C;
-type-body route clauses on master — not freeze / not handbook)
+**As of:** 2026-08-13 (**D131** multi-clause **shipped**; Crema-lite Phase A–C;
+type-body route clauses **on master**, not freeze / not handbook)
 
 ---
 
@@ -26,17 +26,16 @@ import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
 (**D125**); LSP nav; **D124** diagnostics. Agent-only ideas parked:
 [`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 
+**On master, not product:** type-body `GET "/…"` desugar + LSP (idea
+[`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md);
+capability `route-clauses` **partial**). No D-id / handbook. Crema still uses
+typed `Route` + `handleRoute`.
+
 **In progress / next:**
 
 1. **Crema-lite Phase D+** only if wanted — still example only; no `std/`.  
 2. Editor only when DX forces it.  
-3. Sample-driven language polish (no open CURRENT language slice).  
-4. **Landed on master (not freeze):** type-body `GET "/…"` desugar + LSP
-   (idea
-   [`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md)).
-   Compiler surface complete (Request in, Response out, String wrap,
-   `Int64` / multi-segment / optional `req`). **Not** handbook / D-id.
-   Default product path remains Crema + locks above.
+3. Sample-driven language polish (no open CURRENT language slice).
 
 ### Proceed order
 
