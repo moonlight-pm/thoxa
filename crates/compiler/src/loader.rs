@@ -2,7 +2,8 @@
 //!
 //! Specifiers:
 //! - `./…` relative to the importing file's directory (no `..` segments)
-//! - `~/…` relative to the project root (entry file's directory)
+//! - `~/…` relative to the project root (nearest ancestor `Main.thx`, else
+//!   the entry file's directory)
 //! - `std/…` product standard library (D97) — `THOXA_STD`, else `{THOXA_ROOT|workspace}/std`
 //! - bare `ffi` / `ffi/…` — still deferred
 
@@ -31,6 +32,31 @@ pub struct Package {
     pub project_root: PathBuf,
     /// Modules in dependency order (callees before callers); entry last.
     pub modules: Vec<SourceModule>,
+}
+
+/// Directory that `~/…` resolves against for `entry_file`.
+///
+/// D31/D68: normally the entry file's parent. When the file sits under a
+/// directory package (nearest ancestor `Main.thx`), that directory is the root
+/// so `thoxa check` / LSP on `app/Pages.thx` still finds `~/framework/Wire`.
+/// No `Main.thx` ancestor → file parent (lone-file / flat conformance).
+/// Does **not** stop at `.git` (the repo root is not a Thoxa package).
+pub fn package_root_for(entry_file: &Path) -> PathBuf {
+    let start = entry_file
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    let mut dir = start.clone();
+    for _ in 0..24 {
+        if dir.join("Main.thx").is_file() {
+            return dir;
+        }
+        match dir.parent() {
+            Some(p) if p != dir => dir = p.to_path_buf(),
+            _ => break,
+        }
+    }
+    start
 }
 
 /// Resolve a CLI path to the entry `.thx` file.
@@ -76,10 +102,7 @@ pub fn load_package(entry: &Path) -> Result<Package> {
             entry.display()
         )));
     }
-    let project_root = entry
-        .parent()
-        .ok_or_else(|| Error::new("entry file has no parent directory"))?
-        .to_path_buf();
+    let project_root = package_root_for(&entry);
 
     let mut by_path: HashMap<PathBuf, SourceModule> = HashMap::new();
     let mut order: Vec<PathBuf> = Vec::new();
@@ -119,10 +142,7 @@ pub fn load_package_with_entry_ast(entry: &Path, entry_ast: ast::Module) -> Resu
             entry.display()
         )));
     }
-    let project_root = entry
-        .parent()
-        .ok_or_else(|| Error::new("entry file has no parent directory"))?
-        .to_path_buf();
+    let project_root = package_root_for(&entry);
     let entry = canonicalize_soft(&entry)?;
 
     let mut by_path: HashMap<PathBuf, SourceModule> = HashMap::new();
@@ -749,6 +769,55 @@ mod tests {
         fs::write(&file, "fn main() -> Int64 { 0 }\n").unwrap();
         let got = resolve_entry(&file).expect("resolve file");
         assert_eq!(got, fs::canonicalize(&file).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn package_root_walks_to_nearest_main() {
+        let dir = unique_temp_dir("pkgroot");
+        fs::create_dir_all(dir.join("app")).unwrap();
+        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
+        let nested = dir.join("app").join("Pages.thx");
+        fs::write(&nested, "export fn go() -> Int64 { 0 }\n").unwrap();
+        assert_eq!(package_root_for(&nested), dir);
+        assert_eq!(package_root_for(&dir.join("Main.thx")), dir);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn package_root_falls_back_to_file_dir_without_main() {
+        let dir = unique_temp_dir("nomaing");
+        fs::create_dir_all(dir.join("app")).unwrap();
+        let nested = dir.join("app").join("Pages.thx");
+        fs::write(&nested, "export fn go() -> Int64 { 0 }\n").unwrap();
+        assert_eq!(package_root_for(&nested), dir.join("app"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_package_nested_file_resolves_tilde_from_main() {
+        let dir = unique_temp_dir("tilde");
+        fs::create_dir_all(dir.join("app")).unwrap();
+        fs::create_dir_all(dir.join("framework")).unwrap();
+        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
+        fs::write(
+            dir.join("framework").join("Wire.thx"),
+            "export fn ping() -> Int64 { 1 }\n",
+        )
+        .unwrap();
+        let pages = dir.join("app").join("Pages.thx");
+        fs::write(
+            &pages,
+            "import wire from \"~/framework/Wire\"\nexport fn go() -> Int64 { wire.ping() }\n",
+        )
+        .unwrap();
+        let pkg = load_package(&pages).expect("load nested");
+        assert_eq!(pkg.project_root, dir);
+        assert!(
+            pkg.modules.iter().any(|m| m.id == "Wire"),
+            "expected Wire loaded: {:?}",
+            pkg.modules.iter().map(|m| &m.id).collect::<Vec<_>>()
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

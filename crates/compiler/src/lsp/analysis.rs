@@ -1016,6 +1016,33 @@ fn main() -> Int64 {
     }
 
     #[test]
+    fn nested_file_tilde_import_uses_package_main() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa-check-tilde-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("app")).unwrap();
+        fs::create_dir_all(dir.join("framework")).unwrap();
+        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
+        fs::write(
+            dir.join("framework").join("Wire.thx"),
+            "export fn ping() -> Int64 { 1 }\n",
+        )
+        .unwrap();
+        let pages = dir.join("app").join("Pages.thx");
+        let src = "import wire from \"~/framework/Wire\"\nexport fn go() -> Int64 { wire.ping() }\n";
+        fs::write(&pages, src).unwrap();
+        let diags = check_source(pages.to_str().unwrap(), src);
+        assert!(
+            diags.is_empty(),
+            "nested ~/ should resolve via Main.thx: {diags:?}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn library_module_without_main_ok() {
         // Export-only modules must typecheck without `fn main` (LSP on Io.thx / Http.thx).
         let src = "export fn answer() -> Int64 { 42 }\nexport let n = 1\n";

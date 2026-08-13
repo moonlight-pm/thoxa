@@ -1037,9 +1037,9 @@ fn resolve_spec(spec: &str, current_path: &Path) -> Option<PathBuf> {
 /// Resolve an import specifier relative to the importing file (for nav / multi-file refs).
 pub fn resolve_import_file(spec: &str, current_path: &Path) -> Option<PathBuf> {
     let importer_dir = current_path.parent().unwrap_or_else(|| Path::new("."));
-    // `~/` root = entry file's directory (same as D31/D68 for single open file).
-    let project_root = importer_dir;
-    let path = loader::resolve_import_path(spec, importer_dir, project_root)?;
+    // `~/` root = nearest Main.thx package, else this file's directory (D31/D68).
+    let project_root = loader::package_root_for(current_path);
+    let path = loader::resolve_import_path(spec, importer_dir, &project_root)?;
     // Soft-canonicalize when possible.
     fs::canonicalize(&path).ok().or(Some(path))
 }
@@ -1602,6 +1602,24 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn tilde_from_nested_file_uses_package_main() {
+        let dir = unique_dir("tilde_nav");
+        fs::create_dir_all(dir.join("app")).unwrap();
+        fs::create_dir_all(dir.join("framework")).unwrap();
+        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
+        let wire = dir.join("framework").join("Wire.thx");
+        fs::write(&wire, "export fn ping() -> Int64 { 1 }\n").unwrap();
+        let pages = dir.join("app").join("Pages.thx");
+        fs::write(&pages, "import wire from \"~/framework/Wire\"\n").unwrap();
+        let got = resolve_import_file("~/framework/Wire", &pages).expect("resolve");
+        assert_eq!(
+            fs::canonicalize(&got).unwrap(),
+            fs::canonicalize(&wire).unwrap()
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     fn remote_at(

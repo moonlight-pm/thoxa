@@ -49,6 +49,8 @@ restart again.
 | Open buffers | Overlay wins over disk for package check |
 
 Library buffers without `main` typecheck as libraries (no false “requires main”).
+Nested files in a directory package resolve `~/…` from the nearest `Main.thx`
+(same as `thoxa run examples/http`), not from the open file’s directory.
 
 ## Limits (partial)
 

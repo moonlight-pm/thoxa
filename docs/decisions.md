@@ -399,7 +399,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D30 | Import origins (R8) | `./…` and `~/…` only at ship; **D97** adds `std/…` | `ffi` still deferred |
-| D31 | Resolution | No `..` segments; `~/` = entry file’s directory | Matches oracle “never climb” |
+| D31 | Resolution | No `..` segments; `~/` = package root | Package root is the nearest ancestor `Main.thx` when present, else the entry file’s directory. Matches oracle “never climb”. Nested-file `thoxa check` / LSP use the same root so `app/Pages.thx` can `~/framework/…`. |
 | D32 | Export surface | `export` on top-level `fn` / `type` / `let` / `extern`; `mut` never exported | Selective + namespace imports |
 | D33 | Namespace import | `import ns from "…"` camelCase binding; members via `ns.x` | Not a first-class value. Combined form → **D127** |
 | D34 | Module-level values | Static C globals + `thoxa_module_init()` before main | Dep-order init; private mut state |

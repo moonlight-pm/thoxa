@@ -220,7 +220,7 @@ export fn helper() -> Int64 { 1 }
 | Origin | Meaning |
 |--------|---------|
 | `./…` | Relative to current file |
-| `~/…` | Relative to **entry** file directory |
+| `~/…` | Relative to the **package root** (nearest ancestor `Main.thx`; otherwise the entry file’s directory) |
 | `std/…` | Product standard library |
 
 Fallibility types are **not** ambient — import them from
