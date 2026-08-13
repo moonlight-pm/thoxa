@@ -589,6 +589,15 @@ pub fn semantic_tokens(text: &str) -> Vec<SemanticToken> {
             "property"
         } else if first.is_uppercase() {
             "type"
+        } else if name == "start"
+            && matches!(next, Some(TokenKind::Ident(_)))
+            && matches!(
+                tokens.get(i + 2).map(|t| &t.kind),
+                Some(TokenKind::LParen)
+            )
+        {
+            // Contextual `start name(` — compiler keeps `start` as an ident.
+            "keyword"
         } else if matches!(next, Some(TokenKind::LParen)) {
             "function"
         } else {
@@ -1287,6 +1296,21 @@ fn main() -> Int64 {
             diags[0].message.contains("unreachable"),
             "{}",
             diags[0].message
+        );
+    }
+
+    #[test]
+    fn semantic_tokens_start_is_keyword() {
+        let src = "fn main() { start serveOne(peer) }\n";
+        let toks = semantic_tokens(src);
+        assert!(
+            toks.iter().any(|t| t.token_type == "keyword" && t.length == 5),
+            "start should be keyword: {toks:?}"
+        );
+        assert!(
+            toks.iter()
+                .any(|t| t.token_type == "function" && t.length == 8),
+            "serveOne should stay a function: {toks:?}"
         );
     }
 

@@ -468,6 +468,10 @@
         },
         {
           "type": "STRING",
+          "value": "start"
+        },
+        {
+          "type": "STRING",
           "value": "GET"
         },
         {

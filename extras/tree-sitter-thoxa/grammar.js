@@ -126,6 +126,8 @@ module.exports = grammar({
       'let', 'mut', 'fn', 'type', 'export', 'import', 'from', 'extern',
       'if', 'else', 'loop', 'while', 'for', 'in', 'break', 'continue',
       'return', 'match', 'and', 'or', 'not', 'as', 'can', 'is',
+      // Contextual in the compiler (`start name(`); still an ident as a binding.
+      'start',
       // Experiment: type-body route verbs (also parsed as idents by the compiler).
       'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS',
     ),
