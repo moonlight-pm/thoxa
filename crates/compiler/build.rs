@@ -57,7 +57,10 @@ fn main() {
         panic!("libtcc1.a missing after build at {}", libtcc1_a.display());
     }
 
-    println!("cargo:rustc-link-search=native={}", prefix.join("lib").display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        prefix.join("lib").display()
+    );
     println!("cargo:rustc-link-lib=static=tcc");
     println!("cargo:rustc-link-lib=dylib=dl");
     println!("cargo:rustc-link-lib=dylib=pthread");
@@ -109,7 +112,13 @@ fn emit_version_env(workspace: &Path) {
 
 fn git_short_hash(workspace: &Path) -> String {
     let out = Command::new("git")
-        .args(["-C", &workspace.display().to_string(), "rev-parse", "--short=12", "HEAD"])
+        .args([
+            "-C",
+            &workspace.display().to_string(),
+            "rev-parse",
+            "--short=12",
+            "HEAD",
+        ])
         .output();
     match out {
         Ok(o) if o.status.success() => {
@@ -126,7 +135,12 @@ fn git_short_hash(workspace: &Path) -> String {
 
 fn git_is_dirty(workspace: &Path) -> bool {
     let out = Command::new("git")
-        .args(["-C", &workspace.display().to_string(), "status", "--porcelain"])
+        .args([
+            "-C",
+            &workspace.display().to_string(),
+            "status",
+            "--porcelain",
+        ])
         .output();
     match out {
         Ok(o) if o.status.success() => !String::from_utf8_lossy(&o.stdout).trim().is_empty(),

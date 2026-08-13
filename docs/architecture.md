@@ -5,8 +5,8 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-13 (route-clause desugar on master, not freeze; D131 multi-clause;
-D129 return inference + LSP hover; D126 std Io/Net/Http)
+**As of:** 2026-08-13 (route-clause + JSX/`Node` experiments on master, not freeze;
+D131 multi-clause; D129 return inference + LSP hover; D126 std Io/Net/Http)
 
 ---
 
@@ -28,9 +28,9 @@ step `.so` on the happy path.
 | Stage | Location | Notes |
 |-------|----------|--------|
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL |
-| Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. **Experiment:** type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`) |
+| Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. **Experiments:** type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`); tag literals desugar in the parser to `__jsx_el` / `__jsx_child` |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
-| MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**); route-clause bodies after desugar |
+| MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**); route-clause bodies after desugar; builtin **`Ty::Node`** (`html_el` / `html_text` / `html_frag` / `html_render`) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body |
 | Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/Fallible` + `std/Logging` (+ deps) |
 | Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast`; inject deps |
@@ -44,7 +44,7 @@ step `.so` on the happy path.
 |------|------|
 | `crates/compiler` | `thoxa` binary + compiler library (+ libtcc link) |
 | `crates/make` | xtask (`cargo make …`) |
-| `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
+| `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` (incl. `ThoxaHtml` / `THOXA_TAG_HTML`) |
 | `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
 | `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http`/`HttpStatic`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate |

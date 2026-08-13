@@ -234,10 +234,7 @@ mod tests {
                 character: 0
             }
         );
-        assert_eq!(
-            span_to_range("", Span::dummy()),
-            Range::default()
-        );
+        assert_eq!(span_to_range("", Span::dummy()), Range::default());
     }
 
     #[test]

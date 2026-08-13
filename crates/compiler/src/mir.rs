@@ -328,6 +328,8 @@ pub enum Ty {
     Bytes,
     /// Heap RC growable Buffer (`ThoxaBuffer*`) — COW on mutate when shared.
     Buffer,
+    /// Heap RC HTML tree (`ThoxaHtml*`) — builtin `Node` (JSX).
+    Node,
     /// Dynamic growable Array (`ThoxaArray*`) — heap RC; functional append/dropLast.
     Array {
         elem: Box<Ty>,
@@ -359,6 +361,7 @@ pub fn display_ty(ty: &Ty) -> String {
         Ty::String => "String".into(),
         Ty::Bytes => "Bytes".into(),
         Ty::Buffer => "Buffer".into(),
+        Ty::Node => "Node".into(),
         Ty::Array { elem } => format!("Array<{}>", display_ty(elem)),
         Ty::FixedArray { elem, len } => format!("Array<{}, {len}>", display_ty(elem)),
         Ty::Address(inner) => format!("Address<{}>", display_ty(inner)),
@@ -421,8 +424,8 @@ fn display_type_base(mangled_base: &str) -> String {
 
 fn display_mono_arg(arg: &str) -> String {
     match arg {
-        "Void" | "Never" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte" | "Bool"
-        | "String" | "Bytes" | "Buffer" => arg.to_string(),
+        "Void" | "Never" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte" | "Bool" | "String"
+        | "Bytes" | "Buffer" => arg.to_string(),
         a if a.starts_with("Array_") => {
             format!("Array<{}>", display_mono_arg(&a["Array_".len()..]))
         }
@@ -497,7 +500,7 @@ fn free_fn_display_key(mangled: &str, is_main: bool) -> String {
 fn needs_drop(ty: &Ty) -> bool {
     matches!(
         ty,
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } | Ty::User(_)
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::User(_)
     )
 }
 
@@ -511,19 +514,19 @@ fn is_never(ty: &Ty) -> bool {
 fn is_array_elem_ty(ty: &Ty) -> bool {
     matches!(
         ty,
-        Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::User(_)
+        Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Node | Ty::User(_)
     )
 }
 
 fn array_elem_is_heap(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Bytes)
+    matches!(ty, Ty::String | Ty::Bytes | Ty::Node)
 }
 
 fn array_elem_is_user(ty: &Ty) -> bool {
     matches!(ty, Ty::User(_))
 }
 
-/// Constructor-param User types only: fields Int64/Bool/String/Bytes (D65).
+/// Constructor-param User types: scalar/heap fields, plus Array (trees).
 fn is_array_user_elem(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
     match ty {
         Ty::User(name) => {
@@ -534,9 +537,12 @@ fn is_array_user_elem(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
             if info.zero_init {
                 return false;
             }
-            info.fields
-                .iter()
-                .all(|f| matches!(f.ty, Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes))
+            info.fields.iter().all(|f| {
+                matches!(
+                    f.ty,
+                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
+                )
+            })
         }
         _ => true,
     }
@@ -690,7 +696,9 @@ enum GenericKind {
         params: Vec<ast::Param>,
         methods: Vec<Method>,
     },
-    Union { members: Vec<TypeExpr> },
+    Union {
+        members: Vec<TypeExpr>,
+    },
 }
 
 /// Monomorphized method to lower after type mono materialization.
@@ -1195,7 +1203,12 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     }
 
     // Seed common fallible monomorphs first so nested apps (Trial<May<…>>) resolve.
-    seed_fallible_monos(&mut types_info, &mut type_layouts, &generics, &per_mod_types)?;
+    seed_fallible_monos(
+        &mut types_info,
+        &mut type_layouts,
+        &generics,
+        &per_mod_types,
+    )?;
     // Then materialize every GenericApp found in the package (including nested).
     let mut mono_method_jobs: Vec<MonoMethodJob> = Vec::new();
     monomorphize_package(
@@ -1214,40 +1227,40 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
         match resolve_type_def_shape(td, &types_info, &name_map) {
             Ok((fields, zero_init, sum_info)) => {
-            let info = types_info.get_mut(mangled).unwrap();
-            info.fields = fields.clone();
-            info.zero_init = zero_init;
-            info.sum = sum_info.clone();
-            let sum_layout = sum_info.as_ref().map(|s| {
-                s.variants
-                    .iter()
-                    .map(|v| SumVariantLayout {
-                        tag: v.tag,
-                        name: v.name.clone(),
-                        payload_ty: v.ty.clone(),
-                    })
-                    .collect()
-            });
-            // Pure-literal unions: narrow scalar storage (D118 §6).
-            let sum_scalar = sum_info.as_ref().and_then(|s| {
-                if s.variants.is_empty() || !s.variants.iter().all(|v| v.lit.is_some()) {
-                    return None;
-                }
-                Some(pure_lit_scalar_ty(s.variants.len()))
-            });
-            type_layouts.push(TypeLayout {
-                name: mangled.clone(),
-                fields: fields
-                    .iter()
-                    .map(|f| FieldLayout {
-                        name: f.name.clone(),
-                        c_name: sanitize_field(&f.name),
-                        ty: f.ty.clone(),
-                    })
-                    .collect(),
-                sum: sum_layout,
-                sum_scalar,
-            });
+                let info = types_info.get_mut(mangled).unwrap();
+                info.fields = fields.clone();
+                info.zero_init = zero_init;
+                info.sum = sum_info.clone();
+                let sum_layout = sum_info.as_ref().map(|s| {
+                    s.variants
+                        .iter()
+                        .map(|v| SumVariantLayout {
+                            tag: v.tag,
+                            name: v.name.clone(),
+                            payload_ty: v.ty.clone(),
+                        })
+                        .collect()
+                });
+                // Pure-literal unions: narrow scalar storage (D118 §6).
+                let sum_scalar = sum_info.as_ref().and_then(|s| {
+                    if s.variants.is_empty() || !s.variants.iter().all(|v| v.lit.is_some()) {
+                        return None;
+                    }
+                    Some(pure_lit_scalar_ty(s.variants.len()))
+                });
+                type_layouts.push(TypeLayout {
+                    name: mangled.clone(),
+                    fields: fields
+                        .iter()
+                        .map(|f| FieldLayout {
+                            name: f.name.clone(),
+                            c_name: sanitize_field(&f.name),
+                            ty: f.ty.clone(),
+                        })
+                        .collect(),
+                    sum: sum_layout,
+                    sum_scalar,
+                });
             }
             Err(e) => type_reg_errors.push(e),
         }
@@ -1730,189 +1743,69 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     })
 }
 
-
 /// Resolve concrete type fields / union shape (type-reg phase).
 fn resolve_type_def_shape(
     td: &TypeDef,
     types_info: &HashMap<String, TypeInfo>,
     name_map: &HashMap<String, String>,
 ) -> Result<(Vec<FieldInfo>, bool, Option<SumInfo>)> {
-        let mut fields: Vec<FieldInfo> = Vec::new();
-        let zero_init;
-        let mut sum_info: Option<SumInfo> = None;
+    let mut fields: Vec<FieldInfo> = Vec::new();
+    let zero_init;
+    let mut sum_info: Option<SumInfo> = None;
 
-        // Union alias: `type Dir = Up | Down` (D118).
-        if let Some(members) = &td.union_members {
-            if !td.params.is_empty() || !td.fields.is_empty() || !td.methods.is_empty() {
+    // Union alias: `type Dir = Up | Down` (D118).
+    if let Some(members) = &td.union_members {
+        if !td.params.is_empty() || !td.fields.is_empty() || !td.methods.is_empty() {
+            return Err(Error::at(
+                "union type cannot have constructor params, body fields, or methods",
+                td.name_span,
+            ));
+        }
+        zero_init = false;
+        let mut variants = Vec::new();
+        let mut seen_names = HashSet::new();
+        let mut residual_tag: Option<u32> = None;
+        let mut extract_tag: Option<u32> = None;
+        for mem in members {
+            // Whole-arm marks (`Done!`, `Quit?`) and type-arg marks (`Hold<Int64!>`,
+            // `Fail<String?>`) both count toward residual/extract tags (D118).
+            let arg_extract = type_expr_has_arg_mark(mem, TypeMark::Extract);
+            let arg_residual = type_expr_has_arg_mark(mem, TypeMark::Residual);
+            let whole_extract = matches!(mem.mark, Some(TypeMark::Extract));
+            let whole_residual = matches!(mem.mark, Some(TypeMark::Residual));
+            let mark = mem.mark.or(if arg_extract {
+                Some(TypeMark::Extract)
+            } else if arg_residual {
+                Some(TypeMark::Residual)
+            } else {
+                None
+            });
+            // Type-arg `!` → unwrap sole field; whole-arm `!` alone → yield arm type.
+            let unwrap_payload = arg_extract;
+
+            if (whole_residual || arg_residual) && residual_tag.is_some() {
                 return Err(Error::at(
-                    "union type cannot have constructor params, body fields, or methods",
-                    td.name_span,
+                    "union may have at most one residual mark (`?`)",
+                    mem.span,
                 ));
             }
-            zero_init = false;
-            let mut variants = Vec::new();
-            let mut seen_names = HashSet::new();
-            let mut residual_tag: Option<u32> = None;
-            let mut extract_tag: Option<u32> = None;
-            for mem in members {
-                // Whole-arm marks (`Done!`, `Quit?`) and type-arg marks (`Hold<Int64!>`,
-                // `Fail<String?>`) both count toward residual/extract tags (D118).
-                let arg_extract = type_expr_has_arg_mark(mem, TypeMark::Extract);
-                let arg_residual = type_expr_has_arg_mark(mem, TypeMark::Residual);
-                let whole_extract = matches!(mem.mark, Some(TypeMark::Extract));
-                let whole_residual = matches!(mem.mark, Some(TypeMark::Residual));
-                let mark = mem.mark.or(if arg_extract {
-                    Some(TypeMark::Extract)
-                } else if arg_residual {
-                    Some(TypeMark::Residual)
-                } else {
-                    None
-                });
-                // Type-arg `!` → unwrap sole field; whole-arm `!` alone → yield arm type.
-                let unwrap_payload = arg_extract;
+            if (whole_extract || arg_extract) && extract_tag.is_some() {
+                return Err(Error::at(
+                    "union may have at most one extract mark (`!`)",
+                    mem.span,
+                ));
+            }
 
-                if (whole_residual || arg_residual) && residual_tag.is_some() {
-                    return Err(Error::at(
-                        "union may have at most one residual mark (`?`)",
-                        mem.span,
-                    ));
-                }
-                if (whole_extract || arg_extract) && extract_tag.is_some() {
-                    return Err(Error::at(
-                        "union may have at most one extract mark (`!`)",
-                        mem.span,
-                    ));
-                }
-
-                // Pure literal arm: `0 | 1 | "x" | true` (D118).
-                if let Some(lit) = &mem.lit {
-                    let vname = match lit {
-                        TypeLit::Int(n) => n.to_string(),
-                        TypeLit::Bool(b) => b.to_string(),
-                        TypeLit::String(s) => format!("\"{s}\""),
-                    };
-                    if !seen_names.insert(vname.clone()) {
-                        return Err(Error::at(
-                            format!("duplicate union member `{vname}`"),
-                            mem.span,
-                        ));
-                    }
-                    let tag = variants.len() as u32;
-                    if whole_residual || arg_residual {
-                        residual_tag = Some(tag);
-                    }
-                    if whole_extract || arg_extract {
-                        extract_tag = Some(tag);
-                    }
-                    variants.push(SumVariant {
-                        tag,
-                        name: vname,
-                        ty: Ty::Void,
-                        lit: Some(lit.clone()),
-                        mark,
-                        unwrap_payload: false,
-                    });
-                    continue;
-                }
-                let ty = resolve_ty(mem, &types_info, &name_map)?;
-                let Ty::User(ref member_name) = ty else {
-                    return Err(Error::at(
-                        format!("union member must be a named type or literal, got {ty:?}"),
-                        mem.span,
-                    ));
-                };
-                // Flatten nested union aliases: `Outer = Inner | C` → members of Inner + C
-                // (D118; transparent composition). Nested marks on the sum itself are rejected.
-                if let Some(minfo) = types_info.get(member_name) {
-                    if let Some(inner_sum) = &minfo.sum {
-                        if whole_extract || whole_residual || arg_extract || arg_residual {
-                            return Err(Error::at(
-                                format!(
-                                    "cannot place extract marks on nested union member `{member_name}` (mark atoms instead)"
-                                ),
-                                mem.span,
-                            ));
-                        }
-                        if inner_sum.residual_tag.is_some() || inner_sum.extract_tag.is_some() {
-                            return Err(Error::at(
-                                format!(
-                                    "nested union `{member_name}` has residual/extract marks; flatten marks onto the outer union"
-                                ),
-                                mem.span,
-                            ));
-                        }
-                        for iv in &inner_sum.variants {
-                            let vname = iv.name.clone();
-                            if !seen_names.insert(vname.clone()) {
-                                return Err(Error::at(
-                                    format!(
-                                        "duplicate union member `{vname}` (from nested `{member_name}`)"
-                                    ),
-                                    mem.span,
-                                ));
-                            }
-                            let nested_tag = variants.len() as u32;
-                            variants.push(SumVariant {
-                                tag: nested_tag,
-                                name: vname,
-                                ty: iv.ty.clone(),
-                                lit: iv.lit.clone(),
-                                mark: None,
-                                unwrap_payload: iv.unwrap_payload,
-                            });
-                        }
-                        continue;
-                    }
-                }
-                // Prefer source name from type expr for patterns.
-                let vname = if mem.name.is_empty() {
-                    member_name.clone()
-                } else {
-                    mem.name.clone()
+            // Pure literal arm: `0 | 1 | "x" | true` (D118).
+            if let Some(lit) = &mem.lit {
+                let vname = match lit {
+                    TypeLit::Int(n) => n.to_string(),
+                    TypeLit::Bool(b) => b.to_string(),
+                    TypeLit::String(s) => format!("\"{s}\""),
                 };
                 if !seen_names.insert(vname.clone()) {
                     return Err(Error::at(
                         format!("duplicate union member `{vname}`"),
-                        mem.span,
-                    ));
-                }
-                // Product arm: scalar / String / Bytes fields only.
-                if let Some(minfo) = types_info.get(member_name) {
-                    for f in &minfo.fields {
-                        if !matches!(
-                            f.ty,
-                            Ty::Int64
-                                | Ty::Int32
-                                | Ty::UInt32
-                                | Ty::UInt64
-                                | Ty::Byte
-                                | Ty::Bool
-                                | Ty::Void
-                                | Ty::String
-                                | Ty::Bytes
-                        ) {
-                            return Err(Error::at(
-                                format!(
-                                    "union member `{vname}` field `{}` must be a scalar or String/Bytes for now (got {:?})",
-                                    f.name, f.ty
-                                ),
-                                mem.span,
-                            ));
-                        }
-                    }
-                    if unwrap_payload {
-                        if minfo.fields.len() != 1 {
-                            return Err(Error::at(
-                                format!(
-                                    "type-arg extract mark (`!`) on `{vname}` requires a single-field product"
-                                ),
-                                mem.span,
-                            ));
-                        }
-                    }
-                } else if unwrap_payload {
-                    return Err(Error::at(
-                        format!("type-arg extract mark (`!`) requires a product type, got `{vname}`"),
                         mem.span,
                     ));
                 }
@@ -1926,80 +1819,199 @@ fn resolve_type_def_shape(
                 variants.push(SumVariant {
                     tag,
                     name: vname,
-                    ty,
-                    lit: None,
+                    ty: Ty::Void,
+                    lit: Some(lit.clone()),
                     mark,
-                    unwrap_payload,
+                    unwrap_payload: false,
                 });
+                continue;
             }
-            sum_info = Some(SumInfo {
-                variants,
-                residual_tag,
-                extract_tag,
+            let ty = resolve_ty(mem, &types_info, &name_map)?;
+            let Ty::User(ref member_name) = ty else {
+                return Err(Error::at(
+                    format!("union member must be a named type or literal, got {ty:?}"),
+                    mem.span,
+                ));
+            };
+            // Flatten nested union aliases: `Outer = Inner | C` → members of Inner + C
+            // (D118; transparent composition). Nested marks on the sum itself are rejected.
+            if let Some(minfo) = types_info.get(member_name) {
+                if let Some(inner_sum) = &minfo.sum {
+                    if whole_extract || whole_residual || arg_extract || arg_residual {
+                        return Err(Error::at(
+                                format!(
+                                    "cannot place extract marks on nested union member `{member_name}` (mark atoms instead)"
+                                ),
+                                mem.span,
+                            ));
+                    }
+                    if inner_sum.residual_tag.is_some() || inner_sum.extract_tag.is_some() {
+                        return Err(Error::at(
+                                format!(
+                                    "nested union `{member_name}` has residual/extract marks; flatten marks onto the outer union"
+                                ),
+                                mem.span,
+                            ));
+                    }
+                    for iv in &inner_sum.variants {
+                        let vname = iv.name.clone();
+                        if !seen_names.insert(vname.clone()) {
+                            return Err(Error::at(
+                                    format!(
+                                        "duplicate union member `{vname}` (from nested `{member_name}`)"
+                                    ),
+                                    mem.span,
+                                ));
+                        }
+                        let nested_tag = variants.len() as u32;
+                        variants.push(SumVariant {
+                            tag: nested_tag,
+                            name: vname,
+                            ty: iv.ty.clone(),
+                            lit: iv.lit.clone(),
+                            mark: None,
+                            unwrap_payload: iv.unwrap_payload,
+                        });
+                    }
+                    continue;
+                }
+            }
+            // Prefer source name from type expr for patterns.
+            let vname = if mem.name.is_empty() {
+                member_name.clone()
+            } else {
+                mem.name.clone()
+            };
+            if !seen_names.insert(vname.clone()) {
+                return Err(Error::at(
+                    format!("duplicate union member `{vname}`"),
+                    mem.span,
+                ));
+            }
+            // Product arm: scalar / String / Bytes fields only.
+            if let Some(minfo) = types_info.get(member_name) {
+                for f in &minfo.fields {
+                    if !matches!(
+                        f.ty,
+                        Ty::Int64
+                            | Ty::Int32
+                            | Ty::UInt32
+                            | Ty::UInt64
+                            | Ty::Byte
+                            | Ty::Bool
+                            | Ty::Void
+                            | Ty::String
+                            | Ty::Bytes
+                    ) {
+                        return Err(Error::at(
+                                format!(
+                                    "union member `{vname}` field `{}` must be a scalar or String/Bytes for now (got {:?})",
+                                    f.name, f.ty
+                                ),
+                                mem.span,
+                            ));
+                    }
+                }
+                if unwrap_payload {
+                    if minfo.fields.len() != 1 {
+                        return Err(Error::at(
+                                format!(
+                                    "type-arg extract mark (`!`) on `{vname}` requires a single-field product"
+                                ),
+                                mem.span,
+                            ));
+                    }
+                }
+            } else if unwrap_payload {
+                return Err(Error::at(
+                    format!("type-arg extract mark (`!`) requires a product type, got `{vname}`"),
+                    mem.span,
+                ));
+            }
+            let tag = variants.len() as u32;
+            if whole_residual || arg_residual {
+                residual_tag = Some(tag);
+            }
+            if whole_extract || arg_extract {
+                extract_tag = Some(tag);
+            }
+            variants.push(SumVariant {
+                tag,
+                name: vname,
+                ty,
+                lit: None,
+                mark,
+                unwrap_payload,
             });
-        } else if !td.fields.is_empty() {
-            zero_init = true;
-            for f in &td.fields {
-                let ty = resolve_ty(&f.ty, &types_info, &name_map)?;
-                if !is_abi_field_ty(&ty) {
-                    return Err(Error::at(
-                        format!(
-                            "C-layout field `{}` must be an ABI scalar or Array<T, N>, got {ty:?}",
-                            f.name
-                        ),
-                        f.ty.span,
-                    ));
-                }
-                if fields.iter().any(|x| x.name == f.name) {
-                    return Err(Error::at(
-                        format!("duplicate field `{}`", f.name),
-                        f.name_span,
-                    ));
-                }
-                fields.push(FieldInfo {
-                    name: f.name.clone(),
-                    ty,
-                    mutable: f.mutable,
-                    default: None,
-                });
+        }
+        sum_info = Some(SumInfo {
+            variants,
+            residual_tag,
+            extract_tag,
+        });
+    } else if !td.fields.is_empty() {
+        zero_init = true;
+        for f in &td.fields {
+            let ty = resolve_ty(&f.ty, &types_info, &name_map)?;
+            if !is_abi_field_ty(&ty) {
+                return Err(Error::at(
+                    format!(
+                        "C-layout field `{}` must be an ABI scalar or Array<T, N>, got {ty:?}",
+                        f.name
+                    ),
+                    f.ty.span,
+                ));
             }
-        } else {
-            zero_init = false;
-            let mut seen_default = false;
-            for p in &td.params {
-                let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
-                // R3+ : scalars + heap String/Bytes; Array<T> for Request/Response headers (D69).
-                // Nested User as a direct field still deferred; Array of User is fine (D65).
-                let ok = matches!(
-                    ty,
-                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
-                );
-                if !ok {
-                    return Err(Error::at(
-                        "constructor-param fields must be Int64, Bool, String, Bytes, or Array",
-                        p.ty.span,
-                    ));
-                }
-                if p.default.is_some() {
-                    seen_default = true;
-                } else if seen_default {
-                    return Err(Error::at(
+            if fields.iter().any(|x| x.name == f.name) {
+                return Err(Error::at(
+                    format!("duplicate field `{}`", f.name),
+                    f.name_span,
+                ));
+            }
+            fields.push(FieldInfo {
+                name: f.name.clone(),
+                ty,
+                mutable: f.mutable,
+                default: None,
+            });
+        }
+    } else {
+        zero_init = false;
+        let mut seen_default = false;
+        for p in &td.params {
+            let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
+            // R3+ : scalars + heap String/Bytes; Array<T> for Request/Response headers (D69).
+            // Nested User as a direct field still deferred; Array of User is fine (D65).
+            let ok = matches!(
+                ty,
+                Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
+            );
+            if !ok {
+                return Err(Error::at(
+                    "constructor-param fields must be Int64, Bool, String, Bytes, or Array",
+                    p.ty.span,
+                ));
+            }
+            if p.default.is_some() {
+                seen_default = true;
+            } else if seen_default {
+                return Err(Error::at(
                         format!(
                             "constructor parameter `{}` without a default follows a defaulted parameter",
                             p.name
                         ),
                         p.name_span,
                     ));
-                }
-                fields.push(FieldInfo {
-                    name: p.name.clone(),
-                    ty,
-                    mutable: false,
-                    default: p.default.clone(),
-                });
             }
+            fields.push(FieldInfo {
+                name: p.name.clone(),
+                ty,
+                mutable: false,
+                default: p.default.clone(),
+            });
         }
-        Ok((fields, zero_init, sum_info))
+    }
+    Ok((fields, zero_init, sum_info))
 }
 
 fn errors_to_multi(errors: Vec<Error>) -> Error {
@@ -2487,7 +2499,10 @@ fn merge_method_clauses(
     for i in 0..arity {
         let name = resolved[0].param_names[i].clone();
         let first = resolved[0].param_tys[i].clone();
-        if resolved.iter().all(|c| ty_eq(types, &c.param_tys[i], &first)) {
+        if resolved
+            .iter()
+            .all(|c| ty_eq(types, &c.param_tys[i], &first))
+        {
             domain_params.push((name, first));
         } else {
             let tys: Vec<Ty> = resolved.iter().map(|c| c.param_tys[i].clone()).collect();
@@ -2568,11 +2583,7 @@ enum LitKind {
     String,
 }
 
-fn is_pure_lit_sum_of_kind(
-    types: &HashMap<String, TypeInfo>,
-    ty: &Ty,
-    kind: LitKind,
-) -> bool {
+fn is_pure_lit_sum_of_kind(types: &HashMap<String, TypeInfo>, ty: &Ty, kind: LitKind) -> bool {
     let Some(sum) = sum_info_of(types, ty) else {
         return false;
     };
@@ -2695,9 +2706,16 @@ fn walk_type_param_marks(te: &TypeExpr, param: &str, success: &mut bool, residua
     }
 }
 
-fn residual_extract_of_sum(types: &HashMap<String, TypeInfo>, sum: &SumInfo, span: Span) -> Result<Ty> {
+fn residual_extract_of_sum(
+    types: &HashMap<String, TypeInfo>,
+    sum: &SumInfo,
+    span: Span,
+) -> Result<Ty> {
     let tag = sum.residual_tag.ok_or_else(|| {
-        Error::at("`?` requires a residual mark (`?`) on one union member", span)
+        Error::at(
+            "`?` requires a residual mark (`?`) on one union member",
+            span,
+        )
     })?;
     let v = sum
         .variants
@@ -2753,15 +2771,12 @@ fn collapse_residual_exit(
             span,
         ));
     };
-    let sum = types
-        .get(mono)
-        .and_then(|i| i.sum.clone())
-        .ok_or_else(|| {
-            Error::at(
-                "`?` expects a Trial, May, or residual-marked union value",
-                span,
-            )
-        })?;
+    let sum = types.get(mono).and_then(|i| i.sum.clone()).ok_or_else(|| {
+        Error::at(
+            "`?` expects a Trial, May, or residual-marked union value",
+            span,
+        )
+    })?;
     if sum.residual_tag.is_none() {
         return Err(Error::at(
             "`?` requires a residual mark (`?`) on one union member",
@@ -2797,15 +2812,7 @@ fn collapse_residual_exit(
                 }
             }
             let collapsed = mono_type_name(base, &args);
-            ensure_union_mono(
-                types,
-                layouts,
-                generics,
-                base,
-                &args,
-                &gdef.def_mod,
-                span,
-            )?;
+            ensure_union_mono(types, layouts, generics, base, &args, &gdef.def_mod, span)?;
             return Ok(Ty::User(collapsed));
         }
     }
@@ -2926,11 +2933,7 @@ fn combine_inferred_return(
     values: &[Ty],
     span: Span,
 ) -> Result<Ty> {
-    let values: Vec<Ty> = values
-        .iter()
-        .filter(|t| !is_never(t))
-        .cloned()
-        .collect();
+    let values: Vec<Ty> = values.iter().filter(|t| !is_never(t)).cloned().collect();
     if residuals.is_empty() {
         return unify_infer_tys(&values, span);
     }
@@ -3324,9 +3327,14 @@ fn probe_multi_clause_return(
 
         joined = Some(match joined {
             None => clause_ret,
-            Some(prev) => {
-                join_return_tys(types, layouts, &prev, &clause_ret, clause.name_span, module_id)?
-            }
+            Some(prev) => join_return_tys(
+                types,
+                layouts,
+                &prev,
+                &clause_ret,
+                clause.name_span,
+                module_id,
+            )?,
         });
     }
     Ok(joined.unwrap_or(Ty::Void))
@@ -3451,6 +3459,7 @@ fn resolve_ty(
         ("String", []) => Ok(Ty::String),
         ("Bytes", []) => Ok(Ty::Bytes),
         ("Buffer", []) => Ok(Ty::Buffer),
+        ("Node", []) => Ok(Ty::Node),
         // May / Trial are std/Fallible generic unions (D118) — resolved via monomorphs.
         ("Array", [TypeArg::Type(elem)]) => {
             let et = resolve_ty(elem, types, name_map)?;
@@ -3465,7 +3474,7 @@ fn resolve_ty(
             if array_elem_is_user(&et) && !is_array_user_elem(&et, types) {
                 return Err(Error::at(
                     format!(
-                        "Array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {et:?}"
+                        "Array element User type must be constructor-param with Int64/Bool/String/Bytes/Array fields: {et:?}"
                     ),
                     elem.span,
                 ));
@@ -3629,6 +3638,7 @@ fn ty_mono_suffix(ty: &Ty) -> String {
         Ty::String => "String".into(),
         Ty::Bytes => "Bytes".into(),
         Ty::Buffer => "Buffer".into(),
+        Ty::Node => "Node".into(),
         Ty::User(n) => n.replace(['-', '$'], "_"),
         Ty::Array { elem } => format!("Array_{}", ty_mono_suffix(elem)),
         Ty::FixedArray { elem, len } => format!("Fixed_{}_{len}", ty_mono_suffix(elem)),
@@ -3678,9 +3688,7 @@ fn resolve_ctor_mono(
         }
     }
     Err(Error::at(
-        format!(
-            "cannot construct generic `{source_name}` for expected type {exp:?}"
-        ),
+        format!("cannot construct generic `{source_name}` for expected type {exp:?}"),
         span,
     ))
 }
@@ -3699,12 +3707,7 @@ fn seed_fallible_monos(
     for name_map in per_mod_types.values() {
         if let Some(may_base) = name_map.get("May") {
             for inn in &inners {
-                pending.push((
-                    may_base.clone(),
-                    vec![inn.clone()],
-                    name_map.clone(),
-                    span,
-                ));
+                pending.push((may_base.clone(), vec![inn.clone()], name_map.clone(), span));
             }
         }
         if let Some(trial_base) = name_map.get("Trial") {
@@ -3782,7 +3785,15 @@ fn monomorphize_pending(
             }
             GenericKind::Union { members } => {
                 instantiate_union_mono(
-                    mono, gdef, members, &subst, types, layouts, &name_map, generics, &mut pending,
+                    mono,
+                    gdef,
+                    members,
+                    &subst,
+                    types,
+                    layouts,
+                    &name_map,
+                    generics,
+                    &mut pending,
                     span,
                 )?;
             }
@@ -3853,8 +3864,19 @@ fn is_builtin_generic(name: &str) -> bool {
     // May/Trial are user generics from std/Fallible (not builtins).
     matches!(
         name,
-        "Array" | "Address" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte"
-            | "UInt8" | "Bool" | "String" | "Bytes" | "Buffer" | "Void"
+        "Array"
+            | "Address"
+            | "Int32"
+            | "Int64"
+            | "UInt32"
+            | "UInt64"
+            | "Byte"
+            | "UInt8"
+            | "Bool"
+            | "String"
+            | "Bytes"
+            | "Buffer"
+            | "Void"
     )
 }
 
@@ -3939,6 +3961,7 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
         Ty::String => ("String".into(), vec![]),
         Ty::Bytes => ("Bytes".into(), vec![]),
         Ty::Buffer => ("Buffer".into(), vec![]),
+        Ty::Node => ("Node".into(), vec![]),
         Ty::Void => ("Void".into(), vec![]),
         Ty::Never => ("Never".into(), vec![]),
         Ty::User(n) => (n.clone(), vec![]),
@@ -3969,12 +3992,7 @@ fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
             span: te.span,
             lit: None,
             mark: te.mark,
-            union_members: Some(
-                members
-                    .iter()
-                    .map(|m| subst_type_expr(m, subst))
-                    .collect(),
-            ),
+            union_members: Some(members.iter().map(|m| subst_type_expr(m, subst)).collect()),
         };
     }
     if te.args.is_empty() {
@@ -4306,7 +4324,10 @@ fn instantiate_union_mono(
                 TypeLit::String(s) => format!("\"{s}\""),
             };
             if !seen_names.insert(vname.clone()) {
-                return Err(Error::at(format!("duplicate union member `{vname}`"), te.span));
+                return Err(Error::at(
+                    format!("duplicate union member `{vname}`"),
+                    te.span,
+                ));
             }
             let tag = variants.len() as u32;
             if whole_residual || arg_residual {
@@ -4382,7 +4403,10 @@ fn instantiate_union_mono(
             }
         };
         if !seen_names.insert(vname.clone()) {
-            return Err(Error::at(format!("duplicate union member `{vname}`"), te.span));
+            return Err(Error::at(
+                format!("duplicate union member `{vname}`"),
+                te.span,
+            ));
         }
         if let Some(minfo) = types.get(member_name) {
             for f in &minfo.fields {
@@ -4518,9 +4542,7 @@ fn lower_function(
     let ret_ty = fns
         .get(mangled)
         .map(|s| s.ret.clone())
-        .unwrap_or_else(|| {
-            resolve_return_ty(f, is_entry, types, name_to_type).unwrap_or(Ty::Void)
-        });
+        .unwrap_or_else(|| resolve_return_ty(f, is_entry, types, name_to_type).unwrap_or(Ty::Void));
     let mut params = Vec::new();
     for p in &f.params {
         let ty = resolve_ty(&p.ty, types, name_to_type)?;
@@ -4655,7 +4677,9 @@ fn lower_multi_method(
     synthetics: &Rc<RefCell<SyntheticRegistry>>,
 ) -> Result<Function> {
     let info = types.get(mangled_type).ok_or_else(|| {
-        Error::new(format!("internal: missing type `{mangled_type}` for multi-method"))
+        Error::new(format!(
+            "internal: missing type `{mangled_type}` for multi-method"
+        ))
     })?;
     let sig = info.methods.get(method_name).ok_or_else(|| {
         Error::new(format!(
@@ -4796,9 +4820,14 @@ fn lower_multi_clause_cascade(
             };
             let coerced = if ty_eq(&ctx.types, &av_ty, ret_ty) {
                 av_place
-            } else if let Some(p) =
-                try_sum_coerce(ctx, av_place.clone(), &av_ty, ret_ty, None, clause.name_span)?
-            {
+            } else if let Some(p) = try_sum_coerce(
+                ctx,
+                av_place.clone(),
+                &av_ty,
+                ret_ty,
+                None,
+                clause.name_span,
+            )? {
                 p
             } else if can_coerce_ty(&ctx.types, &av_ty, ret_ty) {
                 av_place
@@ -4841,7 +4870,13 @@ fn lower_multi_clause_cascade(
                 if ty_eq(&ctx.types, dom_ty, clause_ty) {
                     continue; // shared formal — always matches
                 }
-                let c = emit_clause_match_cond(ctx, dom_place.clone(), dom_ty, clause_ty, clause.name_span)?;
+                let c = emit_clause_match_cond(
+                    ctx,
+                    dom_place.clone(),
+                    dom_ty,
+                    clause_ty,
+                    clause.name_span,
+                )?;
                 cond_place = Some(match cond_place {
                     None => c,
                     Some(prev) => {
@@ -4920,12 +4955,12 @@ fn refine_formal_to_clause(
         }
     }
 
-    // Clause is a product atom: extract matching payload from domain sum.
-    if let (Ty::User(dn), Ty::User(cn)) = (domain_ty, clause_ty) {
+    // Clause is an atom (product or builtin): extract matching payload from domain sum.
+    if let Ty::User(dn) = domain_ty {
         if let Some(ds) = ctx.types.get(dn).and_then(|i| i.sum.clone()) {
-            if let Some(v) = ds.variants.iter().find(|v| match &v.ty {
-                Ty::User(n) => n == cn,
-                _ => false,
+            if let Some(v) = ds.variants.iter().find(|v| match (&v.ty, clause_ty) {
+                (Ty::User(n), Ty::User(cn)) => n == cn,
+                (vt, ct) => ty_eq(&ctx.types, vt, ct),
             }) {
                 if v.ty != Ty::Void {
                     let pp = ctx.fresh("mcref");
@@ -4977,7 +5012,7 @@ fn emit_clause_match_cond(
             {
                 members
                     .iter()
-                    .map(|(n, ty, lit)| {
+                    .map(|(_n, ty, lit)| {
                         if let Some(l) = lit {
                             match l {
                                 TypeLit::Int(v) => format!("liti_{v}"),
@@ -4993,7 +5028,11 @@ fn emit_clause_match_cond(
                         } else if let Ty::User(un) = ty {
                             format!("ty_{un}")
                         } else {
-                            n.clone()
+                            format!(
+                                "other_{}",
+                                format!("{ty:?}")
+                                    .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+                            )
                         }
                     })
                     .collect()
@@ -5161,10 +5200,7 @@ fn subst_method(m: &Method, subst: &HashMap<String, Ty>) -> Method {
                 default: p.default.as_ref().map(|e| subst_expr(e, subst)),
             })
             .collect(),
-        return_type: m
-            .return_type
-            .as_ref()
-            .map(|t| subst_type_expr(t, subst)),
+        return_type: m.return_type.as_ref().map(|t| subst_type_expr(t, subst)),
         body: subst_block(&m.body, subst),
     }
 }
@@ -5351,10 +5387,7 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
                 .collect(),
         },
     };
-    Expr {
-        kind,
-        span: e.span,
-    }
+    Expr { kind, span: e.span }
 }
 
 fn subst_arg(a: &Arg, subst: &HashMap<String, Ty>) -> Arg {
@@ -5448,11 +5481,7 @@ fn lower_method(
         }
         // Ctor-param types (!zero_init): fields are writable in methods.
         // C-layout (zero_init): only `mut` body fields.
-        let writable = if info.zero_init {
-            f.mutable
-        } else {
-            true
-        };
+        let writable = if info.zero_init { f.mutable } else { true };
         let writeback = if writable {
             Some((recv.clone(), sanitize_field(&f.name)))
         } else {
@@ -5580,10 +5609,7 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
                         coerce_place(ctx, place, &ty, expect, tail.span)?
                     }
                     None => {
-                        return Err(Error::at(
-                            ctx.type_mismatch_msg(expect, &ty),
-                            tail.span,
-                        ));
+                        return Err(Error::at(ctx.type_mismatch_msg(expect, &ty), tail.span));
                     }
                 }
             } else {
@@ -5626,7 +5652,7 @@ fn lower_empty_array_typed(ctx: &mut LowerCtx, elem: &Ty, span: Span) -> Result<
     if array_elem_is_user(elem) && !is_array_user_elem(elem, &ctx.types) {
         return Err(Error::at(
             format!(
-                "Array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {elem:?}"
+                "Array element User type must be constructor-param with Int64/Bool/String/Bytes/Array fields: {elem:?}"
             ),
             span,
         ));
@@ -5676,9 +5702,7 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
                     let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
                     let Ty::Array { elem } = &expect else {
                         return Err(Error::at(
-                            format!(
-                                "empty array `[]` needs Array<T> annotation, got {expect:?}"
-                            ),
+                            format!("empty array `[]` needs Array<T> annotation, got {expect:?}"),
                             *name_span,
                         ));
                     };
@@ -5693,7 +5717,7 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
                     {
                         return Err(Error::at(
                             format!(
-                                "Array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {:?}",
+                                "Array element User type must be constructor-param with Int64/Bool/String/Bytes/Array fields: {:?}",
                                 elem
                             ),
                             *name_span,
@@ -5729,9 +5753,7 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
                         }
                         if !is_abi_scalar(elem) {
                             return Err(Error::at(
-                                format!(
-                                    "fixed Array element must be an ABI scalar, got {elem:?}"
-                                ),
+                                format!("fixed Array element must be an ABI scalar, got {elem:?}"),
                                 *name_span,
                             ));
                         }
@@ -6054,11 +6076,7 @@ fn lower_expr(ctx: &mut LowerCtx, expr: &Expr) -> Result<(Place, Ty)> {
     lower_expr_expect(ctx, expr, None)
 }
 
-fn lower_expr_expect(
-    ctx: &mut LowerCtx,
-    expr: &Expr,
-    expect: Option<&Ty>,
-) -> Result<(Place, Ty)> {
+fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Result<(Place, Ty)> {
     // Thread expect into `if` so branches can inject into an annotated union (D119).
     if let ExprKind::If {
         cond,
@@ -6074,6 +6092,12 @@ fn lower_expr_expect(
             expr.span,
             expect,
         );
+    }
+    // Empty `[]` as a call/return/let value: take elem type from expect.
+    if is_empty_array_lit(expr) {
+        if let Some(Ty::Array { elem }) = expect {
+            return lower_empty_array_typed(ctx, elem.as_ref(), expr.span);
+        }
     }
     // Fixed Array<T,N> from array literal when expected type is known (let/assign).
     if let Some(Ty::FixedArray { elem, len }) = expect {
@@ -6302,9 +6326,7 @@ fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<
                         if ctx.route_clause {
                             ctx.type_mismatch_msg(&fn_ret, &ty)
                         } else {
-                            format!(
-                                "return type mismatch: expected {fn_ret:?}, found {ty:?}"
-                            )
+                            format!("return type mismatch: expected {fn_ret:?}, found {ty:?}")
                         },
                         e.span,
                     ));
@@ -6790,7 +6812,7 @@ fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Pl
                 if array_elem_is_user(&ty) && !is_array_user_elem(&ty, &ctx.types) {
                     return Err(Error::at(
                         format!(
-                            "array element User type must be constructor-param with Int64/Bool/String/Bytes fields: {ty:?}"
+                            "array element User type must be constructor-param with Int64/Bool/String/Bytes/Array fields: {ty:?}"
                         ),
                         e.span,
                     ));
@@ -6866,10 +6888,7 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                         p
                     }
                     Ty::Array { ref elem }
-                        if matches!(
-                            elem.as_ref(),
-                            Ty::Int64 | Ty::Bool | Ty::String
-                        ) =>
+                        if matches!(elem.as_ref(), Ty::Int64 | Ty::Bool | Ty::String) =>
                     {
                         let p = ctx.fresh("ats");
                         ctx.assign(
@@ -7115,12 +7134,7 @@ fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Res
             .fields
             .iter()
             .find(|f| f.name == *name)
-            .ok_or_else(|| {
-                Error::at(
-                    format!("no field `{name}` on `{type_name}`"),
-                    *name_span,
-                )
-            })?;
+            .ok_or_else(|| Error::at(format!("no field `{name}` on `{type_name}`"), *name_span))?;
         match &finfo.ty {
             Ty::FixedArray { elem, len } => {
                 let elem_ty = elem.as_ref().clone();
@@ -7434,6 +7448,7 @@ fn lower_method_call(
     match &recv_ty {
         Ty::Bytes => lower_bytes_method(ctx, recv_p, method, args, method_span),
         Ty::Buffer => lower_buffer_method(ctx, recv_p, method, args, method_span, false),
+        Ty::Node => lower_html_method(ctx, recv_p, method, args, method_span),
         Ty::Array { elem } => {
             lower_array_method(ctx, recv_p, elem.as_ref(), method, args, method_span)
         }
@@ -7534,6 +7549,75 @@ fn lower_buffer_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
         }
         _ => Err(Error::at(
             "`Buffer()` / `Buffer(capacity)` expects 0 or 1 argument",
+            span,
+        )),
+    }
+}
+
+fn lower_html_el(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    let str_arr = Ty::Array {
+        elem: Box::new(Ty::String),
+    };
+    let node_arr = Ty::Array {
+        elem: Box::new(Ty::Node),
+    };
+    let formal = vec![
+        ("tag".into(), Ty::String),
+        ("names".into(), str_arr.clone()),
+        ("vals".into(), str_arr),
+        ("kids".into(), node_arr),
+    ];
+    let defaults = vec![None, None, None, None];
+    let places = resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, "")?;
+    emit_call_result(ctx, Callee::Builtin("html_el".into()), places, Ty::Node)
+}
+
+fn lower_html_child(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    if args.len() != 1 {
+        return Err(Error::at("JSX child takes one argument", span));
+    }
+    let expr = match &args[0] {
+        Arg::Pos(e) => e,
+        Arg::Named { value, .. } => value,
+    };
+    let (p, ty) = lower_expr_expect(ctx, expr, None)?;
+    match &ty {
+        Ty::String => emit_call_result(ctx, Callee::Builtin("html_text".into()), vec![p], Ty::Node),
+        Ty::Node => Ok((p, Ty::Node)),
+        Ty::Array { elem } if matches!(elem.as_ref(), Ty::Node) => {
+            emit_call_result(ctx, Callee::Builtin("html_frag".into()), vec![p], Ty::Node)
+        }
+        other => Err(Error::at(
+            format!(
+                "JSX embed must be String, Node, or Array<Node>, got {}",
+                display_ty(other)
+            ),
+            expr.span,
+        )),
+    }
+}
+
+fn lower_html_method(
+    ctx: &mut LowerCtx,
+    recv: Place,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    match method {
+        "html" => {
+            if !args.is_empty() {
+                return Err(Error::at("Node.html() takes no arguments", span));
+            }
+            emit_call_result(
+                ctx,
+                Callee::Builtin("html_render".into()),
+                vec![recv],
+                Ty::String,
+            )
+        }
+        other => Err(Error::at(
+            format!("no method `{other}` on Node (use .html())"),
             span,
         )),
     }
@@ -7985,9 +8069,7 @@ fn resolve_call_args_with_defaults(
         return Ok(Vec::new());
     }
 
-    let default_at = |i: usize| -> Option<&Expr> {
-        defaults.get(i).and_then(|d| d.as_ref())
-    };
+    let default_at = |i: usize| -> Option<&Expr> { defaults.get(i).and_then(|d| d.as_ref()) };
 
     let all_named = args.iter().all(|a| matches!(a, Arg::Named { .. }));
     let all_pos = args.iter().all(|a| matches!(a, Arg::Pos(_)));
@@ -8270,14 +8352,7 @@ fn lower_try_sum(
         // name and rebuild the target residual product from extracted field(s).
         let saved = std::mem::take(&mut ctx.stmts);
         ctx.stmts = then_body;
-        let inj = rewrap_residual_into(
-            ctx,
-            &scrut_p,
-            residual_tag,
-            &residual_arm,
-            &fn_ret,
-            span,
-        )?;
+        let inj = rewrap_residual_into(ctx, &scrut_p, residual_tag, &residual_arm, &fn_ret, span)?;
         then_body = std::mem::take(&mut ctx.stmts);
         ctx.stmts = saved;
         append_return_with_drops(&mut then_body, &ctx.drop_places, Some(inj), &fn_ret);
@@ -8295,11 +8370,7 @@ fn lower_try_sum(
     } else {
         success_ty.clone()
     };
-    ctx.assign(
-        success_place.clone(),
-        place_ty,
-        RValue::Use(ok_p),
-    );
+    ctx.assign(success_place.clone(), place_ty, RValue::Use(ok_p));
     else_body = std::mem::take(&mut ctx.stmts);
 
     ctx.stmts = outer;
@@ -8340,11 +8411,7 @@ fn sum_success_extract_ty(ctx: &LowerCtx, sum: &SumInfo, span: Span) -> Result<T
     let v = non_res[0];
     match &v.ty {
         Ty::User(n) => {
-            let fields = ctx
-                .types
-                .get(n)
-                .map(|i| i.fields.as_slice())
-                .unwrap_or(&[]);
+            let fields = ctx.types.get(n).map(|i| i.fields.as_slice()).unwrap_or(&[]);
             if fields.is_empty() {
                 Ok(Ty::Void)
             } else if fields.len() == 1 {
@@ -8362,11 +8429,7 @@ fn sum_success_extract_ty(ctx: &LowerCtx, sum: &SumInfo, span: Span) -> Result<T
 fn sum_variant_payload_ty(ctx: &LowerCtx, v: &SumVariant, span: Span) -> Result<Ty> {
     match &v.ty {
         Ty::User(n) => {
-            let fields = ctx
-                .types
-                .get(n)
-                .map(|i| i.fields.as_slice())
-                .unwrap_or(&[]);
+            let fields = ctx.types.get(n).map(|i| i.fields.as_slice()).unwrap_or(&[]);
             if fields.len() == 1 {
                 Ok(fields[0].ty.clone())
             } else if fields.is_empty() {
@@ -8643,11 +8706,7 @@ fn ensure_member_set_type(
     let mut layout_vars = Vec::new();
     for (i, (vname, ty, lit)) in flat.iter().enumerate() {
         let tag = i as u32;
-        let payload_ty = if lit.is_some() {
-            Ty::Void
-        } else {
-            ty.clone()
-        };
+        let payload_ty = if lit.is_some() { Ty::Void } else { ty.clone() };
         variants.push(SumVariant {
             tag,
             name: vname.clone(),
@@ -8835,9 +8894,7 @@ fn materialize_expr_typespace(
                 materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
             }
         }
-        ExprKind::MethodCall {
-            receiver, args, ..
-        } => {
+        ExprKind::MethodCall { receiver, args, .. } => {
             materialize_expr_typespace(receiver, types, layouts, name_map, def_mod)?;
             for a in args {
                 materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
@@ -8972,7 +9029,10 @@ fn sum_variant_key(v: &SumVariant) -> String {
     } else if let Ty::User(n) = &v.ty {
         format!("ty_{n}")
     } else {
-        format!("other_{}", format!("{:?}", v.ty).replace(|c: char| !c.is_ascii_alphanumeric(), "_"))
+        format!(
+            "other_{}",
+            format!("{:?}", v.ty).replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        )
     }
 }
 
@@ -9002,16 +9062,9 @@ fn ty_eq(types: &HashMap<String, TypeInfo>, a: &Ty, b: &Ty) -> bool {
             _ => false,
         },
         (Ty::Array { elem: ae }, Ty::Array { elem: be }) => ty_eq(types, ae, be),
-        (
-            Ty::FixedArray {
-                elem: ae,
-                len: al,
-            },
-            Ty::FixedArray {
-                elem: be,
-                len: bl,
-            },
-        ) => al == bl && ty_eq(types, ae, be),
+        (Ty::FixedArray { elem: ae, len: al }, Ty::FixedArray { elem: be, len: bl }) => {
+            al == bl && ty_eq(types, ae, be)
+        }
         (Ty::Address(ae), Ty::Address(be)) => ty_eq(types, ae, be),
         _ => false,
     }
@@ -9026,25 +9079,30 @@ fn can_coerce_ty(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool 
     if ty_eq(types, from, to) {
         return true;
     }
-    let (Ty::User(from_n), Ty::User(to_n)) = (from, to) else {
+    let Ty::User(to_n) = to else {
         return false;
     };
     let Some(to_sum) = types.get(to_n).and_then(|i| i.sum.as_ref()) else {
         return false;
     };
-    // Atom inject into union.
-    if to_sum.variants.iter().any(|v| match &v.ty {
-        Ty::User(n) => n == from_n,
-        _ => false,
-    }) {
+    // Atom inject into union (User or builtin payload).
+    if let Ty::User(from_n) = from {
+        if to_sum.variants.iter().any(|v| match &v.ty {
+            Ty::User(n) => n == from_n,
+            _ => false,
+        }) {
+            return true;
+        }
+    } else if to_sum.variants.iter().any(|v| ty_eq(types, &v.ty, from)) {
         return true;
     }
+    let Ty::User(from_n) = from else {
+        return false;
+    };
     // Nested / smaller sum inject into larger (after flatten, members are atoms).
     if let Some(from_sum) = types.get(from_n).and_then(|i| i.sum.as_ref()) {
         let to_set = sum_member_set(to_sum);
-        return sum_member_set(from_sum)
-            .iter()
-            .all(|k| to_set.contains(k));
+        return sum_member_set(from_sum).iter().all(|k| to_set.contains(k));
     }
     false
 }
@@ -9172,9 +9230,7 @@ fn try_sum_coerce(
             let to_set = sum_member_set(&ts);
             let from_set = sum_member_set(&fs);
             if !from_set.is_empty() && from_set.iter().all(|k| to_set.contains(k)) {
-                return Ok(Some(emit_sum_remap(
-                    ctx, place, from_n, to_n, &fs, &ts,
-                )?));
+                return Ok(Some(emit_sum_remap(ctx, place, from_n, to_n, &fs, &ts)?));
             }
         }
     }
@@ -9197,7 +9253,7 @@ fn try_sum_inject(
     to: &Ty,
     _span: Span,
 ) -> Result<Option<Place>> {
-    let (Ty::User(from_n), Ty::User(to_n)) = (from, to) else {
+    let Ty::User(to_n) = to else {
         return Ok(None);
     };
     let Some(info) = ctx.types.get(to_n) else {
@@ -9206,9 +9262,9 @@ fn try_sum_inject(
     let Some(sum) = info.sum.as_ref() else {
         return Ok(None);
     };
-    let Some(v) = sum.variants.iter().find(|v| match &v.ty {
-        Ty::User(n) => n == from_n,
-        _ => false,
+    let Some(v) = sum.variants.iter().find(|v| match (&v.ty, from) {
+        (Ty::User(n), Ty::User(from_n)) => n == from_n,
+        (vt, ft) => ty_eq(&ctx.types, vt, ft),
     }) else {
         return Ok(None);
     };
@@ -9436,14 +9492,7 @@ fn lower_match_sum(
                 };
                 let mut body = std::mem::take(&mut ctx.stmts);
                 ctx.stmts = outer;
-                finish_match_arm_ty(
-                    ctx,
-                    &result_place,
-                    &mut result_ty,
-                    arm_val,
-                    &mut body,
-                    span,
-                )?;
+                finish_match_arm_ty(ctx, &result_place, &mut result_ty, arm_val, &mut body, span)?;
                 codes.push(ArmCode {
                     tag: None,
                     prefix: Vec::new(),
@@ -9531,10 +9580,7 @@ fn lower_match_sum(
                     .iter()
                     .find(|v| v.name == *name)
                     .ok_or_else(|| {
-                        Error::at(
-                            format!("`{name}` is not a member of this union"),
-                            *pspan,
-                        )
+                        Error::at(format!("`{name}` is not a member of this union"), *pspan)
                     })?
                     .clone();
                 let guarded = arm.guard.is_some();
@@ -9633,24 +9679,18 @@ fn lower_match_sum(
                     body,
                 });
             }
-            Pattern::IntLit { .. }
-            | Pattern::BoolLit { .. }
-            | Pattern::StringLit { .. } => {
+            Pattern::IntLit { .. } | Pattern::BoolLit { .. } | Pattern::StringLit { .. } => {
                 let (lit, pspan) = match &arm.pattern {
                     Pattern::IntLit { value, span } => (TypeLit::Int(*value), *span),
                     Pattern::BoolLit { value, span } => (TypeLit::Bool(*value), *span),
-                    Pattern::StringLit { value, span } => {
-                        (TypeLit::String(value.clone()), *span)
-                    }
+                    Pattern::StringLit { value, span } => (TypeLit::String(value.clone()), *span),
                     _ => unreachable!(),
                 };
                 let variant = sum
                     .variants
                     .iter()
                     .find(|v| v.lit.as_ref() == Some(&lit))
-                    .ok_or_else(|| {
-                        Error::at("literal is not a member of this union", pspan)
-                    })?
+                    .ok_or_else(|| Error::at("literal is not a member of this union", pspan))?
                     .clone();
                 let guarded = arm.guard.is_some();
                 if !guarded && !covered.insert(variant.tag) {
@@ -9691,9 +9731,7 @@ fn lower_match_sum(
         missing.sort();
         let list = missing.join(", ");
         return Err(Error::at(
-            format!(
-                "non-exhaustive union match: missing {list} (or add `else`)"
-            ),
+            format!("non-exhaustive union match: missing {list} (or add `else`)"),
             span,
         ));
     }
@@ -9868,19 +9906,13 @@ fn lower_match_value(
                     }
                     Pattern::IntLit { value, span: ps } => {
                         if seen_i.contains(value) {
-                            return Err(Error::at(
-                                format!("duplicate match arm for {value}"),
-                                *ps,
-                            ));
+                            return Err(Error::at(format!("duplicate match arm for {value}"), *ps));
                         }
                         seen_i.push(*value);
                     }
                     Pattern::BoolLit { value, span: ps } => {
                         if seen_b.contains(value) {
-                            return Err(Error::at(
-                                format!("duplicate match arm for {value}"),
-                                *ps,
-                            ));
+                            return Err(Error::at(format!("duplicate match arm for {value}"), *ps));
                         }
                         seen_b.push(*value);
                     }
@@ -10200,7 +10232,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
             ctx.assign(place.clone(), ty.clone(), RValue::Int(0))
         }
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } => {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } => {
             ctx.note_drop_place(place, ty);
             ctx.stmts.push(Stmt::Assign {
                 place: place.clone(),
@@ -10250,7 +10282,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                     match &f.ty {
                         Ty::Int64 => ctx.assign(fp.clone(), Ty::Int64, RValue::Int(0)),
                         Ty::Bool => ctx.assign(fp.clone(), Ty::Bool, RValue::Bool(false)),
-                        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } => {
+                        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } => {
                             ctx.note_drop_place(&fp, &f.ty);
                             ctx.stmts.push(Stmt::Assign {
                                 place: fp.clone(),
@@ -10461,7 +10493,10 @@ fn union_arm_payload(types: &HashMap<String, TypeInfo>, union: &Ty, arm: &str) -
         return None;
     };
     let sum = types.get(n)?.sum.as_ref()?;
-    sum.variants.iter().find(|v| v.name == arm).map(|v| v.ty.clone())
+    sum.variants
+        .iter()
+        .find(|v| v.name == arm)
+        .map(|v| v.ty.clone())
 }
 
 /// Construct a monomorphized product type by mangled name.
@@ -10504,10 +10539,16 @@ fn construct_product(
         }
         if args.len() == 1 {
             // Evaluate Void arg for side effects / type check.
-            let _ = lower_arg_for_formal(ctx, match &args[0] {
-                Arg::Pos(e) => e,
-                Arg::Named { value, .. } => value,
-            }, &Ty::Void, "value", 0)?;
+            let _ = lower_arg_for_formal(
+                ctx,
+                match &args[0] {
+                    Arg::Pos(e) => e,
+                    Arg::Named { value, .. } => value,
+                },
+                &Ty::Void,
+                "value",
+                0,
+            )?;
         }
         ctx.assign(
             p.clone(),
@@ -10522,18 +10563,11 @@ fn construct_product(
             .iter()
             .map(|f| (f.name.clone(), f.ty.clone()))
             .collect();
-        let defaults: Vec<Option<Expr>> =
-            real_fields.iter().map(|f| f.default.clone()).collect();
+        let defaults: Vec<Option<Expr>> = real_fields.iter().map(|f| f.default.clone()).collect();
         // If source fields include Void, formals are only non-Void; call sites use
         // non-Void args only (Pass(box) not Pass(Void, box)).
-        let field_places = resolve_call_args_with_defaults(
-            ctx,
-            &formal,
-            &defaults,
-            args,
-            span,
-            &info.def_mod,
-        )?;
+        let field_places =
+            resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, &info.def_mod)?;
         // Shallow product; inject_into_union Dups before the sum takes ownership.
         // Use assign_no_drop so end-of-fn drops don't free the product twice.
         ctx.assign_no_drop(
@@ -10576,18 +10610,21 @@ fn rewrap_residual_into(
     fn_ret: &Ty,
     span: Span,
 ) -> Result<Place> {
-    let target_arm_ty = union_arm_payload(&ctx.types, fn_ret, &residual_arm.name).ok_or_else(|| {
-        Error::at(
-            format!(
-                "`?` residual arm `{}` is not present on enclosing return type {fn_ret:?}",
-                residual_arm.name
-            ),
-            span,
-        )
-    })?;
+    let target_arm_ty =
+        union_arm_payload(&ctx.types, fn_ret, &residual_arm.name).ok_or_else(|| {
+            Error::at(
+                format!(
+                    "`?` residual arm `{}` is not present on enclosing return type {fn_ret:?}",
+                    residual_arm.name
+                ),
+                span,
+            )
+        })?;
 
     // Nullary residual (Not).
-    if residual_arm.ty == Ty::Void || matches!(&target_arm_ty, Ty::User(n) if ctx.types.get(n).map(|i| i.fields.is_empty()).unwrap_or(false)) {
+    if residual_arm.ty == Ty::Void
+        || matches!(&target_arm_ty, Ty::User(n) if ctx.types.get(n).map(|i| i.fields.is_empty()).unwrap_or(false))
+    {
         let Ty::User(tname) = &target_arm_ty else {
             return Err(Error::at("internal: residual target not a product", span));
         };
@@ -10620,12 +10657,16 @@ fn rewrap_residual_into(
     let Ty::User(dst_n) = &target_arm_ty else {
         return Err(Error::at("internal: residual target not User", span));
     };
-    let src_info = ctx.types.get(src_n).cloned().ok_or_else(|| {
-        Error::at(format!("unknown residual type `{src_n}`"), span)
-    })?;
-    let dst_info = ctx.types.get(dst_n).cloned().ok_or_else(|| {
-        Error::at(format!("unknown residual target `{dst_n}`"), span)
-    })?;
+    let src_info = ctx
+        .types
+        .get(src_n)
+        .cloned()
+        .ok_or_else(|| Error::at(format!("unknown residual type `{src_n}`"), span))?;
+    let dst_info = ctx
+        .types
+        .get(dst_n)
+        .cloned()
+        .ok_or_else(|| Error::at(format!("unknown residual target `{dst_n}`"), span))?;
     if src_info.fields.len() != dst_info.fields.len() {
         return Err(Error::at(
             format!(
@@ -10723,14 +10764,13 @@ fn lower_pass_fail(
         // Infer Trial<Int64, Int64> — monomorph must already exist from type annotations.
         fallible_mono(ctx, "Trial", &[Ty::Int64, Ty::Int64], span)?
     };
-    let arm_ty = union_arm_payload(&ctx.types, &trial_ty, callee).ok_or_else(|| {
-        Error::at(
-            format!("`{callee}` is not an arm of {trial_ty:?}"),
-            span,
-        )
-    })?;
+    let arm_ty = union_arm_payload(&ctx.types, &trial_ty, callee)
+        .ok_or_else(|| Error::at(format!("`{callee}` is not an arm of {trial_ty:?}"), span))?;
     let Ty::User(arm_name) = arm_ty else {
-        return Err(Error::at(format!("internal: `{callee}` arm is not a product"), span));
+        return Err(Error::at(
+            format!("internal: `{callee}` arm is not a product"),
+            span,
+        ));
     };
     let (atom, aty) = construct_product(ctx, &arm_name, args, span)?;
     inject_into_union(ctx, atom, &aty, &trial_ty, span)
@@ -10760,9 +10800,8 @@ fn lower_has(
         // Infer May<Int64> when no annotation (historical Has(int) default).
         fallible_mono(ctx, "May", &[Ty::Int64], span)?
     };
-    let arm_ty = union_arm_payload(&ctx.types, &may_ty, "Has").ok_or_else(|| {
-        Error::at(format!("`Has` is not an arm of {may_ty:?}"), span)
-    })?;
+    let arm_ty = union_arm_payload(&ctx.types, &may_ty, "Has")
+        .ok_or_else(|| Error::at(format!("`Has` is not an arm of {may_ty:?}"), span))?;
     let Ty::User(arm_name) = arm_ty else {
         return Err(Error::at("internal: Has arm is not a product", span));
     };
@@ -10793,9 +10832,8 @@ fn lower_not(
     } else {
         fallible_mono(ctx, "May", &[Ty::Int64], span)?
     };
-    let arm_ty = union_arm_payload(&ctx.types, &may_ty, "Not").ok_or_else(|| {
-        Error::at(format!("`Not` is not an arm of {may_ty:?}"), span)
-    })?;
+    let arm_ty = union_arm_payload(&ctx.types, &may_ty, "Not")
+        .ok_or_else(|| Error::at(format!("`Not` is not an arm of {may_ty:?}"), span))?;
     let Ty::User(arm_name) = arm_ty else {
         // Nullary Not is User with empty fields.
         return Err(Error::at("internal: Not arm is not a product", span));
@@ -10820,11 +10858,13 @@ fn lower_call(
             lower_bytes_new(ctx, args, span)
         }
         "Buffer" => lower_buffer_new(ctx, args, span),
+        "__jsx_el" => lower_html_el(ctx, args, span),
+        "__jsx_child" => lower_html_child(ctx, args, span),
         other => {
             // Type constructor via local or imported name.
             if let Some(base_mangled) = ctx.resolve_type_name(other) {
-                let mangled_ty =
-                    resolve_ctor_mono(ctx, &base_mangled, other, expect, span)?.unwrap_or(base_mangled);
+                let mangled_ty = resolve_ctor_mono(ctx, &base_mangled, other, expect, span)?
+                    .unwrap_or(base_mangled);
                 let info = ctx
                     .types
                     .get(&mangled_ty)
@@ -11115,6 +11155,16 @@ fn collect_union_members(
                 Some(vec![(n.clone(), ty.clone(), None)])
             }
         }
+        // Builtins as single-member sets so D131 can join String | User | Array.
+        Ty::String => Some(vec![("String".into(), ty.clone(), None)]),
+        Ty::Node => Some(vec![("Node".into(), ty.clone(), None)]),
+        Ty::Int64 => Some(vec![("Int64".into(), ty.clone(), None)]),
+        Ty::Bool => Some(vec![("Bool".into(), ty.clone(), None)]),
+        Ty::Bytes => Some(vec![("Bytes".into(), ty.clone(), None)]),
+        Ty::Array { .. } => {
+            let key = format!("Array_{}", display_ty(ty).replace(['<', '>', ' '], "_"));
+            Some(vec![(key, ty.clone(), None)])
+        }
         _ => None,
     }
 }
@@ -11231,11 +11281,7 @@ fn ensure_synthetic_sum(
     let mut layout_vars = Vec::new();
     for (i, (_, name, ty, lit)) in keyed.iter().enumerate() {
         let tag = i as u32;
-        let payload_ty = if lit.is_some() {
-            Ty::Void
-        } else {
-            ty.clone()
-        };
+        let payload_ty = if lit.is_some() { Ty::Void } else { ty.clone() };
         // Prefer source atom name for patterns when User.
         let vname = if lit.is_some() {
             name.clone()

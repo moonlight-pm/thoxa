@@ -48,6 +48,8 @@ void thoxa_dup(void *ptr) {
     h->refcount += 1;
 }
 
+static void thoxa_html_free_payload(ThoxaHtml *n);
+
 void thoxa_drop(void *ptr) {
     ThoxaHeader *h = header_of(ptr);
     if (!h) {
@@ -58,6 +60,9 @@ void thoxa_drop(void *ptr) {
     }
     h->refcount -= 1;
     if (h->refcount == 0) {
+        if (h->type_tag == THOXA_TAG_HTML) {
+            thoxa_html_free_payload((ThoxaHtml *)ptr);
+        }
         free(h);
     }
 }
@@ -1456,4 +1461,242 @@ const char *thoxa_hostname(void) {
     }
     buf[sizeof buf - 1] = '\0';
     return buf;
+}
+
+/* --- HTML tree (builtin Node) ------------------------------------------- */
+
+static void thoxa_html_free_payload(ThoxaHtml *n) {
+    if (!n) {
+        return;
+    }
+    thoxa_drop(n->tag);
+    thoxa_drop(n->text);
+    thoxa_array_drop(n->attr_names);
+    thoxa_array_drop(n->attr_vals);
+    thoxa_array_drop(n->kids);
+}
+
+static ThoxaArray *html_own_str_arr(ThoxaArray *a) {
+    if (!a) {
+        return thoxa_array_new(1);
+    }
+    thoxa_array_dup(a);
+    return a;
+}
+
+static ThoxaArray *html_own_kid_arr(ThoxaArray *a) {
+    if (!a) {
+        return thoxa_array_new(1);
+    }
+    thoxa_array_dup(a);
+    return a;
+}
+
+ThoxaHtml *thoxa_html_el(
+    ThoxaString *tag,
+    ThoxaArray *attr_names,
+    ThoxaArray *attr_vals,
+    ThoxaArray *kids
+) {
+    ThoxaHtml *n = (ThoxaHtml *)thoxa_alloc(sizeof(ThoxaHtml), THOXA_TAG_HTML);
+    n->kind = THOXA_HTML_EL;
+    n->tag = tag;
+    thoxa_dup(tag);
+    n->text = NULL;
+    n->attr_names = html_own_str_arr(attr_names);
+    n->attr_vals = html_own_str_arr(attr_vals);
+    n->kids = html_own_kid_arr(kids);
+    return n;
+}
+
+static ThoxaString *html_escape_text(const ThoxaString *s) {
+    if (!s || s->len == 0) {
+        return thoxa_string_new("", 0);
+    }
+    size_t extra = 0;
+    for (size_t i = 0; i < s->len; i++) {
+        char c = s->data[i];
+        if (c == '&') {
+            extra += 4;
+        } else if (c == '<' || c == '>') {
+            extra += 3;
+        }
+    }
+    if (extra == 0) {
+        thoxa_dup((void *)s);
+        return (ThoxaString *)s;
+    }
+    size_t nlen = s->len + extra;
+    char *buf = (char *)malloc(nlen);
+    if (!buf) {
+        thoxa_panic("out of memory");
+    }
+    size_t o = 0;
+    for (size_t i = 0; i < s->len; i++) {
+        char c = s->data[i];
+        if (c == '&') {
+            memcpy(buf + o, "&amp;", 5);
+            o += 5;
+        } else if (c == '<') {
+            memcpy(buf + o, "&lt;", 4);
+            o += 4;
+        } else if (c == '>') {
+            memcpy(buf + o, "&gt;", 4);
+            o += 4;
+        } else {
+            buf[o++] = c;
+        }
+    }
+    ThoxaString *out = thoxa_string_new(buf, o);
+    free(buf);
+    return out;
+}
+
+ThoxaHtml *thoxa_html_text(ThoxaString *s) {
+    ThoxaHtml *n = (ThoxaHtml *)thoxa_alloc(sizeof(ThoxaHtml), THOXA_TAG_HTML);
+    n->kind = THOXA_HTML_TEXT;
+    n->tag = NULL;
+    n->text = html_escape_text(s);
+    n->attr_names = NULL;
+    n->attr_vals = NULL;
+    n->kids = NULL;
+    return n;
+}
+
+ThoxaHtml *thoxa_html_frag(ThoxaArray *kids) {
+    ThoxaHtml *n = (ThoxaHtml *)thoxa_alloc(sizeof(ThoxaHtml), THOXA_TAG_HTML);
+    n->kind = THOXA_HTML_FRAG;
+    n->tag = NULL;
+    n->text = NULL;
+    n->attr_names = NULL;
+    n->attr_vals = NULL;
+    n->kids = html_own_kid_arr(kids);
+    return n;
+}
+
+static int html_is_void(const ThoxaString *tag) {
+    if (!tag) {
+        return 0;
+    }
+    const char *s = thoxa_string_cstr(tag);
+    return strcmp(s, "br") == 0 || strcmp(s, "hr") == 0 || strcmp(s, "img") == 0
+        || strcmp(s, "input") == 0 || strcmp(s, "meta") == 0
+        || strcmp(s, "link") == 0;
+}
+
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+} HtmlBuf;
+
+static void html_buf_grow(HtmlBuf *b, size_t more) {
+    if (b->len + more <= b->cap) {
+        return;
+    }
+    size_t ncap = b->cap ? b->cap : 64;
+    while (ncap < b->len + more) {
+        ncap *= 2;
+    }
+    char *nd = (char *)realloc(b->data, ncap);
+    if (!nd) {
+        thoxa_panic("out of memory");
+    }
+    b->data = nd;
+    b->cap = ncap;
+}
+
+static void html_buf_app(HtmlBuf *b, const char *s, size_t n) {
+    if (!s || n == 0) {
+        return;
+    }
+    html_buf_grow(b, n);
+    memcpy(b->data + b->len, s, n);
+    b->len += n;
+}
+
+static void html_buf_cstr(HtmlBuf *b, const char *s) {
+    if (s) {
+        html_buf_app(b, s, strlen(s));
+    }
+}
+
+static void html_buf_esc_attr(HtmlBuf *b, const ThoxaString *s) {
+    if (!s) {
+        return;
+    }
+    for (size_t i = 0; i < s->len; i++) {
+        char c = s->data[i];
+        if (c == '&') {
+            html_buf_cstr(b, "&amp;");
+        } else if (c == '"') {
+            html_buf_cstr(b, "&quot;");
+        } else {
+            html_buf_app(b, &c, 1);
+        }
+    }
+}
+
+static void html_render_into(const ThoxaHtml *n, HtmlBuf *b);
+
+static void html_render_kids(const ThoxaArray *kids, HtmlBuf *b) {
+    if (!kids) {
+        return;
+    }
+    int64_t n = thoxa_array_count(kids);
+    for (int64_t i = 0; i < n; i++) {
+        ThoxaHtml *k = (ThoxaHtml *)thoxa_array_get_ptr(kids, i);
+        html_render_into(k, b);
+    }
+}
+
+static void html_render_into(const ThoxaHtml *n, HtmlBuf *b) {
+    if (!n) {
+        return;
+    }
+    if (n->kind == THOXA_HTML_TEXT) {
+        if (n->text) {
+            html_buf_app(b, n->text->data, n->text->len);
+        }
+        return;
+    }
+    if (n->kind == THOXA_HTML_FRAG) {
+        html_render_kids(n->kids, b);
+        return;
+    }
+    html_buf_cstr(b, "<");
+    if (n->tag) {
+        html_buf_app(b, n->tag->data, n->tag->len);
+    }
+    int64_t ac = thoxa_array_count(n->attr_names);
+    int64_t vc = thoxa_array_count(n->attr_vals);
+    int64_t nattr = ac < vc ? ac : vc;
+    for (int64_t i = 0; i < nattr; i++) {
+        ThoxaString *name = (ThoxaString *)thoxa_array_get_ptr(n->attr_names, i);
+        ThoxaString *val = (ThoxaString *)thoxa_array_get_ptr(n->attr_vals, i);
+        html_buf_cstr(b, " ");
+        if (name) {
+            html_buf_app(b, name->data, name->len);
+        }
+        html_buf_cstr(b, "=\"");
+        html_buf_esc_attr(b, val);
+        html_buf_cstr(b, "\"");
+    }
+    html_buf_cstr(b, ">");
+    if (!html_is_void(n->tag)) {
+        html_render_kids(n->kids, b);
+        html_buf_cstr(b, "</");
+        if (n->tag) {
+            html_buf_app(b, n->tag->data, n->tag->len);
+        }
+        html_buf_cstr(b, ">");
+    }
+}
+
+ThoxaString *thoxa_html_render(const ThoxaHtml *n) {
+    HtmlBuf b = {0};
+    html_render_into(n, &b);
+    ThoxaString *s = thoxa_string_new(b.data ? b.data : "", b.len);
+    free(b.data);
+    return s;
 }

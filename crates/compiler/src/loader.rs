@@ -85,10 +85,7 @@ pub fn resolve_entry(path: &Path) -> Result<PathBuf> {
     if path.is_file() {
         return Ok(path);
     }
-    Err(Error::new(format!(
-        "source not found: {}",
-        path.display()
-    )))
+    Err(Error::new(format!("source not found: {}", path.display())))
 }
 
 /// Load the entry file and every `./` / `~/` import transitively.
@@ -164,10 +161,7 @@ pub fn load_package_with_entry_ast(entry: &Path, entry_ast: ast::Module) -> Resu
         .collect();
     for imp in &imports {
         let dep = resolve_specifier(&imp.path, dir, &project_root, imp.path_span)?;
-        let stem = dep
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let stem = dep.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         if !is_pascal_case(stem) {
             return Err(Error::at(
                 format!(
@@ -287,9 +281,8 @@ fn load_one(
         return Ok(());
     }
 
-    let src = fs::read_to_string(&path).map_err(|e| {
-        Error::new(format!("cannot read {}: {e}", path.display()))
-    })?;
+    let src = fs::read_to_string(&path)
+        .map_err(|e| Error::new(format!("cannot read {}: {e}", path.display())))?;
     // Entry session scripts: command-skin desugar before parse (PR2).
     let src = if is_entry {
         crate::command::desugar_session_source(&src)?
@@ -297,7 +290,7 @@ fn load_one(
         src
     };
     let tokens = Lexer::new(&src).tokenize()?;
-    let ast = Parser::new(tokens).parse_module()?;
+    let ast = Parser::new(tokens).with_source(src).parse_module()?;
     let id = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -321,10 +314,7 @@ fn load_one(
     for imp in &imports {
         let dep = resolve_specifier(&imp.path, dir, project_root, imp.path_span)?;
         // Non-entry modules must be PascalCase file names.
-        let stem = dep
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let stem = dep.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         if !is_pascal_case(stem) {
             return Err(Error::at(
                 format!(
@@ -334,15 +324,7 @@ fn load_one(
                 imp.path_span,
             ));
         }
-        load_one(
-            &dep,
-            false,
-            project_root,
-            by_path,
-            order,
-            visiting,
-            visited,
-        )?;
+        load_one(&dep, false, project_root, by_path, order, visiting, visited)?;
     }
 
     visiting.remove(&path);
@@ -482,9 +464,7 @@ fn resolve_specifier(
         ));
     } else {
         return Err(Error::at(
-            format!(
-                "unknown import origin in `{spec}` — use `./…`, `~/…`, or `std/…`"
-            ),
+            format!("unknown import origin in `{spec}` — use `./…`, `~/…`, or `std/…`"),
             span,
         ));
     };
@@ -560,11 +540,10 @@ fn insert_selective_import_names(
             .with_path(importer_path));
         }
         if map.contains_key(&local) {
-            return Err(Error::at(
-                format!("duplicate import binding `{local}`"),
-                n.name_span,
-            )
-            .with_path(importer_path));
+            return Err(
+                Error::at(format!("duplicate import binding `{local}`"), n.name_span)
+                    .with_path(importer_path),
+            );
         }
         map.insert(
             local,
@@ -644,16 +623,13 @@ pub fn build_import_maps(
             let Item::Import(imp) = item else { continue };
             let dep_path = resolve_specifier(&imp.path, dir, &package.project_root, imp.path_span)
                 .map_err(|e| e.with_path(&m.path))?;
-            let from_module = path_to_id
-                .get(&dep_path)
-                .cloned()
-                .ok_or_else(|| {
-                    Error::at(
-                        format!("internal: module {} not loaded", dep_path.display()),
-                        imp.path_span,
-                    )
-                    .with_path(&m.path)
-                })?;
+            let from_module = path_to_id.get(&dep_path).cloned().ok_or_else(|| {
+                Error::at(
+                    format!("internal: module {} not loaded", dep_path.display()),
+                    imp.path_span,
+                )
+                .with_path(&m.path)
+            })?;
             let export_set = exports.get(&from_module).cloned().unwrap_or_default();
 
             match &imp.kind {

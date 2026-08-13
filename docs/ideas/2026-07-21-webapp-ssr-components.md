@@ -1,6 +1,9 @@
 # Idea: Server-rendered web components (HTML trees + optional tag sugar)
 
-**Status:** sleeping — speculation only; do not implement yet.  
+**Status:** sleeping — first cut **landed as experiment** (2026-08-13): builtin
+`Node` + tag literals, no import. See
+[`2026-08-13-jsx-node-syntax-experiment.md`](2026-08-13-jsx-node-syntax-experiment.md).
+This file stays the longer design fork (sums, Attr model, streaming).  
 **Sparked by:** `scratch/webapp.thx` musing on component/`view` + JSX-like markup for web apps.  
 **Related:** D67–D70 (HTTP server / Request / Response / Router), D53–D55 (Array), D84 (bare `type`), SPEC §4.1 defaults **[M3]**, SPEC §6 sum types **[M2]**, D2 (effects deferred).
 

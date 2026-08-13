@@ -38,12 +38,22 @@ pub fn emit_program(program: &Program) -> String {
 
 /// Emit C for a session shared-library step TU (step body + ABI entry).
 pub fn emit_session_step(program: &Program) -> String {
-    emit_program_with(program, EntryPoint::SessionStep, BodySet::SessionStepOnly, false)
+    emit_program_with(
+        program,
+        EntryPoint::SessionStep,
+        BodySet::SessionStepOnly,
+        false,
+    )
 }
 
 /// Emit C for a session preamble TU (helpers, globals, init; no step/main).
 pub fn emit_session_base(program: &Program) -> String {
-    emit_program_with(program, EntryPoint::SessionBase, BodySet::SessionBaseOnly, true)
+    emit_program_with(
+        program,
+        EntryPoint::SessionBase,
+        BodySet::SessionBaseOnly,
+        true,
+    )
 }
 
 /// Emit one C TU with session init + step entry (libtcc memory path, D105).
@@ -117,6 +127,20 @@ pub fn emit_program_with(
                     push_user_array_elem(&g.ty, &mut user_arr_elems);
                 }
             }
+        }
+    }
+    for name in &user_arr_elems {
+        if program.types.iter().any(|t| t.name == *name) {
+            let _ = writeln!(
+                out,
+                "static void {}(void *p);",
+                array_user_elem_dup_fn(name)
+            );
+            let _ = writeln!(
+                out,
+                "static void {}(void *p);",
+                array_user_elem_drop_fn(name)
+            );
         }
     }
     for name in &user_arr_elems {
@@ -353,7 +377,9 @@ fn emit_typedefs_topo(out: &mut String, types: &[TypeLayout]) {
         let mut next = Vec::new();
         let mut progressed = false;
         for t in remaining {
-            let ready = layout_deps(t).iter().all(|d| !names.contains(d) || done.contains(d));
+            let ready = layout_deps(t)
+                .iter()
+                .all(|d| !names.contains(d) || done.contains(d));
             if ready {
                 emit_typedef(out, t);
                 done.insert(t.name.clone());
@@ -395,12 +421,7 @@ fn emit_typedef(out: &mut String, t: &TypeLayout) {
         if !payload_vars.is_empty() {
             out.push_str("    union {\n");
             for v in payload_vars {
-                let _ = writeln!(
-                    out,
-                    "        {} v{};",
-                    c_ty(&v.payload_ty),
-                    v.tag
-                );
+                let _ = writeln!(out, "        {} v{};", c_ty(&v.payload_ty), v.tag);
             }
             out.push_str("    } u;\n");
         }
@@ -516,7 +537,10 @@ fn emit_function(
 }
 
 fn is_heap_ty(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. })
+    matches!(
+        ty,
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. }
+    )
 }
 
 /// Pure-literal union stored as a narrow scalar (not a tagged struct).
@@ -532,14 +556,14 @@ fn is_sum_scalar(types: &[TypeLayout], sum_type: &str) -> bool {
 fn needs_drop_ty(ty: &Ty) -> bool {
     matches!(
         ty,
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } | Ty::User(_)
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::User(_)
     )
 }
 
 /// Declare a local with a safe zero value (so branch-skipped drops are no-ops).
 fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
     match ty {
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Array { .. } => {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } => {
             let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
         }
         Ty::User(_) => {
@@ -594,7 +618,9 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
     let pad = "    ".repeat(indent);
     for s in stmts {
         match s {
-            Stmt::Assign { place, ty, value, .. } => {
+            Stmt::Assign {
+                place, ty, value, ..
+            } => {
                 // User ArrayGet writes through out-param (not an expression).
                 // Drop any prior field ownership in `place` before overwrite (D65
                 // defensive: MIR usually Drop's or uses a zeroed fresh place).
@@ -604,14 +630,7 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                     elem_ty: Ty::User(type_name),
                 } = value
                 {
-                    emit_rc(
-                        out,
-                        &pad,
-                        place,
-                        &Ty::User(type_name.clone()),
-                        false,
-                        types,
-                    );
+                    emit_rc(out, &pad, place, &Ty::User(type_name.clone()), false, types);
                     let _ = writeln!(
                         out,
                         "{pad}thoxa_array_get_elem({}, {}, &{}, {});",
@@ -678,11 +697,7 @@ fn emit_stmts(out: &mut String, stmts: &[Stmt], indent: usize, types: &[TypeLayo
                 // Heap field store: drop previous field ownership, then share
                 // `value` (MIR Dup keeps a live local when needed).
                 if is_heap_ty(ty) {
-                    let _ = writeln!(
-                        out,
-                        "{pad}thoxa_drop({}{}{});",
-                        base.name, acc, field
-                    );
+                    let _ = writeln!(out, "{pad}thoxa_drop({}{}{});", base.name, acc, field);
                     let _ = writeln!(
                         out,
                         "{pad}{}{}{} = ({}){};",
@@ -929,6 +944,10 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     "array_insert_at_i64" => "thoxa_array_insert_at_i64",
                     "array_insert_at_ptr" => "thoxa_array_insert_at_ptr",
                     "array_remove_at" => "thoxa_array_remove_at",
+                    "html_el" => "thoxa_html_el",
+                    "html_text" => "thoxa_html_text",
+                    "html_frag" => "thoxa_html_frag",
+                    "html_render" => "thoxa_html_render",
                     other => other,
                 };
                 out.push_str(c);
@@ -1024,13 +1043,7 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             let _ = write!(out, "({}){{0}}", c_type_name(type_name));
         }
         RValue::Field { base, field } => {
-            let _ = write!(
-                out,
-                "{}{}{}",
-                base.name,
-                recv_access(base),
-                field
-            );
+            let _ = write!(out, "{}{}{}", base.name, recv_access(base), field);
         }
         RValue::Index { base, field, index } => {
             let _ = write!(
@@ -1222,6 +1235,7 @@ fn c_ty(ty: &Ty) -> String {
         Ty::String => "ThoxaString*".into(),
         Ty::Bytes => "ThoxaBytes*".into(),
         Ty::Buffer => "ThoxaBuffer*".into(),
+        Ty::Node => "ThoxaHtml*".into(),
         Ty::Array { .. } => "ThoxaArray*".into(),
         Ty::Void | Ty::Never => "void".into(),
         Ty::User(name) => c_type_name(name),
@@ -1234,7 +1248,7 @@ fn c_ty(ty: &Ty) -> String {
 }
 
 fn emit_array_lit(out: &mut String, elems: &[crate::mir::Place], elem_ty: &Ty) {
-    let heap = matches!(elem_ty, Ty::String | Ty::Bytes);
+    let heap = matches!(elem_ty, Ty::String | Ty::Bytes | Ty::Node);
     if let Ty::User(type_name) = elem_ty {
         let cty = c_type_name(type_name);
         let dup = array_user_elem_dup_fn(type_name);
@@ -1298,10 +1312,9 @@ fn array_user_elem_drop_fn(type_name: &str) -> String {
 }
 
 /// Static field-walk helpers used as ThoxaArrayElemFn for Array<User>.
-/// Array *elements* that are User may only have scalar/heap fields (Int64/Bool/
-/// String/Bytes) — no nested Array/User — so only String/Bytes need RC here (D65).
-/// User *values* may hold `Array` fields (D69, e.g. Request.headers) and are
-/// field-walked by `emit_rc` (not by these element helpers).
+/// Elements may have String/Bytes and Array fields (trees). Nested User
+/// fields still deferred. Recursive Array<T> uses the forward-declared
+/// helpers above.
 fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
     let cty = c_type_name(&layout.name);
     let dup = array_user_elem_dup_fn(&layout.name);
@@ -1313,6 +1326,10 @@ fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
             Ty::String | Ty::Bytes | Ty::Buffer => {
                 let _ = writeln!(out, "    thoxa_dup(e->{});", f.c_name);
             }
+            Ty::Array { elem } => {
+                let _ = writeln!(out, "    thoxa_array_dup(e->{});", f.c_name);
+                let _ = elem;
+            }
             _ => {}
         }
     }
@@ -1323,6 +1340,18 @@ fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
         match &f.ty {
             Ty::String | Ty::Bytes | Ty::Buffer => {
                 let _ = writeln!(out, "    thoxa_drop(e->{});", f.c_name);
+            }
+            Ty::Array { elem } => {
+                if let Ty::User(type_name) = elem.as_ref() {
+                    let _ = writeln!(
+                        out,
+                        "    thoxa_array_drop_ex(e->{}, {});",
+                        f.c_name,
+                        array_user_elem_drop_fn(type_name)
+                    );
+                } else {
+                    let _ = writeln!(out, "    thoxa_array_drop(e->{});", f.c_name);
+                }
             }
             _ => {}
         }
@@ -1421,7 +1450,7 @@ fn emit_rc(
 ) {
     let op = if dup { "thoxa_dup" } else { "thoxa_drop" };
     match ty {
-        Ty::String | Ty::Bytes | Ty::Buffer => {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node => {
             let _ = writeln!(out, "{pad}{op}({});", place.name);
         }
         Ty::Array { elem } => {
@@ -1460,7 +1489,8 @@ fn emit_rc(
                         let _ = writeln!(out, "{pad}if ({}.tag == {}) {{", place.name, v.tag);
                         first = false;
                     } else {
-                        let _ = writeln!(out, "{pad}}} else if ({}.tag == {}) {{", place.name, v.tag);
+                        let _ =
+                            writeln!(out, "{pad}}} else if ({}.tag == {}) {{", place.name, v.tag);
                     }
                     let nested = crate::mir::Place {
                         name: format!("{}.u.v{}", place.name, v.tag),

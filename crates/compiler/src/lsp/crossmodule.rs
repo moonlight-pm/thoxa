@@ -168,7 +168,10 @@ fn infer_receiver_nav_ty(
     // Find the Name reference for the receiver immediately before the member.
     // Walk refs whose span text is recv_name and binding is Let/Mut/Param.
     if let Some(b) = binding_for_receiver_name(idx, member_ref, recv_name) {
-        if matches!(b.kind, BindingKind::Let | BindingKind::Mut | BindingKind::Param) {
+        if matches!(
+            b.kind,
+            BindingKind::Let | BindingKind::Mut | BindingKind::Param
+        ) {
             if let Some(init) = find_binding_init(module, b) {
                 if let Some(t) = infer_expr_nav_ty(idx, module, init, docs, current) {
                     return Some(t);
@@ -271,10 +274,7 @@ fn remote_exports_type(
         return false;
     };
     res.bindings.values().any(|b| {
-        b.name == type_name
-            && b.kind == BindingKind::Type
-            && b.exported
-            && b.owner.is_none()
+        b.name == type_name && b.kind == BindingKind::Type && b.exported && b.owner.is_none()
     })
 }
 
@@ -449,7 +449,11 @@ fn find_let_init_in_expr(expr: &Expr, def_span: Span) -> Option<&Expr> {
             ..
         } => find_let_init_in_expr(cond, def_span)
             .or_else(|| find_let_init_in_block(then_branch, def_span))
-            .or_else(|| else_branch.as_ref().and_then(|b| find_let_init_in_block(b, def_span))),
+            .or_else(|| {
+                else_branch
+                    .as_ref()
+                    .and_then(|b| find_let_init_in_block(b, def_span))
+            }),
         ExprKind::While { cond, body } => {
             find_let_init_in_expr(cond, def_span).or_else(|| find_let_init_in_block(body, def_span))
         }
@@ -457,7 +461,10 @@ fn find_let_init_in_expr(expr: &Expr, def_span: Span) -> Option<&Expr> {
         ExprKind::For {
             start, end, body, ..
         } => find_let_init_in_expr(start, def_span)
-            .or_else(|| end.as_ref().and_then(|e| find_let_init_in_expr(e, def_span)))
+            .or_else(|| {
+                end.as_ref()
+                    .and_then(|e| find_let_init_in_expr(e, def_span))
+            })
             .or_else(|| find_let_init_in_block(body, def_span)),
         ExprKind::Match { scrutinee, arms } => {
             if let Some(e) = find_let_init_in_expr(scrutinee, def_span) {
@@ -520,9 +527,7 @@ fn infer_expr_nav_ty(
             let t = infer_expr_nav_ty(idx, module, inner, docs, current)?;
             Some(unwrap_remote_fallible(t))
         }
-        ExprKind::Unary { expr: inner, .. } => {
-            infer_expr_nav_ty(idx, module, inner, docs, current)
-        }
+        ExprKind::Unary { expr: inner, .. } => infer_expr_nav_ty(idx, module, inner, docs, current),
         ExprKind::Call { callee, .. } => {
             let id = idx.resolution.lookup_name_at_module(callee)?;
             let b = idx.resolution.bindings.get(&id)?;
@@ -767,10 +772,7 @@ fn walk_block_member(block: &crate::ast::Block, span: Span) -> Option<(String, S
     None
 }
 
-fn walk_assign_member(
-    target: &crate::ast::AssignTarget,
-    span: Span,
-) -> Option<(String, String)> {
+fn walk_assign_member(target: &crate::ast::AssignTarget, span: Span) -> Option<(String, String)> {
     match target {
         crate::ast::AssignTarget::Field {
             base,
@@ -830,9 +832,7 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
             None
         }
         ExprKind::Field { base, .. } => walk_expr_member(base, span),
-        ExprKind::Unary { expr: inner, .. } | ExprKind::Try(inner) => {
-            walk_expr_member(inner, span)
-        }
+        ExprKind::Unary { expr: inner, .. } | ExprKind::Try(inner) => walk_expr_member(inner, span),
         ExprKind::Binary { left, right, .. } => {
             walk_expr_member(left, span).or_else(|| walk_expr_member(right, span))
         }
@@ -865,7 +865,11 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
             else_branch,
         } => walk_expr_member(cond, span)
             .or_else(|| walk_block_member(then_branch, span))
-            .or_else(|| else_branch.as_ref().and_then(|b| walk_block_member(b, span))),
+            .or_else(|| {
+                else_branch
+                    .as_ref()
+                    .and_then(|b| walk_block_member(b, span))
+            }),
         ExprKind::While { cond, body } => {
             walk_expr_member(cond, span).or_else(|| walk_block_member(body, span))
         }
@@ -1322,12 +1326,7 @@ fn walk_arg_expr(arg: &ast::Arg, byte: usize, best: &mut Option<CallArgHit>) {
     }
 }
 
-fn collect_args(
-    args: &[ast::Arg],
-    call: CallShape,
-    byte: usize,
-    best: &mut Option<CallArgHit>,
-) {
+fn collect_args(args: &[ast::Arg], call: CallShape, byte: usize, best: &mut Option<CallArgHit>) {
     let mut pos_i = 0usize;
     for arg in args {
         match arg {
@@ -1387,9 +1386,7 @@ fn resolve_free_formals(
     let id = idx.resolution.lookup_name_at_module(callee)?;
     let b = idx.resolution.bindings.get(&id)?;
     match b.kind {
-        BindingKind::Fn | BindingKind::Extern => {
-            local_free_fn_params(module, callee)
-        }
+        BindingKind::Fn | BindingKind::Extern => local_free_fn_params(module, callee),
         BindingKind::Type => local_type_ctor_params(module, callee),
         BindingKind::Import => {
             let o = b.import_origin.as_ref()?;
@@ -1420,9 +1417,7 @@ fn resolve_method_formals(
                     if let Some(o) = &b.import_origin {
                         if o.is_namespace {
                             // Prefer free fn on the module; else type method N/A.
-                            if let Some(p) =
-                                remote_export_params(&o.spec, method, docs, current)
-                            {
+                            if let Some(p) = remote_export_params(&o.spec, method, docs, current) {
                                 return Some(p);
                             }
                         }
@@ -1594,11 +1589,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_xmod_{label}_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("thoxa_xmod_{label}_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -1667,8 +1659,7 @@ mod tests {
         let helper = dir.join("Helper.thx");
         fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
         let main = dir.join("Main.thx");
-        let src =
-            "import { answer as ans } from \"./Helper\"\nfn main() -> Int64 { ans() }\n";
+        let src = "import { answer as ans } from \"./Helper\"\nfn main() -> Int64 { ans() }\n";
         fs::write(&main, src).unwrap();
         let use_at = src.rfind("ans").unwrap();
         let p = byte_to_position(src, use_at);
@@ -1745,8 +1736,8 @@ fn main() -> Trial<Int64, String> {
         let idx = build_index(src, &main.to_string_lossy());
         let sixteen = src.find("16").unwrap();
         let p = byte_to_position(src, sixteen);
-        let (md, span) = hover_call_argument(&idx, p.line, p.character, &HashMap::new())
-            .expect("arg hover");
+        let (md, span) =
+            hover_call_argument(&idx, p.line, p.character, &HashMap::new()).expect("arg hover");
         assert!(md.contains("backlog"), "{md}");
         assert!(md.contains("Int64"), "{md}");
         assert_eq!(span.start, sixteen);
@@ -1799,11 +1790,7 @@ fn main() -> Trial<Int64, String> {
         let p = byte_to_position(src, reuse);
         let r = remote_at(src, &main, p.line, p.character, &HashMap::new())
             .expect("typed remote method");
-        assert!(
-            r.signature.contains("reuseAddr"),
-            "sig={}",
-            r.signature
-        );
+        assert!(r.signature.contains("reuseAddr"), "sig={}", r.signature);
         assert!(
             r.doc.contains("SO_REUSEADDR") || r.doc.contains("reuse"),
             "doc={}",
@@ -1818,11 +1805,7 @@ fn main() -> Trial<Int64, String> {
     fn open_buffer_wins_over_disk() {
         let dir = unique_dir("buf");
         let helper = dir.join("Helper.thx");
-        fs::write(
-            &helper,
-            "export fn helper(x: Int64) -> Int64 { x }\n",
-        )
-        .unwrap();
+        fs::write(&helper, "export fn helper(x: Int64) -> Int64 { x }\n").unwrap();
         let main = dir.join("Main.thx");
         let src = "import { helper } from \"./Helper\"\nfn main() -> Int64 { helper(1) }\n";
         fs::write(&main, src).unwrap();

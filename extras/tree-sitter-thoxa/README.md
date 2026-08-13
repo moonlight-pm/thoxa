@@ -3,6 +3,9 @@
 A **deliberately thin, lexer-level** Tree-sitter grammar for native Thoxa. It
 tokenizes rather than fully parses: keywords, casing-based type-vs-value
 identifiers, `#`/`##` comments, string/char/number literals, and operators.
+A small **JSX island** recognises `<tag>…</tag>` so highlights can paint
+markup captures (`@tag`, `@attribute`, `@markup.italic`) without becoming
+a full CST. `Array<Int64>` stays punctuation.
 
 ## Why so thin?
 

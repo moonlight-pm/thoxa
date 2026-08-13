@@ -228,12 +228,8 @@ pub fn build_runtime() -> Result<()> {
 /// On NixOS, clangd does not see gcc's builtin include paths unless we copy
 /// them into the compile command (or configure `--query-driver` in the editor).
 fn write_compile_commands(root: &Path, src: &Path, include: &Path) -> Result<()> {
-    let directory = root
-        .canonicalize()
-        .unwrap_or_else(|_| root.to_path_buf());
-    let file = src
-        .canonicalize()
-        .unwrap_or_else(|_| src.to_path_buf());
+    let directory = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let file = src.canonicalize().unwrap_or_else(|_| src.to_path_buf());
     let include = include
         .canonicalize()
         .unwrap_or_else(|_| include.to_path_buf());

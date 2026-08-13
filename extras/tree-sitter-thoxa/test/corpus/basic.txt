@@ -107,6 +107,53 @@ let y = ~x
   (identifier))
 
 ==================
+jsx element vs generic
+==================
+
+let n = Array<Int64>
+let p = <div class="hero">Hello {who}</div>
+let q = <Page title="Home"><br /></Page>
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (type_identifier)
+  (operator)
+  (type_identifier)
+  (operator)
+  (keyword)
+  (identifier)
+  (operator)
+  (jsx_element
+    (jsx_opening
+      (identifier)
+      (jsx_attribute
+        (identifier)
+        (string)))
+    (jsx_text)
+    (jsx_embed
+      (identifier))
+    (jsx_closing
+      (identifier)))
+  (keyword)
+  (identifier)
+  (operator)
+  (jsx_element
+    (jsx_opening
+      (type_identifier)
+      (jsx_attribute
+        (identifier)
+        (string)))
+    (jsx_element
+      (jsx_self_closing
+        (identifier)))
+    (jsx_closing
+      (type_identifier))))
+
+==================
 module, extern, match
 ==================
 

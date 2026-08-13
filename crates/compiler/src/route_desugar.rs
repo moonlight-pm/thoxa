@@ -115,7 +115,15 @@ fn desugar_type(td: &mut TypeDef) -> Result<(Vec<Function>, DesugarFlags)> {
         if matches!(pat, PathPattern::Segments(_)) {
             flags.need_segments = true;
         }
-        if slots.iter().any(|s| matches!(s, CallSlot::Cap { ty: CapTy::Int64, .. })) {
+        if slots.iter().any(|s| {
+            matches!(
+                s,
+                CallSlot::Cap {
+                    ty: CapTy::Int64,
+                    ..
+                }
+            )
+        }) {
             flags.need_parse_int = true;
         }
 
@@ -144,10 +152,7 @@ fn desugar_type(td: &mut TypeDef) -> Result<(Vec<Function>, DesugarFlags)> {
         });
     }
 
-    let route_span = handlers
-        .first()
-        .map(|h| h.def_span)
-        .unwrap_or(td.name_span);
+    let route_span = handlers.first().map(|h| h.def_span).unwrap_or(td.name_span);
     td.methods.push(build_route_method(&handlers, route_span)?);
     Ok((free_fns, flags))
 }
@@ -249,10 +254,7 @@ fn analyze_pattern(pattern: &str, span: Span) -> Result<PathPattern> {
                 ));
             }
             if !seen.insert(rest.to_string()) {
-                return Err(Error::at(
-                    format!("duplicate path capture `:{rest}`"),
-                    span,
-                ));
+                return Err(Error::at(format!("duplicate path capture `:{rest}`"), span));
             }
             segs.push(Seg::Capture(rest.to_string()));
             any_cap = true;
@@ -434,11 +436,7 @@ fn segments_block(h: &HandlerMeta, segs: &[Seg]) -> Result<Expr> {
             kind: ExprKind::Block(Block {
                 items: vec![
                     let_bind("parsed", false, parsed),
-                    BlockItem::Expr(if_expr(
-                        field(name("parsed"), "ok"),
-                        then,
-                        Some(else_b),
-                    )),
+                    BlockItem::Expr(if_expr(field(name("parsed"), "ok"), then, Some(else_b))),
                 ],
                 tail: None,
                 span: dummy(),
@@ -457,11 +455,7 @@ fn segments_block(h: &HandlerMeta, segs: &[Seg]) -> Result<Expr> {
         core = if_expr(ok, as_stmt_block(core), None);
     }
 
-    let count_ok = bin(
-        BinaryOp::Eq,
-        field(name("segs"), "count"),
-        int_lit(n),
-    );
+    let count_ok = bin(BinaryOp::Eq, field(name("segs"), "count"), int_lit(n));
     let after_count = if_expr(count_ok, as_stmt_block(core), None);
 
     Ok(Expr {
@@ -470,10 +464,7 @@ fn segments_block(h: &HandlerMeta, segs: &[Seg]) -> Result<Expr> {
                 let_bind(
                     "segs",
                     false,
-                    call(
-                        SEGMENTS_FN,
-                        vec![Arg::Pos(field(name("req"), "path"))],
-                    ),
+                    call(SEGMENTS_FN, vec![Arg::Pos(field(name("req"), "path"))]),
                 ),
                 BlockItem::Expr(after_count),
             ],
@@ -497,10 +488,7 @@ fn return_handler_call(handler: &str, args: Vec<Arg>, ret: HandlerRet) -> Expr {
         HandlerRet::Response => inner,
         HandlerRet::Text => {
             let bytes = method_call(name("Bytes"), "fromString", vec![Arg::Pos(inner)]);
-            call(
-                "ok",
-                vec![Arg::Pos(bytes), Arg::Pos(str_lit("text/plain"))],
-            )
+            call("ok", vec![Arg::Pos(bytes), Arg::Pos(str_lit("text/plain"))])
         }
     };
     Expr {
@@ -548,10 +536,7 @@ fn parse_int_ctor(ok: Expr, value: Expr) -> Expr {
 fn parse_int_fn() -> Function {
     // Digit walk; empty / non-digits → ok: false. Optional leading '-'.
     let fail = parse_int_ctor(bool_lit(false), int_lit(0));
-    let ok_val = parse_int_ctor(
-        bool_lit(true),
-        bin(BinaryOp::Mul, name("n"), name("sign")),
-    );
+    let ok_val = parse_int_ctor(bool_lit(true), bin(BinaryOp::Mul, name("n"), name("sign")));
 
     let loop_body = Block {
         items: vec![
@@ -595,12 +580,10 @@ fn parse_int_fn() -> Function {
     };
 
     let after_sign = Block {
-        items: vec![
-            BlockItem::Expr(Expr {
-                kind: ExprKind::Loop { body: loop_body },
-                span: dummy(),
-            }),
-        ],
+        items: vec![BlockItem::Expr(Expr {
+            kind: ExprKind::Loop { body: loop_body },
+            span: dummy(),
+        })],
         tail: Some(Box::new(if_expr(
             name("good"),
             block_expr(ok_val),
@@ -610,10 +593,7 @@ fn parse_int_fn() -> Function {
     };
 
     let minus_body = Block {
-        items: vec![
-            assign("sign", int_lit(-1)),
-            assign("i", int_lit(1)),
-        ],
+        items: vec![assign("sign", int_lit(-1)), assign("i", int_lit(1))],
         tail: Some(Box::new(if_expr(
             bin(BinaryOp::Eq, field(name("b"), "count"), int_lit(1)),
             block_stmts(vec![assign("good", bool_lit(false))]),
@@ -720,11 +700,7 @@ fn segments_fn() -> Function {
             let_bind(
                 "data",
                 false,
-                method_call(
-                    name("Bytes"),
-                    "fromString",
-                    vec![Arg::Pos(name("path"))],
-                ),
+                method_call(name("Bytes"), "fromString", vec![Arg::Pos(name("path"))]),
             ),
             let_bind_ty(
                 "segs",
@@ -1042,7 +1018,9 @@ mod tests {
             .items
             .iter()
             .filter_map(|i| match i {
-                Item::Function(f) if f.name.starts_with("__MyRouter_route_") => Some(f.name.as_str()),
+                Item::Function(f) if f.name.starts_with("__MyRouter_route_") => {
+                    Some(f.name.as_str())
+                }
                 _ => None,
             })
             .collect();

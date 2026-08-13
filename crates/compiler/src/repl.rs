@@ -114,13 +114,7 @@ pub fn run_repl() -> Result<i32> {
             }
         }
 
-        match run_chunk(
-            &chunk,
-            &mut decls,
-            status,
-            &mut step_cache,
-            &mut loaded,
-        ) {
+        match run_chunk(&chunk, &mut decls, status, &mut step_cache, &mut loaded) {
             Ok(ChunkOutcome {
                 status: st,
                 decls_changed,
@@ -273,7 +267,10 @@ fn env_truthy(name: &str) -> bool {
     match std::env::var(name) {
         Ok(v) => {
             let v = v.trim();
-            !(v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("no"))
+            !(v.is_empty()
+                || v == "0"
+                || v.eq_ignore_ascii_case("false")
+                || v.eq_ignore_ascii_case("no"))
         }
         Err(_) => false,
     }
@@ -292,8 +289,8 @@ fn load_shell_rc(
     if !path.is_file() {
         return Ok(0);
     }
-    let src = fs::read_to_string(&path)
-        .map_err(|e| Error::new(format!("{}: {e}", path.display())))?;
+    let src =
+        fs::read_to_string(&path).map_err(|e| Error::new(format!("{}: {e}", path.display())))?;
     apply_rc_source(&src, decls, cache, loaded)
 }
 
@@ -440,11 +437,7 @@ fn line_defines_fn_prompt(line: &str) -> bool {
         return false;
     };
     // `prompt()` / `prompt ()` / `prompt\t(` — not `promptHelper`.
-    after.starts_with('(')
-        || after
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_whitespace())
+    after.starts_with('(') || after.chars().next().is_some_and(|c| c.is_whitespace())
 }
 
 fn primary_prompt(
@@ -555,11 +548,7 @@ fn line_defines_fn_path(line: &str) -> bool {
     let Some(after) = rest.strip_prefix("path") else {
         return false;
     };
-    after.starts_with('(')
-        || after
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_whitespace())
+    after.starts_with('(') || after.chars().next().is_some_and(|c| c.is_whitespace())
 }
 
 /// If `fn path` is defined, run it with parent PATH components and replace
@@ -744,8 +733,12 @@ echo hi
         assert!(decls_define_prompt(&[
             "fn prompt() -> String {\n    \"$ \"\n}".into()
         ]));
-        assert!(decls_define_prompt(&["export fn prompt() -> String { \"a\" }".into()]));
-        assert!(!decls_define_prompt(&["fn promptHelper() -> String { \"a\" }".into()]));
+        assert!(decls_define_prompt(&[
+            "export fn prompt() -> String { \"a\" }".into()
+        ]));
+        assert!(!decls_define_prompt(&[
+            "fn promptHelper() -> String { \"a\" }".into()
+        ]));
         assert!(!decls_define_prompt(&["fn other() -> Int64 { 0 }".into()]));
     }
 
@@ -766,8 +759,8 @@ echo hi
         driver::capture_toolchain_path();
 
         // `/bin/false` — bare `false` is Thoxa Bool and stays non-command sugar.
-        let out = run_chunk("/bin/false", &mut decls, 0, &mut cache, &mut loaded)
-            .expect("/bin/false");
+        let out =
+            run_chunk("/bin/false", &mut decls, 0, &mut cache, &mut loaded).expect("/bin/false");
         assert_eq!(out.status, 1);
 
         // showStatus keeps host-threaded status (compile path, not host println).
@@ -848,16 +841,14 @@ logging.info("from-rc")
     #[test]
     fn prompt_can_read_thoxa_status_env() {
         // Prelude (injected for session stmts) already exports sysGetenv.
-        let decls = vec![
-            r#"
+        let decls = vec![r#"
 fn prompt() -> String {
     let st = sysGetenv("THOXA_STATUS")
     "s={st}$ "
 }
 "#
-            .trim()
-            .to_string(),
-        ];
+        .trim()
+        .to_string()];
         assert!(decls_define_prompt(&decls));
         let mut cache = SessionBuildCache::default();
         let mut pstate = PromptState::default();
@@ -883,15 +874,13 @@ fn prompt() -> String {
 
     #[test]
     fn path_hook_replaces_with_returned_components() {
-        let decls = vec![
-            r#"
+        let decls = vec![r#"
 fn path(parent: Array<String>) -> Array<String> {
     ["/opt/custom", "/run/system"]
 }
 "#
-            .trim()
-            .to_string(),
-        ];
+        .trim()
+        .to_string()];
         assert!(decls_define_path(&decls));
         let parent = vec!["/old/a".into(), "/old/b".into()];
         let mut cache = SessionBuildCache::default();
@@ -901,8 +890,7 @@ fn path(parent: Array<String>) -> Array<String> {
 
     #[test]
     fn path_hook_can_merge_parent() {
-        let decls = vec![
-            r#"
+        let decls = vec![r#"
 fn path(parent: Array<String>) -> Array<String> {
     mut out: Array<String> = ["/first"]
     for p in parent {
@@ -911,9 +899,8 @@ fn path(parent: Array<String>) -> Array<String> {
     out
 }
 "#
-            .trim()
-            .to_string(),
-        ];
+        .trim()
+        .to_string()];
         let parent = vec!["/a".into(), "/b".into()];
         let mut cache = SessionBuildCache::default();
         let out = run_path_hook(&decls, &parent, &mut cache).expect("path merge");
@@ -927,15 +914,13 @@ fn path(parent: Array<String>) -> Array<String> {
         driver::capture_toolchain_path();
 
         // Bare `[]` with `-> Array<String>` (typed empty return).
-        let decls = vec![
-            r#"
+        let decls = vec![r#"
 fn path(parent: Array<String>) -> Array<String> {
     []
 }
 "#
-            .trim()
-            .to_string(),
-        ];
+        .trim()
+        .to_string()];
         let parent = vec!["/a".into(), "/b".into()];
         let mut cache = SessionBuildCache::default();
         let out = run_path_hook(&decls, &parent, &mut cache).expect("empty path");
@@ -958,16 +943,14 @@ fn path(parent: Array<String>) -> Array<String> {
 
     #[test]
     fn path_hook_empty_via_annotated_local() {
-        let decls = vec![
-            r#"
+        let decls = vec![r#"
 fn path(parent: Array<String>) -> Array<String> {
     mut out: Array<String> = []
     out
 }
 "#
-            .trim()
-            .to_string(),
-        ];
+        .trim()
+        .to_string()];
         let mut cache = SessionBuildCache::default();
         let out = run_path_hook(&decls, &["/x".into()], &mut cache).expect("empty local");
         assert!(out.is_empty());
@@ -984,10 +967,7 @@ fn path(parent: Array<String>) -> Array<String> {
     }
 
     fn tempfile_dir(prefix: &str) -> PathBuf {
-        let base = std::env::temp_dir().join(format!(
-            "{prefix}_{}",
-            std::process::id()
-        ));
+        let base = std::env::temp_dir().join(format!("{prefix}_{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         base

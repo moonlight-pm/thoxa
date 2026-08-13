@@ -235,7 +235,10 @@ pub fn symbol_kind(kind: BindingKind) -> i32 {
         BindingKind::Method => 6,                    // Method
         BindingKind::Type => 23,                     // Struct
         BindingKind::Field => 8,                     // Field
-        BindingKind::Param | BindingKind::Let | BindingKind::Mut | BindingKind::ForVar
+        BindingKind::Param
+        | BindingKind::Let
+        | BindingKind::Mut
+        | BindingKind::ForVar
         | BindingKind::Pattern => 13, // Variable
         BindingKind::Import => 2,                    // Module
         BindingKind::Builtin => 14,                  // Constant

@@ -13,6 +13,9 @@ pub struct Parser {
     extra_rangles: usize,
     /// Recoverable errors inside blocks that still produced a partial AST.
     soft_errors: Vec<Error>,
+    /// Original source (byte offsets match token spans). Needed so JSX text
+    /// children can be sliced out; empty means raw text is not available.
+    source: String,
 }
 
 /// User-facing message when a program with `fn main` has top-level statements.
@@ -37,7 +40,14 @@ impl Parser {
             pos: 0,
             extra_rangles: 0,
             soft_errors: Vec::new(),
+            source: String::new(),
         }
+    }
+
+    /// Attach the source buffer the tokens were lexed from (JSX text children).
+    pub fn with_source(mut self, src: impl Into<String>) -> Self {
+        self.source = src.into();
+        self
     }
 
     pub fn parse_module(&mut self) -> Result<Module> {
@@ -418,8 +428,7 @@ impl Parser {
             let mut type_body_errors: Vec<Error> = Vec::new();
             while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
                 let start_pos = self.pos;
-                let item_res: Result<()> = if self.at(TokenKind::Fn) || self.at(TokenKind::Export)
-                {
+                let item_res: Result<()> = if self.at(TokenKind::Fn) || self.at(TokenKind::Export) {
                     self.parse_method().map(|m| {
                         methods.push(m);
                     })
@@ -569,10 +578,7 @@ impl Parser {
             loop {
                 let (p, pspan) = self.expect_ident()?;
                 if params.iter().any(|x| x == &p) {
-                    return Err(Error::at(
-                        format!("duplicate type parameter `{p}`"),
-                        pspan,
-                    ));
+                    return Err(Error::at(format!("duplicate type parameter `{p}`"), pspan));
                 }
                 params.push(p);
                 if self.at(TokenKind::Comma) {
@@ -1542,10 +1548,187 @@ impl Parser {
                     span: Span::new(start.start, self.prev_span().end),
                 })
             }
+            TokenKind::LAngle if self.at_jsx_start() => self.parse_jsx_element(),
+            TokenKind::Junk(s) => Err(Error::at(
+                format!("unexpected character {s:?}"),
+                self.peek_span(),
+            )),
             _ => Err(Error::at(
                 format!("expected expression, found {:?}", self.current().kind),
                 self.peek_span(),
             )),
+        }
+    }
+
+    /// `<Ident` or `<>` at expression start — tag literal, not a comparison.
+    fn at_jsx_start(&self) -> bool {
+        self.at(TokenKind::LAngle)
+            && (self.peek_kind_is(1, TokenKind::Ident(String::new()))
+                || self.peek_kind_is(1, TokenKind::RAngle))
+    }
+
+    /// `<tag attrs>children</tag>` / `<tag attrs />` / `<>children</>` →
+    /// `html.el(...)` / `Type(...).view(children:)` / `html.child([...])`.
+    fn parse_jsx_element(&mut self) -> Result<Expr> {
+        let start = self.peek_span();
+        self.expect_kind(&TokenKind::LAngle)?;
+        if self.at(TokenKind::RAngle) {
+            let frag_span = Span::new(start.start, self.current().span.end);
+            self.bump();
+            let kids = self.parse_jsx_children(None)?;
+            let span = Span::new(start.start, self.prev_span().end);
+            return Ok(desugar_jsx_fragment(kids, span, frag_span));
+        }
+        let (tag, tag_span) = self.expect_ident()?;
+        let attrs = self.parse_jsx_attrs()?;
+        let self_closing = if self.at(TokenKind::Slash) {
+            self.bump();
+            self.expect_kind(&TokenKind::RAngle)?;
+            true
+        } else {
+            self.expect_kind(&TokenKind::RAngle)?;
+            false
+        };
+        let kids = if self_closing {
+            Vec::new()
+        } else {
+            self.parse_jsx_children(Some(tag.as_str()))?
+        };
+        let span = Span::new(start.start, self.prev_span().end);
+        Ok(desugar_jsx(tag, tag_span, attrs, kids, span))
+    }
+
+    fn parse_jsx_attrs(&mut self) -> Result<Vec<(String, Span, Expr)>> {
+        let mut attrs = Vec::new();
+        while !self.at(TokenKind::Slash) && !self.at(TokenKind::RAngle) && !self.at(TokenKind::Eof)
+        {
+            attrs.push(self.parse_jsx_attr()?);
+        }
+        Ok(attrs)
+    }
+
+    fn parse_jsx_attr(&mut self) -> Result<(String, Span, Expr)> {
+        let (name, name_span) = self.parse_jsx_attr_name()?;
+        if !self.at(TokenKind::Eq) {
+            // Boolean attribute: `disabled` → value `"disabled"`.
+            return Ok((name.clone(), name_span, jsx_string_lit(name, name_span)));
+        }
+        self.expect_kind(&TokenKind::Eq)?;
+        let value = if self.at(TokenKind::LBrace) {
+            self.bump();
+            let e = self.parse_expr()?;
+            self.expect_kind(&TokenKind::RBrace)?;
+            e
+        } else if let TokenKind::String(s) = &self.current().kind {
+            let s = s.clone();
+            let span = self.current().span;
+            self.bump();
+            parse_string_literal(s, span)?
+        } else {
+            return Err(Error::at(
+                "expected attribute value (`\"…\"` or `{expr}`)",
+                self.peek_span(),
+            ));
+        };
+        Ok((name, name_span, value))
+    }
+
+    /// `class`, `type`, `for`, `data-foo`, `aria-label`.
+    fn parse_jsx_attr_name(&mut self) -> Result<(String, Span)> {
+        let (mut name, start) = self.expect_jsx_name()?;
+        let mut end = start.end;
+        while self.at(TokenKind::Minus)
+            && (self.peek_kind_is(1, TokenKind::Ident(String::new()))
+                || self.peek_is_jsx_name_word(1))
+        {
+            self.bump();
+            let (more, more_span) = self.expect_jsx_name()?;
+            name.push('-');
+            name.push_str(&more);
+            end = more_span.end;
+        }
+        Ok((name, Span::new(start.start, end)))
+    }
+
+    fn peek_is_jsx_name_word(&self, offset: usize) -> bool {
+        let i = self.pos + offset;
+        if i >= self.tokens.len() {
+            return false;
+        }
+        jsx_name_from_token(&self.tokens[i].kind).is_some()
+    }
+
+    fn expect_jsx_name(&mut self) -> Result<(String, Span)> {
+        if let Some(name) = jsx_name_from_token(&self.current().kind) {
+            let span = self.current().span;
+            self.bump();
+            return Ok((name, span));
+        }
+        self.expect_ident()
+    }
+
+    fn parse_jsx_children(&mut self, end_tag: Option<&str>) -> Result<Vec<Expr>> {
+        let mut kids = Vec::new();
+        loop {
+            if !self.source.is_empty() {
+                let from = self.prev_span().end;
+                let (text, next_at) = scan_jsx_text(&self.source, from);
+                self.seek_to_byte(next_at);
+                if !text.is_empty() {
+                    kids.push(jsx_text_wrap(jsx_string_lit(text, self.peek_span())));
+                }
+            }
+            if self.at(TokenKind::LAngle) && self.peek_kind_is(1, TokenKind::Slash) {
+                self.bump();
+                self.bump();
+                match end_tag {
+                    None => {
+                        self.expect_kind(&TokenKind::RAngle)?;
+                    }
+                    Some(end_tag) => {
+                        let (name, name_span) = self.expect_ident()?;
+                        if name != end_tag {
+                            return Err(Error::at(
+                                format!("closing tag `</{name}>` does not match `<{end_tag}>`"),
+                                name_span,
+                            ));
+                        }
+                        self.expect_kind(&TokenKind::RAngle)?;
+                    }
+                }
+                break;
+            }
+            if self.at_jsx_start() {
+                kids.push(self.parse_jsx_element()?);
+                continue;
+            }
+            if self.at(TokenKind::LBrace) {
+                self.bump();
+                let e = self.parse_expr()?;
+                self.expect_kind(&TokenKind::RBrace)?;
+                kids.push(jsx_child_wrap(e));
+                continue;
+            }
+            let close = match end_tag {
+                None => "</>".to_string(),
+                Some(t) => format!("</{t}>"),
+            };
+            return Err(Error::at(
+                format!("expected child or `{close}`"),
+                self.peek_span(),
+            ));
+        }
+        Ok(kids)
+    }
+
+    /// Jump to the first token whose span starts at or after `offset`.
+    fn seek_to_byte(&mut self, offset: usize) {
+        while self.pos < self.tokens.len() {
+            let tok = &self.tokens[self.pos];
+            if tok.kind == TokenKind::Eof || tok.span.start >= offset {
+                break;
+            }
+            self.pos += 1;
         }
     }
 
@@ -1887,6 +2070,7 @@ impl Parser {
                 | TokenKind::LBrace
                 | TokenKind::LParen
                 | TokenKind::LBracket
+                | TokenKind::LAngle
                 | TokenKind::Minus
                 | TokenKind::Not
                 | TokenKind::Tilde
@@ -1947,6 +2131,156 @@ impl Parser {
     }
 }
 
+/// Slice raw JSX text from `from` until the next `<` or `{`. Trimmed; empty
+/// means whitespace-only. `next_at` is the byte offset of that `<`/`{` (or EOF).
+fn scan_jsx_text(source: &str, from: usize) -> (String, usize) {
+    let bytes = source.as_bytes();
+    if from >= bytes.len() {
+        return (String::new(), from);
+    }
+    let mut i = from;
+    while i < bytes.len() && bytes[i] != b'<' && bytes[i] != b'{' {
+        i += 1;
+    }
+    let raw = &source[from..i];
+    // Drop whitespace-only gaps (between tags). Keep spaces next to `{e}`.
+    let text = if raw.trim().is_empty() {
+        String::new()
+    } else {
+        raw.to_string()
+    };
+    (text, i)
+}
+
+/// PascalCase → component type; otherwise HTML tag via `el`.
+fn is_jsx_component(tag: &str) -> bool {
+    tag.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+}
+
+fn jsx_string_lit(s: String, span: Span) -> Expr {
+    Expr {
+        kind: ExprKind::String(s),
+        span,
+    }
+}
+
+fn jsx_array_lit(elems: Vec<Expr>, span: Span) -> Expr {
+    Expr {
+        kind: ExprKind::ArrayLit(elems),
+        span,
+    }
+}
+
+fn jsx_named(name: &str, name_span: Span, value: Expr) -> Arg {
+    Arg::Named {
+        name: name.to_string(),
+        name_span,
+        value,
+    }
+}
+
+/// Builtin `child(e)` — MIR picks text / identity / fragment from the type.
+fn jsx_child_wrap(expr: Expr) -> Expr {
+    let span = expr.span;
+    Expr {
+        kind: ExprKind::Call {
+            callee: "__jsx_child".into(),
+            args: vec![Arg::Pos(expr)],
+        },
+        span,
+    }
+}
+
+fn desugar_jsx_fragment(kids: Vec<Expr>, span: Span, _name_span: Span) -> Expr {
+    jsx_child_wrap(jsx_array_lit(kids, span))
+}
+
+fn jsx_text_wrap(expr: Expr) -> Expr {
+    jsx_child_wrap(expr)
+}
+
+fn desugar_jsx(
+    tag: String,
+    tag_span: Span,
+    attrs: Vec<(String, Span, Expr)>,
+    kids: Vec<Expr>,
+    span: Span,
+) -> Expr {
+    if is_jsx_component(&tag) {
+        let prop_args = attrs
+            .into_iter()
+            .map(|(name, name_span, value)| jsx_named(&name, name_span, value))
+            .collect();
+        let ctor = Expr {
+            kind: ExprKind::Call {
+                callee: tag,
+                args: prop_args,
+            },
+            span,
+        };
+        Expr {
+            kind: ExprKind::MethodCall {
+                receiver: Box::new(ctor),
+                method: "view".into(),
+                method_span: tag_span,
+                args: vec![jsx_named("children", tag_span, jsx_array_lit(kids, span))],
+            },
+            span,
+        }
+    } else {
+        let mut attr_names = Vec::new();
+        let mut attr_vals = Vec::new();
+        for (name, name_span, value) in attrs {
+            attr_names.push(jsx_string_lit(name, name_span));
+            attr_vals.push(value);
+        }
+        Expr {
+            kind: ExprKind::Call {
+                callee: "__jsx_el".into(),
+                args: vec![
+                    jsx_named("tag", tag_span, jsx_string_lit(tag, tag_span)),
+                    jsx_named("names", tag_span, jsx_array_lit(attr_names, span)),
+                    jsx_named("vals", tag_span, jsx_array_lit(attr_vals, span)),
+                    jsx_named("kids", tag_span, jsx_array_lit(kids, span)),
+                ],
+            },
+            span,
+        }
+    }
+}
+
+/// Attribute names may be ordinary idents or a handful of keywords (`type`, `for`).
+fn jsx_name_from_token(kind: &TokenKind) -> Option<String> {
+    match kind {
+        TokenKind::Ident(s) => Some(s.clone()),
+        TokenKind::Type => Some("type".into()),
+        TokenKind::For => Some("for".into()),
+        TokenKind::In => Some("in".into()),
+        TokenKind::As => Some("as".into()),
+        TokenKind::From => Some("from".into()),
+        TokenKind::If => Some("if".into()),
+        TokenKind::Else => Some("else".into()),
+        TokenKind::Match => Some("match".into()),
+        TokenKind::Fn => Some("fn".into()),
+        TokenKind::Let => Some("let".into()),
+        TokenKind::Mut => Some("mut".into()),
+        TokenKind::Export => Some("export".into()),
+        TokenKind::Import => Some("import".into()),
+        TokenKind::Return => Some("return".into()),
+        TokenKind::Loop => Some("loop".into()),
+        TokenKind::While => Some("while".into()),
+        TokenKind::Break => Some("break".into()),
+        TokenKind::Continue => Some("continue".into()),
+        TokenKind::True => Some("true".into()),
+        TokenKind::False => Some("false".into()),
+        TokenKind::And => Some("and".into()),
+        TokenKind::Or => Some("or".into()),
+        TokenKind::Not => Some("not".into()),
+        TokenKind::Extern => Some("extern".into()),
+        _ => None,
+    }
+}
+
 fn pattern_span(p: &Pattern) -> Span {
     match p {
         Pattern::Variant { span, .. }
@@ -1980,7 +2314,9 @@ enum BlockElem {
 
 fn block_item_span(bi: &BlockItem) -> Span {
     match bi {
-        BlockItem::Let { name_span, init, .. } => Span::new(name_span.start, init.span.end),
+        BlockItem::Let {
+            name_span, init, ..
+        } => Span::new(name_span.start, init.span.end),
         BlockItem::Assign { target, value } => {
             let start = match target {
                 AssignTarget::Name { name_span, .. } => name_span.start,
@@ -2113,12 +2449,18 @@ mod tests {
 
     fn parse(src: &str) -> Module {
         let tokens = Lexer::new(src).tokenize().unwrap();
-        Parser::new(tokens).parse_module().unwrap()
+        Parser::new(tokens)
+            .with_source(src.to_string())
+            .parse_module()
+            .unwrap()
     }
 
     fn parse_err(src: &str) -> String {
         let tokens = Lexer::new(src).tokenize().unwrap();
-        let err = Parser::new(tokens).parse_module().unwrap_err();
+        let err = Parser::new(tokens)
+            .with_source(src.to_string())
+            .parse_module()
+            .unwrap_err();
         format!("{err}")
     }
 
@@ -2147,11 +2489,7 @@ mod tests {
             Item::Import(imp) => {
                 assert_eq!(imp.path, "std/Logging");
                 match &imp.kind {
-                    ImportKind::Combined {
-                        binding,
-                        names,
-                        ..
-                    } => {
+                    ImportKind::Combined { binding, names, .. } => {
                         assert_eq!(binding, "logging");
                         assert_eq!(names.len(), 2);
                         assert_eq!(names[0].name, "info");
@@ -2457,6 +2795,113 @@ mod tests {
         assert_eq!(module.items.len(), 1);
     }
 
-    
+    #[test]
+    fn parse_jsx_html_element() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let n = <div class="hero">Hello</div>
+                0
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        let BlockItem::Let { init, .. } = &f.body.items[0] else {
+            panic!("expected let");
+        };
+        match &init.kind {
+            ExprKind::Call { callee, args } => {
+                assert_eq!(callee, "__jsx_el");
+                assert_eq!(args.len(), 4);
+            }
+            other => panic!("expected el(...), got {other:?}"),
+        }
+    }
 
+    #[test]
+    fn parse_jsx_component() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let n = <Page title="Home"><h1>Hi</h1></Page>
+                0
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        let BlockItem::Let { init, .. } = &f.body.items[0] else {
+            panic!("expected let");
+        };
+        match &init.kind {
+            ExprKind::MethodCall { method, args, .. } => {
+                assert_eq!(method, "view");
+                assert_eq!(args.len(), 1);
+            }
+            other => panic!("expected Page(...).view(...), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_jsx_self_closing_and_embed() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let n = <input type="text" value={who} />
+                0
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        let BlockItem::Let { init, .. } = &f.body.items[0] else {
+            panic!("expected let");
+        };
+        match &init.kind {
+            ExprKind::Call { callee, args } => {
+                assert_eq!(callee, "__jsx_el");
+                assert_eq!(args.len(), 4);
+            }
+            other => panic!("expected el(...), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_jsx_mismatched_close() {
+        let err = parse_err(
+            r#"
+            fn main() -> Int64 {
+                let n = <div>Hi</span>
+                0
+            }
+        "#,
+        );
+        assert!(err.contains("does not match"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn parse_jsx_fragment_and_boolean_attr() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let n = <><input disabled /></>
+                0
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        let BlockItem::Let { init, .. } = &f.body.items[0] else {
+            panic!("expected let");
+        };
+        match &init.kind {
+            ExprKind::Call { callee, .. } => assert_eq!(callee, "__jsx_child"),
+            other => panic!("expected __jsx_child([...]), got {other:?}"),
+        }
+    }
 }

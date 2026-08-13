@@ -1,0 +1,27 @@
+## Builtin Node + tag literals (JSX experiment). No import.
+import logging from "std/Logging"
+
+type Card(title: String) {
+    export fn view(children: Array<Node>) -> Node {
+        <section class="card">
+            <h1>{title}</h1>
+            {children}
+        </section>
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let name = "Ada & Co"
+    let n = <Card title="Hi">
+        <p>Hello, {name}</p>
+        <>
+            <br />
+            <input disabled />
+        </>
+    </Card>
+    logging.info(n.html())
+    0
+}

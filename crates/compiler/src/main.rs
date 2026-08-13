@@ -100,11 +100,7 @@ fn try_main() -> Result<i32, Error> {
 
 fn looks_like_source_path(s: &str) -> bool {
     let p = PathBuf::from(s);
-    p.exists()
-        || s.ends_with(".thx")
-        || s.contains('/')
-        || s == "."
-        || s == ".."
+    p.exists() || s.ends_with(".thx") || s.contains('/') || s == "." || s == ".."
 }
 
 fn parse_check_args(args: &[String]) -> Result<(PathBuf, bool), Error> {
@@ -136,17 +132,19 @@ fn parse_check_args(args: &[String]) -> Result<(PathBuf, bool), Error> {
 
 fn run_check(path: PathBuf, json: bool) -> Result<i32, Error> {
     let entry = thoxa::loader::resolve_entry(&path)?;
-    let text = fs::read_to_string(&entry).map_err(|e| {
-        Error::new(format!("cannot read {}: {e}", entry.display()))
-    })?;
+    let text = fs::read_to_string(&entry)
+        .map_err(|e| Error::new(format!("cannot read {}: {e}", entry.display())))?;
     let filename = entry.to_string_lossy();
     let diags = lsp::check_source(&filename, &text);
     if json {
         let structured: Vec<_> = diags.iter().map(|d| d.to_diagnostic()).collect();
         let report = diagnostic::format_json_report(&structured, Some(&text));
-        println!("{}", serde_json::to_string_pretty(&report).unwrap_or_else(|e| {
-            format!(r#"{{"ok":false,"diagnostics":[],"error":"{e}"}}"#)
-        }));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_else(|e| {
+                format!(r#"{{"ok":false,"diagnostics":[],"error":"{e}"}}"#)
+            })
+        );
     } else {
         for (i, d) in diags.iter().enumerate() {
             if i > 0 {
@@ -157,7 +155,10 @@ fn run_check(path: PathBuf, json: bool) -> Result<i32, Error> {
         }
     }
     // Errors fail the check; warnings alone still exit 0 (D124).
-    if diags.iter().any(|d| d.severity == diagnostic::Severity::Error) {
+    if diags
+        .iter()
+        .any(|d| d.severity == diagnostic::Severity::Error)
+    {
         Ok(1)
     } else {
         Ok(0)
