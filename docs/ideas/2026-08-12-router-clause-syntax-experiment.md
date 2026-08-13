@@ -25,18 +25,19 @@ type MyRouter {
 }
 
 let router = MyRouter()
-let a = router.route(method: "GET", path: "/home")  ## a: May<String> (LSP)
+let a = router.route(req)  ## a: May<String> (LSP)
 ```
 
 Compiler (as built):
 
 1. Parse route clauses in a **type body** only.  
 2. Lower each clause to a **module free-function** handler.  
-3. Emit **`route(method: String, path: String) -> May<String>`** on the type
-   (ordered if-ladder = logical table; miss is `Not()`).  
+3. Emit **`route(req: Request) -> May<String>`** on the type (reads
+   `req.method` / `req.path`; miss is `Not()`).  
 4. Resolve/LSP desugars the same way so hover/outline see generated symbols.
 
-HTTP types stay userland. No lang-items.
+`Request` is userland (usually `std/Http`). Compiler only names the type and
+those two fields. No lang-items.
 
 ---
 
@@ -54,8 +55,8 @@ HTTP types stay userland. No lang-items.
 
 ```thx
 type MyRouter {
-    export fn route(method: String, path: String) -> May<String> {
-        ## ordered if method == … { if path match { return Has(__MyRouter_route_N(…)) } }
+    export fn route(req: Request) -> May<String> {
+        ## ordered if req.method == … { if req.path match { return Has(__MyRouter_route_N(…)) } }
         Not()
     }
 }
@@ -64,13 +65,14 @@ fn __MyRouter_route_0() -> String { "Home" }
 fn __MyRouter_route_1(userId: String) -> String { "user {userId}" }
 ```
 
-Module must `import { Has, Not, May } from "std/Fallible"` (no ambient inject).
+Module must import `Request` and `{ Has, Not, May }` (no ambient inject).
 
 | Choice | Why |
 |--------|-----|
 | Free-fn handlers, not private methods | Private methods cannot be called via `Type().m()` from another method |
 | No Array table field | Ladder is the table (`emit-c` shows it) |
 | Exact path or **trailing** `:capture` only | Capture formal must be `String` |
+| `route(req: Request)` | Dispatcher takes the request; only `.method` / `.path` |
 | `route` returns **`May<String>`** | Hit `Has(…)`; miss `Not()` — handlers still `String` |
 | Nullary product types only | No ctor params / body fields on the router type |
 
@@ -107,8 +109,9 @@ cargo run -p thoxa -- emit-c scratch/router_clause.thx
 | 5 LSP hover/outline for desugared symbols | **done** | resolve desugar + synthetic hover |
 | 6 Typed local hover (`let a: May<String>`) | **done** | general LSP; helps this sample |
 | 7 Typed miss (`May<String>`) | **done** | `Has` / `Not`; user imports Fallible |
-| 8 Path-match helper in std | **pending** | only if Bytes ladder hurts |
-| 9 Decision: keep / reshape / toss | **open** | not a freeze yet |
+| 8 `route(req: Request)` | **done** | reads `.method` / `.path` only |
+| 9 Path-match helper in std | **pending** | only if Bytes ladder hurts |
+| 10 Decision: keep / reshape / toss | **open** | not a freeze yet |
 
 ---
 
@@ -141,7 +144,9 @@ METHOD string_lit [ ( params ) ] [ -> type ] block
 - `e344190` LSP resolve desugar + tree-sitter HTTP keywords  
 - `8f857a7` let hover shows inferred type  
 - `509675c` docs checkpoint (no product claim)  
-- *(this slice)* typed miss `May<String>`  
+- `34c2170` typed miss `May<String>`  
+- `7cded8e` scratch is one-file HTTP demo  
+- *(this slice)* `route(req: Request)`  
 
 Base: master at FCF park note (`969b6d7` lineage).
 

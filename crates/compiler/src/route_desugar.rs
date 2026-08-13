@@ -4,12 +4,13 @@
 //! Handlers are module-level `fn __{Type}_route_N` (not type methods) because
 //! Thoxa cannot call private methods via `Type().m()` from another method.
 //!
-//! `route` returns `May<String>`: hit is `Has(handler(…))`, miss is `Not()`.
-//! Those names come from `std/Fallible` — the module must import them (no
-//! ambient inject). Handlers themselves still return `String`.
+//! `route(req: Request) -> May<String>`: hit is `Has(handler(…))`, miss is
+//! `Not()`. The compiler only reads `req.method` and `req.path` — `Request`
+//! is a userland type (typically `std/Http`). `May`/`Has`/`Not` must be
+//! imported from `std/Fallible` (no ambient inject). Handlers still return
+//! `String`.
 //!
-//! Branch `experiment/router-clause-syntax`. No HTTP lang-items — only normal
-//! Thoxa (`String` equality, `Bytes` for trailing capture, `Has`/`Not`).
+//! Branch `experiment/router-clause-syntax`. No HTTP lang-items.
 
 use crate::ast::*;
 use crate::error::{Error, Result};
@@ -17,7 +18,7 @@ use crate::loader::Package;
 use crate::span::Span;
 
 /// Rewrite every type that has `routes` into handler free functions plus
-/// `route(method: String, path: String) -> May<String>` on the type. Clears `routes`.
+/// `route(req: Request) -> May<String>` on the type. Clears `routes`.
 pub fn desugar_package(package: &mut Package) -> Result<()> {
     for m in &mut package.modules {
         desugar_module(&mut m.ast)?;
@@ -234,10 +235,7 @@ fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Metho
         exported: true,
         name: "route".into(),
         name_span,
-        params: vec![
-            param("method", ty_string()),
-            param("path", ty_string()),
-        ],
+        params: vec![param("req", ty_request())],
         return_type: Some(ty_may_string()),
         body,
     })
@@ -246,12 +244,12 @@ fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Metho
 fn handler_try_if(h: &HandlerMeta) -> Result<Expr> {
     let method_ok = bin(
         BinaryOp::Eq,
-        name("method"),
+        field(name("req"), "method"),
         str_lit(&h.http_method),
     );
     let inner = match &h.pattern {
         PathPattern::Exact(pat) => {
-            let path_ok = bin(BinaryOp::Eq, name("path"), str_lit(pat));
+            let path_ok = bin(BinaryOp::Eq, field(name("req"), "path"), str_lit(pat));
             let call = return_handler_call(&h.handler_name, vec![]);
             if_expr(path_ok, block_stmts(vec![BlockItem::Expr(call)]), None)
         }
@@ -268,7 +266,11 @@ fn handler_try_if(h: &HandlerMeta) -> Result<Expr> {
 }
 
 fn trailing_capture_block(handler_name: &str, prefix: &str) -> Result<Expr> {
-    let path_b_init = method_call(name("Bytes"), "fromString", vec![Arg::Pos(name("path"))]);
+    let path_b_init = method_call(
+        name("Bytes"),
+        "fromString",
+        vec![Arg::Pos(field(name("req"), "path"))],
+    );
     let pre_b_init = method_call(name("Bytes"), "fromString", vec![Arg::Pos(str_lit(prefix))]);
 
     let mut items = vec![
@@ -403,6 +405,17 @@ fn dummy() -> Span {
 fn ty_string() -> TypeExpr {
     TypeExpr {
         name: "String".into(),
+        args: vec![],
+        span: dummy(),
+        lit: None,
+        mark: None,
+        union_members: None,
+    }
+}
+
+fn ty_request() -> TypeExpr {
+    TypeExpr {
+        name: "Request".into(),
         args: vec![],
         span: dummy(),
         lit: None,
@@ -574,7 +587,9 @@ mod tests {
                 assert!(td.routes.is_empty());
                 assert_eq!(td.methods.len(), 1);
                 assert_eq!(td.methods[0].name, "route");
-                assert_eq!(td.methods[0].params.len(), 2);
+                assert_eq!(td.methods[0].params.len(), 1);
+                assert_eq!(td.methods[0].params[0].name, "req");
+                assert_eq!(td.methods[0].params[0].ty.name, "Request");
                 let ret = td.methods[0].return_type.as_ref().expect("route ret");
                 assert_eq!(ret.name, "May");
                 assert_eq!(ret.args.len(), 1);

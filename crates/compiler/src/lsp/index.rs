@@ -291,7 +291,7 @@ fn synthetic_route_signature(
         BindingKind::Method if binding.name == "route" => {
             let owner = binding.owner.as_deref().unwrap_or("?");
             Some(format!(
-                "fn {owner}.route(method: String, path: String) -> {ret}\n\
+                "fn {owner}.route(req: Request) -> {ret}\n\
                  // generated from route clauses"
             ))
         }
@@ -472,12 +472,14 @@ mod tests {
     #[test]
     fn hover_let_from_route_shows_string_type() {
         let src = r#"
+type Request(method: String, path: String)
 type MyRouter {
     GET "/home" { "Home" }
 }
 fn main() -> Int64 {
     let r = MyRouter()
-    let a = r.route(method: "GET", path: "/home")
+    let req = Request(method: "GET", path: "/home")
+    let a = r.route(req)
     a
     0
 }
@@ -498,12 +500,14 @@ fn main() -> Int64 {
     #[test]
     fn hover_route_method_from_type_body_clauses() {
         let src = r#"
+type Request(method: String, path: String)
 type MyRouter {
     GET "/home" { "Home" }
 }
 fn main() -> Int64 {
     let r = MyRouter()
-    r.route(method: "GET", path: "/home")
+    let req = Request(method: "GET", path: "/home")
+    r.route(req)
     0
 }
 "#;
@@ -526,7 +530,7 @@ fn main() -> Int64 {
         assert!(md.contains("route"), "{md}");
         assert!(md.contains("May<String>"), "{md}");
         assert!(
-            md.contains("generated") || md.contains("method: String"),
+            md.contains("generated") || md.contains("req: Request"),
             "{md}"
         );
         // Free handler from desugar is indexed.

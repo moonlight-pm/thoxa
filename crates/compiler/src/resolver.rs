@@ -1705,12 +1705,14 @@ fn f(t: Trial<Int64, Int64>) -> Int64 {
     #[test]
     fn let_from_route_call_has_may_string_ty_hint() {
         let src = r#"
+type Request(method: String, path: String)
 type MyRouter {
     GET "/home" { "Home" }
 }
 fn main() -> Int64 {
     let r = MyRouter()
-    let a = r.route(method: "GET", path: "/home")
+    let req = Request(method: "GET", path: "/home")
+    let a = r.route(req)
     a
     0
 }
