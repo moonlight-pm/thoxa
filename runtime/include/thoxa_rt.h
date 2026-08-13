@@ -15,6 +15,7 @@ extern "C" {
 #define THOXA_TAG_BYTES  2
 #define THOXA_TAG_BUFFER 3
 #define THOXA_TAG_ARRAY  4
+#define THOXA_TAG_HTML   5
 
 /* Element slots: heap pointers (String/Bytes) bitcast into 8-byte slots. */
 #define THOXA_ARRAY_FLAG_HEAP_ELEMS 1u
@@ -308,6 +309,32 @@ void thoxa_array_drop(ThoxaArray *a);
 void thoxa_array_drop_ex(ThoxaArray *a, ThoxaArrayElemFn elem_drop);
 /* Share: bump array RC only (elements stay with the shared object). */
 void thoxa_array_dup(ThoxaArray *a);
+
+/* --- HTML tree (builtin `Node`, JSX runtime) ---------------------------- */
+
+#define THOXA_HTML_EL 0
+#define THOXA_HTML_TEXT 1
+#define THOXA_HTML_FRAG 2
+
+typedef struct ThoxaHtml {
+    uint8_t kind;
+    ThoxaString *tag;
+    ThoxaString *text;
+    ThoxaArray *attr_names;
+    ThoxaArray *attr_vals;
+    ThoxaArray *kids;
+} ThoxaHtml;
+
+ThoxaHtml *thoxa_html_el(
+    ThoxaString *tag,
+    ThoxaArray *attr_names,
+    ThoxaArray *attr_vals,
+    ThoxaArray *kids
+);
+/* Escapes `s` as text. */
+ThoxaHtml *thoxa_html_text(ThoxaString *s);
+ThoxaHtml *thoxa_html_frag(ThoxaArray *kids);
+ThoxaString *thoxa_html_render(const ThoxaHtml *n);
 
 #ifdef __cplusplus
 }

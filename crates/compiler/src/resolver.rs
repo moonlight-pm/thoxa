@@ -205,7 +205,7 @@ impl Resolution {
 /// Built-in type and value names with no source definition in the buffer.
 const BUILTINS: &[&str] = &[
     "Int64", "Int32", "UInt64", "UInt32", "Byte", "Bool", "Void", "String", "Bytes", "Buffer",
-    "Array", "Address", "Trial", "May", "Pass", "Fail", "Has", "Not", "true", "false",
+    "Node", "Array", "Address", "Trial", "May", "Pass", "Fail", "Has", "Not", "true", "false",
 ];
 
 struct Scope {
@@ -254,7 +254,9 @@ pub fn resolve_module(module: &Module) -> Resolution {
 /// Lex + parse + resolve `text`. Parse errors propagate; resolve never fails.
 pub fn resolve_source(text: &str) -> Result<Resolution> {
     let tokens = Lexer::new(text).tokenize()?;
-    let module = Parser::new(tokens).parse_module()?;
+    let module = Parser::new(tokens)
+        .with_source(text.to_string())
+        .parse_module()?;
     Ok(resolve_module(&module))
 }
 
@@ -499,10 +501,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn block_nav_ty(&self, block: &Block, scope: usize) -> Option<NavTy> {
-        block
-            .tail
-            .as_ref()
-            .and_then(|t| self.expr_nav_ty(t, scope))
+        block.tail.as_ref().and_then(|t| self.expr_nav_ty(t, scope))
     }
 
     /// Result type of a bare call for member linking: type ctor, or free/extern return.
@@ -612,14 +611,8 @@ impl<'a> Resolver<'a> {
                     } else {
                         BindingKind::Let
                     };
-                    let id = self.new_binding(
-                        &g.name,
-                        kind,
-                        Some(g.name_span),
-                        g.exported,
-                        None,
-                        true,
-                    );
+                    let id =
+                        self.new_binding(&g.name, kind, Some(g.name_span), g.exported, None, true);
                     self.define(root, &g.name, id);
                 }
                 Item::Import(imp) => match &imp.kind {
@@ -645,12 +638,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn declare_selective_imports(
-        &mut self,
-        root: usize,
-        path: &str,
-        names: &[ast::ImportName],
-    ) {
+    fn declare_selective_imports(&mut self, root: usize, path: &str, names: &[ast::ImportName]) {
         for n in names {
             let (local, span) = match &n.alias {
                 Some((a, sp)) => (a.as_str(), *sp),
@@ -700,13 +688,11 @@ impl<'a> Resolver<'a> {
 
     fn declare_members(&mut self, td: &ast::TypeDef) {
         for p in &td.params {
-            let id =
-                self.member_binding(&td.name, &p.name, BindingKind::Field, p.name_span, false);
+            let id = self.member_binding(&td.name, &p.name, BindingKind::Field, p.name_span, false);
             self.set_nav_ty(id, Self::nav_ty_from_type_expr(&p.ty));
         }
         for f in &td.fields {
-            let id =
-                self.member_binding(&td.name, &f.name, BindingKind::Field, f.name_span, false);
+            let id = self.member_binding(&td.name, &f.name, BindingKind::Field, f.name_span, false);
             self.set_nav_ty(id, Self::nav_ty_from_type_expr(&f.ty));
         }
         for m in &td.methods {
@@ -923,7 +909,10 @@ impl<'a> Resolver<'a> {
 
     fn walk_expr(&mut self, expr: &Expr, scope: usize) {
         match &expr.kind {
-            ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::String(_) | ExprKind::Break
+            ExprKind::Int(_)
+            | ExprKind::Bool(_)
+            | ExprKind::String(_)
+            | ExprKind::Break
             | ExprKind::Continue => {}
             ExprKind::Interpolate(parts) => {
                 for p in parts {
@@ -1120,14 +1109,8 @@ impl<'a> Resolver<'a> {
             | Pattern::Else { .. } => {}
             // Value bare bind (D110): introduce pattern binding for arm body.
             Pattern::Bind { name, span } => {
-                let id = self.new_binding(
-                    name,
-                    BindingKind::Pattern,
-                    Some(*span),
-                    false,
-                    None,
-                    false,
-                );
+                let id =
+                    self.new_binding(name, BindingKind::Pattern, Some(*span), false, None, false);
                 self.define(inner, name, id);
             }
             // Value or-patterns (D108) — only literals; no binds.
@@ -1271,7 +1254,10 @@ mod tests {
         let b = res.binding_of(Some(r)).expect("bound");
         assert_eq!(b.kind, BindingKind::Let);
         // Should be the second let (x = 2)
-        assert_eq!(b.def_span.unwrap().start, src.find("let x = 2").unwrap() + 4);
+        assert_eq!(
+            b.def_span.unwrap().start,
+            src.find("let x = 2").unwrap() + 4
+        );
         let _ = (line, col);
     }
 
@@ -1323,8 +1309,12 @@ fn main() -> Int64 {
             .expect("Point");
         assert_eq!(point.kind, BindingKind::Type);
         let members = res.members_of("Point");
-        assert!(members.iter().any(|m| m.name == "x" && m.kind == BindingKind::Field));
-        assert!(members.iter().any(|m| m.name == "len" && m.kind == BindingKind::Method));
+        assert!(members
+            .iter()
+            .any(|m| m.name == "x" && m.kind == BindingKind::Field));
+        assert!(members
+            .iter()
+            .any(|m| m.name == "len" && m.kind == BindingKind::Method));
         // method call linked via ctor ty_hint
         let len_call = src.find("p.len()").unwrap() + 2;
         let p = byte_to_position(src, len_call);
@@ -1443,7 +1433,9 @@ fn main() -> Int64 {
         let get_call = src.find("b.get()").unwrap() + 2;
         let p = byte_to_position(src, get_call);
         let r = res.ref_at(src, p.line, p.character).expect("b.get");
-        let b = res.binding_of(Some(r)).expect("method via generic return head");
+        let b = res
+            .binding_of(Some(r))
+            .expect("method via generic return head");
         assert_eq!(b.kind, BindingKind::Method);
         assert_eq!(b.name, "get");
         assert_eq!(b.owner.as_deref(), Some("Box"));
@@ -1470,7 +1462,9 @@ fn main() -> Int64 {
         let len_call = src.find("b.get().len()").unwrap() + "b.get().".len();
         let p = byte_to_position(src, len_call);
         let r = res.ref_at(src, p.line, p.character).expect("get().len");
-        let b = res.binding_of(Some(r)).expect("method via type-param return");
+        let b = res
+            .binding_of(Some(r))
+            .expect("method via type-param return");
         assert_eq!(b.kind, BindingKind::Method);
         assert_eq!(b.name, "len");
         assert_eq!(b.owner.as_deref(), Some("Point"));
@@ -1586,7 +1580,9 @@ fn main() -> Int64 {
         let res = resolve_ok(src);
         let len_call = src.find("p.len()").unwrap() + 2;
         let p = byte_to_position(src, len_call);
-        let r = res.ref_at(src, p.line, p.character).expect("p.len in match");
+        let r = res
+            .ref_at(src, p.line, p.character)
+            .expect("p.len in match");
         let b = res.binding_of(Some(r)).expect("method via pattern payload");
         assert_eq!(b.kind, BindingKind::Method);
         assert_eq!(b.name, "len");

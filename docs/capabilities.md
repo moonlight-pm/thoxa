@@ -12,7 +12,7 @@ change. See [`progress-model.md`](progress-model.md).
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
 **As of:** 2026-08-13 (D131 multi-clause **shipped**; Crema-lite Phase A–C;
-type-body route clauses **partial** on master — not freeze)
+type-body route clauses + JSX/`Node` **partial** on master — not freeze)
 
 ---
 
@@ -45,6 +45,7 @@ type-body route clauses **partial** on master — not freeze)
 | modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate`, `import_combined` | D30–D35, D122, **D127** | Combined `import ns, { a } from "…"` shipped. `~/` is nearest ancestor `Main.thx` (else entry dir) so nested-file check/LSP match directory packages. Nested import/type in functions deferred (D91); module mut heap (Array/String) must not end-of-fn drop (D122) | yes |
 | pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |
 | route-clauses | Type-body `GET "/…"` → `route(req) -> Response` | partial | unit (`route_desugar`, LSP); Crema dogfood | idea [`ideas/2026-08-12-router-clause-syntax-experiment.md`](ideas/2026-08-12-router-clause-syntax-experiment.md) | **On master, not freeze / no D-id.** String wrap + `Response` pass-through; `Int64`/`String` captures; multi-segment; optional `req`. **Gaps:** no conformance `.thx`; no handbook; no JSON/form; miss is `notFound()` (no fallthrough). Crema dogfoods via `examples/http` `type Routes`. | no |
+| jsx-node | Tag literals + builtin `Node` / `.html()` | partial | `jsx` | idea [`ideas/2026-08-13-jsx-node-syntax-experiment.md`](ideas/2026-08-13-jsx-node-syntax-experiment.md) | **On master, not freeze / no D-id.** Eager PascalCase → `Type(…).view(children:)`; `{e}` is String / Node / Array&lt;Node&gt;; void tags; boolean attrs; no import. **Gaps:** no handbook; no spreads; runtime is tagged C struct (not `El \| Text \| Frag`); Crema pages still strings; `.html()` method hover thin. | no |
 
 ## FFI and C layout
 

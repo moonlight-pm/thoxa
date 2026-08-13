@@ -5,7 +5,8 @@
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-08-13 (**D131** multi-clause **shipped**; Crema-lite Phase A–C;
-type-body route clauses **on master**, not freeze / not handbook)
+type-body route clauses + **JSX / builtin `Node`** **on master**, not freeze /
+not handbook)
 
 ---
 
@@ -26,14 +27,21 @@ import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
 (**D125**); LSP nav; **D124** diagnostics. Agent-only ideas parked:
 [`docs/ideas/2026-08-09-agent-dx-from-zerolang.md`](docs/ideas/2026-08-09-agent-dx-from-zerolang.md).
 
-**On master, not product:** type-body `GET "/…"` desugar + LSP (idea
-[`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md);
-capability `route-clauses` **partial**). No D-id / handbook. Crema dogfoods
-the clauses (example-only).
+**On master, not product:**
+
+- Type-body `GET "/…"` desugar + LSP (idea
+  [`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md);
+  capability `route-clauses` **partial**). No D-id / handbook. Crema dogfoods
+  the clauses (example-only).
+- Tag literals + builtin **`Node`** (idea
+  [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md);
+  capability `jsx-node` **partial**). No import; `.html()`; gate `jsx`. No
+  D-id / handbook. Crema pages still string HTML.
 
 **In progress / next:**
 
-1. **Crema-lite Phase D+** only if wanted — still example only; no `std/`.  
+1. **Crema-lite** — rewrite pages onto `Node` tags when wanted; Phase D+ only
+   if useful. Still example only; no `std/`.  
 2. Editor only when DX forces it.  
 3. Sample-driven language polish (no open CURRENT language slice).
 

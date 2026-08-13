@@ -73,7 +73,10 @@ impl Server {
                 Some(m) => m,
                 None => return Ok(0),
             };
-            let method = msg.get("method").and_then(|m| m.as_str()).map(str::to_string);
+            let method = msg
+                .get("method")
+                .and_then(|m| m.as_str())
+                .map(str::to_string);
             if method.as_deref() == Some("exit") {
                 return Ok(if self.shutdown_requested { 0 } else { 1 });
             }
@@ -281,12 +284,7 @@ impl Server {
             && binding.def_span.is_some()
         {
             let my_path = PathBuf::from(convert::check_filename(uri));
-            locs.extend(self.export_client_locations(
-                &binding.name,
-                &my_path,
-                uri,
-                include_decl,
-            ));
+            locs.extend(self.export_client_locations(&binding.name, &my_path, uri, include_decl));
         }
 
         Value::Array(locs)
@@ -412,21 +410,11 @@ impl Server {
                 for m in idx.resolution.members_of(&b.name) {
                     let Some(ms) = m.def_span else { continue };
                     let mr = span::span_to_range(&idx.text, ms);
-                    children.push(convert::document_symbol(
-                        &m.name,
-                        m.kind,
-                        mr,
-                        mr,
-                        vec![],
-                    ));
+                    children.push(convert::document_symbol(&m.name, m.kind, mr, mr, vec![]));
                 }
             }
             out.push(convert::document_symbol(
-                &b.name,
-                b.kind,
-                range,
-                selection,
-                children,
+                &b.name, b.kind, range, selection, children,
             ));
         }
         Value::Array(out)
@@ -661,10 +649,7 @@ impl Server {
         })) {
             Ok(pair) => pair,
             Err(panic) => {
-                eprintln!(
-                    "thoxa-lsp: diagnostics failed: {}",
-                    panic_message(&panic)
-                );
+                eprintln!("thoxa-lsp: diagnostics failed: {}", panic_message(&panic));
                 (Vec::new(), HashMap::new())
             }
         };
@@ -795,13 +780,7 @@ const WORKSPACE_SYMBOL_LIMIT: usize = 100;
 
 /// Collect module-level (and type member) symbols matching `query` (case-insensitive
 /// substring; empty query matches all). Appends to `out` up to [`WORKSPACE_SYMBOL_LIMIT`].
-fn collect_workspace_symbols(
-    uri: &str,
-    text: &str,
-    path: &str,
-    query: &str,
-    out: &mut Vec<Value>,
-) {
+fn collect_workspace_symbols(uri: &str, text: &str, path: &str, query: &str, out: &mut Vec<Value>) {
     if out.len() >= WORKSPACE_SYMBOL_LIMIT {
         return;
     }
@@ -846,24 +825,14 @@ fn collect_workspace_symbols(
                     }
                     let Some(ms) = m.def_span else { continue };
                     out.push(workspace_symbol_info(
-                        &m.name,
-                        m.kind,
-                        uri,
-                        text,
-                        ms,
-                        &b.name,
+                        &m.name, m.kind, uri, text, ms, &b.name,
                     ));
                 }
             }
             continue;
         }
         out.push(workspace_symbol_info(
-            &b.name,
-            b.kind,
-            uri,
-            text,
-            sel,
-            &container,
+            &b.name, b.kind, uri, text, sel, &container,
         ));
         if b.kind == BindingKind::Type {
             for m in idx.resolution.members_of(&b.name) {
@@ -875,12 +844,7 @@ fn collect_workspace_symbols(
                 }
                 let Some(ms) = m.def_span else { continue };
                 out.push(workspace_symbol_info(
-                    &m.name,
-                    m.kind,
-                    uri,
-                    text,
-                    ms,
-                    &b.name,
+                    &m.name, m.kind, uri, text, ms, &b.name,
                 ));
             }
         }
@@ -1005,10 +969,7 @@ fn import_rename_edits(
         if origin.is_namespace {
             continue;
         }
-        let name = origin
-            .original
-            .clone()
-            .unwrap_or_else(|| b.name.clone());
+        let name = origin.original.clone().unwrap_or_else(|| b.name.clone());
         if name != export_name {
             continue;
         }
@@ -1059,16 +1020,11 @@ fn import_uses_of_export(
         if origin.is_namespace {
             continue;
         }
-        let name = origin
-            .original
-            .clone()
-            .unwrap_or_else(|| b.name.clone());
+        let name = origin.original.clone().unwrap_or_else(|| b.name.clone());
         if name != export_name {
             continue;
         }
-        let Some(resolved) =
-            crossmodule::resolve_import_file(&origin.spec, other_path)
-        else {
+        let Some(resolved) = crossmodule::resolve_import_file(&origin.spec, other_path) else {
             continue;
         };
         if !crossmodule::paths_equal_public(&resolved, export_path) {
@@ -1222,19 +1178,31 @@ mod tests {
                 "params": { "textDocument": { "uri": uri } }
             }),
         ]);
-        let def = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let def = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         assert_eq!(def["result"]["uri"], uri);
         assert_eq!(def["result"]["range"]["start"]["line"], 0);
 
-        let hover = msgs.iter().find(|m| m.get("id") == Some(&json!(3))).unwrap();
+        let hover = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(3)))
+            .unwrap();
         let md = hover["result"]["contents"]["value"].as_str().unwrap();
         assert!(md.contains("helper"), "{md}");
 
-        let refs = msgs.iter().find(|m| m.get("id") == Some(&json!(4))).unwrap();
+        let refs = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(4)))
+            .unwrap();
         let arr = refs["result"].as_array().unwrap();
         assert!(arr.len() >= 2, "def + call: {arr:?}");
 
-        let syms = msgs.iter().find(|m| m.get("id") == Some(&json!(5))).unwrap();
+        let syms = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(5)))
+            .unwrap();
         let list = syms["result"].as_array().unwrap();
         let names: Vec<_> = list.iter().map(|s| s["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"helper"));
@@ -1280,7 +1248,10 @@ fn main() -> Int64 {
                 }
             }),
         ]);
-        let def = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let def = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         assert_eq!(def["result"]["uri"], uri, "{def}");
         // Method def is on the first `len` line (line 1 in 0-based).
         assert_eq!(def["result"]["range"]["start"]["line"], 1, "{def}");
@@ -1326,7 +1297,10 @@ fn main() -> Int64 {
                 }
             }),
         ]);
-        let def = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let def = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         assert_eq!(def["result"]["uri"], uri, "{def}");
         assert_eq!(def["result"]["range"]["start"]["line"], 1, "{def}");
     }
@@ -1371,10 +1345,16 @@ fn main() -> Int64 {
                 }
             }),
         ]);
-        let prep = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let prep = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         assert_eq!(prep["result"]["placeholder"], "helper");
 
-        let ren = msgs.iter().find(|m| m.get("id") == Some(&json!(3))).unwrap();
+        let ren = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(3)))
+            .unwrap();
         let edits = ren["result"]["changes"][uri].as_array().unwrap();
         assert!(edits.len() >= 2, "{edits:?}");
         assert!(edits.iter().all(|e| e["newText"] == "assist"));
@@ -1401,7 +1381,9 @@ fn main() -> Int64 {
         ]);
         let diags = msgs
             .iter()
-            .find(|m| m.get("method").and_then(|x| x.as_str()) == Some("textDocument/publishDiagnostics"))
+            .find(|m| {
+                m.get("method").and_then(|x| x.as_str()) == Some("textDocument/publishDiagnostics")
+            })
             .expect("publishDiagnostics");
         let list = diags["params"]["diagnostics"].as_array().unwrap();
         assert_eq!(list.len(), 1);
@@ -1443,9 +1425,14 @@ fn main() -> Int64 {
         ]);
         let publishes: Vec<_> = msgs
             .iter()
-            .filter(|m| m.get("method").and_then(|x| x.as_str()) == Some("textDocument/publishDiagnostics"))
+            .filter(|m| {
+                m.get("method").and_then(|x| x.as_str()) == Some("textDocument/publishDiagnostics")
+            })
             .collect();
-        assert!(publishes.len() >= 2, "expected open + change publishes: {publishes:?}");
+        assert!(
+            publishes.len() >= 2,
+            "expected open + change publishes: {publishes:?}"
+        );
         let last = publishes.last().unwrap();
         let list = last["params"]["diagnostics"].as_array().unwrap();
         assert!(list.is_empty(), "fixed buffer should clear diags: {last}");
@@ -1504,11 +1491,8 @@ fn main() -> Int64 {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_lsp_wsym_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("thoxa_lsp_wsym_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         let lib = dir.join("lib");
         fs::create_dir_all(&lib).unwrap();
@@ -1519,8 +1503,7 @@ fn main() -> Int64 {
         )
         .unwrap();
         let main = dir.join("Main.thx");
-        let main_src =
-            "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main_src = "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let main_uri = convert::path_to_uri(&main.to_string_lossy());
 
@@ -1559,21 +1542,30 @@ fn main() -> Int64 {
             }),
         ]);
 
-        let ans = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let ans = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         let arr = ans["result"].as_array().expect("symbol array");
         assert!(
             arr.iter().any(|s| s["name"] == "answer"),
             "expected answer from disk Helper: {arr:?}"
         );
 
-        let pt = msgs.iter().find(|m| m.get("id") == Some(&json!(3))).unwrap();
+        let pt = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(3)))
+            .unwrap();
         let arr = pt["result"].as_array().expect("Point symbols");
         assert!(
             arr.iter().any(|s| s["name"] == "Point"),
             "expected Point type: {arr:?}"
         );
 
-        let mn = msgs.iter().find(|m| m.get("id") == Some(&json!(4))).unwrap();
+        let mn = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(4)))
+            .unwrap();
         let arr = mn["result"].as_array().expect("main symbols");
         assert!(
             arr.iter().any(|s| s["name"] == "main"),
@@ -1606,11 +1598,8 @@ fn main() -> Int64 {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_lsp_xmod_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("thoxa_lsp_xmod_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -1660,7 +1649,10 @@ fn main() -> Int64 {
             }),
         ]);
 
-        let def = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let def = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         let def_uri = def["result"]["uri"].as_str().unwrap();
         assert!(
             def_uri.ends_with("Helper.thx"),
@@ -1668,7 +1660,10 @@ fn main() -> Int64 {
         );
         assert_eq!(def["result"]["range"]["start"]["line"], 1); // export fn answer
 
-        let hover = msgs.iter().find(|m| m.get("id") == Some(&json!(3))).unwrap();
+        let hover = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(3)))
+            .unwrap();
         let md = hover["result"]["contents"]["value"].as_str().unwrap();
         assert!(md.contains("answer"), "{md}");
         assert!(md.contains("the answer") || md.contains("Int64"), "{md}");
@@ -1718,7 +1713,10 @@ fn main() -> Int64 {
         ]);
 
         let _ = fs::remove_file(&main);
-        let def = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let def = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         let def_uri = def["result"]["uri"].as_str().unwrap_or("");
         assert!(
             def_uri.ends_with("Str.thx") || def_uri.contains("/std/Str"),
@@ -1734,11 +1732,7 @@ fn main() -> Int64 {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_lsp_ren_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa_lsp_ren_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -1790,7 +1784,10 @@ fn main() -> Int64 {
             }),
         ]);
 
-        let ren = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let ren = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         let changes = ren["result"]["changes"]
             .as_object()
             .expect("workspace edit changes");
@@ -1823,11 +1820,8 @@ fn main() -> Int64 {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_lsp_diskren_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("thoxa_lsp_diskren_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -1866,7 +1860,10 @@ fn main() -> Int64 {
             }),
         ]);
 
-        let ren = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let ren = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         let changes = ren["result"]["changes"]
             .as_object()
             .expect("workspace edit changes");
@@ -1886,11 +1883,8 @@ fn main() -> Int64 {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_lsp_diskrefs_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("thoxa_lsp_diskrefs_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -1930,12 +1924,12 @@ fn main() -> Int64 {
             }),
         ]);
 
-        let refs = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
-        let arr = refs["result"].as_array().expect("refs array");
-        let uris: Vec<&str> = arr
+        let refs = msgs
             .iter()
-            .filter_map(|l| l["uri"].as_str())
-            .collect();
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
+        let arr = refs["result"].as_array().expect("refs array");
+        let uris: Vec<&str> = arr.iter().filter_map(|l| l["uri"].as_str()).collect();
         assert!(
             uris.iter().any(|u| u.ends_with("Main.thx")),
             "expected disk Main.thx among refs: {uris:?}"
@@ -1952,11 +1946,8 @@ fn main() -> Int64 {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_lsp_pkgrefts_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("thoxa_lsp_pkgrefts_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         let lib = dir.join("lib");
         fs::create_dir_all(&lib).unwrap();
@@ -1964,8 +1955,7 @@ fn main() -> Int64 {
         let helper_src = "export fn answer() -> Int64 { 42 }\n";
         fs::write(&helper, helper_src).unwrap();
         let main = dir.join("Main.thx");
-        let main_src =
-            "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main_src = "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
         let def_byte = helper_src.find("answer").unwrap();
@@ -1997,12 +1987,12 @@ fn main() -> Int64 {
             }),
         ]);
 
-        let refs = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
-        let arr = refs["result"].as_array().expect("refs array");
-        let uris: Vec<&str> = arr
+        let refs = msgs
             .iter()
-            .filter_map(|l| l["uri"].as_str())
-            .collect();
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
+        let arr = refs["result"].as_array().expect("refs array");
+        let uris: Vec<&str> = arr.iter().filter_map(|l| l["uri"].as_str()).collect();
         assert!(
             uris.iter().any(|u| u.ends_with("Main.thx")),
             "expected package-root Main.thx among refs: {uris:?}"
@@ -2018,11 +2008,8 @@ fn main() -> Int64 {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_lsp_pkgren_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("thoxa_lsp_pkgren_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         let lib = dir.join("lib");
         fs::create_dir_all(&lib).unwrap();
@@ -2030,8 +2017,7 @@ fn main() -> Int64 {
         let helper_src = "export fn answer() -> Int64 { 42 }\n";
         fs::write(&helper, helper_src).unwrap();
         let main = dir.join("Main.thx");
-        let main_src =
-            "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main_src = "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
         let def_byte = helper_src.find("answer").unwrap();
@@ -2063,7 +2049,10 @@ fn main() -> Int64 {
             }),
         ]);
 
-        let ren = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let ren = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         let changes = ren["result"]["changes"]
             .as_object()
             .expect("workspace edit changes");
@@ -2083,11 +2072,8 @@ fn main() -> Int64 {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_lsp_refs_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("thoxa_lsp_refs_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -2140,7 +2126,10 @@ fn main() -> Int64 {
             }),
         ]);
 
-        let refs = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let refs = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         let arr = refs["result"].as_array().expect("refs array");
         // At least: Helper def + Main import/use sites.
         assert!(
@@ -2148,18 +2137,9 @@ fn main() -> Int64 {
             "expected multi-file refs, got {}: {arr:?}",
             arr.len()
         );
-        let uris: Vec<&str> = arr
-            .iter()
-            .filter_map(|l| l["uri"].as_str())
-            .collect();
-        assert!(
-            uris.iter().any(|u| u.ends_with("Helper.thx")),
-            "{uris:?}"
-        );
-        assert!(
-            uris.iter().any(|u| u.ends_with("Main.thx")),
-            "{uris:?}"
-        );
+        let uris: Vec<&str> = arr.iter().filter_map(|l| l["uri"].as_str()).collect();
+        assert!(uris.iter().any(|u| u.ends_with("Helper.thx")), "{uris:?}");
+        assert!(uris.iter().any(|u| u.ends_with("Main.thx")), "{uris:?}");
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2172,19 +2152,11 @@ fn main() -> Int64 {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_lsp_buf_{}_{}",
-            std::process::id(),
-            ns
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa_lsp_buf_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
-        fs::write(
-            &helper,
-            "export fn helper(x: Int64) -> Int64 { x }\n",
-        )
-        .unwrap();
+        fs::write(&helper, "export fn helper(x: Int64) -> Int64 { x }\n").unwrap();
         let main = dir.join("Main.thx");
         let text = "import { helper } from \"./Helper\"\nfn main() -> Int64 { helper(1) }\n";
         fs::write(&main, text).unwrap();
@@ -2230,7 +2202,10 @@ fn main() -> Int64 {
                 }
             }),
         ]);
-        let hover = msgs.iter().find(|m| m.get("id") == Some(&json!(2))).unwrap();
+        let hover = msgs
+            .iter()
+            .find(|m| m.get("id") == Some(&json!(2)))
+            .unwrap();
         let md = hover["result"]["contents"]["value"].as_str().unwrap();
         assert!(md.contains("y"), "expected open-buffer signature: {md}");
         let _ = fs::remove_dir_all(&dir);

@@ -5,9 +5,8 @@ use std::io::{self, BufRead, Write};
 
 /// Write one LSP message (headers + JSON body).
 pub fn write_message<W: Write>(stream: &mut W, message: &Value) -> io::Result<()> {
-    let body = serde_json::to_vec(message).map_err(|e| {
-        io::Error::new(io::ErrorKind::InvalidData, e)
-    })?;
+    let body =
+        serde_json::to_vec(message).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     write!(stream, "Content-Length: {}\r\n\r\n", body.len())?;
     stream.write_all(&body)?;
     stream.flush()?;
@@ -44,9 +43,8 @@ pub fn read_message<R: BufRead>(stream: &mut R) -> io::Result<Option<Value>> {
 
     let mut body = vec![0u8; length];
     stream.read_exact(&mut body)?;
-    let value: Value = serde_json::from_slice(&body).map_err(|e| {
-        io::Error::new(io::ErrorKind::InvalidData, e)
-    })?;
+    let value: Value =
+        serde_json::from_slice(&body).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     Ok(Some(value))
 }
 

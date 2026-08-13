@@ -178,13 +178,14 @@ fn check_source_inner(
     };
     // Soft parse: recover partial AST so we can still report undefined names
     // after a mid-file syntax error (e.g. keyword `as`).
-    let (mut module, mut pre_errors) = match Parser::new(tokens).parse_module() {
-        Ok(m) => (m, Vec::new()),
-        Err(mut e) => match e.recovered_module.take() {
-            Some(recovered) => (*recovered, e.into_diagnostics()),
-            None => return (Some(e), None, None),
-        },
-    };
+    let (mut module, mut pre_errors) =
+        match Parser::new(tokens).with_source(text.clone()).parse_module() {
+            Ok(m) => (m, Vec::new()),
+            Err(mut e) => match e.recovered_module.take() {
+                Some(recovered) => (*recovered, e.into_diagnostics()),
+                None => return (Some(e), None, None),
+            },
+        };
 
     // Session stmts already diagnosed at parse when `main` exists; drop them so
     // prepare/lower can analyze the rest of the program.
@@ -437,7 +438,9 @@ fn paths_equal(a: &Path, b: &Path, b_canon: Option<&PathBuf>) -> bool {
 }
 
 fn canonicalize_soft(path: &Path) -> Option<PathBuf> {
-    path.canonicalize().ok().or_else(|| Some(path.to_path_buf()))
+    path.canonicalize()
+        .ok()
+        .or_else(|| Some(path.to_path_buf()))
 }
 
 fn first_import_span(module: &Module) -> Option<Span> {
@@ -544,22 +547,52 @@ pub fn semantic_tokens(text: &str) -> Vec<SemanticToken> {
     };
 
     let mut out = Vec::new();
+    // Track `<…>` so tag names / attrs are not painted as ordinary variables
+    // when Zed `semantic_tokens = "combined"` overlays the grammar.
+    let mut in_tag = false;
+    let mut tag_name_pending = false;
     for i in 0..tokens.len() {
+        match &tokens[i].kind {
+            TokenKind::LAngle => {
+                in_tag = true;
+                tag_name_pending = true;
+                continue;
+            }
+            TokenKind::Slash if in_tag => {
+                tag_name_pending = true;
+                continue;
+            }
+            TokenKind::RAngle => {
+                in_tag = false;
+                tag_name_pending = false;
+                continue;
+            }
+            TokenKind::Ident(_) => {}
+            _ => continue,
+        }
         let TokenKind::Ident(name) = &tokens[i].kind else {
             continue;
         };
         let Some(first) = name.chars().next() else {
             continue;
         };
-        let kind = if first.is_uppercase() {
-            "type"
-        } else {
-            let next = tokens.get(i + 1).map(|t| &t.kind);
-            if matches!(next, Some(TokenKind::LParen)) {
-                "function"
+        let next = tokens.get(i + 1).map(|t| &t.kind);
+        let kind = if in_tag && tag_name_pending {
+            tag_name_pending = false;
+            if first.is_uppercase() {
+                "type"
             } else {
-                "variable"
+                // Distinct from `variable` so combined mode keeps the HTML hue.
+                "macro"
             }
+        } else if in_tag && matches!(next, Some(TokenKind::Eq) | Some(TokenKind::Minus)) {
+            "property"
+        } else if first.is_uppercase() {
+            "type"
+        } else if matches!(next, Some(TokenKind::LParen)) {
+            "function"
+        } else {
+            "variable"
         };
         let range = span::span_to_range(text, tokens[i].span);
         let slice = text
@@ -591,16 +624,16 @@ mod tests {
     #[test]
     fn unused_import_is_warning() {
         use std::fs;
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa-unused-imp-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa-unused-imp-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
         let main = dir.join("Main.thx");
-        fs::write(&helper, "export fn answer() -> Int64 { 42 }\nexport fn other() -> Int64 { 1 }\n")
-            .unwrap();
+        fs::write(
+            &helper,
+            "export fn answer() -> Int64 { 42 }\nexport fn other() -> Int64 { 1 }\n",
+        )
+        .unwrap();
         let src = "\
 import { answer, other } from \"./Helper\"
 fn main() -> Int64 { answer() }
@@ -622,10 +655,7 @@ fn main() -> Int64 { answer() }
     #[test]
     fn unused_namespace_import_is_warning() {
         use std::fs;
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa-unused-ns-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa-unused-ns-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -650,10 +680,7 @@ fn main() -> Int64 { 0 }
     #[test]
     fn used_import_no_warning() {
         use std::fs;
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa-used-imp-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa-used-imp-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -669,10 +696,7 @@ fn main() -> Int64 { 0 }
     #[test]
     fn combined_import_unused_selective_is_warning() {
         use std::fs;
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa-combined-imp-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa-combined-imp-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -787,18 +811,13 @@ fn main() -> Int64 { h.answer() + answer() }
 
     #[test]
     fn lex_error_multi_unexpected_chars() {
-        // Two independent unexpected characters → multi-diag.
+        // Junk chars (`@`, `$`) are tokens now (JSX raw text) and fail at parse.
         let src = "fn main() -> Int64 { @ $ }\n";
         let diags = check_source("<input>", src);
         assert!(
-            diags.len() >= 2,
-            "expected multi lex diags, got {}: {diags:?}",
-            diags.len()
-        );
-        assert!(
             diags
                 .iter()
-                .all(|d| d.message.to_lowercase().contains("unexpected")),
+                .any(|d| d.message.to_lowercase().contains("unexpected")),
             "{diags:?}"
         );
     }
@@ -910,10 +929,7 @@ fn main() -> Int64 {
     #[test]
     fn open_buffer_overlay_affects_check() {
         use std::fs;
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa-overlay-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa-overlay-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -927,7 +943,11 @@ fn main() -> Int64 {
         let mut overlays = HashMap::new();
         overlays.insert(helper.clone(), edited.to_string());
         let diags = check_source_with_overlays(main.to_str().unwrap(), main_src, &overlays);
-        assert_eq!(diags.len(), 1, "expected type error from overlay: {diags:?}");
+        assert_eq!(
+            diags.len(),
+            1,
+            "expected type error from overlay: {diags:?}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -936,10 +956,7 @@ fn main() -> Int64 {
     #[test]
     fn dep_import_error_keeps_foreign_path_and_span() {
         use std::fs;
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa-dep-span-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa-dep-span-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -978,9 +995,7 @@ fn main() -> Int64 {
         );
         // Span text in Helper is the bad import name — not App's `String`.
         let helper_src = fs::read_to_string(&helper).unwrap();
-        let slice = helper_src
-            .get(err.span.start..err.span.end)
-            .unwrap_or("");
+        let slice = helper_src.get(err.span.start..err.span.end).unwrap_or("");
         assert_eq!(
             slice, "NotARealExport",
             "span must cover the import name, got {slice:?} range={:?}",
@@ -992,23 +1007,20 @@ fn main() -> Int64 {
     #[test]
     fn import_with_disk_package_ok() {
         use std::fs;
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa-check-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa-check-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
         let main = dir.join("Main.thx");
+        fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
+        // Buffer has a type error in the open file; deps load from disk.
+        let bad =
+            "import { answer } from \"./Helper\"\nfn main() -> Int64 { if answer() { 0 } 0 }\n";
         fs::write(
-            &helper,
-            "export fn answer() -> Int64 { 42 }\n",
+            &main,
+            "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n",
         )
         .unwrap();
-        // Buffer has a type error in the open file; deps load from disk.
-        let bad = "import { answer } from \"./Helper\"\nfn main() -> Int64 { if answer() { 0 } 0 }\n";
-        fs::write(&main, "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n")
-            .unwrap();
         let diags = check_source(main.to_str().unwrap(), bad);
         assert_eq!(diags.len(), 1, "{diags:?}");
         assert!(diags[0].message.contains("Bool"), "{}", diags[0].message);
@@ -1018,10 +1030,7 @@ fn main() -> Int64 {
     #[test]
     fn nested_file_tilde_import_uses_package_main() {
         use std::fs;
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa-check-tilde-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa-check-tilde-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("app")).unwrap();
         fs::create_dir_all(dir.join("framework")).unwrap();
@@ -1032,7 +1041,8 @@ fn main() -> Int64 {
         )
         .unwrap();
         let pages = dir.join("app").join("Pages.thx");
-        let src = "import wire from \"~/framework/Wire\"\nexport fn go() -> Int64 { wire.ping() }\n";
+        let src =
+            "import wire from \"~/framework/Wire\"\nexport fn go() -> Int64 { wire.ping() }\n";
         fs::write(&pages, src).unwrap();
         let diags = check_source(pages.to_str().unwrap(), src);
         assert!(
@@ -1047,7 +1057,10 @@ fn main() -> Int64 {
         // Export-only modules must typecheck without `fn main` (LSP on Io.thx / Http.thx).
         let src = "export fn answer() -> Int64 { 42 }\nexport let n = 1\n";
         let diags = check_source("Helper.thx", src);
-        assert!(diags.is_empty(), "library should not require main: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "library should not require main: {diags:?}"
+        );
     }
 
     #[test]
@@ -1066,10 +1079,7 @@ fn main() -> Int64 {
     #[test]
     fn library_with_imports_no_main_ok() {
         use std::fs;
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa-lib-check-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa-lib-check-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let helper = dir.join("Helper.thx");
@@ -1130,9 +1140,9 @@ fn main() -> Int64 { 0 }
             "expected route-clause String-or-Response diagnostic, got {diags:?}"
         );
         assert!(
-            diags.iter().any(|d| {
-                d.help.iter().any(|h| h.contains("-> Response"))
-            }),
+            diags
+                .iter()
+                .any(|d| { d.help.iter().any(|h| h.contains("-> Response")) }),
             "expected help mentioning -> Response, got {diags:?}"
         );
     }
@@ -1146,8 +1156,7 @@ fn main() -> Int64 { 0 }
         let diags = check_source("<input>", src);
         assert_eq!(diags.len(), 1, "{diags:?}");
         assert!(
-            diags[0].message.to_lowercase().contains("int64")
-                || diags[0].message.contains("main"),
+            diags[0].message.to_lowercase().contains("int64") || diags[0].message.contains("main"),
             "{}",
             diags[0].message
         );
@@ -1305,9 +1314,19 @@ fn main() -> Int64 {
     fn semantic_tokens_on_lex_error_empty() {
         assert!(semantic_tokens("@").is_empty());
     }
-}
 
-    
+    #[test]
+    fn semantic_tokens_jsx_tag_not_variable() {
+        let src = r#"let n = <div class="hero">Hi</div>"#;
+        let toks = semantic_tokens(src);
+        let divs: Vec<_> = toks.iter().filter(|t| t.token_type == "macro").collect();
+        assert_eq!(divs.len(), 2, "open + close tag: {toks:?}");
+        assert!(
+            toks.iter().any(|t| t.token_type == "property"),
+            "class attr: {toks:?}"
+        );
+    }
+}
 
 #[cfg(test)]
 mod return_type_tests {

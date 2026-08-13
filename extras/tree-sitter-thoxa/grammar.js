@@ -8,6 +8,10 @@
  * Zed's `combined` highlighting mode.
  *
  * Casing is meaningful (PascalCase => type, camelCase => value).
+ *
+ * JSX island: tag trees are parsed just enough to paint them with markup
+ * captures (`@tag`, `@attribute`, `@markup`). Not a full CST. `Array<Int64>`
+ * stays punctuation — a tag must self-close or have a matching close.
  */
 module.exports = grammar({
   name: 'thoxa',
@@ -18,10 +22,17 @@ module.exports = grammar({
   // Whitespace and comments may appear between any tokens.
   extras: $ => [/\s+/, $.comment],
 
+  // `<` is both comparison/generic punctuation and a tag start. GLR keeps
+  // both; `prec.dynamic` on a completed element prefers the tag.
+  conflicts: $ => [
+    [$.jsx_opening, $.jsx_self_closing, $.operator],
+  ],
+
   rules: {
     source_file: $ => repeat($._token),
 
     _token: $ => choice(
+      $.jsx_element,
       $.keyword,
       $.boolean,
       $.type_identifier,
@@ -31,6 +42,83 @@ module.exports = grammar({
       $.char,
       $.operator,
       $.bracket,
+      $.delimiter,
+    ),
+
+    // ── JSX island (highlighting only) ───────────────────────────────────
+
+    jsx_element: $ => prec.dynamic(10, choice(
+      $.jsx_self_closing,
+      seq($.jsx_opening, repeat($._jsx_child), $.jsx_closing),
+    )),
+
+    jsx_self_closing: $ => seq(
+      '<',
+      $._jsx_name,
+      repeat($.jsx_attribute),
+      '/',
+      '>',
+    ),
+
+    jsx_opening: $ => seq(
+      '<',
+      $._jsx_name,
+      repeat($.jsx_attribute),
+      '>',
+    ),
+
+    jsx_closing: $ => seq(
+      '<',
+      '/',
+      $._jsx_name,
+      '>',
+    ),
+
+    _jsx_name: $ => choice($.identifier, $.type_identifier),
+
+    _jsx_child: $ => choice(
+      $.jsx_element,
+      $.jsx_embed,
+      $.jsx_text,
+    ),
+
+    // Prose between tags / embeds. Token so spaces stay inside the node.
+    jsx_text: _ => token(/[^<{]+/),
+
+    jsx_attribute: $ => seq(
+      $._jsx_attr_name,
+      '=',
+      choice($.string, $.jsx_embed),
+    ),
+
+    // `type` / `for` are keywords; `data-foo` is ident + '-' + ident.
+    _jsx_attr_name: $ => seq(
+      choice($.identifier, $.keyword),
+      repeat(seq('-', $.identifier)),
+    ),
+
+    // `{…}` holes back into Thoxa. Nested `{` is another embed (if-blocks).
+    jsx_embed: $ => seq(
+      '{',
+      repeat($._embed_token),
+      '}',
+    ),
+
+    _embed_token: $ => choice(
+      $.jsx_element,
+      $.jsx_embed,
+      $.keyword,
+      $.boolean,
+      $.type_identifier,
+      $.identifier,
+      $.number,
+      $.string,
+      $.char,
+      $.operator,
+      alias('(', $.bracket),
+      alias(')', $.bracket),
+      alias('[', $.bracket),
+      alias(']', $.bracket),
       $.delimiter,
     ),
 

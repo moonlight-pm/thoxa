@@ -42,7 +42,9 @@ pub fn build_index(text: &str, path: &str) -> DocumentIndex {
 
 fn parse_and_resolve(text: &str) -> crate::error::Result<(Module, Resolution)> {
     let tokens = Lexer::new(text).tokenize()?;
-    let module = Parser::new(tokens).parse_module()?;
+    let module = Parser::new(tokens)
+        .with_source(text.to_string())
+        .parse_module()?;
     let resolution = resolver::resolve_module(&module);
     Ok((module, resolution))
 }
@@ -77,8 +79,9 @@ impl DocumentIndex {
     ) -> Option<String> {
         if binding.kind == BindingKind::Builtin {
             return Some(format!(
-                "```thoxa\n{}\n```\n\nBuilt-in.",
-                binding.name
+                "```thoxa\n{}\n```\n\n{}",
+                binding.name,
+                builtin_help(&binding.name)
             ));
         }
         let sig = render_signature_with_ret(binding, &self.text, inferred_ret)?;
@@ -116,9 +119,7 @@ impl DocumentIndex {
         if new_name.is_empty() {
             return Err("name must not be empty".into());
         }
-        if !new_name.chars().next().unwrap().is_ascii_alphabetic()
-            && new_name != "_"
-        {
+        if !new_name.chars().next().unwrap().is_ascii_alphabetic() && new_name != "_" {
             // allow `_` only as full name? Thoxa ident starts with letter
             return Err("name must start with a letter".into());
         }
@@ -149,6 +150,19 @@ impl DocumentIndex {
             BindingKind::Builtin => return Err("cannot rename a built-in".into()),
         }
         Ok(())
+    }
+}
+
+fn builtin_help(name: &str) -> &'static str {
+    match name {
+        "Node" => {
+            "Built-in HTML tree (JSX). Tags produce `Node`; render with `.html() -> String`."
+        }
+        "String" => "Built-in UTF-8 string.",
+        "Bytes" => "Built-in byte buffer.",
+        "Buffer" => "Built-in growable buffer.",
+        "Array" => "Built-in dynamic array.",
+        _ => "Built-in.",
     }
 }
 
@@ -209,10 +223,7 @@ pub fn render_signature_with_ret(
                 binding.name.clone()
             }
         }
-        BindingKind::Param => format!(
-            "param {}",
-            typed_local_name(binding)
-        ),
+        BindingKind::Param => format!("param {}", typed_local_name(binding)),
         BindingKind::Let => format!("let {}", typed_local_name(binding)),
         BindingKind::Mut => format!("mut {}", typed_local_name(binding)),
         BindingKind::ForVar => format!("for {}", typed_local_name(binding)),
@@ -246,7 +257,10 @@ fn local_hover_line(binding: &Binding, source_line: &str) -> Option<String> {
     let ty = binding.ty_hint.as_deref().filter(|t| !t.is_empty())?;
     // Source already has an explicit annotation after the name — keep it.
     let name = &binding.name;
-    if let Some(after_name) = source_line.find(name).map(|i| &source_line[i + name.len()..]) {
+    if let Some(after_name) = source_line
+        .find(name)
+        .map(|i| &source_line[i + name.len()..])
+    {
         let rest = after_name.trim_start();
         if rest.starts_with(':') {
             return None; // use enrich path / raw line
@@ -280,8 +294,7 @@ fn synthetic_route_signature(
     if !is_http {
         return None;
     }
-    let default_ret = if binding.kind == BindingKind::Method && binding.name == "route"
-    {
+    let default_ret = if binding.kind == BindingKind::Method && binding.name == "route" {
         route_return_display(binding)
     } else {
         "String".into()
@@ -428,6 +441,7 @@ pub fn rename_spans(idx: &DocumentIndex, binding: &Binding) -> Vec<Span> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::resolver::BindingKind;
     use crate::span::byte_to_position;
 
     #[test]
@@ -455,6 +469,20 @@ mod tests {
         let doc = idx.doc_above(b.def_span.unwrap());
         assert!(doc.contains("greets"), "{doc}");
         assert!(doc.contains("the world"), "{doc}");
+    }
+
+    #[test]
+    fn hover_builtin_node() {
+        let src = "fn view() -> Node { <p>Hi</p> }\n";
+        let idx = build_index(src, "<input>");
+        let at = src.find("Node").unwrap();
+        let p = byte_to_position(src, at);
+        let b = idx.binding_at(p.line, p.character).expect("Node");
+        assert_eq!(b.kind, BindingKind::Builtin);
+        let md = idx.hover_markdown(b).expect("hover");
+        assert!(md.contains("Node"), "{md}");
+        assert!(md.contains("HTML"), "{md}");
+        assert!(md.contains(".html()"), "{md}");
     }
 
     #[test]

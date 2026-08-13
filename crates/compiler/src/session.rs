@@ -186,7 +186,10 @@ fn session_shell_source() -> Result<String> {
         let path = root.join("Shell.thx");
         if path.is_file() {
             return fs::read_to_string(&path).map_err(|e| {
-                Error::new(format!("read session Shell prelude {}: {e}", path.display()))
+                Error::new(format!(
+                    "read session Shell prelude {}: {e}",
+                    path.display()
+                ))
             });
         }
     }
@@ -222,9 +225,8 @@ fn fallible_source() -> Result<(std::path::PathBuf, String)> {
     if let Ok(root) = loader::std_lib_root() {
         let path = root.join("Fallible.thx");
         if path.is_file() {
-            let src = fs::read_to_string(&path).map_err(|e| {
-                Error::new(format!("read std/Fallible {}: {e}", path.display()))
-            })?;
+            let src = fs::read_to_string(&path)
+                .map_err(|e| Error::new(format!("read std/Fallible {}: {e}", path.display())))?;
             // Match loader::resolve_specifier path key (canonical when possible).
             let path = fs::canonicalize(&path).unwrap_or(path);
             return Ok((path, src));
@@ -238,7 +240,9 @@ fn fallible_source() -> Result<(std::path::PathBuf, String)> {
 
 fn session_block_item_span(bi: &BlockItem) -> Span {
     match bi {
-        BlockItem::Let { name_span, init, .. } => Span::new(name_span.start, init.span.end),
+        BlockItem::Let {
+            name_span, init, ..
+        } => Span::new(name_span.start, init.span.end),
         BlockItem::Assign { target, value } => {
             let start = match target {
                 AssignTarget::Name { name_span, .. } => name_span.start,
@@ -454,7 +458,9 @@ fn main() -> Int64 { 0 }
 "#;
         // Localized at parse time (and still guarded in prepare for synthetic ASTs).
         let tokens = Lexer::new(src).tokenize().expect("lex");
-        let err = Parser::new(tokens).parse_module().expect_err("expected session+main error");
+        let err = Parser::new(tokens)
+            .parse_module()
+            .expect_err("expected session+main error");
         assert!(
             err.message.contains("unexpected top-level statement"),
             "{err}"
@@ -466,7 +472,9 @@ fn main() -> Int64 { 0 }
     #[test]
     fn prepare_rejects_session_stmt_with_main_on_synthetic_ast() {
         // Bypass parse post-check: build AST that still has SessionStmt + main.
-        let tokens = Lexer::new("fn main() -> Int64 { 0 }").tokenize().expect("lex");
+        let tokens = Lexer::new("fn main() -> Int64 { 0 }")
+            .tokenize()
+            .expect("lex");
         let mut ast = Parser::new(tokens).parse_module().expect("parse");
         ast.items.insert(
             0,

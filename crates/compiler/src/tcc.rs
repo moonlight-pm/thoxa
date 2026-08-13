@@ -50,7 +50,9 @@ extern "C" fn collect_error(opaque: *mut c_void, msg: *const c_char) {
         return;
     }
     let buf = unsafe { &*(opaque as *const ErrorBuf) };
-    let s = unsafe { CStr::from_ptr(msg) }.to_string_lossy().into_owned();
+    let s = unsafe { CStr::from_ptr(msg) }
+        .to_string_lossy()
+        .into_owned();
     if let Ok(mut v) = buf.messages.lock() {
         v.push(s);
     }
@@ -126,10 +128,7 @@ impl State {
         let c = path_c(path)?;
         let rc = unsafe { tcc_add_include_path(self.ptr, c.as_ptr()) };
         if rc < 0 {
-            return Err(self.err_ctx(&format!(
-                "tcc_add_include_path {}",
-                path.display()
-            )));
+            return Err(self.err_ctx(&format!("tcc_add_include_path {}", path.display())));
         }
         Ok(())
     }

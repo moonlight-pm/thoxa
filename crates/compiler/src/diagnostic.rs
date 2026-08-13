@@ -194,14 +194,7 @@ pub fn from_error(err: Error, path_fallback: Option<&Path>) -> Vec<Diagnostic> {
 
 fn from_additional(m: AdditionalDiagnostic, path: Option<&Path>) -> Diagnostic {
     diag_from_parts(
-        m.message,
-        m.span,
-        m.code,
-        m.help,
-        m.labels,
-        m.expected,
-        m.actual,
-        path,
+        m.message, m.span, m.code, m.help, m.labels, m.expected, m.actual, path,
     )
 }
 
@@ -341,10 +334,7 @@ fn is_token_kind_debug(s: &str) -> bool {
     // Payload form: Ident("…"), String("…"), Int(…), UInt(…), Float(…), …
     if let Some(i) = s.find('(') {
         let name = &s[..i];
-        return name
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_uppercase())
+        return name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
             && name.chars().all(|c| c.is_ascii_alphanumeric());
     }
     // Bare TokenKind names are PascalCase; exclude common type names that use the
@@ -382,7 +372,7 @@ fn default_help(code: Option<&str>, msg: &str) -> Option<Vec<String>> {
                 Some(vec!["check the field name on this type".into()])
             } else {
                 Some(vec![
-                    "declare the name, import it, or fix the spelling".into(),
+                    "declare the name, import it, or fix the spelling".into()
                 ])
             }
         }
@@ -401,9 +391,7 @@ fn default_help(code: Option<&str>, msg: &str) -> Option<Vec<String>> {
                 ])
             }
         }
-        Some(CODE_UNKNOWN_TYPE) => Some(vec![
-            "define the type in this module or import it".into(),
-        ]),
+        Some(CODE_UNKNOWN_TYPE) => Some(vec!["define the type in this module or import it".into()]),
         Some(CODE_FALLIBLE_IMPORT) => Some(vec![
             "add `import { Has, Not, May, Pass, Fail, Trial } from \"std/Fallible\"` \
              (or a selective subset)"
@@ -420,9 +408,9 @@ fn default_help(code: Option<&str>, msg: &str) -> Option<Vec<String>> {
         Some(CODE_IMPORT) => Some(vec![
             "check the import path (`./`, `~/`, `std/…`) and that the file exists".into(),
         ]),
-        Some(CODE_UNUSED_IMPORT) => Some(vec![
-            "remove the unused name from the import list".into(),
-        ]),
+        Some(CODE_UNUSED_IMPORT) => {
+            Some(vec!["remove the unused name from the import list".into()])
+        }
         _ => {
             if msg.contains("std/Fallible") {
                 Some(vec![
@@ -702,8 +690,8 @@ mod tests {
 
     #[test]
     fn route_clause_mismatch_help_mentions_response() {
-        let d = Diagnostic::error("route clause: expected String or Response, found Int64")
-            .enrich();
+        let d =
+            Diagnostic::error("route clause: expected String or Response, found Int64").enrich();
         assert_eq!(d.code.as_deref(), Some(CODE_TYPE_MISMATCH));
         assert_eq!(d.expected.as_deref(), Some("String or Response"));
         assert_eq!(d.actual.as_deref(), Some("Int64"));
@@ -765,7 +753,10 @@ mod tests {
         d.span = Some(Span::new(0, 1));
         let report = format_json_report(&[d], Some(src));
         assert_eq!(report["ok"], false);
-        assert!(report["compiler"]["version"].as_str().unwrap().contains('+'));
+        assert!(report["compiler"]["version"]
+            .as_str()
+            .unwrap()
+            .contains('+'));
         assert_eq!(report["diagnostics"][0]["code"], CODE_UNDEFINED);
         assert_eq!(report["diagnostics"][0]["severity"], "error");
         assert!(report["diagnostics"][0]["line"].as_u64().unwrap() >= 1);

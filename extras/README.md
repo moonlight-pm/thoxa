@@ -66,7 +66,7 @@ cargo make zed --grammar
 
 | Check | Expect |
 |-------|--------|
-| Color on `.thx` | keywords, PascalCase types, strings, `#` comments |
+| Color on `.thx` | keywords, PascalCase types, strings, `#` comments; tag trees use `@tag` / `@markup` |
 | Type error (`if 3 { … }`) | squiggle from `thoxa lsp` |
 | Fix error | squiggle clears |
 | LSP logs if broken | `zed: open language server logs`; look for `thoxa-lsp: thoxa 0.1.0+<hash>  path=…` |

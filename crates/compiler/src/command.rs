@@ -103,7 +103,10 @@ fn desugar_line(line: &str) -> Result<String> {
     if is_decl_prefix(trimmed) {
         return Ok(line.to_string());
     }
-    let indent: String = line.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+    let indent: String = line
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect();
 
     // Pipelines before Thoxa-first: `echo hi | cat` parses as BitOr and would
     // otherwise be kept as broken/meaningless multi-stmt Thoxa. Pure integer
@@ -134,9 +137,9 @@ fn desugar_line(line: &str) -> Result<String> {
 
 /// `1 | 2` stages — keep as Thoxa BitOr, not `run(["1"]) | run(["2"])`.
 fn stages_are_pure_int_literals(stages: &[Vec<String>]) -> bool {
-    stages.iter().all(|stage| {
-        stage.len() == 1 && stage[0].parse::<i64>().is_ok()
-    })
+    stages
+        .iter()
+        .all(|stage| stage.len() == 1 && stage[0].parse::<i64>().is_ok())
 }
 
 fn is_decl_prefix(t: &str) -> bool {
@@ -192,12 +195,7 @@ fn expr_is_command_atom(e: &crate::ast::Expr) -> bool {
         ExprKind::Field { base, .. } => expr_is_command_atom(base),
         // Paths (`a/b`) and flags (`ls -al`, `cmd -a -b`, `ls --all`)
         ExprKind::Binary {
-            op:
-                BinaryOp::Div
-                | BinaryOp::Sub
-                | BinaryOp::Add
-                | BinaryOp::Mul
-                | BinaryOp::Rem,
+            op: BinaryOp::Div | BinaryOp::Sub | BinaryOp::Add | BinaryOp::Mul | BinaryOp::Rem,
             left,
             right,
         } => expr_is_command_atom(left) && expr_is_command_atom(right),
@@ -216,12 +214,7 @@ fn expr_is_pure_literal_arith(e: &crate::ast::Expr) -> bool {
     match &e.kind {
         ExprKind::Int(_) | ExprKind::Bool(_) => true,
         ExprKind::Binary {
-            op:
-                BinaryOp::Div
-                | BinaryOp::Sub
-                | BinaryOp::Add
-                | BinaryOp::Mul
-                | BinaryOp::Rem,
+            op: BinaryOp::Div | BinaryOp::Sub | BinaryOp::Add | BinaryOp::Mul | BinaryOp::Rem,
             left,
             right,
         } => expr_is_pure_literal_arith(left) && expr_is_pure_literal_arith(right),
@@ -281,9 +274,7 @@ fn parse_redirect_command(line: &str) -> Result<Option<RedirectSpec>> {
     if words.is_empty() {
         return Ok(None);
     }
-    let has_redir = words
-        .iter()
-        .any(|w| w == ">" || w == ">>" || w == "<");
+    let has_redir = words.iter().any(|w| w == ">" || w == ">>" || w == "<");
     if !has_redir {
         return Ok(None);
     }
@@ -684,7 +675,9 @@ export fn n() -> Int64 { 1 }
 
     #[test]
     fn pipeline_respects_quotes() {
-        let s = desugar_command_line(r#"echo "a|b" | cat"#).unwrap().unwrap();
+        let s = desugar_command_line(r#"echo "a|b" | cat"#)
+            .unwrap()
+            .unwrap();
         assert!(
             s.contains(r#"sessionEncodeArgv(["echo", "a|b"])"#),
             "got: {s}"
@@ -694,10 +687,7 @@ export fn n() -> Int64 { 1 }
     #[test]
     fn desugar_session_pipeline_line() {
         let src = desugar_session_source("echo hello | cat\n").unwrap();
-        assert!(
-            src.contains("shell = shell.pipeline("),
-            "got: {src}"
-        );
+        assert!(src.contains("shell = shell.pipeline("), "got: {src}");
     }
 
     #[test]
@@ -732,10 +722,7 @@ export fn n() -> Int64 { 1 }
     #[test]
     fn desugar_session_redirect_line() {
         let src = desugar_session_source("echo hello > /tmp/thoxa_redir\n").unwrap();
-        assert!(
-            src.contains("shell = shell.runIo("),
-            "got: {src}"
-        );
+        assert!(src.contains("shell = shell.runIo("), "got: {src}");
     }
 
     #[test]

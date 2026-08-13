@@ -34,6 +34,9 @@ pub enum TokenKind {
     Ident(String),
     Int(i64),
     String(String),
+    /// Unexpected character kept as a token so JSX raw text can contain `'`,
+    /// `·`, etc. The parser errors on these outside tag children.
+    Junk(String),
     // Operators / punctuation
     LParen,
     RParen,
@@ -196,13 +199,17 @@ impl<'a> Lexer<'a> {
                 self.simple(TokenKind::Ident("_".into()), start, 1)
             }
             b if is_ident_start(b) => self.ident_or_keyword(start),
-            _ => Err(Error::at(
-                format!(
-                    "unexpected character {:?}",
-                    self.src[self.pos..].chars().next()
-                ),
-                Span::new(start, start + 1),
-            )),
+            _ => {
+                // One UTF-8 char as Junk — JSX text may include it; elsewhere parse errors.
+                let rest = &self.src[self.pos..];
+                let ch = rest.chars().next().unwrap_or('\u{FFFD}');
+                let len = ch.len_utf8();
+                self.pos += len;
+                Ok(Token {
+                    kind: TokenKind::Junk(ch.to_string()),
+                    span: Span::new(start, self.pos),
+                })
+            }
         }
     }
 
@@ -495,7 +502,11 @@ mod tests {
             "standalone `_` should lex as Ident(\"_\")"
         );
         // `_foo` is not an identifier (underscore is not is_ident_start).
-        assert!(Lexer::new("_foo").tokenize().is_err());
+        let bad = Lexer::new("_foo").tokenize().unwrap();
+        assert!(
+            matches!(&bad[0].kind, TokenKind::Junk(s) if s == "_"),
+            "{bad:?}"
+        );
         // Bare underscore alone.
         let one = Lexer::new("_").tokenize().unwrap();
         assert!(matches!(one[0].kind, TokenKind::Ident(ref s) if s == "_"));
