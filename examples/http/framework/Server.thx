@@ -12,6 +12,34 @@ import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import { split } from "std/Str"
 import logging, { info, warn } from "std/Logging"
 
+## Example-only: one accept at a time, then blocking recv. An idle browser
+## socket (speculative connect, half-sent headers) would otherwise wedge every
+## other tab. 200ms is plenty for a real localhost request to arrive.
+extern fn sysSetsockopt(fd!: Int32, level!: Int32, optname!: Int32, optval!: Bytes, optlen!: UInt32) -> Int32 from "c" "setsockopt"
+let solSocket = 1
+let soRcvTimeo = 20
+
+fn writeI64le(buf!: Bytes, at!: Int64, n!: Int64) -> Void {
+    mut v = n
+    mut i = 0
+    loop {
+        if i >= 8 {
+            break
+        }
+        buf.set(at + i, v % 256)
+        v = v / 256
+        i = i + 1
+    }
+}
+
+fn setRecvTimeoutMs(peer!: Socket, ms!: Int64) -> Void {
+    let tv = Bytes(16)
+    writeI64le(tv, 0, ms / 1000)
+    writeI64le(tv, 8, (ms % 1000) * 1000)
+    sysSetsockopt(peer.fd, solSocket, soRcvTimeo, tv, 16)
+    Void
+}
+
 ## Full request entity. Headers packed as `name\\tvalue\\n` lines.
 export type Incoming(
     method: String,
@@ -170,6 +198,7 @@ export fn serve(app!: App) -> Trial<Void, String> {
                 warn("accept: {e}")
             }
             Pass(peer) {
+                setRecvTimeoutMs(peer, 200)
                 serveOne(peer, app)
                 peer.close()
             }

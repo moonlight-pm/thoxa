@@ -200,4 +200,5 @@ boundary (FCF parked).
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
 | `server.serve(app)` needs typed `App` without fn values | Framework imports **`App` type only** from `app/Routes` | Ideal: **trait** or free **fn pointer** (no capture); full FCF parked |
+| Single-threaded `accept` + blocking `recv` | Example-only `SO_RCVTIMEO` 200ms on each peer (idle browser sockets used to stall every other request) | Multiplex / poll later if wanted; not `std/` |
 | String path table → dispatch | **Type-body `GET`/`POST` clauses** → generated `route(req)` | Miss is `notFound()` (no fallthrough); `handle` treats 404 as static try. Query/body still example-stitched onto `Request`. Host boundary still `App` |

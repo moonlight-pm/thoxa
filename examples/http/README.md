@@ -91,3 +91,5 @@ Path captures (`:slug`) are clause formals. HTML handlers return `Response`
 - Grow `framework/`, not `std/`, for this experiment.
 - App code = routes/views/domain only.
 - Ideal later: fn values → zero framework→app imports.
+- Host is **one accept at a time**. Accepted sockets get a 200ms recv
+  timeout so a browser’s idle extra connection cannot stall every other tab.
