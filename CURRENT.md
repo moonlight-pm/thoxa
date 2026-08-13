@@ -12,8 +12,8 @@ type-body route clauses **on master**, not freeze / not handbook)
 ## Now
 
 **Active experiment — `examples/http` Crema-lite:** Phase A–C done
-(`server.serve(routes.app())`); routing cleaned to typed `Route` + multi-clause
-`handleRoute` (**D131**). Charter:
+(`server.serve(routes.app())`); routing is type-body `GET`/`POST` on `Routes`
++ `App.handle` static fallback. Charter:
 [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 **Hard rule:** **do not add to `std/`** for this experiment.
 
@@ -28,8 +28,8 @@ import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
 
 **On master, not product:** type-body `GET "/…"` desugar + LSP (idea
 [`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md);
-capability `route-clauses` **partial**). No D-id / handbook. Crema still uses
-typed `Route` + `handleRoute`.
+capability `route-clauses` **partial**). No D-id / handbook. Crema dogfoods
+the clauses (example-only).
 
 **In progress / next:**
 

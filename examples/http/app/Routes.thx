@@ -1,114 +1,65 @@
-## App — typed routes + multi-clause dispatch (D131), App value for serve.
-## Path table lives on the framework Router; hits become Route values here.
+## App — type-body route clauses + App host object.
+## `Routes` is the compiler surface (`GET "/…"` → `route(req)`).
+## `App` keeps port + handle (static fallback when `route` misses).
 ## No listen/accept/parse/send.
 
 import pages from "./Pages"
 import api from "./Api"
 import customer from "./Customer"
 import wire from "~/framework/Wire"
-import router, { Router, Hit } from "~/framework/Router"
-import { Request, Response, methodNotAllowed } from "std/Http"
-import { Has, Not, May } from "std/Fallible"
+import httpStatic from "std/HttpStatic"
+## `notFound` is required: generated `route` calls it on miss.
+import { Request, Response, notFound } from "std/Http"
+import { Has, Not } from "std/Fallible"
 
 let staticRoot = "examples/http/web"
 let defaultPort = 9091
 
-## ── Typed routes (path match → these; multi-clause handle → pages) ──────────
+## ── Route clauses (desugars to `route(req: Request) -> Response`) ───────────
 
-## Nullary pages / actions.
-type Home
-type Health
-type SignIn
+type Routes {
+    GET "/" (req: Request) -> Response {
+        pages.home(customer.greeting(req))
+    }
 
-## Captures and query baked in at resolve time (not parallel string bags).
-type Menu(q: String)
-type Drink(slug: String)
+    GET "/menu" (req: Request) -> Response {
+        pages.menu(customer.greeting(req), menuQuery(req))
+    }
 
-type Route = Home | Menu | Drink | Health | SignIn
+    GET "/menu/:slug" (slug: String, req: Request) -> Response {
+        pages.drink(slug, customer.greeting(req))
+    }
 
-## ── Router config (registration order = match order) ───────────────────────
+    GET "/api/health" -> Response {
+        api.health()
+    }
 
-fn buildRouter() -> Router {
-    router.newRouter(staticRoot)
-        .get("/")
-        .get("/menu")
-        .get("/menu/:slug")
-        .get("/api/health")
-        .post("/")
-}
-
-## Hit (method + pattern + param) → closed Route sum.
-## String compare only for path-table → type; **dispatch** is multi-clause below.
-fn routeOf(hit!: Hit, query!: String) -> May<Route> {
-    if hit.method == "GET" {
-        match hit.pattern {
-            "/" => Has(Home())
-            "/menu" => Has(Menu(q: menuQuery(query)))
-            "/menu/:slug" => Has(Drink(slug: hit.param))
-            "/api/health" => Has(Health())
-            else => Not()
-        }
-    } else {
-        if hit.method == "POST" {
-            match hit.pattern {
-                "/" => Has(SignIn())
-                else => Not()
-            }
-        } else {
-            Not()
-        }
+    POST "/" (req: Request) -> Response {
+        pages.signIn(req.body)
     }
 }
 
-fn menuQuery(query!: String) -> String {
-    match wire.queryParam(query, "q") {
+fn menuQuery(req!: Request) -> String {
+    match wire.queryParam(wire.requestQuery(req), "q") {
         Not => ""
         Has(v) { v }
     }
 }
 
-## ── Multi-clause handle (one function, type-driven arms) ───────────────────
-
-fn handleRoute(route: Home, req!: Request, body!: Bytes, query!: String) -> Response {
-    pages.home(customer.greeting(req))
-}
-
-fn handleRoute(route: Menu, req!: Request, body!: Bytes, query!: String) -> Response {
-    pages.menu(customer.greeting(req), route.q)
-}
-
-fn handleRoute(route: Drink, req!: Request, body!: Bytes, query!: String) -> Response {
-    pages.drink(route.slug, customer.greeting(req))
-}
-
-fn handleRoute(route: Health, req!: Request, body!: Bytes, query!: String) -> Response {
-    api.health()
-}
-
-fn handleRoute(route: SignIn, req!: Request, body!: Bytes, query!: String) -> Response {
-    pages.signIn(body)
+fn serveStatic(req!: Request) -> Response {
+    let files = httpStatic.Router(root: staticRoot)
+    files.handle(req)
 }
 
 ## ── Application object the host receives ───────────────────────────────────
 
 export type App(port: Int64) {
-    export fn handle(req!: Request, body!: Bytes, query!: String) -> Response {
-        let r = buildRouter()
-        match r.resolve(req.method, req.path) {
-            Has(hit) {
-                match routeOf(hit, query) {
-                    Has(route) {
-                        handleRoute(route, req, body, query)
-                    }
-                    Not {
-                        ## Table matched a pattern we forgot to map — treat as 405.
-                        methodNotAllowed("GET, HEAD, POST")
-                    }
-                }
-            }
-            Not {
-                r.serveStatic(req)
-            }
+    export fn handle(req!: Request) -> Response {
+        let res = Routes().route(req)
+        if res.status == 404 {
+            serveStatic(req)
+        } else {
+            res
         }
     }
 }

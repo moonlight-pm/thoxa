@@ -56,9 +56,9 @@ examples/http/
   Main.thx                 # server.serve(routes.app())
   framework/
     Server.thx             # serve(app) — full host loop
-    Wire.thx Router.thx
+    Wire.thx               # body / query / form / cookies
   app/
-    Routes.thx             # type App { handle }, app(), router config
+    Routes.thx             # type Routes { GET/POST … }, App.handle, app()
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
   web/
   README.md
@@ -69,9 +69,9 @@ all plumbing via `serve(app)`. Framework imports **only** the `App` type from
 `app/Routes` for the serve signature (stand-in for future fn values / traits);
 it does not import pages or models. Main is boot only.
 
-**Router:** app registers `.get/.post(pattern)` (no string route names). Path
-params are `:slug`. App maps `Hit` → typed `Route` sum, then multi-clause
-`handleRoute` (**D131**) for dispatch.
+**Router:** type-body `GET "/…"` / `POST "/…"` on a nullary `Routes` type
+(compiler → `route(req)`). Path params are `:slug` clause formals. `App.handle`
+calls `route` and falls through to `std/HttpStatic` on 404.
 
 ---
 
@@ -119,9 +119,9 @@ curl -s  http://127.0.0.1:9091/menu/nope   # 404
 **B1 resolution (no product break):** Body is completed in
 `framework/Wire.thx` / `Server.readIncoming` using the raw header buffer +
 optional further `receive()` for `Content-Length`. Product
-`std/Http.parseRequest` still leaves `Request.body` empty — body is passed
-separately into `App.handle`. Promote to std only if a product slice is
-scheduled later.
+`std/Http.parseRequest` still leaves `Request.body` empty — `Server.requestOf`
+puts the completed body on the `Request` the app sees. Promote to std only if
+a product slice is scheduled later.
 
 **Phase B smoke**
 
@@ -139,8 +139,9 @@ curl -sD- -b /tmp/c.ck -c /tmp/c.ck -X POST -d 'name=' http://127.0.0.1:9091/
 | C2 `GET /menu?q=` filter | **done** | Server-side filter + GET form; `Models.searchDrinks` |
 
 **C1 resolution (no product break):** Query recovered from the raw request-line
-in `framework/Wire.rawQuery`; passed into `App.handle` as a third `query: String`
-arg.
+in `framework/Wire.rawQuery`; `Server.requestOf` attaches it as example-only
+header `X-Thoxa-Query` (`Wire.requestQuery`) because std `Request` has no query
+field.
 
 **Phase C smoke**
 
@@ -164,7 +165,7 @@ after A–C.
 | `#[layout]` | `Layout.thx` function wrapping body HTML |
 | `#[page]` | functions in `Pages.thx` |
 | `#[route]` | functions in `Api.thx` |
-| Manual `Router::builder` | `Router.get/post(pattern)` + typed `Route` + multi-clause `handleRoute` |
+| Manual `Router::builder` | type-body `GET`/`POST` clauses on `Routes` → `route(req)` |
 | `path_param` | `:slug` capture → `Drink(slug)` (and friends) on the route value |
 | Models / seed | `Models.thx` constants |
 | `current_customer(cx)` | Phase B `Customer.thx` |
@@ -182,10 +183,11 @@ after A–C.
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
 **As of last update:** **Phase A–C complete** + layered **`framework/` / `app/`**
-with **`server.serve(routes.app())`** + **typed `Route` + multi-clause
-`handleRoute` (D131)**. Next is Phase D+ only if wanted — still no `std/`
-growth (grow `framework/` instead). Language discussion next: traits / free fn
-pointers for the host boundary (FCF parked).
+with **`server.serve(routes.app())`**. Routing is type-body **`GET`/`POST`
+clauses** on `Routes` (compiler `route(req)` dogfood) + **`App.handle`** static
+fallback. Next is Phase D+ only if wanted — still no `std/` growth (grow
+`framework/` instead). Language discussion next: traits / free fn pointers for
+the host boundary (FCF parked).
 
 ### Language / design notes (experiment)
 
@@ -196,4 +198,4 @@ pointers for the host boundary (FCF parked).
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
 | `server.serve(app)` needs typed `App` without fn values | Framework imports **`App` type only** from `app/Routes` | Ideal: **trait** or free **fn pointer** (no capture); full FCF parked |
-| String path table → dispatch | **Typed `Route` sum** + multi-clause `handleRoute` (**D131**); small `routeOf` maps `Hit` → `Route` | Path engine still string patterns; host boundary still `App` |
+| String path table → dispatch | **Type-body `GET`/`POST` clauses** → generated `route(req)` | Miss is `notFound()` (no fallthrough); `handle` treats 404 as static try. Query/body still example-stitched onto `Request`. Host boundary still `App` |

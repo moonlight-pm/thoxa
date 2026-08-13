@@ -1,6 +1,7 @@
 ## Framework — HTTP server host (candidate std).
 ## Imports only std/, framework/*, and the app's App *type* for serve(app).
 ## (That type dependency is the monorepo stand-in for a future trait / fn value.)
+## Completes body + query onto Request so `App.handle` / `Routes.route` see them.
 ## Does not import app pages, models, or other domain modules.
 
 import net, { Socket } from "std/Net"
@@ -123,13 +124,21 @@ export fn readIncoming(peer!: Socket) -> Trial<Incoming, String> {
 }
 
 export fn requestOf(inc!: Incoming) -> Request {
-    Request(
-        method: inc.method,
+    ## Route clauses match method exactly; GET registrations also answer HEAD
+    ## (same as the old example Router). finalize() still sees the real method.
+    let method = if inc.method == "HEAD" {
+        "GET"
+    } else {
+        inc.method
+    }
+    let req = Request(
+        method: method,
         path: inc.path,
         version: inc.version,
         headers: unpackHeaders(inc.headersWire),
-        body: Bytes(0)
+        body: inc.body
     )
+    wire.withQuery(req, inc.query)
 }
 
 export fn writeResponse(peer!: Socket, method!: String, res!: Response) -> Trial<Void, String> {
@@ -184,7 +193,7 @@ fn serveOne(peer!: Socket, app!: App) {
                 ## quiet close
             } else {
                 let req = requestOf(inc)
-                let res = app.handle(req, inc.body, inc.query)
+                let res = app.handle(req)
                 info("{inc.method} {inc.path} -> {res.status} {res.reason}")
                 match writeResponse(peer, inc.method, res) {
                     Pass(_) { }

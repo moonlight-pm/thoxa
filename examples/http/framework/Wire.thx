@@ -8,8 +8,36 @@ import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import { toLowerAscii, trim, split, isEmpty, byteAt, length } from "std/Str"
 
 let maxBodyBytes = 65536
+let queryHeaderName = "X-Thoxa-Query"
 
 type Kv(key: String, val: String)
+
+## Example-only: std Request has no query field (path is `?`-stripped).
+## Server attaches the recovered query so route clauses can read it.
+export fn withQuery(req!: Request, query!: String) -> Request {
+    mut headers: Array<Header> = []
+    let want = toLowerAscii(queryHeaderName)
+    for h in req.headers {
+        if toLowerAscii(h.name) != want {
+            headers = headers.append(h)
+        }
+    }
+    headers = headers.append(Header(name: queryHeaderName, value: query))
+    Request(
+        method: req.method,
+        path: req.path,
+        version: req.version,
+        headers: headers,
+        body: req.body
+    )
+}
+
+export fn requestQuery(req!: Request) -> String {
+    match headerGet(req, queryHeaderName) {
+        Not => ""
+        Has(v) { v }
+    }
+}
 
 export fn headerGet(req!: Request, name!: String) -> May<String> {
     let want = toLowerAscii(name)

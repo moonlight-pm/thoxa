@@ -49,7 +49,7 @@ No lang-items. JSON / form bodies are **not** compiler work.
 - General macros / attribute macros  
 - Compiler-hardcoded `Request<T>` / `Response<T>` / JSON / form codecs  
 - Lang-items for path matching  
-- Shipping handbook / capabilities / product `examples/http` rewrite  
+- Shipping handbook / capabilities “shipped” / freeze (Crema dogfood is example-only)  
 - First-class function values for a runtime route table  
 
 ---
@@ -123,7 +123,7 @@ cargo run -p thoxa -- emit-c scratch/router_clause.thx
 | 10 `Int64` + multi-segment + `req` | **done** | generated helpers; 400 on bad int |
 | 11 Path-match helper in std | **n/a** | generated `__routeSegments` instead |
 | 12 Compiler surface | **done** | merged to master |
-| 13 Crema dogfood / freeze | **open** | not compiler; not handbook |
+| 13 Crema dogfood / freeze | **dogfood done** | `examples/http` uses type-body `GET`/`POST`; still not handbook / no D-id |
 
 ---
 
@@ -142,7 +142,7 @@ METHOD string_lit [ ( params ) ] [ -> type ] block
 
 ## Open questions / next (not compiler)
 
-1. Crema dogfood one route (example-only; after merge)  
+1. ~~Crema dogfood~~ — `examples/http` `type Routes` (example-only)  
 2. Promote freeze + handbook only if keep as product  
 3. JSON / form / `Request<T>` — library later, not this desugar  
 
