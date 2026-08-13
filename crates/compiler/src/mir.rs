@@ -769,6 +769,8 @@ struct LowerCtx {
     infer_values: Vec<Ty>,
     /// Generic templates for residual collapse (D129).
     generics: HashMap<String, GenericDef>,
+    /// Experiment: body of a desugared route clause (`__Type_route_N`).
+    route_clause: bool,
 }
 
 #[derive(Clone, Default)]
@@ -823,6 +825,23 @@ impl LowerCtx {
             infer_residuals: Vec::new(),
             infer_values: Vec::new(),
             generics: HashMap::new(),
+            route_clause: false,
+        }
+    }
+
+    fn type_mismatch_msg(&self, expect: &Ty, found: &Ty) -> String {
+        if self.route_clause {
+            if matches!(expect, Ty::String) && display_ty(found) == "Response" {
+                return "route clause returns Response; annotate `-> Response` \
+                        to pass it through"
+                    .into();
+            }
+            format!(
+                "route clause: expected String or Response, found {}",
+                display_ty(found)
+            )
+        } else {
+            format!("expected {expect:?}, found {found:?}")
         }
     }
 
@@ -4531,6 +4550,7 @@ fn lower_function(
         // Do not register them in drop_places — early return / `?` must not drop them.
         ctx.define(&p.name, ty, false, place);
     }
+    ctx.route_clause = is_generated_route_handler(&f.name);
 
     let ret = lower_block_value(&mut ctx, &f.body, &ret_ty)?;
     insert_function_drops(&mut ctx.stmts, &ret, &ret_ty, &ctx.drop_places);
@@ -5561,7 +5581,7 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
                     }
                     None => {
                         return Err(Error::at(
-                            format!("expected {expect:?}, found {ty:?}"),
+                            ctx.type_mismatch_msg(expect, &ty),
                             tail.span,
                         ));
                     }
@@ -6279,7 +6299,13 @@ fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<
                     None
                 } else {
                     return Err(Error::at(
-                        format!("return type mismatch: expected {fn_ret:?}, found {ty:?}"),
+                        if ctx.route_clause {
+                            ctx.type_mismatch_msg(&fn_ret, &ty)
+                        } else {
+                            format!(
+                                "return type mismatch: expected {fn_ret:?}, found {ty:?}"
+                            )
+                        },
                         e.span,
                     ));
                 }
@@ -11339,6 +11365,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         infer_residuals: ctx.infer_residuals.clone(),
         infer_values: Vec::new(),
         generics: ctx.generics.clone(),
+        route_clause: ctx.route_clause,
     };
     if block.tail.is_none() {
         return Ok(Ty::Void);
@@ -11346,6 +11373,10 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
     lower_block_items(&mut tmp, &block.items)?;
     let (_, ty) = lower_expr(&mut tmp, block.tail.as_ref().unwrap())?;
     Ok(ty)
+}
+
+fn is_generated_route_handler(name: &str) -> bool {
+    name.starts_with("__") && name.contains("_route_")
 }
 
 fn sanitize_name(name: &str) -> String {

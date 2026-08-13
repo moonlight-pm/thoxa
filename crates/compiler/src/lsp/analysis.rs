@@ -1056,6 +1056,35 @@ fn main() -> Int64 {
     }
 
     #[test]
+    fn route_clause_mismatch_mentions_response() {
+        let src = r#"
+type Request(method: String, path: String)
+type Response
+fn ok(body!: Bytes, contentType!: String) -> Response { Response() }
+fn notFound() -> Response { Response() }
+type Router {
+    GET "/home" {
+        1
+    }
+}
+fn main() -> Int64 { 0 }
+"#;
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.iter().any(|d| {
+                d.message.contains("String or Response") && d.message.contains("Int64")
+            }),
+            "expected route-clause String-or-Response diagnostic, got {diags:?}"
+        );
+        assert!(
+            diags.iter().any(|d| {
+                d.help.iter().any(|h| h.contains("-> Response"))
+            }),
+            "expected help mentioning -> Response, got {diags:?}"
+        );
+    }
+
+    #[test]
     fn program_without_main_still_errors() {
         // Single-file program path used to always require main via lower_module.
         // With require_main only when main is present, bare helpers are libs.

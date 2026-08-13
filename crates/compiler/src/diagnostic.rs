@@ -389,6 +389,12 @@ fn default_help(code: Option<&str>, msg: &str) -> Option<Vec<String>> {
         Some(CODE_TYPE_MISMATCH) => {
             if msg.contains("must be Bool") || msg.contains("condition must be") {
                 Some(vec!["use a Bool expression (comparisons yield Bool)".into()])
+            } else if msg.contains("route clause") {
+                Some(vec![
+                    "return a String for a 200 text body, or annotate `-> Response` \
+                     and return a Response"
+                        .into(),
+                ])
             } else {
                 Some(vec![
                     "adjust the expression type or the annotation / expected type".into(),
@@ -692,6 +698,20 @@ mod tests {
         assert_eq!(d.code.as_deref(), Some(CODE_TYPE_MISMATCH));
         assert_eq!(d.expected.as_deref(), Some("Bool"));
         assert_eq!(d.actual.as_deref(), Some("Int64"));
+    }
+
+    #[test]
+    fn route_clause_mismatch_help_mentions_response() {
+        let d = Diagnostic::error("route clause: expected String or Response, found Int64")
+            .enrich();
+        assert_eq!(d.code.as_deref(), Some(CODE_TYPE_MISMATCH));
+        assert_eq!(d.expected.as_deref(), Some("String or Response"));
+        assert_eq!(d.actual.as_deref(), Some("Int64"));
+        assert!(
+            d.help.iter().any(|h| h.contains("-> Response")),
+            "help: {:?}",
+            d.help
+        );
     }
 
     #[test]
