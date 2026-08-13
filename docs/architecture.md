@@ -6,7 +6,8 @@ Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
 **As of:** 2026-08-13 (route-clause + JSX/`Node` experiments on master, not freeze;
-D131 multi-clause; D129 return inference + LSP hover; D126 std Io/Net/Http)
+program `run`/`build` reuse stamped binaries; D131 multi-clause; D129 return
+inference + LSP hover; D126 std Io/Net/Http)
 
 ---
 
@@ -48,7 +49,7 @@ step `.so` on the happy path.
 | `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
 | `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http`/`HttpStatic`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate |
-| `examples/` | Runnable demos (`http` static server, `kilo` terminal editor); not the gate |
+| `examples/` | Runnable demos (`http` Crema-lite, `kilo` terminal editor); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
 | `apocrypha/` | Historical + Python oracle |
 

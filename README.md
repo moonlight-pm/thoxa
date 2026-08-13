@@ -27,7 +27,7 @@ cargo make test
 # Run a Thoxa file
 cargo make run tests/conformance/hello.thx
 
-# Example: static HTTP server (Ctrl-C to stop; port 9091)
+# Example: Little Crema (multi-route; Ctrl-C to stop; port 9091)
 cargo make run examples/http
 
 # Example: kilo editor (needs a real TTY; Ctrl-Q to quit)
@@ -74,7 +74,7 @@ apocrypha/        history + Python oracle (not product)
 | `target/rust/` | Cargo (compiler + xtask binaries, deps) |
 | `target/c/` | C runtime objects + `libthoxa_rt.a` |
 | `target/thoxa/c/` | Generated C from Thoxa sources |
-| `target/thoxa/bin/` | Linked Thoxa program binaries |
+| `target/thoxa/bin/` | Linked Thoxa program binaries + freshness `*.stamp` |
 
 `cargo make clean` removes `target/c` and `target/thoxa`.  
 `cargo make clean --all` also removes `target/rust`.
