@@ -1703,7 +1703,7 @@ fn f(t: Trial<Int64, Int64>) -> Int64 {
     }
 
     #[test]
-    fn let_from_route_call_has_may_string_ty_hint() {
+    fn let_from_route_call_has_response_ty_hint() {
         let src = r#"
 type Request(method: String, path: String)
 type MyRouter {
@@ -1724,15 +1724,9 @@ fn main() -> Int64 {
         let b = res.binding_of(Some(r)).expect("binding a");
         assert_eq!(
             b.ty_hint.as_deref(),
-            Some("May"),
-            "expected May ty_hint on let a from r.route(), got {:?}",
+            Some("Response"),
+            "expected Response ty_hint on let a from r.route(), got {:?}",
             b.ty_hint
-        );
-        assert_eq!(
-            b.ty_args,
-            vec!["String".to_string()],
-            "expected May<String> ty_args, got {:?}",
-            b.ty_args
         );
     }
 }

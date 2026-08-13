@@ -25,19 +25,21 @@ type MyRouter {
 }
 
 let router = MyRouter()
-let a = router.route(req)  ## a: May<String> (LSP)
+let a = router.route(req)  ## a: Response (LSP)
 ```
 
 Compiler (as built):
 
 1. Parse route clauses in a **type body** only.  
 2. Lower each clause to a **module free-function** handler.  
-3. Emit **`route(req: Request) -> May<String>`** on the type (reads
-   `req.method` / `req.path`; miss is `Not()`).  
-4. Resolve/LSP desugars the same way so hover/outline see generated symbols.
+3. Emit **`route(req: Request) -> Response`** on the type (reads
+   `req.method` / `req.path`; miss is `notFound()`).  
+4. String clause bodies wrap via `ok(Bytes.fromString(s), "text/plain")`;
+   `-> Response` is passed through.  
+5. Resolve/LSP desugars the same way so hover/outline see generated symbols.
 
-`Request` is userland (usually `std/Http`). Compiler only names the type and
-those two fields. No lang-items.
+`Request` / `Response` / `ok` / `notFound` are userland (usually `std/Http`).
+Compiler only names them. No lang-items.
 
 ---
 
@@ -55,9 +57,9 @@ those two fields. No lang-items.
 
 ```thx
 type MyRouter {
-    export fn route(req: Request) -> May<String> {
-        ## ordered if req.method == … { if req.path match { return Has(__MyRouter_route_N(…)) } }
-        Not()
+    export fn route(req: Request) -> Response {
+        ## if req.method/path match { return ok(handler) or handler }
+        notFound()
     }
 }
 
@@ -65,22 +67,24 @@ fn __MyRouter_route_0() -> String { "Home" }
 fn __MyRouter_route_1(userId: String) -> String { "user {userId}" }
 ```
 
-Module must import `Request` and `{ Has, Not, May }` (no ambient inject).
+Module must import `Request`, `Response`, `ok`, `notFound` (no ambient inject).
 
 | Choice | Why |
 |--------|-----|
 | Free-fn handlers, not private methods | Private methods cannot be called via `Type().m()` from another method |
 | No Array table field | Ladder is the table (`emit-c` shows it) |
 | Exact path or **trailing** `:capture` only | Capture formal must be `String` |
-| `route(req: Request)` | Dispatcher takes the request; only `.method` / `.path` |
-| `route` returns **`May<String>`** | Hit `Has(…)`; miss `Not()` — handlers still `String` |
+| `route(req: Request) -> Response` | Dispatcher takes the request; only `.method` / `.path` |
+| String → `ok(…, "text/plain")` | Framework wrap so clauses can return text |
+| `-> Response` | Pass through (status / headers / body) |
+| Miss → `notFound()` | No `May` at the call site (no static fallthrough) |
 | Nullary product types only | No ctor params / body fields on the router type |
 
 **Hooks:** `mir::lower_package_with` and `resolver::resolve_module` both run
 `route_desugar::desugar_module` (idempotent once `routes` cleared).
 
 **Editor:** tree-sitter colors HTTP verbs as keywords; LSP hover shows
-`route` / handlers and `let a: May<String>` when ty_hint is known.
+`route` / handlers and `let a: Response` when ty_hint is known.
 
 ---
 
@@ -88,7 +92,7 @@ Module must import `Request` and `{ Has, Not, May }` (no ambient inject).
 
 ```bash
 cargo run -p thoxa -- run scratch/router_clause.thx   # local; scratch/ gitignored
-# curl -s localhost:9092/   /home   /user/42
+# curl -s localhost:9092/   /home   /health   /user/42
 # curl -s -X PUT localhost:9092/user/42
 # curl -s localhost:9092/nope          # 404
 cargo run -p thoxa -- emit-c scratch/router_clause.thx
@@ -107,11 +111,12 @@ cargo run -p thoxa -- emit-c scratch/router_clause.thx
 | 3 Desugar → handlers + `route` | **done** | `route_desugar.rs` |
 | 4 Scratch + `emit-c` | **done** | `scratch/router_clause.thx` — one-file HTTP demo (gitignored) |
 | 5 LSP hover/outline for desugared symbols | **done** | resolve desugar + synthetic hover |
-| 6 Typed local hover (`let a: May<String>`) | **done** | general LSP; helps this sample |
+| 6 Typed local hover (`let a: Response`) | **done** | general LSP; helps this sample |
 | 7 Typed miss (`May<String>`) | **done** | `Has` / `Not`; user imports Fallible |
 | 8 `route(req: Request)` | **done** | reads `.method` / `.path` only |
-| 9 Path-match helper in std | **pending** | only if Bytes ladder hurts |
-| 10 Decision: keep / reshape / toss | **open** | not a freeze yet |
+| 9 String/`Response` wrap | **done** | `ok` / pass-through / `notFound` |
+| 10 Path-match helper in std | **pending** | only if Bytes ladder hurts |
+| 11 Decision: keep / reshape / toss | **open** | not a freeze yet |
 
 ---
 
@@ -146,7 +151,8 @@ METHOD string_lit [ ( params ) ] [ -> type ] block
 - `509675c` docs checkpoint (no product claim)  
 - `34c2170` typed miss `May<String>`  
 - `7cded8e` scratch is one-file HTTP demo  
-- *(this slice)* `route(req: Request)`  
+- `cff31be` `route(req: Request)`  
+- *(this slice)* String/`Response` wrap + `notFound` miss  
 
 Base: master at FCF park note (`969b6d7` lineage).
 

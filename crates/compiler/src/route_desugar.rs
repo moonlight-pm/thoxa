@@ -4,11 +4,13 @@
 //! Handlers are module-level `fn __{Type}_route_N` (not type methods) because
 //! Thoxa cannot call private methods via `Type().m()` from another method.
 //!
-//! `route(req: Request) -> May<String>`: hit is `Has(handler(…))`, miss is
-//! `Not()`. The compiler only reads `req.method` and `req.path` — `Request`
-//! is a userland type (typically `std/Http`). `May`/`Has`/`Not` must be
-//! imported from `std/Fallible` (no ambient inject). Handlers still return
-//! `String`.
+//! `route(req: Request) -> Response`:
+//! - clause returns `String` (or omits `->`) → `ok(Bytes.fromString(s), "text/plain")`
+//! - clause returns `Response` → pass through
+//! - miss → `notFound()`
+//!
+//! Compiler only names userland `Request` (`.method` / `.path`), `Response`,
+//! and the wrap/miss helpers `ok` / `notFound` (typically `std/Http`).
 //!
 //! Branch `experiment/router-clause-syntax`. No HTTP lang-items.
 
@@ -18,7 +20,7 @@ use crate::loader::Package;
 use crate::span::Span;
 
 /// Rewrite every type that has `routes` into handler free functions plus
-/// `route(req: Request) -> May<String>` on the type. Clears `routes`.
+/// `route(req: Request) -> Response` on the type. Clears `routes`.
 pub fn desugar_package(package: &mut Package) -> Result<()> {
     for m in &mut package.modules {
         desugar_module(&mut m.ast)?;
@@ -76,20 +78,18 @@ fn desugar_type(td: &mut TypeDef) -> Result<Vec<Function>> {
         let pat = analyze_pattern(&r.pattern, r.pattern_span)?;
         validate_formals(&r, &pat)?;
 
-        let ret_ty = r.return_type.clone().unwrap_or_else(ty_string);
-        let ret_name = ret_ty.name.clone();
-        if ret_name != "String" {
-            return Err(Error::at(
-                "route handler return type must be String in this experiment",
-                r.method_span,
-            ));
-        }
+        let ret_kind = classify_return(&r)?;
+        let ret_ty = match ret_kind {
+            HandlerRet::Text => ty_string(),
+            HandlerRet::Response => ty_response(),
+        };
 
         handlers.push(HandlerMeta {
             http_method: r.method.clone(),
             pattern: pat,
             handler_name: handler_name.clone(),
             def_span: r.method_span,
+            ret: ret_kind,
         });
 
         free_fns.push(Function {
@@ -116,6 +116,29 @@ struct HandlerMeta {
     handler_name: String,
     /// Source span of the HTTP method token (for go-to-def / outline).
     def_span: Span,
+    ret: HandlerRet,
+}
+
+#[derive(Clone, Copy)]
+enum HandlerRet {
+    /// Omitted or `-> String` — wrap with `ok(…, "text/plain")`.
+    Text,
+    /// `-> Response` — return the handler value as-is.
+    Response,
+}
+
+fn classify_return(r: &RouteClause) -> Result<HandlerRet> {
+    match r.return_type.as_ref().map(|t| t.name.as_str()) {
+        None | Some("String") => Ok(HandlerRet::Text),
+        Some("Response") => Ok(HandlerRet::Response),
+        Some(other) => Err(Error::at(
+            format!(
+                "route handler return type must be String or Response \
+                 (got `{other}`)"
+            ),
+            r.method_span,
+        )),
+    }
 }
 
 enum PathPattern {
@@ -221,14 +244,14 @@ fn validate_formals(r: &RouteClause, pat: &PathPattern) -> Result<()> {
 }
 
 fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Method> {
-    // Build nested ifs as statements with early return; tail is `Not()`.
+    // Nested ifs with early return; tail is `notFound()`.
     let mut items: Vec<BlockItem> = Vec::new();
     for h in handlers {
         items.push(BlockItem::Expr(handler_try_if(h)?));
     }
     let body = Block {
         items,
-        tail: Some(Box::new(call("Not", vec![]))),
+        tail: Some(Box::new(call("notFound", vec![]))),
         span: name_span,
     };
     Ok(Method {
@@ -236,7 +259,7 @@ fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Metho
         name: "route".into(),
         name_span,
         params: vec![param("req", ty_request())],
-        return_type: Some(ty_may_string()),
+        return_type: Some(ty_response()),
         body,
     })
 }
@@ -250,12 +273,12 @@ fn handler_try_if(h: &HandlerMeta) -> Result<Expr> {
     let inner = match &h.pattern {
         PathPattern::Exact(pat) => {
             let path_ok = bin(BinaryOp::Eq, field(name("req"), "path"), str_lit(pat));
-            let call = return_handler_call(&h.handler_name, vec![]);
+            let call = return_handler_call(&h.handler_name, vec![], h.ret);
             if_expr(path_ok, block_stmts(vec![BlockItem::Expr(call)]), None)
         }
         PathPattern::TrailingCapture { prefix, capture } => {
             let _ = capture; // name already validated against formal
-            trailing_capture_block(&h.handler_name, prefix)?
+            trailing_capture_block(&h.handler_name, prefix, h.ret)?
         }
     };
     Ok(if_expr(
@@ -265,7 +288,11 @@ fn handler_try_if(h: &HandlerMeta) -> Result<Expr> {
     ))
 }
 
-fn trailing_capture_block(handler_name: &str, prefix: &str) -> Result<Expr> {
+fn trailing_capture_block(
+    handler_name: &str,
+    prefix: &str,
+    ret: HandlerRet,
+) -> Result<Expr> {
     let path_b_init = method_call(
         name("Bytes"),
         "fromString",
@@ -354,7 +381,7 @@ fn trailing_capture_block(handler_name: &str, prefix: &str) -> Result<Expr> {
         ],
     );
     let rest_init = method_call(slice, "toString", vec![]);
-    let call = return_handler_call(handler_name, vec![Arg::Pos(name("rest"))]);
+    let call = return_handler_call(handler_name, vec![Arg::Pos(name("rest"))], ret);
     inner_items.push(BlockItem::Expr(if_expr(
         name("ok"),
         Block {
@@ -385,12 +412,26 @@ fn trailing_capture_block(handler_name: &str, prefix: &str) -> Result<Expr> {
     })
 }
 
-fn return_handler_call(handler: &str, args: Vec<Arg>) -> Expr {
-    // return Has(__Type_route_N(args))
+fn return_handler_call(handler: &str, args: Vec<Arg>, ret: HandlerRet) -> Expr {
     let inner = call(handler, args);
+    let value = match ret {
+        HandlerRet::Response => inner,
+        HandlerRet::Text => {
+            // ok(Bytes.fromString(handler(…)), "text/plain")
+            let bytes = method_call(
+                name("Bytes"),
+                "fromString",
+                vec![Arg::Pos(inner)],
+            );
+            call(
+                "ok",
+                vec![Arg::Pos(bytes), Arg::Pos(str_lit("text/plain"))],
+            )
+        }
+    };
     Expr {
         kind: ExprKind::Return {
-            value: Some(Box::new(call("Has", vec![Arg::Pos(inner)]))),
+            value: Some(Box::new(value)),
         },
         span: dummy(),
     }
@@ -424,10 +465,10 @@ fn ty_request() -> TypeExpr {
     }
 }
 
-fn ty_may_string() -> TypeExpr {
+fn ty_response() -> TypeExpr {
     TypeExpr {
-        name: "May".into(),
-        args: vec![TypeArg::Type(ty_string())],
+        name: "Response".into(),
+        args: vec![],
         span: dummy(),
         lit: None,
         mark: None,
@@ -591,8 +632,7 @@ mod tests {
                 assert_eq!(td.methods[0].params[0].name, "req");
                 assert_eq!(td.methods[0].params[0].ty.name, "Request");
                 let ret = td.methods[0].return_type.as_ref().expect("route ret");
-                assert_eq!(ret.name, "May");
-                assert_eq!(ret.args.len(), 1);
+                assert_eq!(ret.name, "Response");
             }
             _ => panic!("expected type"),
         }
@@ -605,5 +645,36 @@ mod tests {
             })
             .collect();
         assert_eq!(free, vec!["__MyRouter_route_0", "__MyRouter_route_1"]);
+    }
+
+    #[test]
+    fn desugar_response_passthrough() {
+        let module = parse_desugar(
+            r#"
+            type MyRouter {
+                GET "/home" { "Home" }
+                GET "/health" -> Response { notFound() }
+            }
+            fn main() -> Int64 { 0 }
+        "#,
+        );
+        match &module.items[0] {
+            Item::Type(td) => {
+                let ret = td.methods[0].return_type.as_ref().expect("route ret");
+                assert_eq!(ret.name, "Response");
+            }
+            _ => panic!("expected type"),
+        }
+        let handlers: Vec<_> = module
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Function(f) if f.name.starts_with("__MyRouter_route_") => {
+                    Some(f.return_type.as_ref().map(|t| t.name.as_str()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(handlers, vec![Some("String"), Some("Response")]);
     }
 }
