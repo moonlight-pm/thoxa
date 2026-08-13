@@ -86,6 +86,9 @@ Module must `import { Has, Not, May } from "std/Fallible"` (no ambient inject).
 
 ```bash
 cargo run -p thoxa -- run scratch/router_clause.thx   # local; scratch/ gitignored
+# curl -s localhost:9092/   /home   /user/42
+# curl -s -X PUT localhost:9092/user/42
+# curl -s localhost:9092/nope          # 404
 cargo run -p thoxa -- emit-c scratch/router_clause.thx
 # → target/thoxa/c/router_clause.c
 ```
@@ -100,7 +103,7 @@ cargo run -p thoxa -- emit-c scratch/router_clause.thx
 | 1 Idea note | **done** | this file |
 | 2 Parse + AST | **done** | `RouteClause` on `TypeDef` |
 | 3 Desugar → handlers + `route` | **done** | `route_desugar.rs` |
-| 4 Scratch + `emit-c` | **done** | `scratch/router_clause.thx` (gitignored) |
+| 4 Scratch + `emit-c` | **done** | `scratch/router_clause.thx` — one-file HTTP demo (gitignored) |
 | 5 LSP hover/outline for desugared symbols | **done** | resolve desugar + synthetic hover |
 | 6 Typed local hover (`let a: May<String>`) | **done** | general LSP; helps this sample |
 | 7 Typed miss (`May<String>`) | **done** | `Has` / `Not`; user imports Fallible |
