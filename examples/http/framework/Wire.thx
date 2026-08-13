@@ -312,16 +312,61 @@ export fn withHeader(res!: Response, name!: String, value!: String) -> Response 
     )
 }
 
-## HEAD: keep headers (incl. Content-Length), drop body (RFC 9110 §9.3.2).
-export fn finalize(method!: String, res!: Response) -> Response {
-    if method == "HEAD" {
-        Response(
-            status: res.status,
-            reason: res.reason,
-            headers: res.headers,
-            body: Bytes(0)
-        )
-    } else {
-        res
+fn hasConnToken(header!: String, token!: String) -> Bool {
+    let want = toLowerAscii(token)
+    let parts = split(header, ",")
+    for p in parts {
+        if toLowerAscii(trim(p)) == want {
+            return true
+        }
     }
+    false
+}
+
+## HTTP/1.1 stays open unless Connection: close. HTTP/1.0 closes unless keep-alive.
+export fn wantsKeepAlive(version!: String, req!: Request) -> Bool {
+    match headerGet(req, "Connection") {
+        Not {
+            version == "HTTP/1.1"
+        }
+        Has(v) {
+            if hasConnToken(v, "close") {
+                false
+            } else {
+                if version == "HTTP/1.1" {
+                    true
+                } else {
+                    hasConnToken(v, "keep-alive")
+                }
+            }
+        }
+    }
+}
+
+## HEAD: keep headers (incl. Content-Length), drop body (RFC 9110 §9.3.2).
+## Rewrite Connection to match whether this peer will read another request.
+export fn finalize(method!: String, res!: Response, keepAlive!: Bool) -> Response {
+    let conn = if keepAlive {
+        "keep-alive"
+    } else {
+        "close"
+    }
+    mut headers: Array<Header> = []
+    for h in res.headers {
+        if toLowerAscii(h.name) != "connection" {
+            headers = headers.append(h)
+        }
+    }
+    headers = headers.append(Header(name: "Connection", value: conn))
+    let body = if method == "HEAD" {
+        Bytes(0)
+    } else {
+        res.body
+    }
+    Response(
+        status: res.status,
+        reason: res.reason,
+        headers: headers,
+        body: body
+    )
 }

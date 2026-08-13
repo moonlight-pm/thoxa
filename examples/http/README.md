@@ -92,5 +92,6 @@ Path captures (`:slug`) are clause formals. HTML handlers return `Response`
 - App code = routes/views/domain only.
 - Ideal later: fn values → zero framework→app imports.
 - Host **`start`s `serveOne` per accept**. An idle browser socket parks in
-  `recv` and does not stall other tabs (experiment/implicit-async). Routes
-  and `App.handle` stay ordinary functions.
+  `recv` and does not stall other tabs (experiment/implicit-async). HTTP/1.1
+  keep-alive: one started peer can serve several requests. Routes and
+  `App.handle` stay ordinary functions.

@@ -141,8 +141,13 @@ export fn requestOf(inc!: Incoming) -> Request {
     wire.withQuery(req, inc.query)
 }
 
-export fn writeResponse(peer!: Socket, method!: String, res!: Response) -> Trial<Void, String> {
-    let final = wire.finalize(method, res)
+export fn writeResponse(
+    peer!: Socket,
+    method!: String,
+    res!: Response,
+    keepAlive!: Bool
+) -> Trial<Void, String> {
+    let final = wire.finalize(method, res, keepAlive)
     let wireBytes = http.writeResponse(final)
     match peer.sendAll(wireBytes) {
         Pass(_) {
@@ -155,7 +160,7 @@ export fn writeResponse(peer!: Socket, method!: String, res!: Response) -> Trial
 }
 
 export fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
-    writeResponse(peer, "GET", http.badRequest(msg))
+    writeResponse(peer, "GET", http.badRequest(msg), false)
 }
 
 ## Run the host forever. `app` is the application object (handle per request).
@@ -179,27 +184,35 @@ export fn serve(app!: App) -> Trial<Void, String> {
 }
 
 fn serveOne(peer!: Socket, app!: App) {
-    match readIncoming(peer) {
-        Fail(e) {
-            warn("recv: {e}")
-            match writeBadRequest(peer, e) {
-                Pass(_) { }
-                Fail(se) {
-                    warn("send: {se}")
-                }
-            }
-        }
-        Pass(inc) {
-            if isQuietClose(inc) {
-                ## quiet close
-            } else {
-                let req = requestOf(inc)
-                let res = app.handle(req)
-                info("{inc.method} {inc.path} -> {res.status} {res.reason}")
-                match writeResponse(peer, inc.method, res) {
+    loop {
+        match readIncoming(peer) {
+            Fail(e) {
+                warn("recv: {e}")
+                match writeBadRequest(peer, e) {
                     Pass(_) { }
                     Fail(se) {
                         warn("send: {se}")
+                    }
+                }
+                break
+            }
+            Pass(inc) {
+                if isQuietClose(inc) {
+                    break
+                }
+                let req = requestOf(inc)
+                let keep = wire.wantsKeepAlive(inc.version, req)
+                let res = app.handle(req)
+                info("{inc.method} {inc.path} -> {res.status} {res.reason}")
+                match writeResponse(peer, inc.method, res, keep) {
+                    Fail(se) {
+                        warn("send: {se}")
+                        break
+                    }
+                    Pass(_) {
+                        if not keep {
+                            break
+                        }
                     }
                 }
             }

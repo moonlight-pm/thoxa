@@ -1,0 +1,52 @@
+## One started peer handles two request/response turns (keep-alive shape).
+import net, { Socket, createSocket } from "std/Net"
+import { Pass, Fail, Trial } from "std/Fallible"
+import logging, { info } from "std/Logging"
+
+fn echo(peer!: Socket) -> Trial<Void, String> {
+    loop {
+        let data = peer.receive()
+        if data.count == 0 {
+            break
+        }
+        peer.sendAll(data)?
+    }
+    peer.close()
+    Pass(Void)
+}
+
+fn run() -> Trial<Void, String> {
+    let listener = createSocket()?
+    listener.reuseAddr()?
+    listener.bind(0)?
+    listener.listen(4)?
+    let port = listener.localPort()?
+    start acceptEcho(listener)
+    let c = createSocket()?
+    c.connect(port)?
+    c.sendAll(Bytes.fromString("a"))?
+    let r1 = c.receive()
+    c.sendAll(Bytes.fromString("b"))?
+    let r2 = c.receive()
+    info("{r1.toString()}{r2.toString()}")
+    c.close()
+    Pass(Void)
+}
+
+fn acceptEcho(listener!: Socket) -> Trial<Void, String> {
+    let peer = listener.accept()?
+    echo(peer)?
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass(_) { 0 }
+        Fail(e) {
+            info("fail {e}")
+            1
+        }
+    }
+}

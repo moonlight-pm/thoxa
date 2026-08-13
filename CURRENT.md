@@ -46,9 +46,9 @@ combined import; **D126** Io/Net/Http; **D125** Logging; **D124** diagnostics.
 
 **In progress / next:**
 
-1. **Implicit wait + `start`** — scratch §§1–5 **live**; Crema host
-   `start serveOne` (200ms recv timeout gone). Next: keep-alive only if
-   browsers force it; otherwise this experiment is dogfood-complete.  
+1. **Implicit wait + `start`** — scratch §§1–5 **live**; Crema
+   `start serveOne` + HTTP/1.1 keep-alive. Experiment dogfood-complete
+   unless poking finds a hole.  
 2. Crema-lite Phase D+ only if useful (parked while this branch is Now).  
 3. Editor only when DX forces it.
 
