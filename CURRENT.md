@@ -4,9 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-13 (**D131** multi-clause **shipped**; Crema-lite Phase A–C;
-type-body route clauses + **JSX / builtin `Node`** **on master**, not freeze /
-not handbook)
+**As of:** 2026-08-13 (**D131** multi-clause **shipped**; Crema-lite Phase A–C
++ pages on **JSX `Node`**; type-body route clauses + **JSX / builtin `Node`**
+**on master**, not freeze / not handbook)
 
 ---
 
@@ -14,7 +14,7 @@ not handbook)
 
 **Active experiment — `examples/http` Crema-lite:** Phase A–C done
 (`server.serve(routes.app())`); routing is type-body `GET`/`POST` on `Routes`
-+ `App.handle` static fallback. Charter:
++ `App.handle` static fallback; pages are JSX `Node`. Charter:
 [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
 **Hard rule:** **do not add to `std/`** for this experiment.
 
@@ -36,12 +36,13 @@ import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
 - Tag literals + builtin **`Node`** (idea
   [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md);
   capability `jsx-node` **partial**). No import; `.html()`; gate `jsx`. No
-  D-id / handbook. Crema pages still string HTML.
+  D-id / handbook. Crema pages dogfood it (`app/Layout.thx` `Page` +
+  `app/Pages.thx`).
 
 **In progress / next:**
 
-1. **Crema-lite** — rewrite pages onto `Node` tags when wanted; Phase D+ only
-   if useful. Still example only; no `std/`.  
+1. **Crema-lite** — pages are on `Node` tags. Phase D+ only if useful. Still
+   example only; no `std/`.  
 2. Editor only when DX forces it.  
 3. Sample-driven language polish (no open CURRENT language slice).
 

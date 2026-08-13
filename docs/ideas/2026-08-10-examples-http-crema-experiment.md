@@ -6,7 +6,8 @@
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) (focus) · this file (charter + checklist) ·
 [`examples/http/README.md`](../../examples/http/README.md) (run + layout)  
 **Related ideas:** [webapp SSR / components](2026-07-21-webapp-ssr-components.md)
-(language-level components — **out of scope** here; string HTML only)
+(language-level components — **out of scope** here; pages now use experiment
+JSX / `Node` tags, not a component system)
 
 ---
 
@@ -87,7 +88,7 @@ Update status in place: `pending` | `in progress` | `done` | `blocked` | `parked
 |------|--------|--------|
 | A0 Charter + CURRENT pointer + hard rules | **done** | this file |
 | A1 Multi-module skeleton; listen loop thin | **done** | `Main` + `App` + modules |
-| A2 Layout + dynamic `/` and `/menu` | **done** | string HTML |
+| A2 Layout + dynamic `/` and `/menu` | **done** | now JSX `Node` (`Page`) |
 | A3 Models + `/menu/:slug` path param | **done** | in-memory catalog; roast is `String`; `:param` not `{braces}` (interp) |
 | A4 `GET /api/health` + README polish | **done** | no layout shell |
 | A5 Smoke matrix (curl) green | **done** | `/` `/menu` `/menu/{slug}` `/api/health` CSS HEAD 404 405 |
@@ -169,7 +170,7 @@ after A–C.
 | `path_param` | `:slug` capture → `Drink(slug)` (and friends) on the route value |
 | Models / seed | `Models.thx` constants |
 | `current_customer(cx)` | Phase B `Customer.thx` |
-| `view!` | string templates with `{interp}` |
+| `view!` | JSX `Node` tags (`type Page` + `.html()`) |
 
 ---
 
@@ -185,9 +186,10 @@ after A–C.
 **As of last update:** **Phase A–C complete** + layered **`framework/` / `app/`**
 with **`server.serve(routes.app())`**. Routing is type-body **`GET`/`POST`
 clauses** on `Routes` (compiler `route(req)` dogfood) + **`App.handle`** static
-fallback. Next is Phase D+ only if wanted — still no `std/` growth (grow
-`framework/` instead). Language discussion next: traits / free fn pointers for
-the host boundary (FCF parked).
+fallback. **Pages are JSX `Node`** (`app/Layout.thx` `Page`, `app/Pages.thx`).
+Next is Phase D+ only if wanted — still no `std/` growth (grow `framework/`
+instead). Language discussion next: traits / free fn pointers for the host
+boundary (FCF parked).
 
 ### Language / design notes (experiment)
 

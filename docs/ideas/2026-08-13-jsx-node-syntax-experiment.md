@@ -1,6 +1,7 @@
 # Experiment: first-class tag literals + builtin `Node`
 
-**Status:** **landed on master** (2026-08-13) — compiler + runtime surface complete.  
+**Status:** **landed on master** (2026-08-13) — compiler + runtime surface
+complete; Crema pages rewritten onto tags.  
 **Date:** 2026-08-13  
 **Not** a freeze, **not** handbook / capabilities “shipped.” No D-id yet.  
 **Demo:** [`scratch/jsx.thx`](../../scratch/jsx.thx)  
@@ -36,7 +37,7 @@ logging.info(n.html())
 | Value | Builtin `Node` (`Ty::Node` → `ThoxaHtml*` in `thoxa_rt`) |
 | HTML tag | `<div class="x">…</div>` → `__jsx_el(tag, names, vals, kids)` |
 | Component | PascalCase `<Card title="Hi">…</Card>` → `Card(title: "Hi").view(children: […])` (eager) |
-| Fragment | `<>…</>` → fragment `Node` |
+| Fragment | `<>…</>` → fragment `Node` (empty `<>` included) |
 | `{e}` | `String` → escaped text; `Node` → identity; `Array<Node>` → splice |
 | Raw text | Source slice (lexer `Junk` so `'` / `·` survive); whitespace-only gaps dropped |
 | Void tags | `br` `hr` `img` `input` `meta` `link` — no close in `.html()` |
@@ -51,10 +52,15 @@ No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
 
 ## Non-goals (this landing)
 
-- Rewriting `examples/http` pages onto tags (later, on master)  
 - `El \| Text \| Frag` sum in the type system (runtime is a tagged C struct)  
 - Spreads, `className`, hydration / client VDOM  
 - Handbook / D-id / freeze  
+
+## Dogfood
+
+[`examples/http`](../../examples/http/) pages are tag trees: `type Page` in
+`app/Layout.thx`, views in `app/Pages.thx`, `n.html()` + `<!DOCTYPE html>` in
+`htmlResponse`.
 
 ## Gaps
 
@@ -62,6 +68,8 @@ No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
 - Hyphenated attrs parse; `data-*` ok  
 - `.html()` method has no dedicated hover (type `Node` does)  
 - Tree-sitter island colors tags; fragments/`<>` highlighting is best-effort  
-- Crema still uses string HTML  
+- `{e}` is String / Node / Array&lt;Node&gt; — not Int64 (stringify first)  
+- Bare `<tag>` after another expression is `<` (comparison). Bind with `let`,
+  or make the tag the whole block value.
 
 Pickup: root `CURRENT.md` (focus) · this file · capability `jsx-node`.

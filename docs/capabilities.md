@@ -11,8 +11,9 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-13 (D131 multi-clause **shipped**; Crema-lite Phase A–C;
-type-body route clauses + JSX/`Node` **partial** on master — not freeze)
+**As of:** 2026-08-13 (D131 multi-clause **shipped**; Crema-lite Phase A–C
++ JSX pages; type-body route clauses + JSX/`Node` **partial** on master — not
+freeze)
 
 ---
 
@@ -45,7 +46,7 @@ type-body route clauses + JSX/`Node` **partial** on master — not freeze)
 | modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate`, `import_combined` | D30–D35, D122, **D127** | Combined `import ns, { a } from "…"` shipped. `~/` is nearest ancestor `Main.thx` (else entry dir) so nested-file check/LSP match directory packages. Nested import/type in functions deferred (D91); module mut heap (Array/String) must not end-of-fn drop (D122) | yes |
 | pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |
 | route-clauses | Type-body `GET "/…"` → `route(req) -> Response` | partial | unit (`route_desugar`, LSP); Crema dogfood | idea [`ideas/2026-08-12-router-clause-syntax-experiment.md`](ideas/2026-08-12-router-clause-syntax-experiment.md) | **On master, not freeze / no D-id.** String wrap + `Response` pass-through; `Int64`/`String` captures; multi-segment; optional `req`. **Gaps:** no conformance `.thx`; no handbook; no JSON/form; miss is `notFound()` (no fallthrough). Crema dogfoods via `examples/http` `type Routes`. | no |
-| jsx-node | Tag literals + builtin `Node` / `.html()` | partial | `jsx` | idea [`ideas/2026-08-13-jsx-node-syntax-experiment.md`](ideas/2026-08-13-jsx-node-syntax-experiment.md) | **On master, not freeze / no D-id.** Eager PascalCase → `Type(…).view(children:)`; `{e}` is String / Node / Array&lt;Node&gt;; void tags; boolean attrs; no import. **Gaps:** no handbook; no spreads; runtime is tagged C struct (not `El \| Text \| Frag`); Crema pages still strings; `.html()` method hover thin. | no |
+| jsx-node | Tag literals + builtin `Node` / `.html()` | partial | `jsx` | idea [`ideas/2026-08-13-jsx-node-syntax-experiment.md`](ideas/2026-08-13-jsx-node-syntax-experiment.md) | **On master, not freeze / no D-id.** Eager PascalCase → `Type(…).view(children:)`; `{e}` is String / Node / Array&lt;Node&gt;; void tags; boolean attrs; empty `<>` is Node; no import. Crema pages dogfood (`examples/http` `Page`). **Gaps:** no handbook; no spreads; runtime is tagged C struct (not `El \| Text \| Frag`); `.html()` method hover thin; `{e}` is not Int64 (stringify first); bare `<tag>` after another expr is `<` (comparison). | no |
 
 ## FFI and C layout
 
@@ -63,7 +64,7 @@ type-body route clauses + JSX/`Node` **partial** on master — not freeze)
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err` | D69, R9, **D126** | Product **`std/Net`** + **`std/Http`**; `receiveRequest` / `sendAll`; 403/405 helpers; Fail is String | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126** | Product **`std/HttpStatic`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/Net` + `std/Http` + `std/HttpStatic` | yes |
-| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`server.serve(routes.app())`**; type-body `GET`/`POST` on `Routes` + `App.handle` static fallback; Phase A–C. **Gaps:** Phase D+; framework still imports `App` type (trait / fn pointer would remove that); query/body still example-stitched onto `Request`. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
+| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`server.serve(routes.app())`**; type-body `GET`/`POST` on `Routes` + `App.handle` static fallback; Phase A–C; pages are JSX `Node` (`Page` + `.html()`). **Gaps:** Phase D+; framework still imports `App` type (trait / fn pointer would remove that); query/body still example-stitched onto `Request`. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 

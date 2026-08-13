@@ -21,7 +21,10 @@ fn main() -> Int64 {
             <br />
             <input disabled />
         </>
+        {if name.count == 0 { <></> } else { <em>ok</em> }}
     </Card>
+    let gap = <div class="gap">{<></>}</div>
     logging.info(n.html())
+    logging.info(gap.html())
     0
 }

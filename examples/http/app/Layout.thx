@@ -1,22 +1,44 @@
 ## App layer — shared HTML shell for Little Crema pages.
+## `Page` is a JSX component: `<Page title=… customer=…>…</Page>`.
 
 import { Response, ok } from "std/Http"
 import { isEmpty } from "std/Str"
 
-export fn htmlResponse(body!: String) -> Response {
-    ok(Bytes.fromString(body), "text/html; charset=utf-8")
+export fn htmlResponse(root!: Node) -> Response {
+    ok(Bytes.fromString("<!DOCTYPE html>\n{root.html()}"), "text/html; charset=utf-8")
 }
 
-fn navExtra(customer!: String) -> String {
+fn navExtra(customer!: String) -> Node {
     if isEmpty(customer) {
-        ""
+        <></>
     } else {
-        "<p class=\"nav-hi\">Hi, {customer}</p>"
+        <p class="nav-hi">Hi, {customer}</p>
     }
 }
 
-export fn page(title!: String, body!: String, customer!: String) -> Response {
-    let hi = navExtra(customer)
-    let html = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title} · Little Crema</title>\n<link rel=\"stylesheet\" href=\"/style.css\">\n</head>\n<body>\n<header>\n<nav>\n<a class=\"brand\" href=\"/\">Little Crema</a>\n<a href=\"/menu\">Menu</a>\n<a href=\"/api/health\">Health</a>\n{hi}\n</nav>\n</header>\n<main>\n{body}\n</main>\n<footer>\n<p>Six drinks · example-only server · not product std.</p>\n</footer>\n</body>\n</html>\n"
-    htmlResponse(html)
+export type Page(title: String, customer: String) {
+    export fn view(children: Array<Node>) -> Node {
+        <html lang="en">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>{title} · Little Crema</title>
+                <link rel="stylesheet" href="/style.css" />
+            </head>
+            <body>
+                <header>
+                    <nav>
+                        <a class="brand" href="/">Little Crema</a>
+                        <a href="/menu">Menu</a>
+                        <a href="/api/health">Health</a>
+                        {navExtra(customer)}
+                    </nav>
+                </header>
+                <main>{children}</main>
+                <footer>
+                    <p>Six drinks · example-only server · not product std.</p>
+                </footer>
+            </body>
+        </html>
+    }
 }

@@ -7580,7 +7580,16 @@ fn lower_html_child(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
         Arg::Pos(e) => e,
         Arg::Named { value, .. } => value,
     };
-    let (p, ty) = lower_expr_expect(ctx, expr, None)?;
+    // `<>…</>` desugars to `__jsx_child([…])`. Empty `[]` is Array<Void>
+    // unless we thread Array<Node> as the expected type.
+    let node_arr = Ty::Array {
+        elem: Box::new(Ty::Node),
+    };
+    let child_expect = match &expr.kind {
+        ExprKind::ArrayLit(_) => Some(&node_arr),
+        _ => None,
+    };
+    let (p, ty) = lower_expr_expect(ctx, expr, child_expect)?;
     match &ty {
         Ty::String => emit_call_result(ctx, Callee::Builtin("html_text".into()), vec![p], Ty::Node),
         Ty::Node => Ok((p, Ty::Node)),
