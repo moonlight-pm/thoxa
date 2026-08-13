@@ -44,7 +44,11 @@ fn try_main() -> Result<i32, Error> {
             let opts = parse_build_args(&args)?;
             let art = driver::build(&opts)?;
             if let Some(bin) = art.bin_path {
-                eprintln!("built {}", bin.display());
+                if art.cached {
+                    eprintln!("up to date {}", bin.display());
+                } else {
+                    eprintln!("built {}", bin.display());
+                }
             }
             Ok(0)
         }

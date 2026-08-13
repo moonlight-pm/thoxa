@@ -21,7 +21,7 @@ freeze)
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | none for v0 | yes |
+| driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | `run`/`build` reuse `target/thoxa/bin/*` when package / `std/` / runtime / compiler are unchanged (`THOXA_FORCE_BUILD=1` to skip). No incremental `cc`. | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
 | multi-clause | Same-name multi-clause fn/method = match sugar on formal types | shipped | `multi_clause` | **D131**; [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | Pattern formals / cross-arity / composition / `extern` multi-clause out of v0. D16 std factories still separate. Bare singleton lit types + inline `\|` in formals shipped as typespace substrate. | yes |
 | trial | `Trial` + `match` + `?` via `std/Fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | none for v0 — import `Pass`/`Fail`/`Trial` from `std/Fallible`; cross-module residual rewrap | yes |

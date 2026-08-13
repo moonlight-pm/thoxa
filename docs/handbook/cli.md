@@ -11,8 +11,8 @@ The product binary is **`thoxa`** (`cargo run -p thoxa -- …`, or via
 | `thoxa repl` | Same as bare REPL |
 | `thoxa path.thx` | Program if `fn main` exists; else **session script** |
 | `thoxa dir/` | Runs `dir/Main.thx` if present |
-| `thoxa run path [args…]` | Compile and run; trailing args go to `fn main(arguments: Array<String>)` (D121) |
-| `thoxa build path -o out` | Compile to a binary |
+| `thoxa run path [args…]` | Compile and run; trailing args go to `fn main(arguments: Array<String>)` (D121). Reuses `target/thoxa/bin/*` when inputs are unchanged. |
+| `thoxa build path -o out` | Compile to a binary (same reuse; prints `up to date` when skipped) |
 | `thoxa check path` | Typecheck only (no C emit); multi-diagnostic when possible; **pretty** codes/caret/help |
 | `thoxa check path --json` | Same check; machine-readable report (stable fields + compiler identity) |
 | `thoxa emit-c path` | Emit C under `target/thoxa/c/` |
@@ -75,7 +75,7 @@ cargo make zed               # sync Zed extras + LSP binary
 | `target/rust/` | Cargo outputs |
 | `target/c/` | Runtime objects + `libthoxa_rt.a` |
 | `target/thoxa/c/` | Generated C |
-| `target/thoxa/bin/` | Linked program binaries |
+| `target/thoxa/bin/` | Linked program binaries + `*.stamp` (freshness fingerprint) |
 
 ## Environment (selected)
 
@@ -86,5 +86,6 @@ cargo make zed               # sync Zed extras + LSP binary
 | `THOXA_SHELL_RC` | Override session rc path |
 | `THOXA_NORC` | Skip session rc when set |
 | `THOXA_STATUS` | Set by REPL host for prompt helpers |
+| `THOXA_FORCE_BUILD` | Set to `1` to ignore the program-binary stamp and rebuild |
 
 Details for session: [session.md](session.md).

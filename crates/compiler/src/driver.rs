@@ -10,9 +10,11 @@ use crate::error::{Error, Result};
 use crate::loader;
 use crate::mir;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
+use std::time::UNIX_EPOCH;
 
 /// Snapshot of PATH for host tools (`cc` / `ar`) before session `path()` replaces it.
 /// Set once via [`capture_toolchain_path`]; consulted by [`host_tool`].
@@ -87,6 +89,8 @@ pub struct BuildOptions {
 pub struct BuildArtifacts {
     pub c_path: PathBuf,
     pub bin_path: Option<PathBuf>,
+    /// True when `build` reused an existing binary (inputs unchanged).
+    pub cached: bool,
 }
 
 /// Cached once: host `cd` must not re-resolve the tree from the new cwd (REPL).
@@ -326,12 +330,141 @@ pub fn emit_c(opts: &BuildOptions) -> Result<PathBuf> {
     Ok(c_path)
 }
 
+/// Set to `1` / `true` / `yes` to ignore the program-binary stamp.
+pub const FORCE_BUILD_ENV: &str = "THOXA_FORCE_BUILD";
+
+fn force_build() -> bool {
+    matches!(
+        std::env::var(FORCE_BUILD_ENV).as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+fn stamp_path(bin: &Path) -> PathBuf {
+    let mut p = bin.as_os_str().to_os_string();
+    p.push(".stamp");
+    PathBuf::from(p)
+}
+
+fn collect_thx(root: &Path, out: &mut Vec<PathBuf>, depth: u32) {
+    if depth > 24 {
+        return;
+    }
+    if root.is_file() {
+        if root.extension().and_then(|e| e.to_str()) == Some("thx") {
+            out.push(root.to_path_buf());
+        }
+        return;
+    }
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for ent in entries.flatten() {
+        let name = ent.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.') || name == "target" {
+            continue;
+        }
+        let path = ent.path();
+        if path.is_dir() {
+            collect_thx(&path, out, depth + 1);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("thx") {
+            out.push(path);
+        }
+    }
+}
+
+fn package_watch_root(opts: &BuildOptions) -> PathBuf {
+    if opts.source.is_dir() {
+        return opts.source.clone();
+    }
+    match loader::resolve_entry(&opts.source) {
+        Ok(entry) => loader::package_root_for(&entry),
+        Err(_) => opts
+            .source
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| opts.source.clone()),
+    }
+}
+
+/// Identity of everything that can change the linked program: package `.thx`,
+/// product `std/`, `libthoxa_rt.a`, and the running `thoxa` binary.
+fn input_fingerprint(opts: &BuildOptions) -> String {
+    let mut files: Vec<PathBuf> = Vec::new();
+    collect_thx(&package_watch_root(opts), &mut files, 0);
+    let std_root = loader::std_lib_root().ok();
+    if let Some(std) = &std_root {
+        collect_thx(std, &mut files, 0);
+    }
+    files.push(runtime_lib_path());
+    if let Ok(exe) = std::env::current_exe() {
+        files.push(exe);
+    }
+    files.sort();
+    files.dedup();
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    "v1".hash(&mut hasher);
+    opts.source.hash(&mut hasher);
+    std_root.hash(&mut hasher);
+    for f in files {
+        f.hash(&mut hasher);
+        match fs::metadata(&f) {
+            Ok(m) => {
+                m.len().hash(&mut hasher);
+                let ns = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0);
+                ns.hash(&mut hasher);
+            }
+            Err(_) => {
+                "missing".hash(&mut hasher);
+            }
+        }
+    }
+    format!("{:016x}", hasher.finish())
+}
+
+fn is_fresh(opts: &BuildOptions, bin: &Path) -> bool {
+    if force_build() || !bin.is_file() {
+        return false;
+    }
+    let Ok(prev) = fs::read_to_string(stamp_path(bin)) else {
+        return false;
+    };
+    prev.trim() == input_fingerprint(opts)
+}
+
+fn write_stamp(opts: &BuildOptions, bin: &Path) {
+    let _ = fs::write(stamp_path(bin), input_fingerprint(opts));
+}
+
 pub fn build(opts: &BuildOptions) -> Result<BuildArtifacts> {
+    if !opts.emit_c_only {
+        ensure_runtime()?;
+        let name = output_stem(opts);
+        let bin_dir = thoxa_target_dir().join("bin");
+        let bin_path = bin_dir.join(&name);
+        let c_path = thoxa_target_dir().join("c").join(format!("{name}.c"));
+        if is_fresh(opts, &bin_path) {
+            return Ok(BuildArtifacts {
+                c_path,
+                bin_path: Some(bin_path),
+                cached: true,
+            });
+        }
+    }
+
     let c_path = emit_c(opts)?;
     if opts.emit_c_only {
         return Ok(BuildArtifacts {
             c_path,
             bin_path: None,
+            cached: false,
         });
     }
 
@@ -359,9 +492,12 @@ pub fn build(opts: &BuildOptions) -> Result<BuildArtifacts> {
         )));
     }
 
+    write_stamp(opts, &bin_path);
+
     Ok(BuildArtifacts {
         c_path,
         bin_path: Some(bin_path),
+        cached: false,
     })
 }
 
@@ -543,4 +679,69 @@ fn keep_session_c() -> bool {
         std::env::var(REPL_KEEP_C_ENV).as_deref(),
         Ok("1") | Ok("true") | Ok("yes")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
+
+    static FRESH_ID: AtomicU64 = AtomicU64::new(1);
+
+    fn temp_prog(body: &str) -> PathBuf {
+        let id = FRESH_ID.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "thoxa_fresh_{}_{}",
+            std::process::id(),
+            id
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Main.thx"), body).unwrap();
+        dir
+    }
+
+    fn opts_for(dir: &Path, name: &str) -> BuildOptions {
+        BuildOptions {
+            source: dir.to_path_buf(),
+            output_name: Some(name.into()),
+            emit_c_only: false,
+            program_args: vec![],
+        }
+    }
+
+    #[test]
+    fn build_reuses_binary_when_inputs_unchanged() {
+        let dir = temp_prog("fn main() -> Int64 { 0 }\n");
+        let name = format!("fresh_{}", std::process::id());
+        let opts = opts_for(&dir, &name);
+        let first = build(&opts).expect("first build");
+        assert!(!first.cached, "first build must compile");
+        let bin = first.bin_path.as_ref().unwrap().clone();
+        let m1 = fs::metadata(&bin).unwrap().modified().unwrap();
+
+        let second = build(&opts).expect("second build");
+        assert!(second.cached, "unchanged inputs should reuse the binary");
+        let m2 = fs::metadata(second.bin_path.as_ref().unwrap())
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(m1, m2, "cached build must not rewrite the binary");
+    }
+
+    #[test]
+    fn build_rebuilds_when_source_changes() {
+        let dir = temp_prog("fn main() -> Int64 { 0 }\n");
+        let name = format!("fresh_chg_{}", std::process::id());
+        let opts = opts_for(&dir, &name);
+        let first = build(&opts).expect("first build");
+        assert!(!first.cached);
+
+        std::thread::sleep(Duration::from_millis(20));
+        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 1 }\n").unwrap();
+
+        let second = build(&opts).expect("rebuild after edit");
+        assert!(!second.cached, "edited source must invalidate the stamp");
+    }
 }
