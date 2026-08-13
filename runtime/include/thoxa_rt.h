@@ -97,6 +97,13 @@ void thoxa_task_start(void (*fn)(void *), void *data);
 void *thoxa_task_alloc(size_t nbytes);
 void thoxa_task_free(void *ptr);
 void thoxa_wait_ms(int64_t ms);
+#define THOXA_WAIT_READ  1
+#define THOXA_WAIT_WRITE 2
+void thoxa_wait_fd(int32_t fd, int32_t events);
+int32_t thoxa_accept(int32_t fd, void *addr, void *addrlen);
+int64_t thoxa_recv(int32_t fd, void *buf, uint64_t len, int32_t flags);
+int64_t thoxa_send(int32_t fd, const void *buf, uint64_t len, int32_t flags);
+int32_t thoxa_connect(int32_t fd, const void *addr, uint32_t addrlen);
 void thoxa_sched_drain(void);
 
 /* --- Heap header (RC) --------------------------------------------------- */

@@ -1,6 +1,9 @@
 ## std/Net — TCP sockets (IPv4 stream; Linux product track).
 ## Errors are Trial<…, String> with errno/strerror polish (Io-style D80).
 ## `receiveRequest` accumulates until the header terminator; `sendAll` drains partial writes.
+## accept / connect / receive / send park the current task when the socket would
+## block (experiment/implicit-async). Sequential programs still wait, just inside
+## the runtime instead of a blocking libc call.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 
@@ -8,11 +11,11 @@ extern fn sysSocket(domain!: Int32, kind!: Int32, protocol!: Int32) -> Int32 fro
 extern fn sysSetsockopt(fd!: Int32, level!: Int32, optname!: Int32, optval!: Bytes, optlen!: UInt32) -> Int32 from "c" "setsockopt"
 extern fn sysBind(fd!: Int32, addr!: Bytes, addrlen!: UInt32) -> Int32 from "c" "bind"
 extern fn sysListen(fd!: Int32, backlog!: Int32) -> Int32 from "c" "listen"
-extern fn sysAccept(fd!: Int32, addr!: Bytes, addrlen!: Bytes) -> Int32 from "c" "accept"
-extern fn sysConnect(fd!: Int32, addr!: Bytes, addrlen!: UInt32) -> Int32 from "c" "connect"
+extern fn sysAccept(fd!: Int32, addr!: Bytes, addrlen!: Bytes) -> Int32 from "c" "thoxa_accept"
+extern fn sysConnect(fd!: Int32, addr!: Bytes, addrlen!: UInt32) -> Int32 from "c" "thoxa_connect"
 extern fn sysGetsockname(fd!: Int32, addr!: Bytes, addrlen!: Bytes) -> Int32 from "c" "getsockname"
-extern fn sysRecv(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32) -> Int64 from "c" "recv"
-extern fn sysSend(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32) -> Int64 from "c" "send"
+extern fn sysRecv(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32) -> Int64 from "c" "thoxa_recv"
+extern fn sysSend(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32) -> Int64 from "c" "thoxa_send"
 extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
 extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
 extern fn sysErrno() -> Int32 from "c" "thoxa_errno"

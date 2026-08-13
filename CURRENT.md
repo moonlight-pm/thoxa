@@ -46,10 +46,10 @@ combined import; **D126** Io/Net/Http; **D125** Logging; **D124** diagnostics.
 
 **In progress / next:**
 
-1. **Implicit wait + `start`** — sections 1–3 of `scratch/async.thx` are
-   **live** (sequential, `start` overlap, accept-loop with wait *inside*
-   `recv` / `accept`). Next: park on real Net (`accept`/`recv`/`send`) only
-   if the scratch file forces it.  
+1. **Implicit wait + `start`** — sections 1–4 of `scratch/async.thx` are
+   **live**. `std/Net` accept/connect/receive/send park the current task
+   (same face as before). Next: dogfood Crema `start serveOne` only if we
+   want the example server to drop the 200ms recv timeout.  
 2. Crema-lite Phase D+ only if useful (parked while this branch is Now).  
 3. Editor only when DX forces it.
 

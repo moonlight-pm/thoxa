@@ -115,9 +115,11 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 ## Runtime notes
 
 - Heap today: `String`, `Bytes`, dynamic `Array`, `Buffer` — simple RC.
-- Cooperative tasks (experiment, this branch): `thoxa_task_start` / `thoxa_wait_ms`
-  / `thoxa_sched_drain` — one OS thread, stackful fibers; generated `main`
-  drains after `thoxa_fn_main`. RC stays non-atomic.
+- Cooperative tasks (experiment, this branch): `thoxa_task_start` /
+  `thoxa_wait_ms` / `thoxa_wait_fd` / `thoxa_sched_drain` — one OS thread,
+  stackful fibers; poll + timers. `std/Net` accept/connect/recv/send go
+  through `thoxa_*` and park on EAGAIN. Generated `main` drains after
+  `thoxa_fn_main`. RC stays non-atomic.
 - Extern from `"c"` (+ optional C symbol); cgen pulls headers when needed.
 - Spawn helper `thoxa_spawn_wait` used by session Shell / dogfood shell.
 - Spawn+IO `thoxa_spawn_wait_io` for session `>` / `>>` / `<` (`Shell.runIo`).
