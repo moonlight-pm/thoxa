@@ -1,0 +1,20 @@
+## `start` a function that never waits itself — the callee does the work.
+## No wait points, so each started run finishes before the next `start`.
+import logging, { info } from "std/Logging"
+
+fn recv(peer!: String) {
+    info("recv {peer}")
+}
+
+fn serveOne(peer!: String) {
+    recv(peer)
+    info("send {peer}")
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    start serveOne("A")
+    start serveOne("B")
+    0
+}

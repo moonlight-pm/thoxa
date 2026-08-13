@@ -46,10 +46,10 @@ combined import; **D126** Io/Net/Http; **D125** Logging; **D124** diagnostics.
 
 **In progress / next:**
 
-1. **Implicit wait + `start`** — section 2 of `scratch/async.thx` is **live**
-   (`start slow("A")` / `start slow("B")` overlap). Next: section 3 accept-loop
-   shape (started `serveOne` with a waiting recv), then Net park if the file
-   forces it.  
+1. **Implicit wait + `start`** — sections 1–3 of `scratch/async.thx` are
+   **live** (sequential, `start` overlap, accept-loop with wait *inside*
+   `recv` / `accept`). Next: park on real Net (`accept`/`recv`/`send`) only
+   if the scratch file forces it.  
 2. Crema-lite Phase D+ only if useful (parked while this branch is Now).  
 3. Editor only when DX forces it.
 
