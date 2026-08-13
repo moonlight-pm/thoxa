@@ -126,7 +126,7 @@ Freezes:
 `framework/` + `app/` under `examples/http/` only; no product `std/` growth
 for the experiment; charter
 [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md);
-accept loop uses **D128** + example recv timeout), `examples/kilo` shipped
+accept loop uses **D128** + **`--> serveOne`** + keep-alive), `examples/kilo` shipped
 and exercised; continue matrix gaps when samples force them.
 
 **Horizon / deferred until CURRENT says so:**
