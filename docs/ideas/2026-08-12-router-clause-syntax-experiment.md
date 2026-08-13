@@ -19,7 +19,7 @@ type MyRouter {
         "Home"
     }
 
-    PUT "/user/:userId" (userId: String) -> String {
+    PUT "/user/:userId" (userId: Int64) -> String {
         "user {userId}"
     }
 }
@@ -36,17 +36,20 @@ Compiler (as built):
    `req.method` / `req.path`; miss is `notFound()`).  
 4. String clause bodies wrap via `ok(Bytes.fromString(s), "text/plain")`;
    `-> Response` is passed through.  
-5. Resolve/LSP desugars the same way so hover/outline see generated symbols.
+5. Path captures `String` or `Int64` in any segment; optional `req: Request`.
+   Bad `Int64` digits → `badRequest("invalid {name}")`.  
+6. Resolve/LSP desugars the same way so hover/outline see generated symbols.
 
-`Request` / `Response` / `ok` / `notFound` are userland (usually `std/Http`).
-Compiler only names them. No lang-items.
+`Request` / `Response` / `ok` / `notFound` / `badRequest` are userland
+(usually `std/Http`). Segment split and int parse are generated helpers.
+No lang-items. JSON / form bodies are **not** compiler work.
 
 ---
 
 ## Non-goals (this branch)
 
 - General macros / attribute macros  
-- Compiler-hardcoded `Request<T>` / `Response<T>`  
+- Compiler-hardcoded `Request<T>` / `Response<T>` / JSON / form codecs  
 - Lang-items for path matching  
 - Shipping handbook / capabilities / product `examples/http` rewrite  
 - First-class function values for a runtime route table  
@@ -64,16 +67,19 @@ type MyRouter {
 }
 
 fn __MyRouter_route_0() -> String { "Home" }
-fn __MyRouter_route_1(userId: String) -> String { "user {userId}" }
+fn __MyRouter_route_1(userId: Int64) -> String { "user {userId}" }
 ```
 
-Module must import `Request`, `Response`, `ok`, `notFound` (no ambient inject).
+Module must import `Request`, `Response`, `ok`, `notFound`, and `badRequest`
+if any `Int64` capture exists (no ambient inject).
 
 | Choice | Why |
 |--------|-----|
 | Free-fn handlers, not private methods | Private methods cannot be called via `Type().m()` from another method |
 | No Array table field | Ladder is the table (`emit-c` shows it) |
-| Exact path or **trailing** `:capture` only | Capture formal must be `String` |
+| Exact path or **segment captures** | `:name` in any segment; `__routeSegments` helper |
+| Capture types `String` \| `Int64` | Parse via generated `__routeParseInt64`; fail → 400 |
+| Optional `req: Request` formal | Passed through; not a path capture |
 | `route(req: Request) -> Response` | Dispatcher takes the request; only `.method` / `.path` |
 | String → `ok(…, "text/plain")` | Framework wrap so clauses can return text |
 | `-> Response` | Pass through (status / headers / body) |
@@ -92,8 +98,9 @@ Module must import `Request`, `Response`, `ok`, `notFound` (no ambient inject).
 
 ```bash
 cargo run -p thoxa -- run scratch/router_clause.thx   # local; scratch/ gitignored
-# curl -s localhost:9092/   /home   /health   /user/42
+# curl -s localhost:9092/   /home   /health   /user/42   /user/42/edit
 # curl -s -X PUT localhost:9092/user/42
+# curl -s localhost:9092/user/abc      # 400
 # curl -s localhost:9092/nope          # 404
 cargo run -p thoxa -- emit-c scratch/router_clause.thx
 # → target/thoxa/c/router_clause.c
@@ -115,8 +122,10 @@ cargo run -p thoxa -- emit-c scratch/router_clause.thx
 | 7 Typed miss (`May<String>`) | **done** | `Has` / `Not`; user imports Fallible |
 | 8 `route(req: Request)` | **done** | reads `.method` / `.path` only |
 | 9 String/`Response` wrap | **done** | `ok` / pass-through / `notFound` |
-| 10 Path-match helper in std | **pending** | only if Bytes ladder hurts |
-| 11 Decision: keep / reshape / toss | **open** | not a freeze yet |
+| 10 `Int64` + multi-segment + `req` | **done** | generated helpers; 400 on bad int |
+| 11 Path-match helper in std | **n/a** | generated `__routeSegments` instead |
+| 12 Compiler surface | **done** | ready to merge when wanted |
+| 13 Crema dogfood / freeze | **open** | not compiler; after merge |
 
 ---
 
@@ -133,12 +142,11 @@ METHOD string_lit [ ( params ) ] [ -> type ] block
 
 ---
 
-## Open questions / next experiment slices
+## Open questions / next (not compiler)
 
-1. `Int64` captures / multi-segment `:id`  
-2. Optional request formal (still userland types)  
-3. Crema dogfood one route (example-only)  
-4. Promote freeze only if keep  
+1. Crema dogfood one route (example-only; after merge)  
+2. Promote freeze + handbook only if keep as product  
+3. JSON / form / `Request<T>` — library later, not this desugar  
 
 ---
 
@@ -152,7 +160,9 @@ METHOD string_lit [ ( params ) ] [ -> type ] block
 - `34c2170` typed miss `May<String>`  
 - `7cded8e` scratch is one-file HTTP demo  
 - `cff31be` `route(req: Request)`  
-- *(this slice)* String/`Response` wrap + `notFound` miss  
+- `fce7561` String/`Response` wrap + `notFound` miss  
+- `07aa788` route-clause mismatch mentions Response  
+- *(this slice)* Int64 + multi-segment + optional `req`  
 
 Base: master at FCF park note (`969b6d7` lineage).
 

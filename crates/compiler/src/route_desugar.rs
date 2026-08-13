@@ -8,9 +8,13 @@
 //! - clause returns `String` (or omits `->`) → `ok(Bytes.fromString(s), "text/plain")`
 //! - clause returns `Response` → pass through
 //! - miss → `notFound()`
+//! - `Int64` capture parse fail → `badRequest("invalid {name}")`
 //!
-//! Compiler only names userland `Request` (`.method` / `.path`), `Response`,
-//! and the wrap/miss helpers `ok` / `notFound` (typically `std/Http`).
+//! Optional formal `req: Request` is passed through. Path captures (`String` or
+//! `Int64`) may appear in any segment (`/user/:userId/edit`).
+//!
+//! Compiler only names userland `Request` / `Response` / `ok` / `notFound` /
+//! `badRequest`. Segment split and int parse are generated helpers.
 //!
 //! Branch `experiment/router-clause-syntax`. No HTTP lang-items.
 
@@ -18,6 +22,11 @@ use crate::ast::*;
 use crate::error::{Error, Result};
 use crate::loader::Package;
 use crate::span::Span;
+use std::collections::HashSet;
+
+const SEGMENTS_FN: &str = "__routeSegments";
+const PARSE_INT_FN: &str = "__routeParseInt64";
+const PARSE_INT_TY: &str = "__RouteInt64";
 
 /// Rewrite every type that has `routes` into handler free functions plus
 /// `route(req: Request) -> Response` on the type. Clears `routes`.
@@ -31,10 +40,26 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
 /// Public for LSP resolve / tests (also invoked from package lower).
 pub fn desugar_module(module: &mut Module) -> Result<()> {
     let mut extra_fns: Vec<Function> = Vec::new();
+    let mut extra_types: Vec<TypeDef> = Vec::new();
+    let mut need_segments = false;
+    let mut need_parse_int = false;
     for item in &mut module.items {
         if let Item::Type(td) = item {
-            extra_fns.extend(desugar_type(td)?);
+            let (fns, flags) = desugar_type(td)?;
+            extra_fns.extend(fns);
+            need_segments |= flags.need_segments;
+            need_parse_int |= flags.need_parse_int;
         }
+    }
+    if need_parse_int {
+        extra_types.push(parse_int_type());
+        extra_fns.push(parse_int_fn());
+    }
+    if need_segments {
+        extra_fns.push(segments_fn());
+    }
+    for t in extra_types {
+        module.items.push(Item::Type(t));
     }
     for f in extra_fns {
         module.items.push(Item::Function(f));
@@ -42,10 +67,19 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
     Ok(())
 }
 
+struct DesugarFlags {
+    need_segments: bool,
+    need_parse_int: bool,
+}
+
 /// Returns synthetic free functions for handlers (to append to the module).
-fn desugar_type(td: &mut TypeDef) -> Result<Vec<Function>> {
+fn desugar_type(td: &mut TypeDef) -> Result<(Vec<Function>, DesugarFlags)> {
+    let empty = DesugarFlags {
+        need_segments: false,
+        need_parse_int: false,
+    };
     if td.routes.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), empty));
     }
     if td.union_members.is_some() {
         return Err(Error::at(
@@ -72,11 +106,18 @@ fn desugar_type(td: &mut TypeDef) -> Result<Vec<Function>> {
     let type_name = td.name.clone();
     let mut handlers: Vec<HandlerMeta> = Vec::new();
     let mut free_fns: Vec<Function> = Vec::new();
+    let mut flags = empty;
 
     for (i, r) in routes.into_iter().enumerate() {
         let handler_name = format!("__{type_name}_route_{i}");
         let pat = analyze_pattern(&r.pattern, r.pattern_span)?;
-        validate_formals(&r, &pat)?;
+        let slots = validate_formals(&r, &pat)?;
+        if matches!(pat, PathPattern::Segments(_)) {
+            flags.need_segments = true;
+        }
+        if slots.iter().any(|s| matches!(s, CallSlot::Cap { ty: CapTy::Int64, .. })) {
+            flags.need_parse_int = true;
+        }
 
         let ret_kind = classify_return(&r)?;
         let ret_ty = match ret_kind {
@@ -90,6 +131,7 @@ fn desugar_type(td: &mut TypeDef) -> Result<Vec<Function>> {
             handler_name: handler_name.clone(),
             def_span: r.method_span,
             ret: ret_kind,
+            slots,
         });
 
         free_fns.push(Function {
@@ -107,16 +149,16 @@ fn desugar_type(td: &mut TypeDef) -> Result<Vec<Function>> {
         .map(|h| h.def_span)
         .unwrap_or(td.name_span);
     td.methods.push(build_route_method(&handlers, route_span)?);
-    Ok(free_fns)
+    Ok((free_fns, flags))
 }
 
 struct HandlerMeta {
     http_method: String,
     pattern: PathPattern,
     handler_name: String,
-    /// Source span of the HTTP method token (for go-to-def / outline).
     def_span: Span,
     ret: HandlerRet,
+    slots: Vec<CallSlot>,
 }
 
 #[derive(Clone, Copy)]
@@ -125,6 +167,18 @@ enum HandlerRet {
     Text,
     /// `-> Response` — return the handler value as-is.
     Response,
+}
+
+#[derive(Clone)]
+enum CallSlot {
+    Req,
+    Cap { name: String, ty: CapTy, seg: usize },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CapTy {
+    String,
+    Int64,
 }
 
 fn classify_return(r: &RouteClause) -> Result<HandlerRet> {
@@ -141,11 +195,32 @@ fn classify_return(r: &RouteClause) -> Result<HandlerRet> {
     }
 }
 
+#[derive(Clone)]
 enum PathPattern {
-    /// Full path equality (`"/home"`).
     Exact(String),
-    /// Literal prefix + final `:name` capture (`"/user/:userId"` → prefix `/user/`).
-    TrailingCapture { prefix: String, capture: String },
+    Segments(Vec<Seg>),
+}
+
+#[derive(Clone)]
+enum Seg {
+    Lit(String),
+    Capture(String),
+}
+
+impl PathPattern {
+    fn captures(&self) -> Vec<(usize, String)> {
+        match self {
+            PathPattern::Exact(_) => Vec::new(),
+            PathPattern::Segments(segs) => segs
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| match s {
+                    Seg::Capture(n) => Some((i, n.clone())),
+                    Seg::Lit(_) => None,
+                })
+                .collect(),
+        }
+    }
 }
 
 fn analyze_pattern(pattern: &str, span: Span) -> Result<PathPattern> {
@@ -153,14 +228,13 @@ fn analyze_pattern(pattern: &str, span: Span) -> Result<PathPattern> {
         return Err(Error::at("route pattern must not be empty", span));
     }
     if !pattern.starts_with('/') {
-        return Err(Error::at(
-            "route pattern must start with `/`",
-            span,
-        ));
+        return Err(Error::at("route pattern must start with `/`", span));
     }
-    let segs: Vec<&str> = pattern.split('/').filter(|s| !s.is_empty()).collect();
-    let mut capture_idxs: Vec<usize> = Vec::new();
-    for (i, s) in segs.iter().enumerate() {
+    let raw: Vec<&str> = pattern.split('/').filter(|s| !s.is_empty()).collect();
+    let mut segs: Vec<Seg> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut any_cap = false;
+    for s in &raw {
         if let Some(rest) = s.strip_prefix(':') {
             if rest.is_empty() {
                 return Err(Error::at("empty path capture name in pattern", span));
@@ -174,77 +248,96 @@ fn analyze_pattern(pattern: &str, span: Span) -> Result<PathPattern> {
                     span,
                 ));
             }
-            capture_idxs.push(i);
+            if !seen.insert(rest.to_string()) {
+                return Err(Error::at(
+                    format!("duplicate path capture `:{rest}`"),
+                    span,
+                ));
+            }
+            segs.push(Seg::Capture(rest.to_string()));
+            any_cap = true;
         } else if s.contains(':') {
             return Err(Error::at(
                 "invalid `:` in path segment (use `:name` for a capture)",
                 span,
             ));
+        } else {
+            segs.push(Seg::Lit((*s).to_string()));
         }
     }
-    if capture_idxs.is_empty() {
-        return Ok(PathPattern::Exact(pattern.to_string()));
-    }
-    if capture_idxs.len() != 1 || capture_idxs[0] != segs.len() - 1 {
-        return Err(Error::at(
-            "this experiment only supports exact paths or a single `:capture` \
-             as the final segment (e.g. `/user/:userId`)",
-            span,
-        ));
-    }
-    let capture = segs[segs.len() - 1][1..].to_string();
-    let prefix = if segs.len() == 1 {
-        "/".to_string()
+    if any_cap {
+        Ok(PathPattern::Segments(segs))
     } else {
-        format!("/{}/", segs[..segs.len() - 1].join("/"))
-    };
-    Ok(PathPattern::TrailingCapture { prefix, capture })
+        Ok(PathPattern::Exact(pattern.to_string()))
+    }
 }
 
-fn validate_formals(r: &RouteClause, pat: &PathPattern) -> Result<()> {
-    match pat {
-        PathPattern::Exact(_) => {
-            if !r.params.is_empty() {
+fn validate_formals(r: &RouteClause, pat: &PathPattern) -> Result<Vec<CallSlot>> {
+    let caps = pat.captures();
+    let cap_names: HashSet<&str> = caps.iter().map(|(_, n)| n.as_str()).collect();
+    let mut used_caps: HashSet<&str> = HashSet::new();
+    let mut have_req = false;
+    let mut slots: Vec<CallSlot> = Vec::new();
+
+    for p in &r.params {
+        if p.ty.name == "Request" && !cap_names.contains(p.name.as_str()) {
+            if have_req {
                 return Err(Error::at(
-                    "exact path route cannot take path-capture parameters",
-                    r.method_span,
+                    "route clause can take at most one `Request` formal",
+                    p.name_span,
                 ));
             }
+            have_req = true;
+            slots.push(CallSlot::Req);
+            continue;
         }
-        PathPattern::TrailingCapture { capture, .. } => {
-            if r.params.len() != 1 {
+        let Some(&(seg, _)) = caps.iter().find(|(_, n)| n == &p.name) else {
+            return Err(Error::at(
+                format!(
+                    "parameter `{}` is not a path capture and is not `Request`",
+                    p.name
+                ),
+                p.name_span,
+            ));
+        };
+        if !used_caps.insert(p.name.as_str()) {
+            return Err(Error::at(
+                format!("duplicate capture parameter `{}`", p.name),
+                p.name_span,
+            ));
+        }
+        let ty = match p.ty.name.as_str() {
+            "String" => CapTy::String,
+            "Int64" => CapTy::Int64,
+            other => {
                 return Err(Error::at(
                     format!(
-                        "trailing-capture route must have exactly one parameter \
-                         named `{capture}`"
-                    ),
-                    r.method_span,
-                ));
-            }
-            let p = &r.params[0];
-            if p.name != *capture {
-                return Err(Error::at(
-                    format!(
-                        "parameter `{}` must match path capture `:{capture}`",
+                        "path capture `{0}` must be String or Int64 (got `{other}`)",
                         p.name
                     ),
                     p.name_span,
                 ));
             }
-            if p.ty.name != "String" {
-                return Err(Error::at(
-                    "path capture parameter must be `String` in this experiment \
-                     (no Int64 parse yet)",
-                    p.name_span,
-                ));
-            }
+        };
+        slots.push(CallSlot::Cap {
+            name: p.name.clone(),
+            ty,
+            seg,
+        });
+    }
+
+    for (_, n) in &caps {
+        if !used_caps.contains(n.as_str()) {
+            return Err(Error::at(
+                format!("path capture `:{n}` needs a matching parameter `{n}`"),
+                r.method_span,
+            ));
         }
     }
-    Ok(())
+    Ok(slots)
 }
 
 fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Method> {
-    // Nested ifs with early return; tail is `notFound()`.
     let mut items: Vec<BlockItem> = Vec::new();
     for h in handlers {
         items.push(BlockItem::Expr(handler_try_if(h)?));
@@ -273,138 +366,117 @@ fn handler_try_if(h: &HandlerMeta) -> Result<Expr> {
     let inner = match &h.pattern {
         PathPattern::Exact(pat) => {
             let path_ok = bin(BinaryOp::Eq, field(name("req"), "path"), str_lit(pat));
-            let call = return_handler_call(&h.handler_name, vec![], h.ret);
+            let call = return_handler_call(&h.handler_name, call_args(&h.slots), h.ret);
             if_expr(path_ok, block_stmts(vec![BlockItem::Expr(call)]), None)
         }
-        PathPattern::TrailingCapture { prefix, capture } => {
-            let _ = capture; // name already validated against formal
-            trailing_capture_block(&h.handler_name, prefix, h.ret)?
-        }
+        PathPattern::Segments(segs) => segments_block(h, segs)?,
     };
+    // Statement `if` (not a tail): then contains `return`, else is absent.
     Ok(if_expr(
         method_ok,
-        block_expr(inner),
+        block_stmts(vec![BlockItem::Expr(inner)]),
         None,
     ))
 }
 
-fn trailing_capture_block(
-    handler_name: &str,
-    prefix: &str,
-    ret: HandlerRet,
-) -> Result<Expr> {
-    let path_b_init = method_call(
-        name("Bytes"),
-        "fromString",
-        vec![Arg::Pos(field(name("req"), "path"))],
-    );
-    let pre_b_init = method_call(name("Bytes"), "fromString", vec![Arg::Pos(str_lit(prefix))]);
+fn call_args(slots: &[CallSlot]) -> Vec<Arg> {
+    slots
+        .iter()
+        .map(|s| match s {
+            CallSlot::Req => Arg::Pos(name("req")),
+            CallSlot::Cap {
+                name: n,
+                ty: CapTy::Int64,
+                ..
+            } => Arg::Pos(name(n)),
+            CallSlot::Cap { seg, .. } => Arg::Pos(index(name("segs"), int_lit(*seg as i64))),
+        })
+        .collect()
+}
 
-    let mut items = vec![
-        let_bind("pathB", false, path_b_init),
-        let_bind("preB", false, pre_b_init),
-    ];
+fn segments_block(h: &HandlerMeta, segs: &[Seg]) -> Result<Expr> {
+    let n = segs.len() as i64;
+    // All `if`s here are statements (no tail) so a missing else is Void, not
+    // a Response-vs-Void lub. Hits `return` from the then branch.
+    let mut core = return_handler_call(&h.handler_name, call_args(&h.slots), h.ret);
 
-    // if preB.count <= pathB.count { … }
-    let len_ok = bin(
-        BinaryOp::Le,
-        field(name("preB"), "count"),
-        field(name("pathB"), "count"),
-    );
-
-    let mut inner_items = vec![
-        let_bind("ok", true, bool_lit(true)),
-        let_bind("i", true, int_lit(0)),
-    ];
-
-    // loop { if i >= preB.count { break }; if pathB.get(i) != preB.get(i) { ok = false; break }; i = i + 1 }
-    let loop_body = Block {
-        items: vec![
-            BlockItem::Expr(if_expr(
-                bin(
-                    BinaryOp::Ge,
-                    name("i"),
-                    field(name("preB"), "count"),
-                ),
-                block_stmts(vec![BlockItem::Expr(Expr {
-                    kind: ExprKind::Break,
-                    span: dummy(),
-                })]),
-                None,
-            )),
-            BlockItem::Expr(if_expr(
-                bin(
-                    BinaryOp::Ne,
-                    method_call(name("pathB"), "get", vec![Arg::Pos(name("i"))]),
-                    method_call(name("preB"), "get", vec![Arg::Pos(name("i"))]),
-                ),
-                block_stmts(vec![
-                    BlockItem::Assign {
-                        target: AssignTarget::Name {
-                            name: "ok".into(),
-                            name_span: dummy(),
-                        },
-                        value: bool_lit(false),
-                    },
-                    BlockItem::Expr(Expr {
-                        kind: ExprKind::Break,
-                        span: dummy(),
-                    }),
-                ]),
-                None,
-            )),
-            BlockItem::Assign {
-                target: AssignTarget::Name {
-                    name: "i".into(),
-                    name_span: dummy(),
-                },
-                value: bin(BinaryOp::Add, name("i"), int_lit(1)),
-            },
-        ],
-        tail: None,
-        span: dummy(),
-    };
-    inner_items.push(BlockItem::Expr(Expr {
-        kind: ExprKind::Loop {
-            body: loop_body,
-        },
-        span: dummy(),
-    }));
-
-    // if ok { let rest = pathB.slice(preB.count, pathB.count).toString(); return Type().handler(rest) }
-    let slice = method_call(
-        name("pathB"),
-        "slice",
-        vec![
-            Arg::Pos(field(name("preB"), "count")),
-            Arg::Pos(field(name("pathB"), "count")),
-        ],
-    );
-    let rest_init = method_call(slice, "toString", vec![]);
-    let call = return_handler_call(handler_name, vec![Arg::Pos(name("rest"))], ret);
-    inner_items.push(BlockItem::Expr(if_expr(
-        name("ok"),
-        Block {
-            items: vec![let_bind("rest", false, rest_init)],
-            tail: Some(Box::new(call)),
-            span: dummy(),
-        },
-        None,
-    )));
-
-    items.push(BlockItem::Expr(if_expr(
-        len_ok,
-        Block {
-            items: inner_items,
+    for slot in h.slots.iter().rev() {
+        let CallSlot::Cap {
+            name: cap,
+            ty: CapTy::Int64,
+            seg,
+        } = slot
+        else {
+            continue;
+        };
+        let parsed = call(
+            PARSE_INT_FN,
+            vec![Arg::Pos(index(name("segs"), int_lit(*seg as i64)))],
+        );
+        let then = Block {
+            items: vec![
+                let_bind(cap, false, field(name("parsed"), "value")),
+                BlockItem::Expr(core),
+            ],
             tail: None,
             span: dummy(),
-        },
-        None,
-    )));
+        };
+        let else_b = block_stmts(vec![BlockItem::Expr(Expr {
+            kind: ExprKind::Return {
+                value: Some(Box::new(call(
+                    "badRequest",
+                    vec![Arg::Pos(str_lit(&format!("invalid {cap}")))],
+                ))),
+            },
+            span: dummy(),
+        })]);
+        core = Expr {
+            kind: ExprKind::Block(Block {
+                items: vec![
+                    let_bind("parsed", false, parsed),
+                    BlockItem::Expr(if_expr(
+                        field(name("parsed"), "ok"),
+                        then,
+                        Some(else_b),
+                    )),
+                ],
+                tail: None,
+                span: dummy(),
+            }),
+            span: dummy(),
+        };
+    }
+
+    for (i, seg) in segs.iter().enumerate().rev() {
+        let Seg::Lit(lit) = seg else { continue };
+        let ok = bin(
+            BinaryOp::Eq,
+            index(name("segs"), int_lit(i as i64)),
+            str_lit(lit),
+        );
+        core = if_expr(ok, as_stmt_block(core), None);
+    }
+
+    let count_ok = bin(
+        BinaryOp::Eq,
+        field(name("segs"), "count"),
+        int_lit(n),
+    );
+    let after_count = if_expr(count_ok, as_stmt_block(core), None);
 
     Ok(Expr {
         kind: ExprKind::Block(Block {
-            items,
+            items: vec![
+                let_bind(
+                    "segs",
+                    false,
+                    call(
+                        SEGMENTS_FN,
+                        vec![Arg::Pos(field(name("req"), "path"))],
+                    ),
+                ),
+                BlockItem::Expr(after_count),
+            ],
             tail: None,
             span: dummy(),
         }),
@@ -412,17 +484,19 @@ fn trailing_capture_block(
     })
 }
 
+fn as_stmt_block(e: Expr) -> Block {
+    match e.kind {
+        ExprKind::Block(b) => b,
+        _ => block_stmts(vec![BlockItem::Expr(e)]),
+    }
+}
+
 fn return_handler_call(handler: &str, args: Vec<Arg>, ret: HandlerRet) -> Expr {
     let inner = call(handler, args);
     let value = match ret {
         HandlerRet::Response => inner,
         HandlerRet::Text => {
-            // ok(Bytes.fromString(handler(…)), "text/plain")
-            let bytes = method_call(
-                name("Bytes"),
-                "fromString",
-                vec![Arg::Pos(inner)],
-            );
+            let bytes = method_call(name("Bytes"), "fromString", vec![Arg::Pos(inner)]);
             call(
                 "ok",
                 vec![Arg::Pos(bytes), Arg::Pos(str_lit("text/plain"))],
@@ -437,6 +511,272 @@ fn return_handler_call(handler: &str, args: Vec<Arg>, ret: HandlerRet) -> Expr {
     }
 }
 
+// ── Generated helpers ───────────────────────────────────────────────────────
+
+fn parse_int_type() -> TypeDef {
+    TypeDef {
+        exported: false,
+        name: PARSE_INT_TY.into(),
+        name_span: dummy(),
+        type_params: vec![],
+        params: vec![param("ok", ty_bool()), param("value", ty_int64())],
+        fields: vec![],
+        methods: vec![],
+        routes: vec![],
+        union_members: None,
+    }
+}
+
+fn parse_int_ctor(ok: Expr, value: Expr) -> Expr {
+    call(
+        PARSE_INT_TY,
+        vec![
+            Arg::Named {
+                name: "ok".into(),
+                name_span: dummy(),
+                value: ok,
+            },
+            Arg::Named {
+                name: "value".into(),
+                name_span: dummy(),
+                value,
+            },
+        ],
+    )
+}
+
+fn parse_int_fn() -> Function {
+    // Digit walk; empty / non-digits → ok: false. Optional leading '-'.
+    let fail = parse_int_ctor(bool_lit(false), int_lit(0));
+    let ok_val = parse_int_ctor(
+        bool_lit(true),
+        bin(BinaryOp::Mul, name("n"), name("sign")),
+    );
+
+    let loop_body = Block {
+        items: vec![
+            BlockItem::Expr(if_expr(
+                un(UnaryOp::Not, name("good")),
+                block_stmts(vec![BlockItem::Expr(brk())]),
+                None,
+            )),
+            BlockItem::Expr(if_expr(
+                bin(BinaryOp::Ge, name("i"), field(name("b"), "count")),
+                block_stmts(vec![BlockItem::Expr(brk())]),
+                None,
+            )),
+            let_bind(
+                "c",
+                false,
+                method_call(name("b"), "get", vec![Arg::Pos(name("i"))]),
+            ),
+            BlockItem::Expr(if_expr(
+                bin(BinaryOp::Lt, name("c"), int_lit(48)),
+                block_stmts(vec![assign("good", bool_lit(false))]),
+                Some(block_stmts(vec![BlockItem::Expr(if_expr(
+                    bin(BinaryOp::Gt, name("c"), int_lit(57)),
+                    block_stmts(vec![assign("good", bool_lit(false))]),
+                    Some(block_stmts(vec![
+                        assign(
+                            "n",
+                            bin(
+                                BinaryOp::Add,
+                                bin(BinaryOp::Mul, name("n"), int_lit(10)),
+                                bin(BinaryOp::Sub, name("c"), int_lit(48)),
+                            ),
+                        ),
+                        assign("i", bin(BinaryOp::Add, name("i"), int_lit(1))),
+                    ])),
+                ))])),
+            )),
+        ],
+        tail: None,
+        span: dummy(),
+    };
+
+    let after_sign = Block {
+        items: vec![
+            BlockItem::Expr(Expr {
+                kind: ExprKind::Loop { body: loop_body },
+                span: dummy(),
+            }),
+        ],
+        tail: Some(Box::new(if_expr(
+            name("good"),
+            block_expr(ok_val),
+            Some(block_expr(fail.clone())),
+        ))),
+        span: dummy(),
+    };
+
+    let minus_body = Block {
+        items: vec![
+            assign("sign", int_lit(-1)),
+            assign("i", int_lit(1)),
+        ],
+        tail: Some(Box::new(if_expr(
+            bin(BinaryOp::Eq, field(name("b"), "count"), int_lit(1)),
+            block_stmts(vec![assign("good", bool_lit(false))]),
+            None,
+        ))),
+        span: dummy(),
+    };
+
+    let nonempty = Block {
+        items: vec![
+            let_bind("i", true, int_lit(0)),
+            let_bind("sign", true, int_lit(1)),
+            let_bind("n", true, int_lit(0)),
+            let_bind("good", true, bool_lit(true)),
+            BlockItem::Expr(if_expr(
+                bin(
+                    BinaryOp::Eq,
+                    method_call(name("b"), "get", vec![Arg::Pos(int_lit(0))]),
+                    int_lit(45),
+                ),
+                minus_body,
+                None,
+            )),
+        ],
+        tail: Some(Box::new(Expr {
+            kind: ExprKind::Block(after_sign),
+            span: dummy(),
+        })),
+        span: dummy(),
+    };
+
+    let body = Block {
+        items: vec![let_bind(
+            "b",
+            false,
+            method_call(name("Bytes"), "fromString", vec![Arg::Pos(name("s"))]),
+        )],
+        tail: Some(Box::new(if_expr(
+            bin(BinaryOp::Eq, field(name("b"), "count"), int_lit(0)),
+            block_expr(fail),
+            Some(nonempty),
+        ))),
+        span: dummy(),
+    };
+
+    Function {
+        exported: false,
+        name: PARSE_INT_FN.into(),
+        name_span: dummy(),
+        params: vec![param("s", ty_string())],
+        return_type: Some(ty_named(PARSE_INT_TY)),
+        body,
+    }
+}
+
+fn segments_fn() -> Function {
+    let slash = int_lit(47);
+    let loop_body = Block {
+        items: vec![
+            BlockItem::Expr(if_expr(
+                bin(BinaryOp::Ge, name("i"), name("n")),
+                block_stmts(vec![BlockItem::Expr(brk())]),
+                None,
+            )),
+            BlockItem::Expr(if_expr(
+                bin(
+                    BinaryOp::Eq,
+                    method_call(name("data"), "get", vec![Arg::Pos(name("i"))]),
+                    slash,
+                ),
+                block_stmts(vec![
+                    BlockItem::Expr(if_expr(
+                        bin(BinaryOp::Gt, name("i"), name("start")),
+                        block_stmts(vec![assign(
+                            "segs",
+                            method_call(
+                                name("segs"),
+                                "append",
+                                vec![Arg::Pos(method_call(
+                                    method_call(
+                                        name("data"),
+                                        "slice",
+                                        vec![Arg::Pos(name("start")), Arg::Pos(name("i"))],
+                                    ),
+                                    "toString",
+                                    vec![],
+                                ))],
+                            ),
+                        )]),
+                        None,
+                    )),
+                    assign("start", bin(BinaryOp::Add, name("i"), int_lit(1))),
+                ]),
+                None,
+            )),
+            assign("i", bin(BinaryOp::Add, name("i"), int_lit(1))),
+        ],
+        tail: None,
+        span: dummy(),
+    };
+
+    let body = Block {
+        items: vec![
+            let_bind(
+                "data",
+                false,
+                method_call(
+                    name("Bytes"),
+                    "fromString",
+                    vec![Arg::Pos(name("path"))],
+                ),
+            ),
+            let_bind_ty(
+                "segs",
+                true,
+                ty_array(ty_string()),
+                Expr {
+                    kind: ExprKind::ArrayLit(vec![]),
+                    span: dummy(),
+                },
+            ),
+            let_bind("start", true, int_lit(0)),
+            let_bind("i", true, int_lit(0)),
+            let_bind("n", false, field(name("data"), "count")),
+            BlockItem::Expr(Expr {
+                kind: ExprKind::Loop { body: loop_body },
+                span: dummy(),
+            }),
+            BlockItem::Expr(if_expr(
+                bin(BinaryOp::Lt, name("start"), name("n")),
+                block_stmts(vec![assign(
+                    "segs",
+                    method_call(
+                        name("segs"),
+                        "append",
+                        vec![Arg::Pos(method_call(
+                            method_call(
+                                name("data"),
+                                "slice",
+                                vec![Arg::Pos(name("start")), Arg::Pos(name("n"))],
+                            ),
+                            "toString",
+                            vec![],
+                        ))],
+                    ),
+                )]),
+                None,
+            )),
+        ],
+        tail: Some(Box::new(name("segs"))),
+        span: dummy(),
+    };
+
+    Function {
+        exported: false,
+        name: SEGMENTS_FN.into(),
+        name_span: dummy(),
+        params: vec![param("path", ty_string())],
+        return_type: Some(ty_array(ty_string())),
+        body,
+    }
+}
+
 // ── AST builders ────────────────────────────────────────────────────────────
 
 fn dummy() -> Span {
@@ -444,19 +784,28 @@ fn dummy() -> Span {
 }
 
 fn ty_string() -> TypeExpr {
-    TypeExpr {
-        name: "String".into(),
-        args: vec![],
-        span: dummy(),
-        lit: None,
-        mark: None,
-        union_members: None,
-    }
+    ty_named("String")
 }
 
 fn ty_request() -> TypeExpr {
+    ty_named("Request")
+}
+
+fn ty_response() -> TypeExpr {
+    ty_named("Response")
+}
+
+fn ty_bool() -> TypeExpr {
+    ty_named("Bool")
+}
+
+fn ty_int64() -> TypeExpr {
+    ty_named("Int64")
+}
+
+fn ty_named(name: &str) -> TypeExpr {
     TypeExpr {
-        name: "Request".into(),
+        name: name.into(),
         args: vec![],
         span: dummy(),
         lit: None,
@@ -465,10 +814,10 @@ fn ty_request() -> TypeExpr {
     }
 }
 
-fn ty_response() -> TypeExpr {
+fn ty_array(elem: TypeExpr) -> TypeExpr {
     TypeExpr {
-        name: "Response".into(),
-        args: vec![],
+        name: "Array".into(),
+        args: vec![TypeArg::Type(elem)],
         span: dummy(),
         lit: None,
         mark: None,
@@ -535,12 +884,32 @@ fn field(base: Expr, fname: &str) -> Expr {
     }
 }
 
+fn index(base: Expr, i: Expr) -> Expr {
+    Expr {
+        kind: ExprKind::Index {
+            base: Box::new(base),
+            index: Box::new(i),
+        },
+        span: dummy(),
+    }
+}
+
 fn bin(op: BinaryOp, left: Expr, right: Expr) -> Expr {
     Expr {
         kind: ExprKind::Binary {
             op,
             left: Box::new(left),
             right: Box::new(right),
+        },
+        span: dummy(),
+    }
+}
+
+fn un(op: UnaryOp, expr: Expr) -> Expr {
+    Expr {
+        kind: ExprKind::Unary {
+            op,
+            expr: Box::new(expr),
         },
         span: dummy(),
     }
@@ -558,6 +927,16 @@ fn method_call(receiver: Expr, method: &str, args: Vec<Arg>) -> Expr {
     }
 }
 
+fn let_bind_ty(name: &str, mutable: bool, ty: TypeExpr, init: Expr) -> BlockItem {
+    BlockItem::Let {
+        name: name.into(),
+        name_span: dummy(),
+        mutable,
+        ty: Some(ty),
+        init,
+    }
+}
+
 fn let_bind(name: &str, mutable: bool, init: Expr) -> BlockItem {
     BlockItem::Let {
         name: name.into(),
@@ -565,6 +944,23 @@ fn let_bind(name: &str, mutable: bool, init: Expr) -> BlockItem {
         mutable,
         ty: None,
         init,
+    }
+}
+
+fn assign(name: &str, value: Expr) -> BlockItem {
+    BlockItem::Assign {
+        target: AssignTarget::Name {
+            name: name.into(),
+            name_span: dummy(),
+        },
+        value,
+    }
+}
+
+fn brk() -> Expr {
+    Expr {
+        kind: ExprKind::Break,
+        span: dummy(),
     }
 }
 
@@ -608,6 +1004,12 @@ mod tests {
         module
     }
 
+    fn parse_desugar_err(src: &str) -> String {
+        let tokens = Lexer::new(src).tokenize().unwrap();
+        let mut module = Parser::new(tokens).parse_module().unwrap();
+        desugar_module(&mut module).unwrap_err().to_string()
+    }
+
     #[test]
     fn desugar_exact_and_trailing_capture() {
         let module = parse_desugar(
@@ -645,6 +1047,13 @@ mod tests {
             })
             .collect();
         assert_eq!(free, vec!["__MyRouter_route_0", "__MyRouter_route_1"]);
+        assert!(
+            module
+                .items
+                .iter()
+                .any(|i| matches!(i, Item::Function(f) if f.name == SEGMENTS_FN)),
+            "expected {SEGMENTS_FN}"
+        );
     }
 
     #[test]
@@ -676,5 +1085,72 @@ mod tests {
             })
             .collect();
         assert_eq!(handlers, vec![Some("String"), Some("Response")]);
+    }
+
+    #[test]
+    fn desugar_int64_and_mid_path_and_req() {
+        let module = parse_desugar(
+            r#"
+            type MyRouter {
+                GET "/home" (req: Request) { "Home" }
+                GET "/user/:userId" (userId: Int64) -> String { "u" }
+                GET "/user/:userId/edit" (req: Request, userId: Int64) -> String { "e" }
+            }
+            fn main() -> Int64 { 0 }
+        "#,
+        );
+        assert!(
+            module
+                .items
+                .iter()
+                .any(|i| matches!(i, Item::Type(t) if t.name == PARSE_INT_TY)),
+            "expected {PARSE_INT_TY}"
+        );
+        assert!(
+            module
+                .items
+                .iter()
+                .any(|i| matches!(i, Item::Function(f) if f.name == PARSE_INT_FN)),
+            "expected {PARSE_INT_FN}"
+        );
+        let edit = module
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Function(f) if f.name == "__MyRouter_route_2" => Some(f),
+                _ => None,
+            })
+            .expect("edit handler");
+        assert_eq!(edit.params.len(), 2);
+        assert_eq!(edit.params[0].name, "req");
+        assert_eq!(edit.params[0].ty.name, "Request");
+        assert_eq!(edit.params[1].name, "userId");
+        assert_eq!(edit.params[1].ty.name, "Int64");
+    }
+
+    #[test]
+    fn desugar_rejects_unknown_capture_type() {
+        let err = parse_desugar_err(
+            r#"
+            type MyRouter {
+                GET "/user/:userId" (userId: Bool) -> String { "x" }
+            }
+            fn main() -> Int64 { 0 }
+        "#,
+        );
+        assert!(err.contains("String or Int64"), "{err}");
+    }
+
+    #[test]
+    fn desugar_rejects_missing_capture_param() {
+        let err = parse_desugar_err(
+            r#"
+            type MyRouter {
+                GET "/user/:userId" { "x" }
+            }
+            fn main() -> Int64 { 0 }
+        "#,
+        );
+        assert!(err.contains("userId"), "{err}");
     }
 }

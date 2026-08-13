@@ -1056,6 +1056,32 @@ fn main() -> Int64 {
     }
 
     #[test]
+    fn route_clause_int64_req_and_mid_path_typecheck() {
+        let src = r#"
+type Request(method: String, path: String)
+type Response(status: Int64)
+fn ok(body!: Bytes, contentType!: String) -> Response { Response(status: 200) }
+fn notFound() -> Response { Response(status: 404) }
+fn badRequest(msg!: String) -> Response { Response(status: 400) }
+type Router {
+    GET "/home" (req: Request) { "x" }
+    GET "/user/:userId" (userId: Int64) -> String { "u" }
+    GET "/user/:userId/edit" (req: Request, userId: Int64) -> String { "e" }
+}
+fn main() -> Int64 {
+    let r = Router()
+    let a = r.route(Request(method: "GET", path: "/user/42"))
+    a.status
+}
+"#;
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.is_empty(),
+            "Int64 / req / mid-path should typecheck, got {diags:?}"
+        );
+    }
+
+    #[test]
     fn route_clause_mismatch_mentions_response() {
         let src = r#"
 type Request(method: String, path: String)

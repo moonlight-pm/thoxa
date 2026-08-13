@@ -34,8 +34,9 @@ import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**); **`std/Logging`**
 4. **Optional:** branch `experiment/router-clause-syntax` — type-body
    `GET "/…"` desugar + LSP (idea
    [`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md)).
-   **Not** merged / not freeze; keep-or-toss open. Default product path remains
-   Crema + locks above.
+   **Compiler surface complete** (Request in, Response out, String wrap,
+   `Int64` / multi-segment / optional `req`). **Not** merged / not freeze.
+   Default product path remains Crema + locks above.
 
 ### Proceed order
 
