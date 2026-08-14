@@ -1302,6 +1302,20 @@ fn main() -> Int64 {
     }
 
     #[test]
+    fn fn_type_not_allowed_as_ctor_field() {
+        let src = r#"
+fn id(x: Int64) -> Int64 { x }
+type Box(h: (x: Int64) -> Int64)
+fn main() -> Int64 { 0 }
+"#;
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.iter().any(|d| d.message.contains("constructor-param")),
+            "{diags:?}"
+        );
+    }
+
+    #[test]
     fn semantic_tokens_nowait_is_keyword() {
         let src = "fn main() { --> serveOne(peer) }\n";
         let toks = semantic_tokens(src);

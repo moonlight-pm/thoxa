@@ -1,0 +1,45 @@
+## D132: free fn pointers, bound methods, unbound Type.method, module mut.
+import logging from "std/Logging"
+
+type Counter(n: Int64) {
+    export fn add(x: Int64) -> Int64 {
+        n + x
+    }
+}
+
+fn double(x: Int64) -> Int64 {
+    x * 2
+}
+
+fn apply(f!: (x: Int64) -> Int64, v!: Int64) -> Int64 {
+    f(v)
+}
+
+fn apply2(f!: (c: Counter, x: Int64) -> Int64, c!: Counter, v!: Int64) -> Int64 {
+    f(c, v)
+}
+
+mut installed = double
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let f: (x: Int64) -> Int64 = double
+    let a = apply(f, 21)
+    logging.info("free {a}")
+
+    let c = Counter(n: 10)
+    let b = apply(c.add, 5)
+    logging.info("bound {b}")
+
+    let u = apply2(Counter.add, c, 7)
+    logging.info("unbound {u}")
+
+    installed = double
+    logging.info("mod {installed(3)}")
+    installed = c.add
+    logging.info("modb {installed(4)}")
+
+    0
+}

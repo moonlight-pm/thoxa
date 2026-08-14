@@ -63,6 +63,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"` |
 | Literal types | Bare `"home"`, `0`, `true` are types in formals / returns / annotations; inline `"a" \| "b"` in those positions too (**D131**) |
 | Multi-clause fns | Same name, different formal types → one function (type-driven match sugar, **D131**) |
+| Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/Fallible` with `?` / `match` (ok/err may nest) |
 | Equality | String `==` / `!=`; usual scalar compares |
@@ -127,6 +128,26 @@ fn add(a: Int64, b: Int64 = 0) -> Int64 {
     a + b
 }
 ```
+
+**Function pointers (**D132**):** a function type is written like a header,
+`(x: Int64) -> Int64`. Values are a code pointer, optionally paired with a
+receiver when formed as `instance.method` (bound — later `h(args)` is
+`instance.method(args)`). Not lexical closures.
+
+```thx
+fn apply(f: (x: Int64) -> Int64, v: Int64) -> Int64 {
+    f(v)
+}
+
+let n = apply(double, 21)       # free fn
+let n = apply(counter.add, 5)   # bound method
+let n = apply2(Counter.add, c, 7)  # unbound: extra self argument
+```
+
+They may be arguments, returns, locals, and **module** `let`/`mut`. They may
+**not** be constructor fields or array elements (type error). No `==`, no
+`-->` of a pointer, no nested `fn`. Multi-clause and `extern` functions cannot
+be taken as values.
 
 Parameter defaults (M3 subset) on free functions, **methods**, **constructor
 params**, and **`!` formals** (including `extern` — defaults expand at the

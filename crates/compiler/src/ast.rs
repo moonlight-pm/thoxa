@@ -167,6 +167,15 @@ pub struct TypeExpr {
     pub mark: Option<TypeMark>,
     /// Inline member-set union `A | B` (D131). When set, `name`/`lit` are unused.
     pub union_members: Option<Vec<TypeExpr>>,
+    /// Function type `(a: T) -> R` (D132). When set, `name`/`lit`/`union_members` unused.
+    pub fn_type: Option<Box<FnType>>,
+}
+
+/// `(name: Type, …) -> Ret` in type position (D132).
+#[derive(Debug, Clone)]
+pub struct FnType {
+    pub params: Vec<(String, TypeExpr)>,
+    pub ret: TypeExpr,
 }
 
 /// Literal types in typespace (D118): `type Flag = 0 | 1`.
@@ -275,6 +284,11 @@ pub enum ExprKind {
     /// `f(…)` or `Point(x: 1, y: 2)` — free function / constructor call.
     Call {
         callee: String,
+        args: Vec<Arg>,
+    },
+    /// `(expr)(args)` / call through a function value (D132).
+    IndirectCall {
+        callee: Box<Expr>,
         args: Vec<Arg>,
     },
     /// `--> name(args)` — begin the call; do not wait (experiment/implicit-async).

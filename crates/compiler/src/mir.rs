@@ -278,6 +278,12 @@ pub enum RValue {
         value: Place,
         from: Ty,
     },
+    /// Form a function value (D132): free / unbound / bound.
+    MakeFn {
+        recv: Option<Place>,
+        recv_ty: Option<Ty>,
+        target: FnTarget,
+    },
     /// Non-consuming concat → owned String.
     StringConcat {
         left: Place,
@@ -306,6 +312,13 @@ pub enum Callee {
         /// Parameter types (for C marshaling of String/Bytes).
         arg_tys: Vec<Ty>,
         /// Return type (for C→Thoxa marshaling, e.g. `char*` → String).
+        ret_ty: Ty,
+    },
+    /// Call through a function value (D132). `args` are the user arguments;
+    /// cgen prepends `fn.recv`.
+    Indirect {
+        fun: Place,
+        arg_tys: Vec<Ty>,
         ret_ty: Ty,
     },
 }
@@ -337,6 +350,11 @@ pub enum Ty {
     Buffer,
     /// Heap RC HTML tree (`ThoxaHtml*`) — builtin `Node` (JSX).
     Node,
+    /// Function pointer / bound method (D132). Unboxed `{recv, code}` pair.
+    Fn {
+        params: Vec<Ty>,
+        ret: Box<Ty>,
+    },
     /// Dynamic growable Array (`ThoxaArray*`) — heap RC; functional append/dropLast.
     Array {
         elem: Box<Ty>,
@@ -373,7 +391,24 @@ pub fn display_ty(ty: &Ty) -> String {
         Ty::FixedArray { elem, len } => format!("Array<{}, {len}>", display_ty(elem)),
         Ty::Address(inner) => format!("Address<{}>", display_ty(inner)),
         Ty::User(n) => display_user_ty(n),
+        Ty::Fn { params, ret } => {
+            let ps: Vec<String> = params.iter().map(display_ty).collect();
+            format!("({}) -> {}", ps.join(", "), display_ty(ret))
+        }
     }
+}
+
+/// What a function value points at (D132).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FnTarget {
+    Free {
+        mangled: String,
+    },
+    Method {
+        type_name: String,
+        method: String,
+        bound: bool,
+    },
 }
 
 fn display_user_ty(mangled: &str) -> String {
@@ -507,7 +542,13 @@ fn free_fn_display_key(mangled: &str, is_main: bool) -> String {
 fn needs_drop(ty: &Ty) -> bool {
     matches!(
         ty,
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::User(_)
+        Ty::String
+            | Ty::Bytes
+            | Ty::Buffer
+            | Ty::Node
+            | Ty::Array { .. }
+            | Ty::User(_)
+            | Ty::Fn { .. }
     )
 }
 
@@ -615,6 +656,8 @@ struct FnSig {
     mangled: String,
     /// Module where the function is defined — default exprs resolve here (D116).
     def_mod: String,
+    /// D131 multi-clause merge — cannot take as a value (D132).
+    multi_clause: bool,
 }
 
 #[derive(Clone)]
@@ -627,6 +670,8 @@ struct MethodSig {
     exported: bool,
     /// Module of the enclosing type — default exprs resolve here (D116).
     def_mod: String,
+    /// D131 multi-clause merge — cannot take as a value (D132).
+    multi_clause: bool,
 }
 
 /// One clause of a multi-clause function/method (D131).
@@ -1445,6 +1490,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                             extern_symbol: Some(c_symbol.clone()),
                             mangled: mangled.clone(),
                             def_mod: m.id.clone(),
+                            multi_clause: false,
                         },
                     )
                     .is_some()
@@ -2196,6 +2242,7 @@ fn merge_free_clauses(
                 extern_symbol: None,
                 mangled: String::new(), // filled by caller insert key
                 def_mod: mod_id.to_string(),
+                multi_clause: false,
             },
             None,
         ));
@@ -2353,6 +2400,7 @@ fn merge_free_clauses(
             extern_symbol: None,
             mangled: String::new(),
             def_mod: mod_id.to_string(),
+            multi_clause: true,
         },
         Some(resolved),
     ))
@@ -2399,6 +2447,7 @@ fn merge_method_clauses(
                 ret,
                 exported: m.exported,
                 def_mod: mod_id.to_string(),
+                multi_clause: false,
             },
             None,
         ));
@@ -2547,6 +2596,7 @@ fn merge_method_clauses(
             ret,
             exported: export_any,
             def_mod: mod_id.to_string(),
+            multi_clause: true,
         },
         Some(resolved),
     ))
@@ -2710,6 +2760,17 @@ fn walk_type_param_marks(te: &TypeExpr, param: &str, success: &mut bool, residua
         if let TypeArg::Type(inner) = arg {
             walk_type_param_marks(inner, param, success, residual);
         }
+    }
+    if let Some(members) = &te.union_members {
+        for m in members {
+            walk_type_param_marks(m, param, success, residual);
+        }
+    }
+    if let Some(ft) = &te.fn_type {
+        for (_, p) in &ft.params {
+            walk_type_param_marks(p, param, success, residual);
+        }
+        walk_type_param_marks(&ft.ret, param, success, residual);
     }
 }
 
@@ -2975,6 +3036,16 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
     match &expr.kind {
         ExprKind::Call { callee, args } | ExprKind::Start { callee, args, .. } => {
             out.insert(callee.clone());
+            for a in args {
+                match a {
+                    Arg::Pos(e) | Arg::Named { value: e, .. } => {
+                        collect_local_fn_calls_expr(e, out)
+                    }
+                }
+            }
+        }
+        ExprKind::IndirectCall { callee, args } => {
+            collect_local_fn_calls_expr(callee, out);
             for a in args {
                 match a {
                     Arg::Pos(e) | Arg::Named { value: e, .. } => {
@@ -3420,6 +3491,17 @@ fn resolve_ty(
     types: &HashMap<String, TypeInfo>,
     name_map: &HashMap<String, String>,
 ) -> Result<Ty> {
+    if let Some(ft) = &t.fn_type {
+        let mut params = Vec::new();
+        for (_, p) in &ft.params {
+            params.push(resolve_ty(p, types, name_map)?);
+        }
+        let ret = resolve_ty(&ft.ret, types, name_map)?;
+        return Ok(Ty::Fn {
+            params,
+            ret: Box::new(ret),
+        });
+    }
     // Inline member-set `A | B` (D131) — must be pre-materialized.
     if let Some(members) = &t.union_members {
         if members.is_empty() {
@@ -3650,6 +3732,10 @@ fn ty_mono_suffix(ty: &Ty) -> String {
         Ty::Array { elem } => format!("Array_{}", ty_mono_suffix(elem)),
         Ty::FixedArray { elem, len } => format!("Fixed_{}_{len}", ty_mono_suffix(elem)),
         Ty::Address(inner) => format!("Addr_{}", ty_mono_suffix(inner)),
+        Ty::Fn { params, ret } => {
+            let ps: Vec<String> = params.iter().map(ty_mono_suffix).collect();
+            format!("Fn_{}_{}", ps.join("_"), ty_mono_suffix(ret))
+        }
     }
 }
 
@@ -3955,6 +4041,12 @@ fn collect_type_apps(te: &TypeExpr, out: &mut Vec<(TypeExpr, Span)>) {
             collect_type_apps(m, out);
         }
     }
+    if let Some(ft) = &te.fn_type {
+        for (_, p) in &ft.params {
+            collect_type_apps(p, out);
+        }
+        collect_type_apps(&ft.ret, out);
+    }
 }
 
 fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
@@ -3976,6 +4068,24 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
             "Array".into(),
             vec![TypeArg::Type(ty_to_type_expr(elem, span))],
         ),
+        Ty::Fn { params, ret } => {
+            return TypeExpr {
+                name: String::new(),
+                args: vec![],
+                span,
+                lit: None,
+                mark: None,
+                union_members: None,
+                fn_type: Some(Box::new(crate::ast::FnType {
+                    params: params
+                        .iter()
+                        .enumerate()
+                        .map(|(i, p)| (format!("a{i}"), ty_to_type_expr(p, span)))
+                        .collect(),
+                    ret: ty_to_type_expr(ret, span),
+                })),
+            };
+        }
         other => (format!("{other:?}"), vec![]),
     };
     TypeExpr {
@@ -3985,12 +4095,31 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
         lit: None,
         mark: None,
         union_members: None,
+        fn_type: None,
     }
 }
 
 fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
     if te.lit.is_some() {
         return te.clone();
+    }
+    if let Some(ft) = &te.fn_type {
+        return TypeExpr {
+            name: String::new(),
+            args: Vec::new(),
+            span: te.span,
+            lit: None,
+            mark: te.mark,
+            union_members: None,
+            fn_type: Some(Box::new(crate::ast::FnType {
+                params: ft
+                    .params
+                    .iter()
+                    .map(|(n, p)| (n.clone(), subst_type_expr(p, subst)))
+                    .collect(),
+                ret: subst_type_expr(&ft.ret, subst),
+            })),
+        };
     }
     if let Some(members) = &te.union_members {
         return TypeExpr {
@@ -4000,6 +4129,7 @@ fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
             lit: None,
             mark: te.mark,
             union_members: Some(members.iter().map(|m| subst_type_expr(m, subst)).collect()),
+            fn_type: None,
         };
     }
     if te.args.is_empty() {
@@ -4027,6 +4157,7 @@ fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
         lit: None,
         mark: te.mark,
         union_members: None,
+        fn_type: None,
     }
 }
 
@@ -4163,6 +4294,7 @@ fn instantiate_product_mono(
                 ret,
                 exported: m.exported,
                 def_mod: gdef.def_mod.clone(),
+                multi_clause: false,
             },
         );
         mono_methods.push(MonoMethodJob {
@@ -5317,6 +5449,10 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
             callee: callee.clone(),
             args: args.iter().map(|a| subst_arg(a, subst)).collect(),
         },
+        ExprKind::IndirectCall { callee, args } => ExprKind::IndirectCall {
+            callee: Box::new(subst_expr(callee, subst)),
+            args: args.iter().map(|a| subst_arg(a, subst)).collect(),
+        },
         ExprKind::Start {
             callee,
             callee_span,
@@ -6144,18 +6280,21 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
                 let p = ctx.fresh("void");
                 return Ok((p, Ty::Void));
             }
-            let binding = ctx
-                .lookup(name)
-                .ok_or_else(|| Error::at(format!("undefined name `{name}`"), expr.span))?;
-            let ty = binding.ty.clone();
-            let src = binding.place;
-            // Simple RC: reading a heap / Trial-with-heap produces a new owner (`assign` dups).
-            if needs_drop(&ty) {
-                let p = ctx.fresh("dup");
-                ctx.assign(p.clone(), ty.clone(), RValue::Use(src));
-                Ok((p, ty))
+            if let Some(binding) = ctx.lookup(name) {
+                let ty = binding.ty.clone();
+                let src = binding.place;
+                // Simple RC: reading a heap / Trial-with-heap produces a new owner (`assign` dups).
+                if needs_drop(&ty) {
+                    let p = ctx.fresh("dup");
+                    ctx.assign(p.clone(), ty.clone(), RValue::Use(src));
+                    Ok((p, ty))
+                } else {
+                    Ok((src, ty))
+                }
+            } else if ctx.name_to_fn.contains_key(name) {
+                form_free_fn(ctx, name, expr.span)
             } else {
-                Ok((src, ty))
+                Err(Error::at(format!("undefined name `{name}`"), expr.span))
             }
         }
         ExprKind::Unary { op, expr: inner } => {
@@ -6214,6 +6353,10 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         }
         ExprKind::Binary { op, left, right } => lower_binary(ctx, *op, left, right, expr.span),
         ExprKind::Call { callee, args } => lower_call(ctx, callee, args, expr.span, expect),
+        ExprKind::IndirectCall { callee, args } => {
+            let (fun, fun_ty) = lower_expr(ctx, callee)?;
+            lower_indirect_call(ctx, fun, fun_ty, args, expr.span)
+        }
         ExprKind::Start { callee, args, .. } => lower_start(ctx, callee, args, expr.span),
         ExprKind::Field {
             base,
@@ -6494,6 +6637,12 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
             args.iter().any(|a| match a {
                 Arg::Pos(e) | Arg::Named { value: e, .. } => expr_has_break(e, depth),
             })
+        }
+        ExprKind::IndirectCall { callee, args } => {
+            expr_has_break(callee, depth)
+                || args.iter().any(|a| match a {
+                    Arg::Pos(e) | Arg::Named { value: e, .. } => expr_has_break(e, depth),
+                })
         }
         ExprKind::MethodCall { receiver, args, .. } => {
             expr_has_break(receiver, depth)
@@ -6959,17 +7108,41 @@ fn lower_field(
     name: &str,
     name_span: Span,
 ) -> Result<(Place, Ty)> {
-    // Namespace member: `geometry.origin` (module-level let).
+    // Namespace member: `geometry.origin` (module-level let) or `routes.handle` (fn).
     if let ExprKind::Name(ns) = &base.kind {
         if let Some(mod_id) = ctx.namespaces.get(ns).cloned() {
             let exp = ctx.module_exports.get(&mod_id).cloned().unwrap_or_default();
             if let Some(info) = exp.globals.get(name) {
                 return Ok((info.place.clone(), info.ty.clone()));
             }
+            if let Some(mangled) = exp.fns.get(name) {
+                let sig = ctx
+                    .fns
+                    .get(mangled)
+                    .ok_or_else(|| Error::at(format!("unknown function `{name}`"), name_span))?
+                    .clone();
+                refuse_fn_value(sig.multi_clause, sig.extern_symbol.is_some(), name, name_span)?;
+                let ty = fn_ty_of_sig(&sig.params, &sig.ret);
+                return Ok(make_fn_value(
+                    ctx,
+                    None,
+                    None,
+                    FnTarget::Free {
+                        mangled: sig.mangled.clone(),
+                    },
+                    ty,
+                ));
+            }
             return Err(Error::at(
                 format!("no exported value `{name}` on namespace `{ns}`"),
                 name_span,
             ));
+        }
+        // Unbound method: `Crema.handle` (type qualifier, not a value).
+        if ctx.lookup(ns).is_none() {
+            if let Some(mangled_ty) = ctx.resolve_type_name(ns) {
+                return form_unbound_method(ctx, &mangled_ty, name, name_span);
+            }
         }
     }
 
@@ -7062,6 +7235,9 @@ fn lower_field(
                 .types
                 .get(type_name)
                 .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), name_span))?;
+            if info.methods.contains_key(name) && info.fields.iter().all(|f| f.name != name) {
+                return form_bound_method(ctx, base_p, base_ty, name, name_span);
+            }
             let field_ty = info
                 .fields
                 .iter()
@@ -8959,6 +9135,12 @@ fn materialize_expr_typespace(
                 materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
             }
         }
+        ExprKind::IndirectCall { callee, args } => {
+            materialize_expr_typespace(callee, types, layouts, name_map, def_mod)?;
+            for a in args {
+                materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
+            }
+        }
         ExprKind::MethodCall { receiver, args, .. } => {
             materialize_expr_typespace(receiver, types, layouts, name_map, def_mod)?;
             for a in args {
@@ -10306,6 +10488,20 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
             });
         }
         Ty::Void | Ty::Never => {}
+        Ty::Fn { .. } => {
+            ctx.note_drop_place(place, ty);
+            ctx.assign(
+                place.clone(),
+                ty.clone(),
+                RValue::MakeFn {
+                    recv: None,
+                    recv_ty: None,
+                    target: FnTarget::Free {
+                        mangled: String::new(),
+                    },
+                },
+            );
+        }
         Ty::FixedArray { .. } | Ty::Address(_) => {
             return Err(Error::new(format!("cannot allocate local of type {ty:?}")));
         }
@@ -10431,6 +10627,9 @@ fn lower_binary(
             Ok((p, Ty::Int64))
         }
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+            if matches!(lt, Ty::Fn { .. }) || matches!(rt, Ty::Fn { .. }) {
+                return Err(Error::at("function values do not support comparison", span));
+            }
             if lt == Ty::Bool && rt == Ty::Bool {
                 let p = ctx.fresh("cmp");
                 ctx.assign(
@@ -10907,6 +11106,190 @@ fn lower_not(
     inject_into_union(ctx, atom, &aty, &may_ty, span)
 }
 
+fn fn_ty_of_sig(params: &[(String, Ty)], ret: &Ty) -> Ty {
+    Ty::Fn {
+        params: params.iter().map(|(_, t)| t.clone()).collect(),
+        ret: Box::new(ret.clone()),
+    }
+}
+
+fn refuse_fn_value(sig_multi: bool, is_extern: bool, name: &str, span: Span) -> Result<()> {
+    if is_extern {
+        return Err(Error::at(
+            format!("cannot take a pointer to extern function `{name}`"),
+            span,
+        ));
+    }
+    if sig_multi {
+        return Err(Error::at(
+            format!("cannot take a pointer to multi-clause function `{name}`"),
+            span,
+        ));
+    }
+    Ok(())
+}
+
+fn make_fn_value(
+    ctx: &mut LowerCtx,
+    recv: Option<Place>,
+    recv_ty: Option<Ty>,
+    target: FnTarget,
+    ty: Ty,
+) -> (Place, Ty) {
+    let p = ctx.fresh("fn");
+    ctx.assign(
+        p.clone(),
+        ty.clone(),
+        RValue::MakeFn {
+            recv,
+            recv_ty,
+            target,
+        },
+    );
+    (p, ty)
+}
+
+fn form_free_fn(ctx: &mut LowerCtx, name: &str, span: Span) -> Result<(Place, Ty)> {
+    let mangled = ctx
+        .name_to_fn
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| name.to_string());
+    let sig = ctx
+        .fns
+        .get(&mangled)
+        .ok_or_else(|| Error::at(format!("undefined name `{name}`"), span))?
+        .clone();
+    refuse_fn_value(sig.multi_clause, sig.extern_symbol.is_some(), name, span)?;
+    let ty = fn_ty_of_sig(&sig.params, &sig.ret);
+    Ok(make_fn_value(
+        ctx,
+        None,
+        None,
+        FnTarget::Free {
+            mangled: sig.mangled.clone(),
+        },
+        ty,
+    ))
+}
+
+fn form_unbound_method(
+    ctx: &mut LowerCtx,
+    type_name: &str,
+    method: &str,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let info = ctx
+        .types
+        .get(type_name)
+        .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?
+        .clone();
+    let sig = info.methods.get(method).ok_or_else(|| {
+        Error::at(
+            format!("no method `{method}` on `{type_name}`"),
+            span,
+        )
+    })?;
+    if !sig.exported && ctx.module_id != info.def_mod {
+        return Err(Error::at(format!("method `{method}` is private"), span));
+    }
+    refuse_fn_value(sig.multi_clause, false, method, span)?;
+    let mut params = vec![Ty::User(type_name.to_string())];
+    params.extend(sig.params.iter().map(|(_, t)| t.clone()));
+    let ty = Ty::Fn {
+        params,
+        ret: Box::new(sig.ret.clone()),
+    };
+    Ok(make_fn_value(
+        ctx,
+        None,
+        None,
+        FnTarget::Method {
+            type_name: type_name.to_string(),
+            method: method.to_string(),
+            bound: false,
+        },
+        ty,
+    ))
+}
+
+fn form_bound_method(
+    ctx: &mut LowerCtx,
+    recv: Place,
+    recv_ty: Ty,
+    method: &str,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let type_name = match &recv_ty {
+        Ty::User(n) => n.clone(),
+        _ => {
+            return Err(Error::at(
+                format!("cannot bind method `{method}` on non-user type"),
+                span,
+            ));
+        }
+    };
+    let info = ctx
+        .types
+        .get(&type_name)
+        .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?
+        .clone();
+    let sig = info.methods.get(method).ok_or_else(|| {
+        Error::at(
+            format!("no method `{method}` on `{type_name}`"),
+            span,
+        )
+    })?;
+    if !sig.exported && ctx.module_id != info.def_mod {
+        return Err(Error::at(format!("method `{method}` is private"), span));
+    }
+    refuse_fn_value(sig.multi_clause, false, method, span)?;
+    let ty = fn_ty_of_sig(&sig.params, &sig.ret);
+    Ok(make_fn_value(
+        ctx,
+        Some(recv),
+        Some(recv_ty),
+        FnTarget::Method {
+            type_name,
+            method: method.to_string(),
+            bound: true,
+        },
+        ty,
+    ))
+}
+
+fn lower_indirect_call(
+    ctx: &mut LowerCtx,
+    fun: Place,
+    fun_ty: Ty,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let Ty::Fn { params, ret } = fun_ty else {
+        return Err(Error::at(
+            format!("value of type {} is not callable", display_ty(&fun_ty)),
+            span,
+        ));
+    };
+    let formal: Vec<(String, Ty)> = params
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (format!("a{i}"), t.clone()))
+        .collect();
+    let defaults = vec![None; formal.len()];
+    let arg_places = resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, "")?;
+    emit_call_result(
+        ctx,
+        Callee::Indirect {
+            fun,
+            arg_tys: params,
+            ret_ty: ret.as_ref().clone(),
+        },
+        arg_places,
+        ret.as_ref().clone(),
+    )
+}
+
 fn lower_call(
     ctx: &mut LowerCtx,
     callee: &str,
@@ -10914,6 +11297,11 @@ fn lower_call(
     span: Span,
     expect: Option<&Ty>,
 ) -> Result<(Place, Ty)> {
+    if let Some(b) = ctx.lookup(callee) {
+        if matches!(b.ty, Ty::Fn { .. }) {
+            return lower_indirect_call(ctx, b.place, b.ty, args, span);
+        }
+    }
     match callee {
         "Pass" | "Fail" => lower_pass_fail(ctx, callee, args, span, expect),
         "Has" => lower_has(ctx, args, span, expect),
@@ -11040,6 +11428,12 @@ fn lower_call(
 }
 
 fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    if ctx.lookup(callee).is_some_and(|b| matches!(b.ty, Ty::Fn { .. })) {
+        return Err(Error::at(
+            "`-->` requires a named free function, not a function value",
+            span,
+        ));
+    }
     if ctx.resolve_type_name(callee).is_some() {
         return Err(Error::at(
             format!("`-->` requires a function, not type `{callee}`"),

@@ -1,6 +1,6 @@
 # Freeze: Function pointers and bound methods (D132)
 
-**Status:** spec’d (v0 — not shipped)  
+**Status:** shipped (v0)  
 **Decision:** D132  
 **Gate:** `fn_pointers`  
 **As of:** 2026-08-13  
@@ -188,9 +188,9 @@ Dogfood after ship: `examples/http` `server.serve(port, handle)` — drop the
 
 **Code acceptance:**
 
-- [ ] `cargo make test` green with `fn_pointers`  
-- [ ] Crema dogfood (`serve(port, handle)` or equivalent)  
-- [ ] Handbook updated (only when shipped)
+- [x] `cargo make test` green with `fn_pointers`  
+- [x] Crema dogfood (`serve(port, handle)`)  
+- [x] Handbook updated (only when shipped)
 
 ---
 
@@ -199,3 +199,4 @@ Dogfood after ship: `examples/http` `server.serve(port, handle)` — drop the
 | Date | Note |
 |------|------|
 | 2026-08-13 | Initial freeze: function types `(a: T) -> R`; free + unbound + bound; module store yes; fields no; no closures |
+| 2026-08-13 | **Shipped:** `Ty::Fn` + unboxed `{recv, code}`; gate `fn_pointers`; Crema `serve(port, handle)` |

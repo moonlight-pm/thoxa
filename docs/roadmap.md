@@ -121,11 +121,8 @@ Freezes:
 - ~~Combined import `import ns, { a } from "…"`~~ (**D127**)
 - ~~Diverging `loop` (Never / no dummy tail)~~ (**D128**)
 
-**Spec’d, not shipped:** function pointers + bound methods (**D132**;
-[`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md)).
-
 **Sample dogfood (not a phase flip):** `examples/http` Crema-lite **experiment**
-(`server.serve(routes.app())`; type-body `GET`/`POST`; JSX `Node` pages;
+(`server.serve(routes.port, routes.handle)` **D132**; type-body `GET`/`POST`; JSX `Node` pages;
 `framework/` + `app/` under `examples/http/` only; no product `std/` growth
 for the experiment; charter
 [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md);

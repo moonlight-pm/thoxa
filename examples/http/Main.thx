@@ -12,7 +12,7 @@ import logging, { warn } from "std/Logging"
 fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
-    match server.serve(routes.app()) {
+    match server.serve(routes.port, routes.handle) {
         Pass => 0
         Fail(e) {
             warn("server error: {e}")

@@ -1,7 +1,9 @@
 //! MIR → C source.
 
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::mir::{Callee, Function, GlobalVar, Program, RValue, Stmt, Ty, TypeLayout};
+use crate::mir::{
+    Callee, FnTarget, Function, GlobalVar, Program, RValue, Stmt, Ty, TypeLayout,
+};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 
@@ -198,6 +200,7 @@ pub fn emit_program_with(
         emit_proto(&mut out, f);
     }
     out.push('\n');
+    emit_fn_support(&mut out, program, &program.types);
 
     // Module initializer (top-level let/mut values).
     let has_init = emit_globals_and_init && !program.init.is_empty();
@@ -346,6 +349,8 @@ fn emit_global(out: &mut String, g: &GlobalVar, is_static: bool) {
     let stor = if is_static { "static " } else { "" };
     if is_heap_ty(&g.ty) {
         let _ = writeln!(out, "{stor}{} {} = NULL;", c_ty(&g.ty), g.name);
+    } else if matches!(g.ty, Ty::Fn { .. } | Ty::User(_)) {
+        let _ = writeln!(out, "{stor}{} {} = {{0}};", c_ty(&g.ty), g.name);
     } else {
         let _ = writeln!(out, "{stor}{} {};", c_ty(&g.ty), g.name);
     }
@@ -583,7 +588,13 @@ fn is_sum_scalar(types: &[TypeLayout], sum_type: &str) -> bool {
 fn needs_drop_ty(ty: &Ty) -> bool {
     matches!(
         ty,
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::User(_)
+        Ty::String
+            | Ty::Bytes
+            | Ty::Buffer
+            | Ty::Node
+            | Ty::Array { .. }
+            | Ty::User(_)
+            | Ty::Fn { .. }
     )
 }
 
@@ -593,7 +604,7 @@ fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } => {
             let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
         }
-        Ty::User(_) => {
+        Ty::User(_) | Ty::Fn { .. } => {
             // Zero: struct `{0}` or scalar `0` both work for pure-lit typedefs.
             let _ = writeln!(out, "    {} {} = {{0}};", c_ty(ty), name);
         }
@@ -1162,6 +1173,25 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                 }
                 out.push(')');
             }
+            Callee::Indirect { fun, arg_tys, ret_ty } => {
+                let _ = write!(out, "((");
+                if *ret_ty == Ty::Void || *ret_ty == Ty::Never {
+                    out.push_str("void");
+                } else {
+                    out.push_str(&c_ty(ret_ty));
+                }
+                out.push_str("(*)(void *");
+                for t in arg_tys {
+                    out.push_str(", ");
+                    out.push_str(&c_ty(t));
+                }
+                let _ = write!(out, ")){}.code)({}.recv", fun.name, fun.name);
+                for a in args {
+                    out.push_str(", ");
+                    out.push_str(&a.name);
+                }
+                out.push(')');
+            }
             Callee::Method { type_name, method } => {
                 let _ = write!(out, "{}", c_method_name(type_name, method));
                 out.push('(');
@@ -1389,6 +1419,32 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
         RValue::StringConcat { left, right } => {
             let _ = write!(out, "thoxa_string_concat({}, {})", left.name, right.name);
         }
+        RValue::MakeFn {
+            recv,
+            recv_ty,
+            target,
+        } => {
+            let thunk = thunk_c_name(target);
+            match (recv, recv_ty, target) {
+                (_, _, FnTarget::Free { mangled }) if mangled.is_empty() => {
+                    out.push_str("thoxa_fn_free(NULL)");
+                }
+                (Some(r), Some(Ty::User(tn)), FnTarget::Method { bound: true, .. }) => {
+                    let _ = write!(
+                        out,
+                        "thoxa_fn_bind(&{}, (uint32_t)sizeof({}), {}, {}, (void *){})",
+                        r.name,
+                        c_type_name(tn),
+                        fn_payload_retain_name(tn),
+                        fn_payload_release_name(tn),
+                        thunk
+                    );
+                }
+                _ => {
+                    let _ = write!(out, "thoxa_fn_free((void *){})", thunk);
+                }
+            }
+        }
         RValue::Cast { value, from, to } => {
             let _ = write!(out, "({})({})", c_ty(to), value.name);
             let _ = from; // from is for diagnostics; C cast is enough
@@ -1435,6 +1491,7 @@ fn c_ty(ty: &Ty) -> String {
             c_ty(elem)
         }
         Ty::Address(inner) => format!("{}*", c_ty(inner)),
+        Ty::Fn { .. } => "ThoxaFn".into(),
     }
 }
 
@@ -1660,6 +1717,13 @@ fn emit_rc(
                 let _ = writeln!(out, "{pad}thoxa_array_drop({});", place.name);
             }
         }
+        Ty::Fn { .. } => {
+            if dup {
+                let _ = writeln!(out, "{pad}thoxa_fn_retain(&{});", place.name);
+            } else {
+                let _ = writeln!(out, "{pad}thoxa_fn_release(&{});", place.name);
+            }
+        }
         Ty::User(name) => {
             let Some(layout) = types.iter().find(|t| t.name == *name) else {
                 return;
@@ -1748,4 +1812,217 @@ fn c_fn_name(f: &Function) -> String {
         }
     }
     c_free_fn_name(&f.name)
+}
+
+fn thunk_c_name(target: &FnTarget) -> String {
+    match target {
+        FnTarget::Free { mangled } => format!("thoxa_fnptr_free_{mangled}"),
+        FnTarget::Method {
+            type_name,
+            method,
+            bound: true,
+        } => format!("thoxa_fnptr_bound_{type_name}_{method}"),
+        FnTarget::Method {
+            type_name,
+            method,
+            bound: false,
+        } => format!("thoxa_fnptr_unbound_{type_name}_{method}"),
+    }
+}
+
+fn fn_payload_retain_name(type_name: &str) -> String {
+    format!("thoxa_fn_retain_payload_{type_name}")
+}
+
+fn fn_payload_release_name(type_name: &str) -> String {
+    format!("thoxa_fn_release_payload_{type_name}")
+}
+
+fn emit_fn_support(out: &mut String, program: &Program, types: &[TypeLayout]) {
+    let mut thunks: Vec<FnTarget> = Vec::new();
+    let mut recvs: Vec<String> = Vec::new();
+    collect_fn_targets_stmts(&program.init, &mut thunks, &mut recvs);
+    for f in &program.functions {
+        collect_fn_targets_stmts(&f.body, &mut thunks, &mut recvs);
+    }
+    thunks.sort_by(|a, b| thunk_c_name(a).cmp(&thunk_c_name(b)));
+    thunks.dedup();
+    recvs.sort();
+    recvs.dedup();
+
+    for tn in &recvs {
+        emit_fn_payload_rc(out, tn, types);
+    }
+    for t in &thunks {
+        emit_fn_thunk(out, t, program);
+    }
+}
+
+fn emit_fn_payload_rc(out: &mut String, type_name: &str, types: &[TypeLayout]) {
+    let cty = c_type_name(type_name);
+    let _ = writeln!(out, "static void {}(void *p) {{", fn_payload_retain_name(type_name));
+    let _ = writeln!(out, "    {cty} *_s = ({cty} *)p;");
+    emit_rc(
+        out,
+        "    ",
+        &crate::mir::Place { name: "(*_s)".into() },
+        &Ty::User(type_name.to_string()),
+        true,
+        types,
+    );
+    out.push_str("}\n");
+    let _ = writeln!(out, "static void {}(void *p) {{", fn_payload_release_name(type_name));
+    let _ = writeln!(out, "    {cty} *_s = ({cty} *)p;");
+    emit_rc(
+        out,
+        "    ",
+        &crate::mir::Place { name: "(*_s)".into() },
+        &Ty::User(type_name.to_string()),
+        false,
+        types,
+    );
+    out.push_str("}\n");
+}
+
+fn emit_fn_thunk(out: &mut String, target: &FnTarget, program: &Program) {
+    match target {
+        FnTarget::Free { mangled } => {
+            if mangled.is_empty() {
+                return;
+            }
+            let Some(f) = program.functions.iter().find(|f| f.name == *mangled) else {
+                return;
+            };
+            emit_thunk_sig(out, &thunk_c_name(target), &f.params, &f.ret_ty);
+            out.push_str("    (void)recv;\n");
+            emit_thunk_invoke(out, &c_free_fn_name(mangled), &f.params, &f.ret_ty, false);
+            out.push_str("}\n");
+        }
+        FnTarget::Method {
+            type_name,
+            method,
+            bound,
+        } => {
+            let Some(f) = program.functions.iter().find(|f| {
+                f.receiver
+                    .as_ref()
+                    .is_some_and(|(_, t)| matches!(t, Ty::User(n) if n == type_name))
+                    && f.name.rsplit_once("__").is_some_and(|(_, m)| m == method)
+            }) else {
+                return;
+            };
+            if *bound {
+                emit_thunk_sig(out, &thunk_c_name(target), &f.params, &f.ret_ty);
+                let cty = c_type_name(type_name);
+                let _ = writeln!(
+                    out,
+                    "    {cty} *_self = ({cty} *)thoxa_fn_payload((ThoxaFnBox *)recv);"
+                );
+                if f.ret_ty == Ty::Void || f.ret_ty == Ty::Never {
+                    let _ = write!(out, "    {}(_self", c_method_name(type_name, method));
+                } else {
+                    let _ = write!(out, "    return {}(_self", c_method_name(type_name, method));
+                }
+                for (n, _) in &f.params {
+                    let _ = write!(out, ", {n}");
+                }
+                out.push_str(");\n");
+            } else {
+                let mut params = Vec::new();
+                if let Some((n, t)) = &f.receiver {
+                    params.push((n.clone(), t.clone()));
+                }
+                params.extend(f.params.iter().cloned());
+                emit_thunk_sig(out, &thunk_c_name(target), &params, &f.ret_ty);
+                out.push_str("    (void)recv;\n");
+                emit_thunk_invoke(
+                    out,
+                    &c_method_name(type_name, method),
+                    &params,
+                    &f.ret_ty,
+                    true,
+                );
+            }
+            out.push_str("}\n");
+        }
+    }
+}
+
+fn emit_thunk_sig(out: &mut String, name: &str, params: &[(String, Ty)], ret: &Ty) {
+    let r = if *ret == Ty::Void || *ret == Ty::Never {
+        "void".to_string()
+    } else {
+        c_ty(ret)
+    };
+    let _ = write!(out, "static {r} {name}(void *recv");
+    for (n, t) in params {
+        let _ = write!(out, ", {} {}", c_ty(t), n);
+    }
+    out.push_str(") {\n");
+}
+
+fn emit_thunk_invoke(
+    out: &mut String,
+    c_name: &str,
+    params: &[(String, Ty)],
+    ret: &Ty,
+    first_user_is_self_ptr: bool,
+) {
+    if *ret == Ty::Void || *ret == Ty::Never {
+        let _ = write!(out, "    {c_name}(");
+    } else {
+        let _ = write!(out, "    return {c_name}(");
+    }
+    for (i, (n, t)) in params.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        if i == 0 && first_user_is_self_ptr && matches!(t, Ty::User(_)) {
+            let _ = write!(out, "&{n}");
+        } else {
+            out.push_str(n);
+        }
+    }
+    out.push_str(");\n");
+}
+
+fn collect_fn_targets_stmts(
+    stmts: &[Stmt],
+    thunks: &mut Vec<FnTarget>,
+    recvs: &mut Vec<String>,
+) {
+    for s in stmts {
+        match s {
+            Stmt::Assign { value, .. } => collect_fn_targets_rvalue(value, thunks, recvs),
+            Stmt::Eval(v) => collect_fn_targets_rvalue(v, thunks, recvs),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_fn_targets_stmts(then_body, thunks, recvs);
+                collect_fn_targets_stmts(else_body, thunks, recvs);
+            }
+            Stmt::Loop { body } | Stmt::ForRange { body, .. } => {
+                collect_fn_targets_stmts(body, thunks, recvs);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_fn_targets_rvalue(
+    v: &RValue,
+    thunks: &mut Vec<FnTarget>,
+    recvs: &mut Vec<String>,
+) {
+    if let RValue::MakeFn {
+        recv_ty, target, ..
+    } = v
+    {
+        thunks.push(target.clone());
+        if let Some(Ty::User(n)) = recv_ty {
+            recvs.push(n.clone());
+        }
+    }
 }

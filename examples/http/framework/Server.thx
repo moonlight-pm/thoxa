@@ -1,13 +1,11 @@
 ## Framework — HTTP server host (candidate std).
-## Imports only std/, framework/*, and the app's App *type* for serve(app).
-## (That type dependency is the monorepo stand-in for a future trait / fn value.)
-## Completes body + query onto Request so `App.handle` / `Routes.route` see them.
+## Imports only std/ and framework/*. Host takes port + handle (D132).
+## Completes body + query onto Request so the app handle / `Routes.route` see them.
 ## Does not import app pages, models, or other domain modules.
 
 import net, { Socket } from "std/Net"
 import http, { Request, Response, Header } from "std/Http"
 import wire from "./Wire"
-import { App } from "~/app/Routes"
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
 import { split } from "std/Str"
 import logging, { info, warn } from "std/Logging"
@@ -163,11 +161,13 @@ export fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
     writeResponse(peer, "GET", http.badRequest(msg), false)
 }
 
-## Run the host forever. `app` is the application object (handle per request).
+## Run the host forever. `handle` is a free fn or bound method (D132).
 ## `--> serveOne` is the omitted await: an idle peer parks in recv without
-## stalling accept (experiment/implicit-async). `handle` stays ordinary.
-export fn serve(app!: App) -> Trial<Void, String> {
-    let port = app.port
+## stalling accept (experiment/implicit-async).
+export fn serve(
+    port!: Int64,
+    handle!: (req: Request) -> Response
+) -> Trial<Void, String> {
     let listener = bindListen(port)?
     info("http server listening on 127.0.0.1:{port}")
     info("framework Server.serve (Ctrl-C to stop)")
@@ -177,13 +177,13 @@ export fn serve(app!: App) -> Trial<Void, String> {
                 warn("accept: {e}")
             }
             Pass(peer) {
-                --> serveOne(peer, app)
+                --> serveOne(peer, handle)
             }
         }
     }
 }
 
-fn serveOne(peer!: Socket, app!: App) {
+fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
     loop {
         match readIncoming(peer) {
             Fail(e) {
@@ -202,7 +202,7 @@ fn serveOne(peer!: Socket, app!: App) {
                 }
                 let req = requestOf(inc)
                 let keep = wire.wantsKeepAlive(inc.version, req)
-                let res = app.handle(req)
+                let res = handle(req)
                 info("{inc.method} {inc.path} -> {res.status} {res.reason}")
                 match writeResponse(peer, inc.method, res, keep) {
                     Fail(se) {

@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-13 (D132 fn pointers **spec’d**; `-->` nowait **on master**,
+**As of:** 2026-08-13 (D132 fn pointers **shipped**; `-->` nowait **on master**,
 not freeze / not handbook; Crema-lite Phase A–C + JSX `Node`; D131 multi-clause)
 
 ---
@@ -13,8 +13,9 @@ not freeze / not handbook; Crema-lite Phase A–C + JSX `Node`; D131 multi-claus
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **`-->` nowait** (colorless wait; Net parks; Crema
-`--> serveOne` + keep-alive); **multi-clause functions** (**D131**);
+**Shipped recently:** **function pointers** (**D132**); **`-->` nowait**
+(colorless wait; Net parks; Crema `--> serveOne` + keep-alive);
+**multi-clause functions** (**D131**);
 Crema-lite **Phase A–C**; **match arm sugar** (**D130**); **return-type
 inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **combined import** (**D127**); **`std/Io`+`Net`+`Http`** (**D126**);
@@ -39,28 +40,24 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **D132 function pointers** — implement the freeze; then Crema
-   `serve(port, handle)`.  
-2. **Crema-lite** — Phase D+ only if useful. Still example only; no `std/`.  
-3. Editor only when DX forces it.
+1. **Crema-lite** — Phase D+ only if useful. Still example only; no `std/`.  
+2. Editor only when DX forces it.  
+3. Sample-driven language polish (D132 shipped).
 
 ### Proceed order
 
-1. **Implement D132** — freeze
-   [`docs/specs/2026-08-13-function-pointers.md`](docs/specs/2026-08-13-function-pointers.md)
-   (gate `fn_pointers`; Crema dogfood after).  
-2. **Crema-lite experiment** — remaining checklist in
+1. **Crema-lite experiment** — remaining checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    (all work under `examples/http/`; no `std/`).  
-3. **Editor depth** — only when DX forces it. Freezes:
+2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).  
-4. **Deferred: all session / shell residual** — redir polish, line editor,
+3. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-5. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
@@ -106,7 +103,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
 | Match arms | Bare ctor = tag-only; `=>` single-expr body or `{ }` multi-stmt (**D130**); `->` types only |
 | Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **shipped**). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |
-| Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **spec’d**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48). |
+| Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48). |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |

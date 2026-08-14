@@ -54,9 +54,9 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  Main.thx                 # server.serve(routes.app())
+  Main.thx                 # server.serve(routes.port, routes.handle)
   framework/
-    Server.thx             # serve(app) — full host loop
+    Server.thx             # serve(port, handle) — full host loop
     Wire.thx               # body / query / form / cookies
   app/
     Routes.thx             # type Routes { GET/POST … }, App.handle, app()
@@ -66,9 +66,8 @@ examples/http/
 ```
 
 **Layers:** App is routes/views/domain (`App` value with `handle`). Framework owns
-all plumbing via `serve(app)`. Framework imports **only** the `App` type from
-`app/Routes` for the serve signature (stand-in for future fn values / traits);
-it does not import pages or models. Main is boot only.
+all plumbing via `serve(port, handle)`. Framework imports no app types
+(**D132**). Main is boot only.
 
 **Router:** type-body `GET "/…"` / `POST "/…"` on a nullary `Routes` type
 (compiler → `route(req)`). Path params are `:slug` clause formals. `App.handle`
@@ -184,11 +183,10 @@ after A–C.
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
 **As of last update:** **Phase A–C complete** + layered **`framework/` / `app/`**
-with **`server.serve(routes.app())`**. Routing is type-body **`GET`/`POST`
-clauses** on `Routes` + **`App.handle`** static fallback. **Pages are JSX
-`Node`**. Host **`--> serveOne`** + HTTP/1.1 keep-alive (implicit-async; no recv timeout).
-Host rewrite after **D132**: `serve(port, handle)`. Next Phase D+ only if
-wanted — still no `std/` growth.
+with **`server.serve(routes.port, routes.handle)`** (**D132**). Routing is
+type-body **`GET`/`POST` clauses** on `Routes` + free **`handle`** static
+fallback. **Pages are JSX `Node`**. Host **`--> serveOne`** + HTTP/1.1
+keep-alive. Next Phase D+ only if wanted — still no `std/` growth.
 
 ### Language / design notes (experiment)
 
@@ -198,6 +196,6 @@ wanted — still no `std/` growth.
 | String interp treats `{…}` as interpolation | Path params use `:slug` not `{slug}` | Document; escape story later if needed |
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
-| `server.serve(app)` needs typed `App` without fn values | Framework imports **`App` type only** from `app/Routes` | **D132** (spec’d): `serve(port, handle)` with `(req: Request) -> Response`; bound `app.handle` allowed. Traits still separate. Full FCF parked |
+| `server.serve(app)` needs typed `App` without fn values | **Done (D132):** `serve(port, handle)`; framework imports no app types | Traits still separate. Full FCF parked |
 | Single-threaded `accept` + blocking `recv` | **`--> serveOne`** + HTTP/1.1 keep-alive loop (implicit-async); 200ms `SO_RCVTIMEO` removed | — |
 | String path table → dispatch | **Type-body `GET`/`POST` clauses** → generated `route(req)` | Miss is `notFound()` (no fallthrough); `handle` treats 404 as static try. Query/body still example-stitched onto `Request`. Host boundary still `App` |

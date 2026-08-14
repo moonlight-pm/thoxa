@@ -83,7 +83,7 @@ Also discussed and not primary here:
   but desugar to static fns (may fold into A/C later).
 - ObjC-style **selectors** — close to B (typed names) or C (method/fn refs).
 
-**Active direction:** **C** is D132 (implement next). Push **A** (traits) later;
+**Active direction:** **C** is **D132 shipped**. Push **A** (traits) later;
 **B** already works. Avoid **D** as the preferred pattern; leave FCF+ORC
 sleeping in this file.
 

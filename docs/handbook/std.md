@@ -119,7 +119,7 @@ lands.
 | Errors | Permission denied → **403** (logged); missing → **404**; other Io → log + 404 |
 
 Runnable demo: `cargo make run examples/http` (Crema-lite **experiment** —
-`server.serve(routes.app())` on product Net/Http/HttpStatic; example
+`server.serve(routes.port, routes.handle)` on product Net/Http/HttpStatic; example
 `framework/` is not product std; see `examples/http/README.md`).
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid

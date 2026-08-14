@@ -119,6 +119,31 @@ void *thoxa_alloc(size_t payload_size, uint16_t type_tag);
 void thoxa_dup(void *ptr);
 void thoxa_drop(void *ptr);
 
+/* --- Function values (D132): unboxed {recv, code} pair ------------------- */
+
+typedef struct ThoxaFnBox {
+    uint32_t rc;
+    void (*release)(void *payload);
+    /* payload follows */
+} ThoxaFnBox;
+
+typedef struct ThoxaFn {
+    ThoxaFnBox *recv; /* NULL for free / unbound */
+    void *code;
+} ThoxaFn;
+
+void *thoxa_fn_payload(ThoxaFnBox *box);
+ThoxaFn thoxa_fn_free(void *code);
+ThoxaFn thoxa_fn_bind(
+    const void *payload,
+    uint32_t size,
+    void (*retain)(void *payload),
+    void (*release)(void *payload),
+    void *code
+);
+void thoxa_fn_retain(ThoxaFn *fn);
+void thoxa_fn_release(ThoxaFn *fn);
+
 /* --- String (immutable UTF-8, RC heap) ---------------------------------- */
 
 /*

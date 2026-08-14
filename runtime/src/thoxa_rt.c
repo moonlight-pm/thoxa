@@ -70,6 +70,71 @@ void thoxa_drop(void *ptr) {
     }
 }
 
+/* --- Function values (D132) --------------------------------------------- */
+
+void *thoxa_fn_payload(ThoxaFnBox *box) {
+    if (!box) {
+        return NULL;
+    }
+    return (void *)(box + 1);
+}
+
+ThoxaFn thoxa_fn_free(void *code) {
+    ThoxaFn f;
+    f.recv = NULL;
+    f.code = code;
+    return f;
+}
+
+ThoxaFn thoxa_fn_bind(
+    const void *payload,
+    uint32_t size,
+    void (*retain)(void *payload),
+    void (*release)(void *payload),
+    void *code
+) {
+    ThoxaFnBox *box = (ThoxaFnBox *)calloc(1, sizeof(ThoxaFnBox) + (size_t)size);
+    if (!box) {
+        thoxa_panic("out of memory");
+    }
+    box->rc = 1;
+    box->release = release;
+    if (payload && size > 0) {
+        memcpy(thoxa_fn_payload(box), payload, (size_t)size);
+    }
+    if (retain) {
+        retain(thoxa_fn_payload(box));
+    }
+    ThoxaFn f;
+    f.recv = box;
+    f.code = code;
+    return f;
+}
+
+void thoxa_fn_retain(ThoxaFn *fn) {
+    if (!fn || !fn->recv) {
+        return;
+    }
+    fn->recv->rc += 1;
+}
+
+void thoxa_fn_release(ThoxaFn *fn) {
+    if (!fn || !fn->recv) {
+        return;
+    }
+    if (fn->recv->rc == 0) {
+        thoxa_panic("fn release on zero refcount");
+    }
+    fn->recv->rc -= 1;
+    if (fn->recv->rc == 0) {
+        if (fn->recv->release) {
+            fn->recv->release(thoxa_fn_payload(fn->recv));
+        }
+        free(fn->recv);
+    }
+    fn->recv = NULL;
+}
+
 /* --- String ------------------------------------------------------------- */
 
 ThoxaString *thoxa_string_new(const char *bytes, size_t len) {

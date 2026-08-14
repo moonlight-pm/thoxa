@@ -1,6 +1,6 @@
-## App — type-body route clauses + App host object.
+## App — type-body route clauses + free `handle` (D132).
 ## `Routes` is the compiler surface (`GET "/…"` → `route(req)`).
-## `App` keeps port + handle (static fallback when `route` misses).
+## `handle` falls through to static files on 404.
 ## No listen/accept/parse/send.
 
 import pages from "./Pages"
@@ -13,7 +13,7 @@ import { Request, Response, notFound } from "std/Http"
 import { Has, Not } from "std/Fallible"
 
 let staticRoot = "examples/http/web"
-let defaultPort = 9091
+export let port = 9091
 
 ## ── Route clauses (desugars to `route(req: Request) -> Response`) ───────────
 
@@ -51,20 +51,11 @@ fn serveStatic(req!: Request) -> Response {
     files.handle(req)
 }
 
-## ── Application object the host receives ───────────────────────────────────
-
-export type App(port: Int64) {
-    export fn handle(req!: Request) -> Response {
-        let res = Routes().route(req)
-        if res.status == 404 {
-            serveStatic(req)
-        } else {
-            res
-        }
+export fn handle(req!: Request) -> Response {
+    let res = Routes().route(req)
+    if res.status == 404 {
+        serveStatic(req)
+    } else {
+        res
     }
-}
-
-## Construct the app (port is host configuration).
-export fn app() -> App {
-    App(port: defaultPort)
 }

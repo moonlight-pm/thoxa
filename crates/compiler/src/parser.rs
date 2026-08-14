@@ -753,6 +753,7 @@ impl Parser {
             lit: None,
             mark: None,
             union_members: Some(members),
+            fn_type: None,
         })
     }
 
@@ -772,6 +773,7 @@ impl Parser {
                 lit: Some(TypeLit::Int(n)),
                 mark,
                 union_members: None,
+                fn_type: None,
             });
         }
         if self.at(TokenKind::True) || self.at(TokenKind::False) {
@@ -787,6 +789,7 @@ impl Parser {
                 lit: Some(TypeLit::Bool(value)),
                 mark,
                 union_members: None,
+                fn_type: None,
             });
         }
         if let TokenKind::String(ref s) = self.current().kind.clone() {
@@ -802,7 +805,12 @@ impl Parser {
                 lit: Some(TypeLit::String(s)),
                 mark,
                 union_members: None,
+                fn_type: None,
             });
+        }
+
+        if self.at(TokenKind::LParen) {
+            return self.parse_fn_type();
         }
 
         let (name, start_span) = self.expect_ident()?;
@@ -836,6 +844,52 @@ impl Parser {
             lit: None,
             mark,
             union_members: None,
+            fn_type: None,
+        })
+    }
+
+    /// `(a: T, b: U) -> R` / `() -> Void` (D132).
+    fn parse_fn_type(&mut self) -> Result<TypeExpr> {
+        let start = self.peek_span();
+        self.expect_kind(&TokenKind::LParen)?;
+        let mut params: Vec<(String, TypeExpr)> = Vec::new();
+        if !self.at(TokenKind::RParen) {
+            loop {
+                let (name, name_span) = self.expect_ident()?;
+                if !self.at(TokenKind::Colon) {
+                    return Err(Error::at(
+                        "function type parameters are `name: Type`",
+                        name_span,
+                    ));
+                }
+                self.bump();
+                let ty = self.parse_type()?;
+                params.push((name, ty));
+                if self.at(TokenKind::Comma) {
+                    self.bump();
+                    continue;
+                }
+                break;
+            }
+        }
+        self.expect_kind(&TokenKind::RParen)?;
+        if !self.at(TokenKind::Arrow) {
+            return Err(Error::at(
+                "expected `->` after function type parameters",
+                self.peek_span(),
+            ));
+        }
+        self.bump();
+        let ret = self.parse_type()?;
+        let span = Span::new(start.start, ret.span.end);
+        Ok(TypeExpr {
+            name: String::new(),
+            args: Vec::new(),
+            span,
+            lit: None,
+            mark: None,
+            union_members: None,
+            fn_type: Some(Box::new(crate::ast::FnType { params, ret })),
         })
     }
 
@@ -1420,6 +1474,21 @@ impl Parser {
                     kind: ExprKind::Index {
                         base: Box::new(expr),
                         index: Box::new(index),
+                    },
+                    span: Span::new(start, end),
+                };
+                continue;
+            }
+            if self.at(TokenKind::LParen) {
+                let start = expr.span.start;
+                self.bump();
+                let args = self.parse_arg_list()?;
+                self.expect_kind(&TokenKind::RParen)?;
+                let end = self.prev_span().end;
+                expr = Expr {
+                    kind: ExprKind::IndirectCall {
+                        callee: Box::new(expr),
+                        args,
                     },
                     span: Span::new(start, end),
                 };
@@ -2614,6 +2683,27 @@ mod tests {
                 assert_eq!(f.params.len(), 1);
                 assert_eq!(f.return_type.as_ref().unwrap().name, "Trial");
                 assert_eq!(f.return_type.as_ref().unwrap().args.len(), 2);
+            }
+            _ => panic!("expected function"),
+        }
+    }
+
+    #[test]
+    fn parse_function_type() {
+        let module = parse(
+            r#"
+            fn apply(f: (x: Int64) -> Int64, v: Int64) -> Int64 {
+                f(v)
+            }
+            "#,
+        );
+        match &module.items[0] {
+            Item::Function(f) => {
+                let ft = f.params[0].ty.fn_type.as_ref().expect("fn type");
+                assert_eq!(ft.params.len(), 1);
+                assert_eq!(ft.params[0].0, "x");
+                assert_eq!(ft.params[0].1.name, "Int64");
+                assert_eq!(ft.ret.name, "Int64");
             }
             _ => panic!("expected function"),
         }

@@ -58,7 +58,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | `std/Logging` + remove ambient `println`/`print` | shipped (D125) |
 | [`specs/2026-08-10-return-type-inference.md`](specs/2026-08-10-return-type-inference.md) | Free-fn return-type inference | shipped (D129; methods still Void default) |
 | [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | Multi-clause fn/method = type-driven match sugar | **shipped** (D131) |
-| [`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md) | Function types + free/unbound/bound methods | **spec’d** (D132; no closures) |
+| [`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md) | Function types + free/unbound/bound methods | **shipped** (D132; no closures) |
 
 ## Related trees (not under `docs/`)
 

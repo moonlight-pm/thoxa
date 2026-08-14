@@ -848,6 +848,21 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
             }
             None
         }
+        ExprKind::IndirectCall { callee, args } => {
+            if let Some(h) = walk_expr_member(callee, span) {
+                return Some(h);
+            }
+            for a in args {
+                match a {
+                    crate::ast::Arg::Pos(e) | crate::ast::Arg::Named { value: e, .. } => {
+                        if let Some(h) = walk_expr_member(e, span) {
+                            return Some(h);
+                        }
+                    }
+                }
+            }
+            None
+        }
         ExprKind::Index { base, index } => {
             walk_expr_member(base, span).or_else(|| walk_expr_member(index, span))
         }
@@ -1222,6 +1237,12 @@ fn walk_expr_call_args(expr: &Expr, byte: usize, best: &mut Option<CallArgHit>) 
                 byte,
                 best,
             );
+            for a in args {
+                walk_arg_expr(a, byte, best);
+            }
+        }
+        ExprKind::IndirectCall { callee, args } => {
+            walk_expr_call_args(callee, byte, best);
             for a in args {
                 walk_arg_expr(a, byte, best);
             }

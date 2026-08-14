@@ -455,6 +455,7 @@ impl<'a> Resolver<'a> {
         match &expr.kind {
             ExprKind::Name(_)
             | ExprKind::Call { .. }
+            | ExprKind::IndirectCall { .. }
             | ExprKind::MethodCall { .. }
             | ExprKind::Field { .. } => self.receiver_nav_ty(expr, scope),
             ExprKind::If {
@@ -936,6 +937,10 @@ impl<'a> Resolver<'a> {
                 let bid = self.lookup(scope, callee);
                 self.add_ref(callee_span, bid, RefCtx::Call);
                 self.walk_args(args, scope, bid);
+            }
+            ExprKind::IndirectCall { callee, args } => {
+                self.walk_expr(callee, scope);
+                self.walk_args(args, scope, None);
             }
             ExprKind::Start {
                 callee,
