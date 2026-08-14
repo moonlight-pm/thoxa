@@ -1,8 +1,12 @@
 # Parked: first-class functions, closures, and ORC
 
-**Status:** **sleeping** — brainstorm only; not scheduled; not a freeze.  
+**Status:** **sleeping** — full FCF / closures / ORC still parked.  
 **Date:** 2026-08-11  
-**Pickup:** this file · root [`CURRENT.md`](../../CURRENT.md) (does **not** list this as Now)  
+**Promoted from here:** alternative **C** (code pointers + bound methods, no
+capture) is now freeze **D132**
+([`../specs/2026-08-13-function-pointers.md`](../specs/2026-08-13-function-pointers.md)).  
+**Pickup:** this file for the parked bundle · D132 freeze for the shipped-next
+pointer slice · root [`CURRENT.md`](../../CURRENT.md)  
 **Related:** Crema framework↔app boundary
 ([`2026-08-10-examples-http-crema-experiment.md`](2026-08-10-examples-http-crema-experiment.md));
 value model D4 / simple RC D8; Perceus still separate deferred megawork.
@@ -65,7 +69,7 @@ session owner (not decisions):
 |---|-----------|--------|--------|
 | **A** | Interfaces / traits / protocols | **Should implement** | Type-shaped injection; formalize beyond ad-hoc `App` type import |
 | **B** | Defunctionalization (enums / names + match) | **Already can; like it** | Crema string route names + `dispatch` match; typed ids better later |
-| **C** | Free function pointers (no capture) | **Should implement** | Needs a real callable type, e.g. `type F = (a: Int64) -> Void` — **code pointer only**, not closures |
+| **C** | Free function pointers (no capture) | **Promoted — D132** | Freeze [`../specs/2026-08-13-function-pointers.md`](../specs/2026-08-13-function-pointers.md): `(a: T) -> R`; free + unbound + bound methods; no closures |
 | **D** | SAM / single-method objects | Can do; **don’t like** | Verbose stand-in for lambdas; state on fields |
 | **E** | Generics / monomorphized callable params | **Clarify existing generics** | User `type Box<T>` monomorphs exist; “`impl Fn` param” style not the same as heap `Fn` |
 | F | Restricted escaping/non-escaping blocks | Nah (for now) | |
@@ -79,8 +83,9 @@ Also discussed and not primary here:
   but desugar to static fns (may fold into A/C later).
 - ObjC-style **selectors** — close to B (typed names) or C (method/fn refs).
 
-**Active direction:** push **A + B + C** (and understand **E**); avoid **D** as
-the preferred pattern; leave FCF+ORC sleeping in this file.
+**Active direction:** **C** is D132 (implement next). Push **A** (traits) later;
+**B** already works. Avoid **D** as the preferred pattern; leave FCF+ORC
+sleeping in this file.
 
 ---
 

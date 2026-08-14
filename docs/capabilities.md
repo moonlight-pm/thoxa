@@ -11,9 +11,9 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-13 (D131 multi-clause **shipped**; Crema-lite Phase A–C
-+ JSX pages; type-body route clauses + JSX/`Node` + **`-->` nowait**
-**partial** on master — not freeze)
+**As of:** 2026-08-13 (D132 fn pointers **spec’d**; D131 multi-clause
+**shipped**; Crema-lite Phase A–C + JSX pages; type-body route clauses +
+JSX/`Node` + **`-->` nowait** **partial** on master — not freeze)
 
 ---
 
@@ -24,6 +24,7 @@ change. See [`progress-model.md`](progress-model.md).
 | driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | `run`/`build` reuse `target/thoxa/bin/*` when package / `std/` / runtime / compiler are unchanged (`THOXA_FORCE_BUILD=1` to skip). No incremental `cc`. | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
 | multi-clause | Same-name multi-clause fn/method = match sugar on formal types | shipped | `multi_clause` | **D131**; [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | Pattern formals / cross-arity / composition / `extern` multi-clause out of v0. D16 std factories still separate. Bare singleton lit types + inline `\|` in formals shipped as typespace substrate. | yes |
+| fn-pointers | Function types `(a: T) -> R`; free + unbound + bound methods | spec’d | `fn_pointers` | **D132**; [`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md) | **No code yet.** Bound = receiver+code (not lexical closure). Module `let`/`mut` allowed; fields/arrays **no** (D48). No `Fn` word; no closures; no multi-clause/`extern` values; no `-->` of a pointer. | no |
 | trial | `Trial` + `match` + `?` via `std/Fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | none for v0 — import `Pass`/`Fail`/`Trial` from `std/Fallible`; cross-module residual rewrap | yes |
 | may | `May` / `Has` / `Not` + `?` via `std/Fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | none for v0 — import `Has`/`Not`/`May` from `std/Fallible`; `Bytes.find` needs `May` in scope | yes |
 | sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | none for v0 | yes |
