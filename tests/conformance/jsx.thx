@@ -24,7 +24,10 @@ fn main() -> Int64 {
         {if name.count == 0 { <></> } else { <em>ok</em> }}
     </Card>
     let gap = <div class="gap">{<></>}</div>
+    let drinks = 6
+    let count = <p>{drinks} drinks</p>
     logging.info(n.html())
     logging.info(gap.html())
+    logging.info(count.html())
     0
 }

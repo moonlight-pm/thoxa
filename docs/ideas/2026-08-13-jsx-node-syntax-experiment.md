@@ -38,7 +38,7 @@ logging.info(n.html())
 | HTML tag | `<div class="x">…</div>` → `__jsx_el(tag, names, vals, kids)` |
 | Component | PascalCase `<Card title="Hi">…</Card>` → `Card(title: "Hi").view(children: […])` (eager) |
 | Fragment | `<>…</>` → fragment `Node` (empty `<>` included) |
-| `{e}` | `String` → escaped text; `Node` → identity; `Array<Node>` → splice |
+| `{e}` | `String` → escaped text; `Int64`/`Bool` → stringify then text; `Node` → identity; `Array<Node>` → splice |
 | Raw text | Source slice (lexer `Junk` so `'` / `·` survive); whitespace-only gaps dropped |
 | Void tags | `br` `hr` `img` `input` `meta` `link` — no close in `.html()` |
 | Boolean attrs | `disabled` → `disabled="disabled"` |
@@ -68,7 +68,7 @@ No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
 - Hyphenated attrs parse; `data-*` ok  
 - `.html()` method has no dedicated hover (type `Node` does)  
 - Tree-sitter island colors tags; fragments/`<>` highlighting is best-effort  
-- `{e}` is String / Node / Array&lt;Node&gt; — not Int64 (stringify first)  
+- `{e}` attrs are still String (HTML attrs); Int64/Bool stringify is children only  
 - Bare `<tag>` after another expression is `<` (comparison). Bind with `let`,
   or make the tag the whole block value.
 

@@ -5317,7 +5317,11 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
             callee: callee.clone(),
             args: args.iter().map(|a| subst_arg(a, subst)).collect(),
         },
-        ExprKind::Start { callee, callee_span, args } => ExprKind::Start {
+        ExprKind::Start {
+            callee,
+            callee_span,
+            args,
+        } => ExprKind::Start {
             callee: callee.clone(),
             callee_span: *callee_span,
             args: args.iter().map(|a| subst_arg(a, subst)).collect(),
@@ -7611,12 +7615,49 @@ fn lower_html_child(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
         Ty::Array { elem } if matches!(elem.as_ref(), Ty::Node) => {
             emit_call_result(ctx, Callee::Builtin("html_frag".into()), vec![p], Ty::Node)
         }
+        // Same scalars string interp accepts — `{n}` is a text node, not a wrap.
+        Ty::Int64 | Ty::Bool => {
+            let s = stringify_place(ctx, p, ty, expr.span)?;
+            emit_call_result(ctx, Callee::Builtin("html_text".into()), vec![s], Ty::Node)
+        }
+        other if is_int(other) => {
+            let s = stringify_place(ctx, p, ty, expr.span)?;
+            emit_call_result(ctx, Callee::Builtin("html_text".into()), vec![s], Ty::Node)
+        }
         other => Err(Error::at(
             format!(
-                "JSX embed must be String, Node, or Array<Node>, got {}",
+                "JSX embed must be String, Int64, Bool, Node, or Array<Node>, got {}",
                 display_ty(other)
             ),
             expr.span,
+        )),
+    }
+}
+
+/// Int64 / Bool / other ints → owned String (shared with interpolation).
+fn stringify_place(ctx: &mut LowerCtx, value: Place, ty: Ty, span: Span) -> Result<Place> {
+    match &ty {
+        Ty::Int64 | Ty::Bool => {
+            let p = ctx.fresh("ts");
+            ctx.assign(p.clone(), Ty::String, RValue::ToString { value, from: ty });
+            Ok(p)
+        }
+        t if is_int(t) => {
+            let widened = coerce_place(ctx, value, t, &Ty::Int64, span)?;
+            let p = ctx.fresh("ts");
+            ctx.assign(
+                p.clone(),
+                Ty::String,
+                RValue::ToString {
+                    value: widened,
+                    from: Ty::Int64,
+                },
+            );
+            Ok(p)
+        }
+        other => Err(Error::at(
+            format!("cannot stringify {other:?} for JSX embed"),
+            span,
         )),
     }
 }
@@ -11021,14 +11062,8 @@ fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Re
             span,
         ));
     }
-    let arg_places = resolve_call_args_with_defaults(
-        ctx,
-        &sig.params,
-        &sig.defaults,
-        args,
-        span,
-        &sig.def_mod,
-    )?;
+    let arg_places =
+        resolve_call_args_with_defaults(ctx, &sig.params, &sig.defaults, args, span, &sig.def_mod)?;
     let arg_tys: Vec<Ty> = sig.params.iter().map(|(_, t)| t.clone()).collect();
     ctx.stmts.push(Stmt::Start {
         callee: Callee::User(sig.mangled.clone()),

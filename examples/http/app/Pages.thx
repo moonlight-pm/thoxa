@@ -16,7 +16,7 @@ export fn home(who!: String) -> Response {
                 <h1>Little Crema</h1>
                 <p class="lede">Six drinks, one tiny counter, and a Thoxa feature in every pour.</p>
                 <p><a class="button" href="/menu">Browse the menu</a></p>
-                <p class="muted">{"{n} drinks brewed fresh daily."}</p>
+                <p class="muted">{n} drinks brewed fresh daily.</p>
             </section>
             {homeCard(who)}
         </Page>
