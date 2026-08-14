@@ -184,7 +184,7 @@ Dogfood after ship: `examples/http` `server.serve(port, handle)` — drop the
 
 - [x] Locks recorded (this document + D132)  
 - [x] Capability row **spec’d**  
-- [x] `CURRENT.md` lists D132 as the open language implement slice  
+- [x] `CURRENT.md` listed D132 as the implement slice (now shipped)  
 
 **Code acceptance:**
 

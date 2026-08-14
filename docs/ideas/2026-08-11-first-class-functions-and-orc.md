@@ -5,8 +5,8 @@
 **Promoted from here:** alternative **C** (code pointers + bound methods, no
 capture) is now freeze **D132**
 ([`../specs/2026-08-13-function-pointers.md`](../specs/2026-08-13-function-pointers.md)).  
-**Pickup:** this file for the parked bundle · D132 freeze for the shipped-next
-pointer slice · root [`CURRENT.md`](../../CURRENT.md)  
+**Pickup:** this file for the parked bundle · D132 freeze (**shipped**) ·
+root [`CURRENT.md`](../../CURRENT.md)  
 **Related:** Crema framework↔app boundary
 ([`2026-08-10-examples-http-crema-experiment.md`](2026-08-10-examples-http-crema-experiment.md));
 value model D4 / simple RC D8; Perceus still separate deferred megawork.

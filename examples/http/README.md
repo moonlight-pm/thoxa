@@ -28,12 +28,11 @@ fn main() {
 | **assets** | `web/` | Static files |
 
 ```text
-Main → server.serve(app)
+Main → server.serve(port, handle)
          framework owns accept / parse / body / query / write
-         app.handle(req) per request
+         handle(req) per request
 
 app → std/HttpStatic          miss → files under web/
-framework → std + framework/*
 framework → std + framework/* only (no app imports)
 ```
 
@@ -61,7 +60,7 @@ Port **9091** (`routes.port`).
 examples/http/
   Main.thx
   framework/
-    Server.thx    # serve(app), bindListen, readIncoming, writeResponse
+    Server.thx    # serve(port, handle), bindListen, readIncoming, writeResponse
     Wire.thx      # body, query, form, cookies, redirects, HEAD finalize
   app/
     Routes.thx    # type-body GET/POST, handle, static fallback

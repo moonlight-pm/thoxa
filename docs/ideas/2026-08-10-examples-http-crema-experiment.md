@@ -59,18 +59,18 @@ examples/http/
     Server.thx             # serve(port, handle) — full host loop
     Wire.thx               # body / query / form / cookies
   app/
-    Routes.thx             # type Routes { GET/POST … }, App.handle, app()
+    Routes.thx             # type Routes { GET/POST … }, handle, port
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
   web/
   README.md
 ```
 
-**Layers:** App is routes/views/domain (`App` value with `handle`). Framework owns
+**Layers:** App is routes/views/domain (free `handle` + `port`). Framework owns
 all plumbing via `serve(port, handle)`. Framework imports no app types
 (**D132**). Main is boot only.
 
 **Router:** type-body `GET "/…"` / `POST "/…"` on a nullary `Routes` type
-(compiler → `route(req)`). Path params are `:slug` clause formals. `App.handle`
+(compiler → `route(req)`). Path params are `:slug` clause formals. `handle`
 calls `route` and falls through to `std/HttpStatic` on 404.
 
 ---
