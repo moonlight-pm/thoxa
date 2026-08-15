@@ -19,10 +19,10 @@ export fn withQuery(req!: Request, query!: String) -> Request {
     let want = toLowerAscii(queryHeaderName)
     for h in req.headers {
         if toLowerAscii(h.name) != want {
-            headers = headers.append(h)
+            headers.append(h)
         }
     }
-    headers = headers.append(Header(name: queryHeaderName, value: query))
+    headers.append(Header(name: queryHeaderName, value: query))
     Request(
         method: req.method,
         path: req.path,
@@ -304,10 +304,12 @@ export fn seeOther(location!: String) -> Response {
 }
 
 export fn withHeader(res!: Response, name!: String, value!: String) -> Response {
+    mut headers = res.headers
+    headers.append(Header(name: name, value: value))
     Response(
         status: res.status,
         reason: res.reason,
-        headers: res.headers.append(Header(name: name, value: value)),
+        headers: headers,
         body: res.body
     )
 }
@@ -354,10 +356,10 @@ export fn finalize(method!: String, res!: Response, keepAlive!: Bool) -> Respons
     mut headers: Array<Header> = []
     for h in res.headers {
         if toLowerAscii(h.name) != "connection" {
-            headers = headers.append(h)
+            headers.append(h)
         }
     }
-    headers = headers.append(Header(name: "Connection", value: conn))
+    headers.append(Header(name: "Connection", value: conn))
     let body = if method == "HEAD" {
         Bytes(0)
     } else {

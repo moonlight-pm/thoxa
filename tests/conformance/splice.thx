@@ -1,5 +1,4 @@
-## insertAt / removeAt — functional value splice (D55). Copying and strict-
-## bounds on Bytes and Array. Source values stay unchanged.
+## insertAt / removeAt — Bytes stay functional (D55). Array is write-back (D133).
 import logging from "std/Logging"
 fn main() -> Int64 {
     logging.toStdout()
@@ -13,22 +12,27 @@ fn main() -> Int64 {
     logging.info("bytes ins={ins.toString()} del={del.toString()} app={app.toString()}")
     logging.info("bytes src count={b.count} text={b.toString()}")
 
-    ## Array Int64: insert mid, remove first, source intact.
+    ## Array Int64: insert mid, remove first, source intact via COW.
     let xs = [10, 20, 30]
-    let ays = xs.insertAt(1, 99)           ## [10, 99, 20, 30]
-    let azs = xs.removeAt(0)               ## [20, 30]
+    mut ays = xs
+    ays.insertAt(1, 99)                    ## [10, 99, 20, 30]
+    mut azs = xs
+    azs.removeAt(0)                        ## [20, 30]
     logging.info("array ins count={ays.count} at1={ays[1]}")
     logging.info("array del count={azs.count} at0={azs[0]}")
     logging.info("array src count={xs.count} at1={xs[1]}")
 
     ## Array append-at-end via insertAt(count, …)
-    let tail = xs.insertAt(xs.count, 40)
+    mut tail = xs
+    tail.insertAt(xs.count, 40)
     logging.info("array tail={tail}")
 
     ## String array heap elems
     let ss = ["a", "c"]
-    let mid = ss.insertAt(1, "b")
-    let cut = ss.removeAt(0)
+    mut mid = ss
+    mid.insertAt(1, "b")
+    mut cut = ss
+    cut.removeAt(0)
     logging.info("str mid={mid[0]}{mid[1]}{mid[2]} cut0={cut[0]} src0={ss[0]}")
     0
 }

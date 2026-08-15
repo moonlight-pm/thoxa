@@ -894,7 +894,7 @@ fn path(parent: Array<String>) -> Array<String> {
 fn path(parent: Array<String>) -> Array<String> {
     mut out: Array<String> = ["/first"]
     for p in parent {
-        out = out.append(p)
+        out.append(p)
     }
     out
 }

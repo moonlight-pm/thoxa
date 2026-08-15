@@ -89,7 +89,7 @@ export fn searchDrinks(needle!: String) -> Array<Drink> {
         mut out: Array<Drink> = []
         for d in allDrinks() {
             if drinkMatches(d, q) {
-                out = out.append(d)
+                out.append(d)
             }
         }
         out

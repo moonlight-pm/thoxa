@@ -1,0 +1,60 @@
+## Map<K,V>: empty, literal, has/get/set/remove, COW alias, for k,v, keys/values.
+import logging from "std/Logging"
+import { Has, Not, May } from "std/Fallible"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    mut m: Map<String, Int64> = Map()
+    let ka = "a"
+    let kz = "z"
+    logging.info("empty={m.count} has={m.has(ka)}")
+    m.set(ka, 1)
+    m["b"] = 2
+    logging.info("count={m.count} has_a={m.has(ka)} has_z={m.has(kz)}")
+    match m.get(ka) {
+        Has(v) => logging.info("get_a={v}")
+        Not => logging.info("get_a=missing")
+    }
+    match m[kz] {
+        Has(v) => logging.info("get_z={v}")
+        Not => logging.info("get_z=missing")
+    }
+
+    ## overwrite keeps insertion order
+    m.set(ka, 10)
+    logging.info("over={m}")
+
+    ## literal + ident keys
+    let lit = { Cookie: "a=1", Host: "localhost" }
+    logging.info("lit={lit} lit_n={lit.count}")
+
+    ## COW: let snapshot survives mut write
+    mut shared: Map<String, Int64> = { x: 1 }
+    let frozen = shared
+    shared.set("y", 2)
+    logging.info("frozen_n={frozen.count} shared_n={shared.count}")
+
+    ## remove missing is no-op; remove live
+    shared.remove("missing")
+    shared.remove("x")
+    logging.info("after_rm={shared}")
+
+    ## for k, v insertion order
+    mut acc = ""
+    for k, v in lit {
+        acc = "{acc}{k}={v};"
+    }
+    logging.info("walk={acc}")
+
+    let ks = lit.keys()
+    let vs = lit.values()
+    logging.info("keys={ks.count} k0={ks[0]} v0={vs[0]}")
+
+    ## Int64 keys
+    mut nums = { 1: "one", 2: "two" }
+    logging.info("nums={nums} n1={nums.has(1)}")
+
+    0
+}

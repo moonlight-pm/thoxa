@@ -19,6 +19,13 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-14 — Map and value collections
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D133 | Value collections (Swift / Buffer COW) | `Array` (and `Map`) writes go through a **`mut` place**: unique → in-place; shared → copy, update that place only. `let` aliases do not observe later writes. Mutating methods return **`Void`** (no `xs = xs.append(x)`). Temporaries allowed. | **Shipped.** Amends D54. Not Rust moves. **Bytes** splice stays D55. Fixed `Array<T,N>` unchanged. Freeze: [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md). Gates: `arrays`. |
+| D134 | Builtin `Map<K, V>` | Heap RC `ThoxaMap*`. Keys v0: String / Int64 / Bool. Values: same as Array elems + nested Map (User values yes). Empty `Map()`. Read `m[k]` / `.get` → `May<V>`; `.has(k) -> Bool`; `.count`. Write `.set` / `.remove` / `m[k] =` write-back. Literals `{ k: v }` (ident key = string name; `{}` still empty block). `for k, v in m` insertion order; `.keys()` / `.values()` snapshots. Ctor fields yes (D48/D69 grow). | **Shipped.** Not `std/`. **User keys deferred:** wait on structural `==` / private hash of constructor-param products — **not** Eq/Hash traits; not pointer identity. No `==` on Array/Map; no Http header migration. Gates: `maps`, `maps_user`. |
+
 ## 2026-08-13 — Function pointers
 
 | ID | Decision | Choice | Notes |
@@ -353,7 +360,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D53 | Dynamic `Array<T>` | Heap RC `ThoxaArray*` (slots as `int64_t`; heap elems bitcast) | Distinct from fixed field `Array<T,N>` (D27); elems: Int64, Bool, String, Bytes; **User via D65** |
-| D54 | Array mutation model | Functional `append`/`dropLast` return new arrays; index set mutates shared storage | Matches oracle list semantics; not Buffer-style COW write-back |
+| D54 | Array mutation model | Functional `append`/`dropLast` return new arrays; index set mutates shared storage | **Amended by D133** (Swift/Buffer write-back; `let` aliases do not see writes). Historical oracle-list note no longer product. |
 | D55 | Array / Bytes splice surface | Literals, empty `[]` + type ann, `.count`, `[i]`, append, dropLast, **`insertAt`/`removeAt`**, `for x in arr`, display; Bytes **`insertAt`/`removeAt`** + **`equals`** | Functional copy (source unchanged); insert `0 ≤ at ≤ count`, remove `0 ≤ at < count` (else panic); byte masked 0–255. Gates: `arrays`, `array_user`, `splice`. |
 
 ## 2026-07-19 — R9+ Buffer

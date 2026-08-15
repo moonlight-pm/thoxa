@@ -148,7 +148,7 @@ fn parseRequestBody(
                     ## empty line inside header block — skip
                 } else {
                     let h = parseHeaderLine(line, colon)?
-                    headers = headers.append(h)
+                    headers.append(h)
                 }
                 match headerBlock.find(crlf, pos) {
                     Not { break }

@@ -20,14 +20,14 @@ fn pathSegments(path!: String) -> Array<String> {
         if i >= n { break }
         if data.get(i) == 47 {
             if i > start {
-                segs = segs.append(data.slice(start, i).toString())
+                segs.append(data.slice(start, i).toString())
             }
             start = i + 1
         }
         i = i + 1
     }
     if start < n {
-        segs = segs.append(data.slice(start, n).toString())
+        segs.append(data.slice(start, n).toString())
     }
     segs
 }

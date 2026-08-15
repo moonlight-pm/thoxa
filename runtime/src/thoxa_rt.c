@@ -53,9 +53,22 @@ void thoxa_dup(void *ptr) {
 
 static void thoxa_html_free_payload(ThoxaHtml *n);
 
+void thoxa_array_drop(ThoxaArray *a);
+void thoxa_array_drop_ex(ThoxaArray *a, ThoxaArrayElemFn elem_drop);
+void thoxa_map_drop(ThoxaMap *m);
+void thoxa_map_drop_ex(ThoxaMap *m, ThoxaArrayElemFn elem_drop);
+
 void thoxa_drop(void *ptr) {
     ThoxaHeader *h = header_of(ptr);
     if (!h) {
+        return;
+    }
+    if (h->type_tag == THOXA_TAG_ARRAY) {
+        thoxa_array_drop((ThoxaArray *)ptr);
+        return;
+    }
+    if (h->type_tag == THOXA_TAG_MAP) {
+        thoxa_map_drop((ThoxaMap *)ptr);
         return;
     }
     if (h->refcount == 0) {
@@ -708,9 +721,45 @@ int64_t thoxa_array_get_i64(const ThoxaArray *a, int64_t i) {
     return *array_i64_c(a, (size_t)i);
 }
 
-void thoxa_array_set_i64(ThoxaArray *a, int64_t i, int64_t v) {
+static ThoxaArray *array_clone(const ThoxaArray *a, ThoxaArrayElemFn elem_dup) {
+    if (!a) {
+        return array_alloc(0, 0, 0, (uint32_t)sizeof(int64_t));
+    }
+    ThoxaArray *n = array_alloc(a->len, a->len, a->flags, a->elem_size);
+    if (elem_dup) {
+        array_copy_items_ex(n, a, a->len, elem_dup);
+    } else {
+        array_copy_items(n, a, a->len);
+    }
+    return n;
+}
+
+static ThoxaArray *array_ensure_unique(
+    ThoxaArray *a,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+) {
+    if (!a) {
+        return array_alloc(0, 0, 0, (uint32_t)sizeof(int64_t));
+    }
+    ThoxaHeader *h = header_of(a);
+    if (h->refcount == 1) {
+        return a;
+    }
+    ThoxaArray *n = array_clone(a, elem_dup);
+    if (elem_drop) {
+        thoxa_array_drop_ex(a, elem_drop);
+    } else {
+        thoxa_array_drop(a);
+    }
+    return n;
+}
+
+ThoxaArray *thoxa_array_set_i64(ThoxaArray *a, int64_t i, int64_t v) {
+    a = array_ensure_unique(a, NULL, NULL);
     array_bounds(a, i);
     *array_i64(a, (size_t)i) = v;
+    return a;
 }
 
 void *thoxa_array_get_ptr(const ThoxaArray *a, int64_t i) {
@@ -718,12 +767,14 @@ void *thoxa_array_get_ptr(const ThoxaArray *a, int64_t i) {
     return (void *)(intptr_t)(*array_i64_c(a, (size_t)i));
 }
 
-void thoxa_array_set_ptr(ThoxaArray *a, int64_t i, void *p) {
+ThoxaArray *thoxa_array_set_ptr(ThoxaArray *a, int64_t i, void *p) {
+    a = array_ensure_unique(a, NULL, NULL);
     array_bounds(a, i);
     void *old = (void *)(intptr_t)(*array_i64(a, (size_t)i));
     thoxa_dup(p);
     *array_i64(a, (size_t)i) = (int64_t)(intptr_t)p;
     thoxa_drop(old);
+    return a;
 }
 
 void thoxa_array_get_elem(
@@ -742,13 +793,14 @@ void thoxa_array_get_elem(
     }
 }
 
-void thoxa_array_set_elem(
+ThoxaArray *thoxa_array_set_elem(
     ThoxaArray *a,
     int64_t i,
     const void *elem,
     ThoxaArrayElemFn elem_dup,
     ThoxaArrayElemFn elem_drop
 ) {
+    a = array_ensure_unique(a, elem_dup, elem_drop);
     array_bounds(a, i);
     if (!elem) {
         thoxa_panic("array set_elem null elem");
@@ -761,9 +813,10 @@ void thoxa_array_set_elem(
     if (elem_dup) {
         elem_dup(array_slot(a, (size_t)i));
     }
+    return a;
 }
 
-ThoxaArray *thoxa_array_append_i64(const ThoxaArray *a, int64_t v) {
+ThoxaArray *thoxa_array_append_i64(ThoxaArray *a, int64_t v) {
     size_t old_len = a ? a->len : 0;
     uint32_t flags = a ? a->flags : 0;
     ThoxaArray *n =
@@ -776,10 +829,11 @@ ThoxaArray *thoxa_array_append_i64(const ThoxaArray *a, int64_t v) {
     } else {
         *array_i64(n, old_len) = v;
     }
+    thoxa_array_drop(a);
     return n;
 }
 
-ThoxaArray *thoxa_array_append_ptr(const ThoxaArray *a, void *p) {
+ThoxaArray *thoxa_array_append_ptr(ThoxaArray *a, void *p) {
     size_t old_len = a ? a->len : 0;
     ThoxaArray *n = array_alloc(
         old_len + 1,
@@ -796,15 +850,17 @@ ThoxaArray *thoxa_array_append_ptr(const ThoxaArray *a, void *p) {
     }
     thoxa_dup(p);
     *array_i64(n, old_len) = (int64_t)(intptr_t)p;
+    thoxa_array_drop(a);
     return n;
 }
 
 ThoxaArray *thoxa_array_append_elem(
-    const ThoxaArray *a,
+    ThoxaArray *a,
     const void *elem,
     uint32_t elem_size,
     uint32_t flags,
-    ThoxaArrayElemFn elem_dup
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
 ) {
     size_t old_len = a ? a->len : 0;
     if (a) {
@@ -820,16 +876,22 @@ ThoxaArray *thoxa_array_append_elem(
     if (elem_dup) {
         elem_dup(array_slot(n, old_len));
     }
+    if (elem_drop) {
+        thoxa_array_drop_ex(a, elem_drop);
+    } else {
+        thoxa_array_drop(a);
+    }
     return n;
 }
 
-ThoxaArray *thoxa_array_drop_last(const ThoxaArray *a) {
+ThoxaArray *thoxa_array_drop_last(ThoxaArray *a) {
     if (!a || a->len == 0) {
         thoxa_panic("Array.dropLast on empty array");
     }
     size_t new_len = a->len - 1;
     ThoxaArray *n = array_alloc(new_len, new_len, a->flags, a->elem_size);
     array_copy_items(n, a, new_len);
+    thoxa_array_drop(a);
     return n;
 }
 
@@ -846,17 +908,26 @@ ThoxaArray *thoxa_argv_to_array(int argc, char **argv) {
     return a;
 }
 
-ThoxaArray *thoxa_array_drop_last_ex(const ThoxaArray *a, ThoxaArrayElemFn elem_dup) {
+ThoxaArray *thoxa_array_drop_last_ex(
+    ThoxaArray *a,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+) {
     if (!a || a->len == 0) {
         thoxa_panic("Array.dropLast on empty array");
     }
     size_t new_len = a->len - 1;
     ThoxaArray *n = array_alloc(new_len, new_len, a->flags, a->elem_size);
     array_copy_items_ex(n, a, new_len, elem_dup);
+    if (elem_drop) {
+        thoxa_array_drop_ex(a, elem_drop);
+    } else {
+        thoxa_array_drop(a);
+    }
     return n;
 }
 
-ThoxaArray *thoxa_array_insert_at_i64(const ThoxaArray *a, int64_t at, int64_t v) {
+ThoxaArray *thoxa_array_insert_at_i64(ThoxaArray *a, int64_t at, int64_t v) {
     size_t old_len = a ? a->len : 0;
     if (at < 0 || (size_t)at > old_len) {
         thoxa_panic("Array.insertAt out of range");
@@ -874,10 +945,11 @@ ThoxaArray *thoxa_array_insert_at_i64(const ThoxaArray *a, int64_t at, int64_t v
         *array_i64(n, pos) = v;
     }
     array_copy_range(n, pos + 1, a, pos, old_len - pos);
+    thoxa_array_drop(a);
     return n;
 }
 
-ThoxaArray *thoxa_array_insert_at_ptr(const ThoxaArray *a, int64_t at, void *p) {
+ThoxaArray *thoxa_array_insert_at_ptr(ThoxaArray *a, int64_t at, void *p) {
     size_t old_len = a ? a->len : 0;
     if (at < 0 || (size_t)at > old_len) {
         thoxa_panic("Array.insertAt out of range");
@@ -906,16 +978,18 @@ ThoxaArray *thoxa_array_insert_at_ptr(const ThoxaArray *a, int64_t at, void *p) 
     }
     thoxa_dup(p);
     *array_i64(n, pos) = (int64_t)(intptr_t)p;
+    thoxa_array_drop(a);
     return n;
 }
 
 ThoxaArray *thoxa_array_insert_at_elem(
-    const ThoxaArray *a,
+    ThoxaArray *a,
     int64_t at,
     const void *elem,
     uint32_t elem_size,
     uint32_t flags,
-    ThoxaArrayElemFn elem_dup
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
 ) {
     size_t old_len = a ? a->len : 0;
     if (at < 0 || (size_t)at > old_len) {
@@ -936,10 +1010,15 @@ ThoxaArray *thoxa_array_insert_at_elem(
         elem_dup(array_slot(n, pos));
     }
     array_copy_range_ex(n, pos + 1, a, pos, old_len - pos, elem_dup);
+    if (elem_drop) {
+        thoxa_array_drop_ex(a, elem_drop);
+    } else {
+        thoxa_array_drop(a);
+    }
     return n;
 }
 
-ThoxaArray *thoxa_array_remove_at(const ThoxaArray *a, int64_t at) {
+ThoxaArray *thoxa_array_remove_at(ThoxaArray *a, int64_t at) {
     if (!a || a->len == 0) {
         thoxa_panic("Array.removeAt out of range");
     }
@@ -951,10 +1030,16 @@ ThoxaArray *thoxa_array_remove_at(const ThoxaArray *a, int64_t at) {
     ThoxaArray *n = array_alloc(new_len, new_len, a->flags, a->elem_size);
     array_copy_range(n, 0, a, 0, pos);
     array_copy_range(n, pos, a, pos + 1, new_len - pos);
+    thoxa_array_drop(a);
     return n;
 }
 
-ThoxaArray *thoxa_array_remove_at_ex(const ThoxaArray *a, int64_t at, ThoxaArrayElemFn elem_dup) {
+ThoxaArray *thoxa_array_remove_at_ex(
+    ThoxaArray *a,
+    int64_t at,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+) {
     if (!a || a->len == 0) {
         thoxa_panic("Array.removeAt out of range");
     }
@@ -966,6 +1051,11 @@ ThoxaArray *thoxa_array_remove_at_ex(const ThoxaArray *a, int64_t at, ThoxaArray
     ThoxaArray *n = array_alloc(new_len, new_len, a->flags, a->elem_size);
     array_copy_range_ex(n, 0, a, 0, pos, elem_dup);
     array_copy_range_ex(n, pos, a, pos + 1, new_len - pos, elem_dup);
+    if (elem_drop) {
+        thoxa_array_drop_ex(a, elem_drop);
+    } else {
+        thoxa_array_drop(a);
+    }
     return n;
 }
 
@@ -1015,6 +1105,768 @@ void thoxa_array_drop_ex(ThoxaArray *a, ThoxaArrayElemFn elem_drop) {
         }
         free(h);
     }
+}
+
+/* --- Map ---------------------------------------------------------------- */
+
+#define MAP_IDX_EMPTY ((int32_t)-1)
+#define MAP_IDX_TOMB ((int32_t)-2)
+
+struct ThoxaMap {
+    size_t len;
+    size_t slot_cap;
+    size_t idx_cap;
+    size_t tombs;
+    uint32_t key_kind;
+    uint32_t val_kind;
+    uint32_t val_size;
+    uint32_t flags;
+    uint8_t data[];
+};
+
+typedef struct {
+    uint64_t hash;
+    int64_t key;
+} MapSlotHead;
+
+static size_t map_align8(size_t n) {
+    return (n + 7u) & ~(size_t)7u;
+}
+
+static uint32_t map_val_size_of(uint32_t val_size) {
+    return val_size == 0 ? (uint32_t)sizeof(int64_t) : val_size;
+}
+
+static size_t map_slot_size_sz(uint32_t val_size) {
+    return sizeof(MapSlotHead) + map_align8(map_val_size_of(val_size));
+}
+
+static size_t map_slot_size(const ThoxaMap *m) {
+    return map_slot_size_sz(m->val_size);
+}
+
+static size_t map_payload_size(size_t slot_cap, size_t idx_cap, uint32_t val_size) {
+    return offsetof(ThoxaMap, data)
+        + slot_cap * map_slot_size_sz(val_size)
+        + idx_cap * sizeof(int32_t);
+}
+
+static MapSlotHead *map_slot(ThoxaMap *m, size_t i) {
+    return (MapSlotHead *)(m->data + i * map_slot_size(m));
+}
+
+static const MapSlotHead *map_slot_c(const ThoxaMap *m, size_t i) {
+    return (const MapSlotHead *)(m->data + i * map_slot_size(m));
+}
+
+static void *map_slot_val(ThoxaMap *m, size_t i) {
+    return (uint8_t *)map_slot(m, i) + sizeof(MapSlotHead);
+}
+
+static const void *map_slot_val_c(const ThoxaMap *m, size_t i) {
+    return (const uint8_t *)map_slot_c(m, i) + sizeof(MapSlotHead);
+}
+
+static int32_t *map_index(ThoxaMap *m) {
+    return (int32_t *)(m->data + m->slot_cap * map_slot_size(m));
+}
+
+static const int32_t *map_index_c(const ThoxaMap *m) {
+    return (const int32_t *)(m->data + m->slot_cap * map_slot_size(m));
+}
+
+static uint64_t map_hash_i64(int64_t k) {
+    uint64_t x = (uint64_t)k;
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    return x;
+}
+
+static uint64_t map_hash_str(const ThoxaString *s) {
+    const unsigned char *p = (const unsigned char *)(s ? s->data : "");
+    size_t n = s ? s->len : 0;
+    uint64_t h = 14695981039346656037ULL;
+    for (size_t i = 0; i < n; i++) {
+        h ^= (uint64_t)p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+static uint64_t map_hash(const ThoxaMap *m, int64_t key) {
+    if (m->key_kind == THOXA_MAP_KEY_STR) {
+        return map_hash_str((const ThoxaString *)(intptr_t)key);
+    }
+    return map_hash_i64(key);
+}
+
+static int map_key_eq(const ThoxaMap *m, int64_t a, int64_t b) {
+    if (m->key_kind == THOXA_MAP_KEY_STR) {
+        return thoxa_string_eq(
+            (const ThoxaString *)(intptr_t)a,
+            (const ThoxaString *)(intptr_t)b
+        );
+    }
+    return a == b;
+}
+
+static void map_dup_key(const ThoxaMap *m, int64_t key) {
+    if (m->key_kind == THOXA_MAP_KEY_STR) {
+        thoxa_dup((void *)(intptr_t)key);
+    }
+}
+
+static void map_drop_key(const ThoxaMap *m, int64_t key) {
+    if (m->key_kind == THOXA_MAP_KEY_STR) {
+        thoxa_drop((void *)(intptr_t)key);
+    }
+}
+
+static void map_dup_val_ptr(void *p) {
+    thoxa_dup(p);
+}
+
+static void map_drop_val_ptr(void *p) {
+    thoxa_drop(p);
+}
+
+static ThoxaMap *map_alloc(
+    size_t slot_cap,
+    size_t idx_cap,
+    uint32_t key_kind,
+    uint32_t val_kind,
+    uint32_t val_size
+) {
+    if (idx_cap < 8) {
+        idx_cap = 8;
+    }
+    if (slot_cap < 4) {
+        slot_cap = 4;
+    }
+    val_size = map_val_size_of(val_size);
+    ThoxaMap *m = (ThoxaMap *)thoxa_alloc(
+        map_payload_size(slot_cap, idx_cap, val_size),
+        THOXA_TAG_MAP
+    );
+    m->len = 0;
+    m->slot_cap = slot_cap;
+    m->idx_cap = idx_cap;
+    m->tombs = 0;
+    m->key_kind = key_kind;
+    m->val_kind = val_kind;
+    m->val_size = val_size;
+    m->flags = 0;
+    int32_t *idx = map_index(m);
+    for (size_t i = 0; i < idx_cap; i++) {
+        idx[i] = MAP_IDX_EMPTY;
+    }
+    return m;
+}
+
+static void map_reindex(ThoxaMap *m) {
+    int32_t *idx = map_index(m);
+    for (size_t i = 0; i < m->idx_cap; i++) {
+        idx[i] = MAP_IDX_EMPTY;
+    }
+    m->tombs = 0;
+    size_t mask = m->idx_cap - 1;
+    for (size_t s = 0; s < m->len; s++) {
+        MapSlotHead *sl = map_slot(m, s);
+        size_t pos = (size_t)sl->hash & mask;
+        while (idx[pos] != MAP_IDX_EMPTY) {
+            pos = (pos + 1) & mask;
+        }
+        idx[pos] = (int32_t)s;
+    }
+}
+
+static int32_t map_find_slot(
+    const ThoxaMap *m,
+    int64_t key,
+    uint64_t hash,
+    int32_t *idx_pos
+) {
+    if (!m || m->idx_cap == 0) {
+        if (idx_pos) {
+            *idx_pos = -1;
+        }
+        return -1;
+    }
+    size_t mask = m->idx_cap - 1;
+    size_t pos = (size_t)hash & mask;
+    int32_t first_tomb = -1;
+    const int32_t *idx = map_index_c(m);
+    for (size_t n = 0; n < m->idx_cap; n++) {
+        int32_t s = idx[pos];
+        if (s == MAP_IDX_EMPTY) {
+            if (idx_pos) {
+                *idx_pos = first_tomb >= 0 ? first_tomb : (int32_t)pos;
+            }
+            return -1;
+        }
+        if (s == MAP_IDX_TOMB) {
+            if (first_tomb < 0) {
+                first_tomb = (int32_t)pos;
+            }
+        } else {
+            const MapSlotHead *sl = map_slot_c(m, (size_t)s);
+            if (sl->hash == hash && map_key_eq(m, sl->key, key)) {
+                if (idx_pos) {
+                    *idx_pos = (int32_t)pos;
+                }
+                return s;
+            }
+        }
+        pos = (pos + 1) & mask;
+    }
+    if (idx_pos) {
+        *idx_pos = first_tomb;
+    }
+    return -1;
+}
+
+static void map_copy_slots(
+    ThoxaMap *dst,
+    const ThoxaMap *src,
+    ThoxaArrayElemFn elem_dup
+) {
+    dst->len = src->len;
+    for (size_t i = 0; i < src->len; i++) {
+        const MapSlotHead *s = map_slot_c(src, i);
+        MapSlotHead *d = map_slot(dst, i);
+        *d = *s;
+        map_dup_key(src, s->key);
+        memcpy(map_slot_val(dst, i), map_slot_val_c(src, i), (size_t)src->val_size);
+        if (src->val_kind == THOXA_MAP_VAL_PTR) {
+            int64_t bits;
+            memcpy(&bits, map_slot_val_c(src, i), sizeof(int64_t));
+            map_dup_val_ptr((void *)(intptr_t)bits);
+        } else if (src->val_kind == THOXA_MAP_VAL_USER && elem_dup) {
+            elem_dup(map_slot_val(dst, i));
+        }
+    }
+    map_reindex(dst);
+}
+
+static ThoxaMap *map_clone(const ThoxaMap *m, ThoxaArrayElemFn elem_dup) {
+    size_t slot_cap = m->slot_cap;
+    size_t idx_cap = m->idx_cap;
+    ThoxaMap *n =
+        map_alloc(slot_cap, idx_cap, m->key_kind, m->val_kind, m->val_size);
+    map_copy_slots(n, m, elem_dup);
+    return n;
+}
+
+static void map_drop_contents(ThoxaMap *m, ThoxaArrayElemFn elem_drop) {
+    for (size_t i = 0; i < m->len; i++) {
+        MapSlotHead *sl = map_slot(m, i);
+        map_drop_key(m, sl->key);
+        if (m->val_kind == THOXA_MAP_VAL_PTR) {
+            int64_t bits;
+            memcpy(&bits, map_slot_val(m, i), sizeof(int64_t));
+            map_drop_val_ptr((void *)(intptr_t)bits);
+        } else if (m->val_kind == THOXA_MAP_VAL_USER && elem_drop) {
+            elem_drop(map_slot_val(m, i));
+        }
+    }
+}
+
+static ThoxaMap *map_ensure_unique(ThoxaMap *m, ThoxaArrayElemFn elem_dup, ThoxaArrayElemFn elem_drop) {
+    if (!m) {
+        thoxa_panic("Map write on null map");
+    }
+    ThoxaHeader *h = header_of(m);
+    if (h->refcount == 1) {
+        return m;
+    }
+    ThoxaMap *n = map_clone(m, elem_dup);
+    if (elem_drop) {
+        thoxa_map_drop_ex(m, elem_drop);
+    } else {
+        thoxa_map_drop(m);
+    }
+    return n;
+}
+
+static ThoxaMap *map_grow_slots(ThoxaMap *m, ThoxaArrayElemFn elem_dup, ThoxaArrayElemFn elem_drop) {
+    size_t new_slots = m->slot_cap * 2;
+    size_t new_idx = m->idx_cap;
+    if (m->len * 4 >= new_idx * 3) {
+        new_idx *= 2;
+    }
+    ThoxaMap *n =
+        map_alloc(new_slots, new_idx, m->key_kind, m->val_kind, m->val_size);
+    map_copy_slots(n, m, elem_dup);
+    if (elem_drop) {
+        thoxa_map_drop_ex(m, elem_drop);
+    } else {
+        thoxa_map_drop(m);
+    }
+    return n;
+}
+
+static ThoxaMap *map_prepare_insert(
+    ThoxaMap *m,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+) {
+    m = map_ensure_unique(m, elem_dup, elem_drop);
+    if (m->len >= m->slot_cap || m->len * 4 >= m->idx_cap * 3 || m->tombs > m->idx_cap / 2) {
+        m = map_grow_slots(m, elem_dup, elem_drop);
+    }
+    return m;
+}
+
+ThoxaMap *thoxa_map_new(uint32_t key_kind, uint32_t val_kind, uint32_t val_size) {
+    if (key_kind != THOXA_MAP_KEY_I64 && key_kind != THOXA_MAP_KEY_STR) {
+        thoxa_panic("Map key kind not supported");
+    }
+    if (val_kind > THOXA_MAP_VAL_USER) {
+        thoxa_panic("Map value kind not supported");
+    }
+    return map_alloc(8, 16, key_kind, val_kind, val_size);
+}
+
+int64_t thoxa_map_count(const ThoxaMap *m) {
+    return m ? (int64_t)m->len : 0;
+}
+
+int thoxa_map_has(const ThoxaMap *m, int64_t key_bits) {
+    if (!m) {
+        return 0;
+    }
+    uint64_t h = map_hash(m, key_bits);
+    return map_find_slot(m, key_bits, h, NULL) >= 0;
+}
+
+int thoxa_map_get_i64(const ThoxaMap *m, int64_t key_bits, int64_t *out) {
+    if (!m) {
+        return 0;
+    }
+    uint64_t h = map_hash(m, key_bits);
+    int32_t s = map_find_slot(m, key_bits, h, NULL);
+    if (s < 0) {
+        return 0;
+    }
+    if (out) {
+        memcpy(out, map_slot_val_c(m, (size_t)s), sizeof(int64_t));
+    }
+    return 1;
+}
+
+int thoxa_map_get_ptr(const ThoxaMap *m, int64_t key_bits, void **out) {
+    int64_t bits = 0;
+    if (!thoxa_map_get_i64(m, key_bits, &bits)) {
+        return 0;
+    }
+    if (out) {
+        *out = (void *)(intptr_t)bits;
+    }
+    return 1;
+}
+
+int thoxa_map_get_elem(
+    const ThoxaMap *m,
+    int64_t key_bits,
+    void *out,
+    ThoxaArrayElemFn elem_dup
+) {
+    if (!m) {
+        return 0;
+    }
+    uint64_t h = map_hash(m, key_bits);
+    int32_t s = map_find_slot(m, key_bits, h, NULL);
+    if (s < 0) {
+        return 0;
+    }
+    if (out) {
+        memcpy(out, map_slot_val_c(m, (size_t)s), (size_t)m->val_size);
+        if (elem_dup) {
+            elem_dup(out);
+        }
+    }
+    return 1;
+}
+
+static ThoxaMap *map_set_raw(
+    ThoxaMap *m,
+    int64_t key_bits,
+    const void *val,
+    size_t val_n,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop,
+    int val_is_ptr
+) {
+    uint64_t h = map_hash(m, key_bits);
+    int32_t ipos = -1;
+    int32_t found = map_find_slot(m, key_bits, h, &ipos);
+    if (found >= 0) {
+        m = map_ensure_unique(m, elem_dup, elem_drop);
+        found = map_find_slot(m, key_bits, h, NULL);
+        void *dst = map_slot_val(m, (size_t)found);
+        if (m->val_kind == THOXA_MAP_VAL_PTR) {
+            int64_t old = 0;
+            memcpy(&old, dst, sizeof(int64_t));
+            if (val_is_ptr) {
+                int64_t bits;
+                memcpy(&bits, val, sizeof(int64_t));
+                map_dup_val_ptr((void *)(intptr_t)bits);
+            }
+            memcpy(dst, val, val_n);
+            map_drop_val_ptr((void *)(intptr_t)old);
+        } else if (m->val_kind == THOXA_MAP_VAL_USER) {
+            if (elem_drop) {
+                elem_drop(dst);
+            }
+            memcpy(dst, val, val_n);
+            if (elem_dup) {
+                elem_dup(dst);
+            }
+        } else {
+            memcpy(dst, val, val_n);
+        }
+        return m;
+    }
+    m = map_prepare_insert(m, elem_dup, elem_drop);
+    h = map_hash(m, key_bits);
+    found = map_find_slot(m, key_bits, h, &ipos);
+    if (found >= 0) {
+        /* grew/rehashed; treat as overwrite (shouldn't happen for new keys). */
+        memcpy(map_slot_val(m, (size_t)found), val, val_n);
+        return m;
+    }
+    if (ipos < 0) {
+        thoxa_panic("Map index full");
+    }
+    int32_t *idx = map_index(m);
+    if (idx[ipos] == MAP_IDX_TOMB) {
+        m->tombs -= 1;
+    }
+    size_t slot = m->len;
+    MapSlotHead *sl = map_slot(m, slot);
+    sl->hash = h;
+    sl->key = key_bits;
+    map_dup_key(m, key_bits);
+    memcpy(map_slot_val(m, slot), val, val_n);
+    if (m->val_kind == THOXA_MAP_VAL_PTR && val_is_ptr) {
+        int64_t bits;
+        memcpy(&bits, val, sizeof(int64_t));
+        map_dup_val_ptr((void *)(intptr_t)bits);
+    } else if (m->val_kind == THOXA_MAP_VAL_USER && elem_dup) {
+        elem_dup(map_slot_val(m, slot));
+    }
+    idx[ipos] = (int32_t)slot;
+    m->len += 1;
+    return m;
+}
+
+ThoxaMap *thoxa_map_set_i64(ThoxaMap *m, int64_t key_bits, int64_t val) {
+    return map_set_raw(m, key_bits, &val, sizeof(int64_t), NULL, NULL, 0);
+}
+
+ThoxaMap *thoxa_map_set_ptr(ThoxaMap *m, int64_t key_bits, void *val) {
+    int64_t bits = (int64_t)(intptr_t)val;
+    return map_set_raw(m, key_bits, &bits, sizeof(int64_t), NULL, NULL, 1);
+}
+
+ThoxaMap *thoxa_map_set_elem(
+    ThoxaMap *m,
+    int64_t key_bits,
+    const void *val,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+) {
+    if (!val) {
+        thoxa_panic("Map.set null value");
+    }
+    return map_set_raw(
+        m,
+        key_bits,
+        val,
+        (size_t)m->val_size,
+        elem_dup,
+        elem_drop,
+        0
+    );
+}
+
+static ThoxaMap *map_remove_raw(
+    ThoxaMap *m,
+    int64_t key_bits,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+) {
+    if (!m) {
+        return m;
+    }
+    uint64_t h = map_hash(m, key_bits);
+    int32_t ipos = -1;
+    int32_t found = map_find_slot(m, key_bits, h, &ipos);
+    if (found < 0) {
+        return m;
+    }
+    m = map_ensure_unique(m, elem_dup, elem_drop);
+    h = map_hash(m, key_bits);
+    found = map_find_slot(m, key_bits, h, &ipos);
+    if (found < 0) {
+        return m;
+    }
+    MapSlotHead *sl = map_slot(m, (size_t)found);
+    map_drop_key(m, sl->key);
+    if (m->val_kind == THOXA_MAP_VAL_PTR) {
+        int64_t bits = 0;
+        memcpy(&bits, map_slot_val(m, (size_t)found), sizeof(int64_t));
+        map_drop_val_ptr((void *)(intptr_t)bits);
+    } else if (m->val_kind == THOXA_MAP_VAL_USER && elem_drop) {
+        elem_drop(map_slot_val(m, (size_t)found));
+    }
+    int32_t *idx = map_index(m);
+    if (ipos >= 0) {
+        idx[ipos] = MAP_IDX_TOMB;
+        m->tombs += 1;
+    }
+    size_t last = m->len - 1;
+    if ((size_t)found != last) {
+        memcpy(map_slot(m, (size_t)found), map_slot(m, last), map_slot_size(m));
+        /* Fix index that pointed at last so it points at `found`. */
+        MapSlotHead *moved = map_slot(m, (size_t)found);
+        int32_t dummy = -1;
+        int32_t moved_slot = map_find_slot(m, moved->key, moved->hash, &dummy);
+        (void)moved_slot;
+        size_t mask = m->idx_cap - 1;
+        size_t pos = (size_t)moved->hash & mask;
+        for (size_t n = 0; n < m->idx_cap; n++) {
+            if (idx[pos] == (int32_t)last) {
+                idx[pos] = found;
+                break;
+            }
+            pos = (pos + 1) & mask;
+        }
+    }
+    m->len -= 1;
+    return m;
+}
+
+ThoxaMap *thoxa_map_remove(ThoxaMap *m, int64_t key_bits) {
+    return map_remove_raw(m, key_bits, NULL, NULL);
+}
+
+ThoxaMap *thoxa_map_remove_ex(
+    ThoxaMap *m,
+    int64_t key_bits,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+) {
+    return map_remove_raw(m, key_bits, elem_dup, elem_drop);
+}
+
+int64_t thoxa_map_key_at(const ThoxaMap *m, int64_t i) {
+    if (!m || i < 0 || (size_t)i >= m->len) {
+        thoxa_panic("Map index out of range");
+    }
+    return map_slot_c(m, (size_t)i)->key;
+}
+
+int64_t thoxa_map_val_i64_at(const ThoxaMap *m, int64_t i) {
+    if (!m || i < 0 || (size_t)i >= m->len) {
+        thoxa_panic("Map index out of range");
+    }
+    int64_t v = 0;
+    memcpy(&v, map_slot_val_c(m, (size_t)i), sizeof(int64_t));
+    return v;
+}
+
+void *thoxa_map_val_ptr_at(const ThoxaMap *m, int64_t i) {
+    return (void *)(intptr_t)thoxa_map_val_i64_at(m, i);
+}
+
+void thoxa_map_val_elem_at(
+    const ThoxaMap *m,
+    int64_t i,
+    void *out,
+    ThoxaArrayElemFn elem_dup
+) {
+    if (!m || i < 0 || (size_t)i >= m->len) {
+        thoxa_panic("Map index out of range");
+    }
+    if (!out) {
+        thoxa_panic("Map val_elem_at null out");
+    }
+    memcpy(out, map_slot_val_c(m, (size_t)i), (size_t)m->val_size);
+    if (elem_dup) {
+        elem_dup(out);
+    }
+}
+
+ThoxaArray *thoxa_map_keys(const ThoxaMap *m) {
+    size_t n = m ? m->len : 0;
+    int heap = m && m->key_kind == THOXA_MAP_KEY_STR;
+    ThoxaArray *a = thoxa_array_new(heap);
+    for (size_t i = 0; i < n; i++) {
+        int64_t k = map_slot_c(m, i)->key;
+        if (heap) {
+            a = thoxa_array_append_ptr(a, (void *)(intptr_t)k);
+        } else {
+            a = thoxa_array_append_i64(a, k);
+        }
+    }
+    return a;
+}
+
+ThoxaArray *thoxa_map_values_i64(const ThoxaMap *m) {
+    size_t n = m ? m->len : 0;
+    ThoxaArray *a = thoxa_array_new(0);
+    for (size_t i = 0; i < n; i++) {
+        int64_t v = 0;
+        memcpy(&v, map_slot_val_c(m, i), sizeof(int64_t));
+        a = thoxa_array_append_i64(a, v);
+    }
+    return a;
+}
+
+ThoxaArray *thoxa_map_values_ptr(const ThoxaMap *m) {
+    size_t n = m ? m->len : 0;
+    ThoxaArray *a = thoxa_array_new(1);
+    for (size_t i = 0; i < n; i++) {
+        int64_t v = 0;
+        memcpy(&v, map_slot_val_c(m, i), sizeof(int64_t));
+        a = thoxa_array_append_ptr(a, (void *)(intptr_t)v);
+    }
+    return a;
+}
+
+ThoxaArray *thoxa_map_values_elem(
+    const ThoxaMap *m,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+) {
+    size_t n = m ? m->len : 0;
+    uint32_t es = m ? m->val_size : (uint32_t)sizeof(int64_t);
+    ThoxaArray *a = thoxa_array_new_ex(es, 0);
+    for (size_t i = 0; i < n; i++) {
+        a = thoxa_array_append_elem(a, map_slot_val_c(m, i), es, 0, elem_dup, elem_drop);
+    }
+    return a;
+}
+
+void thoxa_map_dup(ThoxaMap *m) {
+    thoxa_dup(m);
+}
+
+void thoxa_map_drop(ThoxaMap *m) {
+    thoxa_map_drop_ex(m, NULL);
+}
+
+void thoxa_map_drop_ex(ThoxaMap *m, ThoxaArrayElemFn elem_drop) {
+    if (!m) {
+        return;
+    }
+    ThoxaHeader *h = header_of(m);
+    if (!h) {
+        return;
+    }
+    if (h->refcount == 0) {
+        thoxa_panic("drop on zero refcount");
+    }
+    h->refcount -= 1;
+    if (h->refcount == 0) {
+        map_drop_contents(m, elem_drop);
+        free(h);
+    }
+}
+
+static int map_ident_safe(const char *s, size_t n) {
+    if (n == 0) {
+        return 0;
+    }
+    unsigned char c = (unsigned char)s[0];
+    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_')) {
+        return 0;
+    }
+    for (size_t i = 1; i < n; i++) {
+        c = (unsigned char)s[i];
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+              || c == '_')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void map_buf_grow(char **buf, size_t *cap, size_t *used, size_t need) {
+    while (*used + need >= *cap) {
+        *cap *= 2;
+        *buf = (char *)realloc(*buf, *cap);
+        if (!*buf) {
+            thoxa_panic("out of memory");
+        }
+    }
+}
+
+static void map_buf_app(char **buf, size_t *cap, size_t *used, const char *s, size_t n) {
+    map_buf_grow(buf, cap, used, n);
+    memcpy(*buf + *used, s, n);
+    *used += n;
+}
+
+ThoxaString *thoxa_map_to_string(const ThoxaMap *m, int val_is_string) {
+    size_t n = m ? m->len : 0;
+    size_t cap = 16 + n * 24;
+    char *buf = (char *)malloc(cap);
+    if (!buf) {
+        thoxa_panic("out of memory");
+    }
+    size_t used = 0;
+    buf[used++] = '{';
+    for (size_t i = 0; i < n; i++) {
+        if (i > 0) {
+            map_buf_app(&buf, &cap, &used, ", ", 2);
+        }
+        if (m->key_kind == THOXA_MAP_KEY_STR) {
+            const ThoxaString *ks = (const ThoxaString *)(intptr_t)map_slot_c(m, i)->key;
+            const char *kd = ks ? ks->data : "";
+            size_t kn = ks ? ks->len : 0;
+            if (map_ident_safe(kd, kn)) {
+                map_buf_app(&buf, &cap, &used, kd, kn);
+            } else {
+                map_buf_app(&buf, &cap, &used, "\"", 1);
+                map_buf_app(&buf, &cap, &used, kd, kn);
+                map_buf_app(&buf, &cap, &used, "\"", 1);
+            }
+        } else {
+            char tmp[32];
+            int64_t k = map_slot_c(m, i)->key;
+            int w = snprintf(tmp, sizeof(tmp), "%lld", (long long)k);
+            if (w > 0) {
+                map_buf_app(&buf, &cap, &used, tmp, (size_t)w);
+            }
+        }
+        map_buf_app(&buf, &cap, &used, ": ", 2);
+        int64_t bits = 0;
+        memcpy(&bits, map_slot_val_c(m, i), sizeof(int64_t));
+        if (val_is_string) {
+            const ThoxaString *vs = (const ThoxaString *)(intptr_t)bits;
+            const char *vd = vs ? vs->data : "";
+            size_t vn = vs ? vs->len : 0;
+            map_buf_app(&buf, &cap, &used, "\"", 1);
+            map_buf_app(&buf, &cap, &used, vd, vn);
+            map_buf_app(&buf, &cap, &used, "\"", 1);
+        } else {
+            char tmp[32];
+            int w = snprintf(tmp, sizeof(tmp), "%lld", (long long)bits);
+            if (w > 0) {
+                map_buf_app(&buf, &cap, &used, tmp, (size_t)w);
+            }
+        }
+    }
+    map_buf_grow(&buf, &cap, &used, 1);
+    buf[used++] = '}';
+    ThoxaString *out = thoxa_string_new(buf, used);
+    free(buf);
+    return out;
 }
 
 ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a) {

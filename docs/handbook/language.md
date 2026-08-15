@@ -57,7 +57,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Area | Shipped |
 |------|---------|
 | Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Bool`, `Void` |
-| Heap | `String` (interpolation, `.count`, `\xHH` escapes), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (`.append` / `.dropLast` / `.insertAt` / `.removeAt`) |
+| Heap | `String` (interpolation, `.count`, `\xHH` escapes), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`) |
 | User types | `type Name(fields) { methods }` — including heap fields; method field write-back |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
 | Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"` |
@@ -202,6 +202,46 @@ Rules (v0):
 Bare literal types and inline member-sets (`"a" | "b"`) are also valid in
 formals, returns, and annotations in general. Singleton alias:
 `type Home = "home"`.
+
+## Arrays and maps (value collections)
+
+`Array<T>` and `Map<K, V>` are heap values with Swift / `Buffer` copy-on-write
+(**D133** / **D134**). `let ys = xs` shares storage until a write; a write
+through a `mut` place copies if anyone else still holds the object.
+
+```thx
+import { Has, Not, May } from "std/Fallible"
+
+mut xs = [1, 2, 3]
+xs.append(4)          ## Void — not xs = xs.append(4)
+xs[1] = 99
+
+mut m: Map<String, Int64> = Map()
+m.set("a", 1)
+m["b"] = 2
+match m["a"] {
+    Has(v) => info("{v}")
+    Not => info("missing")
+}
+let lit = { Cookie: "a=1", Host: "localhost" }
+for k, v in lit {
+    info("{k}={v}")
+}
+```
+
+- **Array writes** (`.append` / `.dropLast` / `.insertAt` / `.removeAt` /
+  `a[i] =`) require a `mut` place and return `Void`. Index get `a[i]` still
+  panics out of range.
+- **Map keys:** `String`, `Int64`, `Bool`. Ident keys in `{ Cookie: … }`
+  are the string `"Cookie"`. Empty `{}` is still a block; empty map is `Map()`.
+  A `type Header(…)` may be a **value** (`Map<String, Header>`), not a key.
+- **Map reads:** `m[k]` and `.get(k)` are `May<V>` (import Fallible). `.has(k)`
+  is `Bool`. Duplicate keys in one literal are an error.
+- **Map writes:** `.set` / `.remove` / `m[k] =` write back. Missing `.remove`
+  is a no-op.
+- **Iteration:** `for x in arr`; `for k, v in map` (insertion order).
+  `.keys()` / `.values()` snapshot to `Array`.
+- Fixed `Array<T, N>` and Bytes splice are unchanged (inline / functional).
 
 ## Methods and field write-back
 

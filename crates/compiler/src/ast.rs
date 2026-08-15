@@ -317,6 +317,8 @@ pub enum ExprKind {
     },
     /// `[e1, e2, …]` — dynamic Array literal.
     ArrayLit(Vec<Expr>),
+    /// `{ k: v, … }` — Map literal (expression position; empty `{}` is still a block).
+    MapLit(Vec<(Expr, Expr)>),
     If {
         cond: Box<Expr>,
         then_branch: Block,
@@ -333,9 +335,12 @@ pub enum ExprKind {
         body: Block,
     },
     /// `for name in lo..hi` / `lo..=hi` or `for name in collection { body }` — yields `Void`.
+    /// `for k, v in map` sets `value`.
     For {
         name: String,
         name_span: Span,
+        /// Second binder for `for k, v in map`.
+        value: Option<(String, Span)>,
         /// Range start, or the collection expression when `end` is None.
         start: Box<Expr>,
         /// Range end when iterating a range; `None` means `for x in collection`.

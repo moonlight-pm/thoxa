@@ -1,0 +1,23 @@
+## Map with User values + Map as a constructor field.
+import logging from "std/Logging"
+type Header(name: String, value: String) {
+    export fn label() -> String {
+        "{name}={value}"
+    }
+}
+
+type Bag(items: Map<String, Header>)
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    mut m: Map<String, Header> = Map()
+    m.set("h", Header(name: "Host", value: "ex"))
+    for k, h in m {
+        logging.info("got={h.label()}")
+    }
+    let bag = Bag(items: m)
+    logging.info("bag_n={bag.items.count}")
+    0
+}

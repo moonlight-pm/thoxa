@@ -196,12 +196,12 @@ fn splitOn(line!: String, sep!: Int64) -> Array<String> {
         let c = b.get(i)
         if c == sep {
             if inPart {
-                parts = parts.append(acc.freeze().toString())
+                parts.append(acc.freeze().toString())
                 acc = Buffer()
                 inPart = false
             } else {
                 ## consecutive seps / leading sep → empty component (PATH semantics)
-                parts = parts.append("")
+                parts.append("")
             }
         } else {
             acc.append(c)
@@ -209,12 +209,12 @@ fn splitOn(line!: String, sep!: Int64) -> Array<String> {
         }
     }
     if inPart {
-        parts = parts.append(acc.freeze().toString())
+        parts.append(acc.freeze().toString())
     } else {
         if b.count > 0 {
             ## trailing sep → empty final component
             if b.get(b.count - 1) == sep {
-                parts = parts.append("")
+                parts.append("")
             }
         }
     }
@@ -272,14 +272,14 @@ fn splitWords(line!: String) -> Words {
                             } else {
                                 if c == chSpace {
                                     if inWord {
-                                        words = words.append(acc.freeze().toString())
+                                        words.append(acc.freeze().toString())
                                         acc = Buffer()
                                         inWord = false
                                     }
                                 } else {
                                     if c == chTab {
                                         if inWord {
-                                            words = words.append(acc.freeze().toString())
+                                            words.append(acc.freeze().toString())
                                             acc = Buffer()
                                             inWord = false
                                         }
@@ -307,7 +307,7 @@ fn splitWords(line!: String) -> Words {
         Words(ok: false, items: empty)
     } else {
         if inWord {
-            words = words.append(acc.freeze().toString())
+            words.append(acc.freeze().toString())
         }
         Words(ok: true, items: words)
     }
@@ -319,7 +319,7 @@ fn tailArgs(words!: Array<String>) -> Array<String> {
     mut i = 0
     for w in words {
         if i > 0 {
-            out = out.append(w)
+            out.append(w)
         }
         i = i + 1
     }

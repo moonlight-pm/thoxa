@@ -571,7 +571,7 @@ fn emit_function(
 fn is_heap_ty(ty: &Ty) -> bool {
     matches!(
         ty,
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. }
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. }
     )
 }
 
@@ -593,6 +593,7 @@ fn needs_drop_ty(ty: &Ty) -> bool {
             | Ty::Buffer
             | Ty::Node
             | Ty::Array { .. }
+            | Ty::Map { .. }
             | Ty::User(_)
             | Ty::Fn { .. }
     )
@@ -601,7 +602,7 @@ fn needs_drop_ty(ty: &Ty) -> bool {
 /// Declare a local with a safe zero value (so branch-skipped drops are no-ops).
 fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
     match ty {
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } => {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
             let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
         }
         Ty::User(_) | Ty::Fn { .. } => {
@@ -820,7 +821,87 @@ fn emit_stmts(
                 // User ArrayGet writes through out-param (not an expression).
                 // Drop any prior field ownership in `place` before overwrite (D65
                 // defensive: MIR usually Drop's or uses a zeroed fresh place).
-                if let RValue::ArrayGet {
+                if let RValue::MapGet {
+                    map,
+                    key,
+                    out: dest,
+                    val_ty,
+                } = value
+                {
+                    emit_map_get(out, &pad, place, map, key, dest, val_ty);
+                } else if let RValue::MapValAt {
+                    map,
+                    index,
+                    val_ty,
+                } = value
+                {
+                    match val_ty {
+                        Ty::User(type_name) => {
+                            emit_rc(out, &pad, place, &Ty::User(type_name.clone()), false, types);
+                            let _ = writeln!(
+                                out,
+                                "{pad}thoxa_map_val_elem_at({}, {}, &{}, {});",
+                                map.name,
+                                index.name,
+                                place.name,
+                                array_user_elem_dup_fn(type_name)
+                            );
+                        }
+                        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
+                            let _ = writeln!(
+                                out,
+                                "{pad}{} = ({})thoxa_map_val_ptr_at({}, {});",
+                                place.name,
+                                c_ty(val_ty),
+                                map.name,
+                                index.name
+                            );
+                        }
+                        Ty::Bool => {
+                            let _ = writeln!(
+                                out,
+                                "{pad}{} = thoxa_map_val_i64_at({}, {}) != 0;",
+                                place.name, map.name, index.name
+                            );
+                        }
+                        _ => {
+                            let _ = writeln!(
+                                out,
+                                "{pad}{} = ({})thoxa_map_val_i64_at({}, {});",
+                                place.name,
+                                c_ty(val_ty),
+                                map.name,
+                                index.name
+                            );
+                        }
+                    }
+                } else if let RValue::MapKeyAt { map, index } = value {
+                    if is_heap_ty(ty) {
+                        let _ = writeln!(
+                            out,
+                            "{pad}{} = ({})(intptr_t)thoxa_map_key_at({}, {});",
+                            place.name,
+                            c_ty(ty),
+                            map.name,
+                            index.name
+                        );
+                    } else if *ty == Ty::Bool {
+                        let _ = writeln!(
+                            out,
+                            "{pad}{} = thoxa_map_key_at({}, {}) != 0;",
+                            place.name, map.name, index.name
+                        );
+                    } else {
+                        let _ = writeln!(
+                            out,
+                            "{pad}{} = ({})thoxa_map_key_at({}, {});",
+                            place.name,
+                            c_ty(ty),
+                            map.name,
+                            index.name
+                        );
+                    }
+                } else if let RValue::ArrayGet {
                     arr,
                     index,
                     elem_ty: Ty::User(type_name),
@@ -956,24 +1037,25 @@ fn emit_stmts(
                 elem_ty,
                 value,
             } => match elem_ty {
-                Ty::String | Ty::Bytes => {
+                Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
                     let _ = writeln!(
                         out,
-                        "{pad}thoxa_array_set_ptr({}, {}, {});",
-                        base.name, index.name, value.name
+                        "{pad}{} = thoxa_array_set_ptr({}, {}, {});",
+                        base.name, base.name, index.name, value.name
                     );
                 }
                 Ty::Bool => {
                     let _ = writeln!(
                         out,
-                        "{pad}thoxa_array_set_i64({}, {}, {} ? INT64_C(1) : INT64_C(0));",
-                        base.name, index.name, value.name
+                        "{pad}{} = thoxa_array_set_i64({}, {}, {} ? INT64_C(1) : INT64_C(0));",
+                        base.name, base.name, index.name, value.name
                     );
                 }
                 Ty::User(type_name) => {
                     let _ = writeln!(
                         out,
-                        "{pad}thoxa_array_set_elem({}, {}, &{}, {}, {});",
+                        "{pad}{} = thoxa_array_set_elem({}, {}, &{}, {}, {});",
+                        base.name,
                         base.name,
                         index.name,
                         value.name,
@@ -984,8 +1066,8 @@ fn emit_stmts(
                 _ => {
                     let _ = writeln!(
                         out,
-                        "{pad}thoxa_array_set_i64({}, {}, (int64_t){});",
-                        base.name, index.name, value.name
+                        "{pad}{} = thoxa_array_set_i64({}, {}, (int64_t){});",
+                        base.name, base.name, index.name, value.name
                     );
                 }
             },
@@ -1146,6 +1228,8 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     "array_insert_at_i64" => "thoxa_array_insert_at_i64",
                     "array_insert_at_ptr" => "thoxa_array_insert_at_ptr",
                     "array_remove_at" => "thoxa_array_remove_at",
+                    "map_count" => "thoxa_map_count",
+                    "map_has" => "thoxa_map_has",
                     "html_el" => "thoxa_html_el",
                     "html_text" => "thoxa_html_text",
                     "html_frag" => "thoxa_html_frag",
@@ -1158,7 +1242,11 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     if i > 0 {
                         out.push_str(", ");
                     }
-                    out.push_str(&a.name);
+                    if c == "thoxa_map_has" && i == 1 {
+                        out.push_str(&c_map_key_bits(&a.name));
+                    } else {
+                        out.push_str(&a.name);
+                    }
                 }
                 out.push(')');
             }
@@ -1338,11 +1426,12 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             Ty::User(type_name) => {
                 let _ = write!(
                     out,
-                    "thoxa_array_append_elem({}, &{}, (uint32_t)sizeof({}), 0u, {})",
+                    "thoxa_array_append_elem({}, &{}, (uint32_t)sizeof({}), 0u, {}, {})",
                     arr.name,
                     item.name,
                     c_type_name(type_name),
-                    array_user_elem_dup_fn(type_name)
+                    array_user_elem_dup_fn(type_name),
+                    array_user_elem_drop_fn(type_name)
                 );
             }
             _ => {
@@ -1353,9 +1442,10 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             Ty::User(type_name) => {
                 let _ = write!(
                     out,
-                    "thoxa_array_drop_last_ex({}, {})",
+                    "thoxa_array_drop_last_ex({}, {}, {})",
                     arr.name,
-                    array_user_elem_dup_fn(type_name)
+                    array_user_elem_dup_fn(type_name),
+                    array_user_elem_drop_fn(type_name)
                 );
             }
             _ => {
@@ -1371,12 +1461,13 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             Ty::User(type_name) => {
                 let _ = write!(
                     out,
-                    "thoxa_array_insert_at_elem({}, {}, &{}, (uint32_t)sizeof({}), 0u, {})",
+                    "thoxa_array_insert_at_elem({}, {}, &{}, (uint32_t)sizeof({}), 0u, {}, {})",
                     arr.name,
                     at.name,
                     item.name,
                     c_type_name(type_name),
-                    array_user_elem_dup_fn(type_name)
+                    array_user_elem_dup_fn(type_name),
+                    array_user_elem_drop_fn(type_name)
                 );
             }
             _ => {
@@ -1387,16 +1478,51 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             Ty::User(type_name) => {
                 let _ = write!(
                     out,
-                    "thoxa_array_remove_at_ex({}, {}, {})",
+                    "thoxa_array_remove_at_ex({}, {}, {}, {})",
                     arr.name,
                     at.name,
-                    array_user_elem_dup_fn(type_name)
+                    array_user_elem_dup_fn(type_name),
+                    array_user_elem_drop_fn(type_name)
                 );
             }
             _ => {
                 let _ = write!(out, "thoxa_array_remove_at({}, {})", arr.name, at.name);
             }
         },
+        RValue::MapNew { key_ty, val_ty } => {
+            let _ = write!(
+                out,
+                "thoxa_map_new({}, {}, {})",
+                map_key_kind_c(key_ty),
+                map_val_kind_c(val_ty),
+                map_val_size_c(val_ty)
+            );
+        }
+        RValue::MapSet {
+            map,
+            key,
+            val,
+            val_ty,
+            ..
+        } => emit_map_set(out, map, key, val, val_ty),
+        RValue::MapRemove {
+            map,
+            key,
+            val_ty,
+            ..
+        } => emit_map_remove(out, map, key, val_ty),
+        RValue::MapGet { .. } => {
+            out.push_str("/* bad MapGet as rvalue */");
+        }
+        RValue::MapKeyAt { map, index } => {
+            let _ = write!(out, "thoxa_map_key_at({}, {})", map.name, index.name);
+        }
+        RValue::MapValAt { map, index, val_ty } => emit_map_val_at(out, map, index, val_ty),
+        RValue::MapKeys { map, key_ty } => {
+            let _ = key_ty;
+            let _ = write!(out, "thoxa_map_keys({})", map.name);
+        }
+        RValue::MapValues { map, val_ty } => emit_map_values(out, map, val_ty),
         RValue::ToString { value, from } => match from {
             Ty::Int64 => {
                 let _ = write!(out, "thoxa_string_from_i64({})", value.name);
@@ -1409,6 +1535,12 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             }
             Ty::Array { elem } if matches!(elem.as_ref(), Ty::String) => {
                 let _ = write!(out, "thoxa_array_string_to_string({})", value.name);
+            }
+            Ty::Map { val, .. } if matches!(val.as_ref(), Ty::String) => {
+                let _ = write!(out, "thoxa_map_to_string({}, 1)", value.name);
+            }
+            Ty::Map { .. } => {
+                let _ = write!(out, "thoxa_map_to_string({}, 0)", value.name);
             }
             // MIR should reject unsupported ToString; keep a non-null placeholder if
             // a path slips through so println does not crash on NULL.
@@ -1484,6 +1616,7 @@ fn c_ty(ty: &Ty) -> String {
         Ty::Buffer => "ThoxaBuffer*".into(),
         Ty::Node => "ThoxaHtml*".into(),
         Ty::Array { .. } => "ThoxaArray*".into(),
+        Ty::Map { .. } => "ThoxaMap*".into(),
         Ty::Void | Ty::Never => "void".into(),
         Ty::User(name) => c_type_name(name),
         Ty::FixedArray { elem, .. } => {
@@ -1559,6 +1692,197 @@ fn array_user_elem_drop_fn(type_name: &str) -> String {
     format!("thoxa_arr_elem_drop_{type_name}")
 }
 
+fn c_map_key_bits(name: &str) -> String {
+    format!("(int64_t)(intptr_t){name}")
+}
+
+fn map_key_kind_c(ty: &Ty) -> &'static str {
+    match ty {
+        Ty::String => "THOXA_MAP_KEY_STR",
+        _ => "THOXA_MAP_KEY_I64",
+    }
+}
+
+fn map_val_kind_c(ty: &Ty) -> &'static str {
+    match ty {
+        Ty::User(_) => "THOXA_MAP_VAL_USER",
+        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => "THOXA_MAP_VAL_PTR",
+        _ => "THOXA_MAP_VAL_I64",
+    }
+}
+
+fn map_val_size_c(ty: &Ty) -> String {
+    match ty {
+        Ty::User(n) => format!("(uint32_t)sizeof({})", c_type_name(n)),
+        _ => "(uint32_t)sizeof(int64_t)".into(),
+    }
+}
+
+fn emit_map_set(out: &mut String, map: &crate::mir::Place, key: &crate::mir::Place, val: &crate::mir::Place, val_ty: &Ty) {
+    match val_ty {
+        Ty::User(type_name) => {
+            let _ = write!(
+                out,
+                "thoxa_map_set_elem({}, {}, &{}, {}, {})",
+                map.name,
+                c_map_key_bits(&key.name),
+                val.name,
+                array_user_elem_dup_fn(type_name),
+                array_user_elem_drop_fn(type_name)
+            );
+        }
+        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
+            let _ = write!(
+                out,
+                "thoxa_map_set_ptr({}, {}, {})",
+                map.name,
+                c_map_key_bits(&key.name),
+                val.name
+            );
+        }
+        Ty::Bool => {
+            let _ = write!(
+                out,
+                "thoxa_map_set_i64({}, {}, {} ? INT64_C(1) : INT64_C(0))",
+                map.name,
+                c_map_key_bits(&key.name),
+                val.name
+            );
+        }
+        _ => {
+            let _ = write!(
+                out,
+                "thoxa_map_set_i64({}, {}, (int64_t){})",
+                map.name,
+                c_map_key_bits(&key.name),
+                val.name
+            );
+        }
+    }
+}
+
+fn emit_map_remove(out: &mut String, map: &crate::mir::Place, key: &crate::mir::Place, val_ty: &Ty) {
+    if let Ty::User(type_name) = val_ty {
+        let _ = write!(
+            out,
+            "thoxa_map_remove_ex({}, {}, {}, {})",
+            map.name,
+            c_map_key_bits(&key.name),
+            array_user_elem_dup_fn(type_name),
+            array_user_elem_drop_fn(type_name)
+        );
+    } else {
+        let _ = write!(
+            out,
+            "thoxa_map_remove({}, {})",
+            map.name,
+            c_map_key_bits(&key.name)
+        );
+    }
+}
+
+fn emit_map_get(
+    out: &mut String,
+    pad: &str,
+    found: &crate::mir::Place,
+    map: &crate::mir::Place,
+    key: &crate::mir::Place,
+    dest: &crate::mir::Place,
+    val_ty: &Ty,
+) {
+    match val_ty {
+        Ty::User(type_name) => {
+            let _ = writeln!(
+                out,
+                "{pad}{} = thoxa_map_get_elem({}, {}, &{}, {});",
+                found.name,
+                map.name,
+                c_map_key_bits(&key.name),
+                dest.name,
+                array_user_elem_dup_fn(type_name)
+            );
+        }
+        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
+            let _ = writeln!(
+                out,
+                "{pad}{} = thoxa_map_get_ptr({}, {}, (void **)&{});",
+                found.name,
+                map.name,
+                c_map_key_bits(&key.name),
+                dest.name
+            );
+        }
+        Ty::Bool => {
+            let tmp = format!("{}_i", dest.name);
+            let _ = writeln!(out, "{pad}int64_t {tmp} = 0;");
+            let _ = writeln!(
+                out,
+                "{pad}{} = thoxa_map_get_i64({}, {}, &{tmp});",
+                found.name,
+                map.name,
+                c_map_key_bits(&key.name)
+            );
+            let _ = writeln!(out, "{pad}{} = {tmp} != 0;", dest.name);
+        }
+        _ => {
+            let _ = writeln!(
+                out,
+                "{pad}{} = thoxa_map_get_i64({}, {}, &{});",
+                found.name,
+                map.name,
+                c_map_key_bits(&key.name),
+                dest.name
+            );
+        }
+    }
+}
+
+fn emit_map_val_at(out: &mut String, map: &crate::mir::Place, index: &crate::mir::Place, val_ty: &Ty) {
+    match val_ty {
+        Ty::User(type_name) => {
+            let _ = write!(
+                out,
+                "/* MapValAt user handled in assign */ thoxa_map_val_i64_at({}, {})",
+                map.name, index.name
+            );
+            let _ = type_name;
+        }
+        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
+            let _ = write!(out, "thoxa_map_val_ptr_at({}, {})", map.name, index.name);
+        }
+        Ty::Bool => {
+            let _ = write!(
+                out,
+                "thoxa_map_val_i64_at({}, {}) != 0",
+                map.name, index.name
+            );
+        }
+        _ => {
+            let _ = write!(out, "thoxa_map_val_i64_at({}, {})", map.name, index.name);
+        }
+    }
+}
+
+fn emit_map_values(out: &mut String, map: &crate::mir::Place, val_ty: &Ty) {
+    match val_ty {
+        Ty::User(type_name) => {
+            let _ = write!(
+                out,
+                "thoxa_map_values_elem({}, {}, {})",
+                map.name,
+                array_user_elem_dup_fn(type_name),
+                array_user_elem_drop_fn(type_name)
+            );
+        }
+        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
+            let _ = write!(out, "thoxa_map_values_ptr({})", map.name);
+        }
+        _ => {
+            let _ = write!(out, "thoxa_map_values_i64({})", map.name);
+        }
+    }
+}
+
 /// Static field-walk helpers used as ThoxaArrayElemFn for Array<User>.
 /// Elements may have String/Bytes and Array fields (trees). Nested User
 /// fields still deferred. Recursive Array<T> uses the forward-declared
@@ -1577,6 +1901,9 @@ fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
             Ty::Array { elem } => {
                 let _ = writeln!(out, "    thoxa_array_dup(e->{});", f.c_name);
                 let _ = elem;
+            }
+            Ty::Map { .. } => {
+                let _ = writeln!(out, "    thoxa_map_dup(e->{});", f.c_name);
             }
             _ => {}
         }
@@ -1599,6 +1926,18 @@ fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
                     );
                 } else {
                     let _ = writeln!(out, "    thoxa_array_drop(e->{});", f.c_name);
+                }
+            }
+            Ty::Map { val, .. } => {
+                if let Ty::User(type_name) = val.as_ref() {
+                    let _ = writeln!(
+                        out,
+                        "    thoxa_map_drop_ex(e->{}, {});",
+                        f.c_name,
+                        array_user_elem_drop_fn(type_name)
+                    );
+                } else {
+                    let _ = writeln!(out, "    thoxa_map_drop(e->{});", f.c_name);
                 }
             }
             _ => {}
@@ -1641,6 +1980,14 @@ fn push_user_array_elem_from_rvalue(rv: &RValue, out: &mut Vec<String>) {
         | RValue::ArrayRemoveAt { elem_ty, .. } => {
             push_user_array_elem_ty(elem_ty, out);
         }
+        RValue::MapNew { val_ty, .. }
+        | RValue::MapSet { val_ty, .. }
+        | RValue::MapRemove { val_ty, .. }
+        | RValue::MapGet { val_ty, .. }
+        | RValue::MapValAt { val_ty, .. }
+        | RValue::MapValues { val_ty, .. } => {
+            push_user_array_elem_ty(val_ty, out);
+        }
         _ => {}
     }
 }
@@ -1678,6 +2025,9 @@ fn push_user_array_elem(ty: &Ty, out: &mut Vec<String>) {
     if let Ty::Array { elem } = ty {
         push_user_array_elem_ty(elem, out);
     }
+    if let Ty::Map { val, .. } = ty {
+        push_user_array_elem_ty(val, out);
+    }
 }
 
 fn push_user_array_elem_ty(elem_ty: &Ty, out: &mut Vec<String>) {
@@ -1700,6 +2050,20 @@ fn emit_rc(
     match ty {
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node => {
             let _ = writeln!(out, "{pad}{op}({});", place.name);
+        }
+        Ty::Map { val, .. } => {
+            if dup {
+                let _ = writeln!(out, "{pad}thoxa_map_dup({});", place.name);
+            } else if let Ty::User(type_name) = val.as_ref() {
+                let _ = writeln!(
+                    out,
+                    "{pad}thoxa_map_drop_ex({}, {});",
+                    place.name,
+                    array_user_elem_drop_fn(type_name)
+                );
+            } else {
+                let _ = writeln!(out, "{pad}thoxa_map_drop({});", place.name);
+            }
         }
         Ty::Array { elem } => {
             // Array drop walks heap elements; User uses field-level RC callbacks (D65).

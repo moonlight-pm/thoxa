@@ -114,7 +114,7 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 
 ## Runtime notes
 
-- Heap today: `String`, `Bytes`, dynamic `Array`, `Buffer` — simple RC.
+- Heap today: `String`, `Bytes`, dynamic `Array`, `Map`, `Buffer` — simple RC.
 - Cooperative tasks (on master, not freeze): `thoxa_task_start` /
   `thoxa_wait_ms` / `thoxa_wait_fd` / `thoxa_sched_drain` — one OS thread,
   stackful fibers; poll + timers. `std/Net` accept/connect/recv/send go

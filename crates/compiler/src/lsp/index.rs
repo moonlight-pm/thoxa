@@ -162,6 +162,7 @@ fn builtin_help(name: &str) -> &'static str {
         "Bytes" => "Built-in byte buffer.",
         "Buffer" => "Built-in growable buffer.",
         "Array" => "Built-in dynamic array.",
+        "Map" => "Built-in map (Swift-style COW).",
         _ => "Built-in.",
     }
 }

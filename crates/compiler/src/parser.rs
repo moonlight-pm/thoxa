@@ -1612,12 +1612,16 @@ impl Parser {
                 })
             }
             TokenKind::LBrace => {
-                let block = self.parse_block()?;
-                let span = block.span;
-                Ok(Expr {
-                    kind: ExprKind::Block(block),
-                    span,
-                })
+                if self.at_map_lit() {
+                    self.parse_map_lit()
+                } else {
+                    let block = self.parse_block()?;
+                    let span = block.span;
+                    Ok(Expr {
+                        kind: ExprKind::Block(block),
+                        span,
+                    })
+                }
             }
             TokenKind::LParen => {
                 self.bump();
@@ -1656,6 +1660,101 @@ impl Parser {
             _ => Err(Error::at(
                 format!("expected expression, found {:?}", self.current().kind),
                 self.peek_span(),
+            )),
+        }
+    }
+
+    /// `{ key: value` in expression position — map literal, not a block.
+    fn at_map_lit(&self) -> bool {
+        self.at(TokenKind::LBrace) && self.at_map_key_token(1) && self.peek_kind_is(2, TokenKind::Colon)
+    }
+
+    fn at_map_key_token(&self, offset: usize) -> bool {
+        let i = self.pos + offset;
+        if i >= self.tokens.len() {
+            return false;
+        }
+        matches!(
+            self.tokens[i].kind,
+            TokenKind::Ident(_)
+                | TokenKind::String(_)
+                | TokenKind::Int(_)
+                | TokenKind::True
+                | TokenKind::False
+        )
+    }
+
+    fn parse_map_lit(&mut self) -> Result<Expr> {
+        let start = self.peek_span();
+        self.expect_kind(&TokenKind::LBrace)?;
+        let mut entries = Vec::new();
+        if !self.at(TokenKind::RBrace) {
+            loop {
+                let key = self.parse_map_key()?;
+                self.expect_kind(&TokenKind::Colon)?;
+                let val = self.parse_expr()?;
+                entries.push((key, val));
+                if self.at(TokenKind::Comma) {
+                    self.bump();
+                    if self.at(TokenKind::RBrace) {
+                        break;
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        self.expect_kind(&TokenKind::RBrace)?;
+        Ok(Expr {
+            kind: ExprKind::MapLit(entries),
+            span: Span::new(start.start, self.prev_span().end),
+        })
+    }
+
+    fn parse_map_key(&mut self) -> Result<Expr> {
+        let span = self.peek_span();
+        match &self.current().kind {
+            TokenKind::Ident(s) => {
+                let s = s.clone();
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::String(s),
+                    span,
+                })
+            }
+            TokenKind::String(s) => {
+                let s = s.clone();
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::String(s),
+                    span,
+                })
+            }
+            TokenKind::Int(n) => {
+                let n = *n;
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Int(n),
+                    span,
+                })
+            }
+            TokenKind::True => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Bool(true),
+                    span,
+                })
+            }
+            TokenKind::False => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Bool(false),
+                    span,
+                })
+            }
+            _ => Err(Error::at(
+                "map key must be an identifier, string, integer, or bool literal",
+                span,
             )),
         }
     }
@@ -1949,10 +2048,17 @@ impl Parser {
     }
 
     /// `for name in start..end` / `start..=end` or `for name in collection { body }`
+    /// or `for k, v in map { body }`.
     fn parse_for(&mut self) -> Result<Expr> {
         let start_span = self.peek_span();
         self.expect_kind(&TokenKind::For)?;
         let (name, name_span) = self.expect_ident()?;
+        let value = if self.at(TokenKind::Comma) {
+            self.bump();
+            Some(self.expect_ident()?)
+        } else {
+            None
+        };
         self.expect_kind(&TokenKind::In)?;
         let range_start = self.parse_expr()?;
         let (end_expr, inclusive) = if self.at(TokenKind::DotDotEq) {
@@ -1962,15 +2068,22 @@ impl Parser {
             self.bump();
             (Some(Box::new(self.parse_expr()?)), false)
         } else {
-            // Collection iteration: `for x in xs`
+            // Collection iteration: `for x in xs` / `for k, v in m`
             (None, false)
         };
+        if value.is_some() && end_expr.is_some() {
+            return Err(Error::at(
+                "`for k, v` is only for Map iteration (not ranges)",
+                start_span,
+            ));
+        }
         let body = self.parse_block()?;
         let end = body.span.end;
         Ok(Expr {
             kind: ExprKind::For {
                 name,
                 name_span,
+                value,
                 start: Box::new(range_start),
                 end: end_expr,
                 inclusive,

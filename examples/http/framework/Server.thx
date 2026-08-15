@@ -52,7 +52,7 @@ fn unpackHeaders(packed!: Bytes) -> Array<Header> {
         match splitOnceTab(line) {
             Not { }
             Has(kv) {
-                headers = headers.append(Header(name: kv.name, value: kv.value))
+                headers.append(Header(name: kv.name, value: kv.value))
             }
         }
     }

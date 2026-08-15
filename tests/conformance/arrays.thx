@@ -6,8 +6,12 @@ fn main() -> Int64 {
 
     let xs = [10, 20, 30]
     logging.info("count={xs.count} first={xs[0]} last={xs[2]}")
-    logging.info("appended={xs.append(40)}")
-    logging.info("dropped={xs.dropLast()}")
+    mut appended = xs
+    appended.append(40)
+    logging.info("appended={appended}")
+    mut dropped = xs
+    dropped.dropLast()
+    logging.info("dropped={dropped}")
     mut ys = [1, 2, 3]
     ys[1] = 99
     logging.info("mutated={ys}")

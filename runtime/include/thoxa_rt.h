@@ -16,6 +16,7 @@ extern "C" {
 #define THOXA_TAG_BUFFER 3
 #define THOXA_TAG_ARRAY  4
 #define THOXA_TAG_HTML   5
+#define THOXA_TAG_MAP    6
 
 /* Element slots: heap pointers (String/Bytes) bitcast into 8-byte slots. */
 #define THOXA_ARRAY_FLAG_HEAP_ELEMS 1u
@@ -241,7 +242,7 @@ ThoxaBuffer *thoxa_buffer_append_bytes(ThoxaBuffer *b, const ThoxaBytes *src);
 /* Copy live prefix → owned fixed Bytes (buffer left intact). */
 ThoxaBytes *thoxa_buffer_freeze(const ThoxaBuffer *b);
 
-/* --- Array (dynamic, RC heap; functional append/dropLast/insertAt/removeAt) */
+/* --- Array (dynamic, RC heap; Swift/Buffer COW writes — D133) ----------- */
 
 /*
  * Layout: [ThoxaHeader][ThoxaArray { len, cap, flags, elem_size, data[cap*elem_size] }]
@@ -252,8 +253,9 @@ ThoxaBytes *thoxa_buffer_freeze(const ThoxaBuffer *b);
  * User structs store inline (elem_size = sizeof(C struct)); cgen supplies
  * ThoxaArrayElemFn for field-level RC on copy/get/set/drop.
  *
- * Sharing is refcounted on the array object; index set mutates shared storage
- * (oracle list semantics). append/dropLast always allocate a new array.
+ * Writes (append / dropLast / insertAt / removeAt / index set) copy-on-write
+ * when refcount > 1 and return the (possibly new) unique array — assign the
+ * result back to the place (D133).
  */
 typedef struct ThoxaArray {
     size_t len;
@@ -285,12 +287,12 @@ ThoxaArray *thoxa_array_from_elems(
 int64_t thoxa_array_count(const ThoxaArray *a);
 /* Index get as Int64 (also used for heap pointers bitcast). OOB → panic. */
 int64_t thoxa_array_get_i64(const ThoxaArray *a, int64_t i);
-/* Index set Int64 slot. OOB → panic. */
-void thoxa_array_set_i64(ThoxaArray *a, int64_t i, int64_t v);
+/* COW index set Int64 slot. OOB → panic. Returns unique array. */
+ThoxaArray *thoxa_array_set_i64(ThoxaArray *a, int64_t i, int64_t v);
 /* Index get heap pointer. OOB → panic. Does not dup. */
 void *thoxa_array_get_ptr(const ThoxaArray *a, int64_t i);
-/* Index set heap pointer: dups `p`, drops old slot. */
-void thoxa_array_set_ptr(ThoxaArray *a, int64_t i, void *p);
+/* COW index set heap pointer: dups `p`, drops old slot. Returns unique array. */
+ThoxaArray *thoxa_array_set_ptr(ThoxaArray *a, int64_t i, void *p);
 /* Typed element get: memcpy into `out` (elem_size bytes), optional field-dup. */
 void thoxa_array_get_elem(
     const ThoxaArray *a,
@@ -298,48 +300,59 @@ void thoxa_array_get_elem(
     void *out,
     ThoxaArrayElemFn elem_dup
 );
-/* Typed element set: drop old, memcpy new, optional field-dup of new. */
-void thoxa_array_set_elem(
+/* COW typed element set: drop old, memcpy new, optional field-dup of new. */
+ThoxaArray *thoxa_array_set_elem(
     ThoxaArray *a,
     int64_t i,
     const void *elem,
     ThoxaArrayElemFn elem_dup,
     ThoxaArrayElemFn elem_drop
 );
-/* Functional: new array with `v` appended (int64 or bitcast ptr). */
-ThoxaArray *thoxa_array_append_i64(const ThoxaArray *a, int64_t v);
-/* Functional: new array with heap ptr appended (dups elems + dups `p`). */
-ThoxaArray *thoxa_array_append_ptr(const ThoxaArray *a, void *p);
+/* COW: append `v` (int64 or bitcast ptr). Drops caller's share of `a`. */
+ThoxaArray *thoxa_array_append_i64(ThoxaArray *a, int64_t v);
+/* COW: append heap ptr (dups `p`). Drops caller's share of `a`. */
+ThoxaArray *thoxa_array_append_ptr(ThoxaArray *a, void *p);
 /*
  * Functional append of a raw element. Shallow-copies prior elems + new, then
  * `elem_dup` each slot of the result when non-NULL.
  * When `a` is non-NULL, elem_size/flags are taken from `a`.
  */
 ThoxaArray *thoxa_array_append_elem(
-    const ThoxaArray *a,
+    ThoxaArray *a,
     const void *elem,
     uint32_t elem_size,
     uint32_t flags,
-    ThoxaArrayElemFn elem_dup
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
 );
-/* Functional: new array without last element. Empty → panic. */
-ThoxaArray *thoxa_array_drop_last(const ThoxaArray *a);
+/* COW: drop last element. Empty → panic. Drops caller's share of `a`. */
+ThoxaArray *thoxa_array_drop_last(ThoxaArray *a);
 /* Like drop_last but field-dups surviving elements (User arrays). */
-ThoxaArray *thoxa_array_drop_last_ex(const ThoxaArray *a, ThoxaArrayElemFn elem_dup);
-/* Functional insertAt: 0 ≤ at ≤ count (at == count appends). */
-ThoxaArray *thoxa_array_insert_at_i64(const ThoxaArray *a, int64_t at, int64_t v);
-ThoxaArray *thoxa_array_insert_at_ptr(const ThoxaArray *a, int64_t at, void *p);
+ThoxaArray *thoxa_array_drop_last_ex(
+    ThoxaArray *a,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+);
+/* COW insertAt: 0 ≤ at ≤ count (at == count appends). */
+ThoxaArray *thoxa_array_insert_at_i64(ThoxaArray *a, int64_t at, int64_t v);
+ThoxaArray *thoxa_array_insert_at_ptr(ThoxaArray *a, int64_t at, void *p);
 ThoxaArray *thoxa_array_insert_at_elem(
-    const ThoxaArray *a,
+    ThoxaArray *a,
     int64_t at,
     const void *elem,
     uint32_t elem_size,
     uint32_t flags,
-    ThoxaArrayElemFn elem_dup
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
 );
-/* Functional removeAt: 0 ≤ at < count. */
-ThoxaArray *thoxa_array_remove_at(const ThoxaArray *a, int64_t at);
-ThoxaArray *thoxa_array_remove_at_ex(const ThoxaArray *a, int64_t at, ThoxaArrayElemFn elem_dup);
+/* COW removeAt: 0 ≤ at < count. */
+ThoxaArray *thoxa_array_remove_at(ThoxaArray *a, int64_t at);
+ThoxaArray *thoxa_array_remove_at_ex(
+    ThoxaArray *a,
+    int64_t at,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+);
 /* Build argv as Array<String> for `fn main(arguments: Array<String>)`. */
 ThoxaArray *thoxa_argv_to_array(int argc, char **argv);
 /* Display as `[a, b, c]` for Int64 arrays. */
@@ -352,6 +365,72 @@ void thoxa_array_drop(ThoxaArray *a);
 void thoxa_array_drop_ex(ThoxaArray *a, ThoxaArrayElemFn elem_drop);
 /* Share: bump array RC only (elements stay with the shared object). */
 void thoxa_array_dup(ThoxaArray *a);
+
+/* --- Map (dynamic, RC heap; Swift/Buffer COW writes — D134) ------------- */
+
+#define THOXA_MAP_KEY_I64 0u
+#define THOXA_MAP_KEY_STR 1u
+#define THOXA_MAP_VAL_I64 0u
+#define THOXA_MAP_VAL_PTR 1u
+#define THOXA_MAP_VAL_USER 2u
+
+/*
+ * Layout: [ThoxaHeader][ThoxaMap { len, slot_cap, idx_cap, kinds, … data[] }]
+ * Slots are insertion-ordered. An open-addressed index maps hash → slot.
+ * Writes copy-on-write when refcount > 1 and return the unique map.
+ */
+typedef struct ThoxaMap ThoxaMap;
+
+ThoxaMap *thoxa_map_new(uint32_t key_kind, uint32_t val_kind, uint32_t val_size);
+int64_t thoxa_map_count(const ThoxaMap *m);
+int thoxa_map_has(const ThoxaMap *m, int64_t key_bits);
+int thoxa_map_get_i64(const ThoxaMap *m, int64_t key_bits, int64_t *out);
+int thoxa_map_get_ptr(const ThoxaMap *m, int64_t key_bits, void **out);
+int thoxa_map_get_elem(
+    const ThoxaMap *m,
+    int64_t key_bits,
+    void *out,
+    ThoxaArrayElemFn elem_dup
+);
+ThoxaMap *thoxa_map_set_i64(ThoxaMap *m, int64_t key_bits, int64_t val);
+ThoxaMap *thoxa_map_set_ptr(ThoxaMap *m, int64_t key_bits, void *val);
+ThoxaMap *thoxa_map_set_elem(
+    ThoxaMap *m,
+    int64_t key_bits,
+    const void *val,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+);
+ThoxaMap *thoxa_map_remove(ThoxaMap *m, int64_t key_bits);
+ThoxaMap *thoxa_map_remove_ex(
+    ThoxaMap *m,
+    int64_t key_bits,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+);
+/* Insertion-order access. OOB → panic. Key is i64 or pointer bitcast. */
+int64_t thoxa_map_key_at(const ThoxaMap *m, int64_t i);
+int64_t thoxa_map_val_i64_at(const ThoxaMap *m, int64_t i);
+void *thoxa_map_val_ptr_at(const ThoxaMap *m, int64_t i);
+void thoxa_map_val_elem_at(
+    const ThoxaMap *m,
+    int64_t i,
+    void *out,
+    ThoxaArrayElemFn elem_dup
+);
+ThoxaArray *thoxa_map_keys(const ThoxaMap *m);
+ThoxaArray *thoxa_map_values_i64(const ThoxaMap *m);
+ThoxaArray *thoxa_map_values_ptr(const ThoxaMap *m);
+ThoxaArray *thoxa_map_values_elem(
+    const ThoxaMap *m,
+    ThoxaArrayElemFn elem_dup,
+    ThoxaArrayElemFn elem_drop
+);
+void thoxa_map_dup(ThoxaMap *m);
+void thoxa_map_drop(ThoxaMap *m);
+void thoxa_map_drop_ex(ThoxaMap *m, ThoxaArrayElemFn elem_drop);
+/* Display `{k: v, …}` for i64/bool/string keys and i64/bool/string values. */
+ThoxaString *thoxa_map_to_string(const ThoxaMap *m, int val_is_string);
 
 /* --- HTML tree (builtin `Node`, JSX runtime) ---------------------------- */
 

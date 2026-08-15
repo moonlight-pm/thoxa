@@ -11,9 +11,9 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-13 (D132 fn pointers **shipped**; D131 multi-clause
-**shipped**; Crema-lite Phase A–C + JSX pages; type-body route clauses +
-JSX/`Node` + **`-->` nowait** **partial** on master — not freeze)
+**As of:** 2026-08-14 (D133/D134 Map + value collections **shipped**; D132 fn
+pointers **shipped**; Crema-lite Phase A–C + JSX pages; type-body route
+clauses + JSX/`Node` + **`-->` nowait** **partial** on master — not freeze)
 
 ---
 
@@ -40,7 +40,8 @@ JSX/`Node` + **`-->` nowait** **partial** on master — not freeze)
 | early-return | `return` / `return expr` | shipped | `early_return` | D63 | — | yes |
 | start-tasks | `--> name(args)` — begin a call; do not wait | partial | `start_tasks`, `start_nested`, `start_net`, `start_keepalive` | on master, not freeze | No Future / `async` / `run`. Token `-->` only (not a word). Free Thoxa fns only; `--> { }` later. Net parks. Crema `--> serveOne` + keep-alive. No handbook / D-id | no |
 | return-infer | Unannotated free-fn return from body exits | shipped | `return_infer` | **D129**; [`specs/2026-08-10-return-type-inference.md`](specs/2026-08-10-return-type-inference.md) | Unannotated **methods** still default `Void` (not body-inferred yet); recursive/mutual unannotated free fns → annotate; bare Pass/Fail alone → annotate; LSP hover shows free-fn inferred types after lower | yes |
-| array-dyn | Dynamic `Array<T>` (incl. User) + insertAt/removeAt | shipped | `arrays`, `array_user`, `array_heap_elems`, `splice` | D53–D55, D62, D65 | — | yes |
+| array-dyn | Dynamic `Array<T>` (incl. User) + insertAt/removeAt | shipped | `arrays`, `array_user`, `array_heap_elems`, `splice` | D53–D55, D62, D65; **D133** | Write-back `Void` on `mut` places (Swift/Buffer COW). `let` aliases do not see writes. | yes |
+| map | Builtin `Map<K, V>` + `{k:v}` + `for k, v` | shipped | `maps`, `maps_user` | **D134**; D133; [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) | Keys v0 String/Int64/Bool (User types are **values**, not keys). `.has` / `.get`→May / write-back `.set`; ident keys; insertion order. **Gaps:** User keys wait on structural product `==` + private field hash (not Eq/Hash traits; not pointer identity). No `==` on Map. No `std/Http` header flip. | yes |
 | array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | ABI scalar elems only (no User fixed-array elems) | yes |
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array ctor fields | shipped | `string_fields` | D48–D49, D69 | — | yes |
@@ -125,7 +126,7 @@ JSX/`Node` + **`-->` nowait** **partial** on master — not freeze)
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| simple-rc | Single-threaded RC String/Bytes/Array | partial | strings/bytes/arrays | kernel D4-ish; **D122** | Module mut heap not end-of-fn dropped (D122). Perceus precision later | partial |
+| simple-rc | Single-threaded RC String/Bytes/Array/Map | partial | strings/bytes/arrays/maps | kernel D4-ish; **D122** | Module mut heap not end-of-fn dropped (D122). Perceus precision later | partial |
 | spawn-wait | `thoxa_spawn_wait` for session | shipped | session / extras | D86 | Not a general language spawn surface | no |
 | perceus | Precise RC / Perceus | idea | — | kernel | Deferred megawork | no |
 | effects | Algebraic effects | idea | — | kernel | Out until forced | no |

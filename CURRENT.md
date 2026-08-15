@@ -4,8 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-13 (D132 fn pointers **shipped**; `-->` nowait **on master**,
-not freeze / not handbook; Crema-lite Phase A–C + JSX `Node`; D131 multi-clause)
+**As of:** 2026-08-14 (D133/D134 Map + value collections **shipped**; D132 fn
+pointers **shipped**; `-->` nowait **on master**, not freeze / not handbook;
+Crema-lite Phase A–C + JSX `Node`)
 
 ---
 
@@ -13,7 +14,8 @@ not freeze / not handbook; Crema-lite Phase A–C + JSX `Node`; D131 multi-claus
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **function pointers** (**D132**); **`-->` nowait**
+**Shipped recently:** **Map + value collections** (**D133/D134**); **function
+pointers** (**D132**); **`-->` nowait**
 (colorless wait; Net parks; Crema `--> serveOne` + keep-alive);
 **multi-clause functions** (**D131**);
 Crema-lite **Phase A–C**; **match arm sugar** (**D130**); **return-type
@@ -41,8 +43,7 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **In progress / next:**
 
 1. **Crema-lite** — Phase D+ only if useful. Still example only; no `std/`.  
-2. Editor only when DX forces it.  
-3. Sample-driven language polish (D132 shipped).
+2. Editor only when DX forces it.
 
 ### Proceed order
 
@@ -104,6 +105,8 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Match arms | Bare ctor = tag-only; `=>` single-expr body or `{ }` multi-stmt (**D130**); `->` types only |
 | Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **shipped**). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48). |
+| Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
+| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/Http` header flip. |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
@@ -123,7 +126,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 4. One freeze if building that domain  
 5. [`docs/decisions.md`](docs/decisions.md) only when reopening surface  
 6. If D132: [`docs/specs/2026-08-13-function-pointers.md`](docs/specs/2026-08-13-function-pointers.md)  
-7. If Crema experiment: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
+7. If D133/D134: [`docs/specs/2026-08-14-map-and-value-collections.md`](docs/specs/2026-08-14-map-and-value-collections.md)  
+8. If Crema experiment: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

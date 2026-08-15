@@ -866,6 +866,17 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
         ExprKind::Index { base, index } => {
             walk_expr_member(base, span).or_else(|| walk_expr_member(index, span))
         }
+        ExprKind::MapLit(entries) => {
+            for (k, v) in entries {
+                if let Some(h) = walk_expr_member(k, span) {
+                    return Some(h);
+                }
+                if let Some(h) = walk_expr_member(v, span) {
+                    return Some(h);
+                }
+            }
+            None
+        }
         ExprKind::ArrayLit(elems) => {
             for e in elems {
                 if let Some(h) = walk_expr_member(e, span) {
@@ -1277,6 +1288,12 @@ fn walk_expr_call_args(expr: &Expr, byte: usize, best: &mut Option<CallArgHit>) 
         ExprKind::Index { base, index } => {
             walk_expr_call_args(base, byte, best);
             walk_expr_call_args(index, byte, best);
+        }
+        ExprKind::MapLit(entries) => {
+            for (k, v) in entries {
+                walk_expr_call_args(k, byte, best);
+                walk_expr_call_args(v, byte, best);
+            }
         }
         ExprKind::ArrayLit(elems) => {
             for e in elems {

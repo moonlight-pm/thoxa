@@ -49,30 +49,30 @@ fn emptyBytesArr() -> Array<Bytes> {
 
 fn cSyntax() -> Syntax {
     mut kw1 = emptyBytesArr()
-    kw1 = kw1.append(Bytes.fromString("switch"))
-    kw1 = kw1.append(Bytes.fromString("if"))
-    kw1 = kw1.append(Bytes.fromString("while"))
-    kw1 = kw1.append(Bytes.fromString("for"))
-    kw1 = kw1.append(Bytes.fromString("break"))
-    kw1 = kw1.append(Bytes.fromString("continue"))
-    kw1 = kw1.append(Bytes.fromString("return"))
-    kw1 = kw1.append(Bytes.fromString("else"))
-    kw1 = kw1.append(Bytes.fromString("struct"))
-    kw1 = kw1.append(Bytes.fromString("union"))
-    kw1 = kw1.append(Bytes.fromString("typedef"))
-    kw1 = kw1.append(Bytes.fromString("static"))
-    kw1 = kw1.append(Bytes.fromString("enum"))
-    kw1 = kw1.append(Bytes.fromString("class"))
-    kw1 = kw1.append(Bytes.fromString("case"))
+    kw1.append(Bytes.fromString("switch"))
+    kw1.append(Bytes.fromString("if"))
+    kw1.append(Bytes.fromString("while"))
+    kw1.append(Bytes.fromString("for"))
+    kw1.append(Bytes.fromString("break"))
+    kw1.append(Bytes.fromString("continue"))
+    kw1.append(Bytes.fromString("return"))
+    kw1.append(Bytes.fromString("else"))
+    kw1.append(Bytes.fromString("struct"))
+    kw1.append(Bytes.fromString("union"))
+    kw1.append(Bytes.fromString("typedef"))
+    kw1.append(Bytes.fromString("static"))
+    kw1.append(Bytes.fromString("enum"))
+    kw1.append(Bytes.fromString("class"))
+    kw1.append(Bytes.fromString("case"))
     mut kw2 = emptyBytesArr()
-    kw2 = kw2.append(Bytes.fromString("int"))
-    kw2 = kw2.append(Bytes.fromString("long"))
-    kw2 = kw2.append(Bytes.fromString("double"))
-    kw2 = kw2.append(Bytes.fromString("float"))
-    kw2 = kw2.append(Bytes.fromString("char"))
-    kw2 = kw2.append(Bytes.fromString("unsigned"))
-    kw2 = kw2.append(Bytes.fromString("signed"))
-    kw2 = kw2.append(Bytes.fromString("void"))
+    kw2.append(Bytes.fromString("int"))
+    kw2.append(Bytes.fromString("long"))
+    kw2.append(Bytes.fromString("double"))
+    kw2.append(Bytes.fromString("float"))
+    kw2.append(Bytes.fromString("char"))
+    kw2.append(Bytes.fromString("unsigned"))
+    kw2.append(Bytes.fromString("signed"))
+    kw2.append(Bytes.fromString("void"))
     Syntax(
         keywords1: kw1,
         keywords2: kw2,
@@ -202,7 +202,7 @@ export fn plainRow(render!: Bytes) -> RowHl {
         if i >= render.count {
             break
         }
-        cells = cells.append(Normal())
+        cells.append(Normal())
         i = i + 1
     }
     RowHl(cells: cells, openComment: false)
@@ -234,7 +234,7 @@ export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
                         if i >= n {
                             break
                         }
-                        cells = cells.append(Comment())
+                        cells.append(Comment())
                         i = i + 1
                     }
                     continue
@@ -245,14 +245,14 @@ export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
         ## 2. multi-line comment
         if inString == 0 {
             if inComment {
-                cells = cells.append(Comment())
+                cells.append(Comment())
                 if matchesAt(render, i, s.mlEnd) {
                     mut k = 1
                     loop {
                         if k >= s.mlEnd.count {
                             break
                         }
-                        cells = cells.append(Comment())
+                        cells.append(Comment())
                         k = k + 1
                     }
                     i = i + s.mlEnd.count
@@ -268,7 +268,7 @@ export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
                     if k >= s.mlStart.count {
                         break
                     }
-                    cells = cells.append(Comment())
+                    cells.append(Comment())
                     k = k + 1
                 }
                 i = i + s.mlStart.count
@@ -280,10 +280,10 @@ export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
         ## 3. strings
         if s.strings {
             if inString != 0 {
-                cells = cells.append(Str())
+                cells.append(Str())
                 if c == 92 {
                     if i + 1 < n {
-                        cells = cells.append(Str())
+                        cells.append(Str())
                         i = i + 2
                         continue
                     }
@@ -296,12 +296,12 @@ export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
                 continue
             } else if c == 34 {
                 inString = c
-                cells = cells.append(Str())
+                cells.append(Str())
                 i = i + 1
                 continue
             } else if c == 39 {
                 inString = c
-                cells = cells.append(Str())
+                cells.append(Str())
                 i = i + 1
                 continue
             }
@@ -324,13 +324,13 @@ export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
                 false
             }
             if startsNum {
-                cells = cells.append(Number())
+                cells.append(Number())
                 i = i + 1
                 prevSep = false
                 continue
             }
             if dotNum {
-                cells = cells.append(Number())
+                cells.append(Number())
                 i = i + 1
                 prevSep = false
                 continue
@@ -347,9 +347,9 @@ export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
                             break
                         }
                         if kw.isKw2 {
-                            cells = cells.append(Keyword2())
+                            cells.append(Keyword2())
                         } else {
-                            cells = cells.append(Keyword1())
+                            cells.append(Keyword1())
                         }
                         k = k + 1
                     }
@@ -365,7 +365,7 @@ export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
         }
 
         ## 6. default
-        cells = cells.append(Normal())
+        cells.append(Normal())
         prevSep = isSeparator(c)
         i = i + 1
     }

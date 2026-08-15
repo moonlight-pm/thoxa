@@ -667,22 +667,19 @@ fn segments_fn() -> Function {
                 block_stmts(vec![
                     BlockItem::Expr(if_expr(
                         bin(BinaryOp::Gt, name("i"), name("start")),
-                        block_stmts(vec![assign(
-                            "segs",
-                            method_call(
-                                name("segs"),
-                                "append",
-                                vec![Arg::Pos(method_call(
-                                    method_call(
-                                        name("data"),
-                                        "slice",
-                                        vec![Arg::Pos(name("start")), Arg::Pos(name("i"))],
-                                    ),
-                                    "toString",
-                                    vec![],
-                                ))],
-                            ),
-                        )]),
+                        block_stmts(vec![BlockItem::Expr(method_call(
+                            name("segs"),
+                            "append",
+                            vec![Arg::Pos(method_call(
+                                method_call(
+                                    name("data"),
+                                    "slice",
+                                    vec![Arg::Pos(name("start")), Arg::Pos(name("i"))],
+                                ),
+                                "toString",
+                                vec![],
+                            ))],
+                        ))]),
                         None,
                     )),
                     assign("start", bin(BinaryOp::Add, name("i"), int_lit(1))),
@@ -720,22 +717,19 @@ fn segments_fn() -> Function {
             }),
             BlockItem::Expr(if_expr(
                 bin(BinaryOp::Lt, name("start"), name("n")),
-                block_stmts(vec![assign(
-                    "segs",
-                    method_call(
-                        name("segs"),
-                        "append",
-                        vec![Arg::Pos(method_call(
-                            method_call(
-                                name("data"),
-                                "slice",
-                                vec![Arg::Pos(name("start")), Arg::Pos(name("n"))],
-                            ),
-                            "toString",
-                            vec![],
-                        ))],
-                    ),
-                )]),
+                block_stmts(vec![BlockItem::Expr(method_call(
+                    name("segs"),
+                    "append",
+                    vec![Arg::Pos(method_call(
+                        method_call(
+                            name("data"),
+                            "slice",
+                            vec![Arg::Pos(name("start")), Arg::Pos(name("n"))],
+                        ),
+                        "toString",
+                        vec![],
+                    ))],
+                ))]),
                 None,
             )),
         ],

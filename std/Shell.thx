@@ -65,11 +65,11 @@ fn sessionSplitOn(line!: String, sep!: Int64) -> Array<String> {
         let c = b.get(i)
         if c == sep {
             if inPart {
-                parts = parts.append(acc.freeze().toString())
+                parts.append(acc.freeze().toString())
                 acc = Buffer()
                 inPart = false
             } else {
-                parts = parts.append("")
+                parts.append("")
             }
         } else {
             acc.append(c)
@@ -77,11 +77,11 @@ fn sessionSplitOn(line!: String, sep!: Int64) -> Array<String> {
         }
     }
     if inPart {
-        parts = parts.append(acc.freeze().toString())
+        parts.append(acc.freeze().toString())
     } else {
         if b.count > 0 {
             if b.get(b.count - 1) == sep {
-                parts = parts.append("")
+                parts.append("")
             }
         }
     }

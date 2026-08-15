@@ -376,7 +376,7 @@ export fn split(s!: String, sep!: String) -> Array<String> {
         loop {
             let i = indexOf(rest, sep)
             if i < 0 {
-                parts = parts.append(rest)
+                parts.append(rest)
                 break
             }
             let b = Bytes.fromString(rest)
@@ -385,10 +385,10 @@ export fn split(s!: String, sep!: String) -> Array<String> {
             } else {
                 b.slice(0, i).toString()
             }
-            parts = parts.append(piece)
+            parts.append(piece)
             let next = i + slen
             if next >= b.count {
-                parts = parts.append("")
+                parts.append("")
                 break
             }
             rest = b.slice(next, b.count).toString()
@@ -631,7 +631,7 @@ export fn lines(s!: String) -> Array<String> {
         if i >= raw.count {
             break
         }
-        out = out.append(trimEndCr(raw[i]))
+        out.append(trimEndCr(raw[i]))
         i = i + 1
     }
     out

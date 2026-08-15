@@ -273,6 +273,52 @@ pub enum RValue {
         at: Place,
         elem_ty: Ty,
     },
+    /// Empty `Map()` at a typed slot.
+    MapNew {
+        key_ty: Ty,
+        val_ty: Ty,
+    },
+    /// COW insert/overwrite; result is the unique map (write back onto the place).
+    MapSet {
+        map: Place,
+        key: Place,
+        val: Place,
+        key_ty: Ty,
+        val_ty: Ty,
+    },
+    /// COW remove (missing is a no-op).
+    MapRemove {
+        map: Place,
+        key: Place,
+        key_ty: Ty,
+        val_ty: Ty,
+    },
+    /// Lookup: writes `out` when present; this rvalue is 1/0 found.
+    MapGet {
+        map: Place,
+        key: Place,
+        out: Place,
+        val_ty: Ty,
+    },
+    /// Insertion-order key at `index` (i64 bits / pointer).
+    MapKeyAt {
+        map: Place,
+        index: Place,
+    },
+    /// Insertion-order value at `index`.
+    MapValAt {
+        map: Place,
+        index: Place,
+        val_ty: Ty,
+    },
+    MapKeys {
+        map: Place,
+        key_ty: Ty,
+    },
+    MapValues {
+        map: Place,
+        val_ty: Ty,
+    },
     /// Convert Int64/Bool/Array → owned String.
     ToString {
         value: Place,
@@ -355,9 +401,14 @@ pub enum Ty {
         params: Vec<Ty>,
         ret: Box<Ty>,
     },
-    /// Dynamic growable Array (`ThoxaArray*`) — heap RC; functional append/dropLast.
+    /// Dynamic growable Array (`ThoxaArray*`) — heap RC; Swift/Buffer COW writes (D133).
     Array {
         elem: Box<Ty>,
+    },
+    /// Dynamic map (`ThoxaMap*`) — heap RC; Swift/Buffer COW writes (D134).
+    Map {
+        key: Box<Ty>,
+        val: Box<Ty>,
     },
     /// Fixed inline array field type `Array<T, N>` (not a first-class value).
     FixedArray {
@@ -388,6 +439,7 @@ pub fn display_ty(ty: &Ty) -> String {
         Ty::Buffer => "Buffer".into(),
         Ty::Node => "Node".into(),
         Ty::Array { elem } => format!("Array<{}>", display_ty(elem)),
+        Ty::Map { key, val } => format!("Map<{}, {}>", display_ty(key), display_ty(val)),
         Ty::FixedArray { elem, len } => format!("Array<{}, {len}>", display_ty(elem)),
         Ty::Address(inner) => format!("Address<{}>", display_ty(inner)),
         Ty::User(n) => display_user_ty(n),
@@ -547,6 +599,7 @@ fn needs_drop(ty: &Ty) -> bool {
             | Ty::Buffer
             | Ty::Node
             | Ty::Array { .. }
+            | Ty::Map { .. }
             | Ty::User(_)
             | Ty::Fn { .. }
     )
@@ -562,12 +615,30 @@ fn is_never(ty: &Ty) -> bool {
 fn is_array_elem_ty(ty: &Ty) -> bool {
     matches!(
         ty,
-        Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Node | Ty::User(_)
+        Ty::Int64
+            | Ty::Bool
+            | Ty::String
+            | Ty::Bytes
+            | Ty::Node
+            | Ty::User(_)
+            | Ty::Array { .. }
+            | Ty::Map { .. }
     )
 }
 
 fn array_elem_is_heap(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Bytes | Ty::Node)
+    matches!(
+        ty,
+        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. }
+    )
+}
+
+fn is_map_key_ty(ty: &Ty) -> bool {
+    matches!(ty, Ty::String | Ty::Int64 | Ty::Bool)
+}
+
+fn is_map_val_ty(ty: &Ty) -> bool {
+    is_array_elem_ty(ty)
 }
 
 fn array_elem_is_user(ty: &Ty) -> bool {
@@ -588,7 +659,7 @@ fn is_array_user_elem(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
             info.fields.iter().all(|f| {
                 matches!(
                     f.ty,
-                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
+                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. } | Ty::Map { .. }
                 )
             })
         }
@@ -2037,11 +2108,11 @@ fn resolve_type_def_shape(
             // Nested User as a direct field still deferred; Array of User is fine (D65).
             let ok = matches!(
                 ty,
-                Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. }
+                Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. } | Ty::Map { .. }
             );
             if !ok {
                 return Err(Error::at(
-                    "constructor-param fields must be Int64, Bool, String, Bytes, or Array",
+                    "constructor-param fields must be Int64, Bool, String, Bytes, Array, or Map",
                     p.ty.span,
                 ));
             }
@@ -3120,6 +3191,12 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
                 collect_local_fn_calls_expr(e, out);
             }
         }
+        ExprKind::MapLit(entries) => {
+            for (k, v) in entries {
+                collect_local_fn_calls_expr(k, out);
+                collect_local_fn_calls_expr(v, out);
+            }
+        }
         ExprKind::Interpolate(parts) => {
             for p in parts {
                 if let InterpPart::Expr(e) = p {
@@ -3570,6 +3647,37 @@ fn resolve_ty(
             }
             Ok(Ty::Array { elem: Box::new(et) })
         }
+        ("Map", [TypeArg::Type(k), TypeArg::Type(v)]) => {
+            let kt = resolve_ty(k, types, name_map)?;
+            let vt = resolve_ty(v, types, name_map)?;
+            if !is_map_key_ty(&kt) {
+                return Err(Error::at(
+                    format!(
+                        "Map key type not yet supported: {kt:?} (String, Int64, Bool)"
+                    ),
+                    k.span,
+                ));
+            }
+            if !is_map_val_ty(&vt) {
+                return Err(Error::at(
+                    format!("Map value type not yet supported: {vt:?}"),
+                    v.span,
+                ));
+            }
+            if array_elem_is_user(&vt) && !is_array_user_elem(&vt, types) {
+                return Err(Error::at(
+                    format!(
+                        "Map value User type must be constructor-param with Int64/Bool/String/Bytes/Array/Map fields: {vt:?}"
+                    ),
+                    v.span,
+                ));
+            }
+            Ok(Ty::Map {
+                key: Box::new(kt),
+                val: Box::new(vt),
+            })
+        }
+        ("Map", _) => Err(Error::at("Map expects Map<K, V>", t.span)),
         (
             "Array",
             [TypeArg::Type(elem), TypeArg::Int {
@@ -3730,6 +3838,7 @@ fn ty_mono_suffix(ty: &Ty) -> String {
         Ty::Node => "Node".into(),
         Ty::User(n) => n.replace(['-', '$'], "_"),
         Ty::Array { elem } => format!("Array_{}", ty_mono_suffix(elem)),
+        Ty::Map { key, val } => format!("Map_{}_{}", ty_mono_suffix(key), ty_mono_suffix(val)),
         Ty::FixedArray { elem, len } => format!("Fixed_{}_{len}", ty_mono_suffix(elem)),
         Ty::Address(inner) => format!("Addr_{}", ty_mono_suffix(inner)),
         Ty::Fn { params, ret } => {
@@ -3958,6 +4067,7 @@ fn is_builtin_generic(name: &str) -> bool {
     matches!(
         name,
         "Array"
+            | "Map"
             | "Address"
             | "Int32"
             | "Int64"
@@ -4067,6 +4177,13 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
         Ty::Array { elem } => (
             "Array".into(),
             vec![TypeArg::Type(ty_to_type_expr(elem, span))],
+        ),
+        Ty::Map { key, val } => (
+            "Map".into(),
+            vec![
+                TypeArg::Type(ty_to_type_expr(key, span)),
+                TypeArg::Type(ty_to_type_expr(val, span)),
+            ],
         ),
         Ty::Fn { params, ret } => {
             return TypeExpr {
@@ -4203,13 +4320,14 @@ fn instantiate_product_mono(
                 | Ty::String
                 | Ty::Bytes
                 | Ty::Array { .. }
+                | Ty::Map { .. }
                 | Ty::User(_)
                 | Ty::Void
         );
         if !ok {
             return Err(Error::at(
                 format!(
-                    "generic product field `{}` must be Int64, Bool, String, Bytes, Array, User, or Void (got {ty:?})",
+                    "generic product field `{}` must be Int64, Bool, String, Bytes, Array, Map, User, or Void (got {ty:?})",
                     p.name
                 ),
                 p.ty.span,
@@ -4562,10 +4680,11 @@ fn instantiate_union_mono(
                         | Ty::Bytes
                         | Ty::User(_)
                         | Ty::Array { .. }
+                        | Ty::Map { .. }
                 ) {
                     return Err(Error::at(
                         format!(
-                            "union member `{vname}` field `{}` must be scalar, String/Bytes, User, or Array",
+                            "union member `{vname}` field `{}` must be scalar, String/Bytes, User, Array, or Map",
                             f.name
                         ),
                         te.span,
@@ -5489,6 +5608,12 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
         ExprKind::ArrayLit(elems) => {
             ExprKind::ArrayLit(elems.iter().map(|x| subst_expr(x, subst)).collect())
         }
+        ExprKind::MapLit(entries) => ExprKind::MapLit(
+            entries
+                .iter()
+                .map(|(k, v)| (subst_expr(k, subst), subst_expr(v, subst)))
+                .collect(),
+        ),
         ExprKind::If {
             cond,
             then_branch,
@@ -5508,6 +5633,7 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
         ExprKind::For {
             name,
             name_span,
+            value,
             start,
             end,
             inclusive,
@@ -5515,6 +5641,7 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
         } => ExprKind::For {
             name: name.clone(),
             name_span: *name_span,
+            value: value.clone(),
             start: Box::new(subst_expr(start, subst)),
             end: end.as_ref().map(|x| Box::new(subst_expr(x, subst))),
             inclusive: *inclusive,
@@ -6165,6 +6292,40 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
                     });
                     Ok(())
                 }
+                Ty::Map { key, val } => {
+                    let key_ty = key.as_ref().clone();
+                    let val_ty = val.as_ref().clone();
+                    let (kp, kt) = lower_expr(ctx, index)?;
+                    if kt != key_ty {
+                        return Err(Error::at(
+                            format!("Map key type mismatch: expected {key_ty:?}, found {kt:?}"),
+                            index.span,
+                        ));
+                    }
+                    let (v, vty) = lower_expr(ctx, value)?;
+                    if vty != val_ty {
+                        return Err(Error::at(
+                            format!(
+                                "Map value type mismatch: expected {val_ty:?}, found {vty:?}"
+                            ),
+                            value.span,
+                        ));
+                    }
+                    let kp = coerce_map_key(ctx, kp, &key_ty);
+                    let map_ty = binding.ty.clone();
+                    ctx.assign(
+                        binding.place.clone(),
+                        map_ty,
+                        RValue::MapSet {
+                            map: binding.place.clone(),
+                            key: kp,
+                            val: v,
+                            key_ty,
+                            val_ty,
+                        },
+                    );
+                    Ok(())
+                }
                 Ty::FixedArray { elem, len } => {
                     let elem_ty = elem.as_ref().clone();
                     let len = *len;
@@ -6365,6 +6526,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         } => lower_field(ctx, base, name, *name_span),
         ExprKind::Index { base, index } => lower_index(ctx, base, index, expr.span),
         ExprKind::ArrayLit(elems) => lower_array_lit(ctx, elems, expr.span),
+        ExprKind::MapLit(entries) => lower_map_lit(ctx, entries, expr.span),
         ExprKind::MethodCall {
             receiver,
             method,
@@ -6377,6 +6539,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         ExprKind::For {
             name,
             name_span,
+            value,
             start,
             end,
             inclusive,
@@ -6385,6 +6548,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             ctx,
             name,
             *name_span,
+            value.as_ref(),
             start,
             end.as_deref(),
             *inclusive,
@@ -6660,6 +6824,9 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
             .unwrap_or(false),
         ExprKind::Try(e) => expr_has_break(e, depth),
         ExprKind::ArrayLit(elems) => elems.iter().any(|e| expr_has_break(e, depth)),
+        ExprKind::MapLit(entries) => entries
+            .iter()
+            .any(|(k, v)| expr_has_break(k, depth) || expr_has_break(v, depth)),
         ExprKind::Interpolate(parts) => parts.iter().any(|p| match p {
             InterpPart::Expr(e) => expr_has_break(e, depth),
             InterpPart::Lit(_) => false,
@@ -6722,15 +6889,25 @@ fn lower_for(
     ctx: &mut LowerCtx,
     name: &str,
     name_span: Span,
+    value: Option<&(String, Span)>,
     start: &Expr,
     end: Option<&Expr>,
     inclusive: bool,
     body: &Block,
     _span: Span,
 ) -> Result<(Place, Ty)> {
-    // Collection iteration: `for x in xs`
+    // Collection iteration: `for x in xs` / `for k, v in m`
     if end.is_none() {
+        if let Some((vname, vspan)) = value {
+            return lower_for_map(ctx, name, name_span, vname, *vspan, start, body);
+        }
         return lower_for_array(ctx, name, name_span, start, body);
+    }
+    if value.is_some() {
+        return Err(Error::at(
+            "`for k, v` is only for Map iteration (not ranges)",
+            name_span,
+        ));
     }
     let end = end.unwrap();
 
@@ -6791,6 +6968,12 @@ fn lower_for_array(
     let (arr_p, arr_ty) = lower_expr(ctx, collection)?;
     let elem_ty = match &arr_ty {
         Ty::Array { elem } => elem.as_ref().clone(),
+        Ty::Map { .. } => {
+            return Err(Error::at(
+                "`for x in` on a Map is not allowed (use `for k, v in` or `.keys()` / `.values()`)",
+                collection.span,
+            ));
+        }
         other => {
             return Err(Error::at(
                 format!("`for … in` collection must be Array, got {other:?}"),
@@ -7014,6 +7197,367 @@ fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Pl
     Ok((p, arr_ty))
 }
 
+fn coerce_map_key(ctx: &mut LowerCtx, key: Place, key_ty: &Ty) -> Place {
+    if *key_ty == Ty::Bool {
+        let p = ctx.fresh("mkey");
+        ctx.assign(
+            p.clone(),
+            Ty::Int64,
+            RValue::Cast {
+                value: key,
+                from: Ty::Bool,
+                to: Ty::Int64,
+            },
+        );
+        p
+    } else {
+        key
+    }
+}
+
+fn lower_map_new(ctx: &mut LowerCtx, args: &[Arg], span: Span, expect: Option<&Ty>) -> Result<(Place, Ty)> {
+    if !args.is_empty() {
+        return Err(Error::at("`Map()` takes no arguments", span));
+    }
+    let Some(Ty::Map { key, val }) = expect else {
+        return Err(Error::at(
+            "`Map()` needs a type annotation (e.g. `let m: Map<String, Int64> = Map()`)",
+            span,
+        ));
+    };
+    let ty = Ty::Map {
+        key: key.clone(),
+        val: val.clone(),
+    };
+    let p = ctx.fresh("mnew");
+    ctx.assign(
+        p.clone(),
+        ty.clone(),
+        RValue::MapNew {
+            key_ty: key.as_ref().clone(),
+            val_ty: val.as_ref().clone(),
+        },
+    );
+    Ok((p, ty))
+}
+
+fn lower_map_lit(ctx: &mut LowerCtx, entries: &[(Expr, Expr)], span: Span) -> Result<(Place, Ty)> {
+    if entries.is_empty() {
+        return Err(Error::at(
+            "empty `{}` is a block; use `Map()` for an empty map",
+            span,
+        ));
+    }
+    let mut key_ty: Option<Ty> = None;
+    let mut val_ty: Option<Ty> = None;
+    let mut seen_keys: Vec<(Ty, String)> = Vec::new();
+    let mut pairs: Vec<(Place, Place)> = Vec::new();
+    for (k, v) in entries {
+        let (kp, kt) = lower_expr(ctx, k)?;
+        if !is_map_key_ty(&kt) {
+            return Err(Error::at(
+                format!("Map key type not supported: {kt:?}"),
+                k.span,
+            ));
+        }
+        match &key_ty {
+            None => key_ty = Some(kt.clone()),
+            Some(expect) if *expect != kt => {
+                return Err(Error::at(
+                    format!("heterogeneous map keys: expected {expect:?}, found {kt:?}"),
+                    k.span,
+                ));
+            }
+            Some(_) => {}
+        }
+        let key_id = match &k.kind {
+            ExprKind::String(s) => format!("s:{s}"),
+            ExprKind::Int(n) => format!("i:{n}"),
+            ExprKind::Bool(b) => format!("b:{b}"),
+            _ => String::new(),
+        };
+        if !key_id.is_empty() {
+            if seen_keys.iter().any(|(_, id)| id == &key_id) {
+                return Err(Error::at("duplicate key in map literal", k.span));
+            }
+            seen_keys.push((kt.clone(), key_id));
+        }
+        let (vp, vt) = lower_expr(ctx, v)?;
+        if !is_map_val_ty(&vt) {
+            return Err(Error::at(
+                format!("Map value type not supported: {vt:?}"),
+                v.span,
+            ));
+        }
+        match &val_ty {
+            None => val_ty = Some(vt.clone()),
+            Some(expect) if *expect != vt => {
+                return Err(Error::at(
+                    format!("heterogeneous map values: expected {expect:?}, found {vt:?}"),
+                    v.span,
+                ));
+            }
+            Some(_) => {}
+        }
+        pairs.push((kp, vp));
+    }
+    let key_ty = key_ty.unwrap();
+    let val_ty = val_ty.unwrap();
+    let map_ty = Ty::Map {
+        key: Box::new(key_ty.clone()),
+        val: Box::new(val_ty.clone()),
+    };
+    let p = ctx.fresh("mlit");
+    ctx.assign(
+        p.clone(),
+        map_ty.clone(),
+        RValue::MapNew {
+            key_ty: key_ty.clone(),
+            val_ty: val_ty.clone(),
+        },
+    );
+    for (k, v) in pairs {
+        let k = coerce_map_key(ctx, k, &key_ty);
+        ctx.assign(
+            p.clone(),
+            map_ty.clone(),
+            RValue::MapSet {
+                map: p.clone(),
+                key: k,
+                val: v,
+                key_ty: key_ty.clone(),
+                val_ty: val_ty.clone(),
+            },
+        );
+    }
+    Ok((p, map_ty))
+}
+
+fn lower_map_get(
+    ctx: &mut LowerCtx,
+    map: Place,
+    key: Place,
+    key_ty: &Ty,
+    val_ty: &Ty,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let key = coerce_map_key(ctx, key, key_ty);
+    let out = ctx.fresh("mgv");
+    init_place(ctx, &out, val_ty)?;
+    let found = ctx.fresh("mgf");
+    ctx.assign(
+        found.clone(),
+        Ty::Int64,
+        RValue::MapGet {
+            map,
+            key,
+            out: out.clone(),
+            val_ty: val_ty.clone(),
+        },
+    );
+    let may_ty = fallible_mono(ctx, "May", std::slice::from_ref(val_ty), span)?;
+    let result = ctx.fresh("mmay");
+    init_place(ctx, &result, &may_ty)?;
+    let zero = ctx.fresh("mz");
+    ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
+    let missing = ctx.fresh("mmiss");
+    ctx.assign(
+        missing.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Eq,
+            left: found,
+            right: zero,
+        },
+    );
+    let not_m = match union_arm_payload(&ctx.types, &may_ty, "Not") {
+        Some(Ty::User(n)) => n,
+        _ => return Err(Error::at("May is not in scope (import std/Fallible)", span)),
+    };
+    let has_m = match union_arm_payload(&ctx.types, &may_ty, "Has") {
+        Some(Ty::User(n)) => n,
+        _ => return Err(Error::at("May is not in scope (import std/Fallible)", span)),
+    };
+    let outer = std::mem::take(&mut ctx.stmts);
+    let mut then_body = Vec::new();
+    {
+        let saved = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = then_body;
+        let (not_p, not_ty) = construct_product(ctx, &not_m, &[], span)?;
+        let (inj, _) = inject_into_union(ctx, not_p, &not_ty, &may_ty, span)?;
+        ctx.assign(result.clone(), may_ty.clone(), RValue::Use(inj));
+        then_body = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = saved;
+    }
+    let mut else_body = Vec::new();
+    {
+        let saved = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = else_body;
+        let hp = ctx.fresh("has");
+        let hty = Ty::User(has_m.clone());
+        ctx.assign(
+            hp.clone(),
+            hty.clone(),
+            RValue::StructLit {
+                type_name: has_m,
+                fields: vec![out],
+            },
+        );
+        let (inj, _) = inject_into_union(ctx, hp, &hty, &may_ty, span)?;
+        ctx.assign(result.clone(), may_ty.clone(), RValue::Use(inj));
+        else_body = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = saved;
+    }
+    ctx.stmts = outer;
+    ctx.stmts.push(Stmt::If {
+        cond: missing,
+        then_body,
+        else_body,
+    });
+    Ok((result, may_ty))
+}
+
+fn lower_for_map(
+    ctx: &mut LowerCtx,
+    kname: &str,
+    kspan: Span,
+    vname: &str,
+    _vspan: Span,
+    collection: &Expr,
+    body: &Block,
+) -> Result<(Place, Ty)> {
+    let (map_p, map_ty) = lower_expr(ctx, collection)?;
+    let (key_ty, val_ty) = match &map_ty {
+        Ty::Map { key, val } => (key.as_ref().clone(), val.as_ref().clone()),
+        Ty::Array { .. } => {
+            return Err(Error::at(
+                "`for k, v in` requires a Map (use `for x in` for Array)",
+                collection.span,
+            ));
+        }
+        other => {
+            return Err(Error::at(
+                format!("`for k, v in` collection must be Map, got {other:?}"),
+                collection.span,
+            ));
+        }
+    };
+    let _ = kspan;
+    let count_p = ctx.fresh("mcnt");
+    ctx.assign(
+        count_p.clone(),
+        Ty::Int64,
+        RValue::Call {
+            callee: Callee::Builtin("map_count".into()),
+            args: vec![map_p.clone()],
+        },
+    );
+    let idx = ctx.fresh("mi");
+    ctx.assign(idx.clone(), Ty::Int64, RValue::Int(0));
+    let key_p = Place {
+        name: sanitize_name(kname),
+    };
+    let val_p = Place {
+        name: sanitize_name(vname),
+    };
+    init_place(ctx, &key_p, &key_ty)?;
+    init_place(ctx, &val_p, &val_ty)?;
+    let outer = std::mem::take(&mut ctx.stmts);
+    ctx.loop_depth += 1;
+    ctx.push_scope();
+    ctx.define(kname, key_ty.clone(), false, key_p.clone());
+    ctx.define(vname, val_ty.clone(), false, val_p.clone());
+
+    let end_c = ctx.fresh("mend");
+    ctx.assign(
+        end_c.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Ge,
+            left: idx.clone(),
+            right: count_p,
+        },
+    );
+    ctx.stmts.push(Stmt::If {
+        cond: end_c,
+        then_body: vec![Stmt::Break],
+        else_body: Vec::new(),
+    });
+
+    if needs_drop(&key_ty) {
+        ctx.stmts.push(Stmt::Drop {
+            place: key_p.clone(),
+            ty: key_ty.clone(),
+        });
+    }
+    ctx.assign(
+        key_p.clone(),
+        key_ty.clone(),
+        RValue::MapKeyAt {
+            map: map_p.clone(),
+            index: idx.clone(),
+        },
+    );
+    if needs_drop(&key_ty) {
+        ctx.stmts.push(Stmt::Dup {
+            place: key_p.clone(),
+            ty: key_ty.clone(),
+        });
+    }
+    if array_elem_is_user(&val_ty) {
+        ctx.assign(
+            val_p.clone(),
+            val_ty.clone(),
+            RValue::MapValAt {
+                map: map_p.clone(),
+                index: idx.clone(),
+                val_ty: val_ty.clone(),
+            },
+        );
+    } else {
+        if needs_drop(&val_ty) {
+            ctx.stmts.push(Stmt::Drop {
+                place: val_p.clone(),
+                ty: val_ty.clone(),
+            });
+        }
+        ctx.assign(
+            val_p.clone(),
+            val_ty.clone(),
+            RValue::MapValAt {
+                map: map_p.clone(),
+                index: idx.clone(),
+                val_ty: val_ty.clone(),
+            },
+        );
+        if needs_drop(&val_ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: val_p.clone(),
+                ty: val_ty.clone(),
+            });
+        }
+    }
+
+    lower_block_into(ctx, body, &Ty::Void)?;
+    let one = ctx.fresh("mone");
+    ctx.assign(one.clone(), Ty::Int64, RValue::Int(1));
+    ctx.assign(
+        idx.clone(),
+        Ty::Int64,
+        RValue::Binary {
+            op: BinaryOp::Add,
+            left: idx,
+            right: one,
+        },
+    );
+    ctx.pop_scope();
+    ctx.loop_depth -= 1;
+    let body_stmts = std::mem::take(&mut ctx.stmts);
+    ctx.stmts = outer;
+    ctx.stmts.push(Stmt::Loop { body: body_stmts });
+    Ok(void_place(ctx))
+}
+
 fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Result<(Place, Ty)> {
     if parts.is_empty() {
         let p = ctx.fresh("s");
@@ -7074,6 +7618,30 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                             format!(
                                 "cannot interpolate Array<{elem:?}> into String (supported: Int64, Bool, String)"
                             ),
+                            span,
+                        ));
+                    }
+                    Ty::Map { ref key, ref val }
+                        if matches!(key.as_ref(), Ty::String | Ty::Int64 | Ty::Bool)
+                            && matches!(val.as_ref(), Ty::Int64 | Ty::Bool | Ty::String) =>
+                    {
+                        let p = ctx.fresh("mts");
+                        ctx.assign(
+                            p.clone(),
+                            Ty::String,
+                            RValue::ToString {
+                                value: v,
+                                from: Ty::Map {
+                                    key: key.clone(),
+                                    val: val.clone(),
+                                },
+                            },
+                        );
+                        p
+                    }
+                    Ty::Map { .. } => {
+                        return Err(Error::at(
+                            "cannot interpolate this Map into String (supported values: Int64, Bool, String)",
                             span,
                         ));
                     }
@@ -7181,6 +7749,26 @@ fn lower_field(
                 Ty::Int64,
                 RValue::Call {
                     callee: Callee::Builtin("bytes_count".into()),
+                    args: vec![base_p],
+                },
+            );
+            Ok((p, Ty::Int64))
+        }
+        Ty::Map { .. } => {
+            if name != "count" {
+                return Err(Error::at(
+                    format!(
+                        "no field `{name}` on Map (use .count, .has, .get, .set, .remove, .keys, .values, [k])"
+                    ),
+                    name_span,
+                ));
+            }
+            let p = ctx.fresh("mcnt");
+            ctx.assign(
+                p.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::Builtin("map_count".into()),
                     args: vec![base_p],
                 },
             );
@@ -7425,16 +8013,23 @@ fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Res
         );
         return Ok((p, elem_ty));
     }
-    let elem_ty = match &base_ty {
-        Ty::Array { elem } => elem.as_ref().clone(),
-        other => {
-            return Err(Error::at(
-                format!("cannot index non-Array type {other:?}"),
-                span,
-            ));
+    match &base_ty {
+        Ty::Array { elem } => lower_array_index(ctx, base_p, elem.as_ref().clone(), index),
+        Ty::Map { key, val } => {
+            let (kp, kt) = lower_expr(ctx, index)?;
+            if kt != **key {
+                return Err(Error::at(
+                    format!("Map key type mismatch: expected {key:?}, found {kt:?}"),
+                    index.span,
+                ));
+            }
+            lower_map_get(ctx, base_p, kp, key, val, span)
         }
-    };
-    lower_array_index(ctx, base_p, elem_ty, index)
+        other => Err(Error::at(
+            format!("cannot index non-Array type {other:?}"),
+            span,
+        )),
+    }
 }
 
 /// Index into a lowered dynamic `Array` place.
@@ -7606,9 +8201,12 @@ fn lower_method_call(
         }
     }
 
-    // Buffer mutating methods must use the binding place without Dup and write back
-    // the returned pointer (COW may allocate a new unique buffer).
-    if matches!(method, "append" | "appendBytes" | "freeze") {
+    // Buffer / Array / Map mutating methods must use the binding place without Dup
+    // and write back the returned pointer (COW may allocate a new unique object).
+    if matches!(
+        method,
+        "append" | "appendBytes" | "freeze" | "dropLast" | "insertAt" | "removeAt" | "set" | "remove"
+    ) {
         if let ExprKind::Name(recv_name) = &receiver.kind {
             if let Some(binding) = ctx.lookup(recv_name) {
                 if binding.ty == Ty::Buffer {
@@ -7619,6 +8217,25 @@ fn lower_method_call(
                         args,
                         method_span,
                         /*write_back*/ method != "freeze",
+                    );
+                }
+                if matches!(&binding.ty, Ty::Array { .. } | Ty::Map { .. }) {
+                    let mutating = !matches!(method, "freeze");
+                    if mutating && !binding.mutable {
+                        return Err(Error::at(
+                            format!("cannot mutate immutable binding `{recv_name}`"),
+                            method_span,
+                        ));
+                    }
+                    let recv_p = binding.place.clone();
+                    let recv_ty = binding.ty.clone();
+                    return lower_collection_method(
+                        ctx,
+                        recv_p,
+                        &recv_ty,
+                        method,
+                        args,
+                        method_span,
                     );
                 }
             }
@@ -7646,6 +8263,9 @@ fn lower_method_call(
         Ty::Node => lower_html_method(ctx, recv_p, method, args, method_span),
         Ty::Array { elem } => {
             lower_array_method(ctx, recv_p, elem.as_ref(), method, args, method_span)
+        }
+        Ty::Map { key, val } => {
+            lower_map_method(ctx, recv_p, key.as_ref(), val.as_ref(), method, args, method_span)
         }
         Ty::User(type_name) => {
             let type_name = type_name.clone();
@@ -7864,7 +8484,155 @@ fn lower_html_method(
     }
 }
 
-/// Array methods — functional (return a new array; do not write back).
+fn lower_collection_method(
+    ctx: &mut LowerCtx,
+    recv: Place,
+    recv_ty: &Ty,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    match recv_ty {
+        Ty::Array { elem } => lower_array_method(ctx, recv, elem.as_ref(), method, args, span),
+        Ty::Map { key, val } => {
+            lower_map_method(ctx, recv, key.as_ref(), val.as_ref(), method, args, span)
+        }
+        _ => Err(Error::at(
+            format!("internal: not a collection type {recv_ty:?}"),
+            span,
+        )),
+    }
+}
+
+fn lower_map_method(
+    ctx: &mut LowerCtx,
+    recv: Place,
+    key_ty: &Ty,
+    val_ty: &Ty,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let map_ty = Ty::Map {
+        key: Box::new(key_ty.clone()),
+        val: Box::new(val_ty.clone()),
+    };
+    match method {
+        "has" => {
+            let formal = vec![("key".into(), key_ty.clone())];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let key = coerce_map_key(ctx, places.into_iter().next().unwrap(), key_ty);
+            let raw = ctx.fresh("mhas");
+            ctx.assign(
+                raw.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::Builtin("map_has".into()),
+                    args: vec![recv, key],
+                },
+            );
+            let p = ctx.fresh("mhasb");
+            ctx.assign(
+                p.clone(),
+                Ty::Bool,
+                RValue::Cast {
+                    value: raw,
+                    from: Ty::Int64,
+                    to: Ty::Bool,
+                },
+            );
+            Ok((p, Ty::Bool))
+        }
+        "get" => {
+            let formal = vec![("key".into(), key_ty.clone())];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let key = places.into_iter().next().unwrap();
+            lower_map_get(ctx, recv, key, key_ty, val_ty, span)
+        }
+        "set" => {
+            let formal = vec![
+                ("key".into(), key_ty.clone()),
+                ("value".into(), val_ty.clone()),
+            ];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut it = places.into_iter();
+            let key = coerce_map_key(ctx, it.next().unwrap(), key_ty);
+            let val = it.next().unwrap();
+            ctx.assign(
+                recv.clone(),
+                map_ty,
+                RValue::MapSet {
+                    map: recv,
+                    key,
+                    val,
+                    key_ty: key_ty.clone(),
+                    val_ty: val_ty.clone(),
+                },
+            );
+            Ok(void_place(ctx))
+        }
+        "remove" => {
+            let formal = vec![("key".into(), key_ty.clone())];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let key = coerce_map_key(ctx, places.into_iter().next().unwrap(), key_ty);
+            ctx.assign(
+                recv.clone(),
+                map_ty,
+                RValue::MapRemove {
+                    map: recv,
+                    key,
+                    key_ty: key_ty.clone(),
+                    val_ty: val_ty.clone(),
+                },
+            );
+            Ok(void_place(ctx))
+        }
+        "keys" => {
+            if !args.is_empty() {
+                return Err(Error::at("Map.keys() takes no arguments", span));
+            }
+            let p = ctx.fresh("mkeys");
+            let arr_ty = Ty::Array {
+                elem: Box::new(key_ty.clone()),
+            };
+            ctx.assign(
+                p.clone(),
+                arr_ty.clone(),
+                RValue::MapKeys {
+                    map: recv,
+                    key_ty: key_ty.clone(),
+                },
+            );
+            Ok((p, arr_ty))
+        }
+        "values" => {
+            if !args.is_empty() {
+                return Err(Error::at("Map.values() takes no arguments", span));
+            }
+            let p = ctx.fresh("mvals");
+            let arr_ty = Ty::Array {
+                elem: Box::new(val_ty.clone()),
+            };
+            ctx.assign(
+                p.clone(),
+                arr_ty.clone(),
+                RValue::MapValues {
+                    map: recv,
+                    val_ty: val_ty.clone(),
+                },
+            );
+            Ok((p, arr_ty))
+        }
+        other => Err(Error::at(
+            format!(
+                "no method `{other}` on Map (use .has, .get, .set, .remove, .keys, .values, .count)"
+            ),
+            span,
+        )),
+    }
+}
+
+/// Array methods — write-back Void on mutating ops (D133).
 fn lower_array_method(
     ctx: &mut LowerCtx,
     recv: Place,
@@ -7882,49 +8650,58 @@ fn lower_array_method(
             let places = resolve_call_args(ctx, &formal, args, span)?;
             let item = places.into_iter().next().unwrap();
             if array_elem_is_user(elem) {
-                let p = ctx.fresh("aapp");
                 ctx.assign(
-                    p.clone(),
-                    arr_ty.clone(),
+                    recv.clone(),
+                    arr_ty,
                     RValue::ArrayAppend {
                         arr: recv,
                         item,
                         elem_ty: elem.clone(),
                     },
                 );
-                return Ok((p, arr_ty));
+                return Ok(void_place(ctx));
             }
             let item = coerce_array_scalar_item(ctx, elem, item);
-            let all = vec![recv, item];
+            let all = vec![recv.clone(), item];
             let builtin = if array_elem_is_heap(elem) {
                 "array_append_ptr"
             } else {
                 "array_append_i64"
             };
-            emit_call_result(ctx, Callee::Builtin(builtin.into()), all, arr_ty)
+            ctx.assign(
+                recv,
+                arr_ty,
+                RValue::Call {
+                    callee: Callee::Builtin(builtin.into()),
+                    args: all,
+                },
+            );
+            Ok(void_place(ctx))
         }
         "dropLast" => {
             if !args.is_empty() {
                 return Err(Error::at("Array.dropLast() takes no arguments", span));
             }
             if array_elem_is_user(elem) {
-                let p = ctx.fresh("adrop");
                 ctx.assign(
-                    p.clone(),
-                    arr_ty.clone(),
+                    recv.clone(),
+                    arr_ty,
                     RValue::ArrayDropLast {
                         arr: recv,
                         elem_ty: elem.clone(),
                     },
                 );
-                return Ok((p, arr_ty));
+                return Ok(void_place(ctx));
             }
-            emit_call_result(
-                ctx,
-                Callee::Builtin("array_drop_last".into()),
-                vec![recv],
+            ctx.assign(
+                recv.clone(),
                 arr_ty,
-            )
+                RValue::Call {
+                    callee: Callee::Builtin("array_drop_last".into()),
+                    args: vec![recv],
+                },
+            );
+            Ok(void_place(ctx))
         }
         "insertAt" => {
             let formal = vec![("at".into(), Ty::Int64), ("item".into(), elem.clone())];
@@ -7933,10 +8710,9 @@ fn lower_array_method(
             let at = it.next().unwrap();
             let item = it.next().unwrap();
             if array_elem_is_user(elem) {
-                let p = ctx.fresh("ains");
                 ctx.assign(
-                    p.clone(),
-                    arr_ty.clone(),
+                    recv.clone(),
+                    arr_ty,
                     RValue::ArrayInsertAt {
                         arr: recv,
                         at,
@@ -7944,40 +8720,50 @@ fn lower_array_method(
                         elem_ty: elem.clone(),
                     },
                 );
-                return Ok((p, arr_ty));
+                return Ok(void_place(ctx));
             }
             let item = coerce_array_scalar_item(ctx, elem, item);
-            let all = vec![recv, at, item];
+            let all = vec![recv.clone(), at, item];
             let builtin = if array_elem_is_heap(elem) {
                 "array_insert_at_ptr"
             } else {
                 "array_insert_at_i64"
             };
-            emit_call_result(ctx, Callee::Builtin(builtin.into()), all, arr_ty)
+            ctx.assign(
+                recv,
+                arr_ty,
+                RValue::Call {
+                    callee: Callee::Builtin(builtin.into()),
+                    args: all,
+                },
+            );
+            Ok(void_place(ctx))
         }
         "removeAt" => {
             let formal = vec![("at".into(), Ty::Int64)];
             let places = resolve_call_args(ctx, &formal, args, span)?;
             let at = places.into_iter().next().unwrap();
             if array_elem_is_user(elem) {
-                let p = ctx.fresh("arm");
                 ctx.assign(
-                    p.clone(),
-                    arr_ty.clone(),
+                    recv.clone(),
+                    arr_ty,
                     RValue::ArrayRemoveAt {
                         arr: recv,
                         at,
                         elem_ty: elem.clone(),
                     },
                 );
-                return Ok((p, arr_ty));
+                return Ok(void_place(ctx));
             }
-            emit_call_result(
-                ctx,
-                Callee::Builtin("array_remove_at".into()),
-                vec![recv, at],
+            ctx.assign(
+                recv.clone(),
                 arr_ty,
-            )
+                RValue::Call {
+                    callee: Callee::Builtin("array_remove_at".into()),
+                    args: vec![recv, at],
+                },
+            );
+            Ok(void_place(ctx))
         }
         other => Err(Error::at(
             format!("no method `{other}` on Array (use .append, .dropLast, .insertAt, .removeAt)"),
@@ -9203,6 +9989,12 @@ fn materialize_expr_typespace(
                 materialize_expr_typespace(e, types, layouts, name_map, def_mod)?;
             }
         }
+        ExprKind::MapLit(entries) => {
+            for (k, v) in entries {
+                materialize_expr_typespace(k, types, layouts, name_map, def_mod)?;
+                materialize_expr_typespace(v, types, layouts, name_map, def_mod)?;
+            }
+        }
         ExprKind::Block(b) => {
             materialize_block_typespace(b, types, layouts, name_map, def_mod)?;
         }
@@ -9309,6 +10101,9 @@ fn ty_eq(types: &HashMap<String, TypeInfo>, a: &Ty, b: &Ty) -> bool {
             _ => false,
         },
         (Ty::Array { elem: ae }, Ty::Array { elem: be }) => ty_eq(types, ae, be),
+        (Ty::Map { key: ak, val: av }, Ty::Map { key: bk, val: bv }) => {
+            ty_eq(types, ak, bk) && ty_eq(types, av, bv)
+        }
         (Ty::FixedArray { elem: ae, len: al }, Ty::FixedArray { elem: be, len: bl }) => {
             al == bl && ty_eq(types, ae, be)
         }
@@ -10479,7 +11274,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
             ctx.assign(place.clone(), ty.clone(), RValue::Int(0))
         }
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } => {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
             ctx.note_drop_place(place, ty);
             ctx.stmts.push(Stmt::Assign {
                 place: place.clone(),
@@ -10543,7 +11338,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                     match &f.ty {
                         Ty::Int64 => ctx.assign(fp.clone(), Ty::Int64, RValue::Int(0)),
                         Ty::Bool => ctx.assign(fp.clone(), Ty::Bool, RValue::Bool(false)),
-                        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } => {
+                        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
                             ctx.note_drop_place(&fp, &f.ty);
                             ctx.stmts.push(Stmt::Assign {
                                 place: fp.clone(),
@@ -11311,6 +12106,7 @@ fn lower_call(
             lower_bytes_new(ctx, args, span)
         }
         "Buffer" => lower_buffer_new(ctx, args, span),
+        "Map" => lower_map_new(ctx, args, span, expect),
         "__jsx_el" => lower_html_el(ctx, args, span),
         "__jsx_child" => lower_html_child(ctx, args, span),
         other => {

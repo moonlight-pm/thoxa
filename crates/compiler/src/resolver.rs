@@ -205,7 +205,7 @@ impl Resolution {
 /// Built-in type and value names with no source definition in the buffer.
 const BUILTINS: &[&str] = &[
     "Int64", "Int32", "UInt64", "UInt32", "Byte", "Bool", "Void", "String", "Bytes", "Buffer",
-    "Node", "Array", "Address", "Trial", "May", "Pass", "Fail", "Has", "Not", "true", "false",
+    "Node", "Array", "Map", "Address", "Trial", "May", "Pass", "Fail", "Has", "Not", "true", "false",
 ];
 
 struct Scope {
@@ -984,6 +984,12 @@ impl<'a> Resolver<'a> {
                     self.walk_expr(e, scope);
                 }
             }
+            ExprKind::MapLit(entries) => {
+                for (k, v) in entries {
+                    self.walk_expr(k, scope);
+                    self.walk_expr(v, scope);
+                }
+            }
             ExprKind::If {
                 cond,
                 then_branch,
@@ -1003,6 +1009,7 @@ impl<'a> Resolver<'a> {
             ExprKind::For {
                 name,
                 name_span,
+                value,
                 start,
                 end,
                 body,
@@ -1022,6 +1029,17 @@ impl<'a> Resolver<'a> {
                     false,
                 );
                 self.define(inner, name, id);
+                if let Some((vname, vspan)) = value {
+                    let vid = self.new_binding(
+                        vname,
+                        BindingKind::ForVar,
+                        Some(*vspan),
+                        false,
+                        None,
+                        false,
+                    );
+                    self.define(inner, vname, vid);
+                }
                 self.walk_block(body, inner);
             }
             ExprKind::Return { value } => {

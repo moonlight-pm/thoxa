@@ -61,7 +61,7 @@ fn drinkCard(d!: Drink) -> Node {
 fn drinkCards(drinks!: Array<Drink>) -> Array<Node> {
     mut items: Array<Node> = []
     for d in drinks {
-        items = items.append(drinkCard(d))
+        items.append(drinkCard(d))
     }
     items
 }

@@ -47,13 +47,13 @@ fn splitRows(data!: Bytes) -> Array<Row> {
                     end = end - 1
                 }
             }
-            rows = rows.append(make(data.slice(start, end)))
+            rows.append(make(data.slice(start, end)))
             start = i + 1
         }
         i = i + 1
     }
     if start < n {
-        rows = rows.append(make(data.slice(start, n)))
+        rows.append(make(data.slice(start, n)))
     }
     rows
 }

@@ -14,8 +14,8 @@ fn main() -> Int64 {
     mut xs: Array<Header> = []
     logging.info("empty_count={xs.count}")
 
-    xs = xs.append(Header(name: "Host", value: "ex"))
-    xs = xs.append(Header(name: "Accept", value: "*/*"))
+    xs.append(Header(name: "Host", value: "ex"))
+    xs.append(Header(name: "Accept", value: "*/*"))
     logging.info("count={xs.count}")
     logging.info("first={xs[0].label()}")
     logging.info("second_name={xs[1].name}")
@@ -28,14 +28,15 @@ fn main() -> Int64 {
     }
     logging.info("iters={n}")
 
-    ## Index set mutates shared storage
+    ## Index set write-back (D133)
     xs[0] = Header(name: "Host", value: "localhost")
     logging.info("mutated={xs[0].label()}")
 
-    let ys = xs.dropLast()
+    mut ys = xs
+    ys.dropLast()
     logging.info("dropped_count={ys.count}")
     logging.info("dropped_only={ys[0].label()}")
-    ## Original still intact
+    ## Original still intact (COW)
     logging.info("orig_count={xs.count}")
 
     ## Literal of User elements
@@ -43,10 +44,12 @@ fn main() -> Int64 {
     logging.info("lit_count={zs.count}")
     logging.info("lit0={zs[0].name}")
 
-    ## Functional insertAt / removeAt (User elems)
-    let mid = zs.insertAt(1, Header(name: "M", value: "x"))
+    ## insertAt / removeAt write-back; source intact via COW
+    mut mid = zs
+    mid.insertAt(1, Header(name: "M", value: "x"))
     logging.info("ins_count={mid.count} mid={mid[1].name}")
-    let cut = zs.removeAt(0)
+    mut cut = zs
+    cut.removeAt(0)
     logging.info("rm_count={cut.count} rm0={cut[0].name}")
     logging.info("zs_still={zs.count}")
     0

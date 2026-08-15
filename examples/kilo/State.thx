@@ -230,7 +230,7 @@ fn emptyRow() -> Row {
 
 export fn insertChar(byte: Int64) -> Void {
     if cy == numRows() {
-        textRows = textRows.insertAt(numRows(), emptyRow())
+        textRows.insertAt(numRows(), emptyRow())
     }
     textRows[cy] = row(cy).insertChar(cx, byte)
     cx = cx + 1
@@ -240,10 +240,10 @@ export fn insertChar(byte: Int64) -> Void {
 
 export fn insertNewline() -> Void {
     if cx == 0 {
-        textRows = textRows.insertAt(cy, emptyRow())
+        textRows.insertAt(cy, emptyRow())
     } else {
         let line = row(cy)
-        textRows = textRows.insertAt(cy + 1, line.drop(cx))
+        textRows.insertAt(cy + 1, line.drop(cx))
         textRows[cy] = line.take(cx)
     }
     cy = cy + 1
@@ -263,7 +263,7 @@ export fn deleteChar() -> Void {
         let prev = row(cy - 1)
         cx = prev.charCount()
         textRows[cy - 1] = prev.concat(row(cy))
-        textRows = textRows.removeAt(cy)
+        textRows.removeAt(cy)
         cy = cy - 1
     } else {
         textRows[cy] = row(cy).deleteChar(cx - 1)
@@ -323,12 +323,12 @@ fn overlayMatch(base!: Array<Hl>, r!: Row) -> Array<Hl> {
         }
         if k >= rxBegin {
             if k < rxEnd {
-                out = out.append(Matched())
+                out.append(Matched())
             } else {
-                out = out.append(base[k])
+                out.append(base[k])
             }
         } else {
-            out = out.append(base[k])
+            out.append(base[k])
         }
         k = k + 1
     }
