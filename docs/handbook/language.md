@@ -235,6 +235,7 @@ for k, v in lit {
 - **Map keys:** `String`, `Int64`, `Bool`. Ident keys in `{ Cookie: … }`
   are the string `"Cookie"`. Empty `{}` is still a block; empty map is `Map()`.
   A `type Header(…)` may be a **value** (`Map<String, Header>`), not a key.
+  A Map may itself be a constructor-param field.
 - **Map reads:** `m[k]` and `.get(k)` are `May<V>` (import Fallible). `.has(k)`
   is `Bool`. Duplicate keys in one literal are an error.
 - **Map writes:** `.set` / `.remove` / `m[k] =` write back. Missing `.remove`

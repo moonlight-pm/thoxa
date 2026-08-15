@@ -376,7 +376,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D47 | Loops (subset) | `while`, `loop`, `for x in lo..hi` / `lo..=hi`, `break`, `continue` | Loops yield `Void`; **`for x in arr` shipped with D55**; `continue` in range-for hits C for-step |
-| D48 | Constructor-param field types | Int64, Bool, **String**, **Bytes** | Nested User still deferred; C-layout body fields remain ABI-only |
+| D48 | Constructor-param field types | Int64, Bool, **String**, **Bytes** | Nested User still deferred; C-layout body fields remain ABI-only. **Amended:** dynamic `Array` (D69), `Map` (D134). |
 | D49 | RC on user values | `needs_drop(User)` always; cgen walks heap fields | Dup after `StructLit` and heap field loads; method `_self` is a param (not auto-dropped) |
 
 ## 2026-07-19 — R9+ Trial monomorphs + wire I/O

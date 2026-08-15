@@ -194,7 +194,7 @@ Phase D+ only if wanted — still no `std/` growth.
 
 | Gap | Workaround | Product break? |
 |-----|------------|----------------|
-| Constructor-param fields must be Int64 / Bool / String / Bytes / Array — **not** user sum types | `Drink.roast: String` instead of `Roast` union | Optional later language slice |
+| Constructor-param fields must be Int64 / Bool / String / Bytes / Array / Map — **not** user sum types | `Drink.roast: String` instead of `Roast` union | Optional later language slice |
 | String interp treats `{…}` as interpolation | Path params use `:slug` not `{slug}` | Document; escape story later if needed |
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
