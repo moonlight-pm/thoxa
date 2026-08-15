@@ -42,14 +42,14 @@ restart again.
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
 | Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, ctor, method/fn return (generic head + type-param subst), copy-let, match payload, if/else, block, **match**, **module-level let** inits, or **`?` on Trial/May** (success type) |
 | Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk. Namespace free fns (`net.createSocket`) and **typed methods on values from those calls after `?`** (`server.reuseAddr` → `Socket.reuseAddr` in `Net.thx`) |
-| References | Local file + open buffers + **package-tree `.thx` on disk** (under nearest `Main.thx` / `.git` root; same-dir fallback) that selective-import the export |
+| References | Local file + open buffers + **package-tree `.thx` on disk** (under nearest `main.thx` / `.git` root; same-dir fallback) that selective-import the export |
 | Rename | Local + open buffers + **package-tree disk** selective-import renames when renaming an export |
 | Document symbols | Outline |
 | Workspace symbols | `workspace/symbol` — search open buffers + package-tree `.thx` (same root walk as multi-file refs) |
 | Open buffers | Overlay wins over disk for package check |
 
 Library buffers without `main` typecheck as libraries (no false “requires main”).
-Nested files in a directory package resolve `~/…` from the nearest `Main.thx`
+Nested files in a directory package resolve `~/…` from the nearest `main.thx`
 (same as `thoxa run examples/http`), not from the open file’s directory.
 
 ## Limits (partial)
@@ -57,7 +57,7 @@ Nested files in a directory package resolve `~/…` from the nearest `Main.thx`
 - Typed member navigation still misses some **untyped** expressions (no recoverable type).
 - Call-arg hover needs a resolvable callee (local or import path on disk / open buffer).
 - Package-tree refs/rename and **workspace symbols** use the same root walk
-  (nearest `Main.thx` / `.git`; capped — not an unbounded home walk / multi-root).
+  (nearest `main.thx` / `.git`; capped — not an unbounded home walk / multi-root).
 - Parse recovery is **statement-oriented** (top-level items + mid-block); not full mid-expression recovery.
 - MIR lower still uses its own env (shared-resolver migration is deferred architecture, not day-to-day polish).
 - **No Python** in the product editor path.

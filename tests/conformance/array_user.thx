@@ -1,6 +1,6 @@
 ## Array<User>: empty + append + index get + for-in + field access + dropLast.
 ## Constructor-param User with String fields (inline elems, field RC — D65).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Header(name: String, value: String) {
     export fn label() -> String {
         "{name}={value}"

@@ -638,15 +638,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("thoxa-unused-imp-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
-        let main = dir.join("Main.thx");
+        let helper = dir.join("helper.thx");
+        let main = dir.join("main.thx");
         fs::write(
             &helper,
             "export fn answer() -> Int64 { 42 }\nexport fn other() -> Int64 { 1 }\n",
         )
         .unwrap();
         let src = "\
-import { answer, other } from \"./Helper\"
+import { answer, other } from \"./helper\"
 fn main() -> Int64 { answer() }
 ";
         fs::write(&main, src).unwrap();
@@ -669,11 +669,11 @@ fn main() -> Int64 { answer() }
         let dir = std::env::temp_dir().join(format!("thoxa-unused-ns-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
-        let main = dir.join("Main.thx");
+        let helper = dir.join("helper.thx");
+        let main = dir.join("main.thx");
         fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
         let src = "\
-import h from \"./Helper\"
+import h from \"./helper\"
 fn main() -> Int64 { 0 }
 ";
         fs::write(&main, src).unwrap();
@@ -694,10 +694,10 @@ fn main() -> Int64 { 0 }
         let dir = std::env::temp_dir().join(format!("thoxa-used-imp-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
-        let main = dir.join("Main.thx");
+        let helper = dir.join("helper.thx");
+        let main = dir.join("main.thx");
         fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
-        let src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        let src = "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, src).unwrap();
         let diags = check_source(main.to_str().unwrap(), src);
         assert!(diags.is_empty(), "unexpected: {diags:?}");
@@ -710,15 +710,15 @@ fn main() -> Int64 { 0 }
         let dir = std::env::temp_dir().join(format!("thoxa-combined-imp-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
-        let main = dir.join("Main.thx");
+        let helper = dir.join("helper.thx");
+        let main = dir.join("main.thx");
         fs::write(
             &helper,
             "export fn answer() -> Int64 { 42 }\nexport fn other() -> Int64 { 1 }\n",
         )
         .unwrap();
         let src = "\
-import h, { answer, other } from \"./Helper\"
+import h, { answer, other } from \"./helper\"
 fn main() -> Int64 { h.answer() + answer() }
 ";
         fs::write(&main, src).unwrap();
@@ -885,7 +885,7 @@ fn main() -> Int64 {
     #[test]
     fn import_without_real_path_clear_diagnostic() {
         // Use the import so the only error is path-related (not unused-import).
-        let src = "import { foo } from \"./Helper\"\nfn main() -> Int64 { foo() }\n";
+        let src = "import { foo } from \"./helper\"\nfn main() -> Int64 { foo() }\n";
         let diags = check_source("<input>", src);
         assert!(
             diags.iter().any(|d| {
@@ -905,11 +905,11 @@ fn main() -> Int64 {
             .parent()
             .unwrap()
             .to_path_buf();
-        let main = workspace.join("target/thoxa-test-may-live/Main.thx");
+        let main = workspace.join("target/thoxa-test-may-live/main.thx");
         let _ = fs::create_dir_all(main.parent().unwrap());
         // No `May` type annotation — only constructors; companion rule must keep May.
         let src = "\
-import { Has, Not, May } from \"std/Fallible\"
+import { Has, Not, May } from \"std/fallible\"
 fn main() -> Int64 {
   let m = Not()
   match m {
@@ -943,11 +943,11 @@ fn main() -> Int64 {
         let dir = std::env::temp_dir().join(format!("thoxa-overlay-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
-        let main = dir.join("Main.thx");
+        let helper = dir.join("helper.thx");
+        let main = dir.join("main.thx");
         // Disk: helper returns Int64 (compatible).
         fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
-        let main_src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main_src = "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         // Open buffer: change helper to return Bool → type error at use site.
         let edited = "export fn answer() -> Bool { true }\n";
@@ -970,18 +970,18 @@ fn main() -> Int64 {
         let dir = std::env::temp_dir().join(format!("thoxa-dep-span-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
-        let app = dir.join("App.thx");
-        // Helper imports a name that does not exist on std/Fallible.
+        let helper = dir.join("helper.thx");
+        let app = dir.join("app.thx");
+        // Helper imports a name that does not exist on std/fallible.
         fs::write(
             &helper,
-            "import { NotARealExport } from \"std/Fallible\"\nexport fn hi() -> Int64 { 1 }\n",
+            "import { NotARealExport } from \"std/fallible\"\nexport fn hi() -> Int64 { 1 }\n",
         )
         .unwrap();
         // App is longer / different so a stolen span would underline the wrong token.
         let app_src = "\
 ## filler so offsets diverge from Helper
-import { hi } from \"./Helper\"
+import { hi } from \"./helper\"
 fn isReadMethod(method!: String) -> Bool {
     if method == \"GET\" {
         true
@@ -1000,7 +1000,7 @@ fn main() -> Int64 {
             .find(|d| d.message.contains("NotARealExport"))
             .unwrap_or_else(|| panic!("expected not-exported diag: {diags:?}"));
         assert!(
-            err.filename.contains("Helper.thx"),
+            err.filename.contains("helper.thx"),
             "diag must stay on Helper, got filename={}",
             err.filename
         );
@@ -1021,15 +1021,15 @@ fn main() -> Int64 {
         let dir = std::env::temp_dir().join(format!("thoxa-check-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
-        let main = dir.join("Main.thx");
+        let helper = dir.join("helper.thx");
+        let main = dir.join("main.thx");
         fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
         // Buffer has a type error in the open file; deps load from disk.
         let bad =
-            "import { answer } from \"./Helper\"\nfn main() -> Int64 { if answer() { 0 } 0 }\n";
+            "import { answer } from \"./helper\"\nfn main() -> Int64 { if answer() { 0 } 0 }\n";
         fs::write(
             &main,
-            "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n",
+            "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n",
         )
         .unwrap();
         let diags = check_source(main.to_str().unwrap(), bad);
@@ -1045,29 +1045,29 @@ fn main() -> Int64 {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("app")).unwrap();
         fs::create_dir_all(dir.join("framework")).unwrap();
-        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
+        fs::write(dir.join("main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
         fs::write(
-            dir.join("framework").join("Wire.thx"),
+            dir.join("framework").join("wire.thx"),
             "export fn ping() -> Int64 { 1 }\n",
         )
         .unwrap();
-        let pages = dir.join("app").join("Pages.thx");
+        let pages = dir.join("app").join("pages.thx");
         let src =
-            "import wire from \"~/framework/Wire\"\nexport fn go() -> Int64 { wire.ping() }\n";
+            "import wire from \"~/framework/wire\"\nexport fn go() -> Int64 { wire.ping() }\n";
         fs::write(&pages, src).unwrap();
         let diags = check_source(pages.to_str().unwrap(), src);
         assert!(
             diags.is_empty(),
-            "nested ~/ should resolve via Main.thx: {diags:?}"
+            "nested ~/ should resolve via main.thx: {diags:?}"
         );
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn library_module_without_main_ok() {
-        // Export-only modules must typecheck without `fn main` (LSP on Io.thx / Http.thx).
+        // Export-only modules must typecheck without `fn main` (LSP on io.thx / http.thx).
         let src = "export fn answer() -> Int64 { 42 }\nexport let n = 1\n";
-        let diags = check_source("Helper.thx", src);
+        let diags = check_source("helper.thx", src);
         assert!(
             diags.is_empty(),
             "library should not require main: {diags:?}"
@@ -1077,7 +1077,7 @@ fn main() -> Int64 {
     #[test]
     fn library_module_still_reports_type_errors() {
         let src = "export fn bad() -> Int64 { if 3 { 0 } 0 }\n";
-        let diags = check_source("Lib.thx", src);
+        let diags = check_source("lib.thx", src);
         assert_eq!(diags.len(), 1, "{diags:?}");
         assert!(diags[0].message.contains("Bool"), "{}", diags[0].message);
         assert!(
@@ -1093,10 +1093,10 @@ fn main() -> Int64 {
         let dir = std::env::temp_dir().join(format!("thoxa-lib-check-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
-        let lib = dir.join("Lib.thx");
+        let helper = dir.join("helper.thx");
+        let lib = dir.join("lib.thx");
         fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
-        let src = "import { answer } from \"./Helper\"\nexport fn use() -> Int64 { answer() }\n";
+        let src = "import { answer } from \"./helper\"\nexport fn use() -> Int64 { answer() }\n";
         fs::write(&lib, src).unwrap();
         let diags = check_source(lib.to_str().unwrap(), src);
         assert!(diags.is_empty(), "library with imports: {diags:?}");
@@ -1479,10 +1479,10 @@ fn main() -> Int64 {
             .parent()
             .unwrap()
             .to_path_buf();
-        let main = workspace.join("target/thoxa-test-return-infer/Main.thx");
+        let main = workspace.join("target/thoxa-test-return-infer/main.thx");
         let _ = fs::create_dir_all(main.parent().unwrap());
         let src = "\
-import { Pass, Fail, Trial } from \"std/Fallible\"
+import { Pass, Fail, Trial } from \"std/fallible\"
 fn setup() -> Trial<Void, String> {
     Pass(Void)
 }
@@ -1519,7 +1519,7 @@ mod recover_tests {
     fn soft_parse_reports_undefined_after_keyword() {
         let path = PathBuf::from("/tmp/thoxa_recover_test.thx");
         let text = r#"
-import { Pass } from "std/Fallible"
+import { Pass } from "std/fallible"
 fn main() -> Int64 {
     bar
     FOOBAR

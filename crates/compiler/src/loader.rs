@@ -2,7 +2,7 @@
 //!
 //! Specifiers:
 //! - `./…` relative to the importing file's directory (no `..` segments)
-//! - `~/…` relative to the project root (nearest ancestor `Main.thx`, else
+//! - `~/…` relative to the project root (nearest ancestor `main.thx`, else
 //!   the entry file's directory)
 //! - `std/…` product standard library (D97) — `THOXA_STD`, else `{THOXA_ROOT|workspace}/std`
 //! - bare `ffi` / `ffi/…` — still deferred
@@ -16,10 +16,16 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Directory-package entry file (D68 / D138).
+pub const ENTRY_FILE: &str = "main.thx";
+
 /// A parsed source module with identity and path.
 #[derive(Debug, Clone)]
 pub struct SourceModule {
-    /// Module id = file stem (PascalCase for library modules).
+    /// Module id for C mangling (D35 / D138).
+    ///
+    /// Entry: file stem (symbols stay unprefixed). Library: path-qualified
+    /// kebab-case path, sanitized (`std/http-server` → `std_http_server`).
     pub id: String,
     pub path: PathBuf,
     pub ast: ast::Module,
@@ -37,9 +43,9 @@ pub struct Package {
 /// Directory that `~/…` resolves against for `entry_file`.
 ///
 /// D31/D68: normally the entry file's parent. When the file sits under a
-/// directory package (nearest ancestor `Main.thx`), that directory is the root
-/// so `thoxa check` / LSP on `app/Pages.thx` still finds `~/framework/Wire`.
-/// No `Main.thx` ancestor → file parent (lone-file / flat conformance).
+/// directory package (nearest ancestor `main.thx`), that directory is the root
+/// so `thoxa check` / LSP on `app/pages.thx` still finds `~/framework/wire`.
+/// No `main.thx` ancestor → file parent (lone-file / flat conformance).
 /// Does **not** stop at `.git` (the repo root is not a Thoxa package).
 pub fn package_root_for(entry_file: &Path) -> PathBuf {
     let start = entry_file
@@ -48,7 +54,7 @@ pub fn package_root_for(entry_file: &Path) -> PathBuf {
         .to_path_buf();
     let mut dir = start.clone();
     for _ in 0..24 {
-        if dir.join("Main.thx").is_file() {
+        if dir.join(ENTRY_FILE).is_file() {
             return dir;
         }
         match dir.parent() {
@@ -62,23 +68,23 @@ pub fn package_root_for(entry_file: &Path) -> PathBuf {
 /// Resolve a CLI path to the entry `.thx` file.
 ///
 /// - A **file** path is returned as-is (after soft canonicalize).
-/// - A **directory** path resolves to `<dir>/Main.thx` (D68). The directory is
+/// - A **directory** path resolves to `<dir>/main.thx` (D68 / D138). The directory is
 ///   the project root for `~/…` once `load_package` runs on that file.
 pub fn resolve_entry(path: &Path) -> Result<PathBuf> {
     let path = canonicalize_soft(path)?;
     if path.is_dir() {
-        let main = path.join("Main.thx");
+        let main = path.join(ENTRY_FILE);
         if main.is_file() {
             return Ok(main);
         }
         if main.exists() {
             return Err(Error::new(format!(
-                "Main.thx exists but is not a file in {}",
+                "{ENTRY_FILE} exists but is not a file in {}",
                 path.display()
             )));
         }
         return Err(Error::new(format!(
-            "no Main.thx in {} — a runnable Thoxa project needs a Main.thx",
+            "no {ENTRY_FILE} in {} — a runnable Thoxa project needs a {ENTRY_FILE}",
             path.display()
         )));
     }
@@ -90,7 +96,7 @@ pub fn resolve_entry(path: &Path) -> Result<PathBuf> {
 
 /// Load the entry file and every `./` / `~/` import transitively.
 ///
-/// `entry` may be a `.thx` file or a directory containing `Main.thx`.
+/// `entry` may be a `.thx` file or a directory containing `main.thx`.
 pub fn load_package(entry: &Path) -> Result<Package> {
     let entry = resolve_entry(entry)?;
     if !entry.is_file() {
@@ -121,10 +127,12 @@ pub fn load_package(entry: &Path) -> Result<Package> {
         .map(|p| by_path.remove(&p).expect("loaded module"))
         .collect();
 
-    Ok(Package {
+    let package = Package {
         project_root,
         modules,
-    })
+    };
+    check_unique_module_ids(&package)?;
+    Ok(package)
 }
 
 /// Load a package using an already-parsed entry AST (LSP buffer / soft-recover).
@@ -161,16 +169,7 @@ pub fn load_package_with_entry_ast(entry: &Path, entry_ast: ast::Module) -> Resu
         .collect();
     for imp in &imports {
         let dep = resolve_specifier(&imp.path, dir, &project_root, imp.path_span)?;
-        let stem = dep.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        if !is_pascal_case(stem) {
-            return Err(Error::at(
-                format!(
-                    "module file name `{stem}` must be PascalCase (got `{}`)",
-                    imp.path
-                ),
-                imp.path_span,
-            ));
-        }
+        check_library_stem(&dep, &imp.path, imp.path_span)?;
         load_one(
             &dep,
             false,
@@ -182,11 +181,7 @@ pub fn load_package_with_entry_ast(entry: &Path, entry_ast: ast::Module) -> Resu
         )?;
     }
 
-    let id = entry
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("Main")
-        .to_string();
+    let id = module_id_for(&entry, true, &project_root);
     order.push(entry.clone());
     by_path.insert(
         entry.clone(),
@@ -203,10 +198,12 @@ pub fn load_package_with_entry_ast(entry: &Path, entry_ast: ast::Module) -> Resu
         .map(|p| by_path.remove(&p).expect("loaded module"))
         .collect();
 
-    Ok(Package {
+    let package = Package {
         project_root,
         modules,
-    })
+    };
+    check_unique_module_ids(&package)?;
+    Ok(package)
 }
 
 /// Load `path` and its transitive imports into `package` if not already present.
@@ -259,6 +256,7 @@ pub fn ensure_module_in_package(package: &mut Package, path: &Path) -> Result<()
         modules.push(e);
     }
     package.modules = modules;
+    check_unique_module_ids(package)?;
     Ok(())
 }
 
@@ -291,11 +289,7 @@ fn load_one(
     };
     let tokens = Lexer::new(&src).tokenize()?;
     let ast = Parser::new(tokens).with_source(src).parse_module()?;
-    let id = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("module")
-        .to_string();
+    let id = module_id_for(&path, is_entry, project_root);
 
     // Collect imports and load dependencies first (post-order).
     let imports: Vec<&Import> = ast
@@ -313,17 +307,7 @@ fn load_one(
 
     for imp in &imports {
         let dep = resolve_specifier(&imp.path, dir, project_root, imp.path_span)?;
-        // Non-entry modules must be PascalCase file names.
-        let stem = dep.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        if !is_pascal_case(stem) {
-            return Err(Error::at(
-                format!(
-                    "module file name `{stem}` must be PascalCase (got `{}`)",
-                    imp.path
-                ),
-                imp.path_span,
-            ));
-        }
+        check_library_stem(&dep, &imp.path, imp.path_span)?;
         load_one(&dep, false, project_root, by_path, order, visiting, visited)?;
     }
 
@@ -486,12 +470,103 @@ fn format_thx(rest: &str) -> String {
     }
 }
 
-fn is_pascal_case(name: &str) -> bool {
+/// Non-entry library stems are kebab-case (D138): `http`, `http-server`.
+fn is_kebab_case(name: &str) -> bool {
     let mut chars = name.chars();
     match chars.next() {
-        Some(c) if c.is_ascii_uppercase() => true,
-        _ => false,
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
     }
+    let mut prev_hyphen = false;
+    for c in chars {
+        if c == '-' {
+            if prev_hyphen {
+                return false;
+            }
+            prev_hyphen = true;
+        } else if c.is_ascii_lowercase() || c.is_ascii_digit() {
+            prev_hyphen = false;
+        } else {
+            return false;
+        }
+    }
+    !prev_hyphen
+}
+
+fn check_library_stem(path: &Path, spec: &str, span: Span) -> Result<()> {
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    if is_kebab_case(stem) {
+        return Ok(());
+    }
+    Err(Error::at(
+        format!("module file name `{stem}` must be kebab-case (got `{spec}`)"),
+        span,
+    ))
+}
+
+/// C-mangling id (D35 / D138). Entry keeps the stem; libraries are
+/// path-qualified (`std/http-server` → `std_http_server`).
+pub fn module_id_for(path: &Path, is_entry: bool, project_root: &Path) -> String {
+    if is_entry {
+        return path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Main")
+            .to_string();
+    }
+    sanitize_module_id(&logical_module_path(path, project_root))
+}
+
+fn logical_module_path(path: &Path, project_root: &Path) -> String {
+    let strip_thx = |p: &Path| p.with_extension("");
+    if let Ok(std_root) = std_lib_root() {
+        if let Ok(rel) = path.strip_prefix(&std_root) {
+            return format!("std/{}", path_to_slash(&strip_thx(rel)));
+        }
+    }
+    let display = path.to_string_lossy().replace('\\', "/");
+    if let Some(rest) = display.strip_prefix("std/") {
+        return format!("std/{}", rest.trim_end_matches(".thx"));
+    }
+    if let Some(idx) = display.find("/std/") {
+        let rest = &display[idx + 5..];
+        return format!("std/{}", rest.trim_end_matches(".thx"));
+    }
+    if let Ok(rel) = path.strip_prefix(project_root) {
+        return path_to_slash(&strip_thx(rel));
+    }
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("module")
+        .to_string()
+}
+
+fn path_to_slash(path: &Path) -> String {
+    path.iter()
+        .map(|s| s.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn sanitize_module_id(logical: &str) -> String {
+    // `/` and `-` both become `_`. Do **not** use `__` — MIR monomorphs already
+    // split type args on `__` (`Fallible_Trial__Void__String`).
+    logical.replace('\\', "/").replace('/', "_").replace('-', "_")
+}
+
+fn check_unique_module_ids(package: &Package) -> Result<()> {
+    let mut seen: HashMap<&str, &Path> = HashMap::new();
+    for m in &package.modules {
+        if let Some(prev) = seen.insert(m.id.as_str(), m.path.as_path()) {
+            return Err(Error::new(format!(
+                "module id `{}` is used by both {} and {} — rename one file so sanitized paths differ",
+                m.id,
+                prev.display(),
+                m.path.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn canonicalize_soft(path: &Path) -> Result<PathBuf> {
@@ -515,7 +590,7 @@ pub enum BoundImport {
         from_module: String,
         original: String,
     },
-    /// Namespace import: `import mu from "./MathUtils"` — members via `mu.x`.
+    /// Namespace import: `import mu from "./math-utils"` — members via `mu.x`.
     Namespace { from_module: String },
 }
 
@@ -705,7 +780,7 @@ mod tests {
     #[test]
     fn resolve_entry_dir_with_main() {
         let dir = unique_temp_dir("ok");
-        let main = dir.join("Main.thx");
+        let main = dir.join("main.thx");
         fs::write(&main, "fn main() -> Int64 { 0 }\n").unwrap();
         let got = resolve_entry(&dir).expect("resolve");
         assert_eq!(got, fs::canonicalize(&main).unwrap());
@@ -717,7 +792,7 @@ mod tests {
         let dir = unique_temp_dir("missing");
         let err = resolve_entry(&dir).unwrap_err();
         assert!(
-            err.message.contains("no Main.thx"),
+            err.message.contains("no main.thx"),
             "unexpected message: {}",
             err.message
         );
@@ -727,8 +802,8 @@ mod tests {
     #[test]
     fn resolve_entry_main_not_a_file() {
         let dir = unique_temp_dir("notfile");
-        // `Main.thx` as a subdirectory, not a regular file.
-        fs::create_dir_all(dir.join("Main.thx")).unwrap();
+        // `main.thx` as a subdirectory, not a regular file.
+        fs::create_dir_all(dir.join("main.thx")).unwrap();
         let err = resolve_entry(&dir).unwrap_err();
         assert!(
             err.message.contains("exists but is not a file"),
@@ -752,11 +827,11 @@ mod tests {
     fn package_root_walks_to_nearest_main() {
         let dir = unique_temp_dir("pkgroot");
         fs::create_dir_all(dir.join("app")).unwrap();
-        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
-        let nested = dir.join("app").join("Pages.thx");
+        fs::write(dir.join("main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
+        let nested = dir.join("app").join("pages.thx");
         fs::write(&nested, "export fn go() -> Int64 { 0 }\n").unwrap();
         assert_eq!(package_root_for(&nested), dir);
-        assert_eq!(package_root_for(&dir.join("Main.thx")), dir);
+        assert_eq!(package_root_for(&dir.join("main.thx")), dir);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -764,7 +839,7 @@ mod tests {
     fn package_root_falls_back_to_file_dir_without_main() {
         let dir = unique_temp_dir("nomaing");
         fs::create_dir_all(dir.join("app")).unwrap();
-        let nested = dir.join("app").join("Pages.thx");
+        let nested = dir.join("app").join("pages.thx");
         fs::write(&nested, "export fn go() -> Int64 { 0 }\n").unwrap();
         assert_eq!(package_root_for(&nested), dir.join("app"));
         let _ = fs::remove_dir_all(&dir);
@@ -775,24 +850,64 @@ mod tests {
         let dir = unique_temp_dir("tilde");
         fs::create_dir_all(dir.join("app")).unwrap();
         fs::create_dir_all(dir.join("framework")).unwrap();
-        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
+        fs::write(dir.join("main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
         fs::write(
-            dir.join("framework").join("Wire.thx"),
+            dir.join("framework").join("wire.thx"),
             "export fn ping() -> Int64 { 1 }\n",
         )
         .unwrap();
-        let pages = dir.join("app").join("Pages.thx");
+        let pages = dir.join("app").join("pages.thx");
         fs::write(
             &pages,
-            "import wire from \"~/framework/Wire\"\nexport fn go() -> Int64 { wire.ping() }\n",
+            "import wire from \"~/framework/wire\"\nexport fn go() -> Int64 { wire.ping() }\n",
         )
         .unwrap();
         let pkg = load_package(&pages).expect("load nested");
         assert_eq!(pkg.project_root, dir);
         assert!(
-            pkg.modules.iter().any(|m| m.id == "Wire"),
-            "expected Wire loaded: {:?}",
+            pkg.modules.iter().any(|m| m.id == "framework_wire"),
+            "expected framework_wire loaded: {:?}",
             pkg.modules.iter().map(|m| &m.id).collect::<Vec<_>>()
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn kebab_case_stems() {
+        assert!(is_kebab_case("http"));
+        assert!(is_kebab_case("http-server"));
+        assert!(is_kebab_case("file-io"));
+        assert!(is_kebab_case("a1"));
+        assert!(!is_kebab_case("Http"));
+        assert!(!is_kebab_case("httpServer"));
+        assert!(!is_kebab_case("http_server"));
+        assert!(!is_kebab_case("-http"));
+        assert!(!is_kebab_case("http-"));
+        assert!(!is_kebab_case("http--server"));
+        assert!(!is_kebab_case(""));
+    }
+
+    #[test]
+    fn module_id_sanitizes_hyphens_and_slashes() {
+        assert_eq!(sanitize_module_id("std/http-server"), "std_http_server");
+        assert_eq!(sanitize_module_id("app/routes"), "app_routes");
+        assert_eq!(sanitize_module_id("math-utils"), "math_utils");
+    }
+
+    #[test]
+    fn load_rejects_pascal_case_library() {
+        let dir = unique_temp_dir("pascal");
+        fs::write(
+            dir.join("main.thx"),
+            "import h from \"./Helper\"\nfn main() -> Int64 { 0 }\n",
+        )
+        .unwrap();
+        fs::write(dir.join("Helper.thx"), "export fn go() -> Int64 { 1 }\n").unwrap();
+        let err = load_package(&dir).expect_err("pascal library");
+        assert!(
+            err.message.contains("kebab-case"),
+            "expected kebab-case error: {}",
+            err.message
         );
         let _ = fs::remove_dir_all(&dir);
     }

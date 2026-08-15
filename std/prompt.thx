@@ -1,0 +1,20 @@
+## std/Prompt — ready-made session primary prompts.
+##
+## Default style matches a common zsh PROMPT:
+##   %F{#666666}%* %F{#3B9DC2}%n@%m %F{#cccccc}%2~%F{#2A7A9E}$(git_branch)%F{#ffffff} §
+##
+## The "signature" color is the user@host segment (historically cyan / #3B9DC2).
+## Override with RGB hex (preferred) or RGB+A: `defaultPrompt(signature: "#FF8800")`.
+
+import { brightBlack, white, blue, brightWhite, sgr0, fgHex } from "./ansi"
+import { localHms, userName, hostname } from "./env"
+import { cwdShort } from "./path"
+import { branch } from "./git"
+
+## Time · user@host · short path · git branch · §
+## `signature` is `#RRGGBB` (or optional `#RRGGBBAA`; alpha ignored). Default #3B9DC2.
+export fn defaultPrompt(signature: String = "#3B9DC2") -> String {
+    let sig = fgHex(signature)
+    let reset = sgr0()
+    "{brightBlack}{localHms()} {sig}{userName()}@{hostname()} {white}{cwdShort()}{sig}{branch()}{brightWhite} § {reset}"
+}

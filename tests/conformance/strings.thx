@@ -1,5 +1,5 @@
 ## String interpolation, brace escaping, and character escapes (R4 — heap String + RC).
-import logging from "std/Logging"
+import logging from "std/logging"
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)

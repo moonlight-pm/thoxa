@@ -1,7 +1,7 @@
 ## C-struct FFI: zero-init, typed UInt32 fields, a bitwise field edit, a
 ## fixed Array<Byte, N> field, and a round-trip through libc memcpy/memset by
 ## address. Self-contained and deterministic — no terminal needed.
-import logging from "std/Logging"
+import logging from "std/logging"
 type Regs {
     mut a: UInt32
     mut b: UInt32

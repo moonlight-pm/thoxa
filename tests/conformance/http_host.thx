@@ -1,9 +1,9 @@
 ## D136: std/HttpServer bindListen + serveOne — POST body + keep-alive query.
-import net, { Socket, createSocket } from "std/Net"
-import http, { Request, Response, ok } from "std/Http"
-import server from "std/HttpServer"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging, { info } from "std/Logging"
+import net, { Socket, createSocket } from "std/net"
+import http, { Request, Response, ok } from "std/http"
+import server from "std/http-server"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
 
 fn statusLine(resp!: Bytes) -> String {
     match resp.find(Bytes.fromString("\r")) {

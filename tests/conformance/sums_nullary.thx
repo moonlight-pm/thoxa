@@ -1,5 +1,5 @@
 ## Nullary union types (D118 ladder step 1–2).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Up
 type Down
 type Left

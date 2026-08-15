@@ -1,9 +1,9 @@
 ## File seek / position (D115).
 import {
     openFile, writeFile, readFile, seekSet, seekCur, seekEnd, oRdwr
-} from "std/Io"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+} from "std/io"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

@@ -1,0 +1,36 @@
+## App layer — returning customer via Cookie (domain helper over std/http).
+
+import http, { Request, Response } from "std/http"
+import { Has, Not, May } from "std/fallible"
+
+let cookieName = "customer"
+let maxAgeSecs = 2592000
+
+export fn current(req!: Request) -> May<String> {
+    http.cookie(req, cookieName)
+}
+
+export fn rememberHeader(name!: String) -> String {
+    "{cookieName}={name}; Path=/; HttpOnly; SameSite=Lax; Max-Age={maxAgeSecs}"
+}
+
+export fn forgetHeader() -> String {
+    "{cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+}
+
+export fn withRemember(res!: Response, name!: String) -> Response {
+    http.withHeader(res, "Set-Cookie", rememberHeader(name))
+}
+
+export fn withForget(res!: Response) -> Response {
+    http.withHeader(res, "Set-Cookie", forgetHeader())
+}
+
+export fn greeting(req!: Request) -> String {
+    match current(req) {
+        Not => ""
+        Has(name) {
+            name
+        }
+    }
+}

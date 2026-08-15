@@ -1,0 +1,82 @@
+## Prompt — modal line input for save-as.
+
+import { readKey, Press } from "./keys"
+import screen from "./screen"
+import state from "./state"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+
+let esc = 27
+let enter = 13
+let backspace = 127
+let ctrlH = 8
+
+fn isPrintable(b: Int64) -> Bool {
+    if b < 32 {
+        false
+    } else {
+        b < 127
+    }
+}
+
+fn emptyMayString() -> May<String> {
+    mut m: May<String> = Not()
+    m
+}
+
+export fn promptLine(label!: String) -> May<String> {
+    mut query = Bytes(0)
+    mut result = emptyMayString()
+    mut done = false
+    loop {
+        if done {
+            break
+        }
+        state.setStatusMessage("{label}{query.toString()}")
+        match screen.refresh() {
+            Fail(e) {
+                done = true
+            }
+            Pass(_) {
+                Void
+            }
+        }
+        if done {
+            break
+        }
+        match readKey() {
+            Fail(e) {
+                done = true
+            }
+            Pass(k) {
+                match k {
+                    Press(b) {
+                        if b == esc {
+                            state.setStatusMessage("")
+                            done = true
+                        } else if b == enter {
+                            if query.count > 0 {
+                                state.setStatusMessage("")
+                                result = Has(query.toString())
+                                done = true
+                            }
+                        } else if b == backspace {
+                            if query.count > 0 {
+                                query = query.slice(0, query.count - 1)
+                            }
+                        } else if b == ctrlH {
+                            if query.count > 0 {
+                                query = query.slice(0, query.count - 1)
+                            }
+                        } else if isPrintable(b) {
+                            query = query.insertAt(query.count, b)
+                        }
+                    }
+                    else {
+                        Void
+                    }
+                }
+            }
+        }
+    }
+    result
+}

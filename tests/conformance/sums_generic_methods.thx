@@ -1,5 +1,5 @@
 ## Methods on generic products — monomorphized with the type.
-import logging from "std/Logging"
+import logging from "std/logging"
 type Box<T>(value: T) {
     export fn get() -> T {
         value

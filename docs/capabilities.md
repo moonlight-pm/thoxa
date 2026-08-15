@@ -11,8 +11,9 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-15 (**D137** Str parse + Http wrappers **shipped**;
-**D136** `Request.query` + `std/HttpServer`; **D135** Node + nested User ctor fields;
+**As of:** 2026-08-15 (**D138** kebab-case module files + `main.thx` entry **shipped**;
+**D137** Str parse + Http wrappers;
+**D136** `Request.query` + `std/http-server`; **D135** Node + nested User ctor fields;
 JSX `Node` match + `Attr` + `{...}` spreads **on master**; D133/D134 Map;
 D132 fn pointers; Crema-lite Phase A–C + `Roast` / `DrinkCard`; type-body
 route clauses + JSX/`Node` + **`-->` nowait** **partial** on master — not
@@ -28,8 +29,8 @@ freeze)
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
 | multi-clause | Same-name multi-clause fn/method = match sugar on formal types | shipped | `multi_clause` | **D131**; [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | Pattern formals / cross-arity / composition / `extern` multi-clause out of v0. D16 std factories still separate. Bare singleton lit types + inline `\|` in formals shipped as typespace substrate. | yes |
 | fn-pointers | Function types `(a: T) -> R`; free + unbound + bound methods | shipped | `fn_pointers` | **D132**; [`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md) | Bound = receiver+code (not lexical closure). Module `let`/`mut` allowed; fields/arrays **no** (D48 / D135). No `Fn` word; no closures; no multi-clause/`extern` values; no `-->` of a pointer. | yes |
-| trial | `Trial` + `match` + `?` via `std/Fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | none for v0 — import `Pass`/`Fail`/`Trial` from `std/Fallible`; cross-module residual rewrap | yes |
-| may | `May` / `Has` / `Not` + `?` via `std/Fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | none for v0 — import `Has`/`Not`/`May` from `std/Fallible`; `Bytes.find` needs `May` in scope | yes |
+| trial | `Trial` + `match` + `?` via `std/fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | none for v0 — import `Pass`/`Fail`/`Trial` from `std/fallible`; cross-module residual rewrap | yes |
+| may | `May` / `Has` / `Not` + `?` via `std/fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | none for v0 — import `Has`/`Not`/`May` from `std/fallible`; `Bytes.find` needs `May` in scope | yes |
 | sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | none for v0 | yes |
 | value-match | Literals + or + bind/`else` + guards + `=>` | shipped | `match_value`, `match_or`, `match_bind`, `match_guard`, `match_arm_sugar` | D87, D108, D110, D111, **D130** | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` + bare tag-only | shipped | `match_discard`, `match_arm_sugar` | D66, **D130** | — | yes |
@@ -41,16 +42,16 @@ freeze)
 | mut-assign | `mut` + assign + method field write-back | shipped | `bytes`, `method_field_writeback` | R5, D107 | — | yes |
 | control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops`, `loop_diverge` | D47, D55, **D128** | `loop` without `break` diverges (Never); `while`/`for` still Void | yes |
 | early-return | `return` / `return expr` | shipped | `early_return` | D63 | — | yes |
-| start-tasks | `--> name(args)` — begin a call; do not wait | partial | `start_tasks`, `start_nested`, `start_net`, `start_keepalive`, `http_host` | on master, not freeze | No Future / `async` / `run`. Token `-->` only (not a word). Free Thoxa fns only; `--> { }` later. Net parks. `std/HttpServer` `--> serveOne` + keep-alive (**D136**). No handbook / D-id | no |
+| start-tasks | `--> name(args)` — begin a call; do not wait | partial | `start_tasks`, `start_nested`, `start_net`, `start_keepalive`, `http_host` | on master, not freeze | No Future / `async` / `run`. Token `-->` only (not a word). Free Thoxa fns only; `--> { }` later. Net parks. `std/http-server` `--> serveOne` + keep-alive (**D136**). No handbook / D-id | no |
 | return-infer | Unannotated free-fn return from body exits | shipped | `return_infer` | **D129**; [`specs/2026-08-10-return-type-inference.md`](specs/2026-08-10-return-type-inference.md) | Unannotated **methods** still default `Void` (not body-inferred yet); recursive/mutual unannotated free fns → annotate; bare Pass/Fail alone → annotate; LSP hover shows free-fn inferred types after lower | yes |
 | array-dyn | Dynamic `Array<T>` (incl. User) + insertAt/removeAt | shipped | `arrays`, `array_user`, `array_heap_elems`, `splice` | D53–D55, D62, D65; **D133** | Write-back `Void` on `mut` places (Swift/Buffer COW). `let` aliases do not see writes. | yes |
-| map | Builtin `Map<K, V>` + `{k:v}` + `for k, v` | shipped | `maps`, `maps_user` | **D134**; D133; [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) | Keys v0 String/Int64/Bool (User types are **values**, not keys). `.has` / `.get`→May / write-back `.set`; ident keys; insertion order. Crema dogfoods query/form/cookies as `Map<String, String>`. **Gaps:** User keys wait on structural product `==` + private field hash (not Eq/Hash traits; not pointer identity). No `==` on Map. No `std/Http` header flip. | yes |
+| map | Builtin `Map<K, V>` + `{k:v}` + `for k, v` | shipped | `maps`, `maps_user` | **D134**; D133; [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) | Keys v0 String/Int64/Bool (User types are **values**, not keys). `.has` / `.get`→May / write-back `.set`; ident keys; insertion order. Crema dogfoods query/form/cookies as `Map<String, String>`. **Gaps:** User keys wait on structural product `==` + private field hash (not Eq/Hash traits; not pointer identity). No `==` on Map. No `std/http` header flip. | yes |
 | array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | ABI scalar elems only (no User fixed-array elems) | yes |
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array/Map/Node/User ctor fields | shipped | `string_fields`, `maps_user`, `nested_fields` | D48–D49, D69, D134, **D135** | Nested User and Node shipped (`nested_fields`), including sums as fields. Recursive User fields are an error (use Array/Map). C-layout and fn types still out. | yes |
 | param-defaults | Formal defaults M3 (+ methods/ctors/`!`/extern) | shipped | `param_defaults`, `defaults_mod`, `param_bang_defaults` | D98, D106, D116 | `!` and extern formals may default (call-site fill); non-default cannot follow defaulted; free names use defining module | yes |
-| modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate`, `import_combined` | D30–D35, D122, **D127** | Combined `import ns, { a } from "…"` shipped. `~/` is nearest ancestor `Main.thx` (else entry dir) so nested-file check/LSP match directory packages. Nested import/type in functions deferred (D91); module mut heap (Array/String/Map) must not end-of-fn drop (D122) | yes |
-| pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |
+| modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate`, `import_combined` | D30–D35, D122, **D127**, **D138** | Combined `import ns, { a } from "…"` shipped. Library files are kebab-case modules, not types (**D138**); ids path-qualified. `~/` is nearest ancestor `main.thx` (else entry dir) so nested-file check/LSP match directory packages. Nested import/type in functions deferred (D91); module mut heap (Array/String/Map) must not end-of-fn drop (D122) | yes |
+| pkg-main | Dir entry `main.thx` | shipped | `pkgmain` | D68, **D138** | Filename is kebab-case `main.thx` (D138) | yes |
 | route-clauses | Type-body `GET "/…"` → `route(req) -> Response` | partial | unit (`route_desugar`, LSP); Crema dogfood | idea [`ideas/2026-08-12-router-clause-syntax-experiment.md`](ideas/2026-08-12-router-clause-syntax-experiment.md) | **On master, not freeze / no D-id.** String wrap + `Response` pass-through; `Int64`/`String` captures; multi-segment; optional `req`. **Gaps:** no conformance `.thx`; no handbook; no JSON/form; miss is `notFound()` (no fallthrough). Crema dogfoods via `examples/http` `type Routes`. | no |
 | jsx-node | Tag literals + builtin `Node` / `.html()` | partial | `jsx` | idea [`ideas/2026-08-13-jsx-node-syntax-experiment.md`](ideas/2026-08-13-jsx-node-syntax-experiment.md) | **On master, not freeze / no D-id.** Eager PascalCase → `Type(…).view(children:)`; `{e}` children are String / Int64 / Bool / Node / Array&lt;Node&gt;; `{e}` attrs stringify String / Int64 / Bool; void tags; boolean attrs; empty `<>` is Node; no import. `<tag` (no space) is JSX, including after another expr; `a < b` (spaces) is comparison; glued `a<b` is an error. `Node` matches as `Element \| Text \| Fragment` (same `ThoxaHtml*` tree). Ambient `Attr` / `Element` / `Text` / `Fragment`. HTML `{...Array<Attr>}` and component `{...product}` spreads. Crema pages dogfood (`examples/http` `Page`). **Gaps:** no handbook; `.html()` method hover thin. | no |
 
@@ -66,11 +67,11 @@ freeze)
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| file-io | `readFile` / `writeFile` / `appendFile` + OpenMode + **File** (seek/position) | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode` | D56, D80–D82, D109, D112, D115, **D126** | Product **`std/Io`**; OpenMode + `openModeBits`; Int32 creat/trunc/append flags; Fail is String | yes |
-| net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err`, `http_helpers` | D69, R9, **D126**, **D136**, **D137** | Product **`std/Net`** + **`std/Http`**; `receiveRequest` / `sendAll`; `Request.query`; header/query/form/cookie helpers + `queryParam`/`formField`/`cookie`/`htmlResponse`; 303/403/405; Fail is String | yes |
-| router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126** | Product **`std/HttpStatic`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
-| http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/Net` + `std/Http` + `std/HttpStatic` | yes |
-| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/HttpServer.serve(routes.port, routes.handle)`** (**D132**/**D136**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C; pages are JSX `Node` (`DrinkCard(d: Drink)`, `roast: Roast` — **D135**). Query/form/cookies/`htmlResponse` are product Http (**D137**). **Gaps:** Phase D+. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
+| file-io | `readFile` / `writeFile` / `appendFile` + OpenMode + **File** (seek/position) | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode` | D56, D80–D82, D109, D112, D115, **D126** | Product **`std/io`**; OpenMode + `openModeBits`; Int32 creat/trunc/append flags; Fail is String | yes |
+| net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err`, `http_helpers` | D69, R9, **D126**, **D136**, **D137** | Product **`std/net`** + **`std/http`**; `receiveRequest` / `sendAll`; `Request.query`; header/query/form/cookie helpers + `queryParam`/`formField`/`cookie`/`htmlResponse`; 303/403/405; Fail is String | yes |
+| router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126** | Product **`std/http-static`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
+| http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/net` + `std/http` + `std/http-static` | yes |
+| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/http-server.serve(routes.port, routes.handle)`** (**D132**/**D136**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C; pages are JSX `Node` (`DrinkCard(d: Drink)`, `roast: Roast` — **D135**). Query/form/cookies/`htmlResponse` are product Http (**D137**). **Gaps:** Phase D+. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 
@@ -87,7 +88,7 @@ freeze)
 | session-pipeline | Thoxa-side `\|` → `Shell.pipeline` + RT | shipped | `session_pipe`; `command::` | D101 | Nested Array stages N/A (Bytes blob) | yes |
 | session-redir | File `>` / `>>` / `<` → `Shell.runIo` | shipped | `session_redir`; `command::` | D102 | No `2>`; redir+pipe combo; ops need whitespace | yes |
 | session-host-pipe | Host OS `\|` fast path in REPL | shipped (removed) | `repl::pure_step_*` | D103 | Replaced by Thoxa-side pipeline (D101) | yes |
-| session-prelude | Shell API in product `std/Shell.thx` | shipped | `session::`; session scripts | D104, D123 | Still auto-injected (not `import` by default); compile-time embed fallback; inject loads `std/Fallible` for Shell | yes |
+| session-prelude | Shell API in product `std/shell.thx` | shipped | `session::`; session scripts | D104, D123 | Still auto-injected (not `import` by default); compile-time embed fallback; inject loads `std/fallible` for Shell | yes |
 | session-host-builtins | Drop host `cd`/`status`/`\|` for pure step | shipped | `repl::pure_step_*` | D103 | All session commands via step image (libtcc) | yes |
 | session-libtcc | In-process libtcc for REPL steps (no spawn / no step `.so`) | shipped | `tcc::`; `repl::pure_step_*` | D105; [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | Linux x86_64 only; later polish (base cache / license notice) not CURRENT | no |
 | extras-shell | Pure-Thoxa dogfood Shell | shipped | `cargo make run extras/shell` | D95 | **Not** product face | no |
@@ -97,19 +98,19 @@ freeze)
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
 | std-root | Named `std/…` resolution | shipped | `stdlib` | D97 | — | yes |
-| std-fallible | `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` in `std/Fallible` | shipped | `mays`, `trials*`, `bytes`, `stdlib` | D118, D123 | none for v0 — **import required** for programs (not ambient); session Shell inject loads Fallible | yes |
+| std-fallible | `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` in `std/fallible` | shipped | `mays`, `trials*`, `bytes`, `stdlib` | D118, D123 | none for v0 — **import required** for programs (not ambient); session Shell inject loads Fallible | yes |
 | std-str | Str helpers | partial | `stdlib` | D97, **D137** | +`parseUInt` / `splitOnce` (`Split`); +remove/truncate/reverse/isAscii/ignore-case contains; still sample-driven thin | yes |
 | std-path | Path helpers | partial | `stdlib` | D97 | +`joinAll`/`stripTrailingSlash`/`ensureTrailingSlash`; sample-driven | yes |
 | std-ansi | 16 colors + hex SGR | shipped | `stdlib` | D99 | — | yes |
 | std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`pathVar`/`pwd`/`shell`; sample-driven | yes |
 | std-git | branch helpers | partial | `stdlib` | D97 | +`headLine`/`isDetached`/`repoRoot`; sample-driven | yes |
 | std-prompt | `defaultPrompt` | shipped | `stdlib` | D97, D99 | — | yes |
-| std-logging | Leveled `std/Logging` + no ambient `println` | shipped | `logging_levels`, `logging_sink`, full suite | **D125**; [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | App face: `import logging, { info, … }` (**D127**). Multi named loggers / `initLog` later; structured/JSON; colors/TTY; source location | yes |
-| std-io | File I/O in `std/Io` | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode`, `logging_sink` | **D126** | Linux `extern` open/read/write/lseek; Fail String; no Windows | yes |
-| std-net | TCP sockets in `std/Net` | shipped | `http`, `http_wire`, `http_net_err` | **D126** | IPv4 stream; `receiveRequest` / `sendAll`; Fail String; Linux sockaddr pack | yes |
-| std-http | HTTP/1.1 protocol in `std/Http` | shipped | `http_parse`, `http`, `http_wire`, `http_helpers` | **D126**, **D136**, **D137** | `Request.query` kept; body empty at parse (host fills). Helpers: `headerGet`, query/form/cookie Maps + `queryParam`/`formField`/`cookie`, `htmlResponse` (`Node`), `seeOther`, `finalize` / keep-alive. Still no syscalls | yes |
-| std-http-static | Static-file `Router` in `std/HttpStatic` | shipped | `router`, `http_server` | **D126** | GET+HEAD; small MIME table; depends on Io+Http+Logging | yes |
-| std-http-server | HTTP/1.1 host loop in `std/HttpServer` | shipped | `http_host` | **D136** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
+| std-logging | Leveled `std/logging` + no ambient `println` | shipped | `logging_levels`, `logging_sink`, full suite | **D125**; [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | App face: `import logging, { info, … }` (**D127**). Multi named loggers / `initLog` later; structured/JSON; colors/TTY; source location | yes |
+| std-io | File I/O in `std/io` | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode`, `logging_sink` | **D126** | Linux `extern` open/read/write/lseek; Fail String; no Windows | yes |
+| std-net | TCP sockets in `std/net` | shipped | `http`, `http_wire`, `http_net_err` | **D126** | IPv4 stream; `receiveRequest` / `sendAll`; Fail String; Linux sockaddr pack | yes |
+| std-http | HTTP/1.1 protocol in `std/http` | shipped | `http_parse`, `http`, `http_wire`, `http_helpers` | **D126**, **D136**, **D137** | `Request.query` kept; body empty at parse (host fills). Helpers: `headerGet`, query/form/cookie Maps + `queryParam`/`formField`/`cookie`, `htmlResponse` (`Node`), `seeOther`, `finalize` / keep-alive. Still no syscalls | yes |
+| std-http-static | Static-file `Router` in `std/http-static` | shipped | `router`, `http_server` | **D126** | GET+HEAD; small MIME table; depends on Io+Http+Logging | yes |
+| std-http-server | HTTP/1.1 host loop in `std/http-server` | shipped | `http_host` | **D136** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
 
 ## Editor / LSP
 
@@ -121,8 +122,8 @@ freeze)
 | lint-unused-import | Unused selective/namespace import warning | shipped | unit | THX010 | Open-buffer only (not whole package). Combined imports lint each binding. `May`/`Trial` stay live when `Has`/`Not` or `Pass`/`Fail` are referenced. No unused-local lint yet | yes |
 | cli-version | `thoxa version` / LSP identity stamp | shipped | unit / CLI | build stamp | Git short hash (+`.dirty`) + binary path; LSP stderr + `window/logMessage` + `serverInfo.version` (no toast) | yes |
 | lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; **`?` unwraps Trial/May**; **call-arg hover**; hover shows **D129** inferred/`->` returns; **`let`/`mut` hover prefers nav `ty_hint`** (`let a: Response`). Residual rare untyped exprs | partial |
-| lsp-workspace | `workspace/symbol` package search | shipped | unit | editor plan | Open buffers + package-tree disk (Main.thx/`.git` root); query substring; cap 100 | yes |
-| lsp-xmodule | Cross-module jump (`./` `~/` / `std/`) | partial | unit | D78 | `std/` go-to-def covered; open buffer wins over disk; **`~/` from nested files uses nearest `Main.thx`**; **typed members after namespace + `?`** (e.g. `net.createSocket()?; server.reuseAddr`) | partial |
+| lsp-workspace | `workspace/symbol` package search | shipped | unit | editor plan | Open buffers + package-tree disk (main.thx/`.git` root); query substring; cap 100 | yes |
+| lsp-xmodule | Cross-module jump (`./` `~/` / `std/`) | partial | unit | D78 | `std/` go-to-def covered; open buffer wins over disk; **`~/` from nested files uses nearest `main.thx`**; **typed members after namespace + `?`** (e.g. `net.createSocket()?; server.reuseAddr`) | partial |
 | tree-sitter-zed | Grammar + Zed extension extras | shipped | `cargo make zed` | editor plan | Not full IDE | yes |
 | mir-on-resolver | MIR lower on shared resolver | planned | — | editor plan | **Deferred architecture** (PR5 resolver ships for LSP; MIR still own env — not polish residual) | no |
 
@@ -161,7 +162,7 @@ in the matrices above, not by re-checking R0–R9.
 | R7 | C-layout / Address / fixed Array | `cstruct_ffi` |
 | R8 | modules | `modules`, `namespaces`, `modstate` |
 | R9 | HTTP subset | `http` |
-| R9+ | monomorphs, control flow, Buffer, Array, Io, Router, server, May, Main.thx, … | see matrix |
+| R9+ | monomorphs, control flow, Buffer, Array, Io, Router, server, May, main.thx, … | see matrix |
 
 Kernel freeze ladder table:
 [`specs/2026-07-18-thoxa-native-kernel-design.md`](specs/2026-07-18-thoxa-native-kernel-design.md) §6.

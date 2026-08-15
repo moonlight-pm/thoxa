@@ -1,6 +1,6 @@
 ## Map<K,V>: empty, literal, has/get/set/remove, COW alias, for k,v, keys/values.
-import logging from "std/Logging"
-import { Has, Not, May } from "std/Fallible"
+import logging from "std/logging"
+import { Has, Not, May } from "std/fallible"
 
 fn main() -> Int64 {
     logging.toStdout()

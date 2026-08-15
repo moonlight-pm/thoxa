@@ -15,7 +15,7 @@
 
 > **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. **No Python.** Port ideas from the oracle under `apocrypha/old/ThoxaPython/editor/` and `…/thoxa/lsp/`; implement in **Rust** against the native frontend.
 
-**Baseline (as-built):** Phase 1 (PR1–PR3) + phase 2 navigation (PR5–PR7, D76–D79) shipped. HTTP path + `Main.thx` complete. Pipeline: `.thx` → lexer → parser → AST → MIR (+ RC) → cgen → `cc` + `libthoxa_rt`.
+**Baseline (as-built):** Phase 1 (PR1–PR3) + phase 2 navigation (PR5–PR7, D76–D79) shipped. HTTP path + `main.thx` complete. Pipeline: `.thx` → lexer → parser → AST → MIR (+ RC) → cgen → `cc` + `libthoxa_rt`.
 
 **Goal:** Personal DX for editing `.thx` in **Zed**: thin Tree-sitter color + a real **`thoxa lsp`** that reuses the native compiler so diagnostics never drift. Phase 1 = useful (squiggles + color). Phase 2 = navigation (hover/def/refs/…) when we invest in a shared resolver.
 

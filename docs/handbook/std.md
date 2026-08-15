@@ -3,39 +3,39 @@
 Import product modules with the **`std/…`** named root:
 
 ```thx
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging, { info, warn } from "std/Logging"   ## ns + selective (D127)
-import { readFile } from "std/Io"
-import net, { Socket } from "std/Net"
-import http from "std/Http"
-import server from "std/HttpServer"
-import { Router } from "std/HttpStatic"
-import { defaultPrompt } from "std/Prompt"
-import { startsWith, dropPrefix } from "std/Str"
-import { cwdShort, shortPath } from "std/Path"
-import { fg, fgHex, sgr0, cyan, brightWhite } from "std/Ansi"
-import { localHms, userName, hostname } from "std/Env"
-import { branch } from "std/Git"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info, warn } from "std/logging"   ## ns + selective (D127)
+import { readFile } from "std/io"
+import net, { Socket } from "std/net"
+import http from "std/http"
+import server from "std/http-server"
+import { Router } from "std/http-static"
+import { defaultPrompt } from "std/prompt"
+import { startsWith, dropPrefix } from "std/str"
+import { cwdShort, shortPath } from "std/path"
+import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
+import { localHms, userName, hostname } from "std/env"
+import { branch } from "std/git"
 ```
 
 ## Modules (current)
 
 | Module | Role |
 |--------|------|
-| `Shell` | Session `type Shell` + process builtins; auto-injected for session scripts (pulls Fallible + Logging) |
-| `Fallible` | Exported `May<T> = Has<T!> \| Not?`, `Trial<P,F> = Pass<P!> \| Fail<F?>` — **import required** for programs (D123; not ambient) |
-| `Logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
-| `Io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
-| `Net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
-| `Http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**): parse/write, query/form/cookie helpers, `htmlResponse` |
-| `HttpServer` | HTTP/1.1 host loop (**D136**): `serve` / `serveOne` / `readBody` |
-| `HttpStatic` | Static-file `Router` (**D126**); depends on Io + Http |
-| `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
-| `Str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`splitOnce`/`join`/`lines`, `parseUInt`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
-| `Path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |
-| `Ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
-| `Env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
-| `Git` | `branchName` / `branchSuffix` / `branch` / `branchHere` / `isRepo` / `repoRoot` / `isDetached` / `headLine` via `.git/HEAD` |
+| `std/shell` | Session `type Shell` + process builtins; auto-injected for session scripts (pulls fallible + logging) |
+| `std/fallible` | Exported `May<T> = Has<T!> \| Not?`, `Trial<P,F> = Pass<P!> \| Fail<F?>` — **import required** for programs (D123; not ambient) |
+| `std/logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
+| `std/io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
+| `std/net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
+| `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**): parse/write, query/form/cookie helpers, `htmlResponse` |
+| `std/http-server` | HTTP/1.1 host loop (**D136**): `serve` / `serveOne` / `readBody` |
+| `std/http-static` | Static-file `Router` (**D126**); depends on io + http |
+| `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
+| `std/str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`splitOnce`/`join`/`lines`, `parseUInt`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
+| `std/path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |
+| `std/ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
+| `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
+| `std/git` | `branchName` / `branchSuffix` / `branch` / `branchHere` / `isRepo` / `repoRoot` / `isDetached` / `headLine` via `.git/HEAD` |
 
 ### Logging (default logger)
 
@@ -43,7 +43,7 @@ import { branch } from "std/Git"
 for short call sites (see `examples/http`):
 
 ```thx
-import logging, { info, warn, error, debug } from "std/Logging"
+import logging, { info, warn, error, debug } from "std/logging"
 
 fn main() -> Int64 {
     info("listen")                   ## stderr, full format, min level Info
@@ -62,7 +62,7 @@ fn main() -> Int64 {
 ```
 
 Namespace-only or selective-only still work. Combined
-`import logging, { info, … } from "std/Logging"` is the usual app face (**D127**).
+`import logging, { info, … } from "std/logging"` is the usual app face (**D127**).
 
 | Knob | Default |
 |------|---------|
@@ -73,7 +73,7 @@ Namespace-only or selective-only still work. Combined
 Env (applied once on first use): `THOXA_LOG_LEVEL`, `THOXA_LOG_SINK`. Multiple
 named loggers (`initLog`) are **not** shipped yet.
 
-### Io (`std/Io`)
+### Io (`std/io`)
 
 Linux file I/O. Fail payloads are **String** (`"op: strerror"` or a short
 message).
@@ -87,7 +87,7 @@ message).
 | Flag lets | `oRdonly` / `oWronly` / `oRdwr` / `oCreat` / `oTrunc` / `oAppend` / `oMode644` |
 | Seek | `seekSet` / `seekCur` / `seekEnd` |
 
-### Net (`std/Net`)
+### Net (`std/net`)
 
 IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 
@@ -99,10 +99,10 @@ IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 | `receiveRequest()` | Until `\r\n\r\n` or 64 KiB cap / peer close |
 | `send` / `sendAll` | One write vs drain partial writes |
 
-### Http (`std/Http`)
+### Http (`std/http`)
 
 Pure protocol (no syscalls). `parseRequest` fills `query` (no leading `?`) and
-leaves `body` empty; hosts complete the body via `std/HttpServer.readBody`.
+leaves `body` empty; hosts complete the body via `std/http-server.readBody`.
 
 | Surface | Notes |
 |---------|--------|
@@ -118,9 +118,9 @@ leaves `body` empty; hosts complete the body via `std/HttpServer.readBody`.
 `root.html()` as `text/html; charset=utf-8`. `cookie` looks up one name on
 the `Cookie` header (empty value is `Not`).
 
-### HttpServer (`std/HttpServer`)
+### HttpServer (`std/http-server`)
 
-Host loop over `std/Net`. Completes `Request.body` (64 KiB cap).
+Host loop over `std/net`. Completes `Request.body` (64 KiB cap).
 
 | Surface | Notes |
 |---------|--------|
@@ -132,7 +132,7 @@ Host loop over `std/Net`. Completes `Request.body` (64 KiB cap).
 
 HEAD is answered by GET handlers; `finalize` still sees the real method.
 
-### HttpStatic (`std/HttpStatic`)
+### HttpStatic (`std/http-static`)
 
 | Surface | Notes |
 |---------|--------|
@@ -158,7 +158,7 @@ hex → black SGR.
 ## Limits
 
 This is a **thin** library grown from real samples. Fallibility types live in
-`std/Fallible` and are imported like other std modules. Named **`ffi`** root is
+`std/fallible` and are imported like other std modules. Named **`ffi`** root is
 deferred. I/O and HTTP are **Linux product track** (x86_64 sockaddr pack, Linux
 open flags). Windows is out of scope. Fail payloads are String (not an
 `Error` protocol).

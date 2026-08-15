@@ -1,0 +1,416 @@
+## State — editor singleton (module-private mut, exported API).
+
+import { Row, make } from "./row"
+import fileio from "./file-io"
+import { Hl, Matched, highlightRow, plainRow, selectSyntax } from "./syntax"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+
+extern fn sysTime(tloc!: Bytes) -> Int64 from "c" "time"
+fn now() -> Int64 {
+    sysTime(Bytes(8))
+}
+
+fn emptyRows() -> Array<Row> {
+    mut xs: Array<Row> = []
+    xs
+}
+fn emptyHlCells() -> Array<Hl> {
+    mut xs: Array<Hl> = []
+    xs
+}
+
+mut cx = 0
+mut cy = 0
+mut rx = 0
+mut rowoff = 0
+mut coloff = 0
+mut rows = 0
+mut cols = 0
+mut textRows = emptyRows()
+mut filename = ""
+mut dirty = false
+mut statusMessage = ""
+mut statusTime = 0
+mut quitTimes = 3
+## Syntax is re-selected from filename (avoid storing May monomorphs in module mut).
+mut matchRow = 0 - 1
+mut matchCol = 0 - 1
+mut matchLen = 0
+
+export fn setScreenSize(r: Int64, c: Int64) -> Void {
+    rows = r
+    cols = c
+    Void
+}
+
+export fn screenRows() -> Int64 {
+    rows
+}
+export fn screenCols() -> Int64 {
+    cols
+}
+
+export fn textHeight() -> Int64 {
+    if rows > 2 {
+        rows - 2
+    } else {
+        0
+    }
+}
+
+export fn setRows(newRows!: Array<Row>, name!: String) -> Void {
+    textRows = newRows
+    filename = name
+    Void
+}
+
+export fn numRows() -> Int64 {
+    textRows.count
+}
+export fn row(index: Int64) -> Row {
+    textRows[index]
+}
+export fn allRows() -> Array<Row> {
+    textRows
+}
+
+export fn cursorX() -> Int64 {
+    cx
+}
+export fn cursorY() -> Int64 {
+    cy
+}
+export fn renderX() -> Int64 {
+    rx
+}
+export fn rowOff() -> Int64 {
+    rowoff
+}
+export fn colOff() -> Int64 {
+    coloff
+}
+
+export fn jumpTo(col: Int64, row: Int64) -> Void {
+    cx = col
+    cy = row
+    Void
+}
+
+export fn restoreView(cxv: Int64, cyv: Int64, coloffv: Int64, rowoffv: Int64) -> Void {
+    cx = cxv
+    cy = cyv
+    coloff = coloffv
+    rowoff = rowoffv
+    Void
+}
+
+export fn scroll() -> Void {
+    rx = if cy < textRows.count {
+        row(cy).cxToRx(cx)
+    } else {
+        0
+    }
+    if rx < coloff {
+        coloff = rx
+    }
+    if rx >= coloff + cols {
+        coloff = rx - cols + 1
+    }
+    if cy < rowoff {
+        rowoff = cy
+    }
+    if cy >= rowoff + textHeight() {
+        rowoff = cy - textHeight() + 1
+    }
+    Void
+}
+
+fn snap() -> Void {
+    let n = if cy < textRows.count {
+        row(cy).charCount()
+    } else {
+        0
+    }
+    if cx > n {
+        cx = n
+    }
+    Void
+}
+
+export fn moveLeft() -> Void {
+    if cx > 0 {
+        cx = cx - 1
+    } else if cy > 0 {
+        cy = cy - 1
+        cx = row(cy).charCount()
+    }
+    Void
+}
+
+export fn moveRight() -> Void {
+    if cy < textRows.count {
+        let n = row(cy).charCount()
+        if cx < n {
+            cx = cx + 1
+        } else {
+            cy = cy + 1
+            cx = 0
+        }
+    }
+    Void
+}
+
+export fn moveUp() -> Void {
+    if cy > 0 {
+        cy = cy - 1
+    }
+    snap()
+    Void
+}
+
+export fn moveDown() -> Void {
+    if cy < textRows.count {
+        cy = cy + 1
+    }
+    snap()
+    Void
+}
+
+export fn moveHome() -> Void {
+    cx = 0
+    Void
+}
+
+export fn moveEnd() -> Void {
+    if cy < textRows.count {
+        cx = row(cy).charCount()
+    }
+    Void
+}
+
+export fn pageUp() -> Void {
+    cy = rowoff
+    mut k = 0
+    loop {
+        if k >= textHeight() {
+            break
+        }
+        moveUp()
+        k = k + 1
+    }
+    Void
+}
+
+export fn pageDown() -> Void {
+    cy = rowoff + textHeight() - 1
+    if cy > textRows.count {
+        cy = textRows.count
+    }
+    if cy < 0 {
+        cy = 0
+    }
+    mut k = 0
+    loop {
+        if k >= textHeight() {
+            break
+        }
+        moveDown()
+        k = k + 1
+    }
+    Void
+}
+
+export fn isDirty() -> Bool {
+    dirty
+}
+
+fn emptyRow() -> Row {
+    make(Bytes(0))
+}
+
+export fn insertChar(byte: Int64) -> Void {
+    if cy == numRows() {
+        textRows.insertAt(numRows(), emptyRow())
+    }
+    textRows[cy] = row(cy).insertChar(cx, byte)
+    cx = cx + 1
+    dirty = true
+    Void
+}
+
+export fn insertNewline() -> Void {
+    if cx == 0 {
+        textRows.insertAt(cy, emptyRow())
+    } else {
+        let line = row(cy)
+        textRows.insertAt(cy + 1, line.drop(cx))
+        textRows[cy] = line.take(cx)
+    }
+    cy = cy + 1
+    cx = 0
+    dirty = true
+    Void
+}
+
+export fn deleteChar() -> Void {
+    if cy == numRows() {
+        return Void
+    }
+    if cx == 0 {
+        if cy == 0 {
+            return Void
+        }
+        let prev = row(cy - 1)
+        cx = prev.charCount()
+        textRows[cy - 1] = prev.concat(row(cy))
+        textRows.removeAt(cy)
+        cy = cy - 1
+    } else {
+        textRows[cy] = row(cy).deleteChar(cx - 1)
+        cx = cx - 1
+    }
+    dirty = true
+    Void
+}
+
+export fn deleteForward() -> Void {
+    moveRight()
+    deleteChar()
+    Void
+}
+
+## Fold multi-line comment state from row 0 through `filerow`, return that row's cells.
+fn cellsFor(filerow: Int64) -> Array<Hl> {
+    mut open = false
+    mut i = 0
+    mut last = plainRow(Bytes(0))
+    let syn = selectSyntax(filename)
+    loop {
+        if i > filerow {
+            break
+        }
+        last = match syn {
+            Has(s) {
+                highlightRow(textRows[i].renderBytes(), open, s)
+            }
+            Not {
+                plainRow(textRows[i].renderBytes())
+            }
+        }
+        open = last.openComment
+        i = i + 1
+    }
+    last.cells
+}
+
+export fn rowCells(filerow: Int64) -> Array<Hl> {
+    let base = cellsFor(filerow)
+    if filerow == matchRow {
+        overlayMatch(base, row(filerow))
+    } else {
+        base
+    }
+}
+
+fn overlayMatch(base!: Array<Hl>, r!: Row) -> Array<Hl> {
+    let rxBegin = r.cxToRx(matchCol)
+    let rxEnd = r.cxToRx(matchCol + matchLen)
+    mut out = emptyHlCells()
+    mut k = 0
+    loop {
+        if k >= base.count {
+            break
+        }
+        if k >= rxBegin {
+            if k < rxEnd {
+                out.append(Matched())
+            } else {
+                out.append(base[k])
+            }
+        } else {
+            out.append(base[k])
+        }
+        k = k + 1
+    }
+    out
+}
+
+export fn setMatch(row: Int64, col: Int64, length: Int64) -> Void {
+    matchRow = row
+    matchCol = col
+    matchLen = length
+    Void
+}
+
+export fn clearMatch() -> Void {
+    matchRow = 0 - 1
+    matchCol = 0 - 1
+    matchLen = 0
+    Void
+}
+
+export fn setStatusMessageAt(msg!: String, when: Int64) -> Void {
+    statusMessage = msg
+    statusTime = when
+    Void
+}
+
+export fn messageFor(clock: Int64) -> String {
+    if clock - statusTime < 5 {
+        statusMessage
+    } else {
+        ""
+    }
+}
+
+export fn setStatusMessage(msg!: String) -> Void {
+    setStatusMessageAt(msg, now())
+}
+
+export fn currentMessage() -> String {
+    messageFor(now())
+}
+
+export fn currentFilename() -> String {
+    filename
+}
+
+export fn setFilename(name!: String) -> Void {
+    filename = name
+    Void
+}
+
+export fn save() -> Void {
+    if filename.count == 0 {
+        setStatusMessage("Can't save: no filename")
+        return Void
+    }
+    match fileio.save(filename, textRows) {
+        Pass(n) {
+            dirty = false
+            setStatusMessage("{n} bytes written to disk")
+        }
+        Fail(e) {
+            setStatusMessage("Can't save! {e}")
+        }
+    }
+    Void
+}
+
+export fn confirmQuit() -> Bool {
+    if dirty {
+        if quitTimes > 0 {
+            setStatusMessage(
+                "WARNING! Unsaved changes. Press Ctrl-Q {quitTimes} more times to quit."
+            )
+            quitTimes = quitTimes - 1
+            return false
+        }
+    }
+    true
+}
+
+export fn resetQuitTimes() -> Void {
+    quitTimes = 3
+    Void
+}

@@ -1,7 +1,7 @@
 ## Buffer — growable byte buffer with geometric capacity growth and COW.
 ## See oracle design: value semantics; freeze → fixed Bytes.
 
-import logging from "std/Logging"
+import logging from "std/logging"
 fn grown(seed: Buffer) -> Int64 {
     seed.append(0)
     seed.count

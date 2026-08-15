@@ -1,5 +1,5 @@
 ## Named parameters with defaults (SPEC §4.1 / M3 + D106 method/ctor).
-import logging from "std/Logging"
+import logging from "std/logging"
 fn greet(name: String, greeting: String = "Hello") -> String {
     "{greeting}, {name}"
 }

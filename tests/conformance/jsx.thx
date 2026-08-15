@@ -1,5 +1,5 @@
 ## Builtin Node + tag literals (JSX experiment). No import.
-import logging from "std/Logging"
+import logging from "std/logging"
 
 type Card(title: String) {
     export fn view(children: Array<Node>) -> Node {

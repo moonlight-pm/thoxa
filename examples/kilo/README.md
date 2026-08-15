@@ -4,7 +4,7 @@ Native port of the oracle `examples/kilo` (inspired by antirez’s kilo): raw
 mode, file open/save, movement, editing, find, and C-ish syntax highlighting.
 
 **Status:** shipped and **user-tested** (empty buffer + typing; D122 module-global
-RC). Product surface is still sample-driven — modules live next to `Main.thx`,
+RC). Product surface is still sample-driven — modules live next to `main.thx`,
 not yet under `std/`.
 
 ## Run
@@ -35,15 +35,15 @@ cargo run -p thoxa -- run examples/kilo examples/kilo/sample.c   # C-ish highlig
 
 | Module | Role |
 |--------|------|
-| `Main.thx` | Driver loop + key dispatch |
-| `Terminal.thx` | termios raw mode + window size (`Bytes` ABI buffers) |
-| `Keys.thx` | Read + decode VT100 keys |
-| `Row.thx` | Line buffer + tab expand |
-| `FileIO.thx` | Open / save |
-| `State.thx` | Cursor, buffer, dirty, status (module mut) |
-| `Screen.thx` | Frame paint |
-| `Syntax.thx` | Highlight classes (recomputed per paint) |
-| `Find.thx` / `Prompt.thx` | Search + save-as |
+| `main.thx` | Driver loop + key dispatch |
+| `terminal.thx` | termios raw mode + window size (`Bytes` ABI buffers) |
+| `keys.thx` | Read + decode VT100 keys |
+| `row.thx` | Line buffer + tab expand |
+| `file-io.thx` | Open / save |
+| `state.thx` | Cursor, buffer, dirty, status (module mut) |
+| `screen.thx` | Frame paint |
+| `syntax.thx` | Highlight classes (recomputed per paint) |
+| `find.thx` / `prompt.thx` | Search + save-as |
 
 ## Notes
 

@@ -1,5 +1,5 @@
 ## Whole fixed Array<T,N> assign / bind without literal (D117 extension).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Bag {
     mut data: Array<Byte, 3>
 }

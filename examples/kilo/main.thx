@@ -1,0 +1,286 @@
+## kilo — terminal text editor (native port of the Python-oracle examples/kilo).
+##
+##   cargo run -p thoxa -- run examples/kilo
+##   cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
+##
+## Needs a real TTY. Ctrl-S save, Ctrl-F find, Ctrl-Q quit (3× if dirty).
+
+import terminal from "./terminal"
+import state from "./state"
+import screen from "./screen"
+import fileio from "./file-io"
+import find from "./find"
+import prompt from "./prompt"
+import { Row } from "./row"
+import {
+    readKey,
+    ctrlKey,
+    Key,
+    Press,
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Delete
+} from "./keys"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
+
+export type Quit
+export type RunFind
+export type PromptSave
+export type Resume
+export type Action = Quit | RunFind | PromptSave | Resume
+
+let enter = 13
+let backspace = 127
+let escByte = 27
+
+export fn dispatch(k!: Key) -> Action {
+    if isQuitKey(k) {
+        if state.confirmQuit() {
+            let a: Action = Quit()
+            return a
+        }
+        let a: Action = Resume()
+        return a
+    }
+    mut handled = false
+    mut wantFind = false
+    mut wantSave = false
+    match k {
+        Press(b) {
+            if b == ctrlKey(102) {
+                ## Ctrl-F
+                state.resetQuitTimes()
+                wantFind = true
+                handled = true
+            } else if b == ctrlKey(115) {
+                ## Ctrl-S
+                if state.currentFilename().count == 0 {
+                    state.resetQuitTimes()
+                    wantSave = true
+                    handled = true
+                }
+            }
+        }
+        else {
+            Void
+        }
+    }
+    if handled {
+        if wantFind {
+            let a: Action = RunFind()
+            return a
+        }
+        if wantSave {
+            let a: Action = PromptSave()
+            return a
+        }
+    }
+    applyKey(k)
+    state.resetQuitTimes()
+    let a: Action = Resume()
+    a
+}
+
+fn isQuitKey(k!: Key) -> Bool {
+    match k {
+        Press(b) {
+            b == ctrlKey(113)
+        }
+        else {
+            false
+        }
+    }
+}
+
+fn applyKey(k!: Key) -> Void {
+    match k {
+        Press(b) {
+            if b == ctrlKey(115) {
+                state.save()
+            } else if b == enter {
+                state.insertNewline()
+            } else if b == backspace {
+                state.deleteChar()
+            } else if b == ctrlKey(104) {
+                ## Ctrl-H
+                state.deleteChar()
+            } else if b == ctrlKey(108) {
+                ## Ctrl-L refresh — no-op (frame already redraws)
+                Void
+            } else if b == escByte {
+                Void
+            } else {
+                state.insertChar(b)
+            }
+        }
+        Up {
+            state.moveUp()
+        }
+        Down {
+            state.moveDown()
+        }
+        Left {
+            state.moveLeft()
+        }
+        Right {
+            state.moveRight()
+        }
+        Home {
+            state.moveHome()
+        }
+        End {
+            state.moveEnd()
+        }
+        PageUp {
+            state.pageUp()
+        }
+        PageDown {
+            state.pageDown()
+        }
+        Delete {
+            state.deleteForward()
+        }
+    }
+}
+
+fn emptyRows() -> Array<Row> {
+    mut xs: Array<Row> = []
+    xs
+}
+
+export fn main(arguments: Array<String>) -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    if arguments.count > 1 {
+        let path = arguments[1]
+        match fileio.open(path) {
+            Pass(rows) {
+                state.setRows(rows, path)
+            }
+            Fail(e) {
+                state.setRows(emptyRows(), path)
+            }
+        }
+    }
+
+    match terminal.windowSize() {
+        Pass(size) {
+            state.setScreenSize(size.rows, size.cols)
+        }
+        Fail(e) {
+            logging.info("window size unavailable ({e}); assuming 24x80")
+            state.setScreenSize(24, 80)
+        }
+    }
+
+    mut rawOk = true
+    match terminal.enable() {
+        Fail(e) {
+            logging.info("could not enter raw mode: {e}")
+            rawOk = false
+        }
+        Pass(_) {
+            Void
+        }
+    }
+    if not rawOk {
+        return 1
+    }
+
+    match screen.clear() {
+        Fail(e) {
+            logging.info("clear failed: {e}\r\n")
+        }
+        Pass(_) {
+            Void
+        }
+    }
+
+    state.setStatusMessage("HELP: Ctrl-S = save | Ctrl-F = find | Ctrl-Q = quit")
+
+    mut running = true
+    loop {
+        if not running {
+            break
+        }
+        match terminal.windowSize() {
+            Pass(size) {
+                state.setScreenSize(size.rows, size.cols)
+            }
+            Fail(e) {
+                Void
+            }
+        }
+        mut frameOk = true
+        match screen.refresh() {
+            Fail(e) {
+                logging.info("refresh error: {e}\r\n")
+                frameOk = false
+            }
+            Pass(_) {
+                Void
+            }
+        }
+        if not frameOk {
+            running = false
+        } else {
+            match readKey() {
+                Fail(e) {
+                    logging.info("read error: {e}\r\n")
+                    running = false
+                }
+                Pass(k) {
+                    let act = dispatch(k)
+                    match act {
+                        Quit {
+                            running = false
+                        }
+                        Resume {
+                            Void
+                        }
+                        RunFind {
+                            find.run()
+                        }
+                        PromptSave {
+                            match prompt.promptLine("Save as (ESC to cancel): ") {
+                                Has(name) {
+                                    state.setFilename(name)
+                                    state.save()
+                                }
+                                Not {
+                                    state.setStatusMessage("Save aborted")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    match screen.clear() {
+        Pass(_) {
+            Void
+        }
+        Fail(e) {
+            Void
+        }
+    }
+    match terminal.restore() {
+        Pass(_) {
+            Void
+        }
+        Fail(e) {
+            logging.info("restore failed: {e}")
+        }
+    }
+    0
+}

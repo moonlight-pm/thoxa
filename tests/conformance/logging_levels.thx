@@ -1,5 +1,5 @@
 ## std/Logging — level filter on the default logger (D125).
-import logging from "std/Logging"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

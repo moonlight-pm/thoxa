@@ -1,5 +1,5 @@
 ## Session script with user Shell.step (no top-level stmts).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Shell(status: Int64) {
     export fn step() -> Shell {
         logging.toStdout()

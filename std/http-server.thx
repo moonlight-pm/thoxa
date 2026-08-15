@@ -1,0 +1,223 @@
+## std/http-server — HTTP/1.1 host loop (syscalls via std/net).
+## Completes Request.body after parseRequest; Request.query comes from std/Http.
+## Host takes port + handle (D132). Does not import app types.
+
+import net, { Socket } from "std/net"
+import http, { Request, Response, Header } from "std/http"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info, warn } from "std/logging"
+
+let maxBodyBytes = 65536
+
+export fn bindListen(port!: Int64) -> Trial<Socket, String> {
+    let server = net.createSocket()?
+    server.reuseAddr()?
+    server.bind(port)?
+    server.listen(16)?
+    Pass(server)
+}
+
+fn bodyPrefix(raw!: Bytes) -> Bytes {
+    let sep = Bytes.fromString("\r\n\r\n")
+    match raw.find(sep) {
+        Not => Bytes(0)
+        Has(at) {
+            raw.slice(at + 4, raw.count)
+        }
+    }
+}
+
+fn readUntil(peer!: Socket, start!: Bytes, need!: Int64) -> Trial<Bytes, String> {
+    if need > maxBodyBytes {
+        return Fail("request body too large")
+    }
+    mut acc = start
+    loop {
+        if acc.count >= need {
+            return Pass(acc.slice(0, need))
+        }
+        let chunk = peer.receive()
+        if chunk.count == 0 {
+            return Fail("incomplete request body")
+        }
+        if acc.count + chunk.count > maxBodyBytes {
+            return Fail("request body too large")
+        }
+        mut buf = Buffer()
+        buf.appendBytes(acc)
+        buf.appendBytes(chunk)
+        acc = buf.freeze()
+    }
+    Fail("readUntil: internal")
+}
+
+## Finish a request entity from the raw header buffer + Content-Length.
+export fn readBody(peer!: Socket, raw!: Bytes, req!: Request) -> Trial<Bytes, String> {
+    let have = bodyPrefix(raw)
+    match http.contentLength(req) {
+        Not {
+            Pass(have)
+        }
+        Has(n) {
+            if n == 0 {
+                Pass(Bytes(0))
+            } else {
+                if n > maxBodyBytes {
+                    Fail("request body too large")
+                } else {
+                    readUntil(peer, have, n)
+                }
+            }
+        }
+    }
+}
+
+fn isQuietClose(req!: Request) -> Bool {
+    if req.method == "" {
+        req.path == ""
+    } else {
+        false
+    }
+}
+
+## Receive + parse + complete body. Empty method/path means the peer closed quietly.
+export fn readRequest(peer!: Socket) -> Trial<Request, String> {
+    match peer.receiveRequest() {
+        Fail(e) {
+            Fail(e)
+        }
+        Pass(raw) {
+            if raw.count == 0 {
+                mut headers: Array<Header> = []
+                Pass(Request(
+                    method: "",
+                    path: "",
+                    query: "",
+                    version: "",
+                    headers: headers,
+                    body: Bytes(0)
+                ))
+            } else {
+                match http.parseRequest(raw) {
+                    Fail(msg) {
+                        Fail(msg)
+                    }
+                    Pass(req) {
+                        match readBody(peer, raw, req) {
+                            Fail(e) {
+                                Fail(e)
+                            }
+                            Pass(body) {
+                                Pass(Request(
+                                    method: req.method,
+                                    path: req.path,
+                                    query: req.query,
+                                    version: req.version,
+                                    headers: req.headers,
+                                    body: body
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+## Route clauses match method exactly; GET registrations also answer HEAD.
+fn requestForHandle(req!: Request) -> Request {
+    let method = if req.method == "HEAD" {
+        "GET"
+    } else {
+        req.method
+    }
+    Request(
+        method: method,
+        path: req.path,
+        query: req.query,
+        version: req.version,
+        headers: req.headers,
+        body: req.body
+    )
+}
+
+export fn writeResponse(
+    peer!: Socket,
+    method!: String,
+    res!: Response,
+    keepAlive!: Bool
+) -> Trial<Void, String> {
+    let final = http.finalize(method, res, keepAlive)
+    let wireBytes = http.writeResponse(final)
+    match peer.sendAll(wireBytes) {
+        Pass(_) {
+            Pass(Void)
+        }
+        Fail(e) {
+            Fail(e)
+        }
+    }
+}
+
+fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
+    writeResponse(peer, "GET", http.badRequest(msg), false)
+}
+
+## One keep-alive connection: read / handle / write until close.
+export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
+    loop {
+        match readRequest(peer) {
+            Fail(e) {
+                warn("recv: {e}")
+                match writeBadRequest(peer, e) {
+                    Pass(_) { }
+                    Fail(se) {
+                        warn("send: {se}")
+                    }
+                }
+                break
+            }
+            Pass(req) {
+                if isQuietClose(req) {
+                    break
+                }
+                let keep = http.wantsKeepAlive(req.version, req)
+                let res = handle(requestForHandle(req))
+                info("{req.method} {req.path} -> {res.status} {res.reason}")
+                match writeResponse(peer, req.method, res, keep) {
+                    Fail(se) {
+                        warn("send: {se}")
+                        break
+                    }
+                    Pass(_) {
+                        if not keep {
+                            break
+                        }
+                    }
+                }
+            }
+        }
+    }
+    peer.close()
+}
+
+## Run the host forever. `handle` is a free fn or bound method (D132).
+## `--> serveOne` parks an idle peer in recv without stalling accept.
+export fn serve(
+    port!: Int64,
+    handle!: (req: Request) -> Response
+) -> Trial<Void, String> {
+    let listener = bindListen(port)?
+    info("http server listening on 127.0.0.1:{port}")
+    loop {
+        match listener.accept() {
+            Fail(e) {
+                warn("accept: {e}")
+            }
+            Pass(peer) {
+                --> serveOne(peer, handle)
+            }
+        }
+    }
+}

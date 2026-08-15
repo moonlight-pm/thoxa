@@ -1,7 +1,7 @@
 ## One started peer handles two request/response turns (keep-alive shape).
-import net, { Socket, createSocket } from "std/Net"
-import { Pass, Fail, Trial } from "std/Fallible"
-import logging, { info } from "std/Logging"
+import net, { Socket, createSocket } from "std/net"
+import { Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
 
 fn echo(peer!: Socket) -> Trial<Void, String> {
     loop {

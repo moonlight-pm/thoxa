@@ -1,7 +1,7 @@
 ## File type with method write-back (D107/D109): openFile / readAll / close.
-import { openFile, oRdonly, readFile } from "std/Io"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { openFile, oRdonly, readFile } from "std/io"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

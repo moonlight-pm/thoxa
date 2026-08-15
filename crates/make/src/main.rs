@@ -60,7 +60,7 @@ Commands:
     cargo make zed --grammar        Only rebuild/install tree-sitter grammar WASM
     cargo make zed --all            Also rebuild extension.wasm (rare)
 
-A directory argument resolves to <dir>/Main.thx (same as `thoxa run <dir>`).
+A directory argument resolves to <dir>/main.thx (same as `thoxa run <dir>`).
 
 After `cargo make zed`: restart the language server in Zed (grammar colors may
 need a full Zed quit/restart). See extras/README.md.
@@ -372,7 +372,7 @@ fn cmd_test() -> i32 {
         return 1;
     }
 
-    // Top-level `*.thx` files, plus package directories that contain `Main.thx`.
+    // Top-level `*.thx` files, plus package directories that contain `main.thx`.
     let mut entries: Vec<PathBuf> = fs::read_dir(&conf)
         .unwrap()
         .filter_map(|e| e.ok())
@@ -381,13 +381,13 @@ fn cmd_test() -> i32 {
             if p.extension().and_then(|x| x.to_str()) == Some("thx") {
                 return true;
             }
-            p.is_dir() && p.join("Main.thx").is_file()
+            p.is_dir() && p.join("main.thx").is_file()
         })
         .collect();
     entries.sort();
 
     if entries.is_empty() {
-        eprintln!("no .thx files or Main.thx packages in tests/conformance");
+        eprintln!("no .thx files or main.thx packages in tests/conformance");
         return 1;
     }
 

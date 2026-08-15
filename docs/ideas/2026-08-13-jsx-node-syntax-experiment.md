@@ -62,7 +62,7 @@ No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
 ## Dogfood
 
 [`examples/http`](../../examples/http/) pages are tag trees: `type Page` in
-`app/Layout.thx`, views in `app/Pages.thx` (`DrinkCard(d: Drink)` — **D135**),
+`app/layout.thx`, views in `app/pages.thx` (`DrinkCard(d: Drink)` — **D135**),
 `n.html()` + `<!DOCTYPE html>` in `htmlResponse`. `Node` and user types are
 legal constructor-param fields.
 

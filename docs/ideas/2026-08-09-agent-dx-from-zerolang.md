@@ -59,7 +59,7 @@ Zerolang’s `fix --plan` safety ladder:
 - requires-human-review  
 
 Thoxa shape: LSP code actions or CLI suggestions (e.g. insert
-`import { … } from "std/Fallible"`, “did you mean”) — **never** silent
+`import { … } from "std/fallible"`, “did you mean”) — **never** silent
 API-changing rewrites. Only after codes are stable.
 
 ### 3. Version-matched compiler-served skills / docs

@@ -1,7 +1,7 @@
 ## OpenMode union (D81 polish): nullary access modes + openModeBits → openFile.
-import { OpenMode, Rdonly, Wronly, Rdwr, openModeBits, openFile, oRdonly } from "std/Io"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { OpenMode, Rdonly, Wronly, Rdwr, openModeBits, openFile, oRdonly } from "std/io"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn label(m!: OpenMode) -> String {
     match m {

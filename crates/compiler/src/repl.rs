@@ -495,7 +495,7 @@ fn ensure_prompt_lib(
     Ok(())
 }
 
-/// Session step image whose body prints `prompt()` via std/Logging.
+/// Session step image whose body prints `prompt()` via std/logging.
 fn build_prompt_lib(decls: &[String], cache: &mut SessionBuildCache) -> Result<SessionStepLib> {
     driver::capture_toolchain_path();
     driver::build_session_step(
@@ -814,7 +814,7 @@ echo hi
 fn prompt() -> String {
     "CUSTOM$ "
 }
-## logging import comes from injected Shell prelude (std/Logging).
+## logging import comes from injected Shell prelude (std/logging).
 logging.toStdout()
 logging.setFormat(logging.formatPlain)
 logging.info("from-rc")

@@ -1,8 +1,8 @@
 ## Diverging `loop` (no `break`) is a bottom type (D128): valid as a function tail
 ## for any return type (including Trial) without a dummy value after the loop.
 ## `return` inside the loop still exits the function (for a finite conformance run).
-import logging from "std/Logging"
-import { Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/logging"
+import { Pass, Fail, Trial } from "std/fallible"
 
 fn setup() -> Trial<Void, String> {
     Pass(Void)

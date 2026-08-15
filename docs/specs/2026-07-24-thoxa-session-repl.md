@@ -26,7 +26,7 @@
 |------------|------|----------|
 | `thoxa` (no args) | **REPL** | Long-lived host; read chunk → desugar → compile step → run against live `Shell` |
 | `thoxa path.thx` (no `fn main`) | **Session script** | One-shot: wrap file as session unit → compile → run once → exit with status |
-| `thoxa path.thx` (has `main`) or `thoxa dir/` → `Main.thx` | **Program** | Today’s batch compile-and-run (unchanged semantics) |
+| `thoxa path.thx` (has `main`) or `thoxa dir/` → `main.thx` | **Program** | Today’s batch compile-and-run (unchanged semantics) |
 | `thoxa run\|build\|check\|lsp\|…` | **Tools** | Explicit subcommands stay; CI/editor unchanged |
 
 **One sentence:**  
@@ -202,7 +202,7 @@ type Shell(
 | Area | Status | Notes |
 |------|--------|-------|
 | Pipeline MIR → C → binary | ✅ | `driver`, `cgen`, `libthoxa_rt` |
-| `fn main` programs + `Main.thx` dirs | ✅ | D68 |
+| `fn main` programs + `main.thx` dirs | ✅ | D68 |
 | Library check without `main` | ✅ | D83 `require_main` |
 | Modules `./` `~/`, import/export | ✅ | D30–D35 |
 | `thoxa_spawn_wait` | ✅ | D86; argv as NUL-separated `Bytes` |
@@ -238,7 +238,7 @@ type Shell(
 
 **Goal:** `thoxa run file.thx` when there is **no** `main` runs as a session script.
 
-1. Detect entry mode: has `main` / dir `Main.thx` → program; else → session script.
+1. Detect entry mode: has `main` / dir `main.thx` → program; else → session script.
 2. Splice: lift decls; wrap statements in `Shell.step`; emit synthetic `main`.
 3. Optional: enable command-sugar desugar for script lines (can land in Phase 1b).
 4. Conformance: `tests/conformance/session_*.thx` (+ `.out`) — pure Thoxa statements first; sugar tests second.
@@ -306,7 +306,7 @@ Each PR is independently reviewable; conformance or explicit smoke is the gate.
 
 | Draft | Decision | Choice | Rationale |
 |-------|----------|--------|-----------|
-| D88′ | Session product shape | Bare `thoxa` = REPL; no-`main` = session script; `main`/`Main.thx` = program | One binary face; batch path preserved |
+| D88′ | Session product shape | Bare `thoxa` = REPL; no-`main` = session script; `main`/`main.thx` = program | One binary face; batch path preserved |
 | D89′ | Session value | `type Shell` with `status` + methods | Real Thoxa scope; no magic `$?` core |
 | D90′ | User code placement | Decls → module; statements → `Shell.step` body | Matches “function on Shell” without general nested modules |
 | D91′ | In-function import/type | **Not** required for session; host lifts decls | Smaller language blast radius |

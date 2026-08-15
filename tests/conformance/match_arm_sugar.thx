@@ -2,8 +2,8 @@
 ## `Pat => expr` ≡ one-expr block. Multi-stmt arms still use `{ }` + newlines.
 ## Bare `Pass` / `Fail` / product tags match by tag without destructuring (≡ all `_`).
 
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 type Box(n: Int64)
 

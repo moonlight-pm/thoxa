@@ -3,7 +3,7 @@
 **Date:** 2026-07-19  
 **Status:** historical (plan complete)  
 **Implementation:** shipped  
-**Gaps:** none for this freeze (bounded multi-request static server + Main.thx path)  
+**Gaps:** none for this freeze (bounded multi-request static server + main.thx path)  
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 
 > **Historical plan.** Bounded HTTP path shipped. Living priority:
@@ -11,7 +11,7 @@
 > capabilities + CURRENT (+ handbook when user-visible), not this file as a changelog.
 >
 > **Later product promotion (not part of this freeze):** Io/Net/Http/Router live in
-> product **`std/`** (**D126**); example is `Main.thx` + `web/` only. Conformance
+> product **`std/`** (**D126**); example is `main.thx` + `web/` only. Conformance
 > no longer uses `iolib/` / `httplib/` trees. Prefer this note over body paths below.
 
 **Goal:** Close the gap from today’s subset to a **bounded multi-request static HTTP server** that matches the oracle `examples/http` *shape* (Net + Http + Io + Router + Main), without taking on deferred language megawork (M4, Perceus, effects, full stdlib roots).
@@ -86,7 +86,7 @@ A program that:
 | L7 | Router type + `handle(Request) -> Response` | PR 6 | Oracle shape |
 | L8 | `File` type or keep free `readFile` | PR 2 then optional polish | Free fn is enough if RC fixed |
 | L9 | Bounded multi-request server | PR 7 | Closes HTTP ladder |
-| L10 | `Main.thx` directory entry | PR 8 | Oracle `thoxa run dir` |
+| L10 | `main.thx` directory entry | PR 8 | Oracle `thoxa run dir` |
 | L11 | OpenMode / better Io errors | PR 9 (optional) | Nice-to-have; static Fail tags work |
 | L12 | Local errno/strerror without full ffi root | PR 9 (optional) | Same |
 | L13 | String `.count` / index | only if forced | Prefer Bytes path |
@@ -116,7 +116,7 @@ PR1 early return ─────────────────────
 PR2 User+heap RC ──┬── PR3 Array<User> ── PR5 Request/Response ── PR6 Router type ── PR7 bounded server
                    │                              │
 PR4 match discard ─┴──────────────────────────────┘
-PR8 Main.thx dir entry (depends PR7 optional; can follow PR7)
+PR8 main.thx dir entry (depends PR7 optional; can follow PR7)
 PR9 Io polish (optional, parallel after PR2)
 ```
 
@@ -273,9 +273,9 @@ PR9 Io polish (optional, parallel after PR2)
   - Do **not** require threads.
   - Decision D67 bounded server conformance.
 
-### PR 8: Directory entry `Main.thx`
+### PR 8: Directory entry `main.thx`
 
-- **Description:** `thoxa run <dir>` resolves `<dir>/Main.thx`; project root for `~/` is that directory. Conformance: small multi-file package under `tests/conformance/pkgmain/` with `Main.thx` + helper, invoked via CLI.
+- **Description:** `thoxa run <dir>` resolves `<dir>/main.thx`; project root for `~/` is that directory. Conformance: small multi-file package under `tests/conformance/pkgmain/` with `main.thx` + helper, invoked via CLI.
 - **Files/components affected:** `crates/compiler/src/main.rs` and/or `driver.rs` / `loader.rs`, `crates/make/src/main.rs` if test harness needs dir mode, `tests/conformance/…`, `docs/*`
 - **Dependencies:** PR 7 (so server package can be dir-shaped) — **or** None if only a tiny package is used; prefer soft dep on PR 7 only for optional demo layout
 - **Acceptance:**
@@ -283,7 +283,7 @@ PR9 Io polish (optional, parallel after PR2)
   - [x] `~/` imports resolve from package dir
   - [x] File mode `run path.thx` unchanged
   - [x] `cargo make test` green
-- **Implementation notes:** D31 already says `~/` = entry file’s directory; for dir entry, entry file is `Main.thx`. Decision D68.
+- **Implementation notes:** D31 already says `~/` = entry file’s directory; for dir entry, entry file is `main.thx`. Decision D68.
 
 ### PR 9 (optional): Io OpenMode + errno strings
 
@@ -306,7 +306,7 @@ For `/execute-plan` linearization (also respects parallel levels):
 5. PR5 Request/Response  
 6. PR6 Router type  
 7. PR7 bounded server  
-8. PR8 Main.thx  
+8. PR8 main.thx  
 9. PR9 optional Io polish  
 
 **Critical path to “HTTP complete”:** PR2 → PR3 → PR5 → PR6 → PR7 (PR1/PR4 feed quality, PR1 required for clean server).

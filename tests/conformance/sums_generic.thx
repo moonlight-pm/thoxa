@@ -1,5 +1,5 @@
 ## Generic products + generic unions with monomorphization (D118 prelude path).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Box<T>(value: T)
 type Empty
 type Opt<T> = Box<T!> | Empty?

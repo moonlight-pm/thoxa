@@ -73,7 +73,7 @@ pub enum RefCtx {
 /// Origin of an import binding (for cross-module navigation).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportOrigin {
-    /// Specifier string from the import (e.g. `"./Helper"`, `"~/modlib/Geometry"`).
+    /// Specifier string from the import (e.g. `"./helper"`, `"~/modlib/geometry"`).
     pub spec: String,
     /// For selective imports: the export name in the source module (before `as`).
     /// `None` for namespace imports (`import ns from "…"`).
@@ -1386,7 +1386,7 @@ fn main() -> Int64 {
     fn typed_member_via_try_unwrap() {
         // `let p = make()?` where make() -> Trial<Point, String> links p.len.
         let src = "\
-import { Pass, Fail, Trial } from \"std/Fallible\"
+import { Pass, Fail, Trial } from \"std/fallible\"
 type Point(x: Int64) {
   export fn len() -> Int64 { x }
 }
@@ -1655,7 +1655,7 @@ fn f(t: Trial<Int64, Int64>) -> Int64 {
 
     #[test]
     fn import_local_binding() {
-        let src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        let src = "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n";
         let res = resolve_ok(src);
         let answer = res
             .module_definitions()
@@ -1664,7 +1664,7 @@ fn f(t: Trial<Int64, Int64>) -> Int64 {
             .expect("import");
         assert_eq!(answer.kind, BindingKind::Import);
         let origin = answer.import_origin.as_ref().expect("origin");
-        assert_eq!(origin.spec, "./Helper");
+        assert_eq!(origin.spec, "./helper");
         assert_eq!(origin.original.as_deref(), Some("answer"));
         assert!(!origin.is_namespace);
         let use_at = src.rfind("answer").unwrap();
@@ -1675,7 +1675,7 @@ fn f(t: Trial<Int64, Int64>) -> Int64 {
 
     #[test]
     fn import_alias_and_namespace_origin() {
-        let src = "import { answer as ans } from \"./Helper\"\nimport h from \"./Helper\"\nfn main() -> Int64 { 0 }\n";
+        let src = "import { answer as ans } from \"./helper\"\nimport h from \"./helper\"\nfn main() -> Int64 { 0 }\n";
         let res = resolve_ok(src);
         let ans = res
             .module_definitions()
@@ -1697,7 +1697,7 @@ fn f(t: Trial<Int64, Int64>) -> Int64 {
 
     #[test]
     fn import_combined_namespace_and_selective() {
-        let src = "import h, { answer as ans } from \"./Helper\"\nfn main() -> Int64 { 0 }\n";
+        let src = "import h, { answer as ans } from \"./helper\"\nfn main() -> Int64 { 0 }\n";
         let res = resolve_ok(src);
         let ans = res
             .module_definitions()

@@ -1,5 +1,5 @@
 ## Transparent union aliases + expect on if (D119).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Done(n: Int64)
 type Quit
 type Outcome = Done | Quit

@@ -36,7 +36,7 @@ call). Ambient `println` / `print` are **removed**.
 **Preferred app import face** (shipped style; see `examples/http`):
 
 ```thx
-import logging, { info, warn, error } from "std/Logging"   ## ns + short emits (D127)
+import logging, { info, warn, error } from "std/logging"   ## ns + short emits (D127)
 
 logging.toStdout()                 ## configure via namespace
 logging.setFormat(logging.formatPlain)
@@ -51,7 +51,7 @@ Either import alone remains valid; combining both is the documented default for
 apps. No import-mode dual export names (language unchanged).
 
 **One sentence:**  
-`import logging, { info, … } from "std/Logging"` (D127) is how programs
+`import logging, { info, … } from "std/logging"` (D127) is how programs
 log; `println` is gone.
 
 ---
@@ -67,7 +67,7 @@ log; `println` is gone.
 | 5 | Module name | **`std/Logging`** (not `std/Log`; keep `log` free for instances) |
 
 **Import style (no language change):** prefer **both** —
-`import logging, { info, warn, … } from "std/Logging"` (combined **D127**).
+`import logging, { info, warn, … } from "std/logging"` (combined **D127**).
 Two separate import lines remain valid. Either form alone is
 valid. No import-mode dual export names.
 
@@ -196,8 +196,8 @@ export fn toFile(path!: String) -> Trial<(), String>
 - Call sites that care:
 
 ```thx
-import logging, { error } from "std/Logging"
-import { Pass, Fail, Trial } from "std/Fallible"
+import logging, { error } from "std/logging"
+import { Pass, Fail, Trial } from "std/fallible"
 
 match logging.toFile("/var/log/app.log") {
     Pass(_) { }
@@ -300,7 +300,7 @@ goldens.
 Preferred (namespace + selective, as in apps):
 
 ```thx
-import logging, { info } from "std/Logging"
+import logging, { info } from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()
@@ -313,7 +313,7 @@ fn main() -> Int64 {
 Namespace-only or selective-only remain fine for tests:
 
 ```thx
-import { info, toStdout, setFormat, formatPlain } from "std/Logging"
+import { info, toStdout, setFormat, formatPlain } from "std/logging"
 
 fn main() -> Int64 {
     toStdout()

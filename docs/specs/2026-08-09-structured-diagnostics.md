@@ -180,7 +180,7 @@ thoxa check path.thx --json    # same (flag position flexible)
       "code": "THX001",
       "severity": "error",
       "message": "undefined name `fooo`",
-      "path": "Main.thx",
+      "path": "main.thx",
       "byte_start": 120,
       "byte_end": 124,
       "line": 12,
@@ -192,7 +192,7 @@ thoxa check path.thx --json    # same (flag position flexible)
       "actual": null,
       "related": [
         {
-          "path": "Main.thx",
+          "path": "main.thx",
           "line": 3,
           "column": 4,
           "byte_start": 10,
@@ -232,21 +232,21 @@ in spirit without requiring full rustc parity.
 
 ```text
 error[THX001]: undefined name `fooo`
- --> Main.thx:12:9
+ --> main.thx:12:9
   |
 12 |     let x = fooo()
   |             ^^^^ not found in this scope
   |
   = help: did you mean `foo`?
   = note: `foo` defined here
- --> Main.thx:3:4
+ --> main.thx:3:4
 ```
 
 Minimum viable pretty (acceptable v0 if snippet plumbing is heavy):
 
 ```text
 error[THX001]: undefined name `fooo`
-  --> Main.thx:12:9
+  --> main.thx:12:9
    = help: did you mean `foo`?
 ```
 

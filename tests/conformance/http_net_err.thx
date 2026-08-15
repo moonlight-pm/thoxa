@@ -1,7 +1,7 @@
 ## Net Fail messages include strerror (errno polish, Io-style D80).
-import { createSocket } from "std/Net"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { createSocket } from "std/net"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

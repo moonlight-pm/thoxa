@@ -1,5 +1,5 @@
 ## Pure-literal union members (D118).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Flag = 0 | 1
 type Mode = "r" | "w"
 type Toggle = true | false

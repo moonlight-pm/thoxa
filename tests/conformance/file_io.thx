@@ -1,7 +1,7 @@
 ## File I/O — `readFile` via std/Io (D126; errno/OpenMode polish).
-import { readFile, oRdonly } from "std/Io"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { readFile, oRdonly } from "std/io"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

@@ -277,7 +277,7 @@ impl Server {
         }
 
         // Export: clients that selective-import this export (open buffers first,
-        // then package-tree `.thx` on disk under Main.thx / .git root).
+        // then package-tree `.thx` on disk under main.thx / .git root).
         if binding.exported
             && binding.owner.is_none()
             && binding.kind != BindingKind::Import
@@ -871,13 +871,13 @@ fn workspace_symbol_info(
     })
 }
 
-/// Nearest package-ish root above `export_path`: ancestor with `Main.thx` or `.git`,
+/// Nearest package-ish root above `export_path`: ancestor with `main.thx` or `.git`,
 /// else the export's parent directory (same-dir fallback).
 fn package_walk_root(export_path: &Path) -> Option<PathBuf> {
     let start = export_path.parent()?.to_path_buf();
     let mut dir = start.clone();
     for _ in 0..24 {
-        if dir.join("Main.thx").is_file() || dir.join(".git").exists() {
+        if dir.join("main.thx").is_file() || dir.join(".git").exists() {
             return Some(dir);
         }
         match dir.parent() {
@@ -1496,14 +1496,14 @@ fn main() -> Int64 {
         let _ = fs::remove_dir_all(&dir);
         let lib = dir.join("lib");
         fs::create_dir_all(&lib).unwrap();
-        let helper = lib.join("Helper.thx");
+        let helper = lib.join("helper.thx");
         fs::write(
             &helper,
             "export fn answer() -> Int64 { 42 }\nexport type Point(x: Int64)\n",
         )
         .unwrap();
-        let main = dir.join("Main.thx");
-        let main_src = "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main = dir.join("main.thx");
+        let main_src = "import { answer } from \"./lib/helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let main_uri = convert::path_to_uri(&main.to_string_lossy());
 
@@ -1602,14 +1602,14 @@ fn main() -> Int64 {
             std::env::temp_dir().join(format!("thoxa_lsp_xmod_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         fs::write(
             &helper,
             "## the answer\nexport fn answer() -> Int64 { 42 }\n",
         )
         .unwrap();
-        let main = dir.join("Main.thx");
-        let text = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main = dir.join("main.thx");
+        let text = "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, text).unwrap();
         let main_uri = convert::path_to_uri(&main.to_string_lossy());
         let call = text.rfind("answer").unwrap();
@@ -1655,7 +1655,7 @@ fn main() -> Int64 {
             .unwrap();
         let def_uri = def["result"]["uri"].as_str().unwrap();
         assert!(
-            def_uri.ends_with("Helper.thx"),
+            def_uri.ends_with("helper.thx"),
             "expected jump into Helper, got {def_uri}"
         );
         assert_eq!(def["result"]["range"]["start"]["line"], 1); // export fn answer
@@ -1681,7 +1681,7 @@ fn main() -> Int64 {
             .expect("workspace root");
         let main = workspace.join("tests/conformance/_lsp_std_nav.thx");
         // Ephemeral file under workspace so relative paths / std resolve.
-        let text = "import { isEmpty } from \"std/Str\"\nfn main() -> Int64 { if isEmpty(\"\") { 1 } else { 0 } }\n";
+        let text = "import { isEmpty } from \"std/str\"\nfn main() -> Int64 { if isEmpty(\"\") { 1 } else { 0 } }\n";
         fs::write(&main, text).unwrap();
         let main_uri = convert::path_to_uri(&main.to_string_lossy());
         let call = text.rfind("isEmpty").unwrap();
@@ -1719,8 +1719,8 @@ fn main() -> Int64 {
             .unwrap();
         let def_uri = def["result"]["uri"].as_str().unwrap_or("");
         assert!(
-            def_uri.ends_with("Str.thx") || def_uri.contains("/std/Str"),
-            "expected jump into std/Str, got {def_uri} full={def}"
+            def_uri.ends_with("str.thx") || def_uri.contains("/std/str"),
+            "expected jump into std/str, got {def_uri} full={def}"
         );
     }
 
@@ -1735,11 +1735,11 @@ fn main() -> Int64 {
         let dir = std::env::temp_dir().join(format!("thoxa_lsp_ren_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         let helper_src = "export fn answer() -> Int64 { 42 }\n";
         fs::write(&helper, helper_src).unwrap();
-        let main = dir.join("Main.thx");
-        let main_src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main = dir.join("main.thx");
+        let main_src = "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
         let main_uri = convert::path_to_uri(&main.to_string_lossy());
@@ -1792,17 +1792,17 @@ fn main() -> Int64 {
             .as_object()
             .expect("workspace edit changes");
         assert!(
-            changes.keys().any(|k| k.ends_with("Helper.thx")),
+            changes.keys().any(|k| k.ends_with("helper.thx")),
             "{changes:?}"
         );
         assert!(
-            changes.keys().any(|k| k.ends_with("Main.thx")),
+            changes.keys().any(|k| k.ends_with("main.thx")),
             "{changes:?}"
         );
         // Main should rewrite import binding + call, not the path string.
         let main_edits = changes
             .iter()
-            .find(|(k, _)| k.ends_with("Main.thx"))
+            .find(|(k, _)| k.ends_with("main.thx"))
             .map(|(_, v)| v.as_array().unwrap())
             .expect("main edits");
         assert!(main_edits.len() >= 2, "{main_edits:?}");
@@ -1824,11 +1824,11 @@ fn main() -> Int64 {
             std::env::temp_dir().join(format!("thoxa_lsp_diskren_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         let helper_src = "export fn answer() -> Int64 { 42 }\n";
         fs::write(&helper, helper_src).unwrap();
-        let main = dir.join("Main.thx");
-        let main_src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main = dir.join("main.thx");
+        let main_src = "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
         let def_byte = helper_src.find("answer").unwrap();
@@ -1868,8 +1868,8 @@ fn main() -> Int64 {
             .as_object()
             .expect("workspace edit changes");
         assert!(
-            changes.keys().any(|k| k.ends_with("Main.thx")),
-            "expected Main.thx on disk in rename: {changes:?}"
+            changes.keys().any(|k| k.ends_with("main.thx")),
+            "expected main.thx on disk in rename: {changes:?}"
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -1887,11 +1887,11 @@ fn main() -> Int64 {
             std::env::temp_dir().join(format!("thoxa_lsp_diskrefs_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         let helper_src = "export fn answer() -> Int64 { 42 }\n";
         fs::write(&helper, helper_src).unwrap();
-        let main = dir.join("Main.thx");
-        let main_src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main = dir.join("main.thx");
+        let main_src = "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
         // Only Helper is open — Main stays on disk.
@@ -1931,8 +1931,8 @@ fn main() -> Int64 {
         let arr = refs["result"].as_array().expect("refs array");
         let uris: Vec<&str> = arr.iter().filter_map(|l| l["uri"].as_str()).collect();
         assert!(
-            uris.iter().any(|u| u.ends_with("Main.thx")),
-            "expected disk Main.thx among refs: {uris:?}"
+            uris.iter().any(|u| u.ends_with("main.thx")),
+            "expected disk main.thx among refs: {uris:?}"
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -1951,11 +1951,11 @@ fn main() -> Int64 {
         let _ = fs::remove_dir_all(&dir);
         let lib = dir.join("lib");
         fs::create_dir_all(&lib).unwrap();
-        let helper = lib.join("Helper.thx");
+        let helper = lib.join("helper.thx");
         let helper_src = "export fn answer() -> Int64 { 42 }\n";
         fs::write(&helper, helper_src).unwrap();
-        let main = dir.join("Main.thx");
-        let main_src = "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main = dir.join("main.thx");
+        let main_src = "import { answer } from \"./lib/helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
         let def_byte = helper_src.find("answer").unwrap();
@@ -1994,8 +1994,8 @@ fn main() -> Int64 {
         let arr = refs["result"].as_array().expect("refs array");
         let uris: Vec<&str> = arr.iter().filter_map(|l| l["uri"].as_str()).collect();
         assert!(
-            uris.iter().any(|u| u.ends_with("Main.thx")),
-            "expected package-root Main.thx among refs: {uris:?}"
+            uris.iter().any(|u| u.ends_with("main.thx")),
+            "expected package-root main.thx among refs: {uris:?}"
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -2013,11 +2013,11 @@ fn main() -> Int64 {
         let _ = fs::remove_dir_all(&dir);
         let lib = dir.join("lib");
         fs::create_dir_all(&lib).unwrap();
-        let helper = lib.join("Helper.thx");
+        let helper = lib.join("helper.thx");
         let helper_src = "export fn answer() -> Int64 { 42 }\n";
         fs::write(&helper, helper_src).unwrap();
-        let main = dir.join("Main.thx");
-        let main_src = "import { answer } from \"./lib/Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main = dir.join("main.thx");
+        let main_src = "import { answer } from \"./lib/helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
         let def_byte = helper_src.find("answer").unwrap();
@@ -2057,8 +2057,8 @@ fn main() -> Int64 {
             .as_object()
             .expect("workspace edit changes");
         assert!(
-            changes.keys().any(|k| k.ends_with("Main.thx")),
-            "expected Main.thx on disk in package rename: {changes:?}"
+            changes.keys().any(|k| k.ends_with("main.thx")),
+            "expected main.thx on disk in package rename: {changes:?}"
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -2076,11 +2076,11 @@ fn main() -> Int64 {
             std::env::temp_dir().join(format!("thoxa_lsp_refs_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         let helper_src = "export fn answer() -> Int64 { 42 }\n";
         fs::write(&helper, helper_src).unwrap();
-        let main = dir.join("Main.thx");
-        let main_src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main = dir.join("main.thx");
+        let main_src = "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, main_src).unwrap();
         let helper_uri = convert::path_to_uri(&helper.to_string_lossy());
         let main_uri = convert::path_to_uri(&main.to_string_lossy());
@@ -2138,8 +2138,8 @@ fn main() -> Int64 {
             arr.len()
         );
         let uris: Vec<&str> = arr.iter().filter_map(|l| l["uri"].as_str()).collect();
-        assert!(uris.iter().any(|u| u.ends_with("Helper.thx")), "{uris:?}");
-        assert!(uris.iter().any(|u| u.ends_with("Main.thx")), "{uris:?}");
+        assert!(uris.iter().any(|u| u.ends_with("helper.thx")), "{uris:?}");
+        assert!(uris.iter().any(|u| u.ends_with("main.thx")), "{uris:?}");
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2155,10 +2155,10 @@ fn main() -> Int64 {
         let dir = std::env::temp_dir().join(format!("thoxa_lsp_buf_{}_{}", std::process::id(), ns));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         fs::write(&helper, "export fn helper(x: Int64) -> Int64 { x }\n").unwrap();
-        let main = dir.join("Main.thx");
-        let text = "import { helper } from \"./Helper\"\nfn main() -> Int64 { helper(1) }\n";
+        let main = dir.join("main.thx");
+        let text = "import { helper } from \"./helper\"\nfn main() -> Int64 { helper(1) }\n";
         fs::write(&main, text).unwrap();
         let main_uri = convert::path_to_uri(&main.to_string_lossy());
         let helper_uri = convert::path_to_uri(&helper.to_string_lossy());

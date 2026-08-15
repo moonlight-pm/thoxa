@@ -1,0 +1,373 @@
+## Syntax — highlight classifier (kilo editorUpdateSyntax subset).
+
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+
+export type Normal
+export type Comment
+export type Keyword1
+export type Keyword2
+export type Str
+export type Number
+export type Matched
+export type Hl = Normal | Comment | Keyword1 | Keyword2 | Str | Number | Matched
+
+export fn color(h!: Hl) -> Int64 {
+    match h {
+        Number { 31 }
+        Str { 35 }
+        Comment { 36 }
+        Keyword1 { 33 }
+        Keyword2 { 32 }
+        Matched { 34 }
+        Normal { 39 }
+    }
+}
+
+export type Syntax(
+    keywords1: Array<Bytes>,
+    keywords2: Array<Bytes>,
+    single: Bytes,
+    mlStart: Bytes,
+    mlEnd: Bytes,
+    numbers: Bool,
+    strings: Bool
+)
+
+export type RowHl(cells: Array<Hl>, openComment: Bool)
+
+type KeywordHit(len: Int64, isKw2: Bool)
+
+fn emptyHl() -> Array<Hl> {
+    mut xs: Array<Hl> = []
+    xs
+}
+
+fn emptyBytesArr() -> Array<Bytes> {
+    mut xs: Array<Bytes> = []
+    xs
+}
+
+fn cSyntax() -> Syntax {
+    mut kw1 = emptyBytesArr()
+    kw1.append(Bytes.fromString("switch"))
+    kw1.append(Bytes.fromString("if"))
+    kw1.append(Bytes.fromString("while"))
+    kw1.append(Bytes.fromString("for"))
+    kw1.append(Bytes.fromString("break"))
+    kw1.append(Bytes.fromString("continue"))
+    kw1.append(Bytes.fromString("return"))
+    kw1.append(Bytes.fromString("else"))
+    kw1.append(Bytes.fromString("struct"))
+    kw1.append(Bytes.fromString("union"))
+    kw1.append(Bytes.fromString("typedef"))
+    kw1.append(Bytes.fromString("static"))
+    kw1.append(Bytes.fromString("enum"))
+    kw1.append(Bytes.fromString("class"))
+    kw1.append(Bytes.fromString("case"))
+    mut kw2 = emptyBytesArr()
+    kw2.append(Bytes.fromString("int"))
+    kw2.append(Bytes.fromString("long"))
+    kw2.append(Bytes.fromString("double"))
+    kw2.append(Bytes.fromString("float"))
+    kw2.append(Bytes.fromString("char"))
+    kw2.append(Bytes.fromString("unsigned"))
+    kw2.append(Bytes.fromString("signed"))
+    kw2.append(Bytes.fromString("void"))
+    Syntax(
+        keywords1: kw1,
+        keywords2: kw2,
+        single: Bytes.fromString("//"),
+        mlStart: Bytes.fromString("/*"),
+        mlEnd: Bytes.fromString("*/"),
+        numbers: true,
+        strings: true
+    )
+}
+
+fn matchesAt(hay!: Bytes, at: Int64, needle!: Bytes) -> Bool {
+    if at + needle.count > hay.count {
+        return false
+    }
+    hay.slice(at, at + needle.count).equals(needle)
+}
+
+fn endsWith(hay!: Bytes, suffix!: Bytes) -> Bool {
+    if suffix.count > hay.count {
+        return false
+    }
+    matchesAt(hay, hay.count - suffix.count, suffix)
+}
+
+export fn selectSyntax(filename!: String) -> May<Syntax> {
+    let name = Bytes.fromString(filename)
+    if endsWith(name, Bytes.fromString(".c")) {
+        return Has(cSyntax())
+    }
+    if endsWith(name, Bytes.fromString(".h")) {
+        return Has(cSyntax())
+    }
+    if endsWith(name, Bytes.fromString(".cpp")) {
+        return Has(cSyntax())
+    }
+    Not()
+}
+
+fn isSeparator(c: Int64) -> Bool {
+    if c == 32 { return true }
+    if c == 9 { return true }
+    if c == 10 { return true }
+    if c == 13 { return true }
+    if c == 0 { return true }
+    if c == 44 { return true }
+    if c == 46 { return true }
+    if c == 40 { return true }
+    if c == 41 { return true }
+    if c == 43 { return true }
+    if c == 45 { return true }
+    if c == 47 { return true }
+    if c == 42 { return true }
+    if c == 61 { return true }
+    if c == 126 { return true }
+    if c == 37 { return true }
+    if c == 60 { return true }
+    if c == 62 { return true }
+    if c == 91 { return true }
+    if c == 93 { return true }
+    if c == 59 { return true }
+    false
+}
+
+fn separatorAt(render!: Bytes, at: Int64) -> Bool {
+    if at >= render.count {
+        true
+    } else {
+        isSeparator(render.get(at))
+    }
+}
+
+fn isDigit(c: Int64) -> Bool {
+    if c < 48 {
+        false
+    } else {
+        c <= 57
+    }
+}
+
+fn isNumberHl(h!: Hl) -> Bool {
+    match h {
+        Number { true }
+        else { false }
+    }
+}
+
+fn firstMatch(render!: Bytes, i: Int64, list!: Array<Bytes>) -> May<Int64> {
+    mut k = 0
+    loop {
+        if k >= list.count {
+            break
+        }
+        let kw = list[k]
+        if matchesAt(render, i, kw) {
+            if separatorAt(render, i + kw.count) {
+                return Has(kw.count)
+            }
+        }
+        k = k + 1
+    }
+    Not()
+}
+
+fn keywordAt(render!: Bytes, i: Int64, s!: Syntax) -> May<KeywordHit> {
+    match firstMatch(render, i, s.keywords1) {
+        Has(w) {
+            Has(KeywordHit(len: w, isKw2: false))
+        }
+        Not {
+            match firstMatch(render, i, s.keywords2) {
+                Has(w) {
+                    Has(KeywordHit(len: w, isKw2: true))
+                }
+                Not {
+                    Not()
+                }
+            }
+        }
+    }
+}
+
+export fn plainRow(render!: Bytes) -> RowHl {
+    mut cells = emptyHl()
+    mut i = 0
+    loop {
+        if i >= render.count {
+            break
+        }
+        cells.append(Normal())
+        i = i + 1
+    }
+    RowHl(cells: cells, openComment: false)
+}
+
+export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
+    let n = render.count
+    mut cells = emptyHl()
+    mut prevSep = true
+    mut inString = 0
+    mut inComment = prevOpen
+    mut i = 0
+    loop {
+        if i >= n {
+            break
+        }
+        let c = render.get(i)
+        let prevHl = if cells.count > 0 {
+            cells[cells.count - 1]
+        } else {
+            Normal()
+        }
+
+        ## 1. single-line comment
+        if inString == 0 {
+            if not inComment {
+                if matchesAt(render, i, s.single) {
+                    loop {
+                        if i >= n {
+                            break
+                        }
+                        cells.append(Comment())
+                        i = i + 1
+                    }
+                    continue
+                }
+            }
+        }
+
+        ## 2. multi-line comment
+        if inString == 0 {
+            if inComment {
+                cells.append(Comment())
+                if matchesAt(render, i, s.mlEnd) {
+                    mut k = 1
+                    loop {
+                        if k >= s.mlEnd.count {
+                            break
+                        }
+                        cells.append(Comment())
+                        k = k + 1
+                    }
+                    i = i + s.mlEnd.count
+                    inComment = false
+                    prevSep = true
+                    continue
+                }
+                i = i + 1
+                continue
+            } else if matchesAt(render, i, s.mlStart) {
+                mut k = 0
+                loop {
+                    if k >= s.mlStart.count {
+                        break
+                    }
+                    cells.append(Comment())
+                    k = k + 1
+                }
+                i = i + s.mlStart.count
+                inComment = true
+                continue
+            }
+        }
+
+        ## 3. strings
+        if s.strings {
+            if inString != 0 {
+                cells.append(Str())
+                if c == 92 {
+                    if i + 1 < n {
+                        cells.append(Str())
+                        i = i + 2
+                        continue
+                    }
+                }
+                if c == inString {
+                    inString = 0
+                }
+                i = i + 1
+                prevSep = true
+                continue
+            } else if c == 34 {
+                inString = c
+                cells.append(Str())
+                i = i + 1
+                continue
+            } else if c == 39 {
+                inString = c
+                cells.append(Str())
+                i = i + 1
+                continue
+            }
+        }
+
+        ## 4. numbers
+        if s.numbers {
+            let startsNum = if isDigit(c) {
+                if prevSep {
+                    true
+                } else {
+                    isNumberHl(prevHl)
+                }
+            } else {
+                false
+            }
+            let dotNum = if c == 46 {
+                isNumberHl(prevHl)
+            } else {
+                false
+            }
+            if startsNum {
+                cells.append(Number())
+                i = i + 1
+                prevSep = false
+                continue
+            }
+            if dotNum {
+                cells.append(Number())
+                i = i + 1
+                prevSep = false
+                continue
+            }
+        }
+
+        ## 5. keywords
+        if prevSep {
+            match keywordAt(render, i, s) {
+                Has(kw) {
+                    mut k = 0
+                    loop {
+                        if k >= kw.len {
+                            break
+                        }
+                        if kw.isKw2 {
+                            cells.append(Keyword2())
+                        } else {
+                            cells.append(Keyword1())
+                        }
+                        k = k + 1
+                    }
+                    i = i + kw.len
+                    prevSep = false
+                    continue
+                }
+                Not {
+                    ## fall through to default
+                    Void
+                }
+            }
+        }
+
+        ## 6. default
+        cells.append(Normal())
+        prevSep = isSeparator(c)
+        i = i + 1
+    }
+    RowHl(cells: cells, openComment: inComment)
+}

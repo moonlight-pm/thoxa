@@ -1,7 +1,7 @@
 ## File write/create (D112): writeFile, appendFile, File.write.
-import { writeFile, appendFile, readFile, oCreat, oWronly, oTrunc } from "std/Io"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { writeFile, appendFile, readFile, oCreat, oWronly, oTrunc } from "std/io"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

@@ -6,19 +6,19 @@ User handbook: [`docs/handbook/std.md`](../docs/handbook/std.md).
 As-built rows: [`docs/capabilities.md`](../docs/capabilities.md) (`std-*`).
 
 ```thx
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging, { info } from "std/Logging"  ## ns + short emit (D127)
-import { readFile } from "std/Io"
-import net from "std/Net"
-import http from "std/Http"
-import server from "std/HttpServer"
-import { Router } from "std/HttpStatic"
-import { defaultPrompt } from "std/Prompt"   ## session shell.thx
-import { startsWith, dropPrefix } from "std/Str"
-import { cwdShort, shortPath } from "std/Path"
-import { fg, fgHex, sgr0, cyan, brightWhite } from "std/Ansi"
-import { localHms, userName, hostname } from "std/Env"
-import { branch } from "std/Git"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"  ## ns + short emit (D127)
+import { readFile } from "std/io"
+import net from "std/net"
+import http from "std/http"
+import server from "std/http-server"
+import { Router } from "std/http-static"
+import { defaultPrompt } from "std/prompt"   ## session shell.thx
+import { startsWith, dropPrefix } from "std/str"
+import { cwdShort, shortPath } from "std/path"
+import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
+import { localHms, userName, hostname } from "std/env"
+import { branch } from "std/git"
 ```
 
 | Module | Role |
@@ -30,7 +30,7 @@ import { branch } from "std/Git"
 | `Net` | TCP sockets: `Socket`, `receiveRequest`, `sendAll` (**D126**) |
 | `Http` | HTTP/1.1 parse/write + query/form/cookie helpers + `htmlResponse` (**D126**/**D136**/**D137**) |
 | `HttpServer` | Host loop: `serve` / `serveOne` / `readBody` (**D136**) |
-| `HttpStatic` | Static-file `Router` over `std/Io` + `std/Http` (**D126**) |
+| `HttpStatic` | Static-file `Router` over `std/io` + `std/http` (**D126**) |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
 | `Str` | search/slice/replace/`split`/`splitOnce`/`parseUInt`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |
 | `Path` | dirname/basename/join/`joinAll`/`parts`/slash helpers/extension/`cwd`/`shortPath`/… |

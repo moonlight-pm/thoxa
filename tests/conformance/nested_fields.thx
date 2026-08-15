@@ -1,5 +1,5 @@
 ## D135: Node and constructor-param User (including sums) as ctor fields.
-import logging from "std/Logging"
+import logging from "std/logging"
 
 type Dark
 type Medium

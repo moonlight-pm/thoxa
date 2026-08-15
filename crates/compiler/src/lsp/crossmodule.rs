@@ -1077,7 +1077,7 @@ fn resolve_spec(spec: &str, current_path: &Path) -> Option<PathBuf> {
 /// Resolve an import specifier relative to the importing file (for nav / multi-file refs).
 pub fn resolve_import_file(spec: &str, current_path: &Path) -> Option<PathBuf> {
     let importer_dir = current_path.parent().unwrap_or_else(|| Path::new("."));
-    // `~/` root = nearest Main.thx package, else this file's directory (D31/D68).
+    // `~/` root = nearest main.thx package, else this file's directory (D31/D68).
     let project_root = loader::package_root_for(current_path);
     let path = loader::resolve_import_path(spec, importer_dir, &project_root)?;
     // Soft-canonicalize when possible.
@@ -1661,12 +1661,12 @@ mod tests {
         let dir = unique_dir("tilde_nav");
         fs::create_dir_all(dir.join("app")).unwrap();
         fs::create_dir_all(dir.join("framework")).unwrap();
-        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
-        let wire = dir.join("framework").join("Wire.thx");
+        fs::write(dir.join("main.thx"), "fn main() -> Int64 { 0 }\n").unwrap();
+        let wire = dir.join("framework").join("wire.thx");
         fs::write(&wire, "export fn ping() -> Int64 { 1 }\n").unwrap();
-        let pages = dir.join("app").join("Pages.thx");
-        fs::write(&pages, "import wire from \"~/framework/Wire\"\n").unwrap();
-        let got = resolve_import_file("~/framework/Wire", &pages).expect("resolve");
+        let pages = dir.join("app").join("pages.thx");
+        fs::write(&pages, "import wire from \"~/framework/wire\"\n").unwrap();
+        let got = resolve_import_file("~/framework/wire", &pages).expect("resolve");
         assert_eq!(
             fs::canonicalize(&got).unwrap(),
             fs::canonicalize(&wire).unwrap()
@@ -1693,14 +1693,14 @@ mod tests {
     #[test]
     fn selective_import_remote() {
         let dir = unique_dir("sel");
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         fs::write(
             &helper,
             "## returns forty-two\nexport fn answer() -> Int64 { 42 }\n",
         )
         .unwrap();
-        let main = dir.join("Main.thx");
-        let src = "import { answer } from \"./Helper\"\nfn main() -> Int64 { answer() }\n";
+        let main = dir.join("main.thx");
+        let src = "import { answer } from \"./helper\"\nfn main() -> Int64 { answer() }\n";
         fs::write(&main, src).unwrap();
 
         let use_at = src.rfind("answer").unwrap();
@@ -1708,7 +1708,7 @@ mod tests {
         let r = remote_at(src, &main, p.line, p.character, &HashMap::new()).expect("remote");
         assert!(r.signature.contains("answer"), "{}", r.signature);
         assert!(r.doc.contains("forty-two"), "{}", r.doc);
-        assert!(r.path.ends_with("Helper.thx"), "{:?}", r.path);
+        assert!(r.path.ends_with("helper.thx"), "{:?}", r.path);
         assert!(r.def_span.is_some());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1716,10 +1716,10 @@ mod tests {
     #[test]
     fn aliased_import_shows_original() {
         let dir = unique_dir("alias");
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         fs::write(&helper, "export fn answer() -> Int64 { 42 }\n").unwrap();
-        let main = dir.join("Main.thx");
-        let src = "import { answer as ans } from \"./Helper\"\nfn main() -> Int64 { ans() }\n";
+        let main = dir.join("main.thx");
+        let src = "import { answer as ans } from \"./helper\"\nfn main() -> Int64 { ans() }\n";
         fs::write(&main, src).unwrap();
         let use_at = src.rfind("ans").unwrap();
         let p = byte_to_position(src, use_at);
@@ -1731,7 +1731,7 @@ mod tests {
     #[test]
     fn local_name_not_remote() {
         let dir = unique_dir("local");
-        let main = dir.join("Main.thx");
+        let main = dir.join("main.thx");
         let src = "fn f() -> Int64 { 0 }\nfn main() -> Int64 { f() }\n";
         fs::write(&main, src).unwrap();
         let use_at = src.rfind("f").unwrap();
@@ -1743,14 +1743,14 @@ mod tests {
     #[test]
     fn namespace_member_and_name() {
         let dir = unique_dir("ns");
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         fs::write(
             &helper,
             "## tiny helper\nexport fn answer() -> Int64 { 42 }\n",
         )
         .unwrap();
-        let main = dir.join("Main.thx");
-        let src = "import h from \"./Helper\"\nfn main() -> Int64 { h.answer() }\n";
+        let main = dir.join("main.thx");
+        let src = "import h from \"./helper\"\nfn main() -> Int64 { h.answer() }\n";
         fs::write(&main, src).unwrap();
 
         // member `answer` in h.answer()
@@ -1772,10 +1772,10 @@ mod tests {
     fn hover_arg_shows_formal_param_type() {
         // `server.listen(16)` — hover on `16` → backlog: Int64
         let dir = unique_dir("arg_hover");
-        let net = dir.join("Net.thx");
+        let net = dir.join("net.thx");
         fs::write(
             &net,
-            r#"import { Pass, Fail, Trial } from "std/Fallible"
+            r#"import { Pass, Fail, Trial } from "std/fallible"
 export type Socket(fd: Int64) {
   export fn listen(backlog: Int64) -> Trial<Void, String> { Pass(Void) }
 }
@@ -1783,9 +1783,9 @@ export fn createSocket() -> Trial<Socket, String> { Pass(Socket(fd: 0)) }
 "#,
         )
         .unwrap();
-        let main = dir.join("Main.thx");
-        let src = r#"import net from "./Net"
-import { Pass, Fail, Trial } from "std/Fallible"
+        let main = dir.join("main.thx");
+        let src = r#"import net from "./net"
+import { Pass, Fail, Trial } from "std/fallible"
 fn main() -> Trial<Int64, String> {
   let server = net.createSocket()?
   server.listen(16)?
@@ -1811,7 +1811,7 @@ fn main() -> Trial<Int64, String> {
 fn listen(backlog: Int64) -> Int64 { backlog }
 fn main() -> Int64 { listen(16) }
 ";
-        let idx = build_index(src, "Main.thx");
+        let idx = build_index(src, "main.thx");
         let sixteen = src.find("16").unwrap();
         let p = byte_to_position(src, sixteen);
         let (md, _) = hover_call_argument(&idx, p.line, p.character, &HashMap::new())
@@ -1823,10 +1823,10 @@ fn main() -> Int64 { listen(16) }
     fn typed_member_after_namespace_try() {
         // `let s = net.createSocket()?; s.reuseAddr()` — method is on Socket in Net.
         let dir = unique_dir("try_ns");
-        let net = dir.join("Net.thx");
+        let net = dir.join("net.thx");
         fs::write(
             &net,
-            r#"import { Pass, Fail, Trial } from "std/Fallible"
+            r#"import { Pass, Fail, Trial } from "std/fallible"
 export type Socket(fd: Int64) {
   ## enable SO_REUSEADDR
   export fn reuseAddr() -> Trial<Void, String> { Pass(Void) }
@@ -1835,9 +1835,9 @@ export fn createSocket() -> Trial<Socket, String> { Pass(Socket(fd: 0)) }
 "#,
         )
         .unwrap();
-        let main = dir.join("Main.thx");
-        let src = r#"import net from "./Net"
-import { Pass, Fail, Trial } from "std/Fallible"
+        let main = dir.join("main.thx");
+        let src = r#"import net from "./net"
+import { Pass, Fail, Trial } from "std/fallible"
 fn main() -> Trial<Int64, String> {
   let server = net.createSocket()?
   server.reuseAddr()?
@@ -1856,7 +1856,7 @@ fn main() -> Trial<Int64, String> {
             "doc={}",
             r.doc
         );
-        assert!(r.path.ends_with("Net.thx"), "{:?}", r.path);
+        assert!(r.path.ends_with("net.thx"), "{:?}", r.path);
         assert!(r.def_span.is_some());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1864,10 +1864,10 @@ fn main() -> Trial<Int64, String> {
     #[test]
     fn open_buffer_wins_over_disk() {
         let dir = unique_dir("buf");
-        let helper = dir.join("Helper.thx");
+        let helper = dir.join("helper.thx");
         fs::write(&helper, "export fn helper(x: Int64) -> Int64 { x }\n").unwrap();
-        let main = dir.join("Main.thx");
-        let src = "import { helper } from \"./Helper\"\nfn main() -> Int64 { helper(1) }\n";
+        let main = dir.join("main.thx");
+        let src = "import { helper } from \"./helper\"\nfn main() -> Int64 { helper(1) }\n";
         fs::write(&main, src).unwrap();
 
         let edited = "export fn helper(x: Int64, y: Int64) -> Int64 { x }\n";
@@ -1889,7 +1889,7 @@ fn main() -> Trial<Int64, String> {
     #[test]
     fn missing_module_degrades() {
         let dir = unique_dir("miss");
-        let main = dir.join("Main.thx");
+        let main = dir.join("main.thx");
         let src = "import { nope } from \"./Missing\"\nfn main() -> Int64 { 0 }\n";
         fs::write(&main, src).unwrap();
         let use_at = src.find("nope").unwrap();

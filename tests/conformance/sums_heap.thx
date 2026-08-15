@@ -1,5 +1,5 @@
 ## Heap payloads in user unions: String/Bytes fields (D118).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Msg(text: String)
 type Empty
 type Slot = Msg | Empty?

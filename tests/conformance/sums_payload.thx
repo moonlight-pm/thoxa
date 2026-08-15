@@ -1,5 +1,5 @@
 ## Union with one-field product members (D118).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Empty
 type Hold(n: Int64)
 type Slot = Empty | Hold

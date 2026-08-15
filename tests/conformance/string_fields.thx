@@ -1,5 +1,5 @@
 ## Constructor-param String fields + methods (RC-in-struct).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Person(name: String, age: Int64) {
     export fn label() -> String {
         "{name} ({age})"

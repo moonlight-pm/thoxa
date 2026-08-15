@@ -116,7 +116,7 @@ chunk
 
 | Mode | Backend |
 |------|---------|
-| `thoxa path.thx` with `main` / `Main.thx` | system `cc` + executable |
+| `thoxa path.thx` with `main` / `main.thx` | system `cc` + executable |
 | Session **script** one-shot (no `main`) | system `cc` + executable (D94) |
 | `libthoxa_rt.a` | system `cc` / `ar` as today |
 | Conformance gate | system `cc` (definition of done for language) |

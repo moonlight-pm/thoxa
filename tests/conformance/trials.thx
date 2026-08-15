@@ -1,7 +1,7 @@
 ## Trial + match + ? (R2). Error payload is Int64 — String arrives with R4.
 
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn half(x: Int64) -> Trial<Int64, Int64> {
     if x % 2 == 0 { Pass(x / 2) } else { Fail(x) }

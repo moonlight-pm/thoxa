@@ -6,7 +6,7 @@ implements with conformance**, not the full oracle SPEC.
 ## Programs
 
 ```thx
-import logging, { info } from "std/Logging"
+import logging, { info } from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()
@@ -17,8 +17,8 @@ fn main() -> Int64 {
 ```
 
 There is **no** ambient `println` / `print` (**D125**). Use
-[`std/Logging`](std.md): preferred face is **combined**
-`import logging, { info, … } from "std/Logging"` (**D127**) — namespace for
+[`std/logging`](std.md): preferred face is **combined**
+`import logging, { info, … } from "std/logging"` (**D127**) — namespace for
 configure, selective names for short emits. Default sink is **stderr** with full
 timestamps; for golden/stdout data lines use `toStdout()` +
 `setFormat(formatPlain)` as above.
@@ -26,7 +26,7 @@ timestamps; for golden/stdout data lines use `toStdout()` +
 Optional CLI arguments:
 
 ```thx
-import logging, { info } from "std/Logging"
+import logging, { info } from "std/logging"
 
 fn main(arguments: Array<String>) -> Int64 {
     logging.toStdout()
@@ -39,7 +39,7 @@ fn main(arguments: Array<String>) -> Int64 {
 }
 ```
 
-Directory packages may use `Main.thx` as the entry file.
+Directory packages may use `main.thx` as the entry file.
 
 ### Program vs session script
 
@@ -65,13 +65,13 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Multi-clause fns | Same name, different formal types → one function (type-driven match sugar, **D131**) |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
-| Errors | `May<T>` / `Trial<Ok,Err>` from `std/Fallible` with `?` / `match` (ok/err may nest) |
+| Errors | `May<T>` / `Trial<Ok,Err>` from `std/fallible` with `?` / `match` (ok/err may nest) |
 | Equality | String `==` / `!=`; usual scalar compares. Comparison `<` needs a space after it (`a < b`, not `a<b`) |
 
-**Fallibility** — ordinary generic unions in `std/Fallible`; **import required**:
+**Fallibility** — ordinary generic unions in `std/fallible`; **import required**:
 
 ```thx
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 
 fn half(x: Int64) -> Trial<Int64, Int64> {
     if x % 2 == 0 { Pass(x / 2) } else { Fail(x) }
@@ -211,7 +211,7 @@ formals, returns, and annotations in general. Singleton alias:
 through a `mut` place copies if anyone else still holds the object.
 
 ```thx
-import { Has, Not, May } from "std/Fallible"
+import { Has, Not, May } from "std/fallible"
 
 mut xs = [1, 2, 3]
 xs.append(4)          ## Void — not xs = xs.append(4)
@@ -267,27 +267,32 @@ info("{c.n}")            ## 15
 ## Modules
 
 ```thx
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging, { info, warn } from "std/Logging"   ## namespace + selective (D127)
-import { readFile } from "std/Io"
-import net, { Socket } from "std/Net"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info, warn } from "std/logging"   ## namespace + selective (D127)
+import { readFile } from "std/io"
+import net, { Socket } from "std/net"
 export fn helper() -> Int64 { 1 }
 ```
 
 | Form | Meaning |
 |------|---------|
 | `import { a, b as c } from "…"` | Selective — bind exported names (optional `as`) |
-| `import ns from "…"` | Namespace — camelCase instance; members via `ns.x` |
+| `import ns from "…"` | Namespace — camelCase binding; members via `ns.x`. Not a value |
 | `import ns, { a, b } from "…"` | Combined — both in one clause (**D127**) |
+
+A library file is a **module** (a scope), not a type (**D138**). Non-entry
+stems are kebab-case (`http.thx`, `http-server.thx`); types inside stay
+PascalCase. `main.thx` remains the directory entry. Specifiers match the
+file: `"std/http"`, `"./math-utils"`.
 
 | Origin | Meaning |
 |--------|---------|
 | `./…` | Relative to current file |
-| `~/…` | Relative to the **package root** (nearest ancestor `Main.thx`; otherwise the entry file’s directory) |
+| `~/…` | Relative to the **package root** (nearest ancestor `main.thx`; otherwise the entry file’s directory) |
 | `std/…` | Product standard library |
 
 Fallibility types are **not** ambient — import them from
-[`std/Fallible`](std.md#modules-current) (or selective subsets). Matching on a
+[`std/fallible`](std.md#modules-current) (or selective subsets). Matching on a
 `Trial`/`May` value returned from another module does not by itself require the
 import; constructing, annotating, or calling builtins that produce May (e.g.
 `Bytes.find`) does.
@@ -311,21 +316,21 @@ Marshals common scalars, `String`, `Bytes`, `Void`, `Address<T>`. String
 ## I/O and HTTP (`std/`)
 
 Product modules (**D126** / **D136** / **D137**). Return types use `Trial` / `May` from
-`std/Fallible` — import Fallible when you annotate or construct those values.
+`std/fallible` — import Fallible when you annotate or construct those values.
 Full surface: [`std.md`](std.md).
 
-- **`std/Io`:** free `readFile` / `writeFile` / `appendFile`; `File` +
+- **`std/io`:** free `readFile` / `writeFile` / `appendFile`; `File` +
   `openFile` / `readAll` / `write` / `seek` / `position` / `close`; OpenMode
   union + Int32 flag lets.
-- **`std/Net`:** TCP `Socket` (`createSocket`, bind/listen/accept/connect,
+- **`std/net`:** TCP `Socket` (`createSocket`, bind/listen/accept/connect,
   `receiveRequest`, `sendAll`).
-- **`std/Http`:** `Request` / `Response` / `Header`, `parseRequest` /
+- **`std/http`:** `Request` / `Response` / `Header`, `parseRequest` /
   `writeResponse`, `Request.query`, header/query/form/cookie helpers,
   `seeOther` / `finalize` (**D136**), `queryParam` / `formField` / `cookie` /
   `htmlResponse` (**D137**).
-- **`std/HttpServer`:** `serve(port, handle)`, `serveOne`, `readBody`
+- **`std/http-server`:** `serve(port, handle)`, `serveOne`, `readBody`
   (**D136**).
-- **`std/HttpStatic`:** static-file `Router` (`handle` → Response; GET/HEAD).
+- **`std/http-static`:** static-file `Router` (`handle` → Response; GET/HEAD).
 
 ## Not shipped (do not expect)
 

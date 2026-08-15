@@ -1,0 +1,294 @@
+## Product session Shell API (D89 / D104).
+## Session scripts inject this module's items when no user `type Shell` is present.
+## Lives under `std/shell.thx` (product std tree); the compiler also embeds a
+## compile-time fallback copy for environments without a discoverable std root.
+
+import { Has, Not, May } from "std/fallible"
+import logging from "std/logging"
+
+fn shellConfigureOut() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+}
+
+fn shellOut(msg!: String) {
+    shellConfigureOut()
+    logging.info(msg)
+}
+
+
+extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
+extern fn sysChdir(path!: String) -> Int32 from "c" "chdir"
+extern fn sysGetenv(name!: String) -> String from "c" "getenv"
+extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
+extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
+extern fn sysAccess(path!: String, mode!: Int32) -> Int32 from "c" "access"
+extern fn sysSpawnWait(path!: String, argv!: Bytes, argvLen!: Int64) -> Int64 from "c" "thoxa_spawn_wait"
+extern fn sysSpawnWaitIo(
+    path!: String,
+    argv!: Bytes,
+    argvLen!: Int64,
+    stdinPath!: String,
+    stdoutPath!: String,
+    stdoutAppend!: Int64
+) -> Int64 from "c" "thoxa_spawn_wait_io"
+extern fn sysPipeline(stages!: Bytes, stagesLen!: Int64) -> Int64 from "c" "thoxa_pipeline"
+
+let sessionCwdBufSize = 4096
+let sessionAccessXOk = 1
+
+fn sessionEmptyStrings() -> Array<String> {
+    mut e: Array<String> = []
+    e
+}
+
+fn sessionJoinSpace(parts!: Array<String>) -> String {
+    mut out = ""
+    mut i = 0
+    for p in parts {
+        if i == 0 {
+            out = p
+        } else {
+            out = "{out} {p}"
+        }
+        i = i + 1
+    }
+    out
+}
+
+fn sessionSplitOn(line!: String, sep!: Int64) -> Array<String> {
+    let b = Bytes.fromString(line)
+    mut parts: Array<String> = []
+    mut acc = Buffer()
+    mut inPart = false
+    for i in 0..b.count {
+        let c = b.get(i)
+        if c == sep {
+            if inPart {
+                parts.append(acc.freeze().toString())
+                acc = Buffer()
+                inPart = false
+            } else {
+                parts.append("")
+            }
+        } else {
+            acc.append(c)
+            inPart = true
+        }
+    }
+    if inPart {
+        parts.append(acc.freeze().toString())
+    } else {
+        if b.count > 0 {
+            if b.get(b.count - 1) == sep {
+                parts.append("")
+            }
+        }
+    }
+    parts
+}
+
+fn sessionContainsSlash(s!: String) -> Bool {
+    match Bytes.fromString(s).find(Bytes.fromString("/")) {
+        Has(_) { true }
+        Not { false }
+    }
+}
+
+fn sessionIsExecutable(path!: String) -> Bool {
+    sysAccess(path, sessionAccessXOk) == 0
+}
+
+fn sessionResolveCommand(cmd!: String) -> May<String> {
+    if sessionContainsSlash(cmd) {
+        if sessionIsExecutable(cmd) {
+            Has(cmd)
+        } else {
+            Not()
+        }
+    } else {
+        let pathEnv = sysGetenv("PATH")
+        mut found = ""
+        mut ok = false
+        if pathEnv == "" {
+            if sessionIsExecutable(cmd) {
+                found = cmd
+                ok = true
+            }
+        } else {
+            let dirs = sessionSplitOn(pathEnv, 58)
+            for dir in dirs {
+                mut candidate = ""
+                if dir == "" {
+                    candidate = cmd
+                } else {
+                    candidate = "{dir}/{cmd}"
+                }
+                if ok == false {
+                    if sessionIsExecutable(candidate) {
+                        found = candidate
+                        ok = true
+                    }
+                }
+            }
+        }
+        if ok {
+            Has(found)
+        } else {
+            Not()
+        }
+    }
+}
+
+fn sessionEncodeArgv(words!: Array<String>) -> Bytes {
+    mut buf = Buffer()
+    for w in words {
+        buf.appendBytes(Bytes.fromString(w))
+        buf.append(0)
+    }
+    buf.freeze()
+}
+
+## Join two pipeline stage blobs with a double-NUL stage separator.
+## Encoding: each stage is sessionEncodeArgv output; empty field ends a stage.
+fn sessionPipelineBytes(left!: Bytes, right!: Bytes) -> Bytes {
+    mut buf = Buffer()
+    buf.appendBytes(left)
+    buf.append(0)
+    buf.appendBytes(right)
+    buf.freeze()
+}
+
+## Resolve + spawn with optional I/O redirections. Empty paths inherit.
+## Returns exit status (or 127/1 on resolve/spawn failure).
+fn sessionRunCommand(
+    argv!: Array<String>,
+    stdinPath!: String,
+    stdoutPath!: String,
+    append!: Bool
+) -> Int64 {
+    if argv.count == 0 {
+        0
+    } else {
+        let cmd = argv[0]
+        match sessionResolveCommand(cmd) {
+            Not {
+                shellOut("thoxa: {cmd}: command not found")
+                127
+            }
+            Has(path) {
+                let blob = sessionEncodeArgv(argv)
+                mut app = 0
+                if append {
+                    app = 1
+                }
+                let st = sysSpawnWaitIo(
+                    path,
+                    blob,
+                    blob.count,
+                    stdinPath,
+                    stdoutPath,
+                    app
+                )
+                if st < 0 {
+                    shellOut("thoxa: {cmd}: {sysStrerror(sysErrno())}")
+                    1
+                } else {
+                    st
+                }
+            }
+        }
+    }
+}
+
+type Shell(status: Int64) {
+    export fn echo(args: Array<String>) -> Shell {
+        shellOut("{sessionJoinSpace(args)}")
+        Shell(status: 0)
+    }
+
+    export fn pwd() -> Shell {
+        let buf = Bytes(sessionCwdBufSize)
+        let path = sysGetcwd(buf, sessionCwdBufSize)
+        if path == "" {
+            shellOut("pwd: {sysStrerror(sysErrno())}")
+            Shell(status: 1)
+        } else {
+            shellOut("{path}")
+            Shell(status: 0)
+        }
+    }
+
+    export fn cd(args: Array<String>) -> Shell {
+        if args.count > 1 {
+            shellOut("cd: too many arguments")
+            Shell(status: 1)
+        } else {
+            mut path = ""
+            mut bad = false
+            if args.count == 0 {
+                path = sysGetenv("HOME")
+                if path == "" {
+                    shellOut("cd: HOME not set")
+                    bad = true
+                }
+            } else {
+                path = args[0]
+            }
+            if bad {
+                Shell(status: 1)
+            } else {
+                let rc = sysChdir(path)
+                if rc != 0 {
+                    shellOut("cd: {path}: {sysStrerror(sysErrno())}")
+                    Shell(status: 1)
+                } else {
+                    Shell(status: 0)
+                }
+            }
+        }
+    }
+
+    export fn run(argv: Array<String>) -> Shell {
+        Shell(status: sessionRunCommand(argv, "", "", false))
+    }
+
+    ## External command with optional stdin/stdout file redirections.
+    ## Empty path strings mean inherit. `append` selects `>>` vs `>`.
+    ## Command sugar `cmd > f` / `>>` / `<` desugars here (PATH `echo`, not builtin).
+    export fn runIo(
+        argv: Array<String>,
+        stdinPath: String,
+        stdoutPath: String,
+        append: Bool
+    ) -> Shell {
+        Shell(status: sessionRunCommand(argv, stdinPath, stdoutPath, append))
+    }
+
+    ## OS pipeline from a stage blob (double-NUL between stages; see sessionEncodeArgv
+    ## + sessionPipelineBytes). Command sugar `a | b` desugars here. Status is the
+    ## last stage (shell convention). PATH search is via execvp in the runtime.
+    export fn pipeline(stagesBlob: Bytes) -> Shell {
+        if stagesBlob.count == 0 {
+            Shell(status: 0)
+        } else {
+            let st = sysPipeline(stagesBlob, stagesBlob.count)
+            if st < 0 {
+                shellOut("thoxa: pipeline: {sysStrerror(sysErrno())}")
+                Shell(status: 1)
+            } else {
+                Shell(status: st)
+            }
+        }
+    }
+
+    export fn showStatus() -> Shell {
+        shellOut("{status}")
+        Shell(status: status)
+    }
+
+    export fn help() -> Shell {
+        shellOut("thoxa session — Shell: echo, pwd, cd, status, help, run, pipeline, redirs via PATH")
+        Shell(status: 0)
+    }
+}

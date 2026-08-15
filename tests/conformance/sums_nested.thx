@@ -1,5 +1,5 @@
 ## Nested union aliases flatten (D118).
-import logging from "std/Logging"
+import logging from "std/logging"
 type A
 type B
 type Inner = A | B

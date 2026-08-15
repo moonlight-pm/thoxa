@@ -10,7 +10,7 @@ The product binary is **`thoxa`** (`cargo run -p thoxa -- …`, or via
 | `thoxa` (no args) | Session **REPL** (interactive; loads rc on TTY) |
 | `thoxa repl` | Same as bare REPL |
 | `thoxa path.thx` | Program if `fn main` exists; else **session script** |
-| `thoxa dir/` | Runs `dir/Main.thx` if present |
+| `thoxa dir/` | Runs `dir/main.thx` if present |
 | `thoxa run path [args…]` | Compile and run; trailing args go to `fn main(arguments: Array<String>)` (D121). Reuses `target/thoxa/bin/*` when inputs are unchanged. |
 | `thoxa build path -o out` | Compile to a binary (same reuse; prints `up to date` when skipped) |
 | `thoxa check path` | Typecheck only (no C emit); multi-diagnostic when possible; **pretty** codes/caret/help |
@@ -32,7 +32,7 @@ Default output is human-oriented (D124):
 
 ```text
 error[THX001]: undefined name `x`
- --> Main.thx:1:22
+ --> main.thx:1:22
    |
  1 | fn main() -> Int64 { x }
    |                      ^

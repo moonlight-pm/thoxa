@@ -1,5 +1,5 @@
 ## insertAt / removeAt — Bytes stay functional (D55). Array is write-back (D133).
-import logging from "std/Logging"
+import logging from "std/logging"
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)

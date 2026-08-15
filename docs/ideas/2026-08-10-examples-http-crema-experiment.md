@@ -54,10 +54,10 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  Main.thx                 # std/HttpServer.serve(routes.port, routes.handle)
+  main.thx                 # std/HttpServer.serve(routes.port, routes.handle)
   app/
-    Routes.thx             # type Routes { GET/POST … }, handle, port
-    Pages.thx Layout.thx Api.thx Models.thx Customer.thx
+    routes.thx             # type Routes { GET/POST … }, handle, port
+    pages.thx layout.thx api.thx models.thx customer.thx
   web/
   README.md
 ```

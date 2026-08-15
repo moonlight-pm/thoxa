@@ -1,0 +1,821 @@
+## std/Str — small string helpers (byte-oriented; UTF-8 safe for ASCII ops).
+
+import { Has, Not, May } from "std/fallible"
+
+export fn startsWith(s!: String, prefix!: String) -> Bool {
+    let a = Bytes.fromString(s)
+    let b = Bytes.fromString(prefix)
+    if b.count > a.count {
+        false
+    } else {
+        mut ok = true
+        mut i = 0
+        loop {
+            if i >= b.count {
+                break
+            }
+            if a.get(i) != b.get(i) {
+                ok = false
+                break
+            }
+            i = i + 1
+        }
+        ok
+    }
+}
+
+export fn endsWith(s!: String, suffix!: String) -> Bool {
+    let a = Bytes.fromString(s)
+    let b = Bytes.fromString(suffix)
+    if b.count > a.count {
+        false
+    } else {
+        let base = a.count - b.count
+        mut ok = true
+        mut i = 0
+        loop {
+            if i >= b.count {
+                break
+            }
+            if a.get(base + i) != b.get(i) {
+                ok = false
+                break
+            }
+            i = i + 1
+        }
+        ok
+    }
+}
+
+export fn isEmpty(s!: String) -> Bool {
+    Bytes.fromString(s).count == 0
+}
+
+## Byte length of `s`.
+export fn length(s!: String) -> Int64 {
+    Bytes.fromString(s).count
+}
+
+## Substring from `start` (inclusive) to `end` (exclusive), clamped to bounds.
+export fn substring(s!: String, start!: Int64, end!: Int64) -> String {
+    let b = Bytes.fromString(s)
+    mut a = start
+    mut z = end
+    if a < 0 {
+        a = 0
+    }
+    if z < 0 {
+        z = 0
+    }
+    if a > b.count {
+        a = b.count
+    }
+    if z > b.count {
+        z = b.count
+    }
+    if a >= z {
+        ""
+    } else {
+        b.slice(a, z).toString()
+    }
+}
+
+## Concatenate `s` with itself `n` times (`n <= 0` → `""`).
+export fn repeat(s!: String, n!: Int64) -> String {
+    if n <= 0 {
+        ""
+    } else {
+        mut out = ""
+        mut i = 0
+        loop {
+            if i >= n {
+                break
+            }
+            out = "{out}{s}"
+            i = i + 1
+        }
+        out
+    }
+}
+
+## True if `needle` appears anywhere in `s` (byte-oriented).
+export fn contains(s!: String, needle!: String) -> Bool {
+    let a = Bytes.fromString(s)
+    let b = Bytes.fromString(needle)
+    if b.count == 0 {
+        true
+    } else {
+        if b.count > a.count {
+            false
+        } else {
+            mut found = false
+            mut i = 0
+            let last = a.count - b.count
+            loop {
+                if i > last {
+                    break
+                }
+                mut j = 0
+                mut ok = true
+                loop {
+                    if j >= b.count {
+                        break
+                    }
+                    if a.get(i + j) != b.get(j) {
+                        ok = false
+                        break
+                    }
+                    j = j + 1
+                }
+                if ok {
+                    found = true
+                    break
+                }
+                i = i + 1
+            }
+            found
+        }
+    }
+}
+
+## Count non-overlapping occurrences of `needle` (`""` → 0).
+export fn count(s!: String, needle!: String) -> Int64 {
+    let nlen = Bytes.fromString(needle).count
+    if nlen == 0 {
+        0
+    } else {
+        mut total = 0
+        mut rest = s
+        loop {
+            let i = indexOf(rest, needle)
+            if i < 0 {
+                break
+            }
+            total = total + 1
+            let r = Bytes.fromString(rest)
+            let next = i + nlen
+            if next >= r.count {
+                break
+            }
+            rest = r.slice(next, r.count).toString()
+        }
+        total
+    }
+}
+
+## Pad on the left with `pad` (defaults to space) until at least `width` bytes.
+export fn padLeft(s!: String, width!: Int64, pad!: String = " ") -> String {
+    let cur = length(s)
+    if cur >= width {
+        s
+    } else {
+        let need = width - cur
+        let unit = if pad == "" {
+            " "
+        } else {
+            pad
+        }
+        let u = length(unit)
+        mut out = ""
+        mut left = need
+        loop {
+            if left <= 0 {
+                break
+            }
+            if left >= u {
+                out = "{out}{unit}"
+                left = left - u
+            } else {
+                out = "{out}{Bytes.fromString(unit).slice(0, left).toString()}"
+                left = 0
+            }
+        }
+        "{out}{s}"
+    }
+}
+
+## Pad on the right with `pad` until at least `width` bytes.
+export fn padRight(s!: String, width!: Int64, pad!: String = " ") -> String {
+    let cur = length(s)
+    if cur >= width {
+        s
+    } else {
+        let need = width - cur
+        let unit = if pad == "" {
+            " "
+        } else {
+            pad
+        }
+        let u = length(unit)
+        mut out = s
+        mut left = need
+        loop {
+            if left <= 0 {
+                break
+            }
+            if left >= u {
+                out = "{out}{unit}"
+                left = left - u
+            } else {
+                out = "{out}{Bytes.fromString(unit).slice(0, left).toString()}"
+                left = 0
+            }
+        }
+        out
+    }
+}
+
+## First index of `needle` in `s`, or `-1` if missing (byte-oriented).
+export fn indexOf(s!: String, needle!: String) -> Int64 {
+    let a = Bytes.fromString(s)
+    let b = Bytes.fromString(needle)
+    if b.count == 0 {
+        0
+    } else {
+        if b.count > a.count {
+            0 - 1
+        } else {
+            mut found = 0 - 1
+            mut i = 0
+            let last = a.count - b.count
+            loop {
+                if i > last {
+                    break
+                }
+                mut j = 0
+                mut ok = true
+                loop {
+                    if j >= b.count {
+                        break
+                    }
+                    if a.get(i + j) != b.get(j) {
+                        ok = false
+                        break
+                    }
+                    j = j + 1
+                }
+                if ok {
+                    found = i
+                    break
+                }
+                i = i + 1
+            }
+            found
+        }
+    }
+}
+
+## Last index of `needle` in `s`, or `-1` if missing.
+export fn lastIndexOf(s!: String, needle!: String) -> Int64 {
+    let a = Bytes.fromString(s)
+    let b = Bytes.fromString(needle)
+    if b.count == 0 {
+        a.count
+    } else {
+        if b.count > a.count {
+            0 - 1
+        } else {
+            mut found = 0 - 1
+            mut i = a.count - b.count
+            loop {
+                if i < 0 {
+                    break
+                }
+                mut j = 0
+                mut ok = true
+                loop {
+                    if j >= b.count {
+                        break
+                    }
+                    if a.get(i + j) != b.get(j) {
+                        ok = false
+                        break
+                    }
+                    j = j + 1
+                }
+                if ok {
+                    found = i
+                    break
+                }
+                i = i - 1
+            }
+            found
+        }
+    }
+}
+
+## Replace the first occurrence of `old` with `new` (no-op if missing / empty `old`).
+export fn replaceFirst(s!: String, old!: String, new!: String) -> String {
+    if old == "" {
+        s
+    } else {
+        let i = indexOf(s, old)
+        if i < 0 {
+            s
+        } else {
+            let b = Bytes.fromString(s)
+            let olen = Bytes.fromString(old).count
+            let left = if i == 0 {
+                ""
+            } else {
+                b.slice(0, i).toString()
+            }
+            let rightStart = i + olen
+            let right = if rightStart >= b.count {
+                ""
+            } else {
+                b.slice(rightStart, b.count).toString()
+            }
+            "{left}{new}{right}"
+        }
+    }
+}
+
+## Replace all non-overlapping occurrences of `old` with `new`.
+export fn replaceAll(s!: String, old!: String, new!: String) -> String {
+    if old == "" {
+        s
+    } else {
+        mut out = ""
+        mut rest = s
+        let olen = Bytes.fromString(old).count
+        loop {
+            let i = indexOf(rest, old)
+            if i < 0 {
+                out = "{out}{rest}"
+                break
+            }
+            let b = Bytes.fromString(rest)
+            let left = if i == 0 {
+                ""
+            } else {
+                b.slice(0, i).toString()
+            }
+            out = "{out}{left}{new}"
+            let next = i + olen
+            if next >= b.count {
+                break
+            }
+            rest = b.slice(next, b.count).toString()
+        }
+        out
+    }
+}
+
+## ASCII case-insensitive equality.
+export fn equalsIgnoreCaseAscii(a!: String, b!: String) -> Bool {
+    toLowerAscii(a) == toLowerAscii(b)
+}
+
+## Split on `sep`. Empty `sep` yields a one-element array `[s]`.
+export fn split(s!: String, sep!: String) -> Array<String> {
+    if sep == "" {
+        [s]
+    } else {
+        mut parts: Array<String> = []
+        mut rest = s
+        let slen = Bytes.fromString(sep).count
+        loop {
+            let i = indexOf(rest, sep)
+            if i < 0 {
+                parts.append(rest)
+                break
+            }
+            let b = Bytes.fromString(rest)
+            let piece = if i == 0 {
+                ""
+            } else {
+                b.slice(0, i).toString()
+            }
+            parts.append(piece)
+            let next = i + slen
+            if next >= b.count {
+                parts.append("")
+                break
+            }
+            rest = b.slice(next, b.count).toString()
+        }
+        parts
+    }
+}
+
+## First `sep` only. Empty `sep` or no match → `Not`.
+export type Split(before: String, after: String)
+
+export fn splitOnce(s!: String, sep!: String) -> May<Split> {
+    if sep == "" {
+        Not()
+    } else {
+        let i = indexOf(s, sep)
+        if i < 0 {
+            Not()
+        } else {
+            let b = Bytes.fromString(s)
+            let slen = Bytes.fromString(sep).count
+            let before = if i == 0 {
+                ""
+            } else {
+                b.slice(0, i).toString()
+            }
+            let afterStart = i + slen
+            let after = if afterStart >= b.count {
+                ""
+            } else {
+                b.slice(afterStart, b.count).toString()
+            }
+            Has(Split(before: before, after: after))
+        }
+    }
+}
+
+## Unsigned decimal digits only. Empty or any non-digit → `Not`.
+export fn parseUInt(s!: String) -> May<Int64> {
+    let n = length(s)
+    if n == 0 {
+        Not()
+    } else {
+        mut val = 0
+        mut i = 0
+        mut ok = true
+        loop {
+            if i >= n {
+                break
+            }
+            let c = byteAt(s, i)
+            if c < 48 {
+                ok = false
+                break
+            }
+            if c > 57 {
+                ok = false
+                break
+            }
+            val = val * 10 + (c - 48)
+            i = i + 1
+        }
+        if ok {
+            Has(val)
+        } else {
+            Not()
+        }
+    }
+}
+
+export fn dropPrefix(s!: String, prefix!: String) -> String {
+    let a = Bytes.fromString(s)
+    let n = Bytes.fromString(prefix).count
+    if n >= a.count {
+        ""
+    } else {
+        a.slice(n, a.count).toString()
+    }
+}
+
+export fn dropSuffix(s!: String, suffix!: String) -> String {
+    let a = Bytes.fromString(s)
+    let n = Bytes.fromString(suffix).count
+    if n >= a.count {
+        ""
+    } else {
+        if endsWith(s, suffix) {
+            a.slice(0, a.count - n).toString()
+        } else {
+            s
+        }
+    }
+}
+
+export fn trimNewline(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    if b.count == 0 {
+        s
+    } else {
+        mut end = b.count
+        loop {
+            if end == 0 {
+                break
+            }
+            let c = b.get(end - 1)
+            if c == 10 {
+                end = end - 1
+            } else {
+                if c == 13 {
+                    end = end - 1
+                } else {
+                    break
+                }
+            }
+        }
+        if end == b.count {
+            s
+        } else {
+            if end == 0 {
+                ""
+            } else {
+                b.slice(0, end).toString()
+            }
+        }
+    }
+}
+
+fn isAsciiSpace(c!: Int64) -> Bool {
+    if c == 32 {
+        true
+    } else {
+        if c == 9 {
+            true
+        } else {
+            if c == 10 {
+                true
+            } else {
+                if c == 13 {
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+## ASCII A–Z → a–z; other bytes unchanged.
+export fn toLowerAscii(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    mut out = Bytes(b.count)
+    mut i = 0
+    loop {
+        if i >= b.count {
+            break
+        }
+        let c = b.get(i)
+        if c >= 65 {
+            if c <= 90 {
+                out.set(i, c + 32)
+            } else {
+                out.set(i, c)
+            }
+        } else {
+            out.set(i, c)
+        }
+        i = i + 1
+    }
+    out.toString()
+}
+
+## ASCII a–z → A–Z; other bytes unchanged.
+export fn toUpperAscii(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    mut out = Bytes(b.count)
+    mut i = 0
+    loop {
+        if i >= b.count {
+            break
+        }
+        let c = b.get(i)
+        if c >= 97 {
+            if c <= 122 {
+                out.set(i, c - 32)
+            } else {
+                out.set(i, c)
+            }
+        } else {
+            out.set(i, c)
+        }
+        i = i + 1
+    }
+    out.toString()
+}
+
+## Trim ASCII space / tab / CR / LF from both ends.
+export fn trim(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    if b.count == 0 {
+        ""
+    } else {
+        mut start = 0
+        loop {
+            if start >= b.count {
+                break
+            }
+            if isAsciiSpace(b.get(start)) {
+                start = start + 1
+            } else {
+                break
+            }
+        }
+        mut end = b.count
+        loop {
+            if end <= start {
+                break
+            }
+            if isAsciiSpace(b.get(end - 1)) {
+                end = end - 1
+            } else {
+                break
+            }
+        }
+        if start >= end {
+            ""
+        } else {
+            b.slice(start, end).toString()
+        }
+    }
+}
+
+## Trim ASCII whitespace from the start only.
+export fn trimStart(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    mut start = 0
+    loop {
+        if start >= b.count {
+            break
+        }
+        if isAsciiSpace(b.get(start)) {
+            start = start + 1
+        } else {
+            break
+        }
+    }
+    if start >= b.count {
+        ""
+    } else {
+        if start == 0 {
+            s
+        } else {
+            b.slice(start, b.count).toString()
+        }
+    }
+}
+
+## Trim ASCII whitespace from the end only.
+export fn trimEnd(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    mut end = b.count
+    loop {
+        if end == 0 {
+            break
+        }
+        if isAsciiSpace(b.get(end - 1)) {
+            end = end - 1
+        } else {
+            break
+        }
+    }
+    if end == 0 {
+        ""
+    } else {
+        if end == b.count {
+            s
+        } else {
+            b.slice(0, end).toString()
+        }
+    }
+}
+
+## Byte at index `i`, or `-1` if out of range.
+export fn byteAt(s!: String, i!: Int64) -> Int64 {
+    let b = Bytes.fromString(s)
+    if i < 0 {
+        0 - 1
+    } else {
+        if i >= b.count {
+            0 - 1
+        } else {
+            b.get(i)
+        }
+    }
+}
+
+## Split on `\n`. Each piece has a trailing `\r` stripped (CRLF-friendly).
+export fn lines(s!: String) -> Array<String> {
+    let raw = split(s, "\n")
+    mut out: Array<String> = []
+    mut i = 0
+    loop {
+        if i >= raw.count {
+            break
+        }
+        out.append(trimEndCr(raw[i]))
+        i = i + 1
+    }
+    out
+}
+
+fn trimEndCr(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    if b.count == 0 {
+        s
+    } else {
+        if b.get(b.count - 1) == 13 {
+            if b.count == 1 {
+                ""
+            } else {
+                b.slice(0, b.count - 1).toString()
+            }
+        } else {
+            s
+        }
+    }
+}
+
+## Join `parts` with `sep` between elements (`[]` → `""`).
+export fn join(parts!: Array<String>, sep!: String) -> String {
+    mut out = ""
+    mut i = 0
+    loop {
+        if i >= parts.count {
+            break
+        }
+        if i == 0 {
+            out = parts[i]
+        } else {
+            out = "{out}{sep}{parts[i]}"
+        }
+        i = i + 1
+    }
+    out
+}
+
+## ASCII case-insensitive `startsWith`.
+export fn startsWithIgnoreCaseAscii(s!: String, prefix!: String) -> Bool {
+    startsWith(toLowerAscii(s), toLowerAscii(prefix))
+}
+
+## ASCII case-insensitive `endsWith`.
+export fn endsWithIgnoreCaseAscii(s!: String, suffix!: String) -> Bool {
+    endsWith(toLowerAscii(s), toLowerAscii(suffix))
+}
+
+## ASCII case-insensitive `contains`.
+export fn containsIgnoreCaseAscii(s!: String, needle!: String) -> Bool {
+    contains(toLowerAscii(s), toLowerAscii(needle))
+}
+
+## Drop `prefix` only when `s` starts with it (else return `s` unchanged).
+export fn removePrefix(s!: String, prefix!: String) -> String {
+    if startsWith(s, prefix) {
+        dropPrefix(s, prefix)
+    } else {
+        s
+    }
+}
+
+## Drop `suffix` only when `s` ends with it (else return `s` unchanged).
+export fn removeSuffix(s!: String, suffix!: String) -> String {
+    if endsWith(s, suffix) {
+        dropSuffix(s, suffix)
+    } else {
+        s
+    }
+}
+
+## First `max` bytes of `s` (`max <= 0` → `""`; `max >= length` → `s`).
+export fn truncate(s!: String, max!: Int64) -> String {
+    if max <= 0 {
+        ""
+    } else {
+        let b = Bytes.fromString(s)
+        if b.count <= max {
+            s
+        } else {
+            b.slice(0, max).toString()
+        }
+    }
+}
+
+## Reverse byte order (not Unicode-aware).
+export fn reverse(s!: String) -> String {
+    let b = Bytes.fromString(s)
+    if b.count == 0 {
+        ""
+    } else {
+        mut out = Bytes(b.count)
+        mut i = 0
+        loop {
+            if i >= b.count {
+                break
+            }
+            out.set(i, b.get(b.count - 1 - i))
+            i = i + 1
+        }
+        out.toString()
+    }
+}
+
+## True when every byte is ASCII (`0..127`). Empty → true.
+export fn isAscii(s!: String) -> Bool {
+    let b = Bytes.fromString(s)
+    mut ok = true
+    mut i = 0
+    loop {
+        if i >= b.count {
+            break
+        }
+        if b.get(i) > 127 {
+            ok = false
+            break
+        }
+        i = i + 1
+    }
+    ok
+}

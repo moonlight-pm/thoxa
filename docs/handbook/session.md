@@ -13,7 +13,7 @@ Product face: **bare `thoxa`** (not `extras/shell`).
 | `thoxa` / `thoxa repl` | Long-lived REPL |
 | `thoxa file.thx` without `fn main` | Session script (one-shot) |
 | `thoxa file.thx` with `fn main` | Ordinary **program** (top-level statements illegal) |
-| `thoxa dir/` | `Main.thx` program entry |
+| `thoxa dir/` | `main.thx` program entry |
 
 Session scripts use top-level statements as the body of `Shell.step`. Programs
 must keep the file top level to declarations only — put work inside `main`.
@@ -28,12 +28,12 @@ type Shell(status: Int64) { … methods … }
 ```
 
 Builtins and process helpers are ordinary methods (echo, pwd, cd, run, runIo,
-pipeline, …). Default definition lives in product **`std/Shell.thx`** and is
+pipeline, …). Default definition lives in product **`std/shell.thx`** and is
 auto-injected when a session script has no user `type Shell`.
 **`status`** is the last outcome (0 = success). Process exit of a one-shot
 script is final `status`. There is no required bash-style `$?` core.
 
-Shell uses `May` / `Has` / `Not` from **`std/Fallible`**. When the product Shell
+Shell uses `May` / `Has` / `Not` from **`std/fallible`**. When the product Shell
 is injected, Fallible is loaded into the package so those names resolve for the
 session entry (you do not need a separate Fallible import solely for Shell).
 Ordinary programs with `fn main` still **must** import Fallible themselves when

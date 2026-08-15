@@ -1,0 +1,164 @@
+## std/Ansi — terminal SGR helpers (truecolor + reset) and named colors.
+
+import { Has, Not, May } from "std/fallible"
+
+## Truecolor foreground: ESC[38;2;r;g;bm
+export fn fg(r!: Int64, g!: Int64, b!: Int64) -> String {
+    mut buf = Buffer()
+    buf.append(27)
+    buf.appendBytes(Bytes.fromString("[38;2;{r};{g};{b}m"))
+    buf.freeze().toString()
+}
+
+## Truecolor background: ESC[48;2;r;g;bm
+export fn bg(r!: Int64, g!: Int64, b!: Int64) -> String {
+    mut buf = Buffer()
+    buf.append(27)
+    buf.appendBytes(Bytes.fromString("[48;2;{r};{g};{b}m"))
+    buf.freeze().toString()
+}
+
+## Reset all attributes: ESC[0m
+export fn sgr0() -> String {
+    mut buf = Buffer()
+    buf.append(27)
+    buf.appendBytes(Bytes.fromString("[0m"))
+    buf.freeze().toString()
+}
+
+## Standard 16 ANSI colors as truecolor foreground SGR strings.
+## RGB values follow the common xterm / VGA-ish palette (not pure primaries).
+
+export let black = fg(0, 0, 0)
+export let red = fg(205, 0, 0)
+export let green = fg(0, 205, 0)
+export let yellow = fg(205, 205, 0)
+export let blue = fg(0, 0, 238)
+export let magenta = fg(205, 0, 205)
+export let cyan = fg(0, 205, 205)
+export let white = fg(229, 229, 229)
+
+export let brightBlack = fg(127, 127, 127)
+export let brightRed = fg(255, 0, 0)
+export let brightGreen = fg(0, 255, 0)
+export let brightYellow = fg(255, 255, 0)
+export let brightBlue = fg(92, 92, 255)
+export let brightMagenta = fg(255, 0, 255)
+export let brightCyan = fg(0, 255, 255)
+export let brightWhite = fg(255, 255, 255)
+
+## --- Hex color → truecolor SGR ---------------------------------------------
+## Primary form: `#RRGGBB` (or `RRGGBB` without `#`).
+## Also accepts `#RRGGBBAA` for paste-from-design tools; alpha is ignored
+## (terminals have no SGR alpha — see parseRgba, which sets a=255 when omitted).
+## On invalid input, `fgHex` / `bgHex` fall back to black.
+
+## One hex digit → 0..15, or -1 if not a hex digit.
+fn hexNibble(c!: Int64) -> Int64 {
+    if c >= 48 {
+        if c <= 57 {
+            return c - 48
+        }
+    }
+    if c >= 65 {
+        if c <= 70 {
+            return c - 55
+        }
+    }
+    if c >= 97 {
+        if c <= 102 {
+            return c - 87
+        }
+    }
+    -1
+}
+
+## Two hex digits → 0..255, or -1 if either nibble is invalid.
+fn hexByte(hi!: Int64, lo!: Int64) -> Int64 {
+    let h = hexNibble(hi)
+    let l = hexNibble(lo)
+    if h < 0 {
+        return -1
+    }
+    if l < 0 {
+        return -1
+    }
+    h * 16 + l
+}
+
+## Parsed components. `a` is 255 when the input has no alpha digits.
+export type Rgba(r: Int64, g: Int64, b: Int64, a: Int64)
+
+## Parse `#RRGGBB` or `#RRGGBBAA` (optional `#`) → `Has(Rgba)` / `Not`.
+## Six-digit RGB is first-class; missing alpha → `a: 255`.
+export fn parseRgba(hex!: String) -> May<Rgba> {
+    let bytes = Bytes.fromString(hex)
+    mut i = 0
+    if bytes.count > 0 {
+        if bytes.get(0) == 35 {
+            i = 1
+        }
+    }
+    let n = bytes.count - i
+    if n == 6 {
+        let r = hexByte(bytes.get(i), bytes.get(i + 1))
+        let g = hexByte(bytes.get(i + 2), bytes.get(i + 3))
+        let b = hexByte(bytes.get(i + 4), bytes.get(i + 5))
+        if r < 0 {
+            return Not()
+        }
+        if g < 0 {
+            return Not()
+        }
+        if b < 0 {
+            return Not()
+        }
+        Has(Rgba(r: r, g: g, b: b, a: 255))
+    } else {
+        if n == 8 {
+            let r = hexByte(bytes.get(i), bytes.get(i + 1))
+            let g = hexByte(bytes.get(i + 2), bytes.get(i + 3))
+            let b = hexByte(bytes.get(i + 4), bytes.get(i + 5))
+            let a = hexByte(bytes.get(i + 6), bytes.get(i + 7))
+            if r < 0 {
+                return Not()
+            }
+            if g < 0 {
+                return Not()
+            }
+            if b < 0 {
+                return Not()
+            }
+            if a < 0 {
+                return Not()
+            }
+            Has(Rgba(r: r, g: g, b: b, a: a))
+        } else {
+            Not()
+        }
+    }
+}
+
+## Truecolor foreground from `#RRGGBB` / `#RRGGBBAA`. Invalid → black.
+export fn fgHex(hex!: String) -> String {
+    match parseRgba(hex) {
+        Has(c) {
+            fg(c.r, c.g, c.b)
+        }
+        Not {
+            black
+        }
+    }
+}
+
+## Truecolor background from `#RRGGBB` / `#RRGGBBAA`. Invalid → black.
+export fn bgHex(hex!: String) -> String {
+    match parseRgba(hex) {
+        Has(c) {
+            bg(c.r, c.g, c.b)
+        }
+        Not {
+            bg(0, 0, 0)
+        }
+    }
+}

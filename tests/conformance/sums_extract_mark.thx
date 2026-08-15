@@ -1,5 +1,5 @@
 ## Type-arg `!` vs whole-arm `!` extract marks (D118).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Hold(n: Int64)
 type Empty
 

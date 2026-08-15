@@ -519,7 +519,7 @@ pub fn run(opts: &BuildOptions) -> Result<i32> {
 fn output_stem(opts: &BuildOptions) -> String {
     opts.output_name.clone().unwrap_or_else(|| {
         // Directory packages (`thoxa run pkg/`) → use the directory name so
-        // multiple Main.thx packages do not collide on binary name "Main".
+        // multiple main.thx packages do not collide on binary name "Main".
         // Canonicalize first so `.` / `..` yield a real basename (not `"out"`).
         if opts.source.is_dir() {
             let dir = fs::canonicalize(&opts.source).unwrap_or_else(|_| opts.source.clone());
@@ -698,7 +698,7 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("Main.thx"), body).unwrap();
+        fs::write(dir.join("main.thx"), body).unwrap();
         dir
     }
 
@@ -739,7 +739,7 @@ mod tests {
         assert!(!first.cached);
 
         std::thread::sleep(Duration::from_millis(20));
-        fs::write(dir.join("Main.thx"), "fn main() -> Int64 { 1 }\n").unwrap();
+        fs::write(dir.join("main.thx"), "fn main() -> Int64 { 1 }\n").unwrap();
 
         let second = build(&opts).expect("rebuild after edit");
         assert!(!second.cached, "edited source must invalidate the stamp");

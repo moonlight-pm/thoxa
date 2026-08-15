@@ -1,7 +1,7 @@
 ## May / Has / Not + Bytes.find -> May<Int64> (D85).
 
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn firstAb(hay!: Bytes) -> May<Int64> {
     let i = hay.find(Bytes.fromString("ab"))?

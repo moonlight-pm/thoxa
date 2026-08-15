@@ -1,5 +1,5 @@
 ## Array literals, indexing, methods, index-assignment on a mutable binding, iteration.
-import logging from "std/Logging"
+import logging from "std/logging"
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)

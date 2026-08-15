@@ -1,7 +1,7 @@
 ## Trial monomorphs: Void/String and User/String (post-R9).
 
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 type Box(n: Int64)
 

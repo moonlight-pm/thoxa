@@ -372,9 +372,9 @@ mod tests {
 
     #[test]
     fn uri_roundtrip_unix() {
-        let uri = "file:///home/me/proj/Main.thx";
+        let uri = "file:///home/me/proj/main.thx";
         let path = uri_to_path(uri);
-        assert_eq!(path, PathBuf::from("/home/me/proj/Main.thx"));
+        assert_eq!(path, PathBuf::from("/home/me/proj/main.thx"));
         assert_eq!(path_to_uri(path.to_str().unwrap()), uri);
     }
 

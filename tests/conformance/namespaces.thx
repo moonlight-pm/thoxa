@@ -1,11 +1,10 @@
 ## Namespace import (M-MOD-2): a `./` namespace bound to a freely-chosen camelCase
-## instance name (`mu`), plus one bound conventionally. A module file is a type
-## (PascalCase); the import is a singleton instance (camelCase). Qualified access
-## reaches an exported fn, a type, and a let; only exported names cross and the
-## namespace itself is never a value.
-import mu       from "./modlib/MathUtils"
-import geometry from "./modlib/Geometry"
-import logging from "std/Logging"
+## name (`mu`), plus one bound conventionally. A module file is a kebab-case
+## compilation unit (D138); the import is a namespace, not a value. Qualified
+## access reaches an exported fn, a type, and a let; only exported names cross.
+import mu       from "./modlib/math-utils"
+import geometry from "./modlib/geometry"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

@@ -62,12 +62,12 @@ No shell `if`/`for`/`fn`. Programming = Thoxa.
 printf 'echo hi\nstatus\nfalse\nstatus\nexit\n' | cargo make run extras/shell
 ```
 
-Entry is `Main.thx` (D68). Spawn uses RT `thoxa_spawn_wait`.
+Entry is `main.thx` (D68). Spawn uses RT `thoxa_spawn_wait`.
 
 ## Layout
 
 ```text
 extras/shell/
-  Main.thx     # Shell + REPL loop
+  main.thx     # Shell + REPL loop
   README.md
 ```

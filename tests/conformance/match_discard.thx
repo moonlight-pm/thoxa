@@ -2,8 +2,8 @@
 ## Discarded heap payloads are still dropped at function end (RC).
 ## Pattern `_` only; body `_` is ordinary lookup (no outer `_` here).
 
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 type Box(n: Int64)
 

@@ -1,5 +1,5 @@
 ## Union-match guards (D120): `Ctor if cond` / `Ctor(x) if cond`.
-import logging from "std/Logging"
+import logging from "std/logging"
 type Zero
 type Pos(n: Int64)
 type Neg(n: Int64)

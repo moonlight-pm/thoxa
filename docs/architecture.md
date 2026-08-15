@@ -5,8 +5,9 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-15 (**D137** Str parse + Http wrappers; **D136**
-`std/HttpServer` + `Request.query`; **D135** nested User / Node ctor fields;
+**As of:** 2026-08-15 (**D138** kebab-case modules + `main.thx` entry;
+**D137** Str parse + Http wrappers; **D136**
+`std/http-server` + `Request.query`; **D135** nested User / Node ctor fields;
 JSX `Node` is `Element | Text | Fragment` + `{...}` spreads on master;
 D133/D134 Map; D132 fn pointers; route-clause + `-->` nowait on master, not
 freeze; program `run`/`build` reuse stamped binaries)
@@ -33,9 +34,9 @@ step `.so` on the happy path.
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL. Program `run`/`build` stamp package+std+runtime+compiler and skip `cc` when fresh. |
 | Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. **Experiments:** type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`); tag literals desugar in the parser to `__jsx_el` / `__jsx_child` / `{...}` spreads |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
-| MIR | `mir.rs` | RC; generic monomorphs; `std/Fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**); route-clause bodies after desugar; builtin **`Ty::Node`** (`Element` / `Text` / `Fragment` / `Attr`; `html_el` / `html_text` / `html_frag` / `html_render`); **`Ty::Fn`** unboxed pair (**D132**) |
+| MIR | `mir.rs` | RC; generic monomorphs; `std/fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**); route-clause bodies after desugar; builtin **`Ty::Node`** (`Element` / `Text` / `Fragment` / `Attr`; `html_el` / `html_text` / `html_frag` / `html_render`); **`Ty::Fn`** unboxed pair (**D132**) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body; D132 thunks + `ThoxaFn` |
-| Session | `session.rs`, `command.rs`, `std/Shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/Fallible` + `std/Logging` (+ deps) |
+| Session | `session.rs`, `command.rs`, `std/shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/fallible` + `std/logging` (+ deps) |
 | Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast`; inject deps |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; build stamps `THOXA_GIT_HASH` / dirty |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
@@ -55,10 +56,10 @@ step `.so` on the happy path.
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
 | `apocrypha/` | Historical + Python oracle |
 
-**Fallible (`std/Fallible`):** `Has` / `Not` / `May` / `Pass` / `Fail` /
+**Fallible (`std/fallible`):** `Has` / `Not` / `May` / `Pass` / `Fail` /
 `Trial` are ordinary exported generic unions. Programs **import** them (no
 ambient inject for compiled modules). Session Shell inject still pulls
-`std/Fallible` into the package when the product Shell prelude is spliced
+`std/fallible` into the package when the product Shell prelude is spliced
 (Shell itself imports May/Has/Not). They lower as `Ty::User` monomorphs.
 Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are gone.
 
@@ -77,10 +78,10 @@ Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are gone.
 
 - **Scripts (no `main`):** splice + synthetic `main` → system `cc` executable
   (unchanged).
-- **Programs:** `fn main` or directory `Main.thx` — batch path unchanged.
-- **Shell prelude:** product `std/Shell.thx` preferred at inject time;
+- **Programs:** `fn main` or directory `main.thx` — batch path unchanged.
+- **Shell prelude:** product `std/shell.thx` preferred at inject time;
   compile-time `include_str` fallback when std is not discoverable (D104).
-  Shell imports May/Has/Not; inject also ensures `std/Fallible` is in the
+  Shell imports May/Has/Not; inject also ensures `std/fallible` is in the
   package (D123). Fallible has its own embed fallback for the same case.
 - **REPL steps:** vendored **libtcc only** (`TCC_OUTPUT_MEMORY`); feed
   `emit_session_combined` + `libthoxa_rt.a`; keep `TCCState` until superseded.
@@ -119,7 +120,7 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 - Heap today: `String`, `Bytes`, dynamic `Array`, `Map`, `Buffer` — simple RC.
 - Cooperative tasks (on master, not freeze): `thoxa_task_start` /
   `thoxa_wait_ms` / `thoxa_wait_fd` / `thoxa_sched_drain` — one OS thread,
-  stackful fibers; poll + timers. `std/Net` accept/connect/recv/send go
+  stackful fibers; poll + timers. `std/net` accept/connect/recv/send go
   through `thoxa_*` and park on EAGAIN. Generated `main` drains after
   `thoxa_fn_main`. RC stays non-atomic.
 - Extern from `"c"` (+ optional C symbol); cgen pulls headers when needed.

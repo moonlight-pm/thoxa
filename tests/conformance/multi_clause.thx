@@ -1,5 +1,5 @@
 ## Multi-clause functions = type-driven match sugar (D131).
-import logging, { info } from "std/Logging"
+import logging, { info } from "std/logging"
 
 ## Bare singleton formals + free multi-clause (string lits).
 fn page(path: "home") -> String {

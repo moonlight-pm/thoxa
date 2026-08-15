@@ -1,5 +1,5 @@
 ## while / loop / break / continue and exclusive for-range.
-import logging from "std/Logging"
+import logging from "std/logging"
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)

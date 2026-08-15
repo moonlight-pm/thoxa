@@ -2918,13 +2918,13 @@ mod tests {
     fn parse_combined_import() {
         let module = parse(
             r#"
-            import logging, { info, warn as w } from "std/Logging"
+            import logging, { info, warn as w } from "std/logging"
             fn main() -> Int64 { 0 }
         "#,
         );
         match &module.items[0] {
             Item::Import(imp) => {
-                assert_eq!(imp.path, "std/Logging");
+                assert_eq!(imp.path, "std/logging");
                 match &imp.kind {
                     ImportKind::Combined { binding, names, .. } => {
                         assert_eq!(binding, "logging");

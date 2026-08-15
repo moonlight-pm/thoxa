@@ -1,6 +1,6 @@
 ## `--> name(args)` runs the call as a task; process waits until idle.
 ## No wait points here, so each task runs to completion when started.
-import logging, { info } from "std/Logging"
+import logging, { info } from "std/logging"
 
 fn tick(label!: String) {
     info(label)

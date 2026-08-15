@@ -1,8 +1,8 @@
 ## Module-level private `mut` (M-MOD-4, design §9): a stateful counter module.
 ## `count` lives in `counter.thx`, initialized once; each `bump()` mutates that
 ## single cell, so state accumulates across calls from this file.
-import { bump, current } from "./modstate/Counter"
-import logging from "std/Logging"
+import { bump, current } from "./modstate/counter"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

@@ -1,5 +1,5 @@
 ## Value-match bare bind catch-all (D110): `n { … }` binds the scrutinee.
-import logging from "std/Logging"
+import logging from "std/logging"
 fn label(n!: Int64) -> String {
     match n {
         0 { "zero" }

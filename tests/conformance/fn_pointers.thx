@@ -1,5 +1,5 @@
 ## D132: free fn pointers, bound methods, unbound Type.method, module mut.
-import logging from "std/Logging"
+import logging from "std/logging"
 
 type Counter(n: Int64) {
     export fn add(x: Int64) -> Int64 {

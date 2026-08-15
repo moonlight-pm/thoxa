@@ -16,7 +16,7 @@ pub const CODE_UNDEFINED: &str = "THX001";
 pub const CODE_TYPE_MISMATCH: &str = "THX002";
 /// Unknown type name.
 pub const CODE_UNKNOWN_TYPE: &str = "THX003";
-/// Fallible / `std/Fallible` import required.
+/// Fallible / `std/fallible` import required.
 pub const CODE_FALLIBLE_IMPORT: &str = "THX004";
 /// Top-level statement in a program that defines `fn main`.
 pub const CODE_TOP_LEVEL_WITH_MAIN: &str = "THX005";
@@ -259,7 +259,7 @@ fn classify_code(msg: &str) -> Option<&'static str> {
     {
         return Some(CODE_UNDEFINED);
     }
-    if msg.contains("is not in scope") && msg.contains("std/Fallible") {
+    if msg.contains("is not in scope") && msg.contains("std/fallible") {
         return Some(CODE_FALLIBLE_IMPORT);
     }
     if msg.contains("unknown type") {
@@ -393,7 +393,7 @@ fn default_help(code: Option<&str>, msg: &str) -> Option<Vec<String>> {
         }
         Some(CODE_UNKNOWN_TYPE) => Some(vec!["define the type in this module or import it".into()]),
         Some(CODE_FALLIBLE_IMPORT) => Some(vec![
-            "add `import { Has, Not, May, Pass, Fail, Trial } from \"std/Fallible\"` \
+            "add `import { Has, Not, May, Pass, Fail, Trial } from \"std/fallible\"` \
              (or a selective subset)"
                 .into(),
         ]),
@@ -412,9 +412,9 @@ fn default_help(code: Option<&str>, msg: &str) -> Option<Vec<String>> {
             Some(vec!["remove the unused name from the import list".into()])
         }
         _ => {
-            if msg.contains("std/Fallible") {
+            if msg.contains("std/fallible") {
                 Some(vec![
-                    "import the Fallible names you need from \"std/Fallible\"".into(),
+                    "import the Fallible names you need from \"std/fallible\"".into(),
                 ])
             } else {
                 None
@@ -705,7 +705,7 @@ mod tests {
     #[test]
     fn classify_fallible_import() {
         let d = Diagnostic::error(
-            "`May` is not in scope — import it from \"std/Fallible\" (e.g. `import …`)",
+            "`May` is not in scope — import it from \"std/fallible\" (e.g. `import …`)",
         )
         .enrich();
         assert_eq!(d.code.as_deref(), Some(CODE_FALLIBLE_IMPORT));
@@ -730,7 +730,7 @@ mod tests {
             severity: Severity::Error,
             message: "undefined name `fooo`".into(),
             span: Some(Span::new(start, start + 4)),
-            path: Some(PathBuf::from("Main.thx")),
+            path: Some(PathBuf::from("main.thx")),
             labels: vec![],
             help: vec!["declare the name, import it, or fix the spelling".into()],
             expected: None,
@@ -738,7 +738,7 @@ mod tests {
         };
         let text = format_pretty(&d, Some(src));
         assert!(text.contains("error[THX001]"), "{text}");
-        assert!(text.contains("Main.thx:"), "{text}");
+        assert!(text.contains("main.thx:"), "{text}");
         assert!(text.contains("help:"), "{text}");
         assert!(text.contains("^^^^") || text.contains("^"), "{text}");
     }

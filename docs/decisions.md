@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-15 — kebab-case module files
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D138 | Module files are kebab-case scopes | A `.thx` file is a **module** (a compilation unit / scope), not a type. Non-entry library stems are **kebab-case**: `[a-z][a-z0-9]*(-[a-z0-9]+)*` (`http.thx`, `http-server.thx`). Types remain PascalCase; values and namespace bindings remain camelCase. Directory entry is **`main.thx`** (amends **D68**). Import specifiers match the file (`"std/http"`, `"std/http-server"`, `"./math-utils"`). Namespace import is still not a value (**D33**). No user-facing `type Module`. | **Shipped.** Drops the oracle/loader “file describes a type / import is an instance” story (never surfaced). Amends **D35**: library module ids are path-qualified and sanitized (`std/http-server` → `std_http_server`; `/` and `-` → `_`). Do not use `__` (MIR monomorphs). Amends **D68**: entry file is `main.thx`. Duplicate ids after sanitize are an error. Lone-file entries (conformance `hello.thx`) keep any stem. Gates: `modules`, `namespaces`, `stdlib`. File-based routing stays parked: [`ideas/2026-08-15-file-based-routing.md`](ideas/2026-08-15-file-based-routing.md). |
+
 ## 2026-08-15 — HTTP leftover helpers
 
 | ID | Decision | Choice | Notes |
@@ -90,7 +96,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D125 | `std/Logging` + no ambient print | Product logging is **`std/Logging`** (not `Log` — reserve **`log`** for logger *instances* later). v0 = **default logger**: five levels (Trace…Error), default **Info** + **stderr** + full format; emit void (no `?`); generic emit named **`emit`** (not `log`); **`toFile` / path `setSink` → `Trial`**; emit write failures best-effort. Multi named loggers / `initLog` **later**. Ambient **`println`/`print` removed**. **App import face:** `import logging, { info, warn, … } from "std/Logging"` (**D127** combined; two-line dual import still valid). Golden/data: `toStdout` + `formatPlain` + level fn. Import required. | **Shipped:** `std/Logging.thx` + RT `thoxa_write_line_fd`; session Shell inject loads Logging (+ deps); gates `logging_levels`, `logging_sink` + full conformance dogfood; `examples/http` uses combined import. Freeze: [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md). |
+| D125 | `std/Logging` + no ambient print | Product logging is **`std/Logging`** (not `Log` — reserve **`log`** for logger *instances* later). v0 = **default logger**: five levels (Trace…Error), default **Info** + **stderr** + full format; emit void (no `?`); generic emit named **`emit`** (not `log`); **`toFile` / path `setSink` → `Trial`**; emit write failures best-effort. Multi named loggers / `initLog` **later**. Ambient **`println`/`print` removed**. **App import face:** `import logging, { info, warn, … } from "std/logging"` (**D127** combined; two-line dual import still valid). Golden/data: `toStdout` + `formatPlain` + level fn. Import required. | **Shipped:** `std/Logging.thx` + RT `thoxa_write_line_fd`; session Shell inject loads Logging (+ deps); gates `logging_levels`, `logging_sink` + full conformance dogfood; `examples/http` uses combined import. Freeze: [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md). |
 
 ## 2026-08-09 — Structured diagnostics (foundation)
 
@@ -102,7 +108,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D123 | May/Trial not ambient | Programs **must** `import { … } from "std/Fallible"`; compiler no longer injects Fallible into every module | Refines D118 ambient cutover. Session Shell inject still loads `std/Fallible` into the package (Shell imports Has/Not/May). Types remain ordinary generic unions. Gates: `mays`, `trials*`, `bytes`, `http_*`, `stdlib`. |
+| D123 | May/Trial not ambient | Programs **must** `import { … } from "std/fallible"`; compiler no longer injects Fallible into every module | Refines D118 ambient cutover. Session Shell inject still loads `std/Fallible` into the package (Shell imports Has/Not/May). Types remain ordinary generic unions. Gates: `mays`, `trials*`, `bytes`, `http_*`, `stdlib`. |
 
 ## 2026-08-09 — Examples / argv / module-global RC
 
@@ -208,7 +214,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D88 | Session product shape | Bare `thoxa` / `thoxa repl` = session REPL; `thoxa path` runs program (`main`/`Main.thx`) or **session script** (no `main`); subcommands unchanged | Plan: `docs/specs/2026-07-24-thoxa-session-repl.md` |
+| D88 | Session product shape | Bare `thoxa` / `thoxa repl` = session REPL; `thoxa path` runs program (`main`/`main.thx`) or **session script** (no `main`); subcommands unchanged | Plan: `docs/specs/2026-07-24-thoxa-session-repl.md` |
 | D89 | Session value | `type Shell(status: Int64)` + methods (`echo`/`pwd`/`cd`/`run`/`runIo`/`pipeline`/…) | Real Thoxa; status field (not bash `$?` core). Product file: `std/Shell.thx` (**D104**). |
 | D90 | Session code placement | Decls stay module-level; top-level stmts → `Shell.step` body; synthetic `main` returns `step().status` | `Item::SessionStmt`; `session::prepare` |
 | D91 | In-function import/type | Not required; host lifts / top-level decls only | Deferred general nested modules |
@@ -314,11 +320,11 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | Cross-module | open-buffer overlay | **D78–D79** |
 | JSON | `serde` + `serde_json` on compiler crate | **D74** |
 
-## 2026-07-20 — Directory entry `Main.thx` (PR8)
+## 2026-07-20 — Directory entry `main.thx` (PR8)
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D68 | Directory entry | `thoxa run\|build\|emit-c <dir>` resolves `<dir>/Main.thx`; project root for `~/` is that directory (entry file’s parent — same as D31) | Missing `Main.thx` → clear error. File path mode unchanged. Default binary stem for a dir is the directory name (not `Main`). Conformance harness also discovers top-level package dirs with `Main.thx` + sibling `<name>.out`. Conformance: `pkgmain`. Oracle `export fn main` contract not enforced yet (entry still any `fn main`). |
+| D68 | Directory entry | `thoxa run\|build\|emit-c <dir>` resolves `<dir>/main.thx`; project root for `~/` is that directory (entry file’s parent — same as D31) | **Amended by D138:** file is `main.thx` (was `Main.thx`). Missing `main.thx` → clear error. File path mode unchanged. Default binary stem for a dir is the directory name (not `main`). Conformance harness also discovers top-level package dirs with `main.thx` + sibling `<name>.out`. Conformance: `pkgmain`. Oracle `export fn main` contract not enforced yet (entry still any `fn main`). |
 
 ## 2026-07-20 — Bounded multi-request static server (PR7)
 
@@ -430,7 +436,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D30 | Import origins (R8) | `./…` and `~/…` only at ship; **D97** adds `std/…` | `ffi` still deferred |
-| D31 | Resolution | No `..` segments; `~/` = package root | Package root is the nearest ancestor `Main.thx` when present, else the entry file’s directory. Matches oracle “never climb”. Nested-file `thoxa check` / LSP use the same root so `app/Pages.thx` can `~/framework/…`. |
+| D31 | Resolution | No `..` segments; `~/` = package root | Package root is the nearest ancestor `main.thx` when present, else the entry file’s directory. Matches oracle “never climb”. Nested-file `thoxa check` / LSP use the same root so `app/Pages.thx` can `~/framework/…`. |
 | D32 | Export surface | `export` on top-level `fn` / `type` / `let` / `extern`; `mut` never exported | Selective + namespace imports |
 | D33 | Namespace import | `import ns from "…"` camelCase binding; members via `ns.x` | Not a first-class value. Combined form → **D127** |
 | D34 | Module-level values | Static C globals + `thoxa_module_init()` before main | Dep-order init; private mut state |

@@ -1,6 +1,6 @@
 ## D129: body-inferred return types (unannotated non-main).
-import logging from "std/Logging"
-import { Pass, Fail, Trial } from "std/Fallible"
+import logging from "std/logging"
+import { Pass, Fail, Trial } from "std/fallible"
 
 fn setup() -> Trial<Void, String> {
     Pass(Void)

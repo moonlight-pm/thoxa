@@ -1,11 +1,11 @@
 ## Bounded multi-request static HTTP server (D67).
 ## Bind ephemeral port; N sequential clients (reconnect each time); accept/serve/close;
 ## integrate Net + Http + Router; deterministic stdout; process exits (no infinite loop).
-import net from "std/Net"
-import http from "std/Http"
-import { Router } from "std/HttpStatic"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import net from "std/net"
+import http from "std/http"
+import { Router } from "std/http-static"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn statusLine(resp!: Bytes) -> String {
     match resp.find(Bytes.fromString("\r")) {

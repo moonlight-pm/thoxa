@@ -2,7 +2,7 @@
 
 Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std**
 (the coffee-shop app). Host and wire helpers are product
-`std/Http` + `std/HttpServer` (**D136**).
+`std/http` + `std/http-server` (**D136**).
 
 ## Main (what you write to boot)
 
@@ -24,25 +24,25 @@ fn main() {
 
 | Layer | Path | Role |
 |-------|------|------|
-| **host** | `std/HttpServer` | Accept loop, body read, HEAD, keep-alive |
-| **wire** | `std/Http` | Parse/write, query/form/cookie Maps, redirects |
+| **host** | `std/http-server` | Accept loop, body read, HEAD, keep-alive |
+| **wire** | `std/http` | Parse/write, query/form/cookie Maps, redirects |
 | **app** | `app/` | Type-body `GET`/`POST` clauses, free `handle`, pages/domain |
-| **entry** | `Main.thx` | Logging + `server.serve(routes.port, routes.handle)` |
+| **entry** | `main.thx` | Logging + `server.serve(routes.port, routes.handle)` |
 | **assets** | `web/` | Static files |
 
 ```text
 Main → server.serve(port, handle)
-         std/HttpServer owns accept / parse / body / write
+         std/http-server owns accept / parse / body / write
          handle(req) per request
 
-app → std/HttpStatic          miss → files under web/
-app → std/Http                query / form / cookies / 303
+app → std/http-static          miss → files under web/
+app → std/http                query / form / cookies / 303
 ```
 
 **Routing shape (what you have now):**
 
 1. App `type Routes` — type-body `GET "/…"` / `POST "/…"` (compiler → `route(req)`)
-2. App `handle` — `Routes().route(req)`; **404** falls through to `std/HttpStatic`
+2. App `handle` — `Routes().route(req)`; **404** falls through to `std/http-static`
 3. `parseRequest` keeps `Request.query`; `HttpServer.readBody` fills `Request.body`.
    Query / form / cookies parse to `Map<String, String>`. `Request.headers`
    stays `Array<Header>`.
@@ -62,10 +62,10 @@ Port **9091** (`routes.port`).
 
 ```text
 examples/http/
-  Main.thx
+  main.thx
   app/
-    Routes.thx    # type-body GET/POST, handle, static fallback
-    Pages.thx Layout.thx Api.thx Models.thx Customer.thx
+    routes.thx    # type-body GET/POST, handle, static fallback
+    pages.thx layout.thx api.thx models.thx customer.thx
   web/
 ```
 
@@ -83,13 +83,13 @@ type Routes {
 
 Path captures (`:slug`) are clause formals. HTML handlers return `Response`
 (so they are not wrapped as `text/plain`). Pages are **JSX `Node` trees**
-(`type Page` in `Layout.thx`, views in `Pages.thx`, `std/Http.htmlResponse`).
+(`type Page` in `layout.thx`, views in `pages.thx`, `std/http.htmlResponse`).
 Miss is `notFound()`; `handle` then tries static files.
 
 ## Rules
 
 - App code = routes/views/domain only.
-- Host **`--> serveOne` per accept** (in `std/HttpServer`). An idle browser
+- Host **`--> serveOne` per accept** (in `std/http-server`). An idle browser
   socket parks in `recv` and does not stall other tabs. HTTP/1.1 keep-alive:
   one started peer can serve several requests. `handle` is an ordinary
   function passed as a **D132** pointer.

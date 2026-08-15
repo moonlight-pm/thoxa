@@ -2,7 +2,7 @@
 //!
 //! When the **entry** module has no `fn main`, treat it as a session script:
 //! - Top-level [`Item::SessionStmt`]s become the body of `Shell.step`.
-//! - Default `Shell` + helpers come from product [`std/Shell.thx`](../../../../std/Shell.thx)
+//! - Default `Shell` + helpers come from product [`std/shell.thx`](../../../../std/shell.thx)
 //!   when needed (D104); on-disk std is preferred, with a compile-time embed fallback.
 //! - Synthetic `main` is `Shell(status: 0).step().status`.
 //!
@@ -16,13 +16,13 @@ use crate::parser::Parser;
 use crate::span::Span;
 use std::fs;
 
-/// Compile-time fallback when `std/Shell.thx` cannot be resolved at runtime.
-/// Keep in sync with the product file under `std/Shell.thx` (D104).
-const SESSION_PRELUDE_EMBED: &str = include_str!("../../../std/Shell.thx");
+/// Compile-time fallback when `std/shell.thx` cannot be resolved at runtime.
+/// Keep in sync with the product file under `std/shell.thx` (D104).
+const SESSION_PRELUDE_EMBED: &str = include_str!("../../../std/shell.thx");
 
-/// Compile-time fallback for `std/Fallible.thx` when the std tree is missing.
-/// Keep in sync with the product file under `std/Fallible.thx`.
-const FALLIBLE_EMBED: &str = include_str!("../../../std/Fallible.thx");
+/// Compile-time fallback for `std/fallible.thx` when the std tree is missing.
+/// Keep in sync with the product file under `std/fallible.thx`.
+const FALLIBLE_EMBED: &str = include_str!("../../../std/fallible.thx");
 
 /// Rewrite the package entry for session mode when needed.
 pub fn prepare_package(package: &mut Package) -> Result<()> {
@@ -37,7 +37,7 @@ pub fn prepare_package(package: &mut Package) -> Result<()> {
         .position(|m| m.is_entry)
         .unwrap_or(package.modules.len() - 1);
     let injected_shell = prepare_entry(&mut package.modules[entry_idx])?;
-    // Shell.thx imports Fallible + Logging (and Logging pulls Env/Str/Path).
+    // shell.thx imports fallible + logging (and logging pulls env/str/path).
     // Inject happens after load_package, so pull those modules into the package.
     if injected_shell {
         ensure_shell_std_deps(package)?;
@@ -49,7 +49,7 @@ pub fn prepare_package(package: &mut Package) -> Result<()> {
 fn ensure_shell_std_deps(package: &mut Package) -> Result<()> {
     // Prefer on-disk std tree so Logging/Env/Str/Path load transitively.
     if let Ok(root) = loader::std_lib_root() {
-        let logging = root.join("Logging.thx");
+        let logging = root.join("logging.thx");
         if logging.is_file() {
             loader::ensure_module_in_package(package, &logging)?;
             return Ok(());
@@ -180,10 +180,10 @@ fn inject_prelude(entry: &mut SourceModule) -> Result<()> {
     Ok(())
 }
 
-/// Load product `std/Shell.thx` from the std tree when available; else embedded copy.
+/// Load product `std/shell.thx` from the std tree when available; else embedded copy.
 fn session_shell_source() -> Result<String> {
     if let Ok(root) = loader::std_lib_root() {
-        let path = root.join("Shell.thx");
+        let path = root.join("shell.thx");
         if path.is_file() {
             return fs::read_to_string(&path).map_err(|e| {
                 Error::new(format!(
@@ -196,23 +196,24 @@ fn session_shell_source() -> Result<String> {
     Ok(SESSION_PRELUDE_EMBED.to_string())
 }
 
-/// Ensure `std/Fallible` is a package module (Shell inject imports it after load).
+/// Ensure `std/fallible` is a package module (Shell inject imports it after load).
 fn ensure_fallible_module(package: &mut Package) -> Result<()> {
-    if package.modules.iter().any(|m| m.id == "Fallible") {
+    if package.modules.iter().any(|m| m.id == "std_fallible") {
         return Ok(());
     }
     let (path, src) = fallible_source()?;
     let tokens = Lexer::new(&src)
         .tokenize()
-        .map_err(|e| Error::new(format!("std/Fallible lex: {e}")))?;
+        .map_err(|e| Error::new(format!("std/fallible lex: {e}")))?;
     let ast = Parser::new(tokens)
         .parse_module()
-        .map_err(|e| Error::new(format!("std/Fallible parse: {e}")))?;
-    // Dependency order: Fallible before modules that import it (entry is last).
+        .map_err(|e| Error::new(format!("std/fallible parse: {e}")))?;
+    // Dependency order: fallible before modules that import it (entry is last).
+    let id = loader::module_id_for(&path, false, &package.project_root);
     package.modules.insert(
         0,
         SourceModule {
-            id: "Fallible".into(),
+            id,
             path,
             ast,
             is_entry: false,
@@ -223,17 +224,17 @@ fn ensure_fallible_module(package: &mut Package) -> Result<()> {
 
 fn fallible_source() -> Result<(std::path::PathBuf, String)> {
     if let Ok(root) = loader::std_lib_root() {
-        let path = root.join("Fallible.thx");
+        let path = root.join("fallible.thx");
         if path.is_file() {
             let src = fs::read_to_string(&path)
-                .map_err(|e| Error::new(format!("read std/Fallible {}: {e}", path.display())))?;
+                .map_err(|e| Error::new(format!("read std/fallible {}: {e}", path.display())))?;
             // Match loader::resolve_specifier path key (canonical when possible).
             let path = fs::canonicalize(&path).unwrap_or(path);
             return Ok((path, src));
         }
     }
     Ok((
-        std::path::PathBuf::from("std/Fallible.thx"),
+        std::path::PathBuf::from("std/fallible.thx"),
         FALLIBLE_EMBED.to_string(),
     ))
 }
@@ -394,7 +395,7 @@ mod tests {
         let desugared = desugar_session_source(src).expect("desugar");
         let mut entry = SourceModule {
             id: "Main".into(),
-            path: std::path::PathBuf::from("Main.thx"),
+            path: std::path::PathBuf::from("main.thx"),
             ast: parse(&desugared),
             is_entry: true,
         };
@@ -432,10 +433,10 @@ mod tests {
         );
         // Prefer on-disk std when the workspace is discoverable.
         if let Ok(root) = loader::std_lib_root() {
-            let path = root.join("Shell.thx");
+            let path = root.join("shell.thx");
             assert!(path.is_file(), "missing {}", path.display());
-            let disk = fs::read_to_string(&path).expect("read Shell.thx");
-            assert_eq!(src, disk, "inject should prefer on-disk std/Shell.thx");
+            let disk = fs::read_to_string(&path).expect("read shell.thx");
+            assert_eq!(src, disk, "inject should prefer on-disk std/shell.thx");
         }
     }
 
@@ -444,7 +445,7 @@ mod tests {
         let src = r#"fn main() -> Int64 { 0 }"#;
         let mut entry = SourceModule {
             id: "Main".into(),
-            path: std::path::PathBuf::from("Main.thx"),
+            path: std::path::PathBuf::from("main.thx"),
             ast: parse(src),
             is_entry: true,
         };
@@ -487,7 +488,7 @@ fn main() -> Int64 { 0 }
         );
         let mut entry = SourceModule {
             id: "Main".into(),
-            path: std::path::PathBuf::from("Main.thx"),
+            path: std::path::PathBuf::from("main.thx"),
             ast,
             is_entry: true,
         };

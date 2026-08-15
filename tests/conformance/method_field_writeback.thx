@@ -1,5 +1,5 @@
 ## Method mut-field write-back (D107): bare field assign in methods updates receiver.
-import logging from "std/Logging"
+import logging from "std/logging"
 type Counter(n: Int64) {
     export fn inc() -> Counter {
         n = n + 1

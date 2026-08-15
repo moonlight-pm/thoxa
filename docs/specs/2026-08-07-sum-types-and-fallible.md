@@ -300,7 +300,7 @@ If a single success arm is marked for payload extract (`Pass<P!>`), unwrap to
 Product source: **`std/Fallible.thx`** (import required — D123).
 
 ```thx
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 
 ## Defined in std/Fallible (exported):
 ## type Has<T>(value: T)

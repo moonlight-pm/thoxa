@@ -1,11 +1,11 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, lastIndexOf, substring, replaceFirst, replaceAll, equalsIgnoreCaseAscii, split, splitOnce, parseUInt, join as strJoin, dropPrefix, dropSuffix, removePrefix, removeSuffix, trimNewline, trim, trimStart, trimEnd, toLowerAscii, toUpperAscii, padLeft, padRight, byteAt, lines, startsWithIgnoreCaseAscii, endsWithIgnoreCaseAscii, containsIgnoreCaseAscii, truncate, reverse, isAscii } from "std/Str"
-import { dirname, parent, basename, fileName, join, joinAll, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, withFileName, parts, stripTrailingSlash, ensureTrailingSlash, shortPath } from "std/Path"
-import { hasEnv, getenvOr, home, tmpdir, shell, pathVar, pwd } from "std/Env"
-import { branchName, branchSuffix, isRepo, repoRoot, isDetached, headLine } from "std/Git"
-import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/Ansi"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, lastIndexOf, substring, replaceFirst, replaceAll, equalsIgnoreCaseAscii, split, splitOnce, parseUInt, join as strJoin, dropPrefix, dropSuffix, removePrefix, removeSuffix, trimNewline, trim, trimStart, trimEnd, toLowerAscii, toUpperAscii, padLeft, padRight, byteAt, lines, startsWithIgnoreCaseAscii, endsWithIgnoreCaseAscii, containsIgnoreCaseAscii, truncate, reverse, isAscii } from "std/str"
+import { dirname, parent, basename, fileName, join, joinAll, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, withFileName, parts, stripTrailingSlash, ensureTrailingSlash, shortPath } from "std/path"
+import { hasEnv, getenvOr, home, tmpdir, shell, pathVar, pwd } from "std/env"
+import { branchName, branchSuffix, isRepo, repoRoot, isDetached, headLine } from "std/git"
+import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/ansi"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

@@ -1,5 +1,5 @@
 ## Multi-field product union members (D118).
-import logging from "std/Logging"
+import logging from "std/logging"
 type Circle(radius: Int64)
 type Rect(w: Int64, h: Int64)
 type Shape = Circle | Rect

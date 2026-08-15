@@ -1,9 +1,9 @@
 ## One-shot HTTP over the wire: listen → connect → accept → send/recv → close.
 ## No infinite accept loop; deterministic for conformance.
-import net from "std/Net"
-import http from "std/Http"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import net from "std/net"
+import http from "std/http"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

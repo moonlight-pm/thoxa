@@ -223,7 +223,7 @@ USAGE:
     thoxa lsp
     thoxa version                Build identity (package + git hash + path)
 
-A directory argument resolves to <dir>/Main.thx (project root for ~/ is that dir).
+A directory argument resolves to <dir>/main.thx (project root for ~/ is that dir).
 Build products land under target/ (rust/, c/, thoxa/).
 
 Session scripts omit `fn main`; top-level statements become Shell.step.

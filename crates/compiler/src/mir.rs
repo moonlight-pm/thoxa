@@ -417,7 +417,7 @@ pub enum Ty {
     },
     /// FFI pointer `Address<T>` (param types only in R7).
     Address(Box<Ty>),
-    /// User product / union / monomorph (including std/Fallible May/Trial).
+    /// User product / union / monomorph (including std/fallible May/Trial).
     User(String),
 }
 
@@ -1191,7 +1191,7 @@ pub fn lower_module_with(module: &ast::Module, opts: LowerOptions) -> Result<Pro
         project_root: PathBuf::from("."),
         modules: vec![SourceModule {
             id: "Main".into(),
-            path: PathBuf::from("Main.thx"),
+            path: PathBuf::from("main.thx"),
             ast: module.clone(),
             is_entry,
         }],
@@ -1211,7 +1211,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     crate::route_desugar::desugar_package(&mut package)?;
     let package = &package;
 
-    // May/Trial live in `std/Fallible` and must be imported (no ambient inject).
+    // May/Trial live in `std/fallible` and must be imported (no ambient inject).
     let import_maps = loader::build_import_maps(package)?;
 
     // ---------- Phase 1: register types (mangled names) ----------
@@ -3842,7 +3842,7 @@ fn resolve_ty(
         ("Buffer", []) => Ok(Ty::Buffer),
         ("Node" | "Element" | "Text" | "Fragment", []) => Ok(Ty::Node),
         ("Attr", []) => Ok(Ty::User("Attr".into())),
-        // May / Trial are std/Fallible generic unions (D118) — resolved via monomorphs.
+        // May / Trial are std/fallible generic unions (D118) — resolved via monomorphs.
         ("Array", [TypeArg::Type(elem)]) => {
             let et = resolve_ty(elem, types, name_map)?;
             if !is_array_elem_ty(&et) {
@@ -4277,7 +4277,7 @@ fn monomorphize_package(
 }
 
 fn is_builtin_generic(name: &str) -> bool {
-    // May/Trial are user generics from std/Fallible (not builtins).
+    // May/Trial are user generics from std/fallible (not builtins).
     matches!(
         name,
         "Array"
@@ -7599,11 +7599,11 @@ fn lower_map_get(
     );
     let not_m = match union_arm_payload(&ctx.types, &may_ty, "Not") {
         Some(Ty::User(n)) => n,
-        _ => return Err(Error::at("May is not in scope (import std/Fallible)", span)),
+        _ => return Err(Error::at("May is not in scope (import std/fallible)", span)),
     };
     let has_m = match union_arm_payload(&ctx.types, &may_ty, "Has") {
         Some(Ty::User(n)) => n,
-        _ => return Err(Error::at("May is not in scope (import std/Fallible)", span)),
+        _ => return Err(Error::at("May is not in scope (import std/fallible)", span)),
     };
     let outer = std::mem::take(&mut ctx.stmts);
     let mut then_body = Vec::new();
@@ -9210,7 +9210,7 @@ fn lower_bytes_method(
                     args: all,
                 },
             );
-            // Wrap runtime -1 / index into May<Int64> (requires `import … from "std/Fallible"`).
+            // Wrap runtime -1 / index into May<Int64> (requires `import … from "std/fallible"`).
             let may_ty = fallible_mono(ctx, "May", &[Ty::Int64], span)?;
             let out = ctx.fresh("findm");
             init_place(ctx, &out, &may_ty)?;
@@ -9679,7 +9679,7 @@ fn lower_arg_for_formal(
 
 fn lower_try(ctx: &mut LowerCtx, inner: &Expr, span: Span) -> Result<(Place, Ty)> {
     let (scrut_p, scrut_ty) = lower_expr(ctx, inner)?;
-    // May/Trial are residual-marked user unions (std/Fallible); no builtin Ty::May/Trial.
+    // May/Trial are residual-marked user unions (std/fallible); no builtin Ty::May/Trial.
     if let Ty::User(ref n) = &scrut_ty {
         if let Some(sum) = ctx.types.get(n).and_then(|i| i.sum.clone()) {
             return lower_try_sum(ctx, scrut_p, scrut_ty, sum, span);
@@ -12206,19 +12206,19 @@ fn lower_binary(
     }
 }
 
-/// Resolve a `std/Fallible` monomorph (`May`/`Trial`/…) if imported in this module.
+/// Resolve a `std/fallible` monomorph (`May`/`Trial`/…) if imported in this module.
 fn fallible_mono(ctx: &LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Result<Ty> {
     let Some(base) = ctx.name_to_type.get(base_src).cloned() else {
         return Err(Error::coded_at(
             crate::diagnostic::CODE_FALLIBLE_IMPORT,
             format!(
-                "`{base_src}` is not in scope — import it from \"std/Fallible\" \
-                 (e.g. `import {{ Has, Not, May, Pass, Fail, Trial }} from \"std/Fallible\"`)"
+                "`{base_src}` is not in scope — import it from \"std/fallible\" \
+                 (e.g. `import {{ Has, Not, May, Pass, Fail, Trial }} from \"std/fallible\"`)"
             ),
             span,
         )
         .with_help(
-            "add `import { Has, Not, May, Pass, Fail, Trial } from \"std/Fallible\"` \
+            "add `import { Has, Not, May, Pass, Fail, Trial } from \"std/fallible\"` \
              (or a selective subset)",
         ));
     };

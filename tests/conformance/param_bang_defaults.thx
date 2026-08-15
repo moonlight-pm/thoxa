@@ -1,7 +1,7 @@
 ## Positional `!` formals may carry defaults (call-site fill).
 ## Free functions, methods, ctors, and extern C wrappers.
 
-import logging from "std/Logging"
+import logging from "std/logging"
 extern fn sysAbs(x!: Int32) -> Int32 from "c" "abs"
 
 fn scale(x!: Int64, factor!: Int64 = 2) -> Int64 {

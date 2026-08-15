@@ -1,6 +1,6 @@
 ## Integer arithmetic (truncating division) and comparisons / logical ops.
 ## R1 uses println on values directly (string interpolation comes later).
-import logging from "std/Logging"
+import logging from "std/logging"
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)

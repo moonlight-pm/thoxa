@@ -1,7 +1,7 @@
 ## PR5: Request / Response / Header + parseRequest + writeResponse.
-import http from "std/Http"
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import http from "std/http"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

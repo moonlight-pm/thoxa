@@ -1,8 +1,8 @@
 ## Bytes + mut (R5). Fixed heap Bytes with simple RC; mut reassignment.
 ## R9: Bytes(n) zero-fill + slice.
 
-import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import logging from "std/Logging"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
 
 fn main() -> Int64 {
     logging.toStdout()

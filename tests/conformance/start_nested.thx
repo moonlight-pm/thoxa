@@ -1,6 +1,6 @@
 ## `-->` a function that never waits itself — the callee does the work.
 ## No wait points, so each started run finishes before the next `-->`.
-import logging, { info } from "std/Logging"
+import logging, { info } from "std/logging"
 
 fn recv(peer!: String) {
     info("recv {peer}")

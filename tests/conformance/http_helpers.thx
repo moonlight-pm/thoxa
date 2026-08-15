@@ -1,7 +1,7 @@
 ## D136: std/Http protocol helpers (headers, query/form/cookies, 303, keep-alive).
-import http, { Request, Response, Header } from "std/Http"
-import { Has, Not, May, Pass, Fail } from "std/Fallible"
-import logging, { info } from "std/Logging"
+import http, { Request, Response, Header } from "std/http"
+import { Has, Not, May, Pass, Fail } from "std/fallible"
+import logging, { info } from "std/logging"
 
 fn emptyReq(method!: String, version!: String, headers!: Array<Header>) -> Request {
     Request(

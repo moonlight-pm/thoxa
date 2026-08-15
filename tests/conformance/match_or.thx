@@ -1,5 +1,5 @@
 ## Value-match or-patterns (D108): `0 | 1 { … }` + required else.
-import logging from "std/Logging"
+import logging from "std/logging"
 fn size(n!: Int64) -> String {
     match n {
         0 | 1 { "tiny" }
