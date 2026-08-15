@@ -414,6 +414,10 @@ fn emit_typedefs_topo(out: &mut String, types: &[TypeLayout]) {
 }
 
 fn emit_typedef(out: &mut String, t: &TypeLayout) {
+    if t.name == "Attr" {
+        // Layout lives in thoxa_rt.h as `Thoxa_Attr`.
+        return;
+    }
     if let Some(variants) = &t.sum {
         // Pure-literal-only: narrow scalar (Byte-up), tag stored as the value (D118 §6).
         if let Some(scalar) = &t.sum_scalar {
@@ -1223,6 +1227,11 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     "html_text" => "thoxa_html_text",
                     "html_frag" => "thoxa_html_frag",
                     "html_render" => "thoxa_html_render",
+                    "html_kind" => "thoxa_html_kind",
+                    "html_tag" => "thoxa_html_tag",
+                    "html_get_text" => "thoxa_html_get_text",
+                    "html_attrs" => "thoxa_html_attrs",
+                    "html_kids" => "thoxa_html_kids",
                     other => other,
                 };
                 out.push_str(c);

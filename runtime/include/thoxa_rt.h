@@ -438,25 +438,30 @@ ThoxaString *thoxa_map_to_string(const ThoxaMap *m, int val_is_string);
 #define THOXA_HTML_TEXT 1
 #define THOXA_HTML_FRAG 2
 
+/* Ambient `Attr(name, value)` — layout must match compiler TypeLayout "Attr". */
+typedef struct Thoxa_Attr {
+    ThoxaString *name;
+    ThoxaString *value;
+} Thoxa_Attr;
+
 typedef struct ThoxaHtml {
     uint8_t kind;
     ThoxaString *tag;
     ThoxaString *text;
-    ThoxaArray *attr_names;
-    ThoxaArray *attr_vals;
+    ThoxaArray *attrs; /* Array<Attr>, or NULL */
     ThoxaArray *kids;
 } ThoxaHtml;
 
-ThoxaHtml *thoxa_html_el(
-    ThoxaString *tag,
-    ThoxaArray *attr_names,
-    ThoxaArray *attr_vals,
-    ThoxaArray *kids
-);
+ThoxaHtml *thoxa_html_el(ThoxaString *tag, ThoxaArray *attrs, ThoxaArray *kids);
 /* Escapes `s` as text. */
 ThoxaHtml *thoxa_html_text(ThoxaString *s);
 ThoxaHtml *thoxa_html_frag(ThoxaArray *kids);
 ThoxaString *thoxa_html_render(const ThoxaHtml *n);
+int64_t thoxa_html_kind(const ThoxaHtml *n);
+ThoxaString *thoxa_html_tag(const ThoxaHtml *n);
+ThoxaString *thoxa_html_get_text(const ThoxaHtml *n);
+ThoxaArray *thoxa_html_attrs(const ThoxaHtml *n);
+ThoxaArray *thoxa_html_kids(const ThoxaHtml *n);
 
 #ifdef __cplusplus
 }

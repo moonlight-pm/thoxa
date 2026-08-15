@@ -34,16 +34,18 @@ logging.info(n.html())
 
 | Piece | Behavior |
 |-------|----------|
-| Value | Builtin `Node` (`Ty::Node` → `ThoxaHtml*` in `thoxa_rt`) |
-| HTML tag | `<div class="x">…</div>` → `__jsx_el(tag, names, vals, kids)` |
+| Value | Builtin `Node` (`Ty::Node` → `ThoxaHtml*` in `thoxa_rt`). Matchable as `Element \| Text \| Fragment` (same tree, not a second sum). |
+| HTML tag | `<div class="x">…</div>` → `__jsx_el(tag, attrs, kids)` with `Array<Attr>` |
 | Component | PascalCase `<Card title="Hi">…</Card>` → `Card(title: "Hi").view(children: […])` (eager) |
 | Fragment | `<>…</>` → fragment `Node` (empty `<>` included) |
+| Ctors | Ambient `Element(tag, attrs, kids)`, `Text(s)`, `Fragment(kids)`, `Attr(name, value)` — no import |
 | `{e}` | Children: `String` → escaped text; `Int64`/`Bool` → stringify then text; `Node` → identity; `Array<Node>` → splice. Attrs: `String` / `Int64` / `Bool` (stringify; `true`/`false`) |
+| Spreads | HTML `{...xs}` is `Array<Attr>` (later attrs win by append order). Component `{...p}` copies ctor fields of a product `p` (later named props win) |
 | `<` vs tag | `<name` / `<>` (no space after `<`) is JSX, including after another expr. Comparison is `a < b` (space after `<`). Glued `a<b` / `n<3` is an error. |
 | Raw text | Source slice (lexer `Junk` so `'` / `·` survive); whitespace-only gaps dropped |
 | Void tags | `br` `hr` `img` `input` `meta` `link` — no close in `.html()` |
 | Boolean attrs | `disabled` → `disabled="disabled"` |
-| Hover | `Node` is an LSP builtin |
+| Hover | `Node`, `Element`, `Text`, `Fragment`, `Attr` are LSP builtins |
 
 No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
 (do not steal `el` / `child`).
@@ -53,8 +55,7 @@ No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
 
 ## Non-goals (this landing)
 
-- `El \| Text \| Frag` sum in the type system (runtime is a tagged C struct)  
-- Spreads, `className`, hydration / client VDOM  
+- `className`, hydration / client VDOM  
 - Handbook / D-id / freeze  
 
 ## Dogfood
@@ -66,7 +67,7 @@ legal constructor-param fields.
 
 ## Gaps
 
-- No attr spreads / boolean-without-value beyond `name="name"`  
+- Boolean-without-value beyond `name="name"` (bare `disabled` still serializes `disabled="disabled"`)  
 - Hyphenated attrs parse; `data-*` ok  
 - `.html()` method has no dedicated hover (type `Node` does)  
 - Tree-sitter island colors tags; fragments/`<>` highlighting is best-effort  

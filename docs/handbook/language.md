@@ -105,8 +105,9 @@ for the outer. `while` / `for` still yield `Void` (they can finish).
 
 ## Match
 
-- **Trial / May / user unions:** constructor arms (`Pass(x)` / `Fail(e)`,
-  `Has(x)` / `Not`, custom tags), discard `_`, optional **`if` guards**
+- **Trial / May / user unions / `Node`:** constructor arms (`Pass(x)` / `Fail(e)`,
+  `Has(x)` / `Not`, `Element(tag, attrs, kids)` / `Text(s)` / `Fragment(kids)`,
+  custom tags), discard `_`, optional **`if` guards**
   (`Pos(n) if n > 0 { … }` — binds visible to the guard; guarded arms do not
   exhaust a tag).
 - **Tag-only bare ctors:** bare `Pass` / `Fail` / `Has` / user tags match the

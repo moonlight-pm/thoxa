@@ -39,9 +39,10 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
   capability `jsx-node` **partial**). No import; `.html()`; `{e}` children
   are String / Int64 / Bool / Node / Array<Node>; `{e}` attrs stringify
   Int64 / Bool the same way; `<tag` (no space) is JSX
-  including after another expr, `a < b` (spaces) is comparison; gate `jsx`.
-  No D-id / handbook. Crema pages dogfood it (`app/Layout.thx` `Page` +
-  `app/Pages.thx`).
+  including after another expr, `a < b` (spaces) is comparison; `Node` is
+  `Element | Text | Fragment` (same tree); `{...attrs}` / `{...props}`
+  spreads; gate `jsx`. No D-id / handbook. Crema pages dogfood it
+  (`app/Layout.thx` `Page` + `app/Pages.thx`).
 
 **In progress / next:**
 

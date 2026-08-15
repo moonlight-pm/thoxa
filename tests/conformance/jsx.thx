@@ -10,6 +10,18 @@ type Card(title: String) {
     }
 }
 
+fn kindName(n: Node) -> String {
+    match n {
+        Element(tag, attrs, kids) => {
+            let _ = attrs
+            let _ = kids
+            "el:{tag}"
+        }
+        Text(s) => "text:{s}"
+        Fragment(kids) => "frag:{kids.count}"
+    }
+}
+
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
@@ -40,5 +52,19 @@ fn main() -> Int64 {
     logging.info(count.html())
     logging.info(tail.html())
     logging.info(attrs.html())
+
+    let extra = [Attr(name: "id", value: "x"), Attr(name: "data-k", value: "v")]
+    let spread = <div class="box" {...extra}>z</div>
+    logging.info(spread.html())
+
+    let card = Card(title: "Hi")
+    let fromSpread = <Card {...card}><em>via</em></Card>
+    logging.info(fromSpread.html())
+
+    let built = Element(tag: "span", attrs: [Attr(name: "class", value: "t")], kids: [Text(s: "go")])
+    logging.info(built.html())
+    logging.info(kindName(<p>Hi</p>))
+    logging.info(kindName(Text(s: "a")))
+    logging.info(kindName(Fragment(kids: [<b>1</b>])))
     0
 }

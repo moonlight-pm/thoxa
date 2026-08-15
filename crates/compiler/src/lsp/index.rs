@@ -156,8 +156,12 @@ impl DocumentIndex {
 fn builtin_help(name: &str) -> &'static str {
     match name {
         "Node" => {
-            "Built-in HTML tree (JSX). Tags produce `Node`; render with `.html() -> String`."
+            "Built-in HTML tree (JSX). `Element | Text | Fragment`; render with `.html() -> String`."
         }
+        "Element" => "HTML element node: `Element(tag, attrs, kids)`. A `Node`.",
+        "Text" => "HTML text node: `Text(s)`. A `Node`.",
+        "Fragment" => "HTML fragment: `Fragment(kids)`. A `Node`.",
+        "Attr" => "HTML attribute: `Attr(name, value)`.",
         "String" => "Built-in UTF-8 string.",
         "Bytes" => "Built-in byte buffer.",
         "Buffer" => "Built-in growable buffer.",

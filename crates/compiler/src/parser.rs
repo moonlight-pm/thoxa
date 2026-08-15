@@ -1843,7 +1843,7 @@ impl Parser {
         Ok(desugar_jsx(tag, tag_span, attrs, kids, span))
     }
 
-    fn parse_jsx_attrs(&mut self) -> Result<Vec<(String, Span, Expr)>> {
+    fn parse_jsx_attrs(&mut self) -> Result<Vec<JsxAttr>> {
         let mut attrs = Vec::new();
         while !self.at(TokenKind::Slash) && !self.at(TokenKind::RAngle) && !self.at(TokenKind::Eof)
         {
@@ -1852,11 +1852,32 @@ impl Parser {
         Ok(attrs)
     }
 
-    fn parse_jsx_attr(&mut self) -> Result<(String, Span, Expr)> {
+    fn parse_jsx_attr(&mut self) -> Result<JsxAttr> {
+        if self.at(TokenKind::LBrace) {
+            let start = self.peek_span();
+            self.bump();
+            if self.at(TokenKind::DotDotDot) {
+                self.bump();
+                let expr = self.parse_expr()?;
+                self.expect_kind(&TokenKind::RBrace)?;
+                return Ok(JsxAttr::Spread {
+                    expr,
+                    span: Span::new(start.start, self.prev_span().end),
+                });
+            }
+            return Err(Error::at(
+                "expected `{...expr}` spread or `name=...` attribute",
+                start,
+            ));
+        }
         let (name, name_span) = self.parse_jsx_attr_name()?;
         if !self.at(TokenKind::Eq) {
             // Boolean attribute: `disabled` → value `"disabled"`.
-            return Ok((name.clone(), name_span, jsx_string_lit(name, name_span)));
+            return Ok(JsxAttr::Pair {
+                name: name.clone(),
+                name_span,
+                value: jsx_string_lit(name, name_span),
+            });
         }
         self.expect_kind(&TokenKind::Eq)?;
         let value = if self.at(TokenKind::LBrace) {
@@ -1875,7 +1896,11 @@ impl Parser {
                 self.peek_span(),
             ));
         };
-        Ok((name, name_span, value))
+        Ok(JsxAttr::Pair {
+            name,
+            name_span,
+            value,
+        })
     }
 
     /// `class`, `type`, `for`, `data-foo`, `aria-label`.
@@ -2475,17 +2500,36 @@ fn jsx_text_wrap(expr: Expr) -> Expr {
     jsx_child_wrap(expr)
 }
 
+enum JsxAttr {
+    Pair {
+        name: String,
+        name_span: Span,
+        value: Expr,
+    },
+    Spread {
+        expr: Expr,
+        span: Span,
+    },
+}
+
 fn desugar_jsx(
     tag: String,
     tag_span: Span,
-    attrs: Vec<(String, Span, Expr)>,
+    attrs: Vec<JsxAttr>,
     kids: Vec<Expr>,
     span: Span,
 ) -> Expr {
     if is_jsx_component(&tag) {
         let prop_args = attrs
             .into_iter()
-            .map(|(name, name_span, value)| jsx_named(&name, name_span, value))
+            .map(|a| match a {
+                JsxAttr::Pair {
+                    name,
+                    name_span,
+                    value,
+                } => jsx_named(&name, name_span, value),
+                JsxAttr::Spread { expr, span } => Arg::Spread { value: expr, span },
+            })
             .collect();
         let ctor = Expr {
             kind: ExprKind::Call {
@@ -2504,24 +2548,141 @@ fn desugar_jsx(
             span,
         }
     } else {
-        let mut attr_names = Vec::new();
-        let mut attr_vals = Vec::new();
-        for (name, name_span, value) in attrs {
-            attr_names.push(jsx_string_lit(name, name_span));
-            attr_vals.push(jsx_attr_wrap(value));
-        }
+        let attrs_expr = desugar_html_attrs(attrs, span);
         Expr {
             kind: ExprKind::Call {
                 callee: "__jsx_el".into(),
                 args: vec![
                     jsx_named("tag", tag_span, jsx_string_lit(tag, tag_span)),
-                    jsx_named("names", tag_span, jsx_array_lit(attr_names, span)),
-                    jsx_named("vals", tag_span, jsx_array_lit(attr_vals, span)),
+                    jsx_named("attrs", tag_span, attrs_expr),
                     jsx_named("kids", tag_span, jsx_array_lit(kids, span)),
                 ],
             },
             span,
         }
+    }
+}
+
+fn jsx_type_name(name: &str, span: Span) -> TypeExpr {
+    TypeExpr {
+        name: name.into(),
+        args: Vec::new(),
+        span,
+        lit: None,
+        mark: None,
+        union_members: None,
+        fn_type: None,
+    }
+}
+
+fn jsx_array_attr_ty(span: Span) -> TypeExpr {
+    TypeExpr {
+        name: "Array".into(),
+        args: vec![TypeArg::Type(jsx_type_name("Attr", span))],
+        span,
+        lit: None,
+        mark: None,
+        union_members: None,
+        fn_type: None,
+    }
+}
+
+fn jsx_attr_ctor(name: String, name_span: Span, value: Expr) -> Expr {
+    Expr {
+        kind: ExprKind::Call {
+            callee: "Attr".into(),
+            args: vec![
+                jsx_named("name", name_span, jsx_string_lit(name, name_span)),
+                jsx_named("value", name_span, jsx_attr_wrap(value)),
+            ],
+        },
+        span: name_span,
+    }
+}
+
+fn jsx_name_expr(name: &str, span: Span) -> Expr {
+    Expr {
+        kind: ExprKind::Name(name.into()),
+        span,
+    }
+}
+
+fn desugar_html_attrs(attrs: Vec<JsxAttr>, span: Span) -> Expr {
+    let has_spread = attrs.iter().any(|a| matches!(a, JsxAttr::Spread { .. }));
+    if !has_spread {
+        let elems = attrs
+            .into_iter()
+            .map(|a| match a {
+                JsxAttr::Pair {
+                    name,
+                    name_span,
+                    value,
+                } => jsx_attr_ctor(name, name_span, value),
+                JsxAttr::Spread { .. } => unreachable!(),
+            })
+            .collect();
+        return jsx_array_lit(elems, span);
+    }
+    let mut items = Vec::new();
+    items.push(BlockItem::Let {
+        name: "__jsx_as".into(),
+        name_span: span,
+        mutable: true,
+        ty: Some(jsx_array_attr_ty(span)),
+        init: jsx_array_lit(Vec::new(), span),
+    });
+    for a in attrs {
+        match a {
+            JsxAttr::Pair {
+                name,
+                name_span,
+                value,
+            } => {
+                items.push(BlockItem::Expr(Expr {
+                    kind: ExprKind::MethodCall {
+                        receiver: Box::new(jsx_name_expr("__jsx_as", name_span)),
+                        method: "append".into(),
+                        method_span: name_span,
+                        args: vec![Arg::Pos(jsx_attr_ctor(name, name_span, value))],
+                    },
+                    span: name_span,
+                }));
+            }
+            JsxAttr::Spread { expr, span: sp } => {
+                items.push(BlockItem::Expr(Expr {
+                    kind: ExprKind::For {
+                        name: "__jsx_a".into(),
+                        name_span: sp,
+                        value: None,
+                        start: Box::new(expr),
+                        end: None,
+                        inclusive: false,
+                        body: Block {
+                            items: Vec::new(),
+                            tail: Some(Box::new(Expr {
+                                kind: ExprKind::MethodCall {
+                                    receiver: Box::new(jsx_name_expr("__jsx_as", sp)),
+                                    method: "append".into(),
+                                    method_span: sp,
+                                    args: vec![Arg::Pos(jsx_name_expr("__jsx_a", sp))],
+                                },
+                                span: sp,
+                            })),
+                            span: sp,
+                        },
+                    },
+                    span: sp,
+                }));
+            }
+        }
+    }
+    Expr {
+        kind: ExprKind::Block(Block {
+            items,
+            tail: Some(Box::new(jsx_name_expr("__jsx_as", span))),
+            span,
+        }),
+        span,
     }
 }
 
@@ -3155,20 +3316,7 @@ mod tests {
         match &init.kind {
             ExprKind::Call { callee, args } => {
                 assert_eq!(callee, "__jsx_el");
-                assert_eq!(args.len(), 4);
-                match &args[2] {
-                    Arg::Named { name, value, .. } => {
-                        assert_eq!(name, "vals");
-                        match &value.kind {
-                            ExprKind::ArrayLit(elems) => match &elems[0].kind {
-                                ExprKind::Call { callee, .. } => assert_eq!(callee, "__jsx_attr"),
-                                other => panic!("expected __jsx_attr, got {other:?}"),
-                            },
-                            other => panic!("expected vals array, got {other:?}"),
-                        }
-                    }
-                    other => panic!("expected named vals, got {other:?}"),
-                }
+                assert_eq!(args.len(), 3);
             }
             other => panic!("expected el(...), got {other:?}"),
         }
@@ -3218,7 +3366,7 @@ mod tests {
         match &init.kind {
             ExprKind::Call { callee, args } => {
                 assert_eq!(callee, "__jsx_el");
-                assert_eq!(args.len(), 4);
+                assert_eq!(args.len(), 3);
             }
             other => panic!("expected el(...), got {other:?}"),
         }

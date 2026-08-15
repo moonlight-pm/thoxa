@@ -382,6 +382,8 @@ pub enum Arg {
         name_span: Span,
         value: Expr,
     },
+    /// JSX `{...expr}` — HTML: `Array<Attr>`; component: same type as the ctor.
+    Spread { value: Expr, span: Span },
 }
 
 #[derive(Debug, Clone)]

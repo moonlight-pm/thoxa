@@ -1055,6 +1055,9 @@ impl LowerCtx {
     }
 
     fn resolve_type_name(&self, name: &str) -> Option<String> {
+        if name == "Attr" {
+            return Some("Attr".into());
+        }
         self.name_to_type.get(name).cloned()
     }
 
@@ -1214,6 +1217,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     // ---------- Phase 1: register types (mangled names) ----------
     let mut types_info: HashMap<String, TypeInfo> = HashMap::new();
     let mut type_layouts: Vec<TypeLayout> = Vec::new();
+    seed_html_types(&mut types_info, &mut type_layouts);
     // (module_id, mangled_type_name, &TypeDef) — concrete (non-generic) only
     let mut type_defs: Vec<(String, String, &TypeDef)> = Vec::new();
     // Generic templates: mangled base name → def (D118 / May prelude path).
@@ -1279,6 +1283,15 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         .insert(td.name.clone(), mangled);
                 }
                 continue;
+            }
+            if matches!(
+                td.name.as_str(),
+                "Attr" | "Element" | "Text" | "Fragment" | "Node"
+            ) {
+                return Err(Error::at(
+                    format!("`{}` is a built-in HTML type", td.name),
+                    td.name_span,
+                ));
             }
             // Field types may reference other types; resolve after all types registered.
             type_defs.push((m.id.clone(), mangled.clone(), td));
@@ -2237,6 +2250,133 @@ fn mangle_global(mod_id: &str, name: &str) -> String {
     format!("g_{mod_id}_{name}")
 }
 
+fn attr_ty() -> Ty {
+    Ty::User("Attr".into())
+}
+
+fn attr_array_ty() -> Ty {
+    Ty::Array {
+        elem: Box::new(attr_ty()),
+    }
+}
+
+fn node_array_ty() -> Ty {
+    Ty::Array {
+        elem: Box::new(Ty::Node),
+    }
+}
+
+fn field_info(name: &str, ty: Ty) -> FieldInfo {
+    FieldInfo {
+        name: name.into(),
+        ty,
+        mutable: false,
+        default: None,
+    }
+}
+
+/// Ambient `Attr` plus match-only `Element` / `Text` / `Fragment` field lists.
+fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mut Vec<TypeLayout>) {
+    let attr_fields = vec![
+        field_info("name", Ty::String),
+        field_info("value", Ty::String),
+    ];
+    types_info.insert(
+        "Attr".into(),
+        TypeInfo {
+            fields: attr_fields.clone(),
+            methods: HashMap::new(),
+            zero_init: false,
+            def_mod: String::new(),
+            sum: None,
+        },
+    );
+    type_layouts.push(TypeLayout {
+        name: "Attr".into(),
+        fields: vec![
+            FieldLayout {
+                name: "name".into(),
+                c_name: "name".into(),
+                ty: Ty::String,
+            },
+            FieldLayout {
+                name: "value".into(),
+                c_name: "value".into(),
+                ty: Ty::String,
+            },
+        ],
+        sum: None,
+        sum_scalar: None,
+    });
+    types_info.insert(
+        "Element".into(),
+        TypeInfo {
+            fields: vec![
+                field_info("tag", Ty::String),
+                field_info("attrs", attr_array_ty()),
+                field_info("kids", node_array_ty()),
+            ],
+            methods: HashMap::new(),
+            zero_init: false,
+            def_mod: String::new(),
+            sum: None,
+        },
+    );
+    types_info.insert(
+        "Text".into(),
+        TypeInfo {
+            fields: vec![field_info("s", Ty::String)],
+            methods: HashMap::new(),
+            zero_init: false,
+            def_mod: String::new(),
+            sum: None,
+        },
+    );
+    types_info.insert(
+        "Fragment".into(),
+        TypeInfo {
+            fields: vec![field_info("kids", node_array_ty())],
+            methods: HashMap::new(),
+            zero_init: false,
+            def_mod: String::new(),
+            sum: None,
+        },
+    );
+}
+
+fn node_sum_info() -> SumInfo {
+    SumInfo {
+        variants: vec![
+            SumVariant {
+                tag: 0,
+                name: "Element".into(),
+                ty: Ty::User("Element".into()),
+                lit: None,
+                mark: None,
+                unwrap_payload: false,
+            },
+            SumVariant {
+                tag: 1,
+                name: "Text".into(),
+                ty: Ty::User("Text".into()),
+                lit: None,
+                mark: None,
+                unwrap_payload: false,
+            },
+            SumVariant {
+                tag: 2,
+                name: "Fragment".into(),
+                ty: Ty::User("Fragment".into()),
+                lit: None,
+                mark: None,
+                unwrap_payload: false,
+            },
+        ],
+        residual_tag: None,
+        extract_tag: None,
+    }
+}
+
 fn build_module_name_maps(
     m: &SourceModule,
     import_maps: &HashMap<String, HashMap<String, BoundImport>>,
@@ -3184,7 +3324,7 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
             out.insert(callee.clone());
             for a in args {
                 match a {
-                    Arg::Pos(e) | Arg::Named { value: e, .. } => {
+                    Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => {
                         collect_local_fn_calls_expr(e, out)
                     }
                 }
@@ -3194,7 +3334,7 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
             collect_local_fn_calls_expr(callee, out);
             for a in args {
                 match a {
-                    Arg::Pos(e) | Arg::Named { value: e, .. } => {
+                    Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => {
                         collect_local_fn_calls_expr(e, out)
                     }
                 }
@@ -3204,7 +3344,7 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
             collect_local_fn_calls_expr(receiver, out);
             for a in args {
                 match a {
-                    Arg::Pos(e) | Arg::Named { value: e, .. } => {
+                    Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => {
                         collect_local_fn_calls_expr(e, out)
                     }
                 }
@@ -3700,7 +3840,8 @@ fn resolve_ty(
         ("String", []) => Ok(Ty::String),
         ("Bytes", []) => Ok(Ty::Bytes),
         ("Buffer", []) => Ok(Ty::Buffer),
-        ("Node", []) => Ok(Ty::Node),
+        ("Node" | "Element" | "Text" | "Fragment", []) => Ok(Ty::Node),
+        ("Attr", []) => Ok(Ty::User("Attr".into())),
         // May / Trial are std/Fallible generic unions (D118) — resolved via monomorphs.
         ("Array", [TypeArg::Type(elem)]) => {
             let et = resolve_ty(elem, types, name_map)?;
@@ -5754,6 +5895,10 @@ fn subst_arg(a: &Arg, subst: &HashMap<String, Ty>) -> Arg {
             name_span: *name_span,
             value: subst_expr(value, subst),
         },
+        Arg::Spread { value, span } => Arg::Spread {
+            value: subst_expr(value, subst),
+            span: *span,
+        },
     }
 }
 
@@ -6870,19 +7015,25 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
         }
         ExprKind::Call { args, .. } | ExprKind::Start { args, .. } => {
             args.iter().any(|a| match a {
-                Arg::Pos(e) | Arg::Named { value: e, .. } => expr_has_break(e, depth),
+                Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => {
+                    expr_has_break(e, depth)
+                }
             })
         }
         ExprKind::IndirectCall { callee, args } => {
             expr_has_break(callee, depth)
                 || args.iter().any(|a| match a {
-                    Arg::Pos(e) | Arg::Named { value: e, .. } => expr_has_break(e, depth),
+                    Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => {
+                        expr_has_break(e, depth)
+                    }
                 })
         }
         ExprKind::MethodCall { receiver, args, .. } => {
             expr_has_break(receiver, depth)
                 || args.iter().any(|a| match a {
-                    Arg::Pos(e) | Arg::Named { value: e, .. } => expr_has_break(e, depth),
+                    Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => {
+                        expr_has_break(e, depth)
+                    }
                 })
         }
         ExprKind::Field { base, .. } => expr_has_break(base, depth),
@@ -8483,8 +8634,7 @@ fn lower_html_attr(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Plac
         return Err(Error::at("JSX attribute takes one argument", span));
     }
     let expr = match &args[0] {
-        Arg::Pos(e) => e,
-        Arg::Named { value, .. } => value,
+        Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => e,
     };
     let (p, ty) = lower_expr(ctx, expr)?;
     match &ty {
@@ -8508,21 +8658,30 @@ fn lower_html_attr(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Plac
 }
 
 fn lower_html_el(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
-    let str_arr = Ty::Array {
-        elem: Box::new(Ty::String),
-    };
-    let node_arr = Ty::Array {
-        elem: Box::new(Ty::Node),
-    };
     let formal = vec![
         ("tag".into(), Ty::String),
-        ("names".into(), str_arr.clone()),
-        ("vals".into(), str_arr),
-        ("kids".into(), node_arr),
+        ("attrs".into(), attr_array_ty()),
+        ("kids".into(), node_array_ty()),
     ];
-    let defaults = vec![None, None, None, None];
+    let defaults = vec![None, None, None];
     let places = resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, "")?;
     emit_call_result(ctx, Callee::Builtin("html_el".into()), places, Ty::Node)
+}
+
+fn lower_html_element_ctor(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    lower_html_el(ctx, args, span)
+}
+
+fn lower_html_text_ctor(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    let formal = vec![("s".into(), Ty::String)];
+    let places = resolve_call_args_with_defaults(ctx, &formal, &[None], args, span, "")?;
+    emit_call_result(ctx, Callee::Builtin("html_text".into()), places, Ty::Node)
+}
+
+fn lower_html_frag_ctor(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    let formal = vec![("kids".into(), node_array_ty())];
+    let places = resolve_call_args_with_defaults(ctx, &formal, &[None], args, span, "")?;
+    emit_call_result(ctx, Callee::Builtin("html_frag".into()), places, Ty::Node)
 }
 
 fn lower_html_child(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
@@ -8530,8 +8689,7 @@ fn lower_html_child(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
         return Err(Error::at("JSX child takes one argument", span));
     }
     let expr = match &args[0] {
-        Arg::Pos(e) => e,
-        Arg::Named { value, .. } => value,
+        Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => e,
     };
     // `<>…</>` desugars to `__jsx_child([…])`. Empty `[]` is Array<Void>
     // unless we thread Array<Node> as the expected type.
@@ -9236,6 +9394,11 @@ fn resolve_call_args_with_defaults(
 
     let default_at = |i: usize| -> Option<&Expr> { defaults.get(i).and_then(|d| d.as_ref()) };
 
+    let has_spread = args.iter().any(|a| matches!(a, Arg::Spread { .. }));
+    if has_spread {
+        return resolve_call_args_with_spreads(ctx, formal, defaults, args, span, def_mod);
+    }
+
     let all_named = args.iter().all(|a| matches!(a, Arg::Named { .. }));
     let all_pos = args.iter().all(|a| matches!(a, Arg::Pos(_)));
 
@@ -9272,7 +9435,7 @@ fn resolve_call_args_with_defaults(
         for (i, arg) in args.iter().enumerate() {
             let expr = match arg {
                 Arg::Pos(e) => e,
-                Arg::Named { .. } => unreachable!(),
+                Arg::Named { .. } | Arg::Spread { .. } => unreachable!(),
             };
             let p = lower_arg_for_formal(ctx, expr, &formal[i].1, &formal[i].0, i)?;
             places.push(p);
@@ -9304,7 +9467,7 @@ fn resolve_call_args_with_defaults(
                 }
                 by_name.insert(name.clone(), value);
             }
-            Arg::Pos(_) => unreachable!(),
+            Arg::Pos(_) | Arg::Spread { .. } => unreachable!(),
         }
     }
     let mut places = Vec::new();
@@ -9327,6 +9490,119 @@ fn resolve_call_args_with_defaults(
     }
     if let Some((extra, _)) = by_name.iter().next() {
         return Err(Error::at(format!("unknown argument `{extra}`"), span));
+    }
+    Ok(places)
+}
+
+/// Named args + `{...product}` spreads. Later entries win (React order).
+/// Spread value must be a constructor-param user type whose fields cover the
+/// names being copied (same type as the callee product, typically).
+fn resolve_call_args_with_spreads(
+    ctx: &mut LowerCtx,
+    formal: &[(String, Ty)],
+    defaults: &[Option<Expr>],
+    args: &[Arg],
+    span: Span,
+    def_mod: &str,
+) -> Result<Vec<Place>> {
+    if args.iter().any(|a| matches!(a, Arg::Pos(_))) {
+        return Err(Error::at(
+            "cannot mix positional arguments with `{...}` spreads",
+            span,
+        ));
+    }
+    let default_at = |i: usize| -> Option<&Expr> { defaults.get(i).and_then(|d| d.as_ref()) };
+    let mut slots: Vec<Option<Place>> = vec![None; formal.len()];
+    let idx_of = |name: &str| formal.iter().position(|(n, _)| n == name);
+
+    for arg in args {
+        match arg {
+            Arg::Named {
+                name,
+                name_span,
+                value,
+            } => {
+                let Some(i) = idx_of(name) else {
+                    return Err(Error::at(format!("unknown argument `{name}`"), *name_span));
+                };
+                let p = lower_arg_for_formal(ctx, value, &formal[i].1, name, i)?;
+                slots[i] = Some(p);
+            }
+            Arg::Spread {
+                value,
+                span: sp_span,
+            } => {
+                let (src, src_ty) = lower_expr(ctx, value)?;
+                let Ty::User(type_name) = &src_ty else {
+                    return Err(Error::at(
+                        format!(
+                            "component spread must be a user type, got {}",
+                            display_ty(&src_ty)
+                        ),
+                        *sp_span,
+                    ));
+                };
+                let info = ctx
+                    .types
+                    .get(type_name)
+                    .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), *sp_span))?
+                    .clone();
+                if info.zero_init || info.sum.is_some() {
+                    return Err(Error::at(
+                        "component spread must be a constructor-param product",
+                        *sp_span,
+                    ));
+                }
+                for f in &info.fields {
+                    let Some(i) = idx_of(&f.name) else {
+                        continue;
+                    };
+                    if !ty_eq(&ctx.types, &f.ty, &formal[i].1) {
+                        return Err(Error::at(
+                            format!(
+                                "spread field `{}` has type {}, expected {}",
+                                f.name,
+                                display_ty(&f.ty),
+                                display_ty(&formal[i].1)
+                            ),
+                            *sp_span,
+                        ));
+                    }
+                    let fp = ctx.fresh("sp");
+                    ctx.assign(
+                        fp.clone(),
+                        f.ty.clone(),
+                        RValue::Field {
+                            base: src.clone(),
+                            field: sanitize_field(&f.name),
+                        },
+                    );
+                    if needs_drop(&f.ty) {
+                        ctx.stmts.push(Stmt::Dup {
+                            place: fp.clone(),
+                            ty: f.ty.clone(),
+                        });
+                    }
+                    slots[i] = Some(fp);
+                }
+            }
+            Arg::Pos(_) => unreachable!(),
+        }
+    }
+
+    let mut places = Vec::new();
+    for (i, (fname, fty)) in formal.iter().enumerate() {
+        if let Some(p) = slots[i].take() {
+            places.push(p);
+            continue;
+        }
+        if let Some(d) = default_at(i) {
+            let p =
+                ctx.with_def_mod_maps(def_mod, |ctx| lower_arg_for_formal(ctx, d, fty, fname, i))?;
+            places.push(p);
+            continue;
+        }
+        return Err(Error::at(format!("missing argument `{fname}`"), span));
     }
     Ok(places)
 }
@@ -10148,7 +10424,7 @@ fn materialize_arg_typespace(
     def_mod: &str,
 ) -> Result<()> {
     match arg {
-        ast::Arg::Pos(e) | ast::Arg::Named { value: e, .. } => {
+        ast::Arg::Pos(e) | ast::Arg::Named { value: e, .. } | ast::Arg::Spread { value: e, .. } => {
             materialize_expr_typespace(e, types, layouts, name_map, def_mod)
         }
     }
@@ -10533,13 +10809,16 @@ fn lower_match(
     if matches!(scrut_ty, Ty::String | Ty::Int64 | Ty::Bool) {
         return lower_match_value(ctx, scrut_p, scrut_ty, arms, span);
     }
+    if scrut_ty == Ty::Node {
+        return lower_match_node(ctx, scrut_p, arms, span);
+    }
     if let Ty::User(ref n) = &scrut_ty {
         if ctx.types.get(n).and_then(|i| i.sum.as_ref()).is_some() {
             return lower_match_sum(ctx, scrut_p, scrut_ty, arms, span);
         }
     }
     Err(Error::at(
-        "match supports Trial, May, String, Int64, Bool, or union types",
+        "match supports Trial, May, String, Int64, Bool, Node, or union types",
         span,
     ))
 }
@@ -10595,6 +10874,280 @@ fn finish_match_arm_ty(
             Ok(Ty::Void)
         }
     }
+}
+
+fn node_field_builtin(variant: &str, field: &str) -> Option<&'static str> {
+    match (variant, field) {
+        ("Element", "tag") => Some("html_tag"),
+        ("Element", "attrs") => Some("html_attrs"),
+        ("Element", "kids") => Some("html_kids"),
+        ("Text", "s") => Some("html_get_text"),
+        ("Fragment", "kids") => Some("html_kids"),
+        _ => None,
+    }
+}
+
+/// Match on builtin `Node` — same arms as `Element | Text | Fragment`.
+fn lower_match_node(
+    ctx: &mut LowerCtx,
+    scrut_p: Place,
+    arms: &[MatchArm],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let sum = node_sum_info();
+    let (tag_p, _) = emit_call_result(
+        ctx,
+        Callee::Builtin("html_kind".into()),
+        vec![scrut_p.clone()],
+        Ty::Int64,
+    )?;
+    let result_place = ctx.fresh("mres");
+    let mut result_ty: Option<Ty> = None;
+    let mut covered: HashSet<u32> = HashSet::new();
+    let mut has_else = false;
+    let mut catch_all_done = false;
+
+    struct ArmCode {
+        tag: Option<u32>,
+        prefix: Vec<Stmt>,
+        guard: Option<Place>,
+        body: Vec<Stmt>,
+    }
+    let mut codes: Vec<ArmCode> = Vec::new();
+
+    for arm in arms {
+        if catch_all_done {
+            return Err(Error::at(
+                "unreachable match arm after `else` or catch-all binding",
+                pattern_span_mir(&arm.pattern),
+            ));
+        }
+        match &arm.pattern {
+            Pattern::Else { .. } => {
+                if arm.guard.is_some() {
+                    return Err(Error::at(
+                        "match guards are not allowed on catch-all arms (`else` or bare bind)",
+                        span,
+                    ));
+                }
+                has_else = true;
+                catch_all_done = true;
+                let outer = std::mem::take(&mut ctx.stmts);
+                lower_block_items(ctx, &arm.body.items)?;
+                let arm_val = match &arm.body.tail {
+                    Some(t) => Some(lower_expr(ctx, t)?),
+                    None => None,
+                };
+                let mut body = std::mem::take(&mut ctx.stmts);
+                ctx.stmts = outer;
+                finish_match_arm_ty(ctx, &result_place, &mut result_ty, arm_val, &mut body, span)?;
+                codes.push(ArmCode {
+                    tag: None,
+                    prefix: Vec::new(),
+                    guard: None,
+                    body,
+                });
+            }
+            Pattern::Bind { name, span: bspan } => {
+                if let Some(variant) = sum.variants.iter().find(|v| v.name == *name).cloned() {
+                    let guarded = arm.guard.is_some();
+                    if !guarded && !covered.insert(variant.tag) {
+                        return Err(Error::at(
+                            format!("duplicate match arm for `{name}`"),
+                            *bspan,
+                        ));
+                    }
+                    let (prefix, guard, body) = lower_union_arm_body(
+                        ctx,
+                        arm,
+                        &result_place,
+                        &mut result_ty,
+                        span,
+                        Vec::new(),
+                    )?;
+                    codes.push(ArmCode {
+                        tag: Some(variant.tag),
+                        prefix,
+                        guard,
+                        body,
+                    });
+                } else {
+                    if arm.guard.is_some() {
+                        return Err(Error::at(
+                            "match guards are not allowed on catch-all arms (`else` or bare bind)",
+                            *bspan,
+                        ));
+                    }
+                    has_else = true;
+                    catch_all_done = true;
+                    let outer = std::mem::take(&mut ctx.stmts);
+                    let bound = ctx.fresh("sbind");
+                    ctx.assign(bound.clone(), Ty::Node, RValue::Use(scrut_p.clone()));
+                    if needs_drop(&Ty::Node) {
+                        ctx.stmts.push(Stmt::Dup {
+                            place: bound.clone(),
+                            ty: Ty::Node,
+                        });
+                    }
+                    ctx.define(name, Ty::Node, false, bound);
+                    lower_block_items(ctx, &arm.body.items)?;
+                    let arm_val = match &arm.body.tail {
+                        Some(t) => Some(lower_expr(ctx, t)?),
+                        None => None,
+                    };
+                    let mut body = std::mem::take(&mut ctx.stmts);
+                    ctx.stmts = outer;
+                    finish_match_arm_ty(
+                        ctx,
+                        &result_place,
+                        &mut result_ty,
+                        arm_val,
+                        &mut body,
+                        *bspan,
+                    )?;
+                    codes.push(ArmCode {
+                        tag: None,
+                        prefix: Vec::new(),
+                        guard: None,
+                        body,
+                    });
+                }
+            }
+            Pattern::Variant {
+                name,
+                binds,
+                span: pspan,
+                ..
+            } => {
+                let variant = sum
+                    .variants
+                    .iter()
+                    .find(|v| v.name == *name)
+                    .ok_or_else(|| Error::at(format!("`{name}` is not a member of Node"), *pspan))?
+                    .clone();
+                let guarded = arm.guard.is_some();
+                if !guarded && !covered.insert(variant.tag) {
+                    return Err(Error::at(
+                        format!("duplicate match arm for `{name}`"),
+                        *pspan,
+                    ));
+                }
+                let member_fields = ctx
+                    .types
+                    .get(name)
+                    .map(|i| i.fields.clone())
+                    .unwrap_or_default();
+                let outer = std::mem::take(&mut ctx.stmts);
+                if !binds.is_empty() {
+                    if binds.len() != member_fields.len() {
+                        return Err(Error::at(
+                            format!(
+                                "`{name}` pattern expects {} field(s), found {}",
+                                member_fields.len(),
+                                binds.len()
+                            ),
+                            *pspan,
+                        ));
+                    }
+                    for (i, bopt) in binds.iter().enumerate() {
+                        if let Some(bname) = bopt {
+                            let fty = member_fields[i].ty.clone();
+                            let Some(builtin) = node_field_builtin(name, &member_fields[i].name)
+                            else {
+                                return Err(Error::at(
+                                    format!(
+                                        "internal: no Node field `{}.{}`",
+                                        name, member_fields[i].name
+                                    ),
+                                    *pspan,
+                                ));
+                            };
+                            let (fp, _) = emit_call_result(
+                                ctx,
+                                Callee::Builtin(builtin.into()),
+                                vec![scrut_p.clone()],
+                                fty.clone(),
+                            )?;
+                            ctx.define(bname, fty, false, fp);
+                        }
+                    }
+                }
+                let prefix = std::mem::take(&mut ctx.stmts);
+                ctx.stmts = outer;
+                let (prefix, guard, body) =
+                    lower_union_arm_body(ctx, arm, &result_place, &mut result_ty, span, prefix)?;
+                codes.push(ArmCode {
+                    tag: Some(variant.tag),
+                    prefix,
+                    guard,
+                    body,
+                });
+            }
+            _ => {
+                return Err(Error::at("unsupported pattern in Node match", span));
+            }
+        }
+    }
+
+    let all_tags: HashSet<u32> = sum.variants.iter().map(|v| v.tag).collect();
+    if !has_else && covered != all_tags {
+        let mut missing: Vec<&str> = sum
+            .variants
+            .iter()
+            .filter(|v| !covered.contains(&v.tag))
+            .map(|v| v.name.as_str())
+            .collect();
+        missing.sort();
+        return Err(Error::at(
+            format!(
+                "non-exhaustive Node match: missing {} (or add `else`)",
+                missing.join(", ")
+            ),
+            span,
+        ));
+    }
+
+    let mut acc: Vec<Stmt> = Vec::new();
+    for code in codes.into_iter().rev() {
+        match code.tag {
+            None => acc = code.body,
+            Some(tag) => {
+                let expected = ctx.fresh("ste");
+                ctx.assign(expected.clone(), Ty::Int64, RValue::Int(tag as i64));
+                let tag_cond = ctx.fresh("sc");
+                ctx.assign(
+                    tag_cond.clone(),
+                    Ty::Bool,
+                    RValue::Binary {
+                        op: BinaryOp::Eq,
+                        left: tag_p.clone(),
+                        right: expected,
+                    },
+                );
+                let then_body = if let Some(g) = code.guard {
+                    let mut tb = code.prefix;
+                    tb.push(Stmt::If {
+                        cond: g,
+                        then_body: code.body,
+                        else_body: acc.clone(),
+                    });
+                    tb
+                } else {
+                    let mut tb = code.prefix;
+                    tb.extend(code.body);
+                    tb
+                };
+                acc = vec![Stmt::If {
+                    cond: tag_cond,
+                    then_body,
+                    else_body: acc,
+                }];
+            }
+        }
+    }
+    ctx.stmts.extend(acc);
+    let ty = result_ty.unwrap_or(Ty::Void);
+    Ok((result_place, ty))
 }
 
 /// Match on a user union (D118): constructor arms + optional `else`.
@@ -11747,8 +12300,7 @@ fn construct_product(
             let _ = lower_arg_for_formal(
                 ctx,
                 match &args[0] {
-                    Arg::Pos(e) => e,
-                    Arg::Named { value, .. } => value,
+                    Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => e,
                 },
                 &Ty::Void,
                 "value",
@@ -12252,6 +12804,9 @@ fn lower_call(
         "__jsx_el" => lower_html_el(ctx, args, span),
         "__jsx_child" => lower_html_child(ctx, args, span),
         "__jsx_attr" => lower_html_attr(ctx, args, span),
+        "Element" => lower_html_element_ctor(ctx, args, span),
+        "Text" => lower_html_text_ctor(ctx, args, span),
+        "Fragment" => lower_html_frag_ctor(ctx, args, span),
         other => {
             // Type constructor via local or imported name.
             if let Some(base_mangled) = ctx.resolve_type_name(other) {

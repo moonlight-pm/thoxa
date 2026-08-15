@@ -57,6 +57,8 @@ pub enum TokenKind {
     Dot,
     /// Exclusive range `..`
     DotDot,
+    /// Spread `...` (JSX `{...attrs}` / `{...props}`).
+    DotDotDot,
     /// Inclusive range `..=`
     DotDotEq,
     Eq,
@@ -166,6 +168,9 @@ impl<'a> Lexer<'a> {
             b']' => self.simple(TokenKind::RBracket, start, 1),
             b':' => self.simple(TokenKind::Colon, start, 1),
             b',' => self.simple(TokenKind::Comma, start, 1),
+            b'.' if self.peek(1) == Some(b'.') && self.peek(2) == Some(b'.') => {
+                self.simple(TokenKind::DotDotDot, start, 3)
+            }
             b'.' if self.peek(1) == Some(b'.') && self.peek(2) == Some(b'=') => {
                 self.simple(TokenKind::DotDotEq, start, 3)
             }

@@ -489,7 +489,9 @@ fn find_let_init_in_expr(expr: &Expr, def_span: Span) -> Option<&Expr> {
             }
             for a in args {
                 match a {
-                    ast::Arg::Pos(e) | ast::Arg::Named { value: e, .. } => {
+                    ast::Arg::Pos(e)
+                    | ast::Arg::Named { value: e, .. }
+                    | ast::Arg::Spread { value: e, .. } => {
                         if let Some(hit) = find_let_init_in_expr(e, def_span) {
                             return Some(hit);
                         }
@@ -501,7 +503,9 @@ fn find_let_init_in_expr(expr: &Expr, def_span: Span) -> Option<&Expr> {
         ExprKind::Call { args, .. } => {
             for a in args {
                 match a {
-                    ast::Arg::Pos(e) | ast::Arg::Named { value: e, .. } => {
+                    ast::Arg::Pos(e)
+                    | ast::Arg::Named { value: e, .. }
+                    | ast::Arg::Spread { value: e, .. } => {
                         if let Some(hit) = find_let_init_in_expr(e, def_span) {
                             return Some(hit);
                         }
@@ -822,7 +826,9 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
             }
             for a in args {
                 match a {
-                    crate::ast::Arg::Pos(e) | crate::ast::Arg::Named { value: e, .. } => {
+                    crate::ast::Arg::Pos(e)
+                    | crate::ast::Arg::Named { value: e, .. }
+                    | crate::ast::Arg::Spread { value: e, .. } => {
                         if let Some(h) = walk_expr_member(e, span) {
                             return Some(h);
                         }
@@ -839,7 +845,9 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
         ExprKind::Call { args, .. } | ExprKind::Start { args, .. } => {
             for a in args {
                 match a {
-                    crate::ast::Arg::Pos(e) | crate::ast::Arg::Named { value: e, .. } => {
+                    crate::ast::Arg::Pos(e)
+                    | crate::ast::Arg::Named { value: e, .. }
+                    | crate::ast::Arg::Spread { value: e, .. } => {
                         if let Some(h) = walk_expr_member(e, span) {
                             return Some(h);
                         }
@@ -854,7 +862,9 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
             }
             for a in args {
                 match a {
-                    crate::ast::Arg::Pos(e) | crate::ast::Arg::Named { value: e, .. } => {
+                    crate::ast::Arg::Pos(e)
+                    | crate::ast::Arg::Named { value: e, .. }
+                    | crate::ast::Arg::Spread { value: e, .. } => {
                         if let Some(h) = walk_expr_member(e, span) {
                             return Some(h);
                         }
@@ -1358,7 +1368,7 @@ fn walk_expr_call_args(expr: &Expr, byte: usize, best: &mut Option<CallArgHit>) 
 
 fn walk_arg_expr(arg: &ast::Arg, byte: usize, best: &mut Option<CallArgHit>) {
     match arg {
-        ast::Arg::Pos(e) | ast::Arg::Named { value: e, .. } => {
+        ast::Arg::Pos(e) | ast::Arg::Named { value: e, .. } | ast::Arg::Spread { value: e, .. } => {
             walk_expr_call_args(e, byte, best);
         }
     }
@@ -1394,6 +1404,18 @@ fn collect_args(args: &[ast::Arg], call: CallShape, byte: usize, best: &mut Opti
                 }
                 // Named args still consume a "slot" for positional mapping of
                 // later pos args only by name; pos_i tracks positional only.
+            }
+            ast::Arg::Spread { value, .. } => {
+                if span_contains_byte(value.span, byte) {
+                    consider_hit(
+                        best,
+                        CallArgHit {
+                            span: value.span,
+                            slot: ArgSlot::Positional(pos_i),
+                            call: call.clone(),
+                        },
+                    );
+                }
             }
         }
     }

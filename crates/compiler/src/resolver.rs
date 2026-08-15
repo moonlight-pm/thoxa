@@ -205,7 +205,8 @@ impl Resolution {
 /// Built-in type and value names with no source definition in the buffer.
 const BUILTINS: &[&str] = &[
     "Int64", "Int32", "UInt64", "UInt32", "Byte", "Bool", "Void", "String", "Bytes", "Buffer",
-    "Node", "Array", "Map", "Address", "Trial", "May", "Pass", "Fail", "Has", "Not", "true", "false",
+    "Node", "Element", "Text", "Fragment", "Attr", "Array", "Map", "Address", "Trial", "May",
+    "Pass", "Fail", "Has", "Not", "true", "false",
 ];
 
 struct Scope {
@@ -1062,7 +1063,7 @@ impl<'a> Resolver<'a> {
         let param_map = self.params_of(callee_bid);
         for a in args {
             match a {
-                Arg::Pos(e) => self.walk_expr(e, scope),
+                Arg::Pos(e) | Arg::Spread { value: e, .. } => self.walk_expr(e, scope),
                 Arg::Named {
                     name,
                     name_span,

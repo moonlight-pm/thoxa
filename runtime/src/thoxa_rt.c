@@ -2385,23 +2385,26 @@ const char *thoxa_hostname(void) {
 
 /* --- HTML tree (builtin Node) ------------------------------------------- */
 
+static void thoxa_attr_dup(void *p) {
+    Thoxa_Attr *a = (Thoxa_Attr *)p;
+    thoxa_dup(a->name);
+    thoxa_dup(a->value);
+}
+
+static void thoxa_attr_drop(void *p) {
+    Thoxa_Attr *a = (Thoxa_Attr *)p;
+    thoxa_drop(a->name);
+    thoxa_drop(a->value);
+}
+
 static void thoxa_html_free_payload(ThoxaHtml *n) {
     if (!n) {
         return;
     }
     thoxa_drop(n->tag);
     thoxa_drop(n->text);
-    thoxa_array_drop(n->attr_names);
-    thoxa_array_drop(n->attr_vals);
+    thoxa_array_drop_ex(n->attrs, thoxa_attr_drop);
     thoxa_array_drop(n->kids);
-}
-
-static ThoxaArray *html_own_str_arr(ThoxaArray *a) {
-    if (!a) {
-        return thoxa_array_new(1);
-    }
-    thoxa_array_dup(a);
-    return a;
 }
 
 static ThoxaArray *html_own_kid_arr(ThoxaArray *a) {
@@ -2412,19 +2415,21 @@ static ThoxaArray *html_own_kid_arr(ThoxaArray *a) {
     return a;
 }
 
-ThoxaHtml *thoxa_html_el(
-    ThoxaString *tag,
-    ThoxaArray *attr_names,
-    ThoxaArray *attr_vals,
-    ThoxaArray *kids
-) {
+static ThoxaArray *html_own_attr_arr(ThoxaArray *a) {
+    if (!a) {
+        return thoxa_array_new_ex((uint32_t)sizeof(Thoxa_Attr), 0);
+    }
+    thoxa_array_dup(a);
+    return a;
+}
+
+ThoxaHtml *thoxa_html_el(ThoxaString *tag, ThoxaArray *attrs, ThoxaArray *kids) {
     ThoxaHtml *n = (ThoxaHtml *)thoxa_alloc(sizeof(ThoxaHtml), THOXA_TAG_HTML);
     n->kind = THOXA_HTML_EL;
     n->tag = tag;
     thoxa_dup(tag);
     n->text = NULL;
-    n->attr_names = html_own_str_arr(attr_names);
-    n->attr_vals = html_own_str_arr(attr_vals);
+    n->attrs = html_own_attr_arr(attrs);
     n->kids = html_own_kid_arr(kids);
     return n;
 }
@@ -2477,8 +2482,7 @@ ThoxaHtml *thoxa_html_text(ThoxaString *s) {
     n->kind = THOXA_HTML_TEXT;
     n->tag = NULL;
     n->text = html_escape_text(s);
-    n->attr_names = NULL;
-    n->attr_vals = NULL;
+    n->attrs = NULL;
     n->kids = NULL;
     return n;
 }
@@ -2488,10 +2492,45 @@ ThoxaHtml *thoxa_html_frag(ThoxaArray *kids) {
     n->kind = THOXA_HTML_FRAG;
     n->tag = NULL;
     n->text = NULL;
-    n->attr_names = NULL;
-    n->attr_vals = NULL;
+    n->attrs = NULL;
     n->kids = html_own_kid_arr(kids);
     return n;
+}
+
+int64_t thoxa_html_kind(const ThoxaHtml *n) {
+    return n ? (int64_t)n->kind : 0;
+}
+
+ThoxaString *thoxa_html_tag(const ThoxaHtml *n) {
+    if (!n || !n->tag) {
+        return thoxa_string_new("", 0);
+    }
+    thoxa_dup(n->tag);
+    return n->tag;
+}
+
+ThoxaString *thoxa_html_get_text(const ThoxaHtml *n) {
+    if (!n || !n->text) {
+        return thoxa_string_new("", 0);
+    }
+    thoxa_dup(n->text);
+    return n->text;
+}
+
+ThoxaArray *thoxa_html_attrs(const ThoxaHtml *n) {
+    if (!n || !n->attrs) {
+        return thoxa_array_new_ex((uint32_t)sizeof(Thoxa_Attr), 0);
+    }
+    thoxa_array_dup(n->attrs);
+    return n->attrs;
+}
+
+ThoxaArray *thoxa_html_kids(const ThoxaHtml *n) {
+    if (!n || !n->kids) {
+        return thoxa_array_new(1);
+    }
+    thoxa_array_dup(n->kids);
+    return n->kids;
 }
 
 static int html_is_void(const ThoxaString *tag) {
@@ -2588,18 +2627,16 @@ static void html_render_into(const ThoxaHtml *n, HtmlBuf *b) {
     if (n->tag) {
         html_buf_app(b, n->tag->data, n->tag->len);
     }
-    int64_t ac = thoxa_array_count(n->attr_names);
-    int64_t vc = thoxa_array_count(n->attr_vals);
-    int64_t nattr = ac < vc ? ac : vc;
+    int64_t nattr = thoxa_array_count(n->attrs);
     for (int64_t i = 0; i < nattr; i++) {
-        ThoxaString *name = (ThoxaString *)thoxa_array_get_ptr(n->attr_names, i);
-        ThoxaString *val = (ThoxaString *)thoxa_array_get_ptr(n->attr_vals, i);
+        Thoxa_Attr a;
+        thoxa_array_get_elem(n->attrs, i, &a, NULL);
         html_buf_cstr(b, " ");
-        if (name) {
-            html_buf_app(b, name->data, name->len);
+        if (a.name) {
+            html_buf_app(b, a.name->data, a.name->len);
         }
         html_buf_cstr(b, "=\"");
-        html_buf_esc_attr(b, val);
+        html_buf_esc_attr(b, a.value);
         html_buf_cstr(b, "\"");
     }
     html_buf_cstr(b, ">");
