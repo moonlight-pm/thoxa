@@ -859,6 +859,13 @@ fn emit_stmts(
                                 place.name, map.name, index.name
                             );
                         }
+                        Ty::Float64 => {
+                            let _ = writeln!(
+                                out,
+                                "{pad}{} = thoxa_f64_from_bits((uint64_t)thoxa_map_val_i64_at({}, {}));",
+                                place.name, map.name, index.name
+                            );
+                        }
                         _ => {
                             let _ = writeln!(
                                 out,
@@ -1046,6 +1053,13 @@ fn emit_stmts(
                         base.name, base.name, index.name, value.name
                     );
                 }
+                Ty::Float64 => {
+                    let _ = writeln!(
+                        out,
+                        "{pad}{} = thoxa_array_set_i64({}, {}, (int64_t)thoxa_f64_to_bits({}));",
+                        base.name, base.name, index.name, value.name
+                    );
+                }
                 Ty::User(type_name) => {
                     let _ = writeln!(
                         out,
@@ -1144,6 +1158,10 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
         RValue::Int(n) => {
             let _ = write!(out, "INT64_C({n})");
         }
+        RValue::Float(n) => {
+            let bits = n.to_bits();
+            let _ = write!(out, "thoxa_f64_from_bits(UINT64_C({bits}))");
+        }
         RValue::Bool(b) => {
             out.push_str(if *b { "true" } else { "false" });
         }
@@ -1214,6 +1232,8 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     "buffer_freeze" => "thoxa_buffer_freeze",
                     "array_count" => "thoxa_array_count",
                     "array_get_i64" => "thoxa_array_get_i64",
+                    "f64_from_bits" => "thoxa_f64_from_bits",
+                    "f64_to_bits" => "thoxa_f64_to_bits",
                     "array_get_ptr" => "thoxa_array_get_ptr",
                     "array_append_i64" => "thoxa_array_append_i64",
                     "array_append_ptr" => "thoxa_array_append_ptr",
@@ -1526,6 +1546,9 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             Ty::Int64 => {
                 let _ = write!(out, "thoxa_string_from_i64({})", value.name);
             }
+            Ty::Float64 => {
+                let _ = write!(out, "thoxa_string_from_f64({})", value.name);
+            }
             Ty::Bool => {
                 let _ = write!(out, "thoxa_string_from_bool({})", value.name);
             }
@@ -1609,6 +1632,7 @@ fn c_ty(ty: &Ty) -> String {
         Ty::UInt32 => "uint32_t".into(),
         Ty::UInt64 => "uint64_t".into(),
         Ty::Byte => "uint8_t".into(),
+        Ty::Float64 => "double".into(),
         Ty::Bool => "bool".into(),
         Ty::String => "ThoxaString*".into(),
         Ty::Bytes => "ThoxaBytes*".into(),
@@ -1673,6 +1697,9 @@ fn emit_array_lit(out: &mut String, elems: &[crate::mir::Place], elem_ty: &Ty) {
             match elem_ty {
                 Ty::Bool => {
                     let _ = write!(out, "({} ? INT64_C(1) : INT64_C(0))", e.name);
+                }
+                Ty::Float64 => {
+                    let _ = write!(out, "(int64_t)thoxa_f64_to_bits({})", e.name);
                 }
                 _ => {
                     let _ = write!(out, "(int64_t){}", e.name);
@@ -1751,6 +1778,15 @@ fn emit_map_set(
             let _ = write!(
                 out,
                 "thoxa_map_set_i64({}, {}, {} ? INT64_C(1) : INT64_C(0))",
+                map.name,
+                c_map_key_bits(&key.name),
+                val.name
+            );
+        }
+        Ty::Float64 => {
+            let _ = write!(
+                out,
+                "thoxa_map_set_i64({}, {}, (int64_t)thoxa_f64_to_bits({}))",
                 map.name,
                 c_map_key_bits(&key.name),
                 val.name
@@ -1836,6 +1872,22 @@ fn emit_map_get(
             );
             let _ = writeln!(out, "{pad}{} = {tmp} != 0;", dest.name);
         }
+        Ty::Float64 => {
+            let tmp = format!("{}_i", dest.name);
+            let _ = writeln!(out, "{pad}int64_t {tmp} = 0;");
+            let _ = writeln!(
+                out,
+                "{pad}{} = thoxa_map_get_i64({}, {}, &{tmp});",
+                found.name,
+                map.name,
+                c_map_key_bits(&key.name)
+            );
+            let _ = writeln!(
+                out,
+                "{pad}{} = thoxa_f64_from_bits((uint64_t){tmp});",
+                dest.name
+            );
+        }
         _ => {
             let _ = writeln!(
                 out,
@@ -1871,6 +1923,13 @@ fn emit_map_val_at(
             let _ = write!(
                 out,
                 "thoxa_map_val_i64_at({}, {}) != 0",
+                map.name, index.name
+            );
+        }
+        Ty::Float64 => {
+            let _ = write!(
+                out,
+                "thoxa_f64_from_bits((uint64_t)thoxa_map_val_i64_at({}, {}))",
                 map.name, index.name
             );
         }

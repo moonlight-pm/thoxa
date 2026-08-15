@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-15 — Float64
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D140 | Product `Float64` | IEEE-754 binary64 (`double`). Literals `1.5`, `1e2`, `1.5e-1`, `1f64`, `3.14f64`. A `.` starts a fraction only when the next char is a digit, so `1..5` stays a range. No `Float32` (`f32` suffix is an error). Arith `+ - * /` and compares; no `%`; no bitwise. Int widths coerce to `Float64` at assign / call / field / return / mixed binop; never `Float64`→int implicit. Lives in ctor fields, `Array` elems, Map **values**, C-layout ABI scalars, and `extern` as `double`. Interp / JSX stringify is shortest round-trip (integral values print with `.0`). | **Shipped.** Amends **D28** (new scalar width) and **D48** (ctor fields). Not a Map key. No float literal types or match arms. Gate: `floats`. JSON codec is the next CURRENT slice. |
+
 ## 2026-08-15 — HTTP host modules under `std/http/`
 
 | ID | Decision | Choice | Notes |
@@ -406,7 +412,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D47 | Loops (subset) | `while`, `loop`, `for x in lo..hi` / `lo..=hi`, `break`, `continue` | Loops yield `Void`; **`for x in arr` shipped with D55**; `continue` in range-for hits C for-step |
-| D48 | Constructor-param field types | Int64, Bool, **String**, **Bytes** | C-layout body fields remain ABI-only. **Amended:** dynamic `Array` (D69), `Map` (D134), **Node + nested User / user sums (D135)**. |
+| D48 | Constructor-param field types | Int64, Bool, **String**, **Bytes** | C-layout body fields remain ABI-only. **Amended:** dynamic `Array` (D69), `Map` (D134), **Node + nested User / user sums (D135)**, **Float64 (D140)**. |
 | D49 | RC on user values | `needs_drop(User)` always; cgen walks heap fields | Dup after `StructLit` and heap field loads; method `_self` is a param (not auto-dropped) |
 
 ## 2026-07-19 — R9+ Trial monomorphs + wire I/O
@@ -457,7 +463,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | D25 | Construction | `T()` zero-inits C-layout types | No field args; R3 still uses named constructor args |
 | D26 | `Address<T>` | Extern params only; implicit `&` on mut User places | Explicit `address()`, storing Address deferred |
 | D27 | Fixed arrays | Field-only `Array<T, N>`; element get/set via `[i]` | Locals → **D117**. Whole-array assign → D117 element copy; no slice |
-| D28 | New scalar widths | UInt32, Byte (=UInt8); bitwise on integers in Int64 then truncate on field store | Hex `0x…` literals |
+| D28 | New scalar widths | UInt32, Byte (=UInt8); bitwise on integers in Int64 then truncate on field store | Hex `0x…` literals. **Amended by D140:** `Float64`. |
 | D29 | Struct value-copy / `sizeof` | Deferred | Oracle LF-B §9; kilo re-reads via tcgetattr |
 
 ### Notes

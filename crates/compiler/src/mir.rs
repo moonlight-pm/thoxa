@@ -171,6 +171,8 @@ pub enum Stmt {
 pub enum RValue {
     Use(Place),
     Int(i64),
+    /// IEEE-754 binary64 bits as a Thoxa `Float64` value.
+    Float(f64),
     Bool(bool),
     /// Heap string from UTF-8 bytes (owned, refcount 1).
     StringLit(String),
@@ -387,6 +389,8 @@ pub enum Ty {
     UInt64,
     /// `Byte` / `UInt8` — fixed 8-bit unsigned.
     Byte,
+    /// IEEE-754 binary64 (`double`).
+    Float64,
     Bool,
     /// Heap RC String (`ThoxaString*`).
     String,
@@ -433,6 +437,7 @@ pub fn display_ty(ty: &Ty) -> String {
         Ty::UInt32 => "UInt32".into(),
         Ty::UInt64 => "UInt64".into(),
         Ty::Byte => "Byte".into(),
+        Ty::Float64 => "Float64".into(),
         Ty::Bool => "Bool".into(),
         Ty::String => "String".into(),
         Ty::Bytes => "Bytes".into(),
@@ -518,7 +523,8 @@ fn display_type_base(mangled_base: &str) -> String {
 
 fn display_mono_arg(arg: &str) -> String {
     match arg {
-        "Void" | "Never" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte" | "Bool" | "String"
+        "Void" | "Never" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte" | "Float64"
+        | "Bool" | "String"
         | "Bytes" | "Buffer" => arg.to_string(),
         a if a.starts_with("Array_") => {
             format!("Array<{}>", display_mono_arg(&a["Array_".len()..]))
@@ -616,6 +622,7 @@ fn is_array_elem_ty(ty: &Ty) -> bool {
     matches!(
         ty,
         Ty::Int64
+            | Ty::Float64
             | Ty::Bool
             | Ty::String
             | Ty::Bytes
@@ -665,7 +672,7 @@ fn is_array_user_elem(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
 /// D48 / D135: constructor-param fields (not C-layout body fields, not fn types).
 fn is_ctor_field_ty(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
     match ty {
-        Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Node => true,
+        Ty::Int64 | Ty::Float64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Node => true,
         Ty::Array { .. } | Ty::Map { .. } => true,
         Ty::User(name) => types.get(name).is_some_and(|info| !info.zero_init),
         _ => false,
@@ -679,10 +686,19 @@ fn is_int(ty: &Ty) -> bool {
     )
 }
 
+fn is_float(ty: &Ty) -> bool {
+    matches!(ty, Ty::Float64)
+}
+
+/// Int widths among themselves, or Int → Float64 (never the reverse).
+fn can_numeric_cast(from: &Ty, to: &Ty) -> bool {
+    (is_int(from) && is_int(to)) || (is_int(from) && is_float(to))
+}
+
 fn is_abi_scalar(ty: &Ty) -> bool {
     matches!(
         ty,
-        Ty::Int32 | Ty::Int64 | Ty::UInt32 | Ty::UInt64 | Ty::Byte
+        Ty::Int32 | Ty::Int64 | Ty::UInt32 | Ty::UInt64 | Ty::Byte | Ty::Float64
     )
 }
 
@@ -701,6 +717,7 @@ fn is_ffi_ty(ty: &Ty) -> bool {
         | Ty::UInt32
         | Ty::UInt64
         | Ty::Byte
+        | Ty::Float64
         | Ty::String
         | Ty::Bytes
         | Ty::Void => true,
@@ -2127,7 +2144,7 @@ fn resolve_type_def_shape(
             // (including sums). C-layout and function types stay out.
             if !is_ctor_field_ty(&ty, types_info) {
                 return Err(Error::at(
-                    "constructor-param fields must be Int64, Bool, String, Bytes, Node, Array, Map, or a constructor-param type",
+                    "constructor-param fields must be Int64, Float64, Bool, String, Bytes, Node, Array, Map, or a constructor-param type",
                     p.ty.span,
                 ));
             }
@@ -3420,6 +3437,7 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
             }
         }
         ExprKind::Int(_)
+        | ExprKind::Float(_)
         | ExprKind::Bool(_)
         | ExprKind::String(_)
         | ExprKind::Name(_)
@@ -3835,6 +3853,7 @@ fn resolve_ty(
         ("UInt32", []) => Ok(Ty::UInt32),
         ("UInt64", []) => Ok(Ty::UInt64),
         ("Byte" | "UInt8", []) => Ok(Ty::Byte),
+        ("Float64", []) => Ok(Ty::Float64),
         ("Bool", []) => Ok(Ty::Bool),
         ("Void", []) => Ok(Ty::Void),
         ("String", []) => Ok(Ty::String),
@@ -3848,7 +3867,7 @@ fn resolve_ty(
             if !is_array_elem_ty(&et) {
                 return Err(Error::at(
                     format!(
-                        "Array element type not yet supported: {et:?} (Int64, Bool, String, Bytes, User)"
+                        "Array element type not yet supported: {et:?} (Int64, Float64, Bool, String, Bytes, User)"
                     ),
                     elem.span,
                 ));
@@ -4045,6 +4064,7 @@ fn ty_mono_suffix(ty: &Ty) -> String {
         Ty::UInt32 => "UInt32".into(),
         Ty::UInt64 => "UInt64".into(),
         Ty::Byte => "Byte".into(),
+        Ty::Float64 => "Float64".into(),
         Ty::Bool => "Bool".into(),
         Ty::String => "String".into(),
         Ty::Bytes => "Bytes".into(),
@@ -4289,6 +4309,7 @@ fn is_builtin_generic(name: &str) -> bool {
             | "UInt64"
             | "Byte"
             | "UInt8"
+            | "Float64"
             | "Bool"
             | "String"
             | "Bytes"
@@ -4380,6 +4401,7 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
         Ty::UInt32 => ("UInt32".into(), vec![]),
         Ty::UInt64 => ("UInt64".into(), vec![]),
         Ty::Byte => ("Byte".into(), vec![]),
+        Ty::Float64 => ("Float64".into(), vec![]),
         Ty::Bool => ("Bool".into(), vec![]),
         Ty::String => ("String".into(), vec![]),
         Ty::Bytes => ("Bytes".into(), vec![]),
@@ -4530,6 +4552,7 @@ fn instantiate_product_mono(
         let ok = matches!(
             ty,
             Ty::Int64
+                | Ty::Float64
                 | Ty::Bool
                 | Ty::String
                 | Ty::Bytes
@@ -4541,7 +4564,7 @@ fn instantiate_product_mono(
         if !ok {
             return Err(Error::at(
                 format!(
-                    "generic product field `{}` must be Int64, Bool, String, Bytes, Array, Map, User, or Void (got {ty:?})",
+                    "generic product field `{}` must be Int64, Float64, Bool, String, Bytes, Array, Map, User, or Void (got {ty:?})",
                     p.name
                 ),
                 p.ty.span,
@@ -5757,6 +5780,7 @@ fn subst_assign_target(t: &AssignTarget, subst: &HashMap<String, Ty>) -> AssignT
 fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
     let kind = match &e.kind {
         ExprKind::Int(n) => ExprKind::Int(*n),
+        ExprKind::Float(n) => ExprKind::Float(*n),
         ExprKind::Bool(b) => ExprKind::Bool(*b),
         ExprKind::String(s) => ExprKind::String(s.clone()),
         ExprKind::Interpolate(parts) => ExprKind::Interpolate(
@@ -6102,7 +6126,7 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
                     tail.span,
                 )? {
                     Some(p) => p,
-                    None if is_int(&ty) && is_int(expect) => {
+                    None if can_numeric_cast(&ty, expect) => {
                         coerce_place(ctx, place, &ty, expect, tail.span)?
                     }
                     None => {
@@ -6292,7 +6316,7 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
                         *name_span,
                     )? {
                         Some(p) => (p, expect),
-                        None if is_int(&ty) && is_int(&expect) => {
+                        None if can_numeric_cast(&ty, &expect) => {
                             let p = coerce_place(ctx, place, &ty, &expect, *name_span)?;
                             (p, expect)
                         }
@@ -6592,7 +6616,7 @@ fn coerce_to_field(
     if from == to {
         return Ok(place);
     }
-    if is_int(from) && is_int(to) {
+    if can_numeric_cast(from, to) {
         return coerce_place(ctx, place, from, to, span);
     }
     Err(Error::at(
@@ -6640,6 +6664,11 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             ctx.assign(p.clone(), Ty::Int64, RValue::Int(*n));
             Ok((p, Ty::Int64))
         }
+        ExprKind::Float(n) => {
+            let p = ctx.fresh("f");
+            ctx.assign(p.clone(), Ty::Float64, RValue::Float(*n));
+            Ok((p, Ty::Float64))
+        }
         ExprKind::Bool(b) => {
             let p = ctx.fresh("b");
             ctx.assign(p.clone(), Ty::Bool, RValue::Bool(*b));
@@ -6678,8 +6707,23 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             let (arg, arg_ty) = lower_expr(ctx, inner)?;
             match op {
                 UnaryOp::Neg => {
+                    if is_float(&arg_ty) {
+                        let p = ctx.fresh("neg");
+                        ctx.assign(
+                            p.clone(),
+                            Ty::Float64,
+                            RValue::Unary {
+                                op: UnaryOp::Neg,
+                                arg,
+                            },
+                        );
+                        return Ok((p, Ty::Float64));
+                    }
                     if !is_int(&arg_ty) {
-                        return Err(Error::at("unary `-` expects an integer", expr.span));
+                        return Err(Error::at(
+                            "unary `-` expects an integer or Float64",
+                            expr.span,
+                        ));
                     }
                     let arg = if arg_ty == Ty::Int64 {
                         arg
@@ -6856,7 +6900,7 @@ fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<
             };
             if ty != fn_ret {
                 // Allow int width widen/narrow via existing coerce for ints if needed.
-                if is_int(&ty) && is_int(&fn_ret) {
+                if can_numeric_cast(&ty, &fn_ret) {
                     let place = coerce_place(ctx, place, &ty, &fn_ret, e.span)?;
                     Some(place)
                 } else if fn_ret == Ty::Void && ty == Ty::Void {
@@ -7056,6 +7100,7 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
         ExprKind::Continue
         | ExprKind::Name(_)
         | ExprKind::Int(_)
+        | ExprKind::Float(_)
         | ExprKind::Bool(_)
         | ExprKind::String(_) => false,
     }
@@ -7278,6 +7323,24 @@ fn lower_for_array(
                 value: raw,
                 from: Ty::Int64,
                 to: Ty::Bool,
+            },
+        });
+    } else if elem_ty == Ty::Float64 {
+        let raw = ctx.fresh("araw");
+        ctx.stmts.push(Stmt::Assign {
+            place: raw.clone(),
+            ty: Ty::Int64,
+            value: RValue::Call {
+                callee: Callee::Builtin("array_get_i64".into()),
+                args: vec![arr_p.clone(), idx.clone()],
+            },
+        });
+        ctx.stmts.push(Stmt::Assign {
+            place: elem_p.clone(),
+            ty: Ty::Float64,
+            value: RValue::Call {
+                callee: Callee::Builtin("f64_from_bits".into()),
+                args: vec![raw],
             },
         });
     } else {
@@ -7819,7 +7882,7 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                 let (v, ty) = lower_expr(ctx, e)?;
                 match ty {
                     Ty::String => v,
-                    Ty::Int64 | Ty::Bool => {
+                    Ty::Int64 | Ty::Float64 | Ty::Bool => {
                         let p = ctx.fresh("ts");
                         ctx.assign(
                             p.clone(),
@@ -8338,6 +8401,24 @@ fn lower_array_index(
                 to: Ty::Bool,
             },
         );
+    } else if elem_ty == Ty::Float64 {
+        let raw = ctx.fresh("araw");
+        ctx.assign(
+            raw.clone(),
+            Ty::Int64,
+            RValue::Call {
+                callee: Callee::Builtin("array_get_i64".into()),
+                args: vec![base_p, idx_p],
+            },
+        );
+        ctx.assign(
+            p.clone(),
+            Ty::Float64,
+            RValue::Call {
+                callee: Callee::Builtin("f64_from_bits".into()),
+                args: vec![raw],
+            },
+        );
     } else {
         ctx.assign(
             p.clone(),
@@ -8729,7 +8810,7 @@ fn lower_html_child(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
 /// Int64 / Bool / other ints → owned String (shared with interpolation).
 fn stringify_place(ctx: &mut LowerCtx, value: Place, ty: Ty, span: Span) -> Result<Place> {
     match &ty {
-        Ty::Int64 | Ty::Bool => {
+        Ty::Int64 | Ty::Float64 | Ty::Bool => {
             let p = ctx.fresh("ts");
             ctx.assign(p.clone(), Ty::String, RValue::ToString { value, from: ty });
             Ok(p)
@@ -9079,6 +9160,17 @@ fn coerce_array_scalar_item(ctx: &mut LowerCtx, elem: &Ty, item: Place) -> Place
                 value: item,
                 from: Ty::Bool,
                 to: Ty::Int64,
+            },
+        );
+        p
+    } else if *elem == Ty::Float64 {
+        let p = ctx.fresh("fbits");
+        ctx.assign(
+            p.clone(),
+            Ty::Int64,
+            RValue::Call {
+                callee: Callee::Builtin("f64_to_bits".into()),
+                args: vec![item],
             },
         );
         p
@@ -9655,7 +9747,7 @@ fn lower_arg_for_formal(
     let (p, ty) = lower_expr_expect(ctx, expr, Some(formal_ty))?;
     if &ty == formal_ty {
         Ok(p)
-    } else if is_int(&ty) && is_int(formal_ty) {
+    } else if can_numeric_cast(&ty, formal_ty) {
         coerce_place(ctx, p, &ty, formal_ty, expr.span)
     } else if let Some(p) = try_sum_coerce(
         ctx,
@@ -10311,6 +10403,7 @@ fn materialize_expr_typespace(
 ) -> Result<()> {
     match &expr.kind {
         ExprKind::Int(_)
+        | ExprKind::Float(_)
         | ExprKind::Bool(_)
         | ExprKind::String(_)
         | ExprKind::Name(_)
@@ -11964,6 +12057,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
         Ty::Int32 | Ty::Int64 | Ty::UInt32 | Ty::UInt64 | Ty::Byte => {
             ctx.assign(place.clone(), ty.clone(), RValue::Int(0))
         }
+        Ty::Float64 => ctx.assign(place.clone(), ty.clone(), RValue::Float(0.0)),
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
             ctx.note_drop_place(place, ty);
@@ -12028,6 +12122,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                     let fp = ctx.fresh("zf");
                     match &f.ty {
                         Ty::Int64 => ctx.assign(fp.clone(), Ty::Int64, RValue::Int(0)),
+                        Ty::Float64 => ctx.assign(fp.clone(), Ty::Float64, RValue::Float(0.0)),
                         Ty::Bool => ctx.assign(fp.clone(), Ty::Bool, RValue::Bool(false)),
                         Ty::String
                         | Ty::Bytes
@@ -12078,6 +12173,30 @@ fn lower_binary(
     let (r, rt) = lower_expr(ctx, right)?;
     match op {
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
+            if is_float(&lt) || is_float(&rt) {
+                if matches!(op, BinaryOp::Rem) {
+                    return Err(Error::at("`%` is not defined for Float64", span));
+                }
+                if !(is_float(&lt) || is_int(&lt)) || !(is_float(&rt) || is_int(&rt)) {
+                    return Err(Error::at(
+                        format!("operator {op:?} expects numeric operands"),
+                        span,
+                    ));
+                }
+                let left = if lt == Ty::Float64 {
+                    l
+                } else {
+                    coerce_place(ctx, l, &lt, &Ty::Float64, span)?
+                };
+                let right = if rt == Ty::Float64 {
+                    r
+                } else {
+                    coerce_place(ctx, r, &rt, &Ty::Float64, span)?
+                };
+                let p = ctx.fresh("fbin");
+                ctx.assign(p.clone(), Ty::Float64, RValue::Binary { op, left, right });
+                return Ok((p, Ty::Float64));
+            }
             if !is_int(&lt) || !is_int(&rt) {
                 return Err(Error::at(
                     format!("operator {op:?} expects integer operands"),
@@ -12163,6 +12282,27 @@ fn lower_binary(
                     return Ok((p, Ty::Bool));
                 }
                 return Ok((eq_p, Ty::Bool));
+            }
+            if is_float(&lt) || is_float(&rt) {
+                if !(is_float(&lt) || is_int(&lt)) || !(is_float(&rt) || is_int(&rt)) {
+                    return Err(Error::at(
+                        format!("cannot compare {lt:?} and {rt:?}"),
+                        span,
+                    ));
+                }
+                let left = if lt == Ty::Float64 {
+                    l
+                } else {
+                    coerce_place(ctx, l, &lt, &Ty::Float64, span)?
+                };
+                let right = if rt == Ty::Float64 {
+                    r
+                } else {
+                    coerce_place(ctx, r, &rt, &Ty::Float64, span)?
+                };
+                let p = ctx.fresh("fcmp");
+                ctx.assign(p.clone(), Ty::Bool, RValue::Binary { op, left, right });
+                return Ok((p, Ty::Bool));
             }
             if is_int(&lt) && is_int(&rt) {
                 let left = if lt == Ty::Int64 {
@@ -12972,8 +13112,7 @@ fn coerce_place(ctx: &mut LowerCtx, place: Place, from: &Ty, to: &Ty, span: Span
     if from == to {
         return Ok(place);
     }
-    let ok = is_int(from) && is_int(to);
-    if !ok {
+    if !can_numeric_cast(from, to) {
         return Err(Error::at(format!("cannot coerce {from:?} to {to:?}"), span));
     }
     let p = ctx.fresh("cast");
@@ -13359,7 +13498,7 @@ fn lower_block_into(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Op
                 tail.span,
             )? {
                 Some(p) => return Ok(Some(p)),
-                None if is_int(&ty) && is_int(expect) => {
+                None if can_numeric_cast(&ty, expect) => {
                     return Ok(Some(coerce_place(ctx, place, &ty, expect, tail.span)?));
                 }
                 None => {

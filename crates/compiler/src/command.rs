@@ -190,7 +190,7 @@ fn line_parses_as_thoxa(line: &str) -> bool {
 fn expr_is_command_atom(e: &crate::ast::Expr) -> bool {
     use crate::ast::{BinaryOp, ExprKind, UnaryOp};
     match &e.kind {
-        ExprKind::Name(_) | ExprKind::String(_) | ExprKind::Int(_) | ExprKind::Bool(_) => true,
+        ExprKind::Name(_) | ExprKind::String(_) | ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Bool(_) => true,
         // `AGENTS.md`, `foo.bar.baz` — path-like, not intentional field reads at stmt level
         ExprKind::Field { base, .. } => expr_is_command_atom(base),
         // Paths (`a/b`) and flags (`ls -al`, `cmd -a -b`, `ls --all`)
@@ -212,7 +212,7 @@ fn expr_is_command_atom(e: &crate::ast::Expr) -> bool {
 fn expr_is_pure_literal_arith(e: &crate::ast::Expr) -> bool {
     use crate::ast::{BinaryOp, ExprKind, UnaryOp};
     match &e.kind {
-        ExprKind::Int(_) | ExprKind::Bool(_) => true,
+        ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Bool(_) => true,
         ExprKind::Binary {
             op: BinaryOp::Div | BinaryOp::Sub | BinaryOp::Add | BinaryOp::Mul | BinaryOp::Rem,
             left,

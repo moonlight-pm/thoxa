@@ -177,6 +177,55 @@ ThoxaString *thoxa_string_from_i64(int64_t v) {
     return thoxa_string_new(buf, (size_t)n);
 }
 
+double thoxa_f64_from_bits(uint64_t bits) {
+    double d;
+    memcpy(&d, &bits, sizeof d);
+    return d;
+}
+
+uint64_t thoxa_f64_to_bits(double v) {
+    uint64_t bits;
+    memcpy(&bits, &v, sizeof bits);
+    return bits;
+}
+
+ThoxaString *thoxa_string_from_f64(double v) {
+    char buf[64];
+    uint64_t bits = thoxa_f64_to_bits(v);
+    if ((bits & 0x7ff0000000000000ull) == 0x7ff0000000000000ull) {
+        if ((bits & 0x000fffffffffffffull) != 0) {
+            return thoxa_string_from_cstr("NaN");
+        }
+        return thoxa_string_from_cstr((bits >> 63) != 0 ? "-inf" : "inf");
+    }
+    /* Shortest decimal that round-trips (so 0.15 prints as 0.15, not 0.1499…). */
+    int n = 0;
+    for (int prec = 1; prec <= 17; prec++) {
+        n = snprintf(buf, sizeof(buf), "%.*g", prec, v);
+        if (n < 0) {
+            thoxa_panic("snprintf failed");
+        }
+        char *end = NULL;
+        double back = strtod(buf, &end);
+        if (end && *end == '\0' && thoxa_f64_to_bits(back) == bits) {
+            break;
+        }
+    }
+    int has_dot = 0;
+    for (int i = 0; i < n; i++) {
+        if (buf[i] == '.' || buf[i] == 'e' || buf[i] == 'E') {
+            has_dot = 1;
+            break;
+        }
+    }
+    if (!has_dot && n + 2 < (int)sizeof(buf)) {
+        buf[n++] = '.';
+        buf[n++] = '0';
+        buf[n] = '\0';
+    }
+    return thoxa_string_new(buf, (size_t)n);
+}
+
 ThoxaString *thoxa_string_from_bool(bool v) {
     return thoxa_string_from_cstr(v ? "true" : "false");
 }

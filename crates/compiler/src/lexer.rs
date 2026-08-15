@@ -33,6 +33,8 @@ pub enum TokenKind {
     // Identifiers & literals
     Ident(String),
     Int(i64),
+    /// Decimal / exponent / `f64`-suffixed float (always `Float64`).
+    Float(f64),
     String(String),
     /// Unexpected character kept as a token so JSX raw text can contain `'`,
     /// `·`, etc. The parser errors on these outside tag children.
@@ -352,17 +354,84 @@ impl<'a> Lexer<'a> {
         while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
             self.pos += 1;
         }
+
+        // Float if we see `.` + digit (so `1..5` stays a range) or an exponent.
+        let mut is_float = false;
+        if self.peek(0) == Some(b'.') && self.peek(1).is_some_and(|c| c.is_ascii_digit()) {
+            self.pos += 1;
+            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+                self.pos += 1;
+            }
+            is_float = true;
+        }
+        if matches!(self.peek(0), Some(b'e' | b'E')) {
+            let exp_ok = self.peek(1).is_some_and(|c| c.is_ascii_digit())
+                || (matches!(self.peek(1), Some(b'+' | b'-'))
+                    && self.peek(2).is_some_and(|c| c.is_ascii_digit()));
+            if exp_ok {
+                self.pos += 1;
+                if matches!(self.peek(0), Some(b'+' | b'-')) {
+                    self.pos += 1;
+                }
+                while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+                    self.pos += 1;
+                }
+                is_float = true;
+            }
+        }
+
+        // Optional width suffix. `f64` marks Float64; `f32` is not shipped.
+        if self.at_word("f64") {
+            self.pos += 3;
+            is_float = true;
+        } else if self.at_word("f32") {
+            return Err(Error::at(
+                "Float32 is not shipped; use Float64 (literal `1.0` or `1.0f64`)",
+                Span::new(start, self.pos + 3),
+            ));
+        }
+
         let text = &self.src[start..self.pos];
-        let value: i64 = text.parse().map_err(|_| {
-            Error::at(
-                format!("invalid integer `{text}`"),
-                Span::new(start, self.pos),
-            )
-        })?;
-        Ok(Token {
-            kind: TokenKind::Int(value),
-            span: Span::new(start, self.pos),
-        })
+        if is_float {
+            let num = text.strip_suffix("f64").unwrap_or(text);
+            let value: f64 = num.parse().map_err(|_| {
+                Error::at(
+                    format!("invalid float `{text}`"),
+                    Span::new(start, self.pos),
+                )
+            })?;
+            if !value.is_finite() {
+                return Err(Error::at(
+                    format!("float `{text}` is out of range for Float64"),
+                    Span::new(start, self.pos),
+                ));
+            }
+            Ok(Token {
+                kind: TokenKind::Float(value),
+                span: Span::new(start, self.pos),
+            })
+        } else {
+            let value: i64 = text.parse().map_err(|_| {
+                Error::at(
+                    format!("invalid integer `{text}`"),
+                    Span::new(start, self.pos),
+                )
+            })?;
+            Ok(Token {
+                kind: TokenKind::Int(value),
+                span: Span::new(start, self.pos),
+            })
+        }
+    }
+
+    fn at_word(&self, word: &str) -> bool {
+        let rest = &self.src[self.pos..];
+        rest.starts_with(word)
+            && rest
+                .as_bytes()
+                .get(word.len())
+                .map(|b| !is_ident_continue(*b))
+                .unwrap_or(true)
     }
 
     fn ident_or_keyword(&mut self, start: usize) -> Result<Token> {
@@ -531,5 +600,43 @@ mod tests {
         // Bare underscore alone.
         let one = Lexer::new("_").tokenize().unwrap();
         assert!(matches!(one[0].kind, TokenKind::Ident(ref s) if s == "_"));
+    }
+
+    #[test]
+    fn float_literals() {
+        let tokens = Lexer::new("1.5 1e2 1.5e-1 3.14f64 1f64").tokenize().unwrap();
+        let floats: Vec<f64> = tokens
+            .iter()
+            .filter_map(|t| match t.kind {
+                TokenKind::Float(v) => Some(v),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(floats.len(), 5, "{tokens:?}");
+        assert!((floats[0] - 1.5).abs() < 1e-15);
+        assert!((floats[1] - 100.0).abs() < 1e-15);
+        assert!((floats[2] - 0.15).abs() < 1e-15);
+        assert!((floats[3] - 3.14).abs() < 1e-15);
+        assert!((floats[4] - 1.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn range_is_not_a_float() {
+        let tokens = Lexer::new("1..5 0..=10").tokenize().unwrap();
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::DotDot));
+        assert!(tokens.iter().any(|t| t.kind == TokenKind::DotDotEq));
+        assert!(!tokens.iter().any(|t| matches!(t.kind, TokenKind::Float(_))));
+        assert!(matches!(&tokens[0].kind, TokenKind::Int(1)));
+        assert!(matches!(&tokens[2].kind, TokenKind::Int(5)));
+    }
+
+    #[test]
+    fn float32_suffix_is_rejected() {
+        let err = Lexer::new("1.0f32").tokenize().unwrap_err();
+        assert!(
+            err.message.contains("Float32"),
+            "{}",
+            err.message
+        );
     }
 }

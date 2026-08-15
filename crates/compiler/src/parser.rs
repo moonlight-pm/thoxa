@@ -1524,6 +1524,14 @@ impl Parser {
                     span: Span::new(start.start, self.prev_span().end),
                 })
             }
+            TokenKind::Float(n) => {
+                let n = *n;
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Float(n),
+                    span: Span::new(start.start, self.prev_span().end),
+                })
+            }
             TokenKind::True => {
                 self.bump();
                 Ok(Expr {
@@ -2343,6 +2351,7 @@ impl Parser {
         matches!(
             self.current().kind,
             TokenKind::Int(_)
+                | TokenKind::Float(_)
                 | TokenKind::True
                 | TokenKind::False
                 | TokenKind::String(_)

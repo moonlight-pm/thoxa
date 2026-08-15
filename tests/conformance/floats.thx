@@ -1,0 +1,50 @@
+## Float64 literals, arith, coerce, fields, arrays (D140).
+import logging from "std/logging"
+
+type Point(x: Float64, y: Float64)
+
+fn twice(n: Float64) -> Float64 {
+    n * 2.0
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info("{1.5 + 2.25}")
+    logging.info("{3.0 * 2.0}")
+    logging.info("{7.5 / 2.5}")
+    logging.info("{1.5 - 4.0}")
+    logging.info("{-1.5}")
+    logging.info("{1 + 2.5}")
+    logging.info("{2.5 > 2}")
+    logging.info("{1.5 == 1.5}")
+    logging.info("{1e2 == 100.0}")
+    logging.info("{1.5e-1}")
+    logging.info("{3.14f64}")
+    logging.info("{1f64}")
+
+    let a: Float64 = 4
+    logging.info("{twice(a)}")
+
+    let p = Point(x: 1.5, y: 2)
+    logging.info("{p.x}")
+    logging.info("{p.y}")
+
+    let xs = [1.5, 2.5]
+    logging.info("{xs[0]}")
+    logging.info("{xs[1]}")
+    logging.info("{xs.count}")
+
+    mut ys: Array<Float64> = []
+    ys.append(9.25)
+    logging.info("{ys[0]}")
+
+    ## Range must still be integers, not a float token.
+    mut n = 0
+    for i in 1..4 {
+        n = n + i
+    }
+    logging.info("{n}")
+    0
+}

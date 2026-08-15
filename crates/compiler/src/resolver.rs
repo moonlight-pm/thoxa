@@ -204,7 +204,7 @@ impl Resolution {
 
 /// Built-in type and value names with no source definition in the buffer.
 const BUILTINS: &[&str] = &[
-    "Int64", "Int32", "UInt64", "UInt32", "Byte", "Bool", "Void", "String", "Bytes", "Buffer",
+    "Int64", "Int32", "UInt64", "UInt32", "Byte", "Float64", "Bool", "Void", "String", "Bytes", "Buffer",
     "Node", "Element", "Text", "Fragment", "Attr", "Array", "Map", "Address", "Trial", "May",
     "Pass", "Fail", "Has", "Not", "true", "false",
 ];
@@ -913,6 +913,7 @@ impl<'a> Resolver<'a> {
     fn walk_expr(&mut self, expr: &Expr, scope: usize) {
         match &expr.kind {
             ExprKind::Int(_)
+            | ExprKind::Float(_)
             | ExprKind::Bool(_)
             | ExprKind::String(_)
             | ExprKind::Break

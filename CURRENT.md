@@ -4,7 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-15 (**D139** HTTP hosts under `std/http/`;
+**As of:** 2026-08-15 (**D140** `Float64`;
+**D139** HTTP hosts under `std/http/`;
 **D138** kebab-case module files **shipped**;
 **D137** Str `parseUInt`/`splitOnce` + Http
 `queryParam`/`formField`/`cookie`/`htmlResponse`; **D136**
@@ -19,7 +20,8 @@ not handbook; Crema-lite Phase A–C dogfoods product `http` / `http/server`)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **HTTP hosts under `std/http/`** (**D139**);
+**Shipped recently:** **`Float64`** (**D140**);
+**HTTP hosts under `std/http/`** (**D139**);
 **kebab-case modules** (**D138**);
 **HTTP leftover helpers** (**D137**);
 **HTTP host / wire** (**D136** — `Request.query`,
@@ -55,27 +57,32 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **Crema-lite** — Phase D+ only if useful. App/domain stays example-only.
+1. **`std/json` encode/decode** — dynamic `Json` tree (approved). Charter:
+   [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md).
+   Crema `POST /api/orders` dogfoods it after the codec ships.
+2. **Crema-lite** — Phase D+ only if useful. App/domain stays example-only.
    Host/wire is product **`std/http` + `std/http/server`** (**D136**/**D139**).
    Query/form/cookies are builtin `Map` (headers stay `Array<Header>`).
    File-based routing is **parked**
    ([`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)).
-2. Editor only when DX forces it.
+3. Editor only when DX forces it.
 
 ### Proceed order
 
-1. **Crema-lite experiment** — remaining checklist in
+1. **JSON codec** — [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
+   (`std/json` parse / stringify on a `Json` sum). Then Crema POST API.  
+2. **Crema-lite experiment** — remaining checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    (app under `examples/http/`; host/wire already in `std/`).  
-2. **Editor depth** — only when DX forces it. Freezes:
+3. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).  
-3. **Deferred: all session / shell residual** — redir polish, line editor,
+4. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+5. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
@@ -123,7 +130,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
-| Ctor fields | Int64, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
+| Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
@@ -151,6 +158,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 9. If D138 / module files: [`docs/decisions.md`](docs/decisions.md) (D138) — kebab-case stems, path-qualified ids; file-based routing parked in [`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)
 10. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    + **D136** / **D137** / **D139** in [`docs/decisions.md`](docs/decisions.md)
+11. If JSON: [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
+    + **D140** (`Float64`) in [`docs/decisions.md`](docs/decisions.md)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

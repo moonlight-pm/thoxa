@@ -266,6 +266,8 @@ pub struct Expr {
 #[derive(Debug, Clone)]
 pub enum ExprKind {
     Int(i64),
+    /// Float64 literal (`1.5`, `1e10`, `3.14f64`).
+    Float(f64),
     Bool(bool),
     /// Plain string literal (no interpolation).
     String(String),

@@ -159,7 +159,11 @@ typedef struct ThoxaString {
 ThoxaString *thoxa_string_new(const char *bytes, size_t len);
 ThoxaString *thoxa_string_from_cstr(const char *s);
 ThoxaString *thoxa_string_from_i64(int64_t v);
+ThoxaString *thoxa_string_from_f64(double v);
 ThoxaString *thoxa_string_from_bool(bool v);
+/* IEEE-754 bitcast helpers (array/map slots store Float64 as i64 bits). */
+double thoxa_f64_from_bits(uint64_t bits);
+uint64_t thoxa_f64_to_bits(double v);
 /* Borrows a and b; returns a new owned string (refcount 1). */
 ThoxaString *thoxa_string_concat(const ThoxaString *a, const ThoxaString *b);
 /* Structural equality (length + bytes). NULL equals empty. */

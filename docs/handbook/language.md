@@ -56,7 +56,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 
 | Area | Shipped |
 |------|---------|
-| Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Bool`, `Void` |
+| Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Float64`, `Bool`, `Void` |
 | Heap | `String` (interpolation, `.count`, `\xHH` escapes), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`) |
 | User types | `type Name(fields) { methods }` — including heap fields, **Node**, and nested user types / sums (**D135**); method field write-back. Recursive fields are an error (use `Array` / `Map`) |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
@@ -66,7 +66,13 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/fallible` with `?` / `match` (ok/err may nest) |
-| Equality | String `==` / `!=`; usual scalar compares. Comparison `<` needs a space after it (`a < b`, not `a<b`) |
+| Equality | String `==` / `!=`; usual scalar compares (including `Float64`). Comparison `<` needs a space after it (`a < b`, not `a<b`) |
+
+**`Float64` (**D140**):** IEEE-754 binary64. Literals `1.5`, `1e2`, `1.5e-1`,
+`3.14f64`. `1..5` is still a range (a `.` is a fraction only when a digit
+follows). Arithmetic `+ - * /` and compares; no `%`. Integers coerce to
+`Float64`; the reverse is not implicit. No `Float32`. Interpolation prints a
+shortest round-trip (`2.0` stays `2.0`).
 
 **Fallibility** — ordinary generic unions in `std/fallible`; **import required**:
 
