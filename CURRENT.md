@@ -5,8 +5,9 @@
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-08-15 (**D135** Node + nested User ctor fields **shipped**;
+JSX `Node` is `Element | Text | Fragment` + `{...}` spreads **on master**;
 D133/D134 Map; D132 fn pointers; `-->` nowait **on master**, not freeze /
-not handbook; Crema-lite Phase A–C + JSX `Node` + `Roast` / `DrinkCard`)
+not handbook; Crema-lite Phase A–C + `Roast` / `DrinkCard`)
 
 ---
 
@@ -133,7 +134,9 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 5. [`docs/decisions.md`](docs/decisions.md) only when reopening surface  
 6. If D132: [`docs/specs/2026-08-13-function-pointers.md`](docs/specs/2026-08-13-function-pointers.md)  
 7. If D133/D134: [`docs/specs/2026-08-14-map-and-value-collections.md`](docs/specs/2026-08-14-map-and-value-collections.md)  
-8. If Crema experiment: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
+8. If D135 / JSX `Node`: [`docs/decisions.md`](docs/decisions.md) (D135) +
+   [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md)  
+9. If Crema experiment: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

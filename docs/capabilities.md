@@ -12,9 +12,10 @@ change. See [`progress-model.md`](progress-model.md).
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
 **As of:** 2026-08-15 (**D135** Node + nested User ctor fields **shipped**;
-D133/D134 Map; D132 fn pointers; Crema-lite Phase A–C + JSX pages + `Roast` /
-`DrinkCard`; type-body route clauses + JSX/`Node` + **`-->` nowait** **partial**
-on master — not freeze)
+JSX `Node` match + `Attr` + `{...}` spreads **on master**; D133/D134 Map;
+D132 fn pointers; Crema-lite Phase A–C + `Roast` / `DrinkCard`; type-body
+route clauses + JSX/`Node` + **`-->` nowait** **partial** on master — not
+freeze)
 
 ---
 
@@ -25,7 +26,7 @@ on master — not freeze)
 | driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | `run`/`build` reuse `target/thoxa/bin/*` when package / `std/` / runtime / compiler are unchanged (`THOXA_FORCE_BUILD=1` to skip). No incremental `cc`. | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | — | yes |
 | multi-clause | Same-name multi-clause fn/method = match sugar on formal types | shipped | `multi_clause` | **D131**; [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | Pattern formals / cross-arity / composition / `extern` multi-clause out of v0. D16 std factories still separate. Bare singleton lit types + inline `\|` in formals shipped as typespace substrate. | yes |
-| fn-pointers | Function types `(a: T) -> R`; free + unbound + bound methods | shipped | `fn_pointers` | **D132**; [`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md) | Bound = receiver+code (not lexical closure). Module `let`/`mut` allowed; fields/arrays **no** (D48). No `Fn` word; no closures; no multi-clause/`extern` values; no `-->` of a pointer. | yes |
+| fn-pointers | Function types `(a: T) -> R`; free + unbound + bound methods | shipped | `fn_pointers` | **D132**; [`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md) | Bound = receiver+code (not lexical closure). Module `let`/`mut` allowed; fields/arrays **no** (D48 / D135). No `Fn` word; no closures; no multi-clause/`extern` values; no `-->` of a pointer. | yes |
 | trial | `Trial` + `match` + `?` via `std/Fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | none for v0 — import `Pass`/`Fail`/`Trial` from `std/Fallible`; cross-module residual rewrap | yes |
 | may | `May` / `Has` / `Not` + `?` via `std/Fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | none for v0 — import `Has`/`Not`/`May` from `std/Fallible`; `Bytes.find` needs `May` in scope | yes |
 | sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | none for v0 | yes |
@@ -68,7 +69,7 @@ on master — not freeze)
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err` | D69, R9, **D126** | Product **`std/Net`** + **`std/Http`**; `receiveRequest` / `sendAll`; 403/405 helpers; Fail is String | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126** | Product **`std/HttpStatic`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/Net` + `std/Http` + `std/HttpStatic` | yes |
-| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`server.serve(routes.port, routes.handle)`** (**D132**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C; pages are JSX `Node`; host **`--> serveOne`** + HTTP/1.1 keep-alive (idle peers park; no recv timeout). Query/form/cookies are `Map<String, String>` (**D134**). **Gaps:** Phase D+; query/body still example-stitched onto `Request`. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
+| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`server.serve(routes.port, routes.handle)`** (**D132**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C; pages are JSX `Node` (`DrinkCard(d: Drink)`, `roast: Roast` — **D135**); host **`--> serveOne`** + HTTP/1.1 keep-alive (idle peers park; no recv timeout). Query/form/cookies are `Map<String, String>` (**D134**). **Gaps:** Phase D+; query/body still example-stitched onto `Request`. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 

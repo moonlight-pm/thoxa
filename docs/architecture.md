@@ -5,9 +5,10 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-13 (D132 fn pointers shipped; route-clause + JSX/`Node` +
-`-->` nowait on master, not freeze; program `run`/`build` reuse stamped
-binaries; D131 multi-clause; D129 return inference; D126 Io/Net/Http)
+**As of:** 2026-08-15 (**D135** nested User / Node ctor fields; JSX `Node` is
+`Element | Text | Fragment` + `{...}` spreads on master; D133/D134 Map;
+D132 fn pointers; route-clause + `-->` nowait on master, not freeze;
+program `run`/`build` reuse stamped binaries)
 
 ---
 

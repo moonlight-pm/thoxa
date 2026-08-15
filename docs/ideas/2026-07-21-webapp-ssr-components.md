@@ -1,9 +1,12 @@
 # Idea: Server-rendered web components (HTML trees + optional tag sugar)
 
 **Status:** sleeping — first cut **landed as experiment** (2026-08-13): builtin
-`Node` + tag literals, no import. See
+`Node` + tag literals, no import. **2026-08-15:** matchable
+`Element | Text | Fragment` (same `ThoxaHtml*` tree), ambient `Attr`, HTML
+and component `{...}` spreads. See
 [`2026-08-13-jsx-node-syntax-experiment.md`](2026-08-13-jsx-node-syntax-experiment.md).
-This file stays the longer design fork (sums, Attr model, streaming).  
+This file stays the longer design fork (streaming / inheritance, not the
+sum or Attr model).  
 **Sparked by:** `scratch/webapp.thx` musing on component/`view` + JSX-like markup for web apps.  
 **Related:** D67–D70 (HTTP server / Request / Response / Router), D53–D55 (Array), D84 (bare `type`), SPEC §4.1 defaults **[M3]**, SPEC §6 sum types **[M2]**, D2 (effects deferred).
 
@@ -121,10 +124,12 @@ A component `view()` fits as **another way to build a response body**, not a sec
 type Element(tag: String, attrs: Array<Attr>, kids: Array<Node>)
 type Text(s: String)
 type Fragment(kids: Array<Node>)
-type Node = Element | Text | Fragment   ## needs general unions [M2]
+type Node = Element | Text | Fragment   ## landed as builtin match (not a user alias)
 ```
 
-Until general unions land, a practical interim is a single product type plus tag discrimination, or monomorphic helpers only — but the **target shape** is the sum.
+**Landed (experiment):** `Node` matches those three arms; `Attr` is ambient;
+tags still produce one `ThoxaHtml*` (not a second user-union tree). Streaming
+and `is Component` remain out.
 
 **Avoid for this idea:** inventing `is` / interfaces solely to make HTML nest.
 

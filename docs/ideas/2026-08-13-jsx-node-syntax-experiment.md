@@ -1,8 +1,9 @@
 # Experiment: first-class tag literals + builtin `Node`
 
-**Status:** **landed on master** (2026-08-13) — compiler + runtime surface
-complete; Crema pages rewritten onto tags.  
-**Date:** 2026-08-13  
+**Status:** **landed on master** (2026-08-13; Node sum + `Attr` + spreads
+2026-08-15) — compiler + runtime surface complete; Crema pages rewritten
+onto tags.  
+**Date:** 2026-08-13 (updated 2026-08-15)  
 **Not** a freeze, **not** handbook / capabilities “shipped.” No D-id yet.  
 **Demo:** [`scratch/jsx.thx`](../../scratch/jsx.thx)  
 **Gate:** conformance `jsx`  
