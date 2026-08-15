@@ -178,10 +178,11 @@ after A–C.
 
 **As of last update:** **Phase A–C complete**. Host/wire promoted to
 **`std/Http` + `std/HttpServer` (**D136**)** — example `framework/` removed.
-**`server.serve(routes.port, routes.handle)`** (**D132**). Routing is
-type-body **`GET`/`POST` clauses** on `Routes` + free **`handle`** static
-fallback. **Pages are JSX `Node`**. Host **`--> serveOne`** + HTTP/1.1
-keep-alive. **Map dogfood (D134):** query/form/cookies are
+**D137:** `queryParam` / `formField` / `cookie` / `htmlResponse` + Str
+`parseUInt` / `splitOnce`. **`server.serve(routes.port, routes.handle)`**
+(**D132**). Routing is type-body **`GET`/`POST` clauses** on `Routes` + free
+**`handle`** static fallback. **Pages are JSX `Node`**. Host **`--> serveOne`**
++ HTTP/1.1 keep-alive. **Map dogfood (D134):** query/form/cookies are
 `Map<String, String>`. Headers stay `Array<Header>` (no std flip).
 **D135:** `Drink.roast: Roast` + `DrinkCard(d: Drink)`. Next Phase D+ only
 if wanted — domain stays example-only.
