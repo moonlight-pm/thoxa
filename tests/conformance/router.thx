@@ -10,6 +10,7 @@ fn makeGet(path!: String) -> Request {
     Request(
         method: "GET",
         path: path,
+        query: "",
         version: "HTTP/1.1",
         headers: headers,
         body: Bytes(0)

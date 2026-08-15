@@ -1,0 +1,73 @@
+## D136: std/HttpServer bindListen + serveOne — POST body + keep-alive query.
+import net, { Socket, createSocket } from "std/Net"
+import http, { Request, Response, ok } from "std/Http"
+import server from "std/HttpServer"
+import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
+import logging, { info } from "std/Logging"
+
+fn statusLine(resp!: Bytes) -> String {
+    match resp.find(Bytes.fromString("\r")) {
+        Has(cr) { resp.slice(0, cr).toString() }
+        Not { resp.toString() }
+    }
+}
+
+fn entity(resp!: Bytes) -> String {
+    let sep = Bytes.fromString("\r\n\r\n")
+    match resp.find(sep) {
+        Has(at) { resp.slice(at + 4, resp.count).toString() }
+        Not { resp.toString() }
+    }
+}
+
+fn handle(req: Request) -> Response {
+    if req.method == "POST" {
+        ok(req.body, "text/plain")
+    } else {
+        ok(Bytes.fromString("{req.path}|{req.query}\n"), "text/plain")
+    }
+}
+
+fn acceptOne(listener!: Socket) {
+    match listener.accept() {
+        Fail(e) {
+            info("accept-fail {e}")
+        }
+        Pass(peer) {
+            server.serveOne(peer, handle)
+        }
+    }
+}
+
+fn run() -> Trial<Void, String> {
+    let listener = server.bindListen(0)?
+    let port = listener.localPort()?
+    --> acceptOne(listener)
+
+    let c = createSocket()?
+    c.connect(port)?
+    c.sendAll(Bytes.fromString("POST /form HTTP/1.1\r\nContent-Length: 8\r\n\r\nname=Ada"))?
+    let r1 = c.receive()
+    info("post {statusLine(r1)}")
+    info("body {entity(r1)}")
+
+    c.sendAll(Bytes.fromString("GET /menu?q=mocha HTTP/1.1\r\n\r\n"))?
+    let r2 = c.receive()
+    info("get {statusLine(r2)}")
+    info("echo {entity(r2)}")
+    c.close()
+    listener.close()
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass(_) { 0 }
+        Fail(e) {
+            info("fail {e}")
+            1
+        }
+    }
+}

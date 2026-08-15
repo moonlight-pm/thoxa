@@ -3,8 +3,7 @@
 import layout, { Page } from "./Layout"
 import models, { Drink, formatPrice, roastLabel } from "./Models"
 import customer from "./Customer"
-import wire from "~/framework/Wire"
-import { Response, notFound } from "std/Http"
+import http, { Response, notFound } from "std/Http"
 import { Has, Not, May } from "std/Fallible"
 import { isEmpty, trim } from "std/Str"
 
@@ -125,8 +124,8 @@ fn drinkPage(d!: Drink, who!: String) -> Response {
 }
 
 export fn signIn(body!: Bytes) -> Response {
-    let redirect = wire.seeOther("/")
-    match wire.parseForm(body)["name"] {
+    let redirect = http.seeOther("/")
+    match http.parseForm(body)["name"] {
         Not {
             redirect
         }

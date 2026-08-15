@@ -1,0 +1,17 @@
+qpath=/search
+qstr=q=mocha&n=2
+host=Cafe
+cl=12
+qm=mocha
+dec+=Ada Lovelace
+dec%=a b/c
+form=Ada Lovelace
+ck=Ada
+see=303 /menu
+extra=yes
+ka11=true
+kaclose=false
+ka10=false
+ka10ka=true
+head=0 keep-alive
+fin=3 close

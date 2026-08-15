@@ -1,6 +1,7 @@
 # Experiment: `examples/http` Crema-lite (Topcoat-shaped app dogfood)
 
-**Status:** **active experiment** — not product surface; not a freeze; not `std/` work.  
+**Status:** **active experiment** — app/domain is not product surface; not a freeze.
+Host/wire helpers were promoted to **`std/Http` + `std/HttpServer` (**D136**)**.
 **Date:** 2026-08-10  
 **Home:** [`examples/http/`](../../examples/http/)  
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) (focus) · this file (charter + checklist) ·
@@ -27,14 +28,13 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ## Hard rules
 
-1. **No `std/` growth for this experiment.** All new app logic lives under
-   `examples/http/`. Product std stays as-shipped.
+1. **App/domain stays in `examples/http/`.** Pages, models, cookie policy, and
+   route clauses are not product std. Host/wire already live in `std/` (**D136**).
 2. **Not official product.** Handbook must not present Crema-lite routing /
    layouts as language features. Capability row stays an **example** experiment.
 3. **Language breaks allowed.** If the sample is blocked by a real language
-   gap, stop, fix the language (conformance + CURRENT), then resume. Do **not**
-   work around by inventing std helpers “just for the sample” — keep helpers
-   in the example package.
+   gap, stop, fix the language (conformance + CURRENT), then resume. Further
+   std helpers only when they are clearly product (sample-driven, D97).
 4. **One slice at a time.** Update the checklist in this file + `CURRENT.md`
    when a phase/step lands.
 5. **No second handoff files.** This idea + CURRENT + example README are the
@@ -46,7 +46,7 @@ This experiment **dogfoods** that stack under realistic app structure.
 - Async runtime, ORM, Tailwind asset pipeline  
 - Module-tree auto-routing  
 - Middleware / layer stacks  
-- Growing product `std/Http*` for this experiment  
+- Growing product `std/` with coffee-shop domain types
 
 ---
 
@@ -54,10 +54,7 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  Main.thx                 # server.serve(routes.port, routes.handle)
-  framework/
-    Server.thx             # serve(port, handle) — full host loop
-    Wire.thx               # body / query / form / cookies
+  Main.thx                 # std/HttpServer.serve(routes.port, routes.handle)
   app/
     Routes.thx             # type Routes { GET/POST … }, handle, port
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
@@ -65,9 +62,9 @@ examples/http/
   README.md
 ```
 
-**Layers:** App is routes/views/domain (free `handle` + `port`). Framework owns
-all plumbing via `serve(port, handle)`. Framework imports no app types
-(**D132**). Main is boot only.
+**Layers:** App is routes/views/domain (free `handle` + `port`). Product
+`std/HttpServer` owns plumbing via `serve(port, handle)`. The host imports no
+app types (**D132**). Main is boot only.
 
 **Router:** type-body `GET "/…"` / `POST "/…"` on a nullary `Routes` type
 (compiler → `route(req)`). Path params are `:slug` clause formals. `handle`
@@ -116,12 +113,10 @@ curl -s  http://127.0.0.1:9091/menu/nope   # 404
 | B4 Cookie set/read (example) | **done** | `Customer.thx` |
 | B5 POST `/` sign-in + forget + nav greeting | **done** | PRG; empty name forgets |
 
-**B1 resolution (no product break):** Body is completed in
-`framework/Wire.thx` / `Server.readIncoming` using the raw header buffer +
-optional further `receive()` for `Content-Length`. Product
-`std/Http.parseRequest` still leaves `Request.body` empty — `Server.requestOf`
-puts the completed body on the `Request` the app sees. Promote to std only if
-a product slice is scheduled later.
+**B1 resolution (promoted D136):** Body is completed in `std/HttpServer.readBody`
+using the raw header buffer + optional further `receive()` for `Content-Length`.
+`std/Http.parseRequest` still leaves `Request.body` empty; the host fills it
+before `handle`.
 
 **Phase B smoke**
 
@@ -138,10 +133,8 @@ curl -sD- -b /tmp/c.ck -c /tmp/c.ck -X POST -d 'name=' http://127.0.0.1:9091/
 | C1 Keep raw query on request (product or parse raw in example) | **done** | Example-only: `Wire.rawQuery` / `queryParam` (std still strips `?` from path) |
 | C2 `GET /menu?q=` filter | **done** | Server-side filter + GET form; `Models.searchDrinks` |
 
-**C1 resolution (no product break):** Query recovered from the raw request-line
-in `framework/Wire.rawQuery`; `Server.requestOf` attaches it as example-only
-header `X-Thoxa-Query` (`Wire.requestQuery`) because std `Request` has no query
-field.
+**C1 resolution (promoted D136):** `parseRequest` keeps `Request.query` (no
+leading `?`) and still strips path. The `X-Thoxa-Query` header hack is gone.
 
 **Phase C smoke**
 
@@ -177,19 +170,20 @@ after A–C.
 
 1. Read this file’s **Phases** table (truth for experiment progress).  
 2. Read `examples/http/README.md` (as-built layout).  
-3. **Do not** add to `std/` unless the user reopens that rule.  
+3. **Do not** add coffee-shop domain to `std/`. Host/wire already shipped (**D136**).
 4. If blocked by language: document under Phase step as `blocked`, fix language
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
-**As of last update:** **Phase A–C complete** + layered **`framework/` / `app/`**
-with **`server.serve(routes.port, routes.handle)`** (**D132**). Routing is
+**As of last update:** **Phase A–C complete**. Host/wire promoted to
+**`std/Http` + `std/HttpServer` (**D136**)** — example `framework/` removed.
+**`server.serve(routes.port, routes.handle)`** (**D132**). Routing is
 type-body **`GET`/`POST` clauses** on `Routes` + free **`handle`** static
 fallback. **Pages are JSX `Node`**. Host **`--> serveOne`** + HTTP/1.1
 keep-alive. **Map dogfood (D134):** query/form/cookies are
 `Map<String, String>`. Headers stay `Array<Header>` (no std flip).
 **D135:** `Drink.roast: Roast` + `DrinkCard(d: Drink)`. Next Phase D+ only
-if wanted — still no `std/` growth.
+if wanted — domain stays example-only.
 
 ### Language / design notes (experiment)
 
@@ -201,5 +195,5 @@ if wanted — still no `std/` growth.
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
 | `server.serve(app)` needs typed `App` without fn values | **Done (D132):** `serve(port, handle)`; framework imports no app types | Traits still separate. Full FCF parked |
 | Single-threaded `accept` + blocking `recv` | **`--> serveOne`** + HTTP/1.1 keep-alive loop (implicit-async); 200ms `SO_RCVTIMEO` removed | — |
-| String path table → dispatch | **Type-body `GET`/`POST` clauses** → generated `route(req)` | Miss is `notFound()` (no fallthrough); `handle` treats 404 as static try. Query/body still example-stitched onto `Request`. Host boundary still `App` |
+| String path table → dispatch | **Type-body `GET`/`POST` clauses** → generated `route(req)` | Miss is `notFound()` (no fallthrough); `handle` treats 404 as static try. Query/body are product `Request` fields (**D136**) |
 | Linear-scan query / form / cookies | **`parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`** | `Request.headers` stays `Array<Header>` (D134). `m[k]` needs `May` in scope |

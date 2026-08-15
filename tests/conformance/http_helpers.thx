@@ -1,0 +1,126 @@
+## D136: std/Http protocol helpers (headers, query/form/cookies, 303, keep-alive).
+import http, { Request, Response, Header } from "std/Http"
+import { Has, Not, May, Pass, Fail } from "std/Fallible"
+import logging, { info } from "std/Logging"
+
+fn emptyReq(method!: String, version!: String, headers!: Array<Header>) -> Request {
+    Request(
+        method: method,
+        path: "/",
+        query: "",
+        version: version,
+        headers: headers,
+        body: Bytes(0)
+    )
+}
+
+fn showMay(m: May<String>) -> String {
+    match m {
+        Not => "-"
+        Has(v) { v }
+    }
+}
+
+fn showInt(m: May<Int64>) -> String {
+    match m {
+        Not => "-"
+        Has(n) { "{n}" }
+    }
+}
+
+fn connOf(res!: Response) -> String {
+    for h in res.headers {
+        if h.name == "Connection" {
+            return h.value
+        }
+    }
+    "-"
+}
+
+fn locOf(res!: Response) -> String {
+    for h in res.headers {
+        if h.name == "Location" {
+            return h.value
+        }
+    }
+    "-"
+}
+
+fn extraOf(res!: Response) -> String {
+    for h in res.headers {
+        if h.name == "X-Extra" {
+            return h.value
+        }
+    }
+    "-"
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let raw = Bytes.fromString("GET /search?q=mocha&n=2 HTTP/1.1\r\nHost: Cafe\r\nContent-Length: 12\r\n\r\n")
+    match http.parseRequest(raw) {
+        Pass(req) {
+            info("qpath={req.path}")
+            info("qstr={req.query}")
+            info("host={showMay(http.headerGet(req, \"host\"))}")
+            info("cl={showInt(http.contentLength(req))}")
+            match http.queryMap(req)["q"] {
+                Not => info("qm-miss")
+                Has(v) { info("qm={v}") }
+            }
+        }
+        Fail(e) {
+            info("parse-fail {e}")
+        }
+    }
+
+    info("dec+={http.urlDecode(\"Ada+Lovelace\")}")
+    info("dec%={http.urlDecode(\"a%20b%2Fc\")}")
+
+    let form = http.parseForm(Bytes.fromString("name=Ada+Lovelace&empty="))
+    match form["name"] {
+        Not => info("form-miss")
+        Has(v) { info("form={v}") }
+    }
+
+    let cookies = http.parseCookies("customer=Ada; extra=x")
+    match cookies["customer"] {
+        Not => info("ck-miss")
+        Has(v) { info("ck={v}") }
+    }
+
+    let redir = http.seeOther("/menu")
+    info("see={redir.status} {locOf(redir)}")
+
+    let tagged = http.withHeader(http.ok(Bytes.fromString("ok\n"), "text/plain"), "X-Extra", "yes")
+    info("extra={extraOf(tagged)}")
+
+    mut none: Array<Header> = []
+    let r11 = emptyReq("GET", "HTTP/1.1", none)
+    info("ka11={http.wantsKeepAlive(r11.version, r11)}")
+
+    mut closeH: Array<Header> = []
+    closeH.append(Header(name: "Connection", value: "close"))
+    let rClose = emptyReq("GET", "HTTP/1.1", closeH)
+    info("kaclose={http.wantsKeepAlive(rClose.version, rClose)}")
+
+    mut none0: Array<Header> = []
+    let r10 = emptyReq("GET", "HTTP/1.0", none0)
+    info("ka10={http.wantsKeepAlive(r10.version, r10)}")
+
+    mut kaH: Array<Header> = []
+    kaH.append(Header(name: "Connection", value: "keep-alive"))
+    let r10ka = emptyReq("GET", "HTTP/1.0", kaH)
+    info("ka10ka={http.wantsKeepAlive(r10ka.version, r10ka)}")
+
+    let body = Bytes.fromString("hi\n")
+    let ok = http.ok(body, "text/plain")
+    let head = http.finalize("HEAD", ok, true)
+    info("head={head.body.count} {connOf(head)}")
+    let closed = http.finalize("GET", ok, false)
+    info("fin={closed.body.count} {connOf(closed)}")
+
+    0
+}

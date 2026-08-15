@@ -3,6 +3,7 @@ hdr_count=1
 host=Host:h
 body_count=0
 path=/search
+query=q=1
 POST|/a|HTTP/1.0|n=2
 Host=x
 Accept=*/*

@@ -21,11 +21,12 @@ fn main() -> Int64 {
         }
     }
 
-    ## Query string stripped from path
+    ## Query string stripped from path; kept on Request.query
     let qraw = Bytes.fromString("GET /search?q=1 HTTP/1.1\r\n\r\n")
     match http.parseRequest(qraw) {
         Pass(req) {
             logging.info("path={req.path}")
+            logging.info("query={req.query}")
         }
         Fail(e) {
             logging.info("q-fail {e}")

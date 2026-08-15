@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-15 — HTTP host / wire into std
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D136 | Product `Request.query` + HTTP helpers + `std/HttpServer` | **`Request.query: String`** (no leading `?`); `parseRequest` keeps it and still strips path. Body stays empty at parse. **`std/Http`** (still syscall-free) gains `headerGet`, `contentLength`, `urlDecode`, `parseQuery` / `parseForm` / `parseCookies` / `queryMap`, `seeOther`, `withHeader`, `wantsKeepAlive`, `finalize`. **`std/HttpServer`** (Net syscalls): `bindListen`, `readBody`, `readRequest`, `writeResponse(peer, …)`, `serveOne`, `serve(port, handle)`. HEAD is rewritten to GET for the handle; `finalize` still sees the real method. | **Shipped.** Amends D69; extends D126. Crema-dogfooded; example `framework/` removed. Not promoted: `Incoming` header packing, `X-Thoxa-Query`. Headers stay `Array<Header>` (D134). Gates: `http_parse`, `http_helpers`, `http_host`. |
+
 ## 2026-08-15 — Nested constructor fields
 
 | ID | Decision | Choice | Notes |
@@ -72,7 +78,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D126 | Product `std/Io` + `std/Net` + `std/Http` + `std/HttpStatic` | Promote the mature sample/conformance I/O and HTTP surface into product **`std/`**. **`std/Io`:** `File`, `openFile`/`readFile`/`writeFile`/`appendFile`, OpenMode, seek. **`std/Net`:** TCP `Socket` + `receiveRequest`/`sendAll`. **`std/Http`:** parse/write Request/Response + status helpers. **`std/HttpStatic`:** static-file `Router` (GET/HEAD). Fail payloads remain **String**. Linux product track. | **Shipped:** modules under `std/`; conformance gates retargeted (removed `tests/conformance/{iolib,httplib}/`). Dogfood: `examples/http` Crema-lite experiment (layered `framework/` + `app/`; not product std growth). Extends D56/D69/D70/D97/D109+. Named `ffi` root still deferred. |
+| D126 | Product `std/Io` + `std/Net` + `std/Http` + `std/HttpStatic` | Promote the mature sample/conformance I/O and HTTP surface into product **`std/`**. **`std/Io`:** `File`, `openFile`/`readFile`/`writeFile`/`appendFile`, OpenMode, seek. **`std/Net`:** TCP `Socket` + `receiveRequest`/`sendAll`. **`std/Http`:** parse/write Request/Response + status helpers. **`std/HttpStatic`:** static-file `Router` (GET/HEAD). Fail payloads remain **String**. Linux product track. | **Shipped:** modules under `std/`; conformance gates retargeted (removed `tests/conformance/{iolib,httplib}/`). Dogfood: `examples/http` Crema-lite. Extends D56/D69/D70/D97/D109+. **Grown by D136** (`Request.query`, helpers, `std/HttpServer`). Named `ffi` root still deferred. |
 
 ## 2026-08-10 — std/Logging + remove ambient println
 
@@ -324,7 +330,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D69 | HTTP protocol types | `Header(name,value)`, `Request(method,path,version,headers,body)`, `Response(status,reason,headers,body)`; `parseRequest(raw) -> Trial<Request,String>`; `writeResponse(res) -> Bytes`; `ok`/`notFound`/`badRequest` → `Response` | Constructor-param fields may be `Array<T>` (heap RC via existing User field walk); `user.arrField[i]` loads dynamic Array then indexes (FixedArray peel unchanged). Headers: simple `Name: value` until blank; body always empty. `Bytes.find` → `May<Int64>` (**D85**). **`summarizeRequest` is intentionally an adapter over `parseRequest`** (requires `\r\n\r\n`; path is query-stripped) — not the pre-PR5 request-line-only scan. Empty method/path/version tokens not rejected (oracle parity; tighten later if server forces). Phase-A RC may over-dup on `Trial<Request>` / `Array<Header>` (LSan noise; no UAF; not a conformance gate). Conformance: `http_parse`. |
+| D69 | HTTP protocol types | `Header(name,value)`, `Request(method,path,version,headers,body)`, `Response(status,reason,headers,body)`; `parseRequest(raw) -> Trial<Request,String>`; `writeResponse(res) -> Bytes`; `ok`/`notFound`/`badRequest` → `Response` | Constructor-param fields may be `Array<T>` (heap RC via existing User field walk); `user.arrField[i]` loads dynamic Array then indexes (FixedArray peel unchanged). Headers: simple `Name: value` until blank; body always empty at parse. `Bytes.find` → `May<Int64>` (**D85**). **`summarizeRequest` is intentionally an adapter over `parseRequest`** (requires `\r\n\r\n`; path is query-stripped) — not the pre-PR5 request-line-only scan. Empty method/path/version tokens not rejected (oracle parity; tighten later if server forces). Phase-A RC may over-dup on `Trial<Request>` / `Array<Header>` (LSan noise; no UAF; not a conformance gate). Conformance: `http_parse`. **Amended by D136:** `Request.query` field; helpers + `std/HttpServer`. |
 
 ## 2026-07-19 — Post-R9 HTTP plan (PR1)
 

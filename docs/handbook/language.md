@@ -310,7 +310,7 @@ Marshals common scalars, `String`, `Bytes`, `Void`, `Address<T>`. String
 
 ## I/O and HTTP (`std/`)
 
-Product modules (**D126**). Return types use `Trial` / `May` from
+Product modules (**D126** / **D136**). Return types use `Trial` / `May` from
 `std/Fallible` — import Fallible when you annotate or construct those values.
 Full surface: [`std.md`](std.md).
 
@@ -320,8 +320,10 @@ Full surface: [`std.md`](std.md).
 - **`std/Net`:** TCP `Socket` (`createSocket`, bind/listen/accept/connect,
   `receiveRequest`, `sendAll`).
 - **`std/Http`:** `Request` / `Response` / `Header`, `parseRequest` /
-  `writeResponse`, status helpers (`ok`, `notFound`, `badRequest`,
-  `forbidden`, `methodNotAllowed`).
+  `writeResponse`, `Request.query`, header/query/form/cookie helpers,
+  `seeOther` / `finalize` (**D136**).
+- **`std/HttpServer`:** `serve(port, handle)`, `serveOne`, `readBody`
+  (**D136**).
 - **`std/HttpStatic`:** static-file `Router` (`handle` → Response; GET/HEAD).
 
 ## Not shipped (do not expect)

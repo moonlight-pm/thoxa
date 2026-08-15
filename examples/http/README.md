@@ -1,6 +1,8 @@
 # examples/http — Little Crema (experiment)
 
-Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std.**
+Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std**
+(the coffee-shop app). Host and wire helpers are product
+`std/Http` + `std/HttpServer` (**D136**).
 
 ## Main (what you write to boot)
 
@@ -22,30 +24,31 @@ fn main() {
 
 | Layer | Path | Role |
 |-------|------|------|
-| **framework** | `framework/` | Host: accept loop, wire I/O, HEAD, body/query stitch |
+| **host** | `std/HttpServer` | Accept loop, body read, HEAD, keep-alive |
+| **wire** | `std/Http` | Parse/write, query/form/cookie Maps, redirects |
 | **app** | `app/` | Type-body `GET`/`POST` clauses, free `handle`, pages/domain |
 | **entry** | `Main.thx` | Logging + `server.serve(routes.port, routes.handle)` |
 | **assets** | `web/` | Static files |
 
 ```text
 Main → server.serve(port, handle)
-         framework owns accept / parse / body / query / write
+         std/HttpServer owns accept / parse / body / write
          handle(req) per request
 
 app → std/HttpStatic          miss → files under web/
-framework → std + framework/* only (no app imports)
+app → std/Http                query / form / cookies / 303
 ```
 
 **Routing shape (what you have now):**
 
-1. App `type Routes` — type-body `GET "/…"` / `POST "/…"` (compiler → `route(req)`)  
-2. App `handle` — `Routes().route(req)`; **404** falls through to `std/HttpStatic`  
-3. Framework completes `Request.body` and attaches the raw query (std still
-   strips `?` and leaves body empty). Query / form / cookies parse to
-   `Map<String, String>`. `Request.headers` stays `Array<Header>`.  
+1. App `type Routes` — type-body `GET "/…"` / `POST "/…"` (compiler → `route(req)`)
+2. App `handle` — `Routes().route(req)`; **404** falls through to `std/HttpStatic`
+3. `parseRequest` keeps `Request.query`; `HttpServer.readBody` fills `Request.body`.
+   Query / form / cookies parse to `Map<String, String>`. `Request.headers`
+   stays `Array<Header>`.
 4. Host takes `port` + `(req: Request) -> Response` (**D132**)
 
-Domain modules (Pages, Models, …) are never imported by framework.
+Domain modules (Pages, Models, …) are never imported by the host.
 
 ## Run
 
@@ -60,9 +63,6 @@ Port **9091** (`routes.port`).
 ```text
 examples/http/
   Main.thx
-  framework/
-    Server.thx    # serve(port, handle), bindListen, readIncoming, writeResponse
-    Wire.thx      # body, query/form/cookie Maps, redirects, HEAD finalize
   app/
     Routes.thx    # type-body GET/POST, handle, static fallback
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx
@@ -88,9 +88,8 @@ Path captures (`:slug`) are clause formals. HTML handlers return `Response`
 
 ## Rules
 
-- Grow `framework/`, not `std/`, for this experiment.
 - App code = routes/views/domain only.
-- Host **`--> serveOne` per accept**. An idle browser socket parks in
-  `recv` and does not stall other tabs (experiment/implicit-async). HTTP/1.1
-  keep-alive: one started peer can serve several requests. `handle` is an
-  ordinary function passed as a **D132** pointer.
+- Host **`--> serveOne` per accept** (in `std/HttpServer`). An idle browser
+  socket parks in `recv` and does not stall other tabs. HTTP/1.1 keep-alive:
+  one started peer can serve several requests. `handle` is an ordinary
+  function passed as a **D132** pointer.

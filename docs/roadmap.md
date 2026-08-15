@@ -73,7 +73,7 @@ Freezes:
 - No-main scripts, command sugar, bare `thoxa` REPL, **libtcc** session steps
   (D105), rc/prompt/path, pipes/redirs, pure-step builtins, `std/Shell.thx`.
 - Thin `std/` sample-driven: prompts/helpers plus **Io/Net/Http/HttpStatic**
-  (**D126**) and Logging (**D125**).
+  (**D126**), **HttpServer** (**D136**), and Logging (**D125**).
 
 **Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first;
 crude line editor. Resume only when CURRENT says so.
@@ -118,13 +118,13 @@ Freezes:
   [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md))
 - ~~`std/Logging` + no ambient println~~ (**D125**)
 - ~~Product `std/Io` + `Net` + `Http` + `HttpStatic`~~ (**D126**; sample-driven)
+- ~~`Request.query` + HTTP helpers + `std/HttpServer`~~ (**D136**)
 - ~~Combined import `import ns, { a } from "…"`~~ (**D127**)
 - ~~Diverging `loop` (Never / no dummy tail)~~ (**D128**)
 
 **Sample dogfood (not a phase flip):** `examples/http` Crema-lite **experiment**
-(`server.serve(routes.port, routes.handle)` **D132**; type-body `GET`/`POST`; JSX `Node` pages;
-`framework/` + `app/` under `examples/http/` only; no product `std/` growth
-for the experiment; charter
+(`std/HttpServer.serve(routes.port, routes.handle)` **D132**/**D136**; type-body
+`GET`/`POST`; JSX `Node` pages; app/domain under `examples/http/`; charter
 [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md);
 accept loop uses **D128** + **`--> serveOne`** + keep-alive), `examples/kilo` shipped
 and exercised; continue matrix gaps when samples force them.

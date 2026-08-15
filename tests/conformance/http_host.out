@@ -1,0 +1,7 @@
+POST /form -> 200 OK
+post HTTP/1.1 200 OK
+body name=Ada
+GET /menu -> 200 OK
+get HTTP/1.1 200 OK
+echo /menu|q=mocha
+

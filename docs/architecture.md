@@ -5,10 +5,10 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-15 (**D135** nested User / Node ctor fields; JSX `Node` is
-`Element | Text | Fragment` + `{...}` spreads on master; D133/D134 Map;
-D132 fn pointers; route-clause + `-->` nowait on master, not freeze;
-program `run`/`build` reuse stamped binaries)
+**As of:** 2026-08-15 (**D136** `std/HttpServer` + `Request.query`; **D135**
+nested User / Node ctor fields; JSX `Node` is `Element | Text | Fragment` +
+`{...}` spreads on master; D133/D134 Map; D132 fn pointers; route-clause +
+`-->` nowait on master, not freeze; program `run`/`build` reuse stamped binaries)
 
 ---
 
@@ -48,7 +48,7 @@ step `.so` on the happy path.
 | `crates/make` | xtask (`cargo make …`) |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` (incl. `ThoxaHtml` / `THOXA_TAG_HTML`; **`ThoxaFn`** D132) |
 | `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
-| `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http`/`HttpStatic`, Str/Path/Env/…) |
+| `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http`/`HttpServer`/`HttpStatic`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate |
 | `examples/` | Runnable demos (`http` Crema-lite, `kilo` terminal editor); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |

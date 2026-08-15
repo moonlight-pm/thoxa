@@ -1,7 +1,6 @@
-## App layer — returning customer via Cookie (domain helper over Framework.Wire).
+## App layer — returning customer via Cookie (domain helper over std/Http).
 
-import wire from "~/framework/Wire"
-import { Request, Response } from "std/Http"
+import http, { Request, Response } from "std/Http"
 import { Has, Not, May } from "std/Fallible"
 import { isEmpty } from "std/Str"
 
@@ -9,10 +8,10 @@ let cookieName = "customer"
 let maxAgeSecs = 2592000
 
 export fn current(req!: Request) -> May<String> {
-    match wire.headerGet(req, "Cookie") {
+    match http.headerGet(req, "Cookie") {
         Not => Not()
         Has(raw) {
-            match wire.parseCookies(raw)[cookieName] {
+            match http.parseCookies(raw)[cookieName] {
                 Not => Not()
                 Has(val) {
                     if isEmpty(val) {
@@ -35,11 +34,11 @@ export fn forgetHeader() -> String {
 }
 
 export fn withRemember(res!: Response, name!: String) -> Response {
-    wire.withHeader(res, "Set-Cookie", rememberHeader(name))
+    http.withHeader(res, "Set-Cookie", rememberHeader(name))
 }
 
 export fn withForget(res!: Response) -> Response {
-    wire.withHeader(res, "Set-Cookie", forgetHeader())
+    http.withHeader(res, "Set-Cookie", forgetHeader())
 }
 
 export fn greeting(req!: Request) -> String {

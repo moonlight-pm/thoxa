@@ -4,10 +4,11 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-15 (**D135** Node + nested User ctor fields **shipped**;
+**As of:** 2026-08-15 (**D136** `Request.query` + HTTP helpers +
+`std/HttpServer` **shipped**; **D135** Node + nested User ctor fields;
 JSX `Node` is `Element | Text | Fragment` + `{...}` spreads **on master**;
 D133/D134 Map; D132 fn pointers; `-->` nowait **on master**, not freeze /
-not handbook; Crema-lite Phase A–C + `Roast` / `DrinkCard`)
+not handbook; Crema-lite Phase A–C dogfoods product Http/HttpServer)
 
 ---
 
@@ -15,10 +16,11 @@ not handbook; Crema-lite Phase A–C + `Roast` / `DrinkCard`)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **Node + nested User ctor fields** (**D135**);
-**Map + value collections** (**D133/D134**); **function
+**Shipped recently:** **HTTP host / wire** (**D136** — `Request.query`,
+`std/Http` helpers, `std/HttpServer`); **Node + nested User ctor fields**
+(**D135**); **Map + value collections** (**D133/D134**); **function
 pointers** (**D132**); **`-->` nowait**
-(colorless wait; Net parks; Crema `--> serveOne` + keep-alive);
+(colorless wait; Net parks; `HttpServer` `--> serveOne` + keep-alive);
 **multi-clause functions** (**D131**);
 Crema-lite **Phase A–C**; **match arm sugar** (**D130**); **return-type
 inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
@@ -47,15 +49,16 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **Crema-lite** — Phase D+ only if useful. Still example only; no `std/`.
-   Query/form/cookies now use builtin `Map` (headers stay `Array<Header>`).  
+1. **Crema-lite** — Phase D+ only if useful. App/domain stays example-only.
+   Host/wire is product **`std/Http` + `std/HttpServer`** (**D136**).
+   Query/form/cookies are builtin `Map` (headers stay `Array<Header>`).
 2. Editor only when DX forces it.
 
 ### Proceed order
 
 1. **Crema-lite experiment** — remaining checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   (all work under `examples/http/`; no `std/`).  
+   (app under `examples/http/`; host/wire already in `std/`).  
 2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
@@ -69,13 +72,12 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
    a CURRENT line until samples force it.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
-conformance green-ups. **`std/` growth is on hold for the Crema experiment** —
-helpers go in `examples/http/`. (Other product slices may still grow std when
-CURRENT explicitly allows it outside this experiment.)
+conformance green-ups. Further **`std/` growth is sample-driven** (D97/D136).
+Crema **domain** (pages, models, cookies policy) stays in `examples/http/`.
 
 **Explicit holds:**
 
-- **`std/` growth for the Crema-lite experiment** (user lock — example-only)
+- **Crema domain in `std/`** (pages/models/layout — example-only)
 - **All session / shell residual** (parked by user direction)
 - Inventing shell dialect (`if`/`for`/full `$` forest)
 - Tree-walk product interpreter or QBE path (phase A)
@@ -104,7 +106,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
-| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); `ffi` deferred |
+| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/HttpServer`** (**D136**); `ffi` deferred |
 | Logging / print | **`std/Logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
 | Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
@@ -114,6 +116,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/Http` header flip. |
 | Ctor fields | Int64, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
+| HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
@@ -136,7 +139,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 7. If D133/D134: [`docs/specs/2026-08-14-map-and-value-collections.md`](docs/specs/2026-08-14-map-and-value-collections.md)  
 8. If D135 / JSX `Node`: [`docs/decisions.md`](docs/decisions.md) (D135) +
    [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md)  
-9. If Crema experiment: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
+9. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
+   + **D136** in [`docs/decisions.md`](docs/decisions.md)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

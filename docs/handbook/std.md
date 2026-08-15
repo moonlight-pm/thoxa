@@ -8,6 +8,7 @@ import logging, { info, warn } from "std/Logging"   ## ns + selective (D127)
 import { readFile } from "std/Io"
 import net, { Socket } from "std/Net"
 import http from "std/Http"
+import server from "std/HttpServer"
 import { Router } from "std/HttpStatic"
 import { defaultPrompt } from "std/Prompt"
 import { startsWith, dropPrefix } from "std/Str"
@@ -26,7 +27,8 @@ import { branch } from "std/Git"
 | `Logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
 | `Io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
 | `Net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
-| `Http` | HTTP/1.1 protocol (**D126**): parse/write + status helpers |
+| `Http` | HTTP/1.1 protocol (**D126**/**D136**): parse/write, `Request.query`, helpers |
+| `HttpServer` | HTTP/1.1 host loop (**D136**): `serve` / `serveOne` / `readBody` |
 | `HttpStatic` | Static-file `Router` (**D126**); depends on Io + Http |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `Str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`join`/`lines`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
@@ -99,15 +101,32 @@ IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 
 ### Http (`std/Http`)
 
-Pure protocol (no syscalls). Request bodies are always empty until body reading
-lands.
+Pure protocol (no syscalls). `parseRequest` fills `query` (no leading `?`) and
+leaves `body` empty; hosts complete the body via `std/HttpServer.readBody`.
 
 | Surface | Notes |
 |---------|--------|
-| `Header` / `Request` / `Response` | Constructor-param products |
-| `parseRequest` | `Trial<Request, String>`; requires `\r\n\r\n`; strips query from path |
+| `Header` / `Request` / `Response` | Constructor-param products. `Request.query` is the `?…` tail |
+| `parseRequest` | `Trial<Request, String>`; requires `\r\n\r\n`; path is query-stripped |
 | `writeResponse` | Status line + headers + body → `Bytes` |
-| Helpers | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `response` / `responseHead` |
+| Lookup | `headerGet`, `contentLength`, `queryMap` |
+| Maps | `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`; `urlDecode` |
+| Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `response` / `responseHead` |
+| Connection | `wantsKeepAlive`, `finalize` (HEAD drops body; rewrites `Connection`) |
+
+### HttpServer (`std/HttpServer`)
+
+Host loop over `std/Net`. Completes `Request.body` (64 KiB cap).
+
+| Surface | Notes |
+|---------|--------|
+| `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132**) |
+| `serveOne(peer, handle)` | One keep-alive connection |
+| `bindListen(port)` | `createSocket` + reuse + bind + listen |
+| `readBody` / `readRequest` | `Content-Length` entity; empty method/path = quiet close |
+| `writeResponse(peer, method, res, keepAlive)` | `finalize` + `sendAll` |
+
+HEAD is answered by GET handlers; `finalize` still sees the real method.
 
 ### HttpStatic (`std/HttpStatic`)
 
@@ -119,8 +138,8 @@ lands.
 | Errors | Permission denied → **403** (logged); missing → **404**; other Io → log + 404 |
 
 Runnable demo: `cargo make run examples/http` (Crema-lite **experiment** —
-`server.serve(routes.port, routes.handle)` on product Net/Http/HttpStatic; example
-`framework/` is not product std; see `examples/http/README.md`).
+`server.serve(routes.port, routes.handle)` on product Http/HttpServer/HttpStatic;
+app/domain is not product std; see `examples/http/README.md`).
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
 hex → black SGR.
@@ -137,8 +156,8 @@ hex → black SGR.
 This is a **thin** library grown from real samples. Fallibility types live in
 `std/Fallible` and are imported like other std modules. Named **`ffi`** root is
 deferred. I/O and HTTP are **Linux product track** (x86_64 sockaddr pack, Linux
-open flags). Windows is out of scope. No request-body reading yet; Fail payloads
-are String (not an `Error` protocol).
+open flags). Windows is out of scope. Fail payloads are String (not an
+`Error` protocol).
 
 New helpers land when real samples need them — not via a free-floating
 “expand the stdlib” backlog.

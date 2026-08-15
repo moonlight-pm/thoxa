@@ -11,6 +11,7 @@ import logging, { info } from "std/Logging"  ## ns + short emit (D127)
 import { readFile } from "std/Io"
 import net from "std/Net"
 import http from "std/Http"
+import server from "std/HttpServer"
 import { Router } from "std/HttpStatic"
 import { defaultPrompt } from "std/Prompt"   ## session shell.thx
 import { startsWith, dropPrefix } from "std/Str"
@@ -27,7 +28,8 @@ import { branch } from "std/Git"
 | `Logging` | Default logger: levels, sinks, formats; prefer `import logging, { info, … }` (**D125**/**D127**); no ambient `println` |
 | `Io` | Files: `readFile`/`writeFile`/`appendFile`, `File`, OpenMode (**D126**) |
 | `Net` | TCP sockets: `Socket`, `receiveRequest`, `sendAll` (**D126**) |
-| `Http` | HTTP/1.1 parse/write + status helpers (**D126**) |
+| `Http` | HTTP/1.1 parse/write + query/form/cookie helpers (**D126**/**D136**) |
+| `HttpServer` | Host loop: `serve` / `serveOne` / `readBody` (**D136**) |
 | `HttpStatic` | Static-file `Router` over `std/Io` + `std/Http` (**D126**) |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
 | `Str` | search/slice/replace/`split`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |
