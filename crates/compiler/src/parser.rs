@@ -2455,6 +2455,18 @@ fn jsx_child_wrap(expr: Expr) -> Expr {
     }
 }
 
+/// HTML attr `{e}` — MIR stringifies Int64/Bool the same way children do.
+fn jsx_attr_wrap(expr: Expr) -> Expr {
+    let span = expr.span;
+    Expr {
+        kind: ExprKind::Call {
+            callee: "__jsx_attr".into(),
+            args: vec![Arg::Pos(expr)],
+        },
+        span,
+    }
+}
+
 fn desugar_jsx_fragment(kids: Vec<Expr>, span: Span, _name_span: Span) -> Expr {
     jsx_child_wrap(jsx_array_lit(kids, span))
 }
@@ -2496,7 +2508,7 @@ fn desugar_jsx(
         let mut attr_vals = Vec::new();
         for (name, name_span, value) in attrs {
             attr_names.push(jsx_string_lit(name, name_span));
-            attr_vals.push(value);
+            attr_vals.push(jsx_attr_wrap(value));
         }
         Expr {
             kind: ExprKind::Call {
@@ -3144,6 +3156,19 @@ mod tests {
             ExprKind::Call { callee, args } => {
                 assert_eq!(callee, "__jsx_el");
                 assert_eq!(args.len(), 4);
+                match &args[2] {
+                    Arg::Named { name, value, .. } => {
+                        assert_eq!(name, "vals");
+                        match &value.kind {
+                            ExprKind::ArrayLit(elems) => match &elems[0].kind {
+                                ExprKind::Call { callee, .. } => assert_eq!(callee, "__jsx_attr"),
+                                other => panic!("expected __jsx_attr, got {other:?}"),
+                            },
+                            other => panic!("expected vals array, got {other:?}"),
+                        }
+                    }
+                    other => panic!("expected named vals, got {other:?}"),
+                }
             }
             other => panic!("expected el(...), got {other:?}"),
         }

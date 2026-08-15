@@ -8478,6 +8478,35 @@ fn lower_buffer_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
     }
 }
 
+fn lower_html_attr(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    if args.len() != 1 {
+        return Err(Error::at("JSX attribute takes one argument", span));
+    }
+    let expr = match &args[0] {
+        Arg::Pos(e) => e,
+        Arg::Named { value, .. } => value,
+    };
+    let (p, ty) = lower_expr(ctx, expr)?;
+    match &ty {
+        Ty::String => Ok((p, Ty::String)),
+        Ty::Int64 | Ty::Bool => {
+            let s = stringify_place(ctx, p, ty, expr.span)?;
+            Ok((s, Ty::String))
+        }
+        other if is_int(other) => {
+            let s = stringify_place(ctx, p, ty, expr.span)?;
+            Ok((s, Ty::String))
+        }
+        other => Err(Error::at(
+            format!(
+                "JSX attribute must be String, Int64, or Bool, got {}",
+                display_ty(other)
+            ),
+            expr.span,
+        )),
+    }
+}
+
 fn lower_html_el(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
     let str_arr = Ty::Array {
         elem: Box::new(Ty::String),
@@ -12222,6 +12251,7 @@ fn lower_call(
         "Map" => lower_map_new(ctx, args, span, expect),
         "__jsx_el" => lower_html_el(ctx, args, span),
         "__jsx_child" => lower_html_child(ctx, args, span),
+        "__jsx_attr" => lower_html_attr(ctx, args, span),
         other => {
             // Type constructor via local or imported name.
             if let Some(base_mangled) = ctx.resolve_type_name(other) {
