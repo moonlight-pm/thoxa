@@ -3,7 +3,7 @@
 import wire from "~/framework/Wire"
 import { Request, Response } from "std/Http"
 import { Has, Not, May } from "std/Fallible"
-import { trim, split, isEmpty, startsWith, dropPrefix } from "std/Str"
+import { isEmpty } from "std/Str"
 
 let cookieName = "customer"
 let maxAgeSecs = 2592000
@@ -12,26 +12,18 @@ export fn current(req!: Request) -> May<String> {
     match wire.headerGet(req, "Cookie") {
         Not => Not()
         Has(raw) {
-            findCookie(raw, cookieName)
-        }
-    }
-}
-
-fn findCookie(header!: String, name!: String) -> May<String> {
-    let parts = split(header, ";")
-    let prefix = "{name}="
-    for part in parts {
-        let p = trim(part)
-        if startsWith(p, prefix) {
-            let val = trim(dropPrefix(p, prefix))
-            if isEmpty(val) {
-                return Not()
-            } else {
-                return Has(val)
+            match wire.parseCookies(raw)[cookieName] {
+                Not => Not()
+                Has(val) {
+                    if isEmpty(val) {
+                        Not()
+                    } else {
+                        Has(val)
+                    }
+                }
             }
         }
     }
-    Not()
 }
 
 export fn rememberHeader(name!: String) -> String {

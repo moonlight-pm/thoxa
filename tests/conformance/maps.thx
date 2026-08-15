@@ -56,5 +56,20 @@ fn main() -> Int64 {
     mut nums = { 1: "one", 2: "two" }
     logging.info("nums={nums} n1={nums.has(1)}")
 
+    ## Get of a heap value from a temporary map, including inside `-->`
+    ## (Crema `queryMap(req)["q"]` on a serveOne fiber).
+    --> logTemp()
+
     0
+}
+
+fn logTemp() {
+    match takeQuery()["q"] {
+        Has(v) => logging.info("temp={v}")
+        Not => logging.info("temp=missing")
+    }
+}
+
+fn takeQuery() -> Map<String, String> {
+    { q: "mocha" }
 }

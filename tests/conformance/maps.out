@@ -9,3 +9,4 @@ after_rm={y: 2}
 walk=Cookie=a=1;Host=localhost;
 keys=2 k0=Cookie v0=a=1
 nums={1: "one", 2: "two"} n1=true
+temp=mocha

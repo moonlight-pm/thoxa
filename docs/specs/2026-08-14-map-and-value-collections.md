@@ -278,7 +278,7 @@ returns new arrays.
 **Code acceptance:**
 
 - [x] `cargo make test` green with `maps` + updated Array gates
-- [x] Crema compiles (append sites updated); optional local Map dogfood
+- [x] Crema compiles (append sites updated); local Map dogfood (query/form/cookies)
 - [x] Handbook: Map + amended Array mutation (only when shipped)
 
 ---
@@ -290,3 +290,5 @@ returns new arrays.
 | 2026-08-14 | Initial freeze: Swift/Buffer COW for Array+Map; `Map<K,V>`; `.has`; `{k:v}` lits; `for k, v in m` |
 | 2026-08-14 | **Shipped:** `Ty::Map` + `thoxa_map_*`; Array append/index-set write-back; gates `maps`, `maps_user` |
 | 2026-08-14 | User-key follow-up locked: structural product `==` + private hash; no Eq/Hash traits |
+| 2026-08-14 | Crema dogfood: `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>` |
+| 2026-08-14 | MapGet of heap values retains (so `foo()[k]` is safe after the temp drops) |

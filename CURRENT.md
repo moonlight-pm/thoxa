@@ -6,7 +6,7 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-08-14 (D133/D134 Map + value collections **shipped**; D132 fn
 pointers **shipped**; `-->` nowait **on master**, not freeze / not handbook;
-Crema-lite Phase A–C + JSX `Node`)
+Crema-lite Phase A–C + JSX `Node` + Map dogfood)
 
 ---
 
@@ -42,7 +42,8 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **Crema-lite** — Phase D+ only if useful. Still example only; no `std/`.  
+1. **Crema-lite** — Phase D+ only if useful. Still example only; no `std/`.
+   Query/form/cookies now use builtin `Map` (headers stay `Array<Header>`).  
 2. Editor only when DX forces it.
 
 ### Proceed order

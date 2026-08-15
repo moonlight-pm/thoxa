@@ -10,7 +10,7 @@ import wire from "~/framework/Wire"
 import httpStatic from "std/HttpStatic"
 ## `notFound` is required: generated `route` calls it on miss.
 import { Request, Response, notFound } from "std/Http"
-import { Has, Not } from "std/Fallible"
+import { Has, Not, May } from "std/Fallible"
 
 let staticRoot = "examples/http/web"
 export let port = 9091
@@ -40,7 +40,7 @@ type Routes {
 }
 
 fn menuQuery(req!: Request) -> String {
-    match wire.queryParam(wire.requestQuery(req), "q") {
+    match wire.queryMap(req)["q"] {
         Not => ""
         Has(v) { v }
     }

@@ -1,5 +1,5 @@
 ## Framework — HTTP request/response helpers (candidate std surface).
-## Body completion, query recovery, headers, form decode, redirects, HEAD finalize.
+## Body completion, query recovery, headers, form/query/cookie Maps, redirects, HEAD finalize.
 ## Never imports app/.
 
 import { Socket } from "std/Net"
@@ -155,8 +155,16 @@ export fn rawQuery(raw!: Bytes) -> String {
     }
 }
 
+export fn parseQuery(query!: String) -> Map<String, String> {
+    parsePairs(query, "&")
+}
+
+export fn queryMap(req!: Request) -> Map<String, String> {
+    parseQuery(requestQuery(req))
+}
+
 export fn queryParam(query!: String, key!: String) -> May<String> {
-    formField(Bytes.fromString(query), key)
+    parseQuery(query)[key]
 }
 
 export fn readBody(peer!: Socket, raw!: Bytes, req!: Request) -> Trial<Bytes, String> {
@@ -252,28 +260,54 @@ fn hexByte(hi!: Int64, lo!: Int64) -> May<Int64> {
     }
 }
 
+export fn parseForm(body!: Bytes) -> Map<String, String> {
+    parsePairs(body.toString(), "&")
+}
+
 export fn formField(body!: Bytes, key!: String) -> May<String> {
-    let raw = body.toString()
-    if isEmpty(raw) {
-        Not()
-    } else {
-        let pairs = split(raw, "&")
-        for pair in pairs {
-            match splitOnce(pair, "=") {
-                Not {
-                    if pair == key {
-                        return Has("")
-                    }
-                }
-                Has(kv) {
-                    if kv.key == key {
-                        return Has(urlDecode(kv.val))
-                    }
+    parseForm(body)[key]
+}
+
+export fn parseCookies(header!: String) -> Map<String, String> {
+    mut m: Map<String, String> = Map()
+    if isEmpty(header) {
+        return m
+    }
+    let parts = split(header, ";")
+    for part in parts {
+        let p = trim(part)
+        match splitOnce(p, "=") {
+            Not { }
+            Has(kv) {
+                let key = trim(kv.key)
+                if not isEmpty(key) {
+                    m.set(key, trim(kv.val))
                 }
             }
         }
-        Not()
     }
+    m
+}
+
+fn parsePairs(raw!: String, sep!: String) -> Map<String, String> {
+    mut m: Map<String, String> = Map()
+    if isEmpty(raw) {
+        return m
+    }
+    let pairs = split(raw, sep)
+    for pair in pairs {
+        if not isEmpty(pair) {
+            match splitOnce(pair, "=") {
+                Not {
+                    m.set(urlDecode(pair), "")
+                }
+                Has(kv) {
+                    m.set(urlDecode(kv.key), urlDecode(kv.val))
+                }
+            }
+        }
+    }
+    m
 }
 
 fn splitOnce(s!: String, sep!: String) -> May<Kv> {

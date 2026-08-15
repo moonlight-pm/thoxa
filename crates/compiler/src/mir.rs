@@ -7393,6 +7393,21 @@ fn lower_map_get(
     {
         let saved = std::mem::take(&mut ctx.stmts);
         ctx.stmts = else_body;
+        // MapGet of heap ptrs is a borrow of the slot. The found path then
+        // copies that pointer into Has, the May union, and the result place;
+        // end-of-fn drops every copy. Two Dups match those extra owners
+        // (ArrayGet of heap elems Dups once because it returns the elem
+        // place directly, not a May).
+        if array_elem_is_heap(val_ty) {
+            ctx.stmts.push(Stmt::Dup {
+                place: out.clone(),
+                ty: val_ty.clone(),
+            });
+            ctx.stmts.push(Stmt::Dup {
+                place: out.clone(),
+                ty: val_ty.clone(),
+            });
+        }
         let hp = ctx.fresh("has");
         let hty = Ty::User(has_m.clone());
         ctx.assign(

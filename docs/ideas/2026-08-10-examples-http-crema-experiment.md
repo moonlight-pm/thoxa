@@ -186,7 +186,9 @@ after A–C.
 with **`server.serve(routes.port, routes.handle)`** (**D132**). Routing is
 type-body **`GET`/`POST` clauses** on `Routes` + free **`handle`** static
 fallback. **Pages are JSX `Node`**. Host **`--> serveOne`** + HTTP/1.1
-keep-alive. Next Phase D+ only if wanted — still no `std/` growth.
+keep-alive. **Map dogfood (D134):** query/form/cookies are
+`Map<String, String>`. Headers stay `Array<Header>` (no std flip). Next
+Phase D+ only if wanted — still no `std/` growth.
 
 ### Language / design notes (experiment)
 
@@ -199,3 +201,4 @@ keep-alive. Next Phase D+ only if wanted — still no `std/` growth.
 | `server.serve(app)` needs typed `App` without fn values | **Done (D132):** `serve(port, handle)`; framework imports no app types | Traits still separate. Full FCF parked |
 | Single-threaded `accept` + blocking `recv` | **`--> serveOne`** + HTTP/1.1 keep-alive loop (implicit-async); 200ms `SO_RCVTIMEO` removed | — |
 | String path table → dispatch | **Type-body `GET`/`POST` clauses** → generated `route(req)` | Miss is `notFound()` (no fallthrough); `handle` treats 404 as static try. Query/body still example-stitched onto `Request`. Host boundary still `App` |
+| Linear-scan query / form / cookies | **`parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`** | `Request.headers` stays `Array<Header>` (D134). `m[k]` needs `May` in scope |

@@ -41,7 +41,8 @@ framework → std + framework/* only (no app imports)
 1. App `type Routes` — type-body `GET "/…"` / `POST "/…"` (compiler → `route(req)`)  
 2. App `handle` — `Routes().route(req)`; **404** falls through to `std/HttpStatic`  
 3. Framework completes `Request.body` and attaches the raw query (std still
-   strips `?` and leaves body empty)  
+   strips `?` and leaves body empty). Query / form / cookies parse to
+   `Map<String, String>`. `Request.headers` stays `Array<Header>`.  
 4. Host takes `port` + `(req: Request) -> Response` (**D132**)
 
 Domain modules (Pages, Models, …) are never imported by framework.
@@ -61,7 +62,7 @@ examples/http/
   Main.thx
   framework/
     Server.thx    # serve(port, handle), bindListen, readIncoming, writeResponse
-    Wire.thx      # body, query, form, cookies, redirects, HEAD finalize
+    Wire.thx      # body, query/form/cookie Maps, redirects, HEAD finalize
   app/
     Routes.thx    # type-body GET/POST, handle, static fallback
     Pages.thx Layout.thx Api.thx Models.thx Customer.thx

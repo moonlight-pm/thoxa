@@ -5,7 +5,7 @@ import models, { Drink, formatPrice } from "./Models"
 import customer from "./Customer"
 import wire from "~/framework/Wire"
 import { Response, notFound } from "std/Http"
-import { Has, Not } from "std/Fallible"
+import { Has, Not, May } from "std/Fallible"
 import { isEmpty, trim } from "std/Str"
 
 export fn home(who!: String) -> Response {
@@ -126,7 +126,7 @@ fn drinkPage(d!: Drink, who!: String) -> Response {
 
 export fn signIn(body!: Bytes) -> Response {
     let redirect = wire.seeOther("/")
-    match wire.formField(body, "name") {
+    match wire.parseForm(body)["name"] {
         Not {
             redirect
         }
