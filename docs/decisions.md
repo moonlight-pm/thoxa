@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-15 — Nested constructor fields
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D135 | Node + constructor-param User as ctor fields | `type Wrap(n: Node)` and `type Card(d: Drink)` are legal. User includes sums (`Drink.roast: Roast`). Stored inline (same RC field walk as today). Recursive / mutual User fields are an **error** (infinite C struct); `Array` / `Map` of the same type is fine. C-layout body-field types and function types stay out (D24 / D132). | **Shipped.** Amends D48. Gate: `nested_fields`. Dogfood: Crema `Roast` + `DrinkCard(d: Drink)`. |
+
 ## 2026-08-14 — Map and value collections
 
 | ID | Decision | Choice | Notes |
@@ -376,7 +382,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D47 | Loops (subset) | `while`, `loop`, `for x in lo..hi` / `lo..=hi`, `break`, `continue` | Loops yield `Void`; **`for x in arr` shipped with D55**; `continue` in range-for hits C for-step |
-| D48 | Constructor-param field types | Int64, Bool, **String**, **Bytes** | Nested User still deferred; C-layout body fields remain ABI-only. **Amended:** dynamic `Array` (D69), `Map` (D134). |
+| D48 | Constructor-param field types | Int64, Bool, **String**, **Bytes** | C-layout body fields remain ABI-only. **Amended:** dynamic `Array` (D69), `Map` (D134), **Node + nested User / user sums (D135)**. |
 | D49 | RC on user values | `needs_drop(User)` always; cgen walks heap fields | Dup after `StructLit` and heap field loads; method `_self` is a param (not auto-dropped) |
 
 ## 2026-07-19 — R9+ Trial monomorphs + wire I/O

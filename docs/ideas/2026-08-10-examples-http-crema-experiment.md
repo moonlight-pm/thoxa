@@ -88,7 +88,7 @@ Update status in place: `pending` | `in progress` | `done` | `blocked` | `parked
 | A0 Charter + CURRENT pointer + hard rules | **done** | this file |
 | A1 Multi-module skeleton; listen loop thin | **done** | `Main` + `App` + modules |
 | A2 Layout + dynamic `/` and `/menu` | **done** | now JSX `Node` (`Page`) |
-| A3 Models + `/menu/:slug` path param | **done** | in-memory catalog; roast is `String`; `:param` not `{braces}` (interp) |
+| A3 Models + `/menu/:slug` path param | **done** | in-memory catalog; `roast: Roast` (**D135**); `:param` not `{braces}` (interp) |
 | A4 `GET /api/health` + README polish | **done** | no layout shell |
 | A5 Smoke matrix (curl) green | **done** | `/` `/menu` `/menu/{slug}` `/api/health` CSS HEAD 404 405 |
 
@@ -187,14 +187,15 @@ with **`server.serve(routes.port, routes.handle)`** (**D132**). Routing is
 type-body **`GET`/`POST` clauses** on `Routes` + free **`handle`** static
 fallback. **Pages are JSX `Node`**. Host **`--> serveOne`** + HTTP/1.1
 keep-alive. **Map dogfood (D134):** query/form/cookies are
-`Map<String, String>`. Headers stay `Array<Header>` (no std flip). Next
-Phase D+ only if wanted — still no `std/` growth.
+`Map<String, String>`. Headers stay `Array<Header>` (no std flip).
+**D135:** `Drink.roast: Roast` + `DrinkCard(d: Drink)`. Next Phase D+ only
+if wanted — still no `std/` growth.
 
 ### Language / design notes (experiment)
 
 | Gap | Workaround | Product break? |
 |-----|------------|----------------|
-| Constructor-param fields must be Int64 / Bool / String / Bytes / Array / Map — **not** user sum types | `Drink.roast: String` instead of `Roast` union | Optional later language slice |
+| Constructor-param fields must be Int64 / Bool / String / Bytes / Array / Map — **not** user sum types | **Done (D135):** `Drink.roast: Roast` + `DrinkCard(d: Drink)` | Shipped |
 | String interp treats `{…}` as interpolation | Path params use `:slug` not `{slug}` | Document; escape story later if needed |
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |

@@ -645,7 +645,7 @@ fn array_elem_is_user(ty: &Ty) -> bool {
     matches!(ty, Ty::User(_))
 }
 
-/// Constructor-param User types: scalar/heap fields, plus Array (trees).
+/// Constructor-param User types: scalar/heap fields, plus Array/Map/Node/User.
 fn is_array_user_elem(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
     match ty {
         Ty::User(name) => {
@@ -656,14 +656,19 @@ fn is_array_user_elem(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
             if info.zero_init {
                 return false;
             }
-            info.fields.iter().all(|f| {
-                matches!(
-                    f.ty,
-                    Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. } | Ty::Map { .. }
-                )
-            })
+            info.fields.iter().all(|f| is_ctor_field_ty(&f.ty, types))
         }
         _ => true,
+    }
+}
+
+/// D48 / D135: constructor-param fields (not C-layout body fields, not fn types).
+fn is_ctor_field_ty(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
+    match ty {
+        Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Node => true,
+        Ty::Array { .. } | Ty::Map { .. } => true,
+        Ty::User(name) => types.get(name).is_some_and(|info| !info.zero_init),
+        _ => false,
     }
 }
 
@@ -1388,6 +1393,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             Err(e) => type_reg_errors.push(e),
         }
     }
+    type_reg_errors.extend(user_field_cycle_errors(&types_info, &type_defs));
     if !type_reg_errors.is_empty() {
         return Err(errors_to_multi(type_reg_errors));
     }
@@ -2104,15 +2110,11 @@ fn resolve_type_def_shape(
         let mut seen_default = false;
         for p in &td.params {
             let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
-            // R3+ : scalars + heap String/Bytes; Array<T> for Request/Response headers (D69).
-            // Nested User as a direct field still deferred; Array of User is fine (D65).
-            let ok = matches!(
-                ty,
-                Ty::Int64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Array { .. } | Ty::Map { .. }
-            );
-            if !ok {
+            // D48/D135: scalars + heap + Array/Map + Node + constructor-param User
+            // (including sums). C-layout and function types stay out.
+            if !is_ctor_field_ty(&ty, types_info) {
                 return Err(Error::at(
-                    "constructor-param fields must be Int64, Bool, String, Bytes, Array, or Map",
+                    "constructor-param fields must be Int64, Bool, String, Bytes, Node, Array, Map, or a constructor-param type",
                     p.ty.span,
                 ));
             }
@@ -2140,6 +2142,79 @@ fn resolve_type_def_shape(
 
 fn errors_to_multi(errors: Vec<Error>) -> Error {
     Error::multi(errors)
+}
+
+/// Inline User fields cannot form a cycle (C struct would be infinite).
+/// `Array` / `Map` are pointers, so `type Tree(kids: Array<Tree>)` is fine.
+fn user_field_cycle_errors(
+    types: &HashMap<String, TypeInfo>,
+    type_defs: &[(String, String, &TypeDef)],
+) -> Vec<Error> {
+    let span_of = |mangled: &str| -> Span {
+        type_defs
+            .iter()
+            .find(|(_, name, _)| name == mangled)
+            .map(|(_, _, td)| td.name_span)
+            .unwrap_or_else(Span::dummy)
+    };
+    fn visit(
+        name: &str,
+        stack: &mut Vec<String>,
+        types: &HashMap<String, TypeInfo>,
+    ) -> Option<Vec<String>> {
+        if let Some(i) = stack.iter().position(|s| s == name) {
+            let mut cycle = stack[i..].to_vec();
+            cycle.push(name.to_string());
+            return Some(cycle);
+        }
+        let Some(info) = types.get(name) else {
+            return None;
+        };
+        if info.zero_init {
+            return None;
+        }
+        stack.push(name.to_string());
+        for f in &info.fields {
+            if let Ty::User(inner) = &f.ty {
+                if let Some(c) = visit(inner, stack, types) {
+                    stack.pop();
+                    return Some(c);
+                }
+            }
+        }
+        if let Some(sum) = &info.sum {
+            for v in &sum.variants {
+                if let Ty::User(inner) = &v.ty {
+                    if let Some(c) = visit(inner, stack, types) {
+                        stack.pop();
+                        return Some(c);
+                    }
+                }
+            }
+        }
+        stack.pop();
+        None
+    }
+    let mut errors = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for name in types.keys() {
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        if let Some(cycle) = visit(name, &mut Vec::new(), types) {
+            for n in &cycle {
+                seen.insert(n.clone());
+            }
+            let shown = cycle.join(" → ");
+            errors.push(Error::at(
+                format!(
+                    "constructor-param type cannot contain itself through fields ({shown}); use Array or Map for a recursive shape"
+                ),
+                span_of(&cycle[0]),
+            ));
+        }
+    }
+    errors
 }
 
 fn mangle_type(mod_id: &str, name: &str, is_entry: bool) -> String {
@@ -3640,7 +3715,7 @@ fn resolve_ty(
             if array_elem_is_user(&et) && !is_array_user_elem(&et, types) {
                 return Err(Error::at(
                     format!(
-                        "Array element User type must be constructor-param with Int64/Bool/String/Bytes/Array fields: {et:?}"
+                        "Array element User type must be constructor-param with Int64/Bool/String/Bytes/Node/Array/Map/User fields: {et:?}"
                     ),
                     elem.span,
                 ));
@@ -3652,9 +3727,7 @@ fn resolve_ty(
             let vt = resolve_ty(v, types, name_map)?;
             if !is_map_key_ty(&kt) {
                 return Err(Error::at(
-                    format!(
-                        "Map key type not yet supported: {kt:?} (String, Int64, Bool)"
-                    ),
+                    format!("Map key type not yet supported: {kt:?} (String, Int64, Bool)"),
                     k.span,
                 ));
             }
@@ -3667,7 +3740,7 @@ fn resolve_ty(
             if array_elem_is_user(&vt) && !is_array_user_elem(&vt, types) {
                 return Err(Error::at(
                     format!(
-                        "Map value User type must be constructor-param with Int64/Bool/String/Bytes/Array/Map fields: {vt:?}"
+                        "Map value User type must be constructor-param with Int64/Bool/String/Bytes/Node/Array/Map/User fields: {vt:?}"
                     ),
                     v.span,
                 ));
@@ -5931,7 +6004,7 @@ fn lower_empty_array_typed(ctx: &mut LowerCtx, elem: &Ty, span: Span) -> Result<
     if array_elem_is_user(elem) && !is_array_user_elem(elem, &ctx.types) {
         return Err(Error::at(
             format!(
-                "Array element User type must be constructor-param with Int64/Bool/String/Bytes/Array fields: {elem:?}"
+                "Array element User type must be constructor-param with Int64/Bool/String/Bytes/Node/Array/Map/User fields: {elem:?}"
             ),
             span,
         ));
@@ -5996,7 +6069,7 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
                     {
                         return Err(Error::at(
                             format!(
-                                "Array element User type must be constructor-param with Int64/Bool/String/Bytes/Array fields: {:?}",
+                                "Array element User type must be constructor-param with Int64/Bool/String/Bytes/Node/Array/Map/User fields: {:?}",
                                 elem
                             ),
                             *name_span,
@@ -6305,9 +6378,7 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
                     let (v, vty) = lower_expr(ctx, value)?;
                     if vty != val_ty {
                         return Err(Error::at(
-                            format!(
-                                "Map value type mismatch: expected {val_ty:?}, found {vty:?}"
-                            ),
+                            format!("Map value type mismatch: expected {val_ty:?}, found {vty:?}"),
                             value.span,
                         ));
                     }
@@ -7163,7 +7234,7 @@ fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Pl
                 if array_elem_is_user(&ty) && !is_array_user_elem(&ty, &ctx.types) {
                     return Err(Error::at(
                         format!(
-                            "array element User type must be constructor-param with Int64/Bool/String/Bytes/Array fields: {ty:?}"
+                            "array element User type must be constructor-param with Int64/Bool/String/Bytes/Node/Array/Map/User fields: {ty:?}"
                         ),
                         e.span,
                     ));
@@ -7215,7 +7286,12 @@ fn coerce_map_key(ctx: &mut LowerCtx, key: Place, key_ty: &Ty) -> Place {
     }
 }
 
-fn lower_map_new(ctx: &mut LowerCtx, args: &[Arg], span: Span, expect: Option<&Ty>) -> Result<(Place, Ty)> {
+fn lower_map_new(
+    ctx: &mut LowerCtx,
+    args: &[Arg],
+    span: Span,
+    expect: Option<&Ty>,
+) -> Result<(Place, Ty)> {
     if !args.is_empty() {
         return Err(Error::at("`Map()` takes no arguments", span));
     }
@@ -7704,7 +7780,12 @@ fn lower_field(
                     .get(mangled)
                     .ok_or_else(|| Error::at(format!("unknown function `{name}`"), name_span))?
                     .clone();
-                refuse_fn_value(sig.multi_clause, sig.extern_symbol.is_some(), name, name_span)?;
+                refuse_fn_value(
+                    sig.multi_clause,
+                    sig.extern_symbol.is_some(),
+                    name,
+                    name_span,
+                )?;
                 let ty = fn_ty_of_sig(&sig.params, &sig.ret);
                 return Ok(make_fn_value(
                     ctx,
@@ -8220,7 +8301,14 @@ fn lower_method_call(
     // and write back the returned pointer (COW may allocate a new unique object).
     if matches!(
         method,
-        "append" | "appendBytes" | "freeze" | "dropLast" | "insertAt" | "removeAt" | "set" | "remove"
+        "append"
+            | "appendBytes"
+            | "freeze"
+            | "dropLast"
+            | "insertAt"
+            | "removeAt"
+            | "set"
+            | "remove"
     ) {
         if let ExprKind::Name(recv_name) = &receiver.kind {
             if let Some(binding) = ctx.lookup(recv_name) {
@@ -8279,9 +8367,15 @@ fn lower_method_call(
         Ty::Array { elem } => {
             lower_array_method(ctx, recv_p, elem.as_ref(), method, args, method_span)
         }
-        Ty::Map { key, val } => {
-            lower_map_method(ctx, recv_p, key.as_ref(), val.as_ref(), method, args, method_span)
-        }
+        Ty::Map { key, val } => lower_map_method(
+            ctx,
+            recv_p,
+            key.as_ref(),
+            val.as_ref(),
+            method,
+            args,
+            method_span,
+        ),
         Ty::User(type_name) => {
             let type_name = type_name.clone();
             let info = ctx
@@ -11353,13 +11447,21 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                     match &f.ty {
                         Ty::Int64 => ctx.assign(fp.clone(), Ty::Int64, RValue::Int(0)),
                         Ty::Bool => ctx.assign(fp.clone(), Ty::Bool, RValue::Bool(false)),
-                        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
+                        Ty::String
+                        | Ty::Bytes
+                        | Ty::Buffer
+                        | Ty::Node
+                        | Ty::Array { .. }
+                        | Ty::Map { .. } => {
                             ctx.note_drop_place(&fp, &f.ty);
                             ctx.stmts.push(Stmt::Assign {
                                 place: fp.clone(),
                                 ty: f.ty.clone(),
                                 value: RValue::Null,
                             });
+                        }
+                        Ty::User(_) => {
+                            init_place(ctx, &fp, &f.ty)?;
                         }
                         other => {
                             return Err(Error::new(format!(
@@ -11994,12 +12096,10 @@ fn form_unbound_method(
         .get(type_name)
         .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?
         .clone();
-    let sig = info.methods.get(method).ok_or_else(|| {
-        Error::at(
-            format!("no method `{method}` on `{type_name}`"),
-            span,
-        )
-    })?;
+    let sig = info
+        .methods
+        .get(method)
+        .ok_or_else(|| Error::at(format!("no method `{method}` on `{type_name}`"), span))?;
     if !sig.exported && ctx.module_id != info.def_mod {
         return Err(Error::at(format!("method `{method}` is private"), span));
     }
@@ -12044,12 +12144,10 @@ fn form_bound_method(
         .get(&type_name)
         .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?
         .clone();
-    let sig = info.methods.get(method).ok_or_else(|| {
-        Error::at(
-            format!("no method `{method}` on `{type_name}`"),
-            span,
-        )
-    })?;
+    let sig = info
+        .methods
+        .get(method)
+        .ok_or_else(|| Error::at(format!("no method `{method}` on `{type_name}`"), span))?;
     if !sig.exported && ctx.module_id != info.def_mod {
         return Err(Error::at(format!("method `{method}` is private"), span));
     }
@@ -12239,7 +12337,10 @@ fn lower_call(
 }
 
 fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
-    if ctx.lookup(callee).is_some_and(|b| matches!(b.ty, Ty::Fn { .. })) {
+    if ctx
+        .lookup(callee)
+        .is_some_and(|b| matches!(b.ty, Ty::Fn { .. }))
+    {
         return Err(Error::at(
             "`-->` requires a named free function, not a function value",
             span,

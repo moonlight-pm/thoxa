@@ -1,9 +1,7 @@
 //! MIR → C source.
 
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::mir::{
-    Callee, FnTarget, Function, GlobalVar, Program, RValue, Stmt, Ty, TypeLayout,
-};
+use crate::mir::{Callee, FnTarget, Function, GlobalVar, Program, RValue, Stmt, Ty, TypeLayout};
 use std::collections::HashSet;
 use std::fmt::Write as _;
 
@@ -147,7 +145,7 @@ pub fn emit_program_with(
     }
     for name in &user_arr_elems {
         if let Some(layout) = program.types.iter().find(|t| t.name == *name) {
-            emit_array_user_elem_rc(&mut out, layout);
+            emit_array_user_elem_rc(&mut out, layout, &program.types);
         }
     }
     if !user_arr_elems.is_empty() {
@@ -713,9 +711,7 @@ fn emit_start_thunk(
                     emit_rc(
                         out,
                         "    ",
-                        &crate::mir::Place {
-                            name: "ret".into(),
-                        },
+                        &crate::mir::Place { name: "ret".into() },
                         ret_ty,
                         false,
                         types,
@@ -829,12 +825,7 @@ fn emit_stmts(
                 } = value
                 {
                     emit_map_get(out, &pad, place, map, key, dest, val_ty);
-                } else if let RValue::MapValAt {
-                    map,
-                    index,
-                    val_ty,
-                } = value
-                {
+                } else if let RValue::MapValAt { map, index, val_ty } = value {
                     match val_ty {
                         Ty::User(type_name) => {
                             emit_rc(out, &pad, place, &Ty::User(type_name.clone()), false, types);
@@ -1076,9 +1067,7 @@ fn emit_stmts(
                 emit_rvalue(out, rv, types);
                 out.push_str(";\n");
             }
-            Stmt::Start {
-                args, arg_tys, ..
-            } => {
+            Stmt::Start { args, arg_tys, .. } => {
                 emit_start_site(out, &pad, fn_label, *start_id, args, arg_tys, types);
                 *start_id += 1;
             }
@@ -1261,7 +1250,11 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                 }
                 out.push(')');
             }
-            Callee::Indirect { fun, arg_tys, ret_ty } => {
+            Callee::Indirect {
+                fun,
+                arg_tys,
+                ret_ty,
+            } => {
                 let _ = write!(out, "((");
                 if *ret_ty == Ty::Void || *ret_ty == Ty::Never {
                     out.push_str("void");
@@ -1506,10 +1499,7 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             ..
         } => emit_map_set(out, map, key, val, val_ty),
         RValue::MapRemove {
-            map,
-            key,
-            val_ty,
-            ..
+            map, key, val_ty, ..
         } => emit_map_remove(out, map, key, val_ty),
         RValue::MapGet { .. } => {
             out.push_str("/* bad MapGet as rvalue */");
@@ -1706,7 +1696,9 @@ fn map_key_kind_c(ty: &Ty) -> &'static str {
 fn map_val_kind_c(ty: &Ty) -> &'static str {
     match ty {
         Ty::User(_) => "THOXA_MAP_VAL_USER",
-        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => "THOXA_MAP_VAL_PTR",
+        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
+            "THOXA_MAP_VAL_PTR"
+        }
         _ => "THOXA_MAP_VAL_I64",
     }
 }
@@ -1718,7 +1710,13 @@ fn map_val_size_c(ty: &Ty) -> String {
     }
 }
 
-fn emit_map_set(out: &mut String, map: &crate::mir::Place, key: &crate::mir::Place, val: &crate::mir::Place, val_ty: &Ty) {
+fn emit_map_set(
+    out: &mut String,
+    map: &crate::mir::Place,
+    key: &crate::mir::Place,
+    val: &crate::mir::Place,
+    val_ty: &Ty,
+) {
     match val_ty {
         Ty::User(type_name) => {
             let _ = write!(
@@ -1761,7 +1759,12 @@ fn emit_map_set(out: &mut String, map: &crate::mir::Place, key: &crate::mir::Pla
     }
 }
 
-fn emit_map_remove(out: &mut String, map: &crate::mir::Place, key: &crate::mir::Place, val_ty: &Ty) {
+fn emit_map_remove(
+    out: &mut String,
+    map: &crate::mir::Place,
+    key: &crate::mir::Place,
+    val_ty: &Ty,
+) {
     if let Ty::User(type_name) = val_ty {
         let _ = write!(
             out,
@@ -1837,7 +1840,12 @@ fn emit_map_get(
     }
 }
 
-fn emit_map_val_at(out: &mut String, map: &crate::mir::Place, index: &crate::mir::Place, val_ty: &Ty) {
+fn emit_map_val_at(
+    out: &mut String,
+    map: &crate::mir::Place,
+    index: &crate::mir::Place,
+    val_ty: &Ty,
+) {
     match val_ty {
         Ty::User(type_name) => {
             let _ = write!(
@@ -1884,66 +1892,37 @@ fn emit_map_values(out: &mut String, map: &crate::mir::Place, val_ty: &Ty) {
 }
 
 /// Static field-walk helpers used as ThoxaArrayElemFn for Array<User>.
-/// Elements may have String/Bytes and Array fields (trees). Nested User
-/// fields still deferred. Recursive Array<T> uses the forward-declared
-/// helpers above.
-fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout) {
+/// Elements may have String/Bytes/Node/Array/Map and nested User fields.
+/// Recursive Array<T> uses the forward-declared helpers above.
+fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout, types: &[TypeLayout]) {
     let cty = c_type_name(&layout.name);
     let dup = array_user_elem_dup_fn(&layout.name);
     let drop = array_user_elem_drop_fn(&layout.name);
     let _ = writeln!(out, "static void {dup}(void *p) {{");
     let _ = writeln!(out, "    {cty} *e = ({cty} *)p;");
-    for f in &layout.fields {
-        match &f.ty {
-            Ty::String | Ty::Bytes | Ty::Buffer => {
-                let _ = writeln!(out, "    thoxa_dup(e->{});", f.c_name);
-            }
-            Ty::Array { elem } => {
-                let _ = writeln!(out, "    thoxa_array_dup(e->{});", f.c_name);
-                let _ = elem;
-            }
-            Ty::Map { .. } => {
-                let _ = writeln!(out, "    thoxa_map_dup(e->{});", f.c_name);
-            }
-            _ => {}
-        }
-    }
+    emit_array_user_elem_fields(out, layout, types, true);
     let _ = writeln!(out, "}}");
     let _ = writeln!(out, "static void {drop}(void *p) {{");
     let _ = writeln!(out, "    {cty} *e = ({cty} *)p;");
-    for f in &layout.fields {
-        match &f.ty {
-            Ty::String | Ty::Bytes | Ty::Buffer => {
-                let _ = writeln!(out, "    thoxa_drop(e->{});", f.c_name);
-            }
-            Ty::Array { elem } => {
-                if let Ty::User(type_name) = elem.as_ref() {
-                    let _ = writeln!(
-                        out,
-                        "    thoxa_array_drop_ex(e->{}, {});",
-                        f.c_name,
-                        array_user_elem_drop_fn(type_name)
-                    );
-                } else {
-                    let _ = writeln!(out, "    thoxa_array_drop(e->{});", f.c_name);
-                }
-            }
-            Ty::Map { val, .. } => {
-                if let Ty::User(type_name) = val.as_ref() {
-                    let _ = writeln!(
-                        out,
-                        "    thoxa_map_drop_ex(e->{}, {});",
-                        f.c_name,
-                        array_user_elem_drop_fn(type_name)
-                    );
-                } else {
-                    let _ = writeln!(out, "    thoxa_map_drop(e->{});", f.c_name);
-                }
-            }
-            _ => {}
-        }
-    }
+    emit_array_user_elem_fields(out, layout, types, false);
     let _ = writeln!(out, "}}");
+}
+
+fn emit_array_user_elem_fields(
+    out: &mut String,
+    layout: &TypeLayout,
+    types: &[TypeLayout],
+    dup: bool,
+) {
+    for f in &layout.fields {
+        if !needs_drop_ty(&f.ty) {
+            continue;
+        }
+        let nested = crate::mir::Place {
+            name: format!("e->{}", f.c_name),
+        };
+        emit_rc(out, "    ", &nested, &f.ty, dup, types);
+    }
 }
 
 fn collect_user_array_elems_program(program: &Program, out: &mut Vec<String>) {
@@ -2224,23 +2203,35 @@ fn emit_fn_support(out: &mut String, program: &Program, types: &[TypeLayout]) {
 
 fn emit_fn_payload_rc(out: &mut String, type_name: &str, types: &[TypeLayout]) {
     let cty = c_type_name(type_name);
-    let _ = writeln!(out, "static void {}(void *p) {{", fn_payload_retain_name(type_name));
+    let _ = writeln!(
+        out,
+        "static void {}(void *p) {{",
+        fn_payload_retain_name(type_name)
+    );
     let _ = writeln!(out, "    {cty} *_s = ({cty} *)p;");
     emit_rc(
         out,
         "    ",
-        &crate::mir::Place { name: "(*_s)".into() },
+        &crate::mir::Place {
+            name: "(*_s)".into(),
+        },
         &Ty::User(type_name.to_string()),
         true,
         types,
     );
     out.push_str("}\n");
-    let _ = writeln!(out, "static void {}(void *p) {{", fn_payload_release_name(type_name));
+    let _ = writeln!(
+        out,
+        "static void {}(void *p) {{",
+        fn_payload_release_name(type_name)
+    );
     let _ = writeln!(out, "    {cty} *_s = ({cty} *)p;");
     emit_rc(
         out,
         "    ",
-        &crate::mir::Place { name: "(*_s)".into() },
+        &crate::mir::Place {
+            name: "(*_s)".into(),
+        },
         &Ty::User(type_name.to_string()),
         false,
         types,
@@ -2350,11 +2341,7 @@ fn emit_thunk_invoke(
     out.push_str(");\n");
 }
 
-fn collect_fn_targets_stmts(
-    stmts: &[Stmt],
-    thunks: &mut Vec<FnTarget>,
-    recvs: &mut Vec<String>,
-) {
+fn collect_fn_targets_stmts(stmts: &[Stmt], thunks: &mut Vec<FnTarget>, recvs: &mut Vec<String>) {
     for s in stmts {
         match s {
             Stmt::Assign { value, .. } => collect_fn_targets_rvalue(value, thunks, recvs),
@@ -2375,11 +2362,7 @@ fn collect_fn_targets_stmts(
     }
 }
 
-fn collect_fn_targets_rvalue(
-    v: &RValue,
-    thunks: &mut Vec<FnTarget>,
-    recvs: &mut Vec<String>,
-) {
+fn collect_fn_targets_rvalue(v: &RValue, thunks: &mut Vec<FnTarget>, recvs: &mut Vec<String>) {
     if let RValue::MakeFn {
         recv_ty, target, ..
     } = v

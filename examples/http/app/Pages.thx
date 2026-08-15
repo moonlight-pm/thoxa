@@ -1,7 +1,7 @@
 ## App layer — HTML pages for Little Crema (JSX / builtin Node).
 
 import layout, { Page } from "./Layout"
-import models, { Drink, formatPrice } from "./Models"
+import models, { Drink, formatPrice, roastLabel } from "./Models"
 import customer from "./Customer"
 import wire from "~/framework/Wire"
 import { Response, notFound } from "std/Http"
@@ -46,20 +46,22 @@ fn homeCard(who!: String) -> Node {
     }
 }
 
-fn drinkCard(d!: Drink) -> Node {
-    <li class="card">
-        <a href={"/menu/{d.slug}"}>
-            <span class="name">{d.name}</span>
-            <span class="meta">{d.roast} · {formatPrice(d.priceCents)}</span>
-            <span class="notes">{d.notes}</span>
-        </a>
-    </li>
+type DrinkCard(d: Drink) {
+    export fn view(children: Array<Node>) -> Node {
+        <li class="card">
+            <a href={"/menu/{d.slug}"}>
+                <span class="name">{d.name}</span>
+                <span class="meta">{roastLabel(d.roast)} · {formatPrice(d.priceCents)}</span>
+                <span class="notes">{d.notes}</span>
+            </a>
+        </li>
+    }
 }
 
 fn drinkCards(drinks!: Array<Drink>) -> Array<Node> {
     mut items: Array<Node> = []
     for d in drinks {
-        items.append(drinkCard(d))
+        items.append(<DrinkCard d={d} />)
     }
     items
 }
@@ -114,7 +116,7 @@ fn drinkPage(d!: Drink, who!: String) -> Response {
             <p class="back"><a href="/menu">← Back to the menu</a></p>
             <article class="drink">
                 <h1>{d.name}</h1>
-                <p class="badge">{d.roast}</p>
+                <p class="badge">{roastLabel(d.roast)}</p>
                 <p class="notes">{d.notes}</p>
                 <p class="price">{price}</p>
             </article>

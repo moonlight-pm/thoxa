@@ -1,0 +1,46 @@
+## D135: Node and constructor-param User (including sums) as ctor fields.
+import logging from "std/Logging"
+
+type Dark
+type Medium
+type Light
+type Roast = Dark | Medium | Light
+
+type Drink(name: String, roast: Roast)
+
+type Wrap(n: Node)
+
+type Card(d: Drink) {
+    export fn view(children: Array<Node>) -> Node {
+        <p>{"{d.name} {roastLabel(d.roast)}"}</p>
+    }
+}
+
+fn roastLabel(r: Roast) -> String {
+    match r {
+        Dark => "dark"
+        Medium => "medium"
+        Light => "light"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let d = Drink(name: "espresso", roast: Dark())
+    logging.info("{d.name}")
+    logging.info("{roastLabel(d.roast)}")
+
+    let w = Wrap(n: <em>hi</em>)
+    logging.info("{w.n.html()}")
+
+    let c = <Card d={d}></Card>
+    logging.info("{c.html()}")
+
+    mut xs: Array<Drink> = []
+    xs.append(d)
+    logging.info("{xs[0].name}")
+    logging.info("{roastLabel(xs[0].roast)}")
+    0
+}

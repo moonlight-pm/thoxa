@@ -4,9 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-14 (D133/D134 Map + value collections **shipped**; D132 fn
-pointers **shipped**; `-->` nowait **on master**, not freeze / not handbook;
-Crema-lite Phase A–C + JSX `Node` + Map dogfood)
+**As of:** 2026-08-15 (**D135** Node + nested User ctor fields **shipped**;
+D133/D134 Map; D132 fn pointers; `-->` nowait **on master**, not freeze /
+not handbook; Crema-lite Phase A–C + JSX `Node` + `Roast` / `DrinkCard`)
 
 ---
 
@@ -14,7 +14,8 @@ Crema-lite Phase A–C + JSX `Node` + Map dogfood)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **Map + value collections** (**D133/D134**); **function
+**Shipped recently:** **Node + nested User ctor fields** (**D135**);
+**Map + value collections** (**D133/D134**); **function
 pointers** (**D132**); **`-->` nowait**
 (colorless wait; Net parks; Crema `--> serveOne` + keep-alive);
 **multi-clause functions** (**D131**);
@@ -106,9 +107,10 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
 | Match arms | Bare ctor = tag-only; `=>` single-expr body or `{ }` multi-stmt (**D130**); `->` types only |
 | Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **shipped**). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |
-| Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48). |
+| Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/Http` header flip. |
+| Ctor fields | Int64, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |

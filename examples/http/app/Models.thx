@@ -3,13 +3,26 @@
 import { Has, Not, May } from "std/Fallible"
 import { containsIgnoreCaseAscii, isEmpty, trim } from "std/Str"
 
+export type Dark
+export type Medium
+export type Light
+export type Roast = Dark | Medium | Light
+
 export type Drink(
     slug: String,
     name: String,
     notes: String,
     priceCents: Int64,
-    roast: String
+    roast: Roast
 )
+
+export fn roastLabel(r: Roast) -> String {
+    match r {
+        Dark => "Dark roast"
+        Medium => "Medium roast"
+        Light => "Light roast"
+    }
+}
 
 export fn formatPrice(cents!: Int64) -> String {
     let dollars = cents / 100
@@ -28,42 +41,42 @@ export fn allDrinks() -> Array<Drink> {
             name: "Espresso",
             notes: "A quick, syrupy shot under a hazelnut crema.",
             priceCents: 300,
-            roast: "Dark roast"
+            roast: Dark()
         ),
         Drink(
             slug: "cold-brew",
             name: "Cold Brew",
             notes: "Steeped overnight: chocolate, cherry, no acidity.",
             priceCents: 400,
-            roast: "Dark roast"
+            roast: Dark()
         ),
         Drink(
             slug: "cappuccino",
             name: "Cappuccino",
             notes: "Equal parts espresso, steamed milk, and foam.",
             priceCents: 500,
-            roast: "Medium roast"
+            roast: Medium()
         ),
         Drink(
             slug: "flat-white",
             name: "Flat White",
             notes: "Two ristretto shots under velvet microfoam.",
             priceCents: 500,
-            roast: "Medium roast"
+            roast: Medium()
         ),
         Drink(
             slug: "pour-over",
             name: "Pour Over",
             notes: "A single-origin Ethiopian, bright and floral.",
             priceCents: 600,
-            roast: "Light roast"
+            roast: Light()
         ),
         Drink(
             slug: "mocha",
             name: "Mocha",
             notes: "Espresso and dark chocolate under whipped cream.",
             priceCents: 600,
-            roast: "Dark roast"
+            roast: Dark()
         ),
     ]
 }
@@ -103,7 +116,7 @@ fn drinkMatches(d!: Drink, q!: String) -> Bool {
         if containsIgnoreCaseAscii(d.notes, q) {
             true
         } else {
-            if containsIgnoreCaseAscii(d.roast, q) {
+            if containsIgnoreCaseAscii(roastLabel(d.roast), q) {
                 true
             } else {
                 containsIgnoreCaseAscii(d.slug, q)

@@ -11,10 +11,10 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-14 (D133/D134 Map + value collections **shipped**; D132 fn
-pointers **shipped**; Crema-lite Phase A–C + JSX pages + Map query/form/cookies;
-type-body route clauses + JSX/`Node` + **`-->` nowait** **partial** on master
-— not freeze)
+**As of:** 2026-08-15 (**D135** Node + nested User ctor fields **shipped**;
+D133/D134 Map; D132 fn pointers; Crema-lite Phase A–C + JSX pages + `Roast` /
+`DrinkCard`; type-body route clauses + JSX/`Node` + **`-->` nowait** **partial**
+on master — not freeze)
 
 ---
 
@@ -45,7 +45,7 @@ type-body route clauses + JSX/`Node` + **`-->` nowait** **partial** on master
 | map | Builtin `Map<K, V>` + `{k:v}` + `for k, v` | shipped | `maps`, `maps_user` | **D134**; D133; [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) | Keys v0 String/Int64/Bool (User types are **values**, not keys). `.has` / `.get`→May / write-back `.set`; ident keys; insertion order. Crema dogfoods query/form/cookies as `Map<String, String>`. **Gaps:** User keys wait on structural product `==` + private field hash (not Eq/Hash traits; not pointer identity). No `==` on Map. No `std/Http` header flip. | yes |
 | array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | ABI scalar elems only (no User fixed-array elems) | yes |
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
-| string-fields | String/Bytes/Array/Map ctor fields | shipped | `string_fields`, `maps_user` | D48–D49, D69, **D134** | Map ctor fields shipped (`maps_user`). Nested User still deferred. | yes |
+| string-fields | String/Bytes/Array/Map/Node/User ctor fields | shipped | `string_fields`, `maps_user`, `nested_fields` | D48–D49, D69, D134, **D135** | Nested User and Node shipped (`nested_fields`), including sums as fields. Recursive User fields are an error (use Array/Map). C-layout and fn types still out. | yes |
 | param-defaults | Formal defaults M3 (+ methods/ctors/`!`/extern) | shipped | `param_defaults`, `defaults_mod`, `param_bang_defaults` | D98, D106, D116 | `!` and extern formals may default (call-site fill); non-default cannot follow defaulted; free names use defining module | yes |
 | modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate`, `import_combined` | D30–D35, D122, **D127** | Combined `import ns, { a } from "…"` shipped. `~/` is nearest ancestor `Main.thx` (else entry dir) so nested-file check/LSP match directory packages. Nested import/type in functions deferred (D91); module mut heap (Array/String/Map) must not end-of-fn drop (D122) | yes |
 | pkg-main | Dir entry `Main.thx` | shipped | `pkgmain` | D68 | — | yes |

@@ -1310,7 +1310,82 @@ fn main() -> Int64 { 0 }
 "#;
         let diags = check_source("<input>", src);
         assert!(
-            diags.iter().any(|d| d.message.contains("constructor-param")),
+            diags
+                .iter()
+                .any(|d| d.message.contains("constructor-param")),
+            "{diags:?}"
+        );
+    }
+
+    #[test]
+    fn nested_user_ctor_field_ok() {
+        let src = r#"
+type Inner(n: Int64)
+type Outer(inner: Inner)
+fn main() -> Int64 {
+    let o = Outer(inner: Inner(n: 1))
+    o.inner.n
+}
+"#;
+        let diags = check_source("<input>", src);
+        assert!(diags.is_empty(), "{diags:?}");
+    }
+
+    #[test]
+    fn node_ctor_field_ok() {
+        let src = r#"
+type Wrap(n: Node)
+fn main() -> Int64 {
+    let w = Wrap(n: <p>x</p>)
+    0
+}
+"#;
+        let diags = check_source("<input>", src);
+        assert!(diags.is_empty(), "{diags:?}");
+    }
+
+    #[test]
+    fn recursive_user_field_is_cycle() {
+        let src = r#"
+type Cons(n: Int64, tail: Cons)
+fn main() -> Int64 { 0 }
+"#;
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.iter().any(|d| d.message.contains("itself")),
+            "{diags:?}"
+        );
+    }
+
+    #[test]
+    fn mutual_user_field_is_cycle() {
+        let src = r#"
+type A(b: B)
+type B(a: A)
+fn main() -> Int64 { 0 }
+"#;
+        let diags = check_source("<input>", src);
+        assert!(
+            diags.iter().any(|d| d.message.contains("itself")),
+            "{diags:?}"
+        );
+    }
+
+    #[test]
+    fn clayout_not_allowed_as_ctor_field() {
+        let src = r#"
+type Point {
+    mut x: Int64
+    mut y: Int64
+}
+type Wrap(p: Point)
+fn main() -> Int64 { 0 }
+"#;
+        let diags = check_source("<input>", src);
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("constructor-param")),
             "{diags:?}"
         );
     }
@@ -1320,7 +1395,8 @@ fn main() -> Int64 { 0 }
         let src = "fn main() { --> serveOne(peer) }\n";
         let toks = semantic_tokens(src);
         assert!(
-            toks.iter().any(|t| t.token_type == "keyword" && t.length == 3),
+            toks.iter()
+                .any(|t| t.token_type == "keyword" && t.length == 3),
             "--> should be keyword: {toks:?}"
         );
         assert!(
