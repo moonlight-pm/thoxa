@@ -1,4 +1,4 @@
-## std/http-static — map an HTTP Request onto files under a root directory.
+## std/http/static — map an HTTP Request onto files under a root directory.
 ## Directories serve `index.html`; path traversal (`..` / `.` segments) → 404.
 ## Content-Type from the final file extension. GET and HEAD only.
 ## Depends on std/io + std/http. Logs unexpected Io / permission issues via std/logging.

@@ -11,8 +11,8 @@ import logging, { info } from "std/logging"  ## ns + short emit (D127)
 import { readFile } from "std/io"
 import net from "std/net"
 import http from "std/http"
-import server from "std/http-server"
-import { Router } from "std/http-static"
+import server from "std/http/server"
+import { Router } from "std/http/static"
 import { defaultPrompt } from "std/prompt"   ## session shell.thx
 import { startsWith, dropPrefix } from "std/str"
 import { cwdShort, shortPath } from "std/path"
@@ -29,8 +29,8 @@ import { branch } from "std/git"
 | `Io` | Files: `readFile`/`writeFile`/`appendFile`, `File`, OpenMode (**D126**) |
 | `Net` | TCP sockets: `Socket`, `receiveRequest`, `sendAll` (**D126**) |
 | `Http` | HTTP/1.1 parse/write + query/form/cookie helpers + `htmlResponse` (**D126**/**D136**/**D137**) |
-| `HttpServer` | Host loop: `serve` / `serveOne` / `readBody` (**D136**) |
-| `HttpStatic` | Static-file `Router` over `std/io` + `std/http` (**D126**) |
+| `http/server` | Host loop: `serve` / `serveOne` / `readBody` (**D136**/**D139**) |
+| `http/static` | Static-file `Router` over `std/io` + `std/http` (**D126**/**D139**) |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
 | `Str` | search/slice/replace/`split`/`splitOnce`/`parseUInt`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |
 | `Path` | dirname/basename/join/`joinAll`/`parts`/slash helpers/extension/`cwd`/`shortPath`/… |

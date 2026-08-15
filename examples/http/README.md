@@ -2,7 +2,7 @@
 
 Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std**
 (the coffee-shop app). Host and wire helpers are product
-`std/http` + `std/http-server` (**D136**).
+`std/http` + `std/http/server` (**D136**/**D139**).
 
 ## Main (what you write to boot)
 
@@ -24,7 +24,7 @@ fn main() {
 
 | Layer | Path | Role |
 |-------|------|------|
-| **host** | `std/http-server` | Accept loop, body read, HEAD, keep-alive |
+| **host** | `std/http/server` | Accept loop, body read, HEAD, keep-alive |
 | **wire** | `std/http` | Parse/write, query/form/cookie Maps, redirects |
 | **app** | `app/` | Type-body `GET`/`POST` clauses, free `handle`, pages/domain |
 | **entry** | `main.thx` | Logging + `server.serve(routes.port, routes.handle)` |
@@ -32,18 +32,18 @@ fn main() {
 
 ```text
 Main → server.serve(port, handle)
-         std/http-server owns accept / parse / body / write
+         std/http/server owns accept / parse / body / write
          handle(req) per request
 
-app → std/http-static          miss → files under web/
+app → std/http/static          miss → files under web/
 app → std/http                query / form / cookies / 303
 ```
 
 **Routing shape (what you have now):**
 
 1. App `type Routes` — type-body `GET "/…"` / `POST "/…"` (compiler → `route(req)`)
-2. App `handle` — `Routes().route(req)`; **404** falls through to `std/http-static`
-3. `parseRequest` keeps `Request.query`; `HttpServer.readBody` fills `Request.body`.
+2. App `handle` — `Routes().route(req)`; **404** falls through to `std/http/static`
+3. `parseRequest` keeps `Request.query`; `std/http/server.readBody` fills `Request.body`.
    Query / form / cookies parse to `Map<String, String>`. `Request.headers`
    stays `Array<Header>`.
 4. Host takes `port` + `(req: Request) -> Response` (**D132**)
@@ -89,7 +89,7 @@ Miss is `notFound()`; `handle` then tries static files.
 ## Rules
 
 - App code = routes/views/domain only.
-- Host **`--> serveOne` per accept** (in `std/http-server`). An idle browser
+- Host **`--> serveOne` per accept** (in `std/http/server`). An idle browser
   socket parks in `recv` and does not stall other tabs. HTTP/1.1 keep-alive:
   one started peer can serve several requests. `handle` is an ordinary
   function passed as a **D132** pointer.

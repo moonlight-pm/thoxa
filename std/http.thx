@@ -1,6 +1,6 @@
 ## std/Http — HTTP/1.1 request parsing and response building (pure protocol; no syscalls).
 ## `parseRequest` fills `query` (no leading `?`) and leaves `body` empty.
-## Hosts complete the body via `std/http-server.readBody`. Fail payloads are String.
+## Hosts complete the body via `std/http/server.readBody`. Fail payloads are String.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import { toLowerAscii, trim, split, splitOnce, parseUInt, isEmpty } from "std/str"
@@ -9,7 +9,7 @@ import { toLowerAscii, trim, split, splitOnce, parseUInt, isEmpty } from "std/st
 export type Header(name: String, value: String)
 
 ## A parsed request. `path` is query-stripped; `query` has no leading `?`.
-## `body` is empty until a host (`std/http-server.readBody`) fills it.
+## `body` is empty until a host (`std/http/server.readBody`) fills it.
 export type Request(
     method: String,
     path: String,

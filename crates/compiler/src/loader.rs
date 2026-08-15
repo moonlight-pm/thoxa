@@ -25,7 +25,7 @@ pub struct SourceModule {
     /// Module id for C mangling (D35 / D138).
     ///
     /// Entry: file stem (symbols stay unprefixed). Library: path-qualified
-    /// kebab-case path, sanitized (`std/http-server` → `std_http_server`).
+    /// kebab-case path, sanitized (`std/http/server` → `std_http_server`).
     pub id: String,
     pub path: PathBuf,
     pub ast: ast::Module,
@@ -505,7 +505,7 @@ fn check_library_stem(path: &Path, spec: &str, span: Span) -> Result<()> {
 }
 
 /// C-mangling id (D35 / D138). Entry keeps the stem; libraries are
-/// path-qualified (`std/http-server` → `std_http_server`).
+/// path-qualified (`std/http/server` → `std_http_server`).
 pub fn module_id_for(path: &Path, is_entry: bool, project_root: &Path) -> String {
     if is_entry {
         return path
@@ -890,6 +890,7 @@ mod tests {
     #[test]
     fn module_id_sanitizes_hyphens_and_slashes() {
         assert_eq!(sanitize_module_id("std/http-server"), "std_http_server");
+        assert_eq!(sanitize_module_id("std/http/server"), "std_http_server");
         assert_eq!(sanitize_module_id("app/routes"), "app_routes");
         assert_eq!(sanitize_module_id("math-utils"), "math_utils");
     }

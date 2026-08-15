@@ -8,8 +8,8 @@ import logging, { info, warn } from "std/logging"   ## ns + selective (D127)
 import { readFile } from "std/io"
 import net, { Socket } from "std/net"
 import http from "std/http"
-import server from "std/http-server"
-import { Router } from "std/http-static"
+import server from "std/http/server"
+import { Router } from "std/http/static"
 import { defaultPrompt } from "std/prompt"
 import { startsWith, dropPrefix } from "std/str"
 import { cwdShort, shortPath } from "std/path"
@@ -28,8 +28,8 @@ import { branch } from "std/git"
 | `std/io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
 | `std/net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
 | `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**): parse/write, query/form/cookie helpers, `htmlResponse` |
-| `std/http-server` | HTTP/1.1 host loop (**D136**): `serve` / `serveOne` / `readBody` |
-| `std/http-static` | Static-file `Router` (**D126**); depends on io + http |
+| `std/http/server` | HTTP/1.1 host loop (**D136**/**D139**): `serve` / `serveOne` / `readBody` |
+| `std/http/static` | Static-file `Router` (**D126**/**D139**); depends on io + http |
 | `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `std/str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`splitOnce`/`join`/`lines`, `parseUInt`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
 | `std/path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |
@@ -102,7 +102,7 @@ IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 ### Http (`std/http`)
 
 Pure protocol (no syscalls). `parseRequest` fills `query` (no leading `?`) and
-leaves `body` empty; hosts complete the body via `std/http-server.readBody`.
+leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
 
 | Surface | Notes |
 |---------|--------|
@@ -118,7 +118,7 @@ leaves `body` empty; hosts complete the body via `std/http-server.readBody`.
 `root.html()` as `text/html; charset=utf-8`. `cookie` looks up one name on
 the `Cookie` header (empty value is `Not`).
 
-### HttpServer (`std/http-server`)
+### HttpServer (`std/http/server`)
 
 Host loop over `std/net`. Completes `Request.body` (64 KiB cap).
 
@@ -132,7 +132,7 @@ Host loop over `std/net`. Completes `Request.body` (64 KiB cap).
 
 HEAD is answered by GET handlers; `finalize` still sees the real method.
 
-### HttpStatic (`std/http-static`)
+### HttpStatic (`std/http/static`)
 
 | Surface | Notes |
 |---------|--------|
@@ -142,7 +142,7 @@ HEAD is answered by GET handlers; `finalize` still sees the real method.
 | Errors | Permission denied → **403** (logged); missing → **404**; other Io → log + 404 |
 
 Runnable demo: `cargo make run examples/http` (Crema-lite **experiment** —
-`server.serve(routes.port, routes.handle)` on product Http/HttpServer/HttpStatic;
+`server.serve(routes.port, routes.handle)` on product `http` / `http/server` / `http/static`;
 app/domain is not product std; see `examples/http/README.md`).
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid

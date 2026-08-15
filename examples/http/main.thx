@@ -2,10 +2,10 @@
 ##
 ##   cargo make run examples/http
 ##
-## Host is product `std/http-server`. Charter:
+## Host is product `std/http/server`. Charter:
 ## docs/ideas/2026-08-10-examples-http-crema-experiment.md
 
-import server from "std/http-server"
+import server from "std/http/server"
 import routes from "./app/routes"
 import { Pass, Fail } from "std/fallible"
 import logging, { warn } from "std/logging"

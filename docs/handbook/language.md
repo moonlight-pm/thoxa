@@ -281,9 +281,9 @@ export fn helper() -> Int64 { 1 }
 | `import ns, { a, b } from "…"` | Combined — both in one clause (**D127**) |
 
 A library file is a **module** (a scope), not a type (**D138**). Non-entry
-stems are kebab-case (`http.thx`, `http-server.thx`); types inside stay
+stems are kebab-case (`http.thx`, `math-utils.thx`); types inside stay
 PascalCase. `main.thx` remains the directory entry. Specifiers match the
-file: `"std/http"`, `"./math-utils"`.
+file: `"std/http"`, `"std/http/server"`, `"./math-utils"`.
 
 | Origin | Meaning |
 |--------|---------|
@@ -328,9 +328,9 @@ Full surface: [`std.md`](std.md).
   `writeResponse`, `Request.query`, header/query/form/cookie helpers,
   `seeOther` / `finalize` (**D136**), `queryParam` / `formField` / `cookie` /
   `htmlResponse` (**D137**).
-- **`std/http-server`:** `serve(port, handle)`, `serveOne`, `readBody`
-  (**D136**).
-- **`std/http-static`:** static-file `Router` (`handle` → Response; GET/HEAD).
+- **`std/http/server`:** `serve(port, handle)`, `serveOne`, `readBody`
+  (**D136**/**D139**).
+- **`std/http/static`:** static-file `Router` (`handle` → Response; GET/HEAD).
 
 ## Not shipped (do not expect)
 

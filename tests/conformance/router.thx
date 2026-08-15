@@ -1,6 +1,6 @@
 ## Static-file Router type — path segments, traversal reject, index.html, Content-Type.
 ## Asserts typed Response fields + writeResponse status lines (PR6 / D70).
-import { Router } from "std/http-static"
+import { Router } from "std/http/static"
 import { Request, Header, writeResponse } from "std/http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging from "std/logging"

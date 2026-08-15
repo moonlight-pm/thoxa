@@ -1,7 +1,7 @@
 # Experiment: `examples/http` Crema-lite (Topcoat-shaped app dogfood)
 
 **Status:** **active experiment** — app/domain is not product surface; not a freeze.
-Host/wire helpers were promoted to **`std/Http` + `std/HttpServer` (**D136**)**.
+Host/wire helpers were promoted to **`std/http` + `std/http/server` (**D136**/**D139**)**.
 **Date:** 2026-08-10  
 **Home:** [`examples/http/`](../../examples/http/)  
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) (focus) · this file (charter + checklist) ·
@@ -23,7 +23,7 @@ Inspiration sources (read-only):
 - Topcoat demo: coffee-shop (layout, pages, models, forms, path params)
 - Topcoat examples: `manual-router`, `request-response`, `path-query-params`
 
-Thoxa already has product **`std/Net` + `std/Http` + `std/HttpStatic`** (**D126**).
+Thoxa already has product **`std/net` + `std/http` + `std/http/static`** (**D126**/**D139**).
 This experiment **dogfoods** that stack under realistic app structure.
 
 ## Hard rules
@@ -54,7 +54,7 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 ```text
 examples/http/
-  main.thx                 # std/HttpServer.serve(routes.port, routes.handle)
+  main.thx                 # std/http/server.serve(routes.port, routes.handle)
   app/
     routes.thx             # type Routes { GET/POST … }, handle, port
     pages.thx layout.thx api.thx models.thx customer.thx
@@ -63,12 +63,12 @@ examples/http/
 ```
 
 **Layers:** App is routes/views/domain (free `handle` + `port`). Product
-`std/HttpServer` owns plumbing via `serve(port, handle)`. The host imports no
+`std/http/server` owns plumbing via `serve(port, handle)`. The host imports no
 app types (**D132**). Main is boot only.
 
 **Router:** type-body `GET "/…"` / `POST "/…"` on a nullary `Routes` type
 (compiler → `route(req)`). Path params are `:slug` clause formals. `handle`
-calls `route` and falls through to `std/HttpStatic` on 404.
+calls `route` and falls through to `std/http/static` on 404.
 
 ---
 
@@ -113,7 +113,7 @@ curl -s  http://127.0.0.1:9091/menu/nope   # 404
 | B4 Cookie set/read (example) | **done** | `Customer.thx` |
 | B5 POST `/` sign-in + forget + nav greeting | **done** | PRG; empty name forgets |
 
-**B1 resolution (promoted D136):** Body is completed in `std/HttpServer.readBody`
+**B1 resolution (promoted D136):** Body is completed in `std/http/server.readBody`
 using the raw header buffer + optional further `receive()` for `Content-Length`.
 `std/Http.parseRequest` still leaves `Request.body` empty; the host fills it
 before `handle`.
@@ -177,7 +177,7 @@ after A–C.
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
 **As of last update:** **Phase A–C complete**. Host/wire promoted to
-**`std/Http` + `std/HttpServer` (**D136**)** — example `framework/` removed.
+**`std/http` + `std/http/server` (**D136**/**D139**)** — example `framework/` removed.
 **D137:** `queryParam` / `formField` / `cookie` / `htmlResponse` + Str
 `parseUInt` / `splitOnce`. **`server.serve(routes.port, routes.handle)`**
 (**D132**). Routing is type-body **`GET`/`POST` clauses** on `Routes` + free

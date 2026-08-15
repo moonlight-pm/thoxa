@@ -73,7 +73,8 @@ Freezes:
 - No-main scripts, command sugar, bare `thoxa` REPL, **libtcc** session steps
   (D105), rc/prompt/path, pipes/redirs, pure-step builtins, `std/Shell.thx`.
 - Thin `std/` sample-driven: prompts/helpers plus **Io/Net/Http/HttpStatic**
-  (**D126**), **HttpServer** (**D136**), and Logging (**D125**).
+  (**D126**), **HttpServer** (**D136**; path **`std/http/server`** **D139**),
+  and Logging (**D125**).
 
 **Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first;
 crude line editor. Resume only when CURRENT says so.
@@ -124,7 +125,7 @@ Freezes:
 - ~~Diverging `loop` (Never / no dummy tail)~~ (**D128**)
 
 **Sample dogfood (not a phase flip):** `examples/http` Crema-lite **experiment**
-(`std/HttpServer.serve(routes.port, routes.handle)` **D132**/**D136**; type-body
+(`std/http/server.serve(routes.port, routes.handle)` **D132**/**D136**/**D139**; type-body
 `GET`/`POST`; JSX `Node` pages; app/domain under `examples/http/`; charter
 [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md);
 accept loop uses **D128** + **`--> serveOne`** + keep-alive), `examples/kilo` shipped

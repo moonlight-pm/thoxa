@@ -19,11 +19,17 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-15 — HTTP host modules under `std/http/`
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D139 | HTTP hosts live under `std/http/` | Protocol stays **`std/http.thx`** (syscall-free). Host modules are **`std/http/server`** and **`std/http/static`**. File-beside-folder: `"std/http"` is still the protocol file; `"std/http/server"` is the nested file. No directory-import (`index.thx` / `main.thx` as barrel). No re-exports from `http`. | **Shipped.** Amends D126/D136 import paths (was `std/http-server`, `std/http-static`). Nested specifiers already resolve (`format_thx` appends `.thx`). C id `std/http/server` → `std_http_server`. Hyphenated stems remain legal (D138). Gates: `http_host`, `router`. |
+
 ## 2026-08-15 — kebab-case module files
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D138 | Module files are kebab-case scopes | A `.thx` file is a **module** (a compilation unit / scope), not a type. Non-entry library stems are **kebab-case**: `[a-z][a-z0-9]*(-[a-z0-9]+)*` (`http.thx`, `http-server.thx`). Types remain PascalCase; values and namespace bindings remain camelCase. Directory entry is **`main.thx`** (amends **D68**). Import specifiers match the file (`"std/http"`, `"std/http-server"`, `"./math-utils"`). Namespace import is still not a value (**D33**). No user-facing `type Module`. | **Shipped.** Drops the oracle/loader “file describes a type / import is an instance” story (never surfaced). Amends **D35**: library module ids are path-qualified and sanitized (`std/http-server` → `std_http_server`; `/` and `-` → `_`). Do not use `__` (MIR monomorphs). Amends **D68**: entry file is `main.thx`. Duplicate ids after sanitize are an error. Lone-file entries (conformance `hello.thx`) keep any stem. Gates: `modules`, `namespaces`, `stdlib`. File-based routing stays parked: [`ideas/2026-08-15-file-based-routing.md`](ideas/2026-08-15-file-based-routing.md). |
+| D138 | Module files are kebab-case scopes | A `.thx` file is a **module** (a compilation unit / scope), not a type. Non-entry library stems are **kebab-case**: `[a-z][a-z0-9]*(-[a-z0-9]+)*` (`http.thx`, `http-server.thx`). Types remain PascalCase; values and namespace bindings remain camelCase. Directory entry is **`main.thx`** (amends **D68**). Import specifiers match the file (`"std/http"`, `"std/http/server"`, `"./math-utils"`). Namespace import is still not a value (**D33**). No user-facing `type Module`. | **Shipped.** Drops the oracle/loader “file describes a type / import is an instance” story (never surfaced). Amends **D35**: library module ids are path-qualified and sanitized (`std/http/server` → `std_http_server`; `/` and `-` → `_`). Do not use `__` (MIR monomorphs). Amends **D68**: entry file is `main.thx`. Duplicate ids after sanitize are an error. Lone-file entries (conformance `hello.thx`) keep any stem. Gates: `modules`, `namespaces`, `stdlib`. File-based routing stays parked: [`ideas/2026-08-15-file-based-routing.md`](ideas/2026-08-15-file-based-routing.md). |
 
 ## 2026-08-15 — HTTP leftover helpers
 
@@ -35,7 +41,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D136 | Product `Request.query` + HTTP helpers + `std/HttpServer` | **`Request.query: String`** (no leading `?`); `parseRequest` keeps it and still strips path. Body stays empty at parse. **`std/Http`** (still syscall-free) gains `headerGet`, `contentLength`, `urlDecode`, `parseQuery` / `parseForm` / `parseCookies` / `queryMap`, `seeOther`, `withHeader`, `wantsKeepAlive`, `finalize`. **`std/HttpServer`** (Net syscalls): `bindListen`, `readBody`, `readRequest`, `writeResponse(peer, …)`, `serveOne`, `serve(port, handle)`. HEAD is rewritten to GET for the handle; `finalize` still sees the real method. | **Shipped.** Amends D69; extends D126. Crema-dogfooded; example `framework/` removed. Not promoted: `Incoming` header packing, `X-Thoxa-Query`. Headers stay `Array<Header>` (D134). Gates: `http_parse`, `http_helpers`, `http_host`. Leftover wrappers → **D137**. |
+| D136 | Product `Request.query` + HTTP helpers + `std/HttpServer` | **`Request.query: String`** (no leading `?`); `parseRequest` keeps it and still strips path. Body stays empty at parse. **`std/Http`** (still syscall-free) gains `headerGet`, `contentLength`, `urlDecode`, `parseQuery` / `parseForm` / `parseCookies` / `queryMap`, `seeOther`, `withHeader`, `wantsKeepAlive`, `finalize`. **`std/HttpServer`** (Net syscalls): `bindListen`, `readBody`, `readRequest`, `writeResponse(peer, …)`, `serveOne`, `serve(port, handle)`. HEAD is rewritten to GET for the handle; `finalize` still sees the real method. | **Shipped.** Amends D69; extends D126. Crema-dogfooded; example `framework/` removed. Not promoted: `Incoming` header packing, `X-Thoxa-Query`. Headers stay `Array<Header>` (D134). Gates: `http_parse`, `http_helpers`, `http_host`. Leftover wrappers → **D137**. **Import path amended by D139:** `std/http/server`. |
 
 ## 2026-08-15 — Nested constructor fields
 
@@ -90,7 +96,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D126 | Product `std/Io` + `std/Net` + `std/Http` + `std/HttpStatic` | Promote the mature sample/conformance I/O and HTTP surface into product **`std/`**. **`std/Io`:** `File`, `openFile`/`readFile`/`writeFile`/`appendFile`, OpenMode, seek. **`std/Net`:** TCP `Socket` + `receiveRequest`/`sendAll`. **`std/Http`:** parse/write Request/Response + status helpers. **`std/HttpStatic`:** static-file `Router` (GET/HEAD). Fail payloads remain **String**. Linux product track. | **Shipped:** modules under `std/`; conformance gates retargeted (removed `tests/conformance/{iolib,httplib}/`). Dogfood: `examples/http` Crema-lite. Extends D56/D69/D70/D97/D109+. **Grown by D136** (`Request.query`, helpers, `std/HttpServer`). Named `ffi` root still deferred. |
+| D126 | Product `std/Io` + `std/Net` + `std/Http` + `std/HttpStatic` | Promote the mature sample/conformance I/O and HTTP surface into product **`std/`**. **`std/Io`:** `File`, `openFile`/`readFile`/`writeFile`/`appendFile`, OpenMode, seek. **`std/Net`:** TCP `Socket` + `receiveRequest`/`sendAll`. **`std/Http`:** parse/write Request/Response + status helpers. **`std/HttpStatic`:** static-file `Router` (GET/HEAD). Fail payloads remain **String**. Linux product track. | **Shipped:** modules under `std/`; conformance gates retargeted (removed `tests/conformance/{iolib,httplib}/`). Dogfood: `examples/http` Crema-lite. Extends D56/D69/D70/D97/D109+. **Grown by D136** (`Request.query`, helpers, `std/HttpServer`). **Import path amended by D139:** `std/http/static`. Named `ffi` root still deferred. |
 
 ## 2026-08-10 — std/Logging + remove ambient println
 

@@ -4,13 +4,14 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-15 (**D138** kebab-case module files **shipped**;
+**As of:** 2026-08-15 (**D139** HTTP hosts under `std/http/`;
+**D138** kebab-case module files **shipped**;
 **D137** Str `parseUInt`/`splitOnce` + Http
 `queryParam`/`formField`/`cookie`/`htmlResponse`; **D136**
-`Request.query` + `std/http-server`; **D135** Node + nested User ctor fields;
+`Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
 JSX `Node` is `Element | Text | Fragment` + `{...}` spreads **on master**;
 D133/D134 Map; D132 fn pointers; `-->` nowait **on master**, not freeze /
-not handbook; Crema-lite Phase A–C dogfoods product Http/HttpServer)
+not handbook; Crema-lite Phase A–C dogfoods product `http` / `http/server`)
 
 ---
 
@@ -18,10 +19,11 @@ not handbook; Crema-lite Phase A–C dogfoods product Http/HttpServer)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **kebab-case modules** (**D138**);
+**Shipped recently:** **HTTP hosts under `std/http/`** (**D139**);
+**kebab-case modules** (**D138**);
 **HTTP leftover helpers** (**D137**);
 **HTTP host / wire** (**D136** — `Request.query`,
-`std/http` helpers, `std/http-server`); **Node + nested User ctor fields**
+`std/http` helpers, `std/http/server`); **Node + nested User ctor fields**
 (**D135**); **Map + value collections** (**D133/D134**); **function
 pointers** (**D132**); **`-->` nowait**
 (colorless wait; Net parks; `HttpServer` `--> serveOne` + keep-alive);
@@ -54,7 +56,7 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **In progress / next:**
 
 1. **Crema-lite** — Phase D+ only if useful. App/domain stays example-only.
-   Host/wire is product **`std/http` + `std/http-server`** (**D136**).
+   Host/wire is product **`std/http` + `std/http/server`** (**D136**/**D139**).
    Query/form/cookies are builtin `Map` (headers stay `Array<Header>`).
    File-based routing is **parked**
    ([`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)).
@@ -112,7 +114,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
-| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http-server`** (**D136**); Str parse + remaining Http wrappers (**D137**); `ffi` deferred |
+| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); `ffi` deferred |
 | Logging / print | **`std/logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
 | Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
@@ -124,7 +126,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Ctor fields | Int64, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
-| Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `http-server.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http-server` → `std_http_server`). No user-facing `Module` type |
+| Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
@@ -148,7 +150,7 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
    [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md)  
 9. If D138 / module files: [`docs/decisions.md`](docs/decisions.md) (D138) — kebab-case stems, path-qualified ids; file-based routing parked in [`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)
 10. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   + **D136** / **D137** in [`docs/decisions.md`](docs/decisions.md)
+   + **D136** / **D137** / **D139** in [`docs/decisions.md`](docs/decisions.md)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

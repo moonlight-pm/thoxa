@@ -1,7 +1,7 @@
-## D136: std/HttpServer bindListen + serveOne — POST body + keep-alive query.
+## D136: std/http/server bindListen + serveOne — POST body + keep-alive query.
 import net, { Socket, createSocket } from "std/net"
 import http, { Request, Response, ok } from "std/http"
-import server from "std/http-server"
+import server from "std/http/server"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
 

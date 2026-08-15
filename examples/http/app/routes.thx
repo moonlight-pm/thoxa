@@ -6,7 +6,7 @@
 import pages from "./pages"
 import api from "./api"
 import customer from "./customer"
-import httpStatic from "std/http-static"
+import httpStatic from "std/http/static"
 ## `notFound` is required: generated `route` calls it on miss.
 import http, { Request, Response, notFound } from "std/http"
 import { Has, Not, May } from "std/fallible"

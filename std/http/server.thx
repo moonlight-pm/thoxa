@@ -1,5 +1,5 @@
-## std/http-server — HTTP/1.1 host loop (syscalls via std/net).
-## Completes Request.body after parseRequest; Request.query comes from std/Http.
+## std/http/server — HTTP/1.1 host loop (syscalls via std/net).
+## Completes Request.body after parseRequest; Request.query comes from std/http.
 ## Host takes port + handle (D132). Does not import app types.
 
 import net, { Socket } from "std/net"

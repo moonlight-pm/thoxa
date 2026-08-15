@@ -3,7 +3,7 @@
 ## integrate Net + Http + Router; deterministic stdout; process exits (no infinite loop).
 import net from "std/net"
 import http from "std/http"
-import { Router } from "std/http-static"
+import { Router } from "std/http/static"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging from "std/logging"
 
