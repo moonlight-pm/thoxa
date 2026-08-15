@@ -47,8 +47,6 @@ fn homeCard(who!: String) -> Node {
 }
 
 fn drinkCard(d!: Drink) -> Node {
-    ## Bare `<tag>` after another expression is parsed as `<` (comparison).
-    ## The whole function body has to be the tag, or bind it with `let`.
     <li class="card">
         <a href={"/menu/{d.slug}"}>
             <span class="name">{d.name}</span>

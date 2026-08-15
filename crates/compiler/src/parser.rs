@@ -1224,6 +1224,20 @@ impl Parser {
         // Bitwise binds tighter than comparison (SPEC §7.5).
         let mut left = self.parse_bitor()?;
         loop {
+            // `<name` / `<>` with no space is a tag, not `<`. A following tag
+            // after whitespace or a newline ends this expression; `a<b` (glued
+            // on both sides) is a hard error so it cannot silently become `a`.
+            if self.at(TokenKind::LAngle) {
+                if self.at_jsx_start() {
+                    if self.angle_glued_to_prev() {
+                        return Err(self.lt_space_error());
+                    }
+                    break;
+                }
+                if self.angle_glued_to_next() {
+                    return Err(self.lt_space_error());
+                }
+            }
             let op = match self.current().kind {
                 TokenKind::EqEq => BinaryOp::Eq,
                 TokenKind::Ne => BinaryOp::Ne,
@@ -1653,6 +1667,7 @@ impl Parser {
                 })
             }
             TokenKind::LAngle if self.at_jsx_start() => self.parse_jsx_element(),
+            TokenKind::LAngle => Err(self.lt_space_error()),
             TokenKind::Junk(s) => Err(Error::at(
                 format!("unexpected character {s:?}"),
                 self.peek_span(),
@@ -1666,7 +1681,9 @@ impl Parser {
 
     /// `{ key: value` in expression position — map literal, not a block.
     fn at_map_lit(&self) -> bool {
-        self.at(TokenKind::LBrace) && self.at_map_key_token(1) && self.peek_kind_is(2, TokenKind::Colon)
+        self.at(TokenKind::LBrace)
+            && self.at_map_key_token(1)
+            && self.peek_kind_is(2, TokenKind::Colon)
     }
 
     fn at_map_key_token(&self, offset: usize) -> bool {
@@ -1759,11 +1776,40 @@ impl Parser {
         }
     }
 
-    /// `<Ident` or `<>` at expression start — tag literal, not a comparison.
+    /// `<Ident` or `<>` with **no** whitespace after `<` — tag, not comparison.
     fn at_jsx_start(&self) -> bool {
         self.at(TokenKind::LAngle)
+            && self.angle_glued_to_next()
             && (self.peek_kind_is(1, TokenKind::Ident(String::new()))
                 || self.peek_kind_is(1, TokenKind::RAngle))
+    }
+
+    fn angle_glued_to_next(&self) -> bool {
+        self.tokens_adjacent(self.pos, self.pos + 1)
+    }
+
+    fn angle_glued_to_prev(&self) -> bool {
+        self.pos > 0 && self.tokens_adjacent(self.pos - 1, self.pos)
+    }
+
+    fn tokens_adjacent(&self, a: usize, b: usize) -> bool {
+        b < self.tokens.len() && self.tokens[a].span.end == self.tokens[b].span.start
+    }
+
+    fn lt_space_error(&self) -> Error {
+        Error::at(
+            "comparison `<` needs spaces (`a < b`); a tag is `<name` with no space",
+            self.peek_span(),
+        )
+        .with_help("write `a < b` to compare, or put `<tag` on its own line")
+    }
+
+    /// `if a <b {` leaves a tag where `{` belongs — same rule as infix `<`.
+    fn reject_tag_where_block(&self) -> Result<()> {
+        if self.at_jsx_start() {
+            return Err(self.lt_space_error());
+        }
+        Ok(())
     }
 
     /// `<tag attrs>children</tag>` / `<tag attrs />` / `<>children</>` →
@@ -1970,6 +2016,7 @@ impl Parser {
         let start = self.peek_span();
         self.expect_kind(&TokenKind::If)?;
         let cond = self.parse_expr()?;
+        self.reject_tag_where_block()?;
         let then_branch = self.parse_block()?;
         let else_branch = if self.at(TokenKind::Else) {
             self.bump();
@@ -2005,6 +2052,7 @@ impl Parser {
         let start = self.peek_span();
         self.expect_kind(&TokenKind::Match)?;
         let scrutinee = self.parse_expr()?;
+        self.reject_tag_where_block()?;
         self.expect_kind(&TokenKind::LBrace)?;
         let mut arms = Vec::new();
         while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
@@ -2025,6 +2073,7 @@ impl Parser {
         let start = self.peek_span();
         self.expect_kind(&TokenKind::While)?;
         let cond = self.parse_expr()?;
+        self.reject_tag_where_block()?;
         let body = self.parse_block()?;
         let end = body.span.end;
         Ok(Expr {
@@ -2077,6 +2126,7 @@ impl Parser {
                 start_span,
             ));
         }
+        self.reject_tag_where_block()?;
         let body = self.parse_block()?;
         let end = body.span.end;
         Ok(Expr {
@@ -3182,5 +3232,108 @@ mod tests {
             ExprKind::Call { callee, .. } => assert_eq!(callee, "__jsx_child"),
             other => panic!("expected __jsx_child([...]), got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_jsx_after_expr_is_tag_not_comparison() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                1
+                <p>ok</p>
+                0
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        assert_eq!(f.body.items.len(), 2, "1 and <p> should be separate items");
+        match &f.body.items[1] {
+            BlockItem::Expr(e) => match &e.kind {
+                ExprKind::Call { callee, .. } => assert_eq!(callee, "__jsx_el"),
+                other => panic!("expected tag after 1, got {other:?}"),
+            },
+            other => panic!("expected expr item, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_spaced_lt_is_still_comparison() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let b = 1 < 2
+                0
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        let BlockItem::Let { init, .. } = &f.body.items[0] else {
+            panic!("expected let");
+        };
+        match &init.kind {
+            ExprKind::Binary { op, .. } => assert_eq!(*op, BinaryOp::Lt),
+            other => panic!("expected `<` comparison, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_glued_lt_ident_needs_spaces() {
+        let err = parse_err(
+            r#"
+            fn main() -> Int64 {
+                let b = a<b
+                0
+            }
+        "#,
+        );
+        assert!(err.contains("needs spaces"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn parse_glued_lt_int_needs_spaces() {
+        let err = parse_err(
+            r#"
+            fn main() -> Int64 {
+                let b = n<3
+                0
+            }
+        "#,
+        );
+        assert!(err.contains("needs spaces"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn parse_spaced_tag_is_not_jsx() {
+        let err = parse_err(
+            r#"
+            fn main() -> Int64 {
+                let n = < div>x</div>
+                0
+            }
+        "#,
+        );
+        assert!(
+            err.contains("needs spaces") || err.contains("no space"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_if_lt_tag_needs_spaces() {
+        let err = parse_err(
+            r#"
+            fn main() -> Int64 {
+                if a <b {
+                    0
+                }
+                0
+            }
+        "#,
+        );
+        assert!(err.contains("needs spaces"), "unexpected error: {err}");
     }
 }

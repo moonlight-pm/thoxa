@@ -26,8 +26,16 @@ fn main() -> Int64 {
     let gap = <div class="gap">{<></>}</div>
     let drinks = 6
     let count = <p>{drinks} drinks</p>
+    ## `<` after another expr is a tag when glued (`<p>`), comparison when spaced (`< 10`).
+    let tail = if drinks < 10 {
+        1
+        <p>under ten</p>
+    } else {
+        <p>ten or more</p>
+    }
     logging.info(n.html())
     logging.info(gap.html())
     logging.info(count.html())
+    logging.info(tail.html())
     0
 }

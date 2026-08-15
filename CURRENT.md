@@ -36,8 +36,9 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 - Tag literals + builtin **`Node`** (idea
   [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md);
   capability `jsx-node` **partial**). No import; `.html()`; `{e}` children
-  are String / Int64 / Bool / Node / Array<Node>; gate `jsx`. No D-id /
-  handbook. Crema pages dogfood it (`app/Layout.thx` `Page` +
+  are String / Int64 / Bool / Node / Array<Node>; `<tag` (no space) is JSX
+  including after another expr, `a < b` (spaces) is comparison; gate `jsx`.
+  No D-id / handbook. Crema pages dogfood it (`app/Layout.thx` `Page` +
   `app/Pages.thx`).
 
 **In progress / next:**

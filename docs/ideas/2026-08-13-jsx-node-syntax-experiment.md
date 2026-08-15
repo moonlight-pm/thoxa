@@ -39,6 +39,7 @@ logging.info(n.html())
 | Component | PascalCase `<Card title="Hi">…</Card>` → `Card(title: "Hi").view(children: […])` (eager) |
 | Fragment | `<>…</>` → fragment `Node` (empty `<>` included) |
 | `{e}` | `String` → escaped text; `Int64`/`Bool` → stringify then text; `Node` → identity; `Array<Node>` → splice |
+| `<` vs tag | `<name` / `<>` (no space after `<`) is JSX, including after another expr. Comparison is `a < b` (space after `<`). Glued `a<b` / `n<3` is an error. |
 | Raw text | Source slice (lexer `Junk` so `'` / `·` survive); whitespace-only gaps dropped |
 | Void tags | `br` `hr` `img` `input` `meta` `link` — no close in `.html()` |
 | Boolean attrs | `disabled` → `disabled="disabled"` |
@@ -68,8 +69,6 @@ No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
 - Hyphenated attrs parse; `data-*` ok  
 - `.html()` method has no dedicated hover (type `Node` does)  
 - Tree-sitter island colors tags; fragments/`<>` highlighting is best-effort  
-- `{e}` attrs are still String (HTML attrs); Int64/Bool stringify is children only  
-- Bare `<tag>` after another expression is `<` (comparison). Bind with `let`,
-  or make the tag the whole block value.
+- `{e}` attrs are still String (HTML attrs); Int64/Bool stringify is children only
 
 Pickup: root `CURRENT.md` (focus) · this file · capability `jsx-node`.

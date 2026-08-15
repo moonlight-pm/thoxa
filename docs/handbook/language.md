@@ -66,7 +66,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/Fallible` with `?` / `match` (ok/err may nest) |
-| Equality | String `==` / `!=`; usual scalar compares |
+| Equality | String `==` / `!=`; usual scalar compares. Comparison `<` needs a space after it (`a < b`, not `a<b`) |
 
 **Fallibility** — ordinary generic unions in `std/Fallible`; **import required**:
 
