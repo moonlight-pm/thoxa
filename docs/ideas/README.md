@@ -14,6 +14,8 @@ locked and (if needed) scheduled. Living priority never lives here — see root
 | [examples/http Crema-lite](2026-08-10-examples-http-crema-experiment.md) | **active experiment** | `std/HttpServer.serve` (D132/D136); type-body `GET`/`POST`; Phase A–C; domain stays example-only; living checklist |
 | [FCF + closures + ORC](2026-08-11-first-class-functions-and-orc.md) | sleeping | Full fn values / JS-like capture / cycle collector **parked**. **C** (typed fn pointers + bound methods) **promoted** → **D132** / [`../specs/2026-08-13-function-pointers.md`](../specs/2026-08-13-function-pointers.md) |
 | [router clause syntax](2026-08-12-router-clause-syntax-experiment.md) | **on master** (not freeze) | Type-body `GET "/…"` → handlers + `route(req) -> Response`; LSP; no D-id / handbook |
+| [JSX / tag literals + `Node`](2026-08-13-jsx-node-syntax-experiment.md) | **on master** (not freeze) | Builtin `Node` + `.html()`; `{e}` children/attrs; spreads; no D-id / handbook |
+| [`toString` / `repr` / interpolation](2026-08-15-tostring-repr-and-traits.md) | sleeping | Do not replace `.html()` with generic `toString`; Display is not a traits forcing function |
 
 **Rules of thumb**
 

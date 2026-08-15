@@ -170,7 +170,8 @@ after A–C.
 
 1. Read this file’s **Phases** table (truth for experiment progress).  
 2. Read `examples/http/README.md` (as-built layout).  
-3. **Do not** add coffee-shop domain to `std/`. Host/wire already shipped (**D136**).
+3. **Do not** add coffee-shop domain to `std/`. Host/wire already shipped
+   (**D136** / **D137**).
 4. If blocked by language: document under Phase step as `blocked`, fix language
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.

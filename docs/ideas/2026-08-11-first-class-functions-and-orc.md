@@ -85,7 +85,9 @@ Also discussed and not primary here:
 
 **Active direction:** **C** is **D132 shipped**. Push **A** (traits) later;
 **B** already works. Avoid **D** as the preferred pattern; leave FCF+ORC
-sleeping in this file.
+sleeping in this file. Do **not** start traits for `Display` / `toString` —
+that itch is parked separately
+([`2026-08-15-tostring-repr-and-traits.md`](2026-08-15-tostring-repr-and-traits.md)).
 
 ---
 

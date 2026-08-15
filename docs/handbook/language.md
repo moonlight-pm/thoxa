@@ -310,7 +310,7 @@ Marshals common scalars, `String`, `Bytes`, `Void`, `Address<T>`. String
 
 ## I/O and HTTP (`std/`)
 
-Product modules (**D126** / **D136**). Return types use `Trial` / `May` from
+Product modules (**D126** / **D136** / **D137**). Return types use `Trial` / `May` from
 `std/Fallible` — import Fallible when you annotate or construct those values.
 Full surface: [`std.md`](std.md).
 

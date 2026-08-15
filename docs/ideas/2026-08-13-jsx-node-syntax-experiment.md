@@ -72,5 +72,8 @@ legal constructor-param fields.
 - Hyphenated attrs parse; `data-*` ok  
 - `.html()` method has no dedicated hover (type `Node` does)  
 - Tree-sitter island colors tags; fragments/`<>` highlighting is best-effort  
+- Generic `toString` / `repr` / interpolation of `Node` **parked** — see
+  [`2026-08-15-tostring-repr-and-traits.md`](2026-08-15-tostring-repr-and-traits.md)
+  (not a traits forcing function; do not delete `.html()`)
 
 Pickup: root `CURRENT.md` (focus) · this file · capability `jsx-node`.

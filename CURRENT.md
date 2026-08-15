@@ -142,7 +142,7 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 8. If D135 / JSX `Node`: [`docs/decisions.md`](docs/decisions.md) (D135) +
    [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md)  
 9. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   + **D136** in [`docs/decisions.md`](docs/decisions.md)
+   + **D136** / **D137** in [`docs/decisions.md`](docs/decisions.md)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.
