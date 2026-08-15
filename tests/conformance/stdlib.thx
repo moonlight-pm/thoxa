@@ -1,5 +1,5 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, lastIndexOf, substring, replaceFirst, replaceAll, equalsIgnoreCaseAscii, split, join as strJoin, dropPrefix, dropSuffix, removePrefix, removeSuffix, trimNewline, trim, trimStart, trimEnd, toLowerAscii, toUpperAscii, padLeft, padRight, byteAt, lines, startsWithIgnoreCaseAscii, endsWithIgnoreCaseAscii, containsIgnoreCaseAscii, truncate, reverse, isAscii } from "std/Str"
+import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, lastIndexOf, substring, replaceFirst, replaceAll, equalsIgnoreCaseAscii, split, splitOnce, parseUInt, join as strJoin, dropPrefix, dropSuffix, removePrefix, removeSuffix, trimNewline, trim, trimStart, trimEnd, toLowerAscii, toUpperAscii, padLeft, padRight, byteAt, lines, startsWithIgnoreCaseAscii, endsWithIgnoreCaseAscii, containsIgnoreCaseAscii, truncate, reverse, isAscii } from "std/Str"
 import { dirname, parent, basename, fileName, join, joinAll, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, withFileName, parts, stripTrailingSlash, ensureTrailingSlash, shortPath } from "std/Path"
 import { hasEnv, getenvOr, home, tmpdir, shell, pathVar, pwd } from "std/Env"
 import { branchName, branchSuffix, isRepo, repoRoot, isDetached, headLine } from "std/Git"
@@ -53,6 +53,26 @@ fn main() -> Int64 {
     }
     let parts = split("a,b,c", ",")
     logging.info("split={parts.count}:{parts[0]}:{parts[2]}")
+    match splitOnce("a=b=c", "=") {
+        Not => logging.info("once-miss")
+        Has(cut) { logging.info("once={cut.before}|{cut.after}") }
+    }
+    match splitOnce("abc", "=") {
+        Not => logging.info("once-none")
+        Has(_) { logging.info("once-hit") }
+    }
+    match parseUInt("12") {
+        Not => logging.info("uint-miss")
+        Has(n) { logging.info("uint={n}") }
+    }
+    match parseUInt("12a") {
+        Not => logging.info("uint-bad")
+        Has(_) { logging.info("uint-ok-bad") }
+    }
+    match parseUInt("") {
+        Not => logging.info("uint-empty")
+        Has(_) { logging.info("uint-empty-hit") }
+    }
     logging.info(padLeft("7", 3, "0"))
     logging.info(padRight("x", 3, "."))
     logging.info(dropPrefix("hello", "he"))

@@ -11,8 +11,8 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-15 (**D136** `Request.query` + HTTP helpers +
-`std/HttpServer` **shipped**; **D135** Node + nested User ctor fields;
+**As of:** 2026-08-15 (**D137** Str parse + Http wrappers **shipped**;
+**D136** `Request.query` + `std/HttpServer`; **D135** Node + nested User ctor fields;
 JSX `Node` match + `Attr` + `{...}` spreads **on master**; D133/D134 Map;
 D132 fn pointers; Crema-lite Phase A–C + `Roast` / `DrinkCard`; type-body
 route clauses + JSX/`Node` + **`-->` nowait** **partial** on master — not
@@ -98,7 +98,7 @@ freeze)
 |----|------------|--------|------|--------------|------|----------|
 | std-root | Named `std/…` resolution | shipped | `stdlib` | D97 | — | yes |
 | std-fallible | `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` in `std/Fallible` | shipped | `mays`, `trials*`, `bytes`, `stdlib` | D118, D123 | none for v0 — **import required** for programs (not ambient); session Shell inject loads Fallible | yes |
-| std-str | Str helpers | partial | `stdlib` | D97 | +remove/truncate/reverse/isAscii/ignore-case contains; still sample-driven thin | yes |
+| std-str | Str helpers | partial | `stdlib` | D97, **D137** | +`parseUInt` / `splitOnce` (`Split`); +remove/truncate/reverse/isAscii/ignore-case contains; still sample-driven thin | yes |
 | std-path | Path helpers | partial | `stdlib` | D97 | +`joinAll`/`stripTrailingSlash`/`ensureTrailingSlash`; sample-driven | yes |
 | std-ansi | 16 colors + hex SGR | shipped | `stdlib` | D99 | — | yes |
 | std-env | getenv / host identity helpers | partial | `stdlib` | D97 | +`pathVar`/`pwd`/`shell`; sample-driven | yes |
@@ -107,7 +107,7 @@ freeze)
 | std-logging | Leveled `std/Logging` + no ambient `println` | shipped | `logging_levels`, `logging_sink`, full suite | **D125**; [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | App face: `import logging, { info, … }` (**D127**). Multi named loggers / `initLog` later; structured/JSON; colors/TTY; source location | yes |
 | std-io | File I/O in `std/Io` | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode`, `logging_sink` | **D126** | Linux `extern` open/read/write/lseek; Fail String; no Windows | yes |
 | std-net | TCP sockets in `std/Net` | shipped | `http`, `http_wire`, `http_net_err` | **D126** | IPv4 stream; `receiveRequest` / `sendAll`; Fail String; Linux sockaddr pack | yes |
-| std-http | HTTP/1.1 protocol in `std/Http` | shipped | `http_parse`, `http`, `http_wire`, `http_helpers` | **D126**, **D136** | `Request.query` kept; body empty at parse (host fills). Helpers: `headerGet`, query/form/cookie Maps, `seeOther`, `finalize` / keep-alive. Still no syscalls | yes |
+| std-http | HTTP/1.1 protocol in `std/Http` | shipped | `http_parse`, `http`, `http_wire`, `http_helpers` | **D126**, **D136**, **D137** | `Request.query` kept; body empty at parse (host fills). Helpers: `headerGet`, query/form/cookie Maps + `queryParam`/`formField`/`cookie`, `htmlResponse` (`Node`), `seeOther`, `finalize` / keep-alive. Still no syscalls | yes |
 | std-http-static | Static-file `Router` in `std/HttpStatic` | shipped | `router`, `http_server` | **D126** | GET+HEAD; small MIME table; depends on Io+Http+Logging | yes |
 | std-http-server | HTTP/1.1 host loop in `std/HttpServer` | shipped | `http_host` | **D136** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
 

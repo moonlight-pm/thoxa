@@ -1,12 +1,7 @@
 ## App layer — shared HTML shell for Little Crema pages.
 ## `Page` is a JSX component: `<Page title=… customer=…>…</Page>`.
 
-import { Response, ok } from "std/Http"
 import { isEmpty } from "std/Str"
-
-export fn htmlResponse(root!: Node) -> Response {
-    ok(Bytes.fromString("<!DOCTYPE html>\n{root.html()}"), "text/html; charset=utf-8")
-}
 
 fn navExtra(customer!: String) -> Node {
     if isEmpty(customer) {

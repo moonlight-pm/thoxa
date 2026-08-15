@@ -3,13 +3,13 @@
 import layout, { Page } from "./Layout"
 import models, { Drink, formatPrice, roastLabel } from "./Models"
 import customer from "./Customer"
-import http, { Response, notFound } from "std/Http"
+import http, { Response, notFound, htmlResponse } from "std/Http"
 import { Has, Not, May } from "std/Fallible"
 import { isEmpty, trim } from "std/Str"
 
 export fn home(who!: String) -> Response {
     let n = models.drinkCount()
-    layout.htmlResponse(
+    htmlResponse(
         <Page title="Home" customer={who}>
             <section class="hero">
                 <h1>Little Crema</h1>
@@ -82,7 +82,7 @@ export fn menu(who!: String, q!: String) -> Response {
             {" · showing {drinks.count} of {models.drinkCount()}"}
         </p>
     }
-    layout.htmlResponse(
+    htmlResponse(
         <Page title="Menu" customer={who}>
             <h1>The menu</h1>
             <form class="search" method="get" action="/menu">
@@ -110,7 +110,7 @@ export fn drink(slug!: String, who!: String) -> Response {
 
 fn drinkPage(d!: Drink, who!: String) -> Response {
     let price = formatPrice(d.priceCents)
-    layout.htmlResponse(
+    htmlResponse(
         <Page title={d.name} customer={who}>
             <p class="back"><a href="/menu">← Back to the menu</a></p>
             <article class="drink">
@@ -125,7 +125,7 @@ fn drinkPage(d!: Drink, who!: String) -> Response {
 
 export fn signIn(body!: Bytes) -> Response {
     let redirect = http.seeOther("/")
-    match http.parseForm(body)["name"] {
+    match http.formField(body, "name") {
         Not {
             redirect
         }

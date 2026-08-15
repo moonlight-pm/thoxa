@@ -3,7 +3,7 @@
 ## Hosts complete the body via `std/HttpServer.readBody`. Fail payloads are String.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/Fallible"
-import { toLowerAscii, trim, split, isEmpty, byteAt, length } from "std/Str"
+import { toLowerAscii, trim, split, splitOnce, parseUInt, isEmpty } from "std/Str"
 
 ## One header field: name and value as Strings (ASCII for this demo).
 export type Header(name: String, value: String)
@@ -313,38 +313,6 @@ export fn headerGet(req!: Request, name!: String) -> May<String> {
     Not()
 }
 
-fn parseUInt(s!: String) -> May<Int64> {
-    let n = length(s)
-    if n == 0 {
-        Not()
-    } else {
-        mut val = 0
-        mut i = 0
-        mut ok = true
-        loop {
-            if i >= n {
-                break
-            }
-            let c = byteAt(s, i)
-            if c < 48 {
-                ok = false
-                break
-            }
-            if c > 57 {
-                ok = false
-                break
-            }
-            val = val * 10 + (c - 48)
-            i = i + 1
-        }
-        if ok {
-            Has(val)
-        } else {
-            Not()
-        }
-    }
-}
-
 export fn contentLength(req!: Request) -> May<Int64> {
     match headerGet(req, "Content-Length") {
         Not => Not()
@@ -358,12 +326,20 @@ export fn queryMap(req!: Request) -> Map<String, String> {
     parseQuery(req.query)
 }
 
+export fn queryParam(req!: Request, key!: String) -> May<String> {
+    queryMap(req)[key]
+}
+
 export fn parseQuery(query!: String) -> Map<String, String> {
     parsePairs(query, "&")
 }
 
 export fn parseForm(body!: Bytes) -> Map<String, String> {
     parsePairs(body.toString(), "&")
+}
+
+export fn formField(body!: Bytes, key!: String) -> May<String> {
+    parseForm(body)[key]
 }
 
 export fn parseCookies(header!: String) -> Map<String, String> {
@@ -376,18 +352,16 @@ export fn parseCookies(header!: String) -> Map<String, String> {
         let p = trim(part)
         match splitOnce(p, "=") {
             Not { }
-            Has(kv) {
-                let key = trim(kv.key)
+            Has(cut) {
+                let key = trim(cut.before)
                 if not isEmpty(key) {
-                    m.set(key, trim(kv.val))
+                    m.set(key, trim(cut.after))
                 }
             }
         }
     }
     m
 }
-
-type Kv(key: String, val: String)
 
 fn parsePairs(raw!: String, sep!: String) -> Map<String, String> {
     mut m: Map<String, String> = Map()
@@ -401,8 +375,8 @@ fn parsePairs(raw!: String, sep!: String) -> Map<String, String> {
                 Not {
                     m.set(urlDecode(pair), "")
                 }
-                Has(kv) {
-                    m.set(urlDecode(kv.key), urlDecode(kv.val))
+                Has(cut) {
+                    m.set(urlDecode(cut.before), urlDecode(cut.after))
                 }
             }
         }
@@ -410,18 +384,26 @@ fn parsePairs(raw!: String, sep!: String) -> Map<String, String> {
     m
 }
 
-fn splitOnce(s!: String, sep!: String) -> May<Kv> {
-    let b = Bytes.fromString(s)
-    let needle = Bytes.fromString(sep)
-    match b.find(needle) {
+export fn cookie(req!: Request, name!: String) -> May<String> {
+    match headerGet(req, "Cookie") {
         Not => Not()
-        Has(at) {
-            Has(Kv(
-                key: b.slice(0, at).toString(),
-                val: b.slice(at + needle.count, b.count).toString()
-            ))
+        Has(raw) {
+            match parseCookies(raw)[name] {
+                Not => Not()
+                Has(val) {
+                    if isEmpty(val) {
+                        Not()
+                    } else {
+                        Has(val)
+                    }
+                }
+            }
         }
     }
+}
+
+export fn htmlResponse(root!: Node) -> Response {
+    ok(Bytes.fromString("<!DOCTYPE html>\n{root.html()}"), "text/html; charset=utf-8")
 }
 
 export fn urlDecode(s!: String) -> String {

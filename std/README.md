@@ -28,11 +28,11 @@ import { branch } from "std/Git"
 | `Logging` | Default logger: levels, sinks, formats; prefer `import logging, { info, … }` (**D125**/**D127**); no ambient `println` |
 | `Io` | Files: `readFile`/`writeFile`/`appendFile`, `File`, OpenMode (**D126**) |
 | `Net` | TCP sockets: `Socket`, `receiveRequest`, `sendAll` (**D126**) |
-| `Http` | HTTP/1.1 parse/write + query/form/cookie helpers (**D126**/**D136**) |
+| `Http` | HTTP/1.1 parse/write + query/form/cookie helpers + `htmlResponse` (**D126**/**D136**/**D137**) |
 | `HttpServer` | Host loop: `serve` / `serveOne` / `readBody` (**D136**) |
 | `HttpStatic` | Static-file `Router` over `std/Io` + `std/Http` (**D126**) |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
-| `Str` | search/slice/replace/`split`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |
+| `Str` | search/slice/replace/`split`/`splitOnce`/`parseUInt`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |
 | `Path` | dirname/basename/join/`joinAll`/`parts`/slash helpers/extension/`cwd`/`shortPath`/… |
 | `Ansi` | truecolor `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` (`#RRGGBB` or `#RRGGBBAA`) |
 | `Env` | `getenv`/`hasEnv`/`home`/`tmpdir`/`shell`/`pathVar`/`pwd`/`localHms`/`hostname`/`userName` |

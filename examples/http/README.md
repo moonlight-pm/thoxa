@@ -83,8 +83,8 @@ type Routes {
 
 Path captures (`:slug`) are clause formals. HTML handlers return `Response`
 (so they are not wrapped as `text/plain`). Pages are **JSX `Node` trees**
-(`type Page` in `Layout.thx`, views in `Pages.thx`, `.html()` + doctype in
-`htmlResponse`). Miss is `notFound()`; `handle` then tries static files.
+(`type Page` in `Layout.thx`, views in `Pages.thx`, `std/Http.htmlResponse`).
+Miss is `notFound()`; `handle` then tries static files.
 
 ## Rules
 

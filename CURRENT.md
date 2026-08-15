@@ -4,8 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-15 (**D136** `Request.query` + HTTP helpers +
-`std/HttpServer` **shipped**; **D135** Node + nested User ctor fields;
+**As of:** 2026-08-15 (**D137** Str `parseUInt`/`splitOnce` + Http
+`queryParam`/`formField`/`cookie`/`htmlResponse` **shipped**; **D136**
+`Request.query` + `std/HttpServer`; **D135** Node + nested User ctor fields;
 JSX `Node` is `Element | Text | Fragment` + `{...}` spreads **on master**;
 D133/D134 Map; D132 fn pointers; `-->` nowait **on master**, not freeze /
 not handbook; Crema-lite Phase A–C dogfoods product Http/HttpServer)
@@ -16,7 +17,8 @@ not handbook; Crema-lite Phase A–C dogfoods product Http/HttpServer)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **HTTP host / wire** (**D136** — `Request.query`,
+**Shipped recently:** **HTTP leftover helpers** (**D137**);
+**HTTP host / wire** (**D136** — `Request.query`,
 `std/Http` helpers, `std/HttpServer`); **Node + nested User ctor fields**
 (**D135**); **Map + value collections** (**D133/D134**); **function
 pointers** (**D132**); **`-->` nowait**
@@ -106,7 +108,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
-| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/HttpServer`** (**D136**); `ffi` deferred |
+| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/HttpServer`** (**D136**); Str parse + remaining Http wrappers (**D137**); `ffi` deferred |
 | Logging / print | **`std/Logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
 | Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
@@ -116,7 +118,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/Http` header flip. |
 | Ctor fields | Int64, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
-| HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. |
+| HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |

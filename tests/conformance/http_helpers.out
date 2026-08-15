@@ -3,10 +3,17 @@ qstr=q=mocha&n=2
 host=Cafe
 cl=12
 qm=mocha
+qp=mocha
 dec+=Ada Lovelace
 dec%=a b/c
 form=Ada Lovelace
+ff=Ada Lovelace
 ck=Ada
+cookie=Ada
+cookie-miss=-
+html=200 text/html; charset=utf-8
+html-body=<!DOCTYPE html>
+<p>hi</p>
 see=303 /menu
 extra=yes
 ka11=true

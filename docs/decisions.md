@@ -19,11 +19,17 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-15 — HTTP leftover helpers
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D137 | Public Str parse + remaining Http wrappers | **`std/Str`:** `parseUInt` → `May<Int64>`; `splitOnce` → `May<Split>` (`before` / `after`; empty sep or no match → `Not`). **`std/Http`:** `queryParam(req, key)`, `formField(body, key)`, `cookie(req, name)` (empty value → `Not`), `htmlResponse(root: Node)` (doctype + `.html()` + `text/html; charset=utf-8`). | **Shipped.** Finishes D136 optional list. Crema uses the wrappers; cookie policy (`customer` / Max-Age) stays in the example. Gates: `stdlib`, `http_helpers`. |
+
 ## 2026-08-15 — HTTP host / wire into std
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D136 | Product `Request.query` + HTTP helpers + `std/HttpServer` | **`Request.query: String`** (no leading `?`); `parseRequest` keeps it and still strips path. Body stays empty at parse. **`std/Http`** (still syscall-free) gains `headerGet`, `contentLength`, `urlDecode`, `parseQuery` / `parseForm` / `parseCookies` / `queryMap`, `seeOther`, `withHeader`, `wantsKeepAlive`, `finalize`. **`std/HttpServer`** (Net syscalls): `bindListen`, `readBody`, `readRequest`, `writeResponse(peer, …)`, `serveOne`, `serve(port, handle)`. HEAD is rewritten to GET for the handle; `finalize` still sees the real method. | **Shipped.** Amends D69; extends D126. Crema-dogfooded; example `framework/` removed. Not promoted: `Incoming` header packing, `X-Thoxa-Query`. Headers stay `Array<Header>` (D134). Gates: `http_parse`, `http_helpers`, `http_host`. |
+| D136 | Product `Request.query` + HTTP helpers + `std/HttpServer` | **`Request.query: String`** (no leading `?`); `parseRequest` keeps it and still strips path. Body stays empty at parse. **`std/Http`** (still syscall-free) gains `headerGet`, `contentLength`, `urlDecode`, `parseQuery` / `parseForm` / `parseCookies` / `queryMap`, `seeOther`, `withHeader`, `wantsKeepAlive`, `finalize`. **`std/HttpServer`** (Net syscalls): `bindListen`, `readBody`, `readRequest`, `writeResponse(peer, …)`, `serveOne`, `serve(port, handle)`. HEAD is rewritten to GET for the handle; `finalize` still sees the real method. | **Shipped.** Amends D69; extends D126. Crema-dogfooded; example `framework/` removed. Not promoted: `Incoming` header packing, `X-Thoxa-Query`. Headers stay `Array<Header>` (D134). Gates: `http_parse`, `http_helpers`, `http_host`. Leftover wrappers → **D137**. |
 
 ## 2026-08-15 — Nested constructor fields
 

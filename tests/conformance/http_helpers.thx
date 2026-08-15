@@ -70,6 +70,7 @@ fn main() -> Int64 {
                 Not => info("qm-miss")
                 Has(v) { info("qm={v}") }
             }
+            info("qp={showMay(http.queryParam(req, \"q\"))}")
         }
         Fail(e) {
             info("parse-fail {e}")
@@ -84,12 +85,23 @@ fn main() -> Int64 {
         Not => info("form-miss")
         Has(v) { info("form={v}") }
     }
+    info("ff={showMay(http.formField(Bytes.fromString(\"name=Ada+Lovelace\"), \"name\"))}")
 
     let cookies = http.parseCookies("customer=Ada; extra=x")
     match cookies["customer"] {
         Not => info("ck-miss")
         Has(v) { info("ck={v}") }
     }
+
+    mut cookieH: Array<Header> = []
+    cookieH.append(Header(name: "Cookie", value: "customer=Ada; extra=x"))
+    let creq = emptyReq("GET", "HTTP/1.1", cookieH)
+    info("cookie={showMay(http.cookie(creq, \"customer\"))}")
+    info("cookie-miss={showMay(http.cookie(creq, \"nope\"))}")
+
+    let page = http.htmlResponse(<p>hi</p>)
+    info("html={page.status} {page.headers[0].value}")
+    info("html-body={page.body.toString()}")
 
     let redir = http.seeOther("/menu")
     info("see={redir.status} {locOf(redir)}")

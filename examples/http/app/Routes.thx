@@ -39,7 +39,7 @@ type Routes {
 }
 
 fn menuQuery(req!: Request) -> String {
-    match http.queryMap(req)["q"] {
+    match http.queryParam(req, "q") {
         Not => ""
         Has(v) { v }
     }

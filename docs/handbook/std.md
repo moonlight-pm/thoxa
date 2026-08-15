@@ -27,11 +27,11 @@ import { branch } from "std/Git"
 | `Logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
 | `Io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
 | `Net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
-| `Http` | HTTP/1.1 protocol (**D126**/**D136**): parse/write, `Request.query`, helpers |
+| `Http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**): parse/write, query/form/cookie helpers, `htmlResponse` |
 | `HttpServer` | HTTP/1.1 host loop (**D136**): `serve` / `serveOne` / `readBody` |
 | `HttpStatic` | Static-file `Router` (**D126**); depends on Io + Http |
 | `Prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
-| `Str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`join`/`lines`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
+| `Str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`splitOnce`/`join`/`lines`, `parseUInt`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
 | `Path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |
 | `Ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
 | `Env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
@@ -109,10 +109,14 @@ leaves `body` empty; hosts complete the body via `std/HttpServer.readBody`.
 | `Header` / `Request` / `Response` | Constructor-param products. `Request.query` is the `?…` tail |
 | `parseRequest` | `Trial<Request, String>`; requires `\r\n\r\n`; path is query-stripped |
 | `writeResponse` | Status line + headers + body → `Bytes` |
-| Lookup | `headerGet`, `contentLength`, `queryMap` |
+| Lookup | `headerGet`, `contentLength`, `queryMap`, `queryParam`, `formField`, `cookie` |
 | Maps | `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`; `urlDecode` |
-| Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `response` / `responseHead` |
+| Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `response` / `responseHead` |
 | Connection | `wantsKeepAlive`, `finalize` (HEAD drops body; rewrites `Connection`) |
+
+`htmlResponse` takes a builtin `Node` and sends `<!DOCTYPE html>` plus
+`root.html()` as `text/html; charset=utf-8`. `cookie` looks up one name on
+the `Cookie` header (empty value is `Not`).
 
 ### HttpServer (`std/HttpServer`)
 

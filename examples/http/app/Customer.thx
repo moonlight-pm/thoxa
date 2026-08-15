@@ -2,27 +2,12 @@
 
 import http, { Request, Response } from "std/Http"
 import { Has, Not, May } from "std/Fallible"
-import { isEmpty } from "std/Str"
 
 let cookieName = "customer"
 let maxAgeSecs = 2592000
 
 export fn current(req!: Request) -> May<String> {
-    match http.headerGet(req, "Cookie") {
-        Not => Not()
-        Has(raw) {
-            match http.parseCookies(raw)[cookieName] {
-                Not => Not()
-                Has(val) {
-                    if isEmpty(val) {
-                        Not()
-                    } else {
-                        Has(val)
-                    }
-                }
-            }
-        }
-    }
+    http.cookie(req, cookieName)
 }
 
 export fn rememberHeader(name!: String) -> String {

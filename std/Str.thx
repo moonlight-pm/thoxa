@@ -1,5 +1,7 @@
 ## std/Str — small string helpers (byte-oriented; UTF-8 safe for ASCII ops).
 
+import { Has, Not, May } from "std/Fallible"
+
 export fn startsWith(s!: String, prefix!: String) -> Bool {
     let a = Bytes.fromString(s)
     let b = Bytes.fromString(prefix)
@@ -394,6 +396,68 @@ export fn split(s!: String, sep!: String) -> Array<String> {
             rest = b.slice(next, b.count).toString()
         }
         parts
+    }
+}
+
+## First `sep` only. Empty `sep` or no match → `Not`.
+export type Split(before: String, after: String)
+
+export fn splitOnce(s!: String, sep!: String) -> May<Split> {
+    if sep == "" {
+        Not()
+    } else {
+        let i = indexOf(s, sep)
+        if i < 0 {
+            Not()
+        } else {
+            let b = Bytes.fromString(s)
+            let slen = Bytes.fromString(sep).count
+            let before = if i == 0 {
+                ""
+            } else {
+                b.slice(0, i).toString()
+            }
+            let afterStart = i + slen
+            let after = if afterStart >= b.count {
+                ""
+            } else {
+                b.slice(afterStart, b.count).toString()
+            }
+            Has(Split(before: before, after: after))
+        }
+    }
+}
+
+## Unsigned decimal digits only. Empty or any non-digit → `Not`.
+export fn parseUInt(s!: String) -> May<Int64> {
+    let n = length(s)
+    if n == 0 {
+        Not()
+    } else {
+        mut val = 0
+        mut i = 0
+        mut ok = true
+        loop {
+            if i >= n {
+                break
+            }
+            let c = byteAt(s, i)
+            if c < 48 {
+                ok = false
+                break
+            }
+            if c > 57 {
+                ok = false
+                break
+            }
+            val = val * 10 + (c - 48)
+            i = i + 1
+        }
+        if ok {
+            Has(val)
+        } else {
+            Not()
+        }
     }
 }
 

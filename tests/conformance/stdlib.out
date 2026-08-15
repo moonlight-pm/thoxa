@@ -15,6 +15,11 @@ b-aa
 b-b
 eq-ic-ok
 split=3:a:c
+once=a|b=c
+once-none
+uint=12
+uint-bad
+uint-empty
 007
 x..
 llo

@@ -119,6 +119,7 @@ Freezes:
 - ~~`std/Logging` + no ambient println~~ (**D125**)
 - ~~Product `std/Io` + `Net` + `Http` + `HttpStatic`~~ (**D126**; sample-driven)
 - ~~`Request.query` + HTTP helpers + `std/HttpServer`~~ (**D136**)
+- ~~Str `parseUInt`/`splitOnce` + Http `queryParam`/`formField`/`cookie`/`htmlResponse`~~ (**D137**)
 - ~~Combined import `import ns, { a } from "…"`~~ (**D127**)
 - ~~Diverging `loop` (Never / no dummy tail)~~ (**D128**)
 
