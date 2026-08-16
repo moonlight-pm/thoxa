@@ -28,7 +28,7 @@ Do not collapse these. They already disagree in the language:
 | Operation | Meaning today | Example |
 |-----------|---------------|---------|
 | **Decode / convert** | Encoding change, not a pretty-print | `Bytes.toString()` (UTF-8) |
-| **Interpolate / dump** | Closed compiler table | `"{n}"` for Int64 / Bool / String, and Arrays/Maps of those |
+| **Interpolate / dump** | Closed compiler table | `"{n}"` for Int64 / Float64 / Bool / String, and Arrays/Maps of those |
 | **Serialize a format** | Destination codec | `Node.html()` — escaped markup, void tags, boolean attrs |
 
 `.html()` is a **format**. Decimal `42` is a value’s natural text. Markup is a
@@ -43,10 +43,10 @@ call the same render. Keep the method as “this tree as markup.”
 
 ## As-built (do not re-derive)
 
-- `"{x}"` is a monomorphic match on `Ty` → `RValue::ToString` (Int64, Bool,
+- `"{x}"` is a monomorphic match on `Ty` → `RValue::ToString` (Int64, Float64, Bool,
   String; Array/Map of those). User types and `Node` error.
-- JSX `{e}` children: String / Int64 / Bool / Node / `Array<Node>` (scalars
-  share `stringify_place` with interp). Attrs: String / Int64 / Bool.
+- JSX `{e}` children: String / Int64 / Float64 / Bool / Node / `Array<Node>` (scalars
+  share `stringify_place` with interp). Attrs: String / Int64 / Float64 / Bool.
 - `logging.info` takes a `String`. Call sites interpolate first.
 - `Node.html()` → runtime `thoxa_html_render`. Product
   `std/Http.htmlResponse` (**D137**) wraps doctype + `root.html()`.

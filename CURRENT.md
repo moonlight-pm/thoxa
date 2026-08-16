@@ -48,8 +48,8 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 - Tag literals + builtin **`Node`** (idea
   [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md);
   capability `jsx-node` **partial**). No import; `.html()`; `{e}` children
-  are String / Int64 / Bool / Node / Array<Node>; `{e}` attrs stringify
-  Int64 / Bool the same way; `<tag` (no space) is JSX
+  are String / Int64 / Float64 / Bool / Node / Array<Node>; `{e}` attrs stringify
+  Int64 / Float64 / Bool the same way; `<tag` (no space) is JSX
   including after another expr, `a < b` (spaces) is comparison; `Node` is
   `Element | Text | Fragment` (same tree); `{...attrs}` / `{...props}`
   spreads; gate `jsx`. No D-id / handbook. Crema pages dogfood it
@@ -129,7 +129,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **shipped**). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
-| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
+| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)**. `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |

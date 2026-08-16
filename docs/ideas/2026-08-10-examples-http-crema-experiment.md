@@ -191,7 +191,7 @@ if wanted — domain stays example-only.
 
 | Gap | Workaround | Product break? |
 |-----|------------|----------------|
-| Constructor-param fields must be Int64 / Bool / String / Bytes / Array / Map — **not** user sum types | **Done (D135):** `Drink.roast: Roast` + `DrinkCard(d: Drink)` | Shipped |
+| Constructor-param fields must be Int64 / Bool / String / Bytes / Array / Map — **not** user sum types | **Done (D135):** `Drink.roast: Roast` + `DrinkCard(d: Drink)`. **D140** also allows `Float64` fields. | Shipped |
 | String interp treats `{…}` as interpolation | Path params use `:slug` not `{slug}` | Document; escape story later if needed |
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
