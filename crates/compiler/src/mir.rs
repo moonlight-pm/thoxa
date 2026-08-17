@@ -1903,6 +1903,25 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     })
 }
 
+fn union_member_field_ok(ty: &Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Int64
+            | Ty::Int32
+            | Ty::UInt32
+            | Ty::UInt64
+            | Ty::Byte
+            | Ty::Float64
+            | Ty::Bool
+            | Ty::Void
+            | Ty::String
+            | Ty::Bytes
+            | Ty::User(_)
+            | Ty::Array { .. }
+            | Ty::Map { .. }
+    )
+}
+
 /// Resolve concrete type fields / union shape (type-reg phase).
 fn resolve_type_def_shape(
     td: &TypeDef,
@@ -2048,24 +2067,13 @@ fn resolve_type_def_shape(
                     mem.span,
                 ));
             }
-            // Product arm: scalar / String / Bytes fields only.
+            // Product arm: scalars (incl. Float64 / D140), String/Bytes, User, Array, Map.
             if let Some(minfo) = types_info.get(member_name) {
                 for f in &minfo.fields {
-                    if !matches!(
-                        f.ty,
-                        Ty::Int64
-                            | Ty::Int32
-                            | Ty::UInt32
-                            | Ty::UInt64
-                            | Ty::Byte
-                            | Ty::Bool
-                            | Ty::Void
-                            | Ty::String
-                            | Ty::Bytes
-                    ) {
+                    if !union_member_field_ok(&f.ty) {
                         return Err(Error::at(
                                 format!(
-                                    "union member `{vname}` field `{}` must be a scalar or String/Bytes for now (got {:?})",
+                                    "union member `{vname}` field `{}` must be a scalar, String/Bytes, User, Array, or Map (got {:?})",
                                     f.name, f.ty
                                 ),
                                 mem.span,
@@ -4260,6 +4268,36 @@ fn monomorphize_package(
             collect_item_type_apps(item, &mut apps);
         }
         for (te, span) in apps {
+            // `m[k]` / `.get` is `May<V>` (D134). Seed it from every `Map<K, V>`.
+            if te.name == "Map" && te.args.len() == 2 {
+                if let Some(may_base) = name_map.get("May") {
+                    let mut arg_tys = Vec::new();
+                    let mut ok = true;
+                    for arg in &te.args {
+                        match arg {
+                            TypeArg::Type(inner) => match resolve_ty(inner, types, &name_map) {
+                                Ok(ty) => arg_tys.push(ty),
+                                Err(_) => {
+                                    ok = false;
+                                    break;
+                                }
+                            },
+                            TypeArg::Int { .. } => {
+                                ok = false;
+                                break;
+                            }
+                        }
+                    }
+                    if ok && arg_tys.len() == 2 {
+                        pending.push((
+                            may_base.clone(),
+                            vec![arg_tys[1].clone()],
+                            name_map.clone(),
+                            span,
+                        ));
+                    }
+                }
+            }
             if te.args.is_empty() || is_builtin_generic(&te.name) {
                 continue;
             }
@@ -4904,21 +4942,7 @@ fn instantiate_union_mono(
         }
         if let Some(minfo) = types.get(member_name) {
             for f in &minfo.fields {
-                if !matches!(
-                    f.ty,
-                    Ty::Int64
-                        | Ty::Int32
-                        | Ty::UInt32
-                        | Ty::UInt64
-                        | Ty::Byte
-                        | Ty::Bool
-                        | Ty::Void
-                        | Ty::String
-                        | Ty::Bytes
-                        | Ty::User(_)
-                        | Ty::Array { .. }
-                        | Ty::Map { .. }
-                ) {
+                if !union_member_field_ok(&f.ty) {
                     return Err(Error::at(
                         format!(
                             "union member `{vname}` field `{}` must be scalar, String/Bytes, User, Array, or Map",
@@ -13387,19 +13411,10 @@ fn ensure_synthetic_sum(
                 ));
             }
             for f in &minfo.fields {
-                if !matches!(
-                    f.ty,
-                    Ty::Int64
-                        | Ty::Int32
-                        | Ty::UInt32
-                        | Ty::UInt64
-                        | Ty::Byte
-                        | Ty::Bool
-                        | Ty::Void
-                ) {
+                if !union_member_field_ok(&f.ty) {
                     return Err(Error::at(
                         format!(
-                            "union member `{vname}` field `{}` must be a scalar for now",
+                            "union member `{vname}` field `{}` must be a scalar, String/Bytes, User, Array, or Map",
                             f.name
                         ),
                         span,

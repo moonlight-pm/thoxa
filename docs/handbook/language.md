@@ -60,7 +60,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Heap | `String` (interpolation, `.count`, `\xHH` escapes), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`) |
 | User types | `type Name(fields) { methods }` — including heap fields, **Node**, and nested user types / sums (**D135**); method field write-back. Recursive fields are an error (use `Array` / `Map`) |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
-| Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"` |
+| Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"`. Member product fields may be scalars (incl. `Float64`), String/Bytes, User, `Array`, or `Map` (**D141**) |
 | Literal types | Bare `"home"`, `0`, `true` are types in formals / returns / annotations; inline `"a" \| "b"` in those positions too (**D131**) |
 | Multi-clause fns | Same name, different formal types → one function (type-driven match sugar, **D131**) |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |

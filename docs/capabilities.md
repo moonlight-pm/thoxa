@@ -11,7 +11,8 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-15 (**D140** `Float64`;
+**As of:** 2026-08-16 (**D141** `std/json`;
+**D140** `Float64`;
 **D139** HTTP hosts under `std/http/`;
 **D138** kebab-case module files + `main.thx` entry **shipped**;
 **D137** Str parse + Http wrappers;
@@ -34,7 +35,7 @@ freeze)
 | fn-pointers | Function types `(a: T) -> R`; free + unbound + bound methods | shipped | `fn_pointers` | **D132**; [`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md) | Bound = receiver+code (not lexical closure). Module `let`/`mut` allowed; fields/arrays **no** (D48 / D135). No `Fn` word; no closures; no multi-clause/`extern` values; no `-->` of a pointer. | yes |
 | trial | `Trial` + `match` + `?` via `std/fallible` | shipped | `trials`, `trials_mono`, `trials_nested`, `trials_nested_trial`, `http_*` | D40–D45, D113–D114, D118, D123 | none for v0 — import `Pass`/`Fail`/`Trial` from `std/fallible`; cross-module residual rewrap | yes |
 | may | `May` / `Has` / `Not` + `?` via `std/fallible` | shipped | `mays`, `trials_nested`, `bytes` (find) | D85, D113–D114, D118, D123 | none for v0 — import `Has`/`Not`/`May` from `std/fallible`; `Bytes.find` needs `May` in scope | yes |
-| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*` | D118–D120; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | none for v0 | yes |
+| sum-types | User unions, literals, tagged layout, type `!`/`?` marks | shipped | `sums_*`, `sums_match_guard`, `sums_generic*`, `json` | D118–D120, **D141**; [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Union-member product fields include **Float64**, **Array**, **Map**, User (**D141**). Array/Map of sums RC the live arm. | yes |
 | value-match | Literals + or + bind/`else` + guards + `=>` | shipped | `match_value`, `match_or`, `match_bind`, `match_guard`, `match_arm_sugar` | D87, D108, D110, D111, **D130** | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` + bare tag-only | shipped | `match_discard`, `match_arm_sugar` | D66, **D130** | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |
@@ -48,7 +49,7 @@ freeze)
 | start-tasks | `--> name(args)` — begin a call; do not wait | partial | `start_tasks`, `start_nested`, `start_net`, `start_keepalive`, `http_host` | on master, not freeze | No Future / `async` / `run`. Token `-->` only (not a word). Free Thoxa fns only; `--> { }` later. Net parks. `std/http/server` `--> serveOne` + keep-alive (**D136**). No handbook / D-id | no |
 | return-infer | Unannotated free-fn return from body exits | shipped | `return_infer` | **D129**; [`specs/2026-08-10-return-type-inference.md`](specs/2026-08-10-return-type-inference.md) | Unannotated **methods** still default `Void` (not body-inferred yet); recursive/mutual unannotated free fns → annotate; bare Pass/Fail alone → annotate; LSP hover shows free-fn inferred types after lower | yes |
 | array-dyn | Dynamic `Array<T>` (incl. User) + insertAt/removeAt | shipped | `arrays`, `array_user`, `array_heap_elems`, `splice` | D53–D55, D62, D65; **D133** | Write-back `Void` on `mut` places (Swift/Buffer COW). `let` aliases do not see writes. | yes |
-| map | Builtin `Map<K, V>` + `{k:v}` + `for k, v` | shipped | `maps`, `maps_user` | **D134**; D133; [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) | Keys v0 String/Int64/Bool (User types are **values**, not keys). Values include **Float64 (D140)**. `.has` / `.get`→May / write-back `.set`; ident keys; insertion order. Crema dogfoods query/form/cookies as `Map<String, String>`. **Gaps:** User keys wait on structural product `==` + private field hash (not Eq/Hash traits; not pointer identity). No `==` on Map. No `std/http` header flip. | yes |
+| map | Builtin `Map<K, V>` + `{k:v}` + `for k, v` | shipped | `maps`, `maps_user`, `json` | **D134**; D133; **D141**; [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) | Keys v0 String/Int64/Bool (User types are **values**, not keys). Values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `.get`→May / write-back `.set`; ident keys; insertion order. `Map<K,V>` seeds `May<V>` so `.get` works without a nested annotation. Crema dogfoods query/form/cookies as `Map<String, String>`. **Gaps:** User keys wait on structural product `==` + private field hash (not Eq/Hash traits; not pointer identity). No `==` on Map. No `std/http` header flip. | yes |
 | array-fixed | Fixed `Array<T,N>` fields **and locals** | shipped | `cstruct_ffi`, `fixed_array_local`, `fixed_array_assign` | D27, D117 | ABI scalar elems only (no User fixed-array elems) | yes |
 | user-rc | User+heap field RC in Trial/match/method | shipped | `user_rc` | D64 | — | yes |
 | string-fields | String/Bytes/Array/Map/Node/User/Float64 ctor fields | shipped | `string_fields`, `maps_user`, `nested_fields`, `floats` | D48–D49, D69, D134, **D135**, **D140** | Nested User and Node shipped (`nested_fields`), including sums as fields. Recursive User fields are an error (use Array/Map). C-layout and fn types still out. | yes |
@@ -114,6 +115,7 @@ freeze)
 | std-http | HTTP/1.1 protocol in `std/http` | shipped | `http_parse`, `http`, `http_wire`, `http_helpers` | **D126**, **D136**, **D137** | `Request.query` kept; body empty at parse (host fills). Helpers: `headerGet`, query/form/cookie Maps + `queryParam`/`formField`/`cookie`, `htmlResponse` (`Node`), `seeOther`, `finalize` / keep-alive. Still no syscalls | yes |
 | std-http-static | Static-file `Router` in `std/http/static` | shipped | `router`, `http_server` | **D126**, **D139** | GET+HEAD; small MIME table; depends on Io+Http+Logging | yes |
 | std-http-server | HTTP/1.1 host loop in `std/http/server` | shipped | `http_host` | **D136**, **D139** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
+| std-json | Dynamic `Json` tree in `std/json` | shipped | `json` | **D141**; idea [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md) | `parse` / `stringify`. `JInt` vs `JFloat` as charter. Fail String. No derive, no pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` | yes |
 
 ## Editor / LSP
 

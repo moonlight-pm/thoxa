@@ -1982,15 +1982,19 @@ fn emit_array_user_elem_fields(
     types: &[TypeLayout],
     dup: bool,
 ) {
-    for f in &layout.fields {
-        if !needs_drop_ty(&f.ty) {
-            continue;
-        }
-        let nested = crate::mir::Place {
-            name: format!("e->{}", f.c_name),
-        };
-        emit_rc(out, "    ", &nested, &f.ty, dup, types);
-    }
+    // Sums (Json) have no product fields; walk the live arm via emit_rc.
+    // Products keep the same field RC as before (`(*e).field`).
+    let nested = crate::mir::Place {
+        name: "(*e)".into(),
+    };
+    emit_rc(
+        out,
+        "    ",
+        &nested,
+        &Ty::User(layout.name.clone()),
+        dup,
+        types,
+    );
 }
 
 fn collect_user_array_elems_program(program: &Program, out: &mut Vec<String>) {

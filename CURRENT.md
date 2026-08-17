@@ -4,7 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-15 (**D140** `Float64`;
+**As of:** 2026-08-16 (**D141** `std/json`;
+**D140** `Float64`;
 **D139** HTTP hosts under `std/http/`;
 **D138** kebab-case module files **shipped**;
 **D137** Str `parseUInt`/`splitOnce` + Http
@@ -20,7 +21,8 @@ not handbook; Crema-lite Phase A–C dogfoods product `http` / `http/server`)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **`Float64`** (**D140**);
+**Shipped recently:** **`std/json`** (**D141**);
+**`Float64`** (**D140**);
 **HTTP hosts under `std/http/`** (**D139**);
 **kebab-case modules** (**D138**);
 **HTTP leftover helpers** (**D137**);
@@ -57,32 +59,29 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **`std/json` encode/decode** — dynamic `Json` tree (approved). Charter:
-   [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md).
-   Crema `POST /api/orders` dogfoods it after the codec ships.
-2. **Crema-lite** — Phase D+ only if useful. App/domain stays example-only.
+1. **Crema-lite** — Phase D+ JSON POST (`POST /api/orders`) now that
+   **`std/json`** (**D141**) is shipped. App/domain stays example-only.
    Host/wire is product **`std/http` + `std/http/server`** (**D136**/**D139**).
    Query/form/cookies are builtin `Map` (headers stay `Array<Header>`).
    File-based routing is **parked**
    ([`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)).
-3. Editor only when DX forces it.
+2. Editor only when DX forces it.
 
 ### Proceed order
 
-1. **JSON codec** — [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
-   (`std/json` parse / stringify on a `Json` sum). Then Crema POST API.  
-2. **Crema-lite experiment** — remaining checklist in
+1. **Crema-lite experiment** — remaining checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   (app under `examples/http/`; host/wire already in `std/`).  
-3. **Editor depth** — only when DX forces it. Freezes:
+   (app under `examples/http/`; host/wire already in `std/`; **JSON codec
+   shipped**). Prefer `POST /api/orders` if still useful.  
+2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).  
-4. **Deferred: all session / shell residual** — redir polish, line editor,
+3. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-5. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
@@ -121,7 +120,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
-| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); `ffi` deferred |
+| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); **`std/json`** (**D141**); `ffi` deferred |
 | Logging / print | **`std/logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
 | Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
@@ -158,8 +157,9 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 9. If D138 / module files: [`docs/decisions.md`](docs/decisions.md) (D138) — kebab-case stems, path-qualified ids; file-based routing parked in [`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)
 10. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    + **D136** / **D137** / **D139** in [`docs/decisions.md`](docs/decisions.md)
-11. If JSON: [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
-    + **D140** (`Float64`) in [`docs/decisions.md`](docs/decisions.md)
+11. If JSON: [`docs/decisions.md`](docs/decisions.md) (**D141**) +
+    [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
+    + **D140** (`Float64`)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

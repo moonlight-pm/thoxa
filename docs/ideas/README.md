@@ -17,7 +17,7 @@ locked and (if needed) scheduled. Living priority never lives here — see root
 | [JSX / tag literals + `Node`](2026-08-13-jsx-node-syntax-experiment.md) | **on master** (not freeze) | Builtin `Node` + `.html()`; `{e}` children/attrs; spreads; no D-id / handbook |
 | [`toString` / `repr` / interpolation](2026-08-15-tostring-repr-and-traits.md) | sleeping | Do not replace `.html()` with generic `toString`; Display is not a traits forcing function |
 | [file-based routing](2026-08-15-file-based-routing.md) | **parked** | Path-from-tree for Crema; captures/layouts as filenames deferred. Kebab-case modules split out → **D138** |
-| [`std/json` codec](2026-08-15-json-codec.md) | **next** | Dynamic `Json` tree; `Float64` shipped (**D140**). Crema POST dogfood after codec |
+| [`std/json` codec](2026-08-15-json-codec.md) | **shipped** (**D141**) | Dynamic `Json` tree; `parse` / `stringify`. Crema POST dogfood is next |
 
 **Rules of thumb**
 

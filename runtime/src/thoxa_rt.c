@@ -189,6 +189,19 @@ uint64_t thoxa_f64_to_bits(double v) {
     return bits;
 }
 
+double thoxa_f64_from_string(const char *s) {
+    if (!s) {
+        return 0.0;
+    }
+    char *end = NULL;
+    return strtod(s, &end);
+}
+
+int32_t thoxa_f64_is_finite(double v) {
+    uint64_t bits = thoxa_f64_to_bits(v);
+    return (bits & 0x7ff0000000000000ull) != 0x7ff0000000000000ull;
+}
+
 ThoxaString *thoxa_string_from_f64(double v) {
     char buf[64];
     uint64_t bits = thoxa_f64_to_bits(v);

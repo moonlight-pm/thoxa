@@ -1,0 +1,737 @@
+## std/json — dynamic JSON tree (D141).
+## Integers without `.` / exponent are JInt; every other JSON number is JFloat.
+## Out-of-range Int64 / non-finite Float64 fail parse. Fail payloads are String.
+## No comments, trailing commas, NaN/Infinity tokens, or pretty-print knobs.
+
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+
+extern fn cParseF64(s!: String) -> Float64 from "c" "thoxa_f64_from_string"
+extern fn cF64IsFinite(v!: Float64) -> Int32 from "c" "thoxa_f64_is_finite"
+
+export type JNull
+export type JBool(value: Bool)
+export type JInt(value: Int64)
+export type JFloat(value: Float64)
+export type JStr(value: String)
+export type JArr(value: Array<Json>)
+export type JObj(value: Map<String, Json>)
+export type Json = JNull | JBool | JInt | JFloat | JStr | JArr | JObj
+
+type Parsed(value: Json, pos: Int64)
+type Cut(text: String, pos: Int64)
+
+let int64Max = 9223372036854775807
+
+## --- public ---------------------------------------------------------------
+
+export fn stringify(v!: Json) -> String {
+    match v {
+        JNull => "null"
+        JBool(b) {
+            if b {
+                "true"
+            } else {
+                "false"
+            }
+        }
+        JInt(n) => "{n}"
+        JFloat(f) => "{f}"
+        JStr(s) => quoteStr(s)
+        JArr(xs) => stringifyArr(xs)
+        JObj(m) => stringifyObj(m)
+    }
+}
+
+export fn parse(s!: String) -> Trial<Json, String> {
+    let b = Bytes.fromString(s)
+    let p = skipWs(b, 0)
+    if p >= b.count {
+        Fail("empty input")
+    } else {
+        let got = parseValue(b, p)?
+        let end = skipWs(b, got.pos)
+        if end != b.count {
+            Fail("trailing junk")
+        } else {
+            Pass(got.value)
+        }
+    }
+}
+
+## --- stringify helpers ----------------------------------------------------
+
+fn quoteStr(s!: String) -> String {
+    let src = Bytes.fromString(s)
+    mut out = Buffer()
+    out.append(34)
+    mut i = 0
+    loop {
+        if i >= src.count {
+            break
+        }
+        let c = src.get(i)
+        match c {
+            34 {
+                out.append(92)
+                out.append(34)
+            }
+            92 {
+                out.append(92)
+                out.append(92)
+            }
+            8 {
+                out.append(92)
+                out.append(98)
+            }
+            12 {
+                out.append(92)
+                out.append(102)
+            }
+            10 {
+                out.append(92)
+                out.append(110)
+            }
+            13 {
+                out.append(92)
+                out.append(114)
+            }
+            9 {
+                out.append(92)
+                out.append(116)
+            }
+            else {
+                if c < 32 {
+                    out.append(92)
+                    out.append(117)
+                    out.append(hexDigitByte((c / 4096) % 16))
+                    out.append(hexDigitByte((c / 256) % 16))
+                    out.append(hexDigitByte((c / 16) % 16))
+                    out.append(hexDigitByte(c % 16))
+                } else {
+                    out.append(c)
+                }
+            }
+        }
+        i = i + 1
+    }
+    out.append(34)
+    out.freeze().toString()
+}
+
+fn hexDigitByte(n!: Int64) -> Int64 {
+    if n < 10 {
+        48 + n
+    } else {
+        87 + n
+    }
+}
+
+fn stringifyArr(xs!: Array<Json>) -> String {
+    mut out = Buffer()
+    out.append(91)
+    mut i = 0
+    loop {
+        if i >= xs.count {
+            break
+        }
+        if i > 0 {
+            out.append(44)
+        }
+        out.appendBytes(Bytes.fromString(stringify(xs[i])))
+        i = i + 1
+    }
+    out.append(93)
+    out.freeze().toString()
+}
+
+fn stringifyObj(m!: Map<String, Json>) -> String {
+    mut out = Buffer()
+    out.append(123)
+    mut first = true
+    for k, v in m {
+        if first {
+            first = false
+        } else {
+            out.append(44)
+        }
+        out.appendBytes(Bytes.fromString(quoteStr(k)))
+        out.append(58)
+        out.appendBytes(Bytes.fromString(stringify(v)))
+    }
+    out.append(125)
+    out.freeze().toString()
+}
+
+## --- parse ----------------------------------------------------------------
+
+fn parseValue(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
+    let p = skipWs(b, pos)
+    if p >= b.count {
+        Fail("unexpected end")
+    } else {
+        let c = b.get(p)
+        match c {
+            110 => parseLit(b, p, "null", JNull())
+            116 => parseLit(b, p, "true", JBool(true))
+            102 => parseLit(b, p, "false", JBool(false))
+            34 => parseString(b, p)
+            91 => parseArray(b, p)
+            123 => parseObject(b, p)
+            else {
+                if isNumberStart(c) {
+                    parseNumber(b, p)
+                } else {
+                    Fail("unexpected character")
+                }
+            }
+        }
+    }
+}
+
+fn parseLit(b!: Bytes, pos!: Int64, lit!: String, value!: Json) -> Trial<Parsed, String> {
+    let want = Bytes.fromString(lit)
+    if pos + want.count > b.count {
+        Fail("unexpected end")
+    } else {
+        if b.slice(pos, pos + want.count).toString() == lit {
+            Pass(Parsed(value: value, pos: pos + want.count))
+        } else {
+            Fail("invalid literal")
+        }
+    }
+}
+
+fn parseArray(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
+    mut p = skipWs(b, pos + 1)
+    if p >= b.count {
+        Fail("unexpected end")
+    } else {
+        if b.get(p) == 93 {
+            let empty: Array<Json> = []
+            Pass(Parsed(value: JArr(empty), pos: p + 1))
+        } else {
+            mut items: Array<Json> = []
+            loop {
+                let got = parseValue(b, p)?
+                items.append(got.value)
+                p = skipWs(b, got.pos)
+                if p >= b.count {
+                    return Fail("unexpected end")
+                }
+                let c = b.get(p)
+                if c == 93 {
+                    break
+                }
+                if c != 44 {
+                    return Fail("expected ',' or ']'")
+                }
+                p = skipWs(b, p + 1)
+                if p >= b.count {
+                    return Fail("unexpected end")
+                }
+                if b.get(p) == 93 {
+                    return Fail("trailing comma")
+                }
+            }
+            Pass(Parsed(value: JArr(items), pos: p + 1))
+        }
+    }
+}
+
+fn parseObject(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
+    mut p = skipWs(b, pos + 1)
+    if p >= b.count {
+        Fail("unexpected end")
+    } else {
+        if b.get(p) == 125 {
+            let empty: Map<String, Json> = Map()
+            Pass(Parsed(value: JObj(empty), pos: p + 1))
+        } else {
+            mut fields: Map<String, Json> = Map()
+            loop {
+                p = skipWs(b, p)
+                if p >= b.count {
+                    return Fail("unexpected end")
+                }
+                if b.get(p) != 34 {
+                    return Fail("expected string key")
+                }
+                let key = parseStringRaw(b, p)?
+                p = skipWs(b, key.pos)
+                if p >= b.count {
+                    return Fail("unexpected end")
+                }
+                if b.get(p) != 58 {
+                    return Fail("expected ':'")
+                }
+                let got = parseValue(b, p + 1)?
+                fields.set(key.text, got.value)
+                p = skipWs(b, got.pos)
+                if p >= b.count {
+                    return Fail("unexpected end")
+                }
+                let c = b.get(p)
+                if c == 125 {
+                    break
+                }
+                if c != 44 {
+                    return Fail("expected ',' or '}}'")
+                }
+                p = skipWs(b, p + 1)
+                if p >= b.count {
+                    return Fail("unexpected end")
+                }
+                if b.get(p) == 125 {
+                    return Fail("trailing comma")
+                }
+            }
+            Pass(Parsed(value: JObj(fields), pos: p + 1))
+        }
+    }
+}
+
+fn parseString(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
+    let cut = parseStringRaw(b, pos)?
+    Pass(Parsed(value: JStr(cut.text), pos: cut.pos))
+}
+
+fn parseStringRaw(b!: Bytes, pos!: Int64) -> Trial<Cut, String> {
+    mut p = pos + 1
+    mut out = Buffer()
+    loop {
+        if p >= b.count {
+            return Fail("unterminated string")
+        }
+        let c = b.get(p)
+        if c == 34 {
+            return Pass(Cut(text: out.freeze().toString(), pos: p + 1))
+        }
+        if c == 92 {
+            let esc = parseEscape(b, p + 1)?
+            out.appendBytes(Bytes.fromString(esc.text))
+            p = esc.pos
+        } else {
+            if c < 32 {
+                return Fail("unescaped control")
+            }
+            out.append(c)
+            p = p + 1
+        }
+    }
+}
+
+fn parseEscape(b!: Bytes, pos!: Int64) -> Trial<Cut, String> {
+    if pos >= b.count {
+        Fail("unterminated string")
+    } else {
+        let c = b.get(pos)
+        match c {
+            34 => Pass(Cut(text: "\"", pos: pos + 1))
+            92 => Pass(Cut(text: "\\", pos: pos + 1))
+            47 => Pass(Cut(text: "/", pos: pos + 1))
+            98 => Pass(Cut(text: "\x08", pos: pos + 1))
+            102 => Pass(Cut(text: "\x0c", pos: pos + 1))
+            110 => Pass(Cut(text: "\n", pos: pos + 1))
+            114 => Pass(Cut(text: "\r", pos: pos + 1))
+            116 => Pass(Cut(text: "\t", pos: pos + 1))
+            117 => parseUnicodeEscape(b, pos + 1)
+            else => Fail("invalid escape")
+        }
+    }
+}
+
+fn parseUnicodeEscape(b!: Bytes, pos!: Int64) -> Trial<Cut, String> {
+    let unit = parseHex4(b, pos)?
+    if isHighSurrogate(unit.value) {
+        let next = pos + 4
+        if next + 1 < b.count {
+            if b.get(next) == 92 {
+                if b.get(next + 1) == 117 {
+                    let low = parseHex4(b, next + 2)?
+                    if isLowSurrogate(low.value) {
+                        let hi = unit.value - 55296
+                        let lo = low.value - 56320
+                        let cp = 65536 + hi * 1024 + lo
+                        Pass(Cut(text: utf8(cp), pos: low.pos))
+                    } else {
+                        Fail("invalid unicode escape")
+                    }
+                } else {
+                    Fail("invalid unicode escape")
+                }
+            } else {
+                Fail("invalid unicode escape")
+            }
+        } else {
+            Fail("invalid unicode escape")
+        }
+    } else {
+        if isLowSurrogate(unit.value) {
+            Fail("invalid unicode escape")
+        } else {
+            Pass(Cut(text: utf8(unit.value), pos: unit.pos))
+        }
+    }
+}
+
+type Hex4(value: Int64, pos: Int64)
+
+fn parseHex4(b!: Bytes, pos!: Int64) -> Trial<Hex4, String> {
+    if pos + 4 > b.count {
+        Fail("invalid unicode escape")
+    } else {
+        mut n = 0
+        mut i = 0
+        mut ok = true
+        loop {
+            if i >= 4 {
+                break
+            }
+            match hexNibble(b.get(pos + i)) {
+                Not {
+                    ok = false
+                    break
+                }
+                Has(d) {
+                    n = n * 16 + d
+                }
+            }
+            i = i + 1
+        }
+        if ok {
+            Pass(Hex4(value: n, pos: pos + 4))
+        } else {
+            Fail("invalid unicode escape")
+        }
+    }
+}
+
+fn hexNibble(c!: Int64) -> May<Int64> {
+    if c >= 48 {
+        if c <= 57 {
+            Has(c - 48)
+        } else {
+            if c >= 65 {
+                if c <= 70 {
+                    Has(c - 55)
+                } else {
+                    if c >= 97 {
+                        if c <= 102 {
+                            Has(c - 87)
+                        } else {
+                            Not()
+                        }
+                    } else {
+                        Not()
+                    }
+                }
+            } else {
+                Not()
+            }
+        }
+    } else {
+        Not()
+    }
+}
+
+fn isHighSurrogate(cp!: Int64) -> Bool {
+    if cp >= 55296 {
+        cp <= 56319
+    } else {
+        false
+    }
+}
+
+fn isLowSurrogate(cp!: Int64) -> Bool {
+    if cp >= 56320 {
+        cp <= 57343
+    } else {
+        false
+    }
+}
+
+fn utf8(cp!: Int64) -> String {
+    if cp < 128 {
+        bytes1(cp)
+    } else {
+        if cp < 2048 {
+            bytes2(192 + cp / 64, 128 + cp % 64)
+        } else {
+            if cp < 65536 {
+                bytes3(224 + cp / 4096, 128 + (cp / 64) % 64, 128 + cp % 64)
+            } else {
+                bytes4(
+                    240 + cp / 262144,
+                    128 + (cp / 4096) % 64,
+                    128 + (cp / 64) % 64,
+                    128 + cp % 64
+                )
+            }
+        }
+    }
+}
+
+fn bytes1(a!: Int64) -> String {
+    mut b = Bytes(1)
+    b.set(0, a)
+    b.toString()
+}
+
+fn bytes2(a!: Int64, c!: Int64) -> String {
+    mut b = Bytes(2)
+    b.set(0, a)
+    b.set(1, c)
+    b.toString()
+}
+
+fn bytes3(a!: Int64, c!: Int64, d!: Int64) -> String {
+    mut b = Bytes(3)
+    b.set(0, a)
+    b.set(1, c)
+    b.set(2, d)
+    b.toString()
+}
+
+fn bytes4(a!: Int64, c!: Int64, d!: Int64, e!: Int64) -> String {
+    mut b = Bytes(4)
+    b.set(0, a)
+    b.set(1, c)
+    b.set(2, d)
+    b.set(3, e)
+    b.toString()
+}
+
+fn parseNumber(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
+    mut p = pos
+    mut neg = false
+    if b.get(p) == 45 {
+        neg = true
+        p = p + 1
+        if p >= b.count {
+            return Fail("invalid number")
+        }
+    }
+    let intStart = p
+    if p >= b.count {
+        Fail("invalid number")
+    } else {
+        let c0 = b.get(p)
+        if c0 < 48 {
+            Fail("invalid number")
+        } else {
+            if c0 > 57 {
+                Fail("invalid number")
+            } else {
+                if c0 == 48 {
+                    p = p + 1
+                    if p < b.count {
+                        let nxt = b.get(p)
+                        if nxt >= 48 {
+                            if nxt <= 57 {
+                                return Fail("invalid number")
+                            }
+                        }
+                    }
+                    Void
+                } else {
+                    loop {
+                        if p >= b.count {
+                            break
+                        }
+                        let d = b.get(p)
+                        if d < 48 {
+                            break
+                        }
+                        if d > 57 {
+                            break
+                        }
+                        p = p + 1
+                    }
+                }
+                mut isFloat = false
+                if p < b.count {
+                    if b.get(p) == 46 {
+                        isFloat = true
+                        p = p + 1
+                        if p >= b.count {
+                            return Fail("invalid number")
+                        }
+                        let fd = b.get(p)
+                        if fd < 48 {
+                            return Fail("invalid number")
+                        }
+                        if fd > 57 {
+                            return Fail("invalid number")
+                        }
+                        loop {
+                            if p >= b.count {
+                                break
+                            }
+                            let d = b.get(p)
+                            if d < 48 {
+                                break
+                            }
+                            if d > 57 {
+                                break
+                            }
+                            p = p + 1
+                        }
+                    }
+                }
+                if p < b.count {
+                    let e = b.get(p)
+                    if e == 101 {
+                        isFloat = true
+                        p = consumeExp(b, p)?
+                    } else {
+                        if e == 69 {
+                            isFloat = true
+                            p = consumeExp(b, p)?
+                        }
+                    }
+                }
+                let token = b.slice(pos, p).toString()
+                if isFloat {
+                    let f = cParseF64(token)
+                    if cF64IsFinite(f) == 0 {
+                        Fail("number out of range")
+                    } else {
+                        Pass(Parsed(value: JFloat(f), pos: p))
+                    }
+                } else {
+                    let n = parseIntDigits(b, intStart, p, neg)?
+                    Pass(Parsed(value: JInt(n), pos: p))
+                }
+            }
+        }
+    }
+}
+
+fn consumeExp(b!: Bytes, pos!: Int64) -> Trial<Int64, String> {
+    mut p = pos + 1
+    if p >= b.count {
+        Fail("invalid number")
+    } else {
+        let s = b.get(p)
+        if s == 43 {
+            p = p + 1
+        } else {
+            if s == 45 {
+                p = p + 1
+            }
+        }
+        if p >= b.count {
+            Fail("invalid number")
+        } else {
+            let d0 = b.get(p)
+            if d0 < 48 {
+                Fail("invalid number")
+            } else {
+                if d0 > 57 {
+                    Fail("invalid number")
+                } else {
+                    loop {
+                        if p >= b.count {
+                            break
+                        }
+                        let d = b.get(p)
+                        if d < 48 {
+                            break
+                        }
+                        if d > 57 {
+                            break
+                        }
+                        p = p + 1
+                    }
+                    Pass(p)
+                }
+            }
+        }
+    }
+}
+
+fn parseIntDigits(b!: Bytes, start!: Int64, end!: Int64, neg!: Bool) -> Trial<Int64, String> {
+    mut mag = 0
+    mut i = start
+    loop {
+        if i >= end {
+            break
+        }
+        let d = b.get(i) - 48
+        if mag > int64Max / 10 {
+            return intOverflow(neg, mag, d, i, end)
+        }
+        if mag == int64Max / 10 {
+            if d > int64Max % 10 {
+                return intOverflow(neg, mag, d, i, end)
+            }
+        }
+        mag = mag * 10 + d
+        i = i + 1
+    }
+    if neg {
+        Pass(0 - mag)
+    } else {
+        Pass(mag)
+    }
+}
+
+fn intOverflow(neg!: Bool, mag!: Int64, d!: Int64, i!: Int64, end!: Int64) -> Trial<Int64, String> {
+    if neg {
+        if mag == int64Max / 10 {
+            if d == 8 {
+                if i + 1 == end {
+                    Pass(0 - int64Max - 1)
+                } else {
+                    Fail("number out of range")
+                }
+            } else {
+                Fail("number out of range")
+            }
+        } else {
+            Fail("number out of range")
+        }
+    } else {
+        Fail("number out of range")
+    }
+}
+
+fn isNumberStart(c!: Int64) -> Bool {
+    if c == 45 {
+        true
+    } else {
+        if c >= 48 {
+            c <= 57
+        } else {
+            false
+        }
+    }
+}
+
+fn skipWs(b!: Bytes, pos!: Int64) -> Int64 {
+    mut p = pos
+    loop {
+        if p >= b.count {
+            break
+        }
+        let c = b.get(p)
+        if c == 32 {
+            p = p + 1
+        } else {
+            if c == 9 {
+                p = p + 1
+            } else {
+                if c == 10 {
+                    p = p + 1
+                } else {
+                    if c == 13 {
+                        p = p + 1
+                    } else {
+                        break
+                    }
+                }
+            }
+        }
+    }
+    p
+}

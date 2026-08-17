@@ -74,7 +74,7 @@ Freezes:
   (D105), rc/prompt/path, pipes/redirs, pure-step builtins, `std/Shell.thx`.
 - Thin `std/` sample-driven: prompts/helpers plus **Io/Net/Http/HttpStatic**
   (**D126**), **HttpServer** (**D136**; path **`std/http/server`** **D139**),
-  and Logging (**D125**).
+  Logging (**D125**), and **Json** (**D141**).
 
 **Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first;
 crude line editor. Resume only when CURRENT says so.

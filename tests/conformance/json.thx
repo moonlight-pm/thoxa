@@ -1,0 +1,132 @@
+## std/json — dynamic Json tree: parse / stringify (D141).
+import { Json, JNull, JBool, JInt, JFloat, JStr, JArr, JObj, parse, stringify } from "std/json"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn show(t!: Trial<Json, String>) -> String {
+    match t {
+        Pass(v) => stringify(v)
+        Fail(e) => "ERR:{e}"
+    }
+}
+
+fn kind(t!: Trial<Json, String>) -> String {
+    match t {
+        Fail(e) => "ERR:{e}"
+        Pass(v) {
+            match v {
+                JNull => "null"
+                JBool => "bool"
+                JInt => "int"
+                JFloat => "float"
+                JStr => "str"
+                JArr => "arr"
+                JObj => "obj"
+            }
+        }
+    }
+}
+
+fn qtyOf(t!: Trial<Json, String>) -> String {
+    match t {
+        Fail(e) => "ERR:{e}"
+        Pass(v) {
+            match v {
+                JObj(m) {
+                    let qty: May<Json> = m.get("qty")
+                    match qty {
+                        Not => "missing"
+                        Has(q) {
+                            match q {
+                                JInt(n) => "int:{n}"
+                                JFloat => "float"
+                                JNull => "null"
+                                JBool => "bool"
+                                JStr => "str"
+                                JArr => "arr"
+                                JObj => "obj"
+                            }
+                        }
+                    }
+                }
+                JNull => "not-obj"
+                JBool => "not-obj"
+                JInt => "not-obj"
+                JFloat => "not-obj"
+                JStr => "not-obj"
+                JArr => "not-obj"
+            }
+        }
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    info(show(parse("null")))
+    info(show(parse("true")))
+    info(show(parse("false")))
+    info(show(parse("0")))
+    info(show(parse("-2")))
+    info(show(parse("42")))
+    info(kind(parse("2")))
+    info(kind(parse("2.0")))
+    info(kind(parse("1e2")))
+    info(show(parse("0.5")))
+    info(show(parse("-1.5")))
+    info(show(parse("1e2")))
+    info(show(parse("1.5e-1")))
+    info(show(parse("0.15")))
+    info(show(parse("\"\"")))
+    info(show(parse("\"hello\"")))
+    info(show(parse("\"quote\\\"here\"")))
+    info(show(parse("\"a\\nb\"")))
+    info(show(parse("\"\\u0041\"")))
+    info(show(parse("\"\\u00e9\"")))
+    info(show(parse("\"\\uD83D\\uDE00\"")))
+    info(show(parse("[]")))
+    info(show(parse("[1,2,3]")))
+    info(show(parse("[null,true,\"x\"]")))
+    info(show(parse("{{}}")))
+    info(show(parse("{{\"a\":1}}")))
+    info(show(parse("{{\"qty\":2,\"name\":\"mocha\"}}")))
+    info(qtyOf(parse("{{\"qty\":2,\"name\":\"mocha\"}}")))
+    info(show(parse("{{\"items\":[1,{{\"ok\":true}}]}}")))
+    info(show(parse("  [ 1 , 2 ]  ")))
+    info(show(parse("{{\"a\":1,\"a\":2}}")))
+    info(show(parse("{{ \"\": 1 }}")))
+
+    ## constructed tree
+    mut xs: Array<Json> = []
+    xs.append(JInt(1))
+    xs.append(JNull())
+    info(stringify(JArr(xs)))
+    info(stringify(JBool(false)))
+    info(stringify(JStr("line\nbreak")))
+
+    ## failures
+    info(show(parse("")))
+    info(show(parse("   ")))
+    info(show(parse("1 2")))
+    info(show(parse("+1")))
+    info(show(parse("01")))
+    info(show(parse(".5")))
+    info(show(parse("1.")))
+    info(show(parse("1e")))
+    info(show(parse("[1,]")))
+    info(show(parse("{{\"a\":1,}}")))
+    info(show(parse("[1")))
+    info(show(parse("\"abc")))
+    info(show(parse("{{a:1}}")))
+    info(show(parse("'x'")))
+    info(show(parse("NaN")))
+    info(show(parse("Infinity")))
+    info(show(parse("9223372036854775808")))
+    info(show(parse("-9223372036854775808")))
+    info(kind(parse("-9223372036854775808")))
+    info(show(parse("1e1000")))
+    info(show(parse("[truee]")))
+
+    0
+}

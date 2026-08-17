@@ -1,0 +1,56 @@
+null
+true
+false
+0
+-2
+42
+int
+float
+float
+0.5
+-1.5
+1e+02
+0.15
+0.15
+""
+"hello"
+"quote\"here"
+"a\nb"
+"A"
+"é"
+"😀"
+[]
+[1,2,3]
+[null,true,"x"]
+{}
+{"a":1}
+{"qty":2,"name":"mocha"}
+int:2
+{"items":[1,{"ok":true}]}
+[1,2]
+{"a":2}
+{"":1}
+[1,null]
+false
+"line\nbreak"
+ERR:empty input
+ERR:empty input
+ERR:trailing junk
+ERR:unexpected character
+ERR:invalid number
+ERR:unexpected character
+ERR:invalid number
+ERR:invalid number
+ERR:trailing comma
+ERR:trailing comma
+ERR:unexpected end
+ERR:unterminated string
+ERR:expected string key
+ERR:unexpected character
+ERR:unexpected character
+ERR:unexpected character
+ERR:number out of range
+-9223372036854775808
+int
+ERR:number out of range
+ERR:expected ',' or ']'

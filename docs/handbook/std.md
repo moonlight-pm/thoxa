@@ -16,6 +16,7 @@ import { cwdShort, shortPath } from "std/path"
 import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
 import { localHms, userName, hostname } from "std/env"
 import { branch } from "std/git"
+import json, { Json, parse, stringify } from "std/json"
 ```
 
 ## Modules (current)
@@ -36,6 +37,7 @@ import { branch } from "std/git"
 | `std/ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
 | `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
 | `std/git` | `branchName` / `branchSuffix` / `branch` / `branchHere` / `isRepo` / `repoRoot` / `isDetached` / `headLine` via `.git/HEAD` |
+| `std/json` | Dynamic `Json` tree (**D141**): `parse` / `stringify` |
 
 ### Logging (default logger)
 
@@ -147,6 +149,35 @@ app/domain is not product std; see `examples/http/README.md`).
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
 hex → black SGR.
+
+### Json (`std/json`)
+
+Dynamic tree. Callers map to domain types by hand (**D141**). Fail payloads
+are String.
+
+```thx
+import { parse, stringify } from "std/json"
+import { Pass, Fail } from "std/fallible"
+import { info, error } from "std/logging"
+
+match parse("[1,true,\"mocha\"]") {
+    Fail(e) => error(e)
+    Pass(v) => info(stringify(v))
+}
+```
+
+Object literals in Thoxa strings need `{{` / `}}` (`"{{\"qty\":2}}"` is
+`{"qty":2}`). Match `JObj` / `JInt` / … to walk the tree; `qty: 2` stays
+`JInt`.
+
+| Surface | Notes |
+|---------|--------|
+| `Json` | `JNull \| JBool \| JInt \| JFloat \| JStr \| JArr \| JObj` |
+| `parse(s)` | `Trial<Json, String>`. One value; trailing junk fails |
+| `stringify(v)` | Compact JSON. Object keys in insertion order |
+| Numbers | No `.` / exponent → `JInt` (Int64 range or fail). Else `JFloat`. Non-finite fails |
+| Strings | Escapes `\" \\ \/ \b \f \n \r \t \uXXXX` including surrogate pairs |
+| Not shipped | Derive of user types, pretty-print, comments, trailing commas, `NaN` / `Infinity` tokens, `jsonResponse` |
 
 ## Resolution order
 

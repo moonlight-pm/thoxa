@@ -1,7 +1,7 @@
 # Idea: `std/json` encode/decode (dynamic tree)
 
-**Status:** **next** — 2026-08-15. Approved design; implement after **D140**
-`Float64` (shipped). Not a freeze yet.  
+**Status:** **shipped** — 2026-08-16 (**D141**). Product `std/json` +
+conformance `json`. Not a freeze.  
 **Sparked by:** Crema Phase D+ JSON POST APIs.  
 **Related:** Crema charter
 [`2026-08-10-examples-http-crema-experiment.md`](2026-08-10-examples-http-crema-experiment.md);

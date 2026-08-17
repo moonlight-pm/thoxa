@@ -164,6 +164,10 @@ ThoxaString *thoxa_string_from_bool(bool v);
 /* IEEE-754 bitcast helpers (array/map slots store Float64 as i64 bits). */
 double thoxa_f64_from_bits(uint64_t bits);
 uint64_t thoxa_f64_to_bits(double v);
+/* strtod wrapper for std/json float tokens (already syntax-checked). */
+double thoxa_f64_from_string(const char *s);
+/* 1 when finite (not NaN / ±Inf). */
+int32_t thoxa_f64_is_finite(double v);
 /* Borrows a and b; returns a new owned string (refcount 1). */
 ThoxaString *thoxa_string_concat(const ThoxaString *a, const ThoxaString *b);
 /* Structural equality (length + bytes). NULL equals empty. */

@@ -5,7 +5,8 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-15 (**D139** HTTP hosts under `std/http/`;
+**As of:** 2026-08-16 (**D141** `std/json`;
+**D139** HTTP hosts under `std/http/`;
 **D138** kebab-case modules + `main.thx` entry;
 **D137** Str parse + Http wrappers; **D136**
 `std/http/server` + `Request.query`; **D135** nested User / Node ctor fields;
@@ -51,7 +52,7 @@ step `.so` on the happy path.
 | `crates/make` | xtask (`cargo make …`) |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` (incl. `ThoxaHtml` / `THOXA_TAG_HTML`; **`ThoxaFn`** D132) |
 | `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
-| `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, Str/Path/Env/…) |
+| `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, `Json`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate |
 | `examples/` | Runnable demos (`http` Crema-lite, `kilo` terminal editor); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |

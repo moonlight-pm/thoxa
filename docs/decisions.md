@@ -19,11 +19,17 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-16 — `std/json`
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D141 | Product JSON codec is a dynamic `Json` tree | `std/json`: `Json = JNull \| JBool \| JInt \| JFloat \| JStr \| JArr \| JObj`. `parse(s) -> Trial<Json, String>`; `stringify(v) -> String`. Integers without `.` / exponent are `JInt` (out-of-range Int64 fails). Every other JSON number is `JFloat` via `strtod` (non-finite fails). Arrays / objects recurse through `Array<Json>` / `Map<String, Json>`. No derive, no pretty-print, no comments / trailing commas / NaN tokens, no HTTP helper in this module. | **Shipped.** Sample-driven (D97); charter [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md). Enables union-member fields that are `Float64` / `Array` / `Map` / User (was a stale scalar-only check). Array/Map of **sums** now RC the live arm. `Map<K,V>` seeds `May<V>` so `.get` works for User values. RT: `thoxa_f64_from_string` / `thoxa_f64_is_finite`. Gate: `json`. Crema POST dogfood is next. |
+
 ## 2026-08-15 — Float64
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D140 | Product `Float64` | IEEE-754 binary64 (`double`). Literals `1.5`, `1e2`, `1.5e-1`, `1f64`, `3.14f64`. A `.` starts a fraction only when the next char is a digit, so `1..5` stays a range. No `Float32` (`f32` suffix is an error). Arith `+ - * /` and compares; no `%`; no bitwise. Int widths coerce to `Float64` at assign / call / field / return / mixed binop; never `Float64`→int implicit. Lives in ctor fields, `Array` elems, Map **values**, C-layout ABI scalars, and `extern` as `double`. Interp / JSX stringify is shortest round-trip (integral values print with `.0`). | **Shipped.** Amends **D28** (new scalar width) and **D48** (ctor fields). Not a Map key. No float literal types or match arms. Gate: `floats`. JSON codec is the next CURRENT slice. |
+| D140 | Product `Float64` | IEEE-754 binary64 (`double`). Literals `1.5`, `1e2`, `1.5e-1`, `1f64`, `3.14f64`. A `.` starts a fraction only when the next char is a digit, so `1..5` stays a range. No `Float32` (`f32` suffix is an error). Arith `+ - * /` and compares; no `%`; no bitwise. Int widths coerce to `Float64` at assign / call / field / return / mixed binop; never `Float64`→int implicit. Lives in ctor fields, `Array` elems, Map **values**, C-layout ABI scalars, and `extern` as `double`. Interp / JSX stringify is shortest round-trip (integral values print with `.0`). | **Shipped.** Amends **D28** (new scalar width) and **D48** (ctor fields). Not a Map key. No float literal types or match arms. Gate: `floats`. JSON codec followed as **D141**. |
 
 ## 2026-08-15 — HTTP host modules under `std/http/`
 
