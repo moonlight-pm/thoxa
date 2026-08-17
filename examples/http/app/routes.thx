@@ -33,6 +33,10 @@ type Routes {
         api.health()
     }
 
+    POST "/api/orders" (req: Request) -> Response {
+        api.createOrder(req)
+    }
+
     POST "/" (req: Request) -> Response {
         pages.signIn(req.body)
     }

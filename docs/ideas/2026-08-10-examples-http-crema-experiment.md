@@ -144,10 +144,12 @@ curl -s  'http://127.0.0.1:9091/menu?q=chocolate' # Cold Brew + Mocha
 curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 ```
 
-### Phase D+ — Parked
+### Phase D+ — JSON POST (partial) + parked rest
 
-htmx-ish partials, persistence, JSON POST APIs, sessions — only if still useful
-after A–C.
+| Step | Status | Notes |
+|------|--------|-------|
+| D1 `POST /api/orders` | **done** | `std/json` `decode`/`encode`; body `{"slug","qty"}`; 200 priced ticket / 400 `{ok:false}` |
+| D2 htmx-ish partials, persistence, sessions | **parked** | only if still useful |
 
 ---
 

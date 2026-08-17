@@ -115,7 +115,7 @@ freeze)
 | std-http | HTTP/1.1 protocol in `std/http` | shipped | `http_parse`, `http`, `http_wire`, `http_helpers` | **D126**, **D136**, **D137** | `Request.query` kept; body empty at parse (host fills). Helpers: `headerGet`, query/form/cookie Maps + `queryParam`/`formField`/`cookie`, `htmlResponse` (`Node`), `seeOther`, `finalize` / keep-alive. Still no syscalls | yes |
 | std-http-static | Static-file `Router` in `std/http/static` | shipped | `router`, `http_server` | **D126**, **D139** | GET+HEAD; small MIME table; depends on Io+Http+Logging | yes |
 | std-http-server | HTTP/1.1 host loop in `std/http/server` | shipped | `http_host` | **D136**, **D139** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
-| std-json | Dynamic `Json` tree in `std/json` | shipped | `json` | **D141**; idea [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md) | `parse` / `stringify`. `JInt` vs `JFloat` as charter. Fail String. No derive, no pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` | yes |
+| std-json | Dynamic `Json` tree in `std/json` | shipped | `json` | **D141**; idea [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md) | `decode` / `encode`. `JInt` vs `JFloat` as charter. Fail String. No derive, no pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` (Crema keeps that in `examples/http`) | yes |
 
 ## Editor / LSP
 

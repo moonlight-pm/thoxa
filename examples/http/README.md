@@ -58,6 +58,14 @@ cargo make run examples/http
 
 Port **9091** (`routes.port`).
 
+JSON order API (`std/json` **D141**):
+
+```bash
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"slug":"mocha","qty":2}' http://127.0.0.1:9091/api/orders
+# {"ok":true,"slug":"mocha","name":"Mocha","qty":2,"unitCents":600,"totalCents":1200}
+```
+
 ## Layout
 
 ```text
@@ -77,6 +85,7 @@ type Routes {
     GET "/menu" (req: Request) -> Response { … }
     GET "/menu/:slug" (slug: String, req: Request) -> Response { … }
     GET "/api/health" -> Response { … }
+    POST "/api/orders" (req: Request) -> Response { … }
     POST "/" (req: Request) -> Response { … }
 }
 ```

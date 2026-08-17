@@ -59,8 +59,8 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **Crema-lite** — Phase D+ JSON POST (`POST /api/orders`) now that
-   **`std/json`** (**D141**) is shipped. App/domain stays example-only.
+1. **Crema-lite** — Phase D+ `POST /api/orders` dogfoods **`std/json`**
+   (`decode` / `encode`). App/domain stays example-only.
    Host/wire is product **`std/http` + `std/http/server`** (**D136**/**D139**).
    Query/form/cookies are builtin `Map` (headers stay `Array<Header>`).
    File-based routing is **parked**
@@ -71,8 +71,8 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 1. **Crema-lite experiment** — remaining checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   (app under `examples/http/`; host/wire already in `std/`; **JSON codec
-   shipped**). Prefer `POST /api/orders` if still useful.  
+   (app under `examples/http/`; host/wire already in `std/`; **JSON
+   `POST /api/orders` shipped**). Further D+ only if useful.  
 2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);

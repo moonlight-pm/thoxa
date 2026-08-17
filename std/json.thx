@@ -1,6 +1,6 @@
 ## std/json — dynamic JSON tree (D141).
 ## Integers without `.` / exponent are JInt; every other JSON number is JFloat.
-## Out-of-range Int64 / non-finite Float64 fail parse. Fail payloads are String.
+## Out-of-range Int64 / non-finite Float64 fail decode. Fail payloads are String.
 ## No comments, trailing commas, NaN/Infinity tokens, or pretty-print knobs.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
@@ -24,7 +24,7 @@ let int64Max = 9223372036854775807
 
 ## --- public ---------------------------------------------------------------
 
-export fn stringify(v!: Json) -> String {
+export fn encode(v!: Json) -> String {
     match v {
         JNull => "null"
         JBool(b) {
@@ -37,12 +37,12 @@ export fn stringify(v!: Json) -> String {
         JInt(n) => "{n}"
         JFloat(f) => "{f}"
         JStr(s) => quoteStr(s)
-        JArr(xs) => stringifyArr(xs)
-        JObj(m) => stringifyObj(m)
+        JArr(xs) => encodeArr(xs)
+        JObj(m) => encodeObj(m)
     }
 }
 
-export fn parse(s!: String) -> Trial<Json, String> {
+export fn decode(s!: String) -> Trial<Json, String> {
     let b = Bytes.fromString(s)
     let p = skipWs(b, 0)
     if p >= b.count {
@@ -58,7 +58,7 @@ export fn parse(s!: String) -> Trial<Json, String> {
     }
 }
 
-## --- stringify helpers ----------------------------------------------------
+## --- encode helpers -------------------------------------------------------
 
 fn quoteStr(s!: String) -> String {
     let src = Bytes.fromString(s)
@@ -126,7 +126,7 @@ fn hexDigitByte(n!: Int64) -> Int64 {
     }
 }
 
-fn stringifyArr(xs!: Array<Json>) -> String {
+fn encodeArr(xs!: Array<Json>) -> String {
     mut out = Buffer()
     out.append(91)
     mut i = 0
@@ -137,14 +137,14 @@ fn stringifyArr(xs!: Array<Json>) -> String {
         if i > 0 {
             out.append(44)
         }
-        out.appendBytes(Bytes.fromString(stringify(xs[i])))
+        out.appendBytes(Bytes.fromString(encode(xs[i])))
         i = i + 1
     }
     out.append(93)
     out.freeze().toString()
 }
 
-fn stringifyObj(m!: Map<String, Json>) -> String {
+fn encodeObj(m!: Map<String, Json>) -> String {
     mut out = Buffer()
     out.append(123)
     mut first = true
@@ -156,7 +156,7 @@ fn stringifyObj(m!: Map<String, Json>) -> String {
         }
         out.appendBytes(Bytes.fromString(quoteStr(k)))
         out.append(58)
-        out.appendBytes(Bytes.fromString(stringify(v)))
+        out.appendBytes(Bytes.fromString(encode(v)))
     }
     out.append(125)
     out.freeze().toString()

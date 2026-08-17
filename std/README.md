@@ -19,7 +19,7 @@ import { cwdShort, shortPath } from "std/path"
 import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
 import { localHms, userName, hostname } from "std/env"
 import { branch } from "std/git"
-import json, { Json, parse, stringify } from "std/json"
+import json, { Json, decode, encode } from "std/json"
 ```
 
 | Module | Role |
@@ -38,7 +38,7 @@ import json, { Json, parse, stringify } from "std/json"
 | `Ansi` | truecolor `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` (`#RRGGBB` or `#RRGGBBAA`) |
 | `Env` | `getenv`/`hasEnv`/`home`/`tmpdir`/`shell`/`pathVar`/`pwd`/`localHms`/`hostname`/`userName` |
 | `Git` | `branchName`/`isRepo`/`repoRoot`/`isDetached`/`headLine`/… via `.git/HEAD` |
-| `Json` | Dynamic `Json` tree: `parse` / `stringify` (**D141**) |
+| `Json` | Dynamic `Json` tree: `decode` / `encode` (**D141**) |
 
 Full shipped surface: [`docs/handbook/std.md`](../docs/handbook/std.md).
 

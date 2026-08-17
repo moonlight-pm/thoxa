@@ -20,11 +20,11 @@ Approved v0 face: a **dynamic `Json` tree**. Callers map to domain types by
 hand. Crema dogfoods with something like `POST /api/orders`.
 
 ```thx
-import json, { Json, JNull, JBool, JInt, JFloat, JStr, JArr, JObj } from "std/json"
+import json, { Json, JNull, JBool, JInt, JFloat, JStr, JArr, JObj, decode, encode } from "std/json"
 import { Pass, Fail, Trial } from "std/fallible"
 
-fn parse(s: String) -> Trial<Json, String>
-fn stringify(v: Json) -> String
+fn decode(s: String) -> Trial<Json, String>
+fn encode(v: Json) -> String
 ```
 
 `Json` is a user union. Arrays / objects recurse through `Array<Json>` /
@@ -33,8 +33,8 @@ fn stringify(v: Json) -> String
 ## Numbers
 
 Integers without `.` / exponent become `JInt(Int64)`. Anything else that is a
-JSON number becomes `JFloat(Float64)`. Out-of-range integers fail parse.
-Stringify emits JSON number syntax (ints unquoted, floats shortest
+JSON number becomes `JFloat(Float64)`. Out-of-range integers fail decode.
+`encode` emits JSON number syntax (ints unquoted, floats shortest
 round-trip). Do not collapse everything to `Float64` — coffee-shop `qty: 2`
 should stay an int.
 
@@ -50,6 +50,6 @@ should stay an int.
 
 1. Sample-driven `std/` (D97). Domain types stay in `examples/http/`.
 2. Fail payloads are `String`.
-3. Conformance `.thx` + `.out` is done. Then Crema POST.
+3. Conformance `.thx` + `.out` is done. Crema `POST /api/orders` dogfoods it.
 
 **Pickup:** this file + root [`CURRENT.md`](../../CURRENT.md).

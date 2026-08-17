@@ -337,6 +337,7 @@ Full surface: [`std.md`](std.md).
 - **`std/http/server`:** `serve(port, handle)`, `serveOne`, `readBody`
   (**D136**/**D139**).
 - **`std/http/static`:** static-file `Router` (`handle` → Response; GET/HEAD).
+- **`std/json`:** `Json` tree, `decode` / `encode` (**D141**).
 
 ## Not shipped (do not expect)
 
