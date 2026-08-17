@@ -178,7 +178,7 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
-**As of last update:** **Phase A–C complete**. Host/wire promoted to
+**As of last update:** **Phase A–D1 complete**. Host/wire promoted to
 **`std/http` + `std/http/server` (**D136**/**D139**)** — example `framework/` removed.
 **D137:** `queryParam` / `formField` / `cookie` / `htmlResponse` + Str
 `parseUInt` / `splitOnce`. **`server.serve(routes.port, routes.handle)`**
@@ -186,8 +186,9 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 **`handle`** static fallback. **Pages are JSX `Node`**. Host **`--> serveOne`**
 + HTTP/1.1 keep-alive. **Map dogfood (D134):** query/form/cookies are
 `Map<String, String>`. Headers stay `Array<Header>` (no std flip).
-**D135:** `Drink.roast: Roast` + `DrinkCard(d: Drink)`. Next Phase D+ only
-if wanted — domain stays example-only.
+**D135:** `Drink.roast: Roast` + `DrinkCard(d: Drink)`.
+**D141:** `POST /api/orders` via `std/json` `decode`/`encode`. Remaining D+
+(htmx / persistence / sessions) only if wanted — domain stays example-only.
 
 ### Language / design notes (experiment)
 

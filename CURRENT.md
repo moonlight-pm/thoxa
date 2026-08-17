@@ -4,7 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-16 (**D141** `std/json`;
+**As of:** 2026-08-17 (**D141** `std/json` `decode`/`encode` + Crema
+`POST /api/orders`;
 **D140** `Float64`;
 **D139** HTTP hosts under `std/http/`;
 **D138** kebab-case module files **shipped**;
@@ -13,7 +14,8 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
 JSX `Node` is `Element | Text | Fragment` + `{...}` spreads **on master**;
 D133/D134 Map; D132 fn pointers; `-->` nowait **on master**, not freeze /
-not handbook; Crema-lite Phase A–C dogfoods product `http` / `http/server`)
+not handbook; Crema-lite Phase A–D1 dogfoods product `http` / `http/server` /
+`json`)
 
 ---
 
@@ -21,7 +23,8 @@ not handbook; Crema-lite Phase A–C dogfoods product `http` / `http/server`)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **`std/json`** (**D141**);
+**Shipped recently:** **`std/json`** (**D141** — `decode` / `encode`;
+Crema `POST /api/orders`);
 **`Float64`** (**D140**);
 **HTTP hosts under `std/http/`** (**D139**);
 **kebab-case modules** (**D138**);
@@ -32,7 +35,7 @@ not handbook; Crema-lite Phase A–C dogfoods product `http` / `http/server`)
 pointers** (**D132**); **`-->` nowait**
 (colorless wait; Net parks; `HttpServer` `--> serveOne` + keep-alive);
 **multi-clause functions** (**D131**);
-Crema-lite **Phase A–C**; **match arm sugar** (**D130**); **return-type
+Crema-lite **Phase A–D1**; **match arm sugar** (**D130**); **return-type
 inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **combined import** (**D127**); **`std/io`+`Net`+`Http`** (**D126**);
 **`std/logging`** (**D125**); LSP nav; **D124** diagnostics.
@@ -59,11 +62,11 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **Crema-lite** — Phase D+ `POST /api/orders` dogfoods **`std/json`**
-   (`decode` / `encode`). App/domain stays example-only.
-   Host/wire is product **`std/http` + `std/http/server`** (**D136**/**D139**).
-   Query/form/cookies are builtin `Map` (headers stay `Array<Header>`).
-   File-based routing is **parked**
+1. **Crema-lite** — remaining D+ (htmx / persistence / sessions) only if
+   useful. `POST /api/orders` already dogfoods **`std/json`**. App/domain
+   stays example-only. Host/wire is product **`std/http` + `std/http/server`**
+   (**D136**/**D139**). Query/form/cookies are builtin `Map` (headers stay
+   `Array<Header>`). File-based routing is **parked**
    ([`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)).
 2. Editor only when DX forces it.
 
@@ -128,7 +131,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **shipped**). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
-| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)**. `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
+| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |

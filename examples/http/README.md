@@ -37,6 +37,7 @@ Main → server.serve(port, handle)
 
 app → std/http/static          miss → files under web/
 app → std/http                query / form / cookies / 303
+app → std/json                POST /api/orders decode/encode
 ```
 
 **Routing shape (what you have now):**

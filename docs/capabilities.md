@@ -11,14 +11,15 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-16 (**D141** `std/json`;
+**As of:** 2026-08-17 (**D141** `std/json` `decode`/`encode`;
 **D140** `Float64`;
 **D139** HTTP hosts under `std/http/`;
 **D138** kebab-case module files + `main.thx` entry **shipped**;
 **D137** Str parse + Http wrappers;
 **D136** `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
 JSX `Node` match + `Attr` + `{...}` spreads **on master**; D133/D134 Map;
-D132 fn pointers; Crema-lite Phase A–C + `Roast` / `DrinkCard`; type-body
+D132 fn pointers; Crema-lite Phase A–D1 (`POST /api/orders`) + `Roast` /
+`DrinkCard`; type-body
 route clauses + JSX/`Node` + **`-->` nowait** **partial** on master — not
 freeze)
 
@@ -75,7 +76,7 @@ freeze)
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err`, `http_helpers` | D69, R9, **D126**, **D136**, **D137** | Product **`std/net`** + **`std/http`**; `receiveRequest` / `sendAll`; `Request.query`; header/query/form/cookie helpers + `queryParam`/`formField`/`cookie`/`htmlResponse`; 303/403/405; Fail is String | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126**, **D139** | Product **`std/http/static`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/net` + `std/http` + `std/http/static` | yes |
-| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/http/server.serve(routes.port, routes.handle)`** (**D132**/**D136**/**D139**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C; pages are JSX `Node` (`DrinkCard(d: Drink)`, `roast: Roast` — **D135**). Query/form/cookies/`htmlResponse` are product Http (**D137**). **Gaps:** Phase D+. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
+| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/http/server.serve(routes.port, routes.handle)`** (**D132**/**D136**/**D139**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C + **D1** `POST /api/orders` (`std/json` **D141**); pages are JSX `Node` (`DrinkCard(d: Drink)`, `roast: Roast` — **D135**). Query/form/cookies/`htmlResponse` are product Http (**D137**). **Gaps:** remaining D+ (htmx / persistence / sessions) parked. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 
