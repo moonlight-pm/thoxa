@@ -29,7 +29,7 @@ import json, { Json, decode, encode } from "std/json"
 | `Logging` | Default logger: levels, sinks, formats; prefer `import logging, { info, … }` (**D125**/**D127**); no ambient `println` |
 | `Io` | Files: `readFile`/`writeFile`/`appendFile`, `File`, OpenMode (**D126**) |
 | `Net` | TCP sockets: `Socket`, `receiveRequest`, `sendAll` (**D126**) |
-| `Http` | HTTP/1.1 parse/write + query/form/cookie helpers + `htmlResponse` (**D126**/**D136**/**D137**) |
+| `Http` | HTTP/1.1 parse/write + query/form/cookie helpers + `htmlResponse` + `Cookie` / `withCookie` (**D126**/**D136**/**D137**/**D142**) |
 | `http/server` | Host loop: `serve` / `serveOne` / `readBody` (**D136**/**D139**) |
 | `http/static` | Static-file `Router` over `std/io` + `std/http` (**D126**/**D139**) |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |

@@ -173,7 +173,7 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 1. Read this file’s **Phases** table (truth for experiment progress).  
 2. Read `examples/http/README.md` (as-built layout).  
 3. **Do not** add coffee-shop domain to `std/`. Host/wire already shipped
-   (**D136** / **D137**).
+   (**D136** / **D137** / **D142**).
 4. If blocked by language: document under Phase step as `blocked`, fix language
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
@@ -181,7 +181,8 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 **As of last update:** **Phase A–D1 complete**. Host/wire promoted to
 **`std/http` + `std/http/server` (**D136**/**D139**)** — example `framework/` removed.
 **D137:** `queryParam` / `formField` / `cookie` / `htmlResponse` + Str
-`parseUInt` / `splitOnce`. **`server.serve(routes.port, routes.handle)`**
+`parseUInt` / `splitOnce`. **D142:** `Cookie` / `withCookie` / `clearCookie`
+(Crema remember/forget no longer format `Set-Cookie` by hand). **`server.serve(routes.port, routes.handle)`**
 (**D132**). Routing is type-body **`GET`/`POST` clauses** on `Routes` + free
 **`handle`** static fallback. **Pages are JSX `Node`**. Host **`--> serveOne`**
 + HTTP/1.1 keep-alive. **Map dogfood (D134):** query/form/cookies are

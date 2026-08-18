@@ -16,6 +16,11 @@ html-body=<!DOCTYPE html>
 <p>hi</p>
 see=303 /menu
 extra=yes
+ck-session=customer=Ada; Path=/; SameSite=Lax
+ck-remember=customer=Ada; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax
+ck-forget=customer=; Path=/; Max-Age=0; SameSite=Lax
+ck-secure=sid=x; Path=/app; Domain=cafe.test; Secure; SameSite=Strict
+set-cookie=customer=Ada; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax
 ka11=true
 kaclose=false
 ka10=false

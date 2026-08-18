@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-18 — `Set-Cookie` builder
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D142 | Product `Set-Cookie` is a `Cookie` value | **`std/Http`:** `SameSite = "Strict" \| "Lax" \| "None"`; `Cookie(name, value, path="/", domain="", maxAge=Not(), httpOnly=false, secure=false, sameSite="Lax")` with `.header()`; `withCookie(res, cookie)` appends `Set-Cookie`; `clearCookie(name, path="/", domain="")` is `Max-Age=0` + empty value. No `Expires`, no cookie-octet escaping. Read path stays `cookie(req, name)` / `parseCookies`. | **Shipped.** Sample-driven (D97/D136): Crema remember/forget were literal `Set-Cookie` strings. **Amends D137** — wire format is std; cookie *policy* (name `customer`, Max-Age 30d, HttpOnly) stays in `examples/http`. Gate: `http_helpers`. |
+
 ## 2026-08-16 — `std/json`
 
 | ID | Decision | Choice | Notes |
@@ -47,7 +53,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D137 | Public Str parse + remaining Http wrappers | **`std/Str`:** `parseUInt` → `May<Int64>`; `splitOnce` → `May<Split>` (`before` / `after`; empty sep or no match → `Not`). **`std/Http`:** `queryParam(req, key)`, `formField(body, key)`, `cookie(req, name)` (empty value → `Not`), `htmlResponse(root: Node)` (doctype + `.html()` + `text/html; charset=utf-8`). | **Shipped.** Finishes D136 optional list. Crema uses the wrappers; cookie policy (`customer` / Max-Age) stays in the example. Gates: `stdlib`, `http_helpers`. |
+| D137 | Public Str parse + remaining Http wrappers | **`std/Str`:** `parseUInt` → `May<Int64>`; `splitOnce` → `May<Split>` (`before` / `after`; empty sep or no match → `Not`). **`std/Http`:** `queryParam(req, key)`, `formField(body, key)`, `cookie(req, name)` (empty value → `Not`), `htmlResponse(root: Node)` (doctype + `.html()` + `text/html; charset=utf-8`). | **Shipped.** Finishes D136 optional list. Crema uses the wrappers; cookie policy (`customer` / Max-Age) stays in the example. **Set-Cookie builder → D142.** Gates: `stdlib`, `http_helpers`. |
 
 ## 2026-08-15 — HTTP host / wire into std
 

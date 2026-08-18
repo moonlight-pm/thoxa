@@ -6,6 +6,7 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-08-18 (**built-in validation** on master, not product — types as
 inhabitation; syntax open;
+**D142** `Cookie` / `withCookie` / `clearCookie`;
 **D141** `std/json` `decode`/`encode` + Crema
 `POST /api/orders`;
 **D140** `Float64`;
@@ -25,7 +26,8 @@ not handbook; Crema-lite Phase A–D1 dogfoods product `http` / `http/server` /
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **`std/json`** (**D141** — `decode` / `encode`;
+**Shipped recently:** **`Cookie` / `withCookie`** (**D142**);
+**`std/json`** (**D141** — `decode` / `encode`;
 Crema `POST /api/orders`);
 **`Float64`** (**D140**);
 **HTTP hosts under `std/http/`** (**D139**);
@@ -74,7 +76,8 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
    useful. `POST /api/orders` already dogfoods **`std/json`**. App/domain
    stays example-only. Host/wire is product **`std/http` + `std/http/server`**
    (**D136**/**D139**). Query/form/cookies are builtin `Map` (headers stay
-   `Array<Header>`). File-based routing is **parked**
+   `Array<Header>`). `Set-Cookie` is a `Cookie` value (**D142**).
+   File-based routing is **parked**
    ([`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)).
 2. Editor only when DX forces it.
 
@@ -141,7 +144,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
-| HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). |
+| HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); policy stays in the app. |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
@@ -167,7 +170,7 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
    [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md)  
 9. If D138 / module files: [`docs/decisions.md`](docs/decisions.md) (D138) — kebab-case stems, path-qualified ids; file-based routing parked in [`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)
 10. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   + **D136** / **D137** / **D139** in [`docs/decisions.md`](docs/decisions.md)
+   + **D136** / **D137** / **D139** / **D142** in [`docs/decisions.md`](docs/decisions.md)
 11. If JSON: [`docs/decisions.md`](docs/decisions.md) (**D141**) +
     [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
     + **D140** (`Float64`)

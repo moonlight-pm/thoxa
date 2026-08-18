@@ -6,6 +6,7 @@ Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
 **As of:** 2026-08-18 (**built-in validation** on master, not product; `Type.read`;
+**D142** `Cookie` / `withCookie`;
 **D141** `std/json` `decode`/`encode`;
 **D139** HTTP hosts under `std/http/`;
 **D138** kebab-case modules + `main.thx` entry;

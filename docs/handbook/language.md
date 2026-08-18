@@ -333,7 +333,7 @@ Full surface: [`std.md`](std.md).
 - **`std/http`:** `Request` / `Response` / `Header`, `parseRequest` /
   `writeResponse`, `Request.query`, header/query/form/cookie helpers,
   `seeOther` / `finalize` (**D136**), `queryParam` / `formField` / `cookie` /
-  `htmlResponse` (**D137**).
+  `htmlResponse` (**D137**), `Cookie` / `withCookie` / `clearCookie` (**D142**).
 - **`std/http/server`:** `serve(port, handle)`, `serveOne`, `readBody`
   (**D136**/**D139**).
 - **`std/http/static`:** static-file `Router` (`handle` → Response; GET/HEAD).

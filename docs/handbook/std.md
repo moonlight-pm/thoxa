@@ -28,7 +28,7 @@ import json, { Json, decode, encode } from "std/json"
 | `std/logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
 | `std/io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
 | `std/net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
-| `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**): parse/write, query/form/cookie helpers, `htmlResponse` |
+| `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**/**D142**): parse/write, query/form/cookie helpers, `htmlResponse`, `Cookie` / `withCookie` |
 | `std/http/server` | HTTP/1.1 host loop (**D136**/**D139**): `serve` / `serveOne` / `readBody` |
 | `std/http/static` | Static-file `Router` (**D126**/**D139**); depends on io + http |
 | `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
@@ -113,12 +113,19 @@ leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
 | `writeResponse` | Status line + headers + body → `Bytes` |
 | Lookup | `headerGet`, `contentLength`, `queryMap`, `queryParam`, `formField`, `cookie` |
 | Maps | `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`; `urlDecode` |
+| Cookies | `Cookie` (`.header()`), `SameSite`, `withCookie`, `clearCookie` (**D142**) |
 | Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `response` / `responseHead` |
 | Connection | `wantsKeepAlive`, `finalize` (HEAD drops body; rewrites `Connection`) |
 
 `htmlResponse` takes a builtin `Node` and sends `<!DOCTYPE html>` plus
 `root.html()` as `text/html; charset=utf-8`. `cookie` looks up one name on
 the `Cookie` header (empty value is `Not`).
+
+`Cookie(name, value, …)` builds a `Set-Cookie` value. Defaults: `path="/"`,
+`sameSite="Lax"`, session (`maxAge` is `Not`), not HttpOnly/Secure. Empty
+`path` / `domain` omit those attributes. `withCookie` appends the header;
+`clearCookie(name)` expires it (`Max-Age=0`). Values are not escaped. App
+policy (which name, how long, HttpOnly) stays in the caller.
 
 ### HttpServer (`std/http/server`)
 

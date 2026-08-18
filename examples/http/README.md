@@ -25,7 +25,7 @@ fn main() {
 | Layer | Path | Role |
 |-------|------|------|
 | **host** | `std/http/server` | Accept loop, body read, HEAD, keep-alive |
-| **wire** | `std/http` | Parse/write, query/form/cookie Maps, redirects |
+| **wire** | `std/http` | Parse/write, query/form/cookie Maps, `Cookie` / `withCookie`, redirects |
 | **app** | `app/` | Type-body `GET`/`POST` clauses, free `handle`, pages/domain |
 | **entry** | `main.thx` | Logging + `server.serve(routes.port, routes.handle)` |
 | **assets** | `web/` | Static files |
@@ -36,7 +36,7 @@ Main → server.serve(port, handle)
          handle(request) per request
 
 app → std/http/static          miss → files under web/
-app → std/http                query / form / cookies / 303
+app → std/http                query / form / cookies / Set-Cookie / 303
 app → std/json                POST /api/orders decode/encode
 ```
 

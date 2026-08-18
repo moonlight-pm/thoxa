@@ -1,5 +1,5 @@
 ## D136: std/Http protocol helpers (headers, query/form/cookies, 303, keep-alive).
-import http, { Request, Response, Header } from "std/http"
+import http, { Request, Response, Header, Cookie } from "std/http"
 import { Has, Not, May, Pass, Fail } from "std/fallible"
 import logging, { info } from "std/logging"
 
@@ -49,6 +49,15 @@ fn locOf(res!: Response) -> String {
 fn extraOf(res!: Response) -> String {
     for h in res.headers {
         if h.name == "X-Extra" {
+            return h.value
+        }
+    }
+    "-"
+}
+
+fn setCookieOf(res!: Response) -> String {
+    for h in res.headers {
+        if h.name == "Set-Cookie" {
             return h.value
         }
     }
@@ -108,6 +117,29 @@ fn main() -> Int64 {
 
     let tagged = http.withHeader(http.ok(Bytes.fromString("ok\n"), "text/plain"), "X-Extra", "yes")
     info("extra={extraOf(tagged)}")
+
+    let session = Cookie(name: "customer", value: "Ada")
+    info("ck-session={session.header()}")
+    let remembered = Cookie(
+        name: "customer",
+        value: "Ada",
+        httpOnly: true,
+        maxAge: Has(2592000)
+    )
+    info("ck-remember={remembered.header()}")
+    let forgot = http.clearCookie("customer")
+    info("ck-forget={forgot.header()}")
+    let secured = Cookie(
+        name: "sid",
+        value: "x",
+        path: "/app",
+        domain: "cafe.test",
+        secure: true,
+        sameSite: "Strict"
+    )
+    info("ck-secure={secured.header()}")
+    let set = http.withCookie(http.ok(Bytes.fromString("ok\n"), "text/plain"), remembered)
+    info("set-cookie={setCookieOf(set)}")
 
     mut none: Array<Header> = []
     let r11 = emptyReq("GET", "HTTP/1.1", none)

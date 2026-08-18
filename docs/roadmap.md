@@ -74,7 +74,7 @@ Freezes:
   (D105), rc/prompt/path, pipes/redirs, pure-step builtins, `std/Shell.thx`.
 - Thin `std/` sample-driven: prompts/helpers plus **Io/Net/Http/HttpStatic**
   (**D126**), **HttpServer** (**D136**; path **`std/http/server`** **D139**),
-  Logging (**D125**), and **Json** (**D141**).
+  Logging (**D125**), **Json** (**D141**), and **Cookie** (**D142**).
 
 **Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first;
 crude line editor. Resume only when CURRENT says so.
@@ -121,6 +121,7 @@ Freezes:
 - ~~Product `std/Io` + `Net` + `Http` + `HttpStatic`~~ (**D126**; sample-driven)
 - ~~`Request.query` + HTTP helpers + `std/HttpServer`~~ (**D136**)
 - ~~Str `parseUInt`/`splitOnce` + Http `queryParam`/`formField`/`cookie`/`htmlResponse`~~ (**D137**)
+- ~~Http `Cookie` / `withCookie` / `clearCookie`~~ (**D142**)
 - ~~Combined import `import ns, { a } from "…"`~~ (**D127**)
 - ~~Diverging `loop` (Never / no dummy tail)~~ (**D128**)
 

@@ -27,6 +27,49 @@ export type Response(
     body: Bytes
 )
 
+## `Set-Cookie` SameSite token. Default on `Cookie` is `"Lax"`.
+export type SameSite = "Strict" | "Lax" | "None"
+
+## One `Set-Cookie` cookie. `name` / `value` are required; the rest are
+## protocol attributes (empty `path` / `domain` omit those attrs; `Not`
+## `maxAge` is a session cookie). App policy (name, Max-Age, HttpOnly) stays
+## at the call site.
+export type Cookie(
+    name: String,
+    value: String,
+    path: String = "/",
+    domain: String = "",
+    maxAge: May<Int64> = Not(),
+    httpOnly: Bool = false,
+    secure: Bool = false,
+    sameSite: SameSite = "Lax"
+) {
+    ## `Set-Cookie` header value (no header name).
+    export fn header() -> String {
+        mut line = "{name}={value}"
+        if not isEmpty(path) {
+            line = "{line}; Path={path}"
+        }
+        if not isEmpty(domain) {
+            line = "{line}; Domain={domain}"
+        }
+        match maxAge {
+            Has(seconds) {
+                line = "{line}; Max-Age={seconds}"
+            }
+            Not { }
+        }
+        if httpOnly {
+            line = "{line}; HttpOnly"
+        }
+        if secure {
+            line = "{line}; Secure"
+        }
+        line = "{line}; SameSite={sameSite}"
+        line
+    }
+}
+
 ## Shared constructor for text/binary responses with the usual close headers.
 export fn response(
     status!: Int64,
@@ -501,6 +544,17 @@ export fn withHeader(res!: Response, name!: String, value!: String) -> Response 
         headers: headers,
         body: res.body
     )
+}
+
+## Append a `Set-Cookie` header. Call more than once for several cookies.
+export fn withCookie(res!: Response, cookie!: Cookie) -> Response {
+    withHeader(res, "Set-Cookie", cookie.header())
+}
+
+## Expire a cookie (`Max-Age=0`, empty value). `path` / `domain` must match
+## the cookie being cleared.
+export fn clearCookie(name!: String, path: String = "/", domain: String = "") -> Cookie {
+    Cookie(name: name, value: "", path: path, domain: domain, maxAge: Has(0))
 }
 
 fn hasConnToken(header!: String, token!: String) -> Bool {
