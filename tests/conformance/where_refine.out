@@ -2,8 +2,10 @@ lit:2
 base:2
 42
 ok:3
-ERR:expected integer >= 1, got 0
+ERR:need integer >= 1, got 0
 ok:5
 ERR:expected integer <= 12, got 13
 mocha:2
-ERR:qty: expected integer >= 1, got 0
+ERR:need integer >= 1, got 0
+line:n: expected integer >= 1, got 0
+{"slug":"mocha","qty":2}

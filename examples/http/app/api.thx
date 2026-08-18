@@ -3,7 +3,7 @@
 import models from "./models"
 import http, { Request, Response, ok } from "std/http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { Json, JBool, JInt, JStr, JObj, encode, Issue, issueRejected, errorObject } from "std/json"
+import { Json, JBool, JObj, encode, Issue, issueRejected, errorObject } from "std/json"
 
 export fn health() -> Response {
     ok(Bytes.fromString("ok\n"), "text/plain; charset=utf-8")
@@ -19,7 +19,7 @@ export fn createOrder(req!: Request) -> Response {
         Pass(o) {
             match placeOrder(o) {
                 Fail(e) => jsonIssue(e)
-                Pass(ticket) => jsonOk(ticketJson(ticket))
+                Pass(ticket) => jsonOk(ticketOk(ticket))
             }
         }
     }
@@ -42,15 +42,17 @@ fn placeOrder(o!: CreateOrder) -> Trial<Ticket, Issue> {
     }
 }
 
-fn ticketJson(t!: Ticket) -> Json {
-    mut m: Map<String, Json> = Map()
-    m.set("ok", JBool(true))
-    m.set("slug", JStr(t.slug))
-    m.set("name", JStr(t.name))
-    m.set("qty", JInt(t.qty))
-    m.set("unitCents", JInt(t.unitCents))
-    m.set("totalCents", JInt(t.totalCents))
-    JObj(m)
+fn ticketOk(t!: Ticket) -> Json {
+    let raw: Json = t.toJson()
+    match raw {
+        JObj(m) {
+            mut o = m
+            o.set("ok", JBool(true))
+            let j: Json = JObj(o)
+            j
+        }
+        else => raw
+    }
 }
 
 fn jsonOk(v!: Json) -> Response {

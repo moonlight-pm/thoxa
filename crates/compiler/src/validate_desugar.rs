@@ -120,8 +120,12 @@ fn desugar_module_with(
         };
         if let Some((base, clause)) = refined_alias_of(&td, module_id, world, resolve) {
             extra.push(gen_from_refined(&td, base, &clause));
+            extra.push(gen_to_json_refined(&td, base));
+            extra.push(gen_encode(&td));
             json_need.insert("Issue".into());
             json_need.insert("issueMismatch".into());
+            json_need.insert("encode".into());
+            json_need.insert(json_ctor_for_base(base).into());
             any = true;
             continue;
         }
@@ -146,10 +150,20 @@ fn desugar_module_with(
                 &mut HashSet::new(),
             ) {
                 need_json_names(&sh, &mut json_need);
+                need_encode_names(&sh, &mut json_need);
+            }
+            if p.ty.where_clause.is_some() {
+                json_need.insert("issueMismatch".into());
+                json_need.insert("Issue".into());
+                json_need.insert("joinPath".into());
             }
         }
         extra.push(gen_from_json(&td, module_id, world, resolve)?);
         extra.push(gen_read(&td));
+        extra.push(gen_to_json(&td, module_id, world, resolve)?);
+        extra.push(gen_encode(&td));
+        json_need.insert("encode".into());
+        json_need.insert("JObj".into());
         any = true;
     }
     if !any {
@@ -277,6 +291,33 @@ fn need_json_names(shape: &Shape, need: &mut HashSet<String>) {
     }
 }
 
+fn need_encode_names(shape: &Shape, need: &mut HashSet<String>) {
+    match shape {
+        Shape::Str => {
+            need.insert("JStr".into());
+        }
+        Shape::Int => {
+            need.insert("JInt".into());
+        }
+        Shape::Bool => {
+            need.insert("JBool".into());
+        }
+        Shape::Float => {
+            need.insert("JFloat".into());
+        }
+        Shape::Product(_) => {
+            need.insert("JObj".into());
+        }
+        Shape::Refined { base, .. } => {
+            need.insert(json_ctor_for_base(base).into());
+        }
+        Shape::Array(elem) => {
+            need.insert("JArr".into());
+            need_encode_names(elem, need);
+        }
+    }
+}
+
 fn shape_of(
     ty: &TypeExpr,
     module_id: &str,
@@ -363,12 +404,27 @@ fn gen_from_json(
                 p.name_span,
             )
         })?;
+        let mut ann = p.ty.clone();
+        ann.where_clause = None;
         items.push(let_bind_ty(
             &p.name,
             false,
-            p.ty.clone(),
+            ann,
             field_value(&p.name, &shape, &p.ty),
         ));
+        if let Some(w) = &p.ty.where_clause {
+            let base = shape_base(&shape);
+            let pvar = format!("{}Path", p.name);
+            items.push(let_bind(
+                &pvar,
+                false,
+                call(
+                    "joinPath",
+                    vec![Arg::Pos(name("path")), Arg::Pos(str_lit(&p.name))],
+                ),
+            ));
+            items.extend(where_guard_items_at(&p.name, base, &w.expr, &pvar));
+        }
         ctor_args.push(Arg::Named {
             name: p.name.clone(),
             name_span: dummy(),
@@ -602,6 +658,187 @@ fn refined_alias_of<'a>(
     }
 }
 
+fn shape_base(shape: &Shape) -> &'static str {
+    match shape {
+        Shape::Str => "String",
+        Shape::Int => "Int64",
+        Shape::Bool => "Bool",
+        Shape::Float => "Float64",
+        Shape::Array(_) => "Array",
+        Shape::Product(_) => "object",
+        Shape::Refined { base, .. } => match base.as_str() {
+            "String" => "String",
+            "Float64" => "Float64",
+            "Bool" => "Bool",
+            _ => "Int64",
+        },
+    }
+}
+
+fn json_ctor_for_base(base: &str) -> &'static str {
+    match base {
+        "String" => "JStr",
+        "Float64" => "JFloat",
+        "Bool" => "JBool",
+        _ => "JInt",
+    }
+}
+
+fn gen_encode(td: &TypeDef) -> Function {
+    Function {
+        exported: false,
+        name: format!("__encode_{}", td.name),
+        name_span: dummy(),
+        params: vec![param("v", ty_named(&td.name))],
+        return_type: Some(ty_named("String")),
+        body: Block {
+            items: vec![],
+            tail: Some(Box::new(call(
+                "encode",
+                vec![Arg::Pos(method_call(name("v"), "toJson", vec![]))],
+            ))),
+            span: dummy(),
+        },
+    }
+}
+
+fn gen_to_json_refined(td: &TypeDef, base: &str) -> Function {
+    Function {
+        exported: false,
+        name: format!("__toJson_{}", td.name),
+        name_span: dummy(),
+        params: vec![param("v", ty_named(&td.name))],
+        return_type: Some(ty_named("Json")),
+        body: Block {
+            items: vec![],
+            tail: Some(Box::new(call(
+                json_ctor_for_base(base),
+                vec![Arg::Pos(field(name("v"), "value"))],
+            ))),
+            span: dummy(),
+        },
+    }
+}
+
+fn gen_to_json(
+    td: &TypeDef,
+    module_id: &str,
+    world: &HashMap<String, HashMap<String, TypeDef>>,
+    resolve: &HashMap<String, HashMap<String, (String, String)>>,
+) -> Result<Function> {
+    let mut visiting = HashSet::new();
+    let mut items = vec![let_bind_ty(
+        "m",
+        true,
+        TypeExpr {
+            name: "Map".into(),
+            args: vec![
+                TypeArg::Type(ty_named("String")),
+                TypeArg::Type(ty_named("Json")),
+            ],
+            span: dummy(),
+            lit: None,
+            mark: None,
+            union_members: None,
+            fn_type: None,
+            where_clause: None,
+        },
+        call("Map", vec![]),
+    )];
+    for p in &td.params {
+        let shape = shape_of(&p.ty, module_id, world, resolve, &mut visiting).ok_or_else(|| {
+            Error::at(
+                format!("internal: field `{}` not encodable", p.name),
+                p.name_span,
+            )
+        })?;
+        items.push(BlockItem::Expr(method_call(
+            name("m"),
+            "set",
+            vec![
+                Arg::Pos(str_lit(&p.name)),
+                Arg::Pos(encode_field_value(&p.name, &shape)),
+            ],
+        )));
+    }
+    Ok(Function {
+        exported: false,
+        name: format!("__toJson_{}", td.name),
+        name_span: dummy(),
+        params: vec![param("v", ty_named(&td.name))],
+        return_type: Some(ty_named("Json")),
+        body: Block {
+            items,
+            tail: Some(Box::new(call("JObj", vec![Arg::Pos(name("m"))]))),
+            span: dummy(),
+        },
+    })
+}
+
+fn encode_field_value(field_name: &str, shape: &Shape) -> Expr {
+    let src = field(name("v"), field_name);
+    match shape {
+        Shape::Str => call("JStr", vec![Arg::Pos(src)]),
+        Shape::Int => call("JInt", vec![Arg::Pos(src)]),
+        Shape::Bool => call("JBool", vec![Arg::Pos(src)]),
+        Shape::Float => call("JFloat", vec![Arg::Pos(src)]),
+        Shape::Product(_) | Shape::Refined { .. } => method_call(src, "toJson", vec![]),
+        Shape::Array(elem) => encode_array(src, elem),
+    }
+}
+
+fn encode_array(src: Expr, elem: &Shape) -> Expr {
+    Expr {
+        kind: ExprKind::Block(Block {
+            items: vec![
+                let_bind_ty(
+                    "out",
+                    true,
+                    ty_array(ty_named("Json")),
+                    Expr {
+                        kind: ExprKind::ArrayLit(vec![]),
+                        span: dummy(),
+                    },
+                ),
+                BlockItem::Expr(Expr {
+                    kind: ExprKind::For {
+                        name: "x".into(),
+                        name_span: dummy(),
+                        value: None,
+                        start: Box::new(src),
+                        end: None,
+                        inclusive: false,
+                        body: Block {
+                            items: vec![BlockItem::Expr(method_call(
+                                name("out"),
+                                "append",
+                                vec![Arg::Pos(encode_elem_value(name("x"), elem))],
+                            ))],
+                            tail: None,
+                            span: dummy(),
+                        },
+                    },
+                    span: dummy(),
+                }),
+            ],
+            tail: Some(Box::new(call("JArr", vec![Arg::Pos(name("out"))]))),
+            span: dummy(),
+        }),
+        span: dummy(),
+    }
+}
+
+fn encode_elem_value(src: Expr, shape: &Shape) -> Expr {
+    match shape {
+        Shape::Str => call("JStr", vec![Arg::Pos(src)]),
+        Shape::Int => call("JInt", vec![Arg::Pos(src)]),
+        Shape::Bool => call("JBool", vec![Arg::Pos(src)]),
+        Shape::Float => call("JFloat", vec![Arg::Pos(src)]),
+        Shape::Product(_) | Shape::Refined { .. } => method_call(src, "toJson", vec![]),
+        Shape::Array(elem) => encode_array(src, elem),
+    }
+}
+
 fn gen_from_refined(td: &TypeDef, base: &str, clause: &WhereClause) -> Function {
     let items = where_guard_items("n", base, &clause.expr);
     Function {
@@ -632,10 +869,14 @@ fn gen_from_refined(td: &TypeDef, base: &str, clause: &WhereClause) -> Function 
 }
 
 fn where_guard_items(val: &str, base: &str, expr: &WhereExpr) -> Vec<BlockItem> {
+    where_guard_items_at(val, base, expr, "path")
+}
+
+fn where_guard_items_at(val: &str, base: &str, expr: &WhereExpr, path_var: &str) -> Vec<BlockItem> {
     match expr {
         WhereExpr::And(a, b) => {
-            let mut xs = where_guard_items(val, base, a);
-            xs.extend(where_guard_items(val, base, b));
+            let mut xs = where_guard_items_at(val, base, a, path_var);
+            xs.extend(where_guard_items_at(val, base, b, path_var));
             xs
         }
         WhereExpr::Or(a, b) => {
@@ -644,7 +885,7 @@ fn where_guard_items(val: &str, base: &str, expr: &WhereExpr) -> Vec<BlockItem> 
             let ok = bin(BinaryOp::Or, ca, cb);
             vec![BlockItem::Expr(if_expr(
                 un(UnaryOp::Not, ok),
-                block_stmts(vec![BlockItem::Expr(fail_where(val, base, expr))]),
+                block_stmts(vec![BlockItem::Expr(fail_where_at(val, base, expr, path_var))]),
                 None,
             ))]
         }
@@ -652,7 +893,7 @@ fn where_guard_items(val: &str, base: &str, expr: &WhereExpr) -> Vec<BlockItem> 
             let cond = pred_cond(val, base, &atom.pred);
             vec![BlockItem::Expr(if_expr(
                 un(UnaryOp::Not, cond),
-                block_stmts(vec![BlockItem::Expr(fail_atom(val, base, atom))]),
+                block_stmts(vec![BlockItem::Expr(fail_atom_at(val, base, atom, path_var))]),
                 None,
             ))]
         }
@@ -702,34 +943,84 @@ fn pred_cond(val: &str, base: &str, pred: &WherePred) -> Expr {
     }
 }
 
-fn fail_atom(val: &str, base: &str, atom: &WhereAtom) -> Expr {
+fn fail_atom_at(val: &str, base: &str, atom: &WhereAtom, path_var: &str) -> Expr {
     let expected = crate::refine::expected_desc(&atom.pred, base);
-    fail_issue(val, &expected, atom.message.as_deref())
+    fail_issue_at(val, &expected, atom.message.as_deref(), path_var)
 }
 
-fn fail_where(val: &str, base: &str, expr: &WhereExpr) -> Expr {
+fn fail_where_at(val: &str, base: &str, expr: &WhereExpr, path_var: &str) -> Expr {
     let expected = match expr {
         WhereExpr::Atom(a) => crate::refine::expected_desc(&a.pred, base),
         _ => "this refinement".into(),
     };
-    fail_issue(val, &expected, None)
+    fail_issue_at(val, &expected, None, path_var)
 }
 
-fn fail_issue(val: &str, expected: &str, _tmpl: Option<&str>) -> Expr {
+fn fail_issue_at(val: &str, expected: &str, tmpl: Option<&str>, path_var: &str) -> Expr {
+    let issue = if let Some(t) = tmpl {
+        call(
+            "Issue",
+            vec![
+                Arg::Pos(name(path_var)),
+                Arg::Pos(str_lit(expected)),
+                Arg::Pos(interp_val(val)),
+                Arg::Pos(template_expr_at(t, val, expected, path_var)),
+            ],
+        )
+    } else {
+        call(
+            "issueMismatch",
+            vec![
+                Arg::Pos(name(path_var)),
+                Arg::Pos(str_lit(expected)),
+                Arg::Pos(interp_val(val)),
+            ],
+        )
+    };
     Expr {
         kind: ExprKind::Return {
-            value: Some(Box::new(call(
-                "Fail",
-                vec![Arg::Pos(call(
-                    "issueMismatch",
-                    vec![
-                        Arg::Pos(name("path")),
-                        Arg::Pos(str_lit(expected)),
-                        Arg::Pos(interp_val(val)),
-                    ],
-                ))],
-            ))),
+            value: Some(Box::new(call("Fail", vec![Arg::Pos(issue)]))),
         },
+        span: dummy(),
+    }
+}
+
+fn template_expr_at(tmpl: &str, val: &str, expected: &str, path_var: &str) -> Expr {
+    let mut parts: Vec<InterpPart> = Vec::new();
+    let mut rest = tmpl;
+    while !rest.is_empty() {
+        if let Some(i) = rest.find('{') {
+            if i > 0 {
+                parts.push(InterpPart::Lit(rest[..i].into()));
+            }
+            if let Some(j) = rest[i + 1..].find('}') {
+                let hole = &rest[i + 1..i + 1 + j];
+                match hole {
+                    "path" => parts.push(InterpPart::Expr(name(path_var))),
+                    "expected" => parts.push(InterpPart::Lit(expected.into())),
+                    "value" => parts.push(InterpPart::Expr(name(val))),
+                    _ => parts.push(InterpPart::Lit(format!("{{{hole}}}")))
+                }
+                rest = &rest[i + 2 + j..];
+            } else {
+                parts.push(InterpPart::Lit(rest.into()));
+                break;
+            }
+        } else {
+            parts.push(InterpPart::Lit(rest.into()));
+            break;
+        }
+    }
+    if parts.is_empty() {
+        return str_lit("");
+    }
+    if parts.len() == 1 {
+        if let InterpPart::Lit(s) = &parts[0] {
+            return str_lit(s);
+        }
+    }
+    Expr {
+        kind: ExprKind::Interpolate(parts),
         span: dummy(),
     }
 }

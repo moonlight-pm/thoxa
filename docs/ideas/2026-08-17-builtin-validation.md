@@ -233,12 +233,10 @@ double-frees). Path is dotted. `message` is generated or written.
 
 1. **`Issue` + `Type.read` of plain products** — **done.** Gate `json_read`.
 2. **`where` refinements + `T.from` + compile-time literals** — **done.**
-   Gate `where_refine`. `type Qty = Int64 where >= 1`. `let q: Qty = 0` is a
-   compile error. `Qty.from(n)` runtime. Qty → Int64 implicit. Empty
-   `Qty where <= 0` is a compile error. Crema `CreateOrder.qty: Qty`.
-   Custom `{value}` templates parsed; runtime still uses generated text.
-3. Encode of products (Ticket 200 body).
+3. **Custom message templates + field-level `where` + `.toJson`/`.encode`**
+   — **done.** `{value}` / `{expected}` / `{path}` fill at runtime. Inline
+   `Int64 where >= 1` on a field is checked in `read`. `t.encode()` /
+   `t.toJson()`. Crema Ticket uses `toJson` + `ok`.
 4. Literal-union slugs if we want unknown-drink as a type error.
 5. Restore `Issue` as `Missing | Mismatch | Rejected` when residual-sum RC is
-   fixed. May fields. Field-level `where` checks in `read` (stored, not
-   applied yet — use a named refined type).
+   fixed. May fields. Nested `read` after a failed `read` heap-corrupt.

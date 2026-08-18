@@ -8670,7 +8670,9 @@ fn lower_method_call(
         if type_name == "Bytes" && ctx.lookup(type_name).is_none() {
             return lower_bytes_static(ctx, method, args, method_span);
         }
-        if matches!(method, "read" | "fromJson" | "from") && ctx.lookup(type_name).is_none() {
+        if matches!(method, "read" | "fromJson" | "from" | "encode" | "toJson")
+            && ctx.lookup(type_name).is_none()
+        {
             if let Some(mangled_ty) = ctx.resolve_type_name(type_name) {
                 return lower_type_read_static(ctx, &mangled_ty, method, args, method_span);
             }
@@ -8865,6 +8867,27 @@ fn lower_method_call(
         ),
         Ty::User(type_name) => {
             let type_name = type_name.clone();
+            if matches!(method, "encode" | "toJson") {
+                if let Some(info) = ctx.types.get(&type_name).cloned() {
+                    if let Some(mangled_fn) =
+                        lookup_generated_read_fn(ctx, &info, &type_name, method)
+                    {
+                        if !args.is_empty() {
+                            return Err(Error::at(
+                                format!("`{method}` takes no arguments"),
+                                method_span,
+                            ));
+                        }
+                        let sig = ctx.fns.get(&mangled_fn).unwrap().clone();
+                        return emit_call_result(
+                            ctx,
+                            Callee::User(sig.mangled.clone()),
+                            vec![recv_p],
+                            sig.ret,
+                        );
+                    }
+                }
+            }
             let info = ctx
                 .types
                 .get(&type_name)

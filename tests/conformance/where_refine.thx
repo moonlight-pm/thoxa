@@ -3,9 +3,10 @@ import { Issue, message } from "std/json"
 import { Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
 
-type Qty = Int64 where >= 1
+type Qty = Int64 where >= 1 "need {expected}, got {value}"
 type Dozen = Qty where <= 12
 type Order(slug: String, qty: Qty)
+type Line(n: Int64 where >= 1)
 
 fn showQ(t: Trial<Qty, Issue>) -> String {
     match t {
@@ -44,5 +45,13 @@ fn main() -> Int64 {
 
     info(showO(Order.read("{{\"slug\":\"mocha\",\"qty\":2}}")))
     info(showO(Order.read("{{\"slug\":\"mocha\",\"qty\":0}}")))
+    match Line.read("{{\"n\":0}}") {
+        Fail(e) => info("line:{message(e)}")
+        Pass(x) => info("lineok:{x.n}")
+    }
+    match Order.read("{{\"slug\":\"mocha\",\"qty\":2}}") {
+        Fail(e) => info("enc:{message(e)}")
+        Pass(o) => info(o.encode())
+    }
     0
 }
