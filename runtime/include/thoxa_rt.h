@@ -471,6 +471,31 @@ ThoxaString *thoxa_html_get_text(const ThoxaHtml *n);
 ThoxaArray *thoxa_html_attrs(const ThoxaHtml *n);
 ThoxaArray *thoxa_html_kids(const ThoxaHtml *n);
 
+/* Quote `s` as a SQL string literal (`'` doubled). Used by sql"…" (D144). */
+ThoxaString *thoxa_sql_quote(const ThoxaString *s);
+
+/* --- SQLite (amalgamation in vendor/sqlite; handles are sqlite3* as Int64) */
+
+/* 0 = fail; errmsg via thoxa_sql_errmsg. Path ":memory:" is allowed. */
+int64_t thoxa_sql_open(const char *path);
+int32_t thoxa_sql_close(int64_t handle);
+/* Last error from any sqlite helper (thread-local; copied by String returns). */
+const char *thoxa_sql_errmsg(void);
+int32_t thoxa_sql_exec(int64_t handle, const char *sql);
+int64_t thoxa_sql_last_insert_rowid(int64_t handle);
+int64_t thoxa_sql_changes(int64_t handle);
+/* 0 = fail. Step: 100 = row, 101 = done, else error (same as SQLite). */
+int64_t thoxa_sql_prepare(int64_t handle, const char *sql);
+int32_t thoxa_sql_step(int64_t stmt);
+int32_t thoxa_sql_finalize(int64_t stmt);
+int32_t thoxa_sql_column_count(int64_t stmt);
+const char *thoxa_sql_column_name(int64_t stmt, int32_t i);
+/* 1 integer, 2 float, 3 text, 4 blob, 5 null. */
+int32_t thoxa_sql_column_type(int64_t stmt, int32_t i);
+int64_t thoxa_sql_column_i64(int64_t stmt, int32_t i);
+double thoxa_sql_column_f64(int64_t stmt, int32_t i);
+const char *thoxa_sql_column_text(int64_t stmt, int32_t i);
+
 #ifdef __cplusplus
 }
 #endif

@@ -20,6 +20,7 @@ import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
 import { localHms, userName, hostname } from "std/env"
 import { branch } from "std/git"
 import json, { Json, decode, encode } from "std/json"
+import sqlite, { lit } from "std/sqlite"
 ```
 
 | Module | Role |
@@ -39,6 +40,7 @@ import json, { Json, decode, encode } from "std/json"
 | `Env` | `getenv`/`hasEnv`/`home`/`tmpdir`/`shell`/`pathVar`/`pwd`/`localHms`/`hostname`/`userName` |
 | `Git` | `branchName`/`isRepo`/`repoRoot`/`isDetached`/`headLine`/… via `.git/HEAD` |
 | `Json` | Dynamic `Json` tree: `decode` / `encode` (**D141**) |
+| `Sqlite` | Embedded SQLite: `open` / `exec` / `query`; `sql"…"` (**D143**/**D144**) |
 
 Full shipped surface: [`docs/handbook/std.md`](../docs/handbook/std.md).
 

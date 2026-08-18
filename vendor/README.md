@@ -18,3 +18,17 @@ C backend (D105 / in-process libtcc).
 
 Do not edit TinyCC sources for product features; upgrade by re-vendoring a new
 pin. Build products stay under `target/` (not committed).
+
+## SQLite (`sqlite/`)
+
+Vendored [SQLite amalgamation](https://sqlite.org/amalgamation.html) for
+product `std/sqlite` (**D143**). Compiled into `libthoxa_rt.a`.
+
+| | |
+|--|--|
+| Version | See `sqlite/VERSION` |
+| License | Public domain / blessing |
+| Built by | `build_runtime` (`sqlite3.c` + `runtime/src/thoxa_sql.c`) |
+| Used for | Batch programs and session steps that import `std/sqlite` |
+
+See [`sqlite/README.md`](sqlite/README.md).

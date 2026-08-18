@@ -57,7 +57,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Area | Shipped |
 |------|---------|
 | Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Float64`, `Bool`, `Void` |
-| Heap | `String` (interpolation, `.count`, `\xHH` escapes), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`) |
+| Heap | `String` (interpolation, `.count`, `\xHH` escapes), `sql"…"` tagged interpolator (**D144**), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`) |
 | User types | `type Name(fields) { methods }` — including heap fields, **Node**, and nested user types / sums (**D135**); method field write-back. Recursive fields are an error (use `Array` / `Map`) |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
 | Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"`. Member product fields may be scalars (incl. `Float64`), String/Bytes, User, `Array`, or `Map` (**D141**) |
@@ -338,6 +338,9 @@ Full surface: [`std.md`](std.md).
   (**D136**/**D139**).
 - **`std/http/static`:** static-file `Router` (`handle` → Response; GET/HEAD).
 - **`std/json`:** `Json` tree, `decode` / `encode` (**D141**).
+- **`std/sqlite`:** amalgamation in the runtime; `open` / `exec` / `query`
+  (**D143**). Write `sql"… {value} …"` (**D144**); holes are embedded as
+  SQL. `exec` / `query` take `Sql`.
 
 ## Not shipped (do not expect)
 

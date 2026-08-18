@@ -3589,7 +3589,7 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
                 collect_local_fn_calls_expr(v, out);
             }
         }
-        ExprKind::Interpolate(parts) => {
+        ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
             for p in parts {
                 if let InterpPart::Expr(e) = p {
                     collect_local_fn_calls_expr(e, out);
@@ -5976,6 +5976,16 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
                 })
                 .collect(),
         ),
+        ExprKind::TaggedInterp { tag, parts } => ExprKind::TaggedInterp {
+            tag: tag.clone(),
+            parts: parts
+                .iter()
+                .map(|p| match p {
+                    InterpPart::Lit(s) => InterpPart::Lit(s.clone()),
+                    InterpPart::Expr(ex) => InterpPart::Expr(subst_expr(ex, subst)),
+                })
+                .collect(),
+        },
         ExprKind::Name(n) => ExprKind::Name(n.clone()),
         ExprKind::Unary { op, expr } => ExprKind::Unary {
             op: *op,
@@ -6882,6 +6892,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             )
         }
         ExprKind::Interpolate(parts) => lower_interpolate(ctx, parts, expr.span),
+        ExprKind::TaggedInterp { tag, parts } => lower_tagged_interp(ctx, tag, parts, expr.span),
         ExprKind::Name(name) => {
             // Unit value `Void` (type name used as value).
             if name == "Void" && ctx.lookup(name).is_none() {
@@ -7295,10 +7306,12 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
         ExprKind::MapLit(entries) => entries
             .iter()
             .any(|(k, v)| expr_has_break(k, depth) || expr_has_break(v, depth)),
-        ExprKind::Interpolate(parts) => parts.iter().any(|p| match p {
-            InterpPart::Expr(e) => expr_has_break(e, depth),
-            InterpPart::Lit(_) => false,
-        }),
+        ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
+            parts.iter().any(|p| match p {
+                InterpPart::Expr(e) => expr_has_break(e, depth),
+                InterpPart::Lit(_) => false,
+            })
+        }
         ExprKind::Continue
         | ExprKind::Name(_)
         | ExprKind::Int(_)
@@ -8204,6 +8217,206 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
         });
     }
     Ok((acc.unwrap(), Ty::String))
+}
+
+fn lower_tagged_interp(
+    ctx: &mut LowerCtx,
+    tag: &str,
+    parts: &[InterpPart],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    if tag != "sql" {
+        return Err(Error::at(
+            format!("unknown string interpolator `{tag}` (only sql\"…\" is shipped)"),
+            span,
+        ));
+    }
+    let text = lower_sql_interpolate(ctx, parts, span)?;
+    let Some(sql_ty) = find_sql_type(ctx) else {
+        return Err(Error::at(
+            "sql\"…\" requires type `Sql` from std/sqlite (import the module)",
+            span,
+        ));
+    };
+    let p = ctx.fresh("sql");
+    let ty = Ty::User(sql_ty.clone());
+    ctx.assign(
+        p.clone(),
+        ty.clone(),
+        RValue::StructLit {
+            type_name: sql_ty,
+            fields: vec![text],
+        },
+    );
+    if needs_drop(&ty) {
+        ctx.stmts.push(Stmt::Dup {
+            place: p.clone(),
+            ty: ty.clone(),
+        });
+    }
+    Ok((p, ty))
+}
+
+fn find_sql_type(ctx: &LowerCtx) -> Option<String> {
+    ctx.types.iter().find_map(|(name, info)| {
+        if info.sum.is_some() || info.zero_init {
+            return None;
+        }
+        if info.fields.len() == 1
+            && info.fields[0].name == "text"
+            && matches!(info.fields[0].ty, Ty::String)
+            && (name == "std_sqlite_Sql" || name.ends_with("_Sql"))
+        {
+            Some(name.clone())
+        } else {
+            None
+        }
+    })
+}
+
+fn is_sql_type(ctx: &LowerCtx, ty: &Ty) -> bool {
+    match ty {
+        Ty::User(name) => find_sql_type(ctx).as_deref() == Some(name.as_str())
+            || name == "std_sqlite_Sql"
+            || name.ends_with("_Sql"),
+        _ => false,
+    }
+}
+
+fn sql_embed_piece(ctx: &mut LowerCtx, v: Place, ty: Ty, span: Span) -> Result<Place> {
+    match ty {
+        Ty::String => {
+            let p = ctx.fresh("sqlq");
+            ctx.assign(
+                p.clone(),
+                Ty::String,
+                RValue::Call {
+                    callee: Callee::Builtin("sql_quote".into()),
+                    args: vec![v],
+                },
+            );
+            Ok(p)
+        }
+        Ty::Int64 | Ty::Float64 => {
+            let p = ctx.fresh("sqln");
+            ctx.assign(
+                p.clone(),
+                Ty::String,
+                RValue::ToString { value: v, from: ty },
+            );
+            Ok(p)
+        }
+        ref t if is_int(t) => {
+            let widened = coerce_place(ctx, v, t, &Ty::Int64, span)?;
+            let p = ctx.fresh("sqln");
+            ctx.assign(
+                p.clone(),
+                Ty::String,
+                RValue::ToString {
+                    value: widened,
+                    from: Ty::Int64,
+                },
+            );
+            Ok(p)
+        }
+        Ty::Bool => {
+            let p = ctx.fresh("sqlb");
+            init_place(ctx, &p, &Ty::String)?;
+            let mut then_body = Vec::new();
+            then_body.push(Stmt::Assign {
+                place: p.clone(),
+                ty: Ty::String,
+                value: RValue::StringLit("1".into()),
+            });
+            let mut else_body = Vec::new();
+            else_body.push(Stmt::Assign {
+                place: p.clone(),
+                ty: Ty::String,
+                value: RValue::StringLit("0".into()),
+            });
+            ctx.stmts.push(Stmt::If {
+                cond: v,
+                then_body,
+                else_body,
+            });
+            Ok(p)
+        }
+        ref t if is_sql_type(ctx, t) => {
+            let p = ctx.fresh("sqlf");
+            ctx.assign(
+                p.clone(),
+                Ty::String,
+                RValue::Field {
+                    base: v,
+                    field: sanitize_field("text"),
+                },
+            );
+            if needs_drop(&Ty::String) {
+                ctx.stmts.push(Stmt::Dup {
+                    place: p.clone(),
+                    ty: Ty::String,
+                });
+            }
+            Ok(p)
+        }
+        other if refined_info(&ctx.types, &other).is_some() => {
+            let (inner, ity) = unwrap_refined(ctx, v, &other)?;
+            sql_embed_piece(ctx, inner, ity, span)
+        }
+        other => Err(Error::at(
+            format!(
+                "cannot interpolate {} into sql\"…\" (supported: String, Int64, Float64, Bool, Sql)",
+                display_ty(&other)
+            ),
+            span,
+        )),
+    }
+}
+
+fn lower_sql_interpolate(
+    ctx: &mut LowerCtx,
+    parts: &[InterpPart],
+    span: Span,
+) -> Result<Place> {
+    if parts.is_empty() {
+        let p = ctx.fresh("s");
+        ctx.assign(p.clone(), Ty::String, RValue::StringLit(String::new()));
+        return Ok(p);
+    }
+    let mut acc: Option<Place> = None;
+    for part in parts {
+        let piece = match part {
+            InterpPart::Lit(s) => {
+                let p = ctx.fresh("sl");
+                ctx.assign(p.clone(), Ty::String, RValue::StringLit(s.clone()));
+                p
+            }
+            InterpPart::Expr(e) => {
+                let (v, ty) = lower_expr(ctx, e)?;
+                let (v, ty) = match maybe_widen_lit_sum(ctx, v.clone(), &ty)? {
+                    Some((p, t)) => (p, t),
+                    None => (v, ty),
+                };
+                sql_embed_piece(ctx, v, ty, span)?
+            }
+        };
+        acc = Some(match acc {
+            None => piece,
+            Some(left) => {
+                let p = ctx.fresh("cat");
+                ctx.assign(
+                    p.clone(),
+                    Ty::String,
+                    RValue::StringConcat {
+                        left,
+                        right: piece,
+                    },
+                );
+                p
+            }
+        });
+    }
+    Ok(acc.unwrap())
 }
 
 fn lower_field(
@@ -10779,7 +10992,7 @@ fn materialize_expr_typespace(
         | ExprKind::Name(_)
         | ExprKind::Break
         | ExprKind::Continue => {}
-        ExprKind::Interpolate(parts) => {
+        ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
             for p in parts {
                 if let InterpPart::Expr(e) = p {
                     materialize_expr_typespace(e, types, layouts, name_map, def_mod)?;

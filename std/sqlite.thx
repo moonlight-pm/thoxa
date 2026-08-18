@@ -1,0 +1,167 @@
+## std/sqlite — embedded SQLite (D143 / D144).
+## Write `sql"… {value} …"`. Holes are embedded as SQL (strings quoted).
+## `{ident(name)?}` splices a quoted identifier. Not `?` + a bind list.
+## Fail payloads are String.
+
+import { Pass, Fail, Trial } from "std/fallible"
+import { isEmpty, replaceAll } from "std/str"
+
+extern fn sysSqlOpen(path!: String) -> Int64 from "c" "thoxa_sql_open"
+extern fn sysSqlClose(handle!: Int64) -> Int32 from "c" "thoxa_sql_close"
+extern fn sysSqlErrmsg() -> String from "c" "thoxa_sql_errmsg"
+extern fn sysSqlExec(handle!: Int64, sql!: String) -> Int32 from "c" "thoxa_sql_exec"
+extern fn sysSqlLastInsert(handle!: Int64) -> Int64 from "c" "thoxa_sql_last_insert_rowid"
+extern fn sysSqlChanges(handle!: Int64) -> Int64 from "c" "thoxa_sql_changes"
+extern fn sysSqlPrepare(handle!: Int64, sql!: String) -> Int64 from "c" "thoxa_sql_prepare"
+extern fn sysSqlStep(stmt!: Int64) -> Int32 from "c" "thoxa_sql_step"
+extern fn sysSqlFinalize(stmt!: Int64) -> Int32 from "c" "thoxa_sql_finalize"
+extern fn sysSqlColumnCount(stmt!: Int64) -> Int32 from "c" "thoxa_sql_column_count"
+extern fn sysSqlColumnName(stmt!: Int64, i!: Int32) -> String from "c" "thoxa_sql_column_name"
+extern fn sysSqlColumnType(stmt!: Int64, i!: Int32) -> Int32 from "c" "thoxa_sql_column_type"
+extern fn sysSqlColumnI64(stmt!: Int64, i!: Int32) -> Int64 from "c" "thoxa_sql_column_i64"
+extern fn sysSqlColumnF64(stmt!: Int64, i!: Int32) -> Float64 from "c" "thoxa_sql_column_f64"
+extern fn sysSqlColumnText(stmt!: Int64, i!: Int32) -> String from "c" "thoxa_sql_column_text"
+
+let stepRow = 100
+let stepDone = 101
+let colInt = 1
+let colFloat = 2
+let colNull = 5
+
+export type SqlNull
+export type SqlInt(value: Int64)
+export type SqlFloat(value: Float64)
+export type SqlText(value: String)
+export type SqlValue = SqlNull | SqlInt | SqlFloat | SqlText
+export type Row(cells: Map<String, SqlValue>)
+
+## A SQL statement or fragment. Produced by `sql"…"`; `exec` / `query` take this.
+export type Sql(text: String)
+
+## SQL NULL token for interpolation (`values ({null})`).
+export let null = Sql(text: "NULL")
+
+## Quote a value as a SQL literal fragment (rarely needed; prefer `sql"…"`).
+export fn lit(value: String) -> Sql {
+    let q = "'"
+    let doubled = "{q}{q}"
+    Sql(text: "{q}{replaceAll(value, q, doubled)}{q}")
+}
+
+export fn lit(value: Bool) -> Sql {
+    if value {
+        Sql(text: "1")
+    } else {
+        Sql(text: "0")
+    }
+}
+
+## Quote an identifier (`"name"`). Empty names fail. Use `{ident(name)?}`
+## inside `sql"…"` (spliced, not re-quoted).
+export fn ident(name!: String) -> Trial<Sql, String> {
+    if isEmpty(name) {
+        Fail("empty SQL identifier")
+    } else {
+        let quote = "\x22"
+        let doubled = "{quote}{quote}"
+        Pass(Sql(text: "{quote}{replaceAll(name, quote, doubled)}{quote}"))
+    }
+}
+
+export type Db(handle: Int64) {
+    export fn isOpen() -> Bool {
+        handle != 0
+    }
+
+    export fn close() {
+        if handle != 0 {
+            sysSqlClose(handle)
+            handle = 0
+        }
+    }
+
+    export fn exec(sql!: Sql) -> Trial<Void, String> {
+        if handle == 0 {
+            Fail("sqlite exec: closed handle")
+        } else {
+            if sysSqlExec(handle, sql.text) != 0 {
+                Fail(sysSqlErrmsg())
+            } else {
+                Pass(Void)
+            }
+        }
+    }
+
+    export fn lastInsertRowid() -> Int64 {
+        sysSqlLastInsert(handle)
+    }
+
+    export fn changes() -> Int64 {
+        sysSqlChanges(handle)
+    }
+
+    export fn query(sql!: Sql) -> Trial<Array<Row>, String> {
+        if handle == 0 {
+            return Fail("sqlite query: closed handle")
+        }
+        let stmt = sysSqlPrepare(handle, sql.text)
+        if stmt == 0 {
+            return Fail(sysSqlErrmsg())
+        }
+        mut rows: Array<Row> = []
+        loop {
+            let rc = sysSqlStep(stmt)
+            if rc == stepDone {
+                break
+            }
+            if rc != stepRow {
+                let err = sysSqlErrmsg()
+                sysSqlFinalize(stmt)
+                return Fail(err)
+            }
+            rows.append(readRow(stmt))
+        }
+        if sysSqlFinalize(stmt) != 0 {
+            Fail(sysSqlErrmsg())
+        } else {
+            Pass(rows)
+        }
+    }
+}
+
+fn readRow(stmt!: Int64) -> Row {
+    mut cells: Map<String, SqlValue> = Map()
+    let n = sysSqlColumnCount(stmt)
+    mut i = 0
+    loop {
+        if i >= n {
+            break
+        }
+        let name = sysSqlColumnName(stmt, i)
+        let col = sysSqlColumnType(stmt, i)
+        if col == colNull {
+            cells.set(name, SqlNull())
+        } else {
+            if col == colInt {
+                cells.set(name, SqlInt(value: sysSqlColumnI64(stmt, i)))
+            } else {
+                if col == colFloat {
+                    cells.set(name, SqlFloat(value: sysSqlColumnF64(stmt, i)))
+                } else {
+                    cells.set(name, SqlText(value: sysSqlColumnText(stmt, i)))
+                }
+            }
+        }
+        i = i + 1
+    }
+    Row(cells: cells)
+}
+
+export fn open(path!: String) -> Trial<Db, String> {
+    let handle = sysSqlOpen(path)
+    if handle == 0 {
+        Fail(sysSqlErrmsg())
+    } else {
+        Pass(Db(handle: handle))
+    }
+}

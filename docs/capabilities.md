@@ -13,6 +13,8 @@ change. See [`progress-model.md`](progress-model.md).
 
 **As of:** 2026-08-18 (**built-in validation** on master, not product;
 `Type.read`;
+**D144** `sql"…"`;
+**D143** `std/sqlite`;
 **D142** `Cookie` / `withCookie` / `clearCookie`;
 **D141** `std/json` `decode`/`encode`;
 **D140** `Float64`;
@@ -43,7 +45,7 @@ freeze)
 | value-match | Literals + or + bind/`else` + guards + `=>` | shipped | `match_value`, `match_or`, `match_bind`, `match_guard`, `match_arm_sugar` | D87, D108, D110, D111, **D130** | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` + bare tag-only | shipped | `match_discard`, `match_arm_sugar` | D66, **D130** | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |
-| string | String, interpolation, `.count`, simple RC | shipped | `strings` | R4 | Perceus later; `\xHH` string escapes | yes |
+| string | String, interpolation, `.count`, simple RC | shipped | `strings`, `sqlite` | R4, **D144** | `sql"…"` tagged interpolator (sql only). Perceus later; `\xHH` string escapes | yes |
 | string-eq | String `==` / `!=` | shipped | `router` (uses) | D60 | — | yes |
 | bytes | Bytes API + slice + find→May + insertAt/removeAt + equals | shipped | `bytes`, `splice` | D14–D18, D36–D37, D46′/D85, D55 | String→Bytes is `fromString` only; **no** `"…" as Bytes` (D15 rejected) | yes |
 | buffer | Growable Buffer COW → freeze | shipped | `buffer` | D50–D52 | — | yes |
@@ -121,6 +123,7 @@ freeze)
 | std-http-static | Static-file `Router` in `std/http/static` | shipped | `router`, `http_server` | **D126**, **D139** | GET+HEAD; small MIME table; depends on Io+Http+Logging | yes |
 | std-http-server | HTTP/1.1 host loop in `std/http/server` | shipped | `http_host` | **D136**, **D139** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
 | std-json | Dynamic `Json` tree in `std/json` | shipped | `json`, `json_read` | **D141**; idea [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md) | `decode` / `encode`. `JInt` vs `JFloat` as charter. Fail String. This branch also: `Issue`, `readJson`, `asObj` / `*Field`, `errorObject`. No derive, no pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` (Crema keeps that in `examples/http`) | yes |
+| std-sqlite | Embedded SQLite in `std/sqlite` | shipped | `sqlite` | **D143**, **D144** | Amalgamation in `vendor/sqlite` → `libthoxa_rt`. `open` / `exec` / `query` / `close`. Write `sql"… {value} …"` (tagged interpolator; `exec`/`query` take `Sql`). Rows `Row` + `SqlValue`. **Gaps:** no blobs, no prepare/bind API, no explicit transactions, no Crema persist, no general tagged templates | yes |
 
 ## Editor / LSP
 

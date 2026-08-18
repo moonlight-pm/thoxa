@@ -149,7 +149,7 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 | Step | Status | Notes |
 |------|--------|-------|
 | D1 `POST /api/orders` | **done** | `std/json` `decode`/`encode`; body `{"slug","qty"}`; 200 priced ticket / 400 `{ok:false}` |
-| D2 htmx-ish partials, persistence, sessions | **parked** | only if still useful |
+| D2 htmx-ish partials, persistence, sessions | **parked** | `std/sqlite` (**D143**) exists if persist becomes useful |
 
 ---
 

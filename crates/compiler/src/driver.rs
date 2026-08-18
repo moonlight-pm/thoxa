@@ -158,24 +158,35 @@ pub fn compile_to_c(source: &Path) -> Result<String> {
     Ok(cgen::emit_program(&program))
 }
 
-pub fn ensure_runtime() -> Result<()> {
-    // Rebuild when the library is missing or older than runtime sources.
-    let lib = runtime_lib_path();
-    let src = workspace_root().join("runtime/src/thoxa_rt.c");
-    let hdr = workspace_root().join("runtime/include/thoxa_rt.h");
-    let needs = match (lib.metadata(), src.metadata(), hdr.metadata()) {
-        (Ok(lib_m), Ok(src_m), Ok(hdr_m)) => {
-            let lib_t = lib_m.modified().ok();
-            let src_t = src_m.modified().ok();
-            let hdr_t = hdr_m.modified().ok();
-            match (lib_t, src_t, hdr_t) {
-                (Some(lt), Some(st), Some(ht)) => lt < st || lt < ht,
-                _ => true,
-            }
-        }
-        _ => true,
+fn runtime_inputs(root: &Path) -> Vec<PathBuf> {
+    vec![
+        root.join("runtime/src/thoxa_rt.c"),
+        root.join("runtime/src/thoxa_sql.c"),
+        root.join("runtime/include/thoxa_rt.h"),
+        root.join("vendor/sqlite/sqlite3.c"),
+        root.join("vendor/sqlite/sqlite3.h"),
+    ]
+}
+
+fn runtime_is_stale(lib: &Path, inputs: &[PathBuf]) -> bool {
+    let Ok(lib_m) = lib.metadata() else {
+        return true;
     };
-    if needs {
+    let Some(lib_t) = lib_m.modified().ok() else {
+        return true;
+    };
+    inputs.iter().any(|p| match p.metadata().and_then(|m| m.modified()) {
+        Ok(t) => lib_t < t,
+        Err(_) => true,
+    })
+}
+
+pub fn ensure_runtime() -> Result<()> {
+    // Rebuild when the library is missing or older than runtime / sqlite sources.
+    let lib = runtime_lib_path();
+    let root = workspace_root();
+    let inputs = runtime_inputs(&root);
+    if runtime_is_stale(&lib, &inputs) {
         build_runtime()?;
     }
     if !lib.is_file() {
@@ -187,42 +198,77 @@ pub fn ensure_runtime() -> Result<()> {
     Ok(())
 }
 
+fn compile_c_object(
+    src: &Path,
+    obj: &Path,
+    includes: &[&Path],
+    extra_defs: &[&str],
+) -> Result<()> {
+    let mut cmd = host_tool("cc");
+    cmd.args(["-std=c11", "-O2", "-fPIC", "-c"]);
+    for def in extra_defs {
+        cmd.arg(def);
+    }
+    cmd.arg(src);
+    for inc in includes {
+        cmd.arg("-I").arg(inc);
+    }
+    cmd.arg("-o").arg(obj);
+    let status = cmd
+        .status()
+        .map_err(|e| Error::new(format!("failed to spawn cc: {e}")))?;
+    if !status.success() {
+        return Err(Error::new(format!(
+            "cc failed building {}",
+            src.display()
+        )));
+    }
+    Ok(())
+}
+
 pub fn build_runtime() -> Result<()> {
     let root = workspace_root();
     let out_dir = c_target_dir();
     fs::create_dir_all(&out_dir).map_err(|e| Error::new(e.to_string()))?;
 
-    let src = root.join("runtime/src/thoxa_rt.c");
-    let obj = out_dir.join("thoxa_rt.o");
-    let lib = out_dir.join("libthoxa_rt.a");
     let include = root.join("runtime/include");
+    let sqlite_inc = root.join("vendor/sqlite");
+    let rt_src = root.join("runtime/src/thoxa_rt.c");
+    let sql_src = root.join("runtime/src/thoxa_sql.c");
+    let sqlite_src = root.join("vendor/sqlite/sqlite3.c");
+    let rt_obj = out_dir.join("thoxa_rt.o");
+    let sql_obj = out_dir.join("thoxa_sql.o");
+    let sqlite_obj = out_dir.join("sqlite3.o");
+    let lib = out_dir.join("libthoxa_rt.a");
 
-    // -fPIC so the archive can be linked into session step shared objects (D93).
-    let status = host_tool("cc")
-        .args(["-std=c11", "-O2", "-fPIC", "-c"])
-        .arg(&src)
-        .arg("-I")
-        .arg(&include)
-        .arg("-o")
-        .arg(&obj)
-        .status()
-        .map_err(|e| Error::new(format!("failed to spawn cc: {e}")))?;
-    if !status.success() {
-        return Err(Error::new("cc failed building runtime object"));
-    }
+    // -fPIC so the archive can be linked into session step images (D93/D105).
+    compile_c_object(&rt_src, &rt_obj, &[&include], &[])?;
+    compile_c_object(&sql_src, &sql_obj, &[&include, &sqlite_inc], &[])?;
+    compile_c_object(
+        &sqlite_src,
+        &sqlite_obj,
+        &[&sqlite_inc],
+        &[
+            "-DSQLITE_THREADSAFE=0",
+            "-DSQLITE_OMIT_LOAD_EXTENSION=1",
+            "-DSQLITE_DQS=0",
+            "-DSQLITE_DEFAULT_MEMSTATUS=0",
+        ],
+    )?;
 
-    // ar rcs lib.a obj
     let status = host_tool("ar")
         .args(["rcs"])
         .arg(&lib)
-        .arg(&obj)
+        .arg(&rt_obj)
+        .arg(&sql_obj)
+        .arg(&sqlite_obj)
         .status()
         .map_err(|e| Error::new(format!("failed to spawn ar: {e}")))?;
     if !status.success() {
         return Err(Error::new("ar failed creating libthoxa_rt.a"));
     }
 
-    write_compile_commands(&root, &src, &include)?;
+    write_compile_commands(&root, &rt_src, &include)?;
     Ok(())
 }
 
@@ -481,6 +527,7 @@ pub fn build(opts: &BuildOptions) -> Result<BuildArtifacts> {
         .arg("-I")
         .arg(runtime_include_dir())
         .arg(runtime_lib_path())
+        .arg("-lm")
         .arg("-o")
         .arg(&bin_path)
         .status()

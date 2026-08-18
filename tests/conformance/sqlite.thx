@@ -1,0 +1,88 @@
+## D143/D144: std/sqlite — sql"…" tagged interpolator + memory DB.
+import sqlite, { lit, ident, null, SqlNull, SqlInt, SqlFloat, SqlText, SqlValue, Row } from "std/sqlite"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn showCell(row: Row, key: String) -> String {
+    let cells = row.cells
+    let cell: May<SqlValue> = cells[key]
+    match cell {
+        Not => "-"
+        Has(value) {
+            match value {
+                SqlNull => "NULL"
+                SqlInt(n) => "i:{n}"
+                SqlFloat(x) => "f:{x}"
+                SqlText(s) => "t:{s}"
+            }
+        }
+    }
+}
+
+fn run() -> Trial<Void, String> {
+    let ada = "Ada"
+    let qAda = sql"{ada}"
+    info("lit-s={qAda.text}")
+    let quoted = "a'b"
+    let qQuoted = sql"{quoted}"
+    info("lit-q={qQuoted.text}")
+    let qBool = sql"{true}"
+    info("lit-b={qBool.text}")
+    let qNull = sql"v = {null}"
+    info("null={qNull.text}")
+    match ident("orders") {
+        Fail(e) => info("ident-fail {e}")
+        Pass(s) => info("ident={s.text}")
+    }
+    match ident("") {
+        Pass(s) => info("ident-empty={s.text}")
+        Fail(_) => info("ident-empty=err")
+    }
+
+    let db = sqlite.open(":memory:")?
+    db.exec(sql"create table orders (id integer primary key, slug text, qty integer, note text)")?
+    let slug = "mocha"
+    let qty = 2
+    db.exec(sql"insert into orders(slug, qty, note) values ({slug}, {qty}, {null})")?
+    info("rowid={db.lastInsertRowid()} changes={db.changes()}")
+
+    let evil = "'; drop table orders; --"
+    let ok = "ok"
+    db.exec(sql"insert into orders(slug, qty, note) values ({evil}, 1, {ok})")?
+
+    let table = "orders"
+    let rows = db.query(sql"select slug, qty, note from {ident(table)?} order by id")?
+    info("nrows={rows.count}")
+    if rows.count > 0 {
+        info("r0={showCell(rows[0], \"slug\")} {showCell(rows[0], \"qty\")} {showCell(rows[0], \"note\")}")
+    }
+    if rows.count > 1 {
+        info("r1={showCell(rows[1], \"slug\")} {showCell(rows[1], \"qty\")} {showCell(rows[1], \"note\")}")
+    }
+
+    let counted = db.query(sql"select count(*) as n from orders")?
+    if counted.count > 0 {
+        info("count={showCell(counted[0], \"n\")}")
+    }
+
+    info("lit-fn={lit(\"x\").text}")
+
+    db.close()
+    match db.exec(sql"select 1") {
+        Pass => info("closed-ok")
+        Fail(_) => info("closed-fail")
+    }
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass => 0
+        Fail(e) {
+            info("fail {e}")
+            1
+        }
+    }
+}

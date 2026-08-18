@@ -6,6 +6,8 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-08-18 (**built-in validation** on master, not product — types as
 inhabitation; syntax open;
+**D144** `sql"…"` tagged interpolator;
+**D143** `std/sqlite` amalgamation;
 **D142** `Cookie` / `withCookie` / `clearCookie`;
 **D141** `std/json` `decode`/`encode` + Crema
 `POST /api/orders`;
@@ -26,7 +28,9 @@ not handbook; Crema-lite Phase A–D1 dogfoods product `http` / `http/server` /
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **`Cookie` / `withCookie`** (**D142**);
+**Shipped recently:** **`sql"…"`** (**D144**);
+**`std/sqlite`** (**D143**);
+**`Cookie` / `withCookie`** (**D142**);
 **`std/json`** (**D141** — `decode` / `encode`;
 Crema `POST /api/orders`);
 **`Float64`** (**D140**);
@@ -134,7 +138,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
-| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); **`std/json`** (**D141**); `ffi` deferred |
+| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); **`std/json`** (**D141**); **`std/sqlite`** (**D143**); `ffi` deferred |
 | Logging / print | **`std/logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
 | Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
@@ -145,6 +149,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); policy stays in the app. |
+| SQLite | Amalgamation in `libthoxa_rt` (**D143**). Write `sql"… {value} …"` (**D144**); holes quote themselves. `exec`/`query` take `Sql`. No named `ffi` root. |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
@@ -176,6 +181,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
     + **D140** (`Float64`)
 12. If built-in validation: [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md)
     (on master, not product; syntax open)
+13. If SQLite: [`docs/decisions.md`](docs/decisions.md) (**D143** / **D144**) —
+    amalgamation in `vendor/sqlite`; `sql"… {value} …"`
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

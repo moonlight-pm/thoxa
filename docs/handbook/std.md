@@ -17,6 +17,7 @@ import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
 import { localHms, userName, hostname } from "std/env"
 import { branch } from "std/git"
 import json, { Json, decode, encode } from "std/json"
+import sqlite, { lit, ident } from "std/sqlite"
 ```
 
 ## Modules (current)
@@ -38,6 +39,7 @@ import json, { Json, decode, encode } from "std/json"
 | `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
 | `std/git` | `branchName` / `branchSuffix` / `branch` / `branchHere` / `isRepo` / `repoRoot` / `isDetached` / `headLine` via `.git/HEAD` |
 | `std/json` | Dynamic `Json` tree (**D141**): `decode` / `encode` |
+| `std/sqlite` | Embedded SQLite (**D143**/**D144**): `open` / `exec` / `query`; `sql"…"` |
 
 ### Logging (default logger)
 
@@ -185,6 +187,40 @@ Object literals in Thoxa strings need `{{` / `}}` (`"{{\"qty\":2}}"` is
 | Numbers | No `.` / exponent → `JInt` (Int64 range or fail). Else `JFloat`. Non-finite fails |
 | Strings | Escapes `\" \\ \/ \b \f \n \r \t \uXXXX` including surrogate pairs |
 | Not shipped | Derive of user types, pretty-print, comments, trailing commas, `NaN` / `Infinity` tokens, `jsonResponse` |
+
+### Sqlite (`std/sqlite`)
+
+Embedded SQLite (**D143**). The amalgamation is compiled into `libthoxa_rt`.
+Write **`sql"…"`** (**D144**) — a tagged interpolator (no space after `sql`).
+Holes are embedded as SQL: strings are quoted, numbers are digits, `Sql`
+fragments (`ident`, `null`, `lit`) are spliced. `exec` / `query` take `Sql`.
+
+```thx
+import sqlite from "std/sqlite"
+import { ident } from "std/sqlite"
+
+let db = sqlite.open(":memory:")?
+db.exec(sql"create table orders (slug text, qty integer)")?
+db.exec(sql"insert into orders(slug, qty) values ({slug}, {qty})")?
+let rows = db.query(sql"select slug, qty from {ident(table)?}")?
+```
+
+| Surface | Notes |
+|---------|--------|
+| `sql"…"` | Tagged interpolator → `Sql`. Import `std/sqlite` so `Sql` exists |
+| `open(path)` | `Trial<Db, String>`. `":memory:"` is allowed |
+| `Db.exec` / `Db.query` | Take `Sql`. `query` → `Array<Row>` |
+| `Row` | `cells: Map<String, SqlValue>` |
+| `SqlValue` | `SqlNull \| SqlInt \| SqlFloat \| SqlText` |
+| `ident(name)` | Quoted `"name"` as `Sql` (`Trial`; empty fails) |
+| `null` / `lit` | `NULL` token / explicit literal fragment |
+| Numbers | `{qty}` → digits |
+
+A plain `"… {slug} …"` string is still concatenation. `sql"…"` is the
+safe form. `sql "…"` (space) is not a tag.
+
+Not shipped: blobs, prepared `?` binds, explicit transactions, extension
+loading, general `tag"…"` interpolators.
 
 ## Resolution order
 

@@ -1231,6 +1231,7 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     "buffer_append_bytes" => "thoxa_buffer_append_bytes",
                     "buffer_freeze" => "thoxa_buffer_freeze",
                     "array_count" => "thoxa_array_count",
+                    "sql_quote" => "thoxa_sql_quote",
                     "array_get_i64" => "thoxa_array_get_i64",
                     "f64_from_bits" => "thoxa_f64_from_bits",
                     "f64_to_bits" => "thoxa_f64_to_bits",

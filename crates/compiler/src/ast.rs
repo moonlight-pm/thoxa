@@ -320,6 +320,12 @@ pub enum ExprKind {
     String(String),
     /// `"…{expr}…"` with literal and expression parts (after `{{`/`}}` unescape).
     Interpolate(Vec<InterpPart>),
+    /// `sql"…{expr}…"` — tagged interpolator (D144). v0 tag is `sql` only.
+    /// Holes are embedded as SQL (strings quoted; `Sql` fragments spliced).
+    TaggedInterp {
+        tag: String,
+        parts: Vec<InterpPart>,
+    },
     Name(String),
     Unary {
         op: UnaryOp,

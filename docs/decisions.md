@@ -19,6 +19,18 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-18 — `sql"…"` tagged interpolator
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D144 | `sql"…"` is a tagged interpolator | Ident **immediately** followed by a string (`sql"…"`; no space, like JSX `<tag`) is a tag. **v0 tag is `sql` only**; other tags error. Holes: String → quoted literal; Int64/Float64 → digits; Bool → `0`/`1`; `Sql` fragment → spliced raw (`ident` / `null` / `lit`). Result type is **`Sql`**. `Db.exec` / `Db.query` take `Sql`, not String. Not general JS tagged templates (no rest-args / `tag(parts, …values)`). | **Shipped.** Amends **D143** call surface. Gate: `sqlite`. `sql "…"` (space) is not a tag. Nested quotes inside `{…}` still can't live in the same lexer string (bind a local). |
+
+## 2026-08-18 — Embedded SQLite
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D143 | Product SQLite is amalgamation + interpolated literals | **Amalgamation** in `vendor/sqlite` (3.53.4) compiled into `libthoxa_rt.a` (`SQLITE_THREADSAFE=0`, no load_extension). Thin RT `thoxa_sql_*` (Int64 handles; no stored `Address`). **`std/sqlite`:** `open` / `Db.exec` / `Db.query` / `close`; rows are `Row(cells: Map<String, SqlValue>)` with `SqlNull \| SqlInt \| SqlFloat \| SqlText`. **Injection (amended D144):** write `sql"… {value} …"`; holes are embedded as SQL. `lit` / `ident` remain as fragment helpers. Not `?` + a bind list. No named `ffi` root. | **Shipped.** Sample-driven (D97). Gate: `sqlite`. **Call surface → D144.** No blobs / prepared binds / transactions API / Crema persist yet. |
+
 ## 2026-08-18 — `Set-Cookie` builder
 
 | ID | Decision | Choice | Notes |

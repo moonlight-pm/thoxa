@@ -928,7 +928,7 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
             }
             None
         }
-        ExprKind::Interpolate(parts) => {
+        ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
             for p in parts {
                 if let crate::ast::InterpPart::Expr(e) = p {
                     if let Some(h) = walk_expr_member(e, span) {
@@ -1351,7 +1351,7 @@ fn walk_expr_call_args(expr: &Expr, byte: usize, best: &mut Option<CallArgHit>) 
                 walk_block_call_args(&arm.body, byte, best);
             }
         }
-        ExprKind::Interpolate(parts) => {
+        ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
             for p in parts {
                 if let ast::InterpPart::Expr(e) = p {
                     walk_expr_call_args(e, byte, best);

@@ -6,6 +6,8 @@ Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
 **As of:** 2026-08-18 (**built-in validation** on master, not product; `Type.read`;
+**D144** `sql"…"`;
+**D143** `std/sqlite`;
 **D142** `Cookie` / `withCookie`;
 **D141** `std/json` `decode`/`encode`;
 **D139** HTTP hosts under `std/http/`;
@@ -52,9 +54,10 @@ step `.so` on the happy path.
 |------|------|
 | `crates/compiler` | `thoxa` binary + compiler library (+ libtcc link) |
 | `crates/make` | xtask (`cargo make …`) |
-| `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` (incl. `ThoxaHtml` / `THOXA_TAG_HTML`; **`ThoxaFn`** D132) |
+| `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` (incl. `ThoxaHtml` / `THOXA_TAG_HTML`; **`ThoxaFn`** D132; `thoxa_sql_*` D143) |
 | `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
-| `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, `Json`, Str/Path/Env/…) |
+| `vendor/sqlite` | Vendored SQLite amalgamation (D143; compiled into `libthoxa_rt`) |
+| `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, `Json`, `Sqlite`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate |
 | `examples/` | Runnable demos (`http` Crema-lite, `kilo` terminal editor); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |

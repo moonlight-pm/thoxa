@@ -60,7 +60,7 @@ runtime/          C runtime (thoxa_rt)
 std/              product standard library (std/… imports)
 tests/conformance definition of done (.thx + .out)
 examples/         runnable demos (http server, kilo editor)
-vendor/           vendored upstream (TinyCC for session libtcc)
+vendor/           vendored upstream (TinyCC for session libtcc; SQLite amalgamation)
 docs/             canonical engineering + handbook
 CURRENT.md        living session handoff
 extras/           non-product DX (tree-sitter, Zed, dogfood shell)

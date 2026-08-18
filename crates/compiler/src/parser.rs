@@ -1775,7 +1775,13 @@ impl Parser {
             }
             TokenKind::Ident(name) => {
                 let name = name.clone();
+                let name_span = self.current().span;
                 self.bump();
+                if self.at(TokenKind::String(String::new()))
+                    && self.current().span.start == name_span.end
+                {
+                    return self.parse_tagged_interp(name, name_span);
+                }
                 if self.at(TokenKind::LParen) {
                     self.bump();
                     let args = self.parse_arg_list()?;
@@ -2637,6 +2643,36 @@ impl Parser {
         } else {
             self.tokens[self.pos - 1].span
         }
+    }
+
+    /// `sql"…"` immediately after the tag ident (no space). v0: only `sql`.
+    fn parse_tagged_interp(&mut self, tag: String, tag_span: Span) -> Result<Expr> {
+        if tag != "sql" {
+            return Err(Error::at(
+                format!("unknown string interpolator `{tag}` (only sql\"…\" is shipped)"),
+                tag_span,
+            ));
+        }
+        let TokenKind::String(content) = self.current().kind.clone() else {
+            return Err(Error::at("expected string after interpolator tag", self.peek_span()));
+        };
+        let str_span = self.current().span;
+        self.bump();
+        let inner = parse_string_literal(content, str_span)?;
+        let parts = match inner.kind {
+            ExprKind::String(s) => vec![InterpPart::Lit(s)],
+            ExprKind::Interpolate(parts) => parts,
+            _ => {
+                return Err(Error::at(
+                    "internal error: tagged interpolator string",
+                    str_span,
+                ));
+            }
+        };
+        Ok(Expr {
+            kind: ExprKind::TaggedInterp { tag, parts },
+            span: Span::new(tag_span.start, str_span.end),
+        })
     }
 }
 

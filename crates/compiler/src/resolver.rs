@@ -923,7 +923,7 @@ impl<'a> Resolver<'a> {
             | ExprKind::String(_)
             | ExprKind::Break
             | ExprKind::Continue => {}
-            ExprKind::Interpolate(parts) => {
+            ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
                 for p in parts {
                     if let ast::InterpPart::Expr(e) = p {
                         self.walk_expr(e, scope);
