@@ -130,6 +130,20 @@ fn desugar_module_with(
             any = true;
             continue;
         }
+        if let Some((base, lits)) = pure_lit_union_of(&td) {
+            extra.push(gen_from_lit_union(&td, base, &lits));
+            extra.push(gen_to_json_lit_union(&td, base));
+            extra.push(gen_encode(&td));
+            extra.push(gen_from_json_scalar(&td, base));
+            extra.push(gen_read(&td));
+            json_need.insert("Issue".into());
+            json_need.insert("issueMismatch".into());
+            json_need.insert("encode".into());
+            json_need.insert(json_ctor_for_base(base).into());
+            json_need.insert(as_helper_for_base(base).into());
+            any = true;
+            continue;
+        }
         if !is_eligible(&td, module_id, world, resolve, &mut HashSet::new()) {
             continue;
         }
@@ -384,6 +398,11 @@ fn shape_of(
             let (def_mod, def_name) = resolve.get(module_id)?.get(other)?.clone();
             let td = world.get(&def_mod)?.get(&def_name)?;
             if let Some((base, _)) = refined_alias_of(td, &def_mod, world, resolve) {
+                Some(Shape::Refined {
+                    name: other.to_string(),
+                    base: base.to_string(),
+                })
+            } else if let Some((base, _)) = pure_lit_union_of(td) {
                 Some(Shape::Refined {
                     name: other.to_string(),
                     base: base.to_string(),
@@ -796,6 +815,158 @@ fn json_ctor_for_base(base: &str) -> &'static str {
         "Float64" => "JFloat",
         "Bool" => "JBool",
         _ => "JInt",
+    }
+}
+
+fn as_helper_for_base(base: &str) -> &'static str {
+    match base {
+        "String" => "asStr",
+        "Float64" => "asFloat",
+        "Bool" => "asBool",
+        _ => "asInt",
+    }
+}
+
+/// `type T = "espresso" | "mocha"` / `0 | 1` / `true | false`.
+fn pure_lit_union_of(td: &TypeDef) -> Option<(&'static str, Vec<TypeLit>)> {
+    let members = td.union_members.as_ref()?;
+    if members.is_empty() {
+        return None;
+    }
+    let mut lits = Vec::new();
+    for m in members {
+        if m.where_clause.is_some() || m.union_members.is_some() {
+            return None;
+        }
+        lits.push(m.lit.clone()?);
+    }
+    let base = match &lits[0] {
+        TypeLit::String(_) => "String",
+        TypeLit::Int(_) => "Int64",
+        TypeLit::Bool(_) => "Bool",
+    };
+    let same = lits.iter().all(|l| match (l, base) {
+        (TypeLit::String(_), "String") => true,
+        (TypeLit::Int(_), "Int64") => true,
+        (TypeLit::Bool(_), "Bool") => true,
+        _ => false,
+    });
+    if same {
+        Some((base, lits))
+    } else {
+        None
+    }
+}
+
+fn typelit_expr(lit: &TypeLit) -> Expr {
+    match lit {
+        TypeLit::String(s) => str_lit(s),
+        TypeLit::Int(n) => int_lit(*n),
+        TypeLit::Bool(b) => bool_lit(*b),
+    }
+}
+
+fn typelit_expected(lits: &[TypeLit]) -> String {
+    lits.iter()
+        .map(|l| match l {
+            TypeLit::String(s) => format!("\"{s}\""),
+            TypeLit::Int(n) => n.to_string(),
+            TypeLit::Bool(b) => b.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+fn gen_from_lit_union(td: &TypeDef, _base: &str, lits: &[TypeLit]) -> Function {
+    let expected = typelit_expected(lits);
+    let mut items = Vec::new();
+    for lit in lits {
+        items.push(BlockItem::Expr(if_expr(
+            bin(BinaryOp::Eq, name("n"), typelit_expr(lit)),
+            block_stmts(vec![BlockItem::Expr(Expr {
+                kind: ExprKind::Return {
+                    value: Some(Box::new(call(
+                        "Pass",
+                        vec![Arg::Pos(typelit_expr(lit))],
+                    ))),
+                },
+                span: dummy(),
+            })]),
+            None,
+        )));
+    }
+    Function {
+        exported: false,
+        name: format!("__from_{}", td.name),
+        name_span: dummy(),
+        params: vec![
+            param("n", ty_named(_base)),
+            param_default("path", ty_named("String"), str_lit("")),
+        ],
+        return_type: Some(ty_trial(ty_named(&td.name))),
+        body: Block {
+            items,
+            tail: Some(Box::new(call(
+                "Fail",
+                vec![Arg::Pos(call(
+                    "issueMismatch",
+                    vec![
+                        Arg::Pos(name("path")),
+                        Arg::Pos(str_lit(&expected)),
+                        Arg::Pos(interp_val("n")),
+                    ],
+                ))],
+            ))),
+            span: dummy(),
+        },
+    }
+}
+
+fn gen_to_json_lit_union(td: &TypeDef, base: &str) -> Function {
+    Function {
+        exported: false,
+        name: format!("__toJson_{}", td.name),
+        name_span: dummy(),
+        params: vec![param("v", ty_named(&td.name))],
+        return_type: Some(ty_named("Json")),
+        body: Block {
+            items: vec![],
+            tail: Some(Box::new(call(
+                json_ctor_for_base(base),
+                vec![Arg::Pos(name("v"))],
+            ))),
+            span: dummy(),
+        },
+    }
+}
+
+fn gen_from_json_scalar(td: &TypeDef, base: &str) -> Function {
+    let from = format!("__fromJson_{}", td.name);
+    Function {
+        exported: false,
+        name: from,
+        name_span: dummy(),
+        params: vec![
+            param("v", ty_named("Json")),
+            param_default("path", ty_named("String"), str_lit("")),
+        ],
+        return_type: Some(ty_trial(ty_named(&td.name))),
+        body: Block {
+            items: vec![let_bind(
+                "raw",
+                false,
+                try_expr(call(
+                    as_helper_for_base(base),
+                    vec![Arg::Pos(name("v")), Arg::Pos(name("path"))],
+                )),
+            )],
+            tail: Some(Box::new(method_call(
+                name(&td.name),
+                "from",
+                vec![Arg::Pos(name("raw")), Arg::Pos(name("path"))],
+            ))),
+            span: dummy(),
+        },
     }
 }
 
@@ -1534,6 +1705,27 @@ mod tests {
             .collect();
         assert!(names.contains(&"__read_Order"));
         assert!(names.contains(&"__fromJson_Order"));
+    }
+
+    #[test]
+    fn generates_from_for_lit_union() {
+        let m = parse_desugar(
+            r#"
+            import { Json } from "std/json"
+            type DrinkSlug = "espresso" | "mocha"
+            "#,
+        );
+        let names: Vec<_> = m
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Function(f) => Some(f.name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(names.contains(&"__from_DrinkSlug"));
+        assert!(names.contains(&"__fromJson_DrinkSlug"));
+        assert!(names.contains(&"__read_DrinkSlug"));
     }
 
     #[test]

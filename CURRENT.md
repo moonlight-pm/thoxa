@@ -79,7 +79,8 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 ### Proceed order
 
 1. **Built-in validation** — `Type.read` + `where` + `T.from` + `.encode` +
-   literal-union slugs + `Issue` sum + `May` fields on this branch. Nested
+   `Issue` sum + `May` fields on this branch. Closed slugs are literal
+   unions (`type DrinkSlug = "espresso" | …`) and subtype `String`. Nested
    `read` after a failed `read` is RC-clean. Do not merge to master until
    the surface sticks.  
 2. **Crema-lite experiment** — remaining checklist in

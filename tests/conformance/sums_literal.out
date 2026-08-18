@@ -3,3 +3,7 @@ on
 off
 read
 yes
+r
+w:r
+i:r
+n:0

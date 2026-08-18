@@ -138,9 +138,15 @@ type Mid    = Dozen where >= 5          ## Int64 where >= 5 & <= 12
 ```
 
 ```thx
-type DrinkSlug = String where "espresso" | "mocha" | "latte"
-type HotSlug   = DrinkSlug where "espresso" | "mocha"   ## ok, subset
+type DrinkSlug = "espresso" | "mocha" | "latte"
+type HotSlug   = "espresso" | "mocha"   ## subset; HotSlug <: DrinkSlug <: String
 ```
+
+Closed string sets are literal unions, not `where`. `"espresso"` <: `String`,
+so a sum of only string literals is also a subtype of `String` (widen emits
+the word from the tag). `DrinkSlug.from` / `read` are the String→union check.
+`where "espresso" | "mocha"` on `String` still works (same membership) but is
+the redundant spelling.
 
 ### Empty — compile error
 
@@ -149,7 +155,7 @@ type Qty  = Int64 where >= 1
 type Nope = Qty   where <= 0            ## >= 1 & <= 0
 type Gap  = Int64 where 1..10
 type Miss = Gap   where 11..20          ## disjoint ranges
-type Hot  = DrinkSlug where "cold-brew" ## not a member
+type Hot  = "cold-brew"   ## not a member of DrinkSlug — no inject
 ```
 
 ### A product is several field clauses
@@ -241,8 +247,9 @@ fills generated text.
    — **done.** `{value}` / `{expected}` / `{path}` fill at runtime. Inline
    `Int64 where >= 1` on a field is checked in `read`. `t.encode()` /
    `t.toJson()`. Crema Ticket uses `toJson` + `ok`.
-4. **Literal-union slugs** — **done.** `type DrinkSlug = String where "espresso" | …`.
-   Crema `CreateOrder.slug: DrinkSlug`. Or-clause expected text lists members.
+4. **Literal-union slugs** — **done.** `type DrinkSlug = "espresso" | …`
+   (not `String where`). Crema `CreateOrder.slug: DrinkSlug`. Union <: String.
+   `from` / `read` on the union. Or-clause expected text lists members.
 5. **`Issue` sum + May fields + nested-read RC** — **done.**
    `Issue = Missing | Mismatch | Rejected`. `May<T>` fields treat missing
    and JSON null as `Not`. Map.get of User is a slot borrow + retain, so

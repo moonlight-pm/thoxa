@@ -7,7 +7,9 @@ type Qty = Int64 where >= 1 "need {expected}, got {value}"
 type Dozen = Qty where <= 12
 type Order(slug: String, qty: Qty)
 type Line(n: Int64 where >= 1)
-type DrinkSlug = String where "espresso" | "mocha"
+type DrinkSlug = "espresso" | "mocha"
+type Drink(slug: DrinkSlug)
+type Closed = String where "a" | "b"
 
 fn showQ(t: Trial<Qty, Issue>) -> String {
     match t {
@@ -57,6 +59,29 @@ fn main() -> Int64 {
     match DrinkSlug.from("chai") {
         Fail(e) => info("slug:{message(e)}")
         Pass(s) => info("slugok:{s}")
+    }
+    match DrinkSlug.from("mocha") {
+        Fail(e) => info("slug2:{message(e)}")
+        Pass(s) {
+            let asStr: String = s
+            info("slugok:{asStr}")
+        }
+    }
+    match Drink.read("{{\"slug\":\"espresso\"}}") {
+        Fail(e) => info("dr:{message(e)}")
+        Pass(d) => info("drok:{d.slug}")
+    }
+    match DrinkSlug.read("\"espresso\"") {
+        Fail(e) => info("sr:{message(e)}")
+        Pass(s) => info("srok:{s}")
+    }
+    match Drink.read("{{\"slug\":\"chai\"}}") {
+        Fail(e) => info("dr2:{message(e)}")
+        Pass(d) => info("drok2:{d.slug}")
+    }
+    match Closed.from("c") {
+        Fail(e) => info("cl:{message(e)}")
+        Pass(s) => info("clok:{s}")
     }
     0
 }

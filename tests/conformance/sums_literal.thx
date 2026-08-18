@@ -11,6 +11,10 @@ fn flagName(f!: Flag) -> String {
     }
 }
 
+fn takeStr(s!: String) -> String {
+    s
+}
+
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
@@ -30,5 +34,11 @@ fn main() -> Int64 {
         true { logging.info("yes") }
         false { logging.info("no") }
     }
+    let widened: String = m
+    logging.info(takeStr(m))
+    logging.info("w:{widened}")
+    logging.info("i:{m}")
+    let n: Int64 = a
+    logging.info("n:{n}")
     0
 }

@@ -8083,6 +8083,10 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
             }
             InterpPart::Expr(e) => {
                 let (v, ty) = lower_expr(ctx, e)?;
+                let (v, ty) = match maybe_widen_lit_sum(ctx, v.clone(), &ty)? {
+                    Some((p, t)) => (p, t),
+                    None => (v, ty),
+                };
                 match ty {
                     Ty::String => v,
                     Ty::Int64 | Ty::Float64 | Ty::Bool => {
@@ -8969,9 +8973,11 @@ fn lower_type_read_static(
         .get(mangled_ty)
         .ok_or_else(|| Error::at(format!("unknown type `{mangled_ty}`"), span))?
         .clone();
-    if info.sum.is_some() {
+    if info.sum.is_some()
+        && lookup_generated_read_fn(ctx, &info, mangled_ty, method).is_none()
+    {
         return Err(Error::at(
-            format!("cannot `{method}` a union type (read is for constructor-param products)"),
+            format!("cannot `{method}` a union type (read is for constructor-param products and closed literal unions)"),
             span,
         ));
     }
@@ -10961,6 +10967,106 @@ fn sum_info_of<'a>(types: &'a HashMap<String, TypeInfo>, ty: &Ty) -> Option<&'a 
     }
 }
 
+fn lit_sum_widens_to(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool {
+    match to {
+        Ty::String => is_pure_lit_sum_of_kind(types, from, LitKind::String),
+        Ty::Int64 => is_pure_lit_sum_of_kind(types, from, LitKind::Int),
+        Ty::Bool => is_pure_lit_sum_of_kind(types, from, LitKind::Bool),
+        _ => false,
+    }
+}
+
+/// Materialize a pure-literal union as its base (`"r"|"w"` → String, `0|1` → Int64).
+fn emit_lit_widen(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    to: &Ty,
+) -> Result<Option<Place>> {
+    if !lit_sum_widens_to(&ctx.types, from, to) {
+        return Ok(None);
+    }
+    let Ty::User(from_n) = from else {
+        return Ok(None);
+    };
+    let sum = ctx
+        .types
+        .get(from_n)
+        .and_then(|i| i.sum.clone())
+        .ok_or_else(|| Error::new("internal: lit widen on non-sum"))?;
+    let tag = ctx.fresh("wtag");
+    ctx.assign(
+        tag.clone(),
+        Ty::Int64,
+        RValue::SumTag {
+            place,
+            sum_type: from_n.clone(),
+        },
+    );
+    let out = ctx.fresh("wwide");
+    init_place(ctx, &out, to)?;
+
+    let mut acc: Vec<Stmt> = Vec::new();
+    for v in sum.variants.iter().rev() {
+        let Some(lit) = &v.lit else {
+            continue;
+        };
+        let want = ctx.fresh("wte");
+        ctx.assign(want.clone(), Ty::Int64, RValue::Int(v.tag as i64));
+        let cond = ctx.fresh("wc");
+        ctx.assign(
+            cond.clone(),
+            Ty::Bool,
+            RValue::Binary {
+                op: BinaryOp::Eq,
+                left: tag.clone(),
+                right: want,
+            },
+        );
+        let saved = std::mem::take(&mut ctx.stmts);
+        match lit {
+            TypeLit::String(s) => {
+                ctx.assign(out.clone(), Ty::String, RValue::StringLit(s.clone()));
+            }
+            TypeLit::Int(n) => {
+                ctx.assign(out.clone(), Ty::Int64, RValue::Int(*n));
+            }
+            TypeLit::Bool(b) => {
+                ctx.assign(out.clone(), Ty::Bool, RValue::Bool(*b));
+            }
+        }
+        let then_body = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = saved;
+        acc = vec![Stmt::If {
+            cond,
+            then_body,
+            else_body: acc,
+        }];
+    }
+    ctx.stmts.extend(acc);
+    Ok(Some(out))
+}
+
+fn maybe_widen_lit_sum(
+    ctx: &mut LowerCtx,
+    place: Place,
+    ty: &Ty,
+) -> Result<Option<(Place, Ty)>> {
+    let to = if is_pure_lit_sum_of_kind(&ctx.types, ty, LitKind::String) {
+        Ty::String
+    } else if is_pure_lit_sum_of_kind(&ctx.types, ty, LitKind::Int) {
+        Ty::Int64
+    } else if is_pure_lit_sum_of_kind(&ctx.types, ty, LitKind::Bool) {
+        Ty::Bool
+    } else {
+        return Ok(None);
+    };
+    match emit_lit_widen(ctx, place, ty, &to)? {
+        Some(p) => Ok(Some((p, to))),
+        None => Ok(None),
+    }
+}
+
 /// Type equality including transparent union aliases (D119).
 fn ty_eq(types: &HashMap<String, TypeInfo>, a: &Ty, b: &Ty) -> bool {
     if a == b {
@@ -10990,6 +11096,10 @@ fn can_coerce_ty(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool 
         return true;
     }
     if ty_eq(types, from, to) {
+        return true;
+    }
+    // `"espresso" | "mocha"` <: String (and 0|1 <: Int64, true|false <: Bool).
+    if lit_sum_widens_to(types, from, to) {
         return true;
     }
     if let Some(rf) = refined_info(types, from) {
@@ -11138,6 +11248,9 @@ fn try_sum_coerce(
 ) -> Result<Option<Place>> {
     if from == to {
         return Ok(Some(place));
+    }
+    if let Some(p) = emit_lit_widen(ctx, place.clone(), from, to)? {
+        return Ok(Some(p));
     }
     // Transparent aliases / nested flatten: remap when from members ⊆ to (D119).
     if let (Ty::User(from_n), Ty::User(to_n)) = (from, to) {
@@ -12542,6 +12655,14 @@ fn lower_binary(
     let (r, rt) = lower_expr(ctx, right)?;
     let (l, lt) = unwrap_refined(ctx, l, &lt)?;
     let (r, rt) = unwrap_refined(ctx, r, &rt)?;
+    let (l, lt) = match maybe_widen_lit_sum(ctx, l.clone(), &lt)? {
+        Some(w) => w,
+        None => (l, lt),
+    };
+    let (r, rt) = match maybe_widen_lit_sum(ctx, r.clone(), &rt)? {
+        Some(w) => w,
+        None => (r, rt),
+    };
     match op {
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
             if is_float(&lt) || is_float(&rt) {

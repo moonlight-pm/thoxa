@@ -10,7 +10,7 @@ export fn health() -> Response {
 }
 
 type Qty = Int64 where >= 1
-type DrinkSlug = String where "espresso" | "cold-brew" | "cappuccino" | "flat-white" | "pour-over" | "mocha"
+type DrinkSlug = "espresso" | "cold-brew" | "cappuccino" | "flat-white" | "pour-over" | "mocha"
 type CreateOrder(slug: DrinkSlug, qty: Qty)
 
 ## POST /api/orders — `{"slug":"mocha","qty":2}` → priced ticket.
