@@ -4,30 +4,30 @@ import http, { Request, Response } from "std/http"
 import { Has, Not, May } from "std/fallible"
 
 let cookieName = "customer"
-let maxAgeSecs = 2592000
+let maxAgeSeconds = 2592000
 
-export fn current(req!: Request) -> May<String> {
-    http.cookie(req, cookieName)
+export fn current(request!: Request) -> May<String> {
+    http.cookie(request, cookieName)
 }
 
 export fn rememberHeader(name!: String) -> String {
-    "{cookieName}={name}; Path=/; HttpOnly; SameSite=Lax; Max-Age={maxAgeSecs}"
+    "{cookieName}={name}; Path=/; HttpOnly; SameSite=Lax; Max-Age={maxAgeSeconds}"
 }
 
 export fn forgetHeader() -> String {
     "{cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
 }
 
-export fn withRemember(res!: Response, name!: String) -> Response {
-    http.withHeader(res, "Set-Cookie", rememberHeader(name))
+export fn withRemember(response!: Response, name!: String) -> Response {
+    http.withHeader(response, "Set-Cookie", rememberHeader(name))
 }
 
-export fn withForget(res!: Response) -> Response {
-    http.withHeader(res, "Set-Cookie", forgetHeader())
+export fn withForget(response!: Response) -> Response {
+    http.withHeader(response, "Set-Cookie", forgetHeader())
 }
 
-export fn greeting(req!: Request) -> String {
-    match current(req) {
+export fn greeting(request!: Request) -> String {
+    match current(request) {
         Not => ""
         Has(name) {
             name

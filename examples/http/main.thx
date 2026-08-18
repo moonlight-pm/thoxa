@@ -15,8 +15,8 @@ fn main() {
     logging.setFormat(logging.formatPlain)
     match server.serve(routes.port, routes.handle) {
         Pass => 0
-        Fail(e) {
-            warn("server error: {e}")
+        Fail(error) {
+            warn("server error: {error}")
             1
         }
     }

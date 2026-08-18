@@ -198,3 +198,4 @@ printf 'echo hi\nexit\n' | cargo run -p thoxa --
 - **After each finished checklist / product slice:** update progress docs,
   then **commit and push** (user standing order).  
 - Prefer small diffs; don’t drive-by-refactor unrelated surfaces.  
+- **Full-word names** — no single-letter locals; `req`/`res` → `request`/`response`. Especially `examples/http`.  

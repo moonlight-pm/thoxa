@@ -12,8 +12,8 @@ fn main() {
     logging.setFormat(logging.formatPlain)
     match server.serve(routes.port, routes.handle) {
         Pass => 0
-        Fail(e) {
-            warn("server error: {e}")
+        Fail(error) {
+            warn("server error: {error}")
             1
         }
     }
@@ -33,7 +33,7 @@ fn main() {
 ```text
 Main → server.serve(port, handle)
          std/http/server owns accept / parse / body / write
-         handle(req) per request
+         handle(request) per request
 
 app → std/http/static          miss → files under web/
 app → std/http                query / form / cookies / 303
@@ -43,11 +43,11 @@ app → std/json                POST /api/orders decode/encode
 **Routing shape (what you have now):**
 
 1. App `type Routes` — type-body `GET "/…"` / `POST "/…"` (compiler → `route(req)`)
-2. App `handle` — `Routes().route(req)`; **404** falls through to `std/http/static`
+2. App `handle` — `Routes().route(request)`; **404** falls through to `std/http/static`
 3. `parseRequest` keeps `Request.query`; `std/http/server.readBody` fills `Request.body`.
    Query / form / cookies parse to `Map<String, String>`. `Request.headers`
    stays `Array<Header>`.
-4. Host takes `port` + `(req: Request) -> Response` (**D132**)
+4. Host takes `port` + `(request: Request) -> Response` (**D132**)
 
 Domain modules (Pages, Models, …) are never imported by the host.
 
@@ -82,12 +82,12 @@ examples/http/
 
 ```thx
 type Routes {
-    GET "/" (req: Request) -> Response { … }
-    GET "/menu" (req: Request) -> Response { … }
-    GET "/menu/:slug" (slug: String, req: Request) -> Response { … }
+    GET "/" (request: Request) -> Response { … }
+    GET "/menu" (request: Request) -> Response { … }
+    GET "/menu/:slug" (slug: String, request: Request) -> Response { … }
     GET "/api/health" -> Response { … }
-    POST "/api/orders" (req: Request) -> Response { … }
-    POST "/" (req: Request) -> Response { … }
+    POST "/api/orders" (request: Request) -> Response { … }
+    POST "/" (request: Request) -> Response { … }
 }
 ```
 

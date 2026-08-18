@@ -109,6 +109,9 @@ Compiler pipeline: `.thx` → lexer → parser → AST → MIR (+ simple RC) →
 - **No QBE / no tree-walk product interpreter** in phase A.
 - **Heap today:** simple single-threaded RC; Perceus later.
 - Prefer small diffs; don’t drive-by-refactor unrelated surfaces.
+- **Full-word names.** No single-letter locals (`d`, `e`, `q`, `n`, `o`, `v`).
+  Prefer `drink`, `error`, `query`, `count`, `order`, `value`. Abbreviations
+  like `req`/`res` → `request`/`response`. Especially in `examples/http`.
 - Do **not** commit unless the user asks.
 - Never mix “is” and “will be” in docs without labels (progress model).
 

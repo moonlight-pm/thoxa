@@ -7,23 +7,23 @@ import http, { Response, notFound, htmlResponse } from "std/http"
 import { Has, Not, May } from "std/fallible"
 import { isEmpty, trim } from "std/str"
 
-export fn home(who!: String) -> Response {
-    let n = models.drinkCount()
+export fn home(customerName!: String) -> Response {
+    let drinkCount = models.drinkCount()
     htmlResponse(
-        <Page title="Home" customer={who}>
+        <Page title="Home" customer={customerName}>
             <section class="hero">
                 <h1>Little Crema</h1>
                 <p class="lede">Six drinks, one tiny counter, and a Thoxa feature in every pour.</p>
                 <p><a class="button" href="/menu">Browse the menu</a></p>
-                <p class="muted" data-count={n}>{n} drinks brewed fresh daily.</p>
+                <p class="muted" data-count={drinkCount}>{drinkCount} drinks brewed fresh daily.</p>
             </section>
-            {homeCard(who)}
+            {homeCard(customerName)}
         </Page>
     )
 }
 
-fn homeCard(who!: String) -> Node {
-    if isEmpty(who) {
+fn homeCard(customerName!: String) -> Node {
+    if isEmpty(customerName) {
         <section class="card-form">
             <h2>Are you a regular?</h2>
             <p class="muted">Leave your name and the counter remembers you.</p>
@@ -35,23 +35,23 @@ fn homeCard(who!: String) -> Node {
         </section>
     } else {
         <section class="card-form">
-            <h2>Welcome back, {who}</h2>
+            <h2>Welcome back, {customerName}</h2>
             <p class="muted">Your usual table is free.</p>
             <form method="post" action="/">
                 <input type="hidden" name="name" value="" />
-                <button type="submit" class="outline">Not {who}?</button>
+                <button type="submit" class="outline">Not {customerName}?</button>
             </form>
         </section>
     }
 }
 
-type DrinkCard(d: Drink) {
+type DrinkCard(drink: Drink) {
     export fn view(children: Array<Node>) -> Node {
         <li class="card">
-            <a href={"/menu/{d.slug}"}>
-                <span class="name">{d.name}</span>
-                <span class="meta">{roastLabel(d.roast)} · {formatPrice(d.priceCents)}</span>
-                <span class="notes">{d.notes}</span>
+            <a href={"/menu/{drink.slug}"}>
+                <span class="name">{drink.name}</span>
+                <span class="meta">{roastLabel(drink.roast)} · {formatPrice(drink.priceCents)}</span>
+                <span class="notes">{drink.notes}</span>
             </a>
         </li>
     }
@@ -59,14 +59,14 @@ type DrinkCard(d: Drink) {
 
 fn drinkCards(drinks!: Array<Drink>) -> Array<Node> {
     mut items: Array<Node> = []
-    for d in drinks {
-        items.append(<DrinkCard d={d} />)
+    for drink in drinks {
+        items.append(<DrinkCard drink={drink} />)
     }
     items
 }
 
-export fn menu(who!: String, q!: String) -> Response {
-    let needle = trim(q)
+export fn menu(customerName!: String, query!: String) -> Response {
+    let needle = trim(query)
     let drinks = models.searchDrinks(needle)
     let items = drinkCards(drinks)
     let emptyNote = if drinks.count == 0 {
@@ -83,7 +83,7 @@ export fn menu(who!: String, q!: String) -> Response {
         </p>
     }
     htmlResponse(
-        <Page title="Menu" customer={who}>
+        <Page title="Menu" customer={customerName}>
             <h1>The menu</h1>
             <form class="search" method="get" action="/menu">
                 <label for="q">Search the menu</label>
@@ -99,24 +99,24 @@ export fn menu(who!: String, q!: String) -> Response {
     )
 }
 
-export fn drink(slug!: String, who!: String) -> Response {
+export fn drink(slug!: String, customerName!: String) -> Response {
     match models.findBySlug(slug) {
         Not => notFound()
-        Has(d) {
-            drinkPage(d, who)
+        Has(drink) {
+            drinkPage(drink, customerName)
         }
     }
 }
 
-fn drinkPage(d!: Drink, who!: String) -> Response {
-    let price = formatPrice(d.priceCents)
+fn drinkPage(drink!: Drink, customerName!: String) -> Response {
+    let price = formatPrice(drink.priceCents)
     htmlResponse(
-        <Page title={d.name} customer={who}>
+        <Page title={drink.name} customer={customerName}>
             <p class="back"><a href="/menu">← Back to the menu</a></p>
             <article class="drink">
-                <h1>{d.name}</h1>
-                <p class="badge">{roastLabel(d.roast)}</p>
-                <p class="notes">{d.notes}</p>
+                <h1>{drink.name}</h1>
+                <p class="badge">{roastLabel(drink.roast)}</p>
+                <p class="notes">{drink.notes}</p>
                 <p class="price">{price}</p>
             </article>
         </Page>

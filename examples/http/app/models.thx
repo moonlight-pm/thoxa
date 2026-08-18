@@ -16,8 +16,8 @@ export type Drink(
     roast: Roast
 )
 
-export fn roastLabel(r: Roast) -> String {
-    match r {
+export fn roastLabel(roast: Roast) -> String {
+    match roast {
         Dark => "Dark roast"
         Medium => "Medium roast"
         Light => "Light roast"
@@ -26,11 +26,11 @@ export fn roastLabel(r: Roast) -> String {
 
 export fn formatPrice(cents!: Int64) -> String {
     let dollars = cents / 100
-    let rem = cents % 100
-    if rem < 10 {
-        "${dollars}.0{rem}"
+    let remainder = cents % 100
+    if remainder < 10 {
+        "${dollars}.0{remainder}"
     } else {
-        "${dollars}.{rem}"
+        "${dollars}.{remainder}"
     }
 }
 
@@ -82,9 +82,9 @@ export fn allDrinks() -> Array<Drink> {
 }
 
 export fn findBySlug(slug!: String) -> May<Drink> {
-    for d in allDrinks() {
-        if d.slug == slug {
-            return Has(d)
+    for drink in allDrinks() {
+        if drink.slug == slug {
+            return Has(drink)
         }
     }
     Not()
@@ -95,31 +95,31 @@ export fn drinkCount() -> Int64 {
 }
 
 export fn searchDrinks(needle!: String) -> Array<Drink> {
-    let q = trim(needle)
-    if isEmpty(q) {
+    let query = trim(needle)
+    if isEmpty(query) {
         allDrinks()
     } else {
-        mut out: Array<Drink> = []
-        for d in allDrinks() {
-            if drinkMatches(d, q) {
-                out.append(d)
+        mut matches: Array<Drink> = []
+        for drink in allDrinks() {
+            if drinkMatches(drink, query) {
+                matches.append(drink)
             }
         }
-        out
+        matches
     }
 }
 
-fn drinkMatches(d!: Drink, q!: String) -> Bool {
-    if containsIgnoreCaseAscii(d.name, q) {
+fn drinkMatches(drink!: Drink, query!: String) -> Bool {
+    if containsIgnoreCaseAscii(drink.name, query) {
         true
     } else {
-        if containsIgnoreCaseAscii(d.notes, q) {
+        if containsIgnoreCaseAscii(drink.notes, query) {
             true
         } else {
-            if containsIgnoreCaseAscii(roastLabel(d.roast), q) {
+            if containsIgnoreCaseAscii(roastLabel(drink.roast), query) {
                 true
             } else {
-                containsIgnoreCaseAscii(d.slug, q)
+                containsIgnoreCaseAscii(drink.slug, query)
             }
         }
     }

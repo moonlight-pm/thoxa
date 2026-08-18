@@ -14,12 +14,12 @@ type DrinkSlug = "espresso" | "cold-brew" | "cappuccino" | "flat-white" | "pour-
 type CreateOrder(slug: DrinkSlug, qty: Qty)
 
 ## POST /api/orders — `{"slug":"mocha","qty":2}` → priced ticket.
-export fn createOrder(req!: Request) -> Response {
-    match CreateOrder.read(req.body.toString()) {
-        Fail(e) => jsonIssue(e)
-        Pass(o) {
-            match placeOrder(o) {
-                Fail(e) => jsonIssue(e)
+export fn createOrder(request!: Request) -> Response {
+    match CreateOrder.read(request.body.toString()) {
+        Fail(error) => jsonIssue(error)
+        Pass(order) {
+            match placeOrder(order) {
+                Fail(error) => jsonIssue(error)
                 Pass(ticket) => jsonOk(ticketOk(ticket))
             }
         }
@@ -28,47 +28,47 @@ export fn createOrder(req!: Request) -> Response {
 
 type Ticket(slug: String, name: String, qty: Int64, unitCents: Int64, totalCents: Int64)
 
-fn placeOrder(o!: CreateOrder) -> Trial<Ticket, Issue> {
-    match models.findBySlug(o.slug) {
+fn placeOrder(order!: CreateOrder) -> Trial<Ticket, Issue> {
+    match models.findBySlug(order.slug) {
         Not => Fail(issueRejected("slug", "unknown drink"))
-        Has(d) {
+        Has(drink) {
             Pass(Ticket(
-                slug: d.slug,
-                name: d.name,
-                qty: o.qty,
-                unitCents: d.priceCents,
-                totalCents: d.priceCents * o.qty
+                slug: drink.slug,
+                name: drink.name,
+                qty: order.qty,
+                unitCents: drink.priceCents,
+                totalCents: drink.priceCents * order.qty
             ))
         }
     }
 }
 
-fn ticketOk(t!: Ticket) -> Json {
-    let raw: Json = t.toJson()
+fn ticketOk(ticket!: Ticket) -> Json {
+    let raw: Json = ticket.toJson()
     match raw {
-        JObj(m) {
-            mut o = m
-            o.set("ok", JBool(true))
-            let j: Json = JObj(o)
-            j
+        JObj(fields) {
+            mut object = fields
+            object.set("ok", JBool(true))
+            let json: Json = JObj(object)
+            json
         }
         else => raw
     }
 }
 
-fn jsonOk(v!: Json) -> Response {
-    jsonRes(200, "OK", v)
+fn jsonOk(value!: Json) -> Response {
+    jsonResponse(200, "OK", value)
 }
 
-fn jsonIssue(e!: Issue) -> Response {
-    jsonRes(400, "Bad Request", errorObject(e))
+fn jsonIssue(error!: Issue) -> Response {
+    jsonResponse(400, "Bad Request", errorObject(error))
 }
 
-fn jsonRes(status!: Int64, reason!: String, v!: Json) -> Response {
+fn jsonResponse(status!: Int64, reason!: String, value!: Json) -> Response {
     http.response(
         status,
         reason,
         "application/json; charset=utf-8",
-        Bytes.fromString(encode(v))
+        Bytes.fromString(encode(value))
     )
 }

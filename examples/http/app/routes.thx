@@ -1,5 +1,5 @@
 ## App — type-body route clauses + free `handle` (D132).
-## `Routes` is the compiler surface (`GET "/…"` → `route(req)`).
+## `Routes` is the compiler surface (`GET "/…"` → generated `route(req)`).
 ## `handle` falls through to static files on 404.
 ## No listen/accept/parse/send.
 
@@ -14,51 +14,51 @@ import { Has, Not, May } from "std/fallible"
 let staticRoot = "examples/http/web"
 export let port = 9091
 
-## ── Route clauses (desugars to `route(req: Request) -> Response`) ───────────
+## ── Route clauses (desugars to generated `route(req: Request) -> Response`) ────
 
 type Routes {
-    GET "/" (req: Request) -> Response {
-        pages.home(customer.greeting(req))
+    GET "/" (request: Request) -> Response {
+        pages.home(customer.greeting(request))
     }
 
-    GET "/menu" (req: Request) -> Response {
-        pages.menu(customer.greeting(req), menuQuery(req))
+    GET "/menu" (request: Request) -> Response {
+        pages.menu(customer.greeting(request), menuQuery(request))
     }
 
-    GET "/menu/:slug" (slug: String, req: Request) -> Response {
-        pages.drink(slug, customer.greeting(req))
+    GET "/menu/:slug" (slug: String, request: Request) -> Response {
+        pages.drink(slug, customer.greeting(request))
     }
 
     GET "/api/health" -> Response {
         api.health()
     }
 
-    POST "/api/orders" (req: Request) -> Response {
-        api.createOrder(req)
+    POST "/api/orders" (request: Request) -> Response {
+        api.createOrder(request)
     }
 
-    POST "/" (req: Request) -> Response {
-        pages.signIn(req.body)
+    POST "/" (request: Request) -> Response {
+        pages.signIn(request.body)
     }
 }
 
-fn menuQuery(req!: Request) -> String {
-    match http.queryParam(req, "q") {
+fn menuQuery(request!: Request) -> String {
+    match http.queryParam(request, "q") {
         Not => ""
-        Has(v) { v }
+        Has(value) { value }
     }
 }
 
-fn serveStatic(req!: Request) -> Response {
+fn serveStatic(request!: Request) -> Response {
     let files = httpStatic.Router(root: staticRoot)
-    files.handle(req)
+    files.handle(request)
 }
 
-export fn handle(req!: Request) -> Response {
-    let res = Routes().route(req)
-    if res.status == 404 {
-        serveStatic(req)
+export fn handle(request!: Request) -> Response {
+    let response = Routes().route(request)
+    if response.status == 404 {
+        serveStatic(request)
     } else {
-        res
+        response
     }
 }
