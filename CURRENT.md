@@ -6,6 +6,7 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-08-18 (**built-in validation** on master, not product — types as
 inhabitation; syntax open;
+Crema **D2** persist `/tmp/crema.db`;
 **D144** `sql"…"` tagged interpolator;
 **D143** `std/sqlite` amalgamation;
 **D142** `Cookie` / `withCookie` / `clearCookie`;
@@ -19,8 +20,8 @@ inhabitation; syntax open;
 `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
 JSX `Node` is `Element | Text | Fragment` + `{...}` spreads **on master**;
 D133/D134 Map; D132 fn pointers; `-->` nowait **on master**, not freeze /
-not handbook; Crema-lite Phase A–D1 dogfoods product `http` / `http/server` /
-`json`)
+not handbook; Crema-lite Phase A–D2 dogfoods product `http` / `http/server` /
+`json` / `sqlite`)
 
 ---
 
@@ -28,7 +29,10 @@ not handbook; Crema-lite Phase A–D1 dogfoods product `http` / `http/server` /
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **`sql"…"`** (**D144**);
+**Shipped recently:** multiline `"…"` / `sql"…"` gated (`strings_multiline`);
+Zed SQL injection on `sql"…"`;
+Crema persist (`/tmp/crema.db`);
+**`sql"…"`** (**D144**);
 **`std/sqlite`** (**D143**);
 **`Cookie` / `withCookie`** (**D142**);
 **`std/json`** (**D141** — `decode` / `encode`;
@@ -43,7 +47,7 @@ Crema `POST /api/orders`);
 pointers** (**D132**); **`-->` nowait**
 (colorless wait; Net parks; `HttpServer` `--> serveOne` + keep-alive);
 **multi-clause functions** (**D131**);
-Crema-lite **Phase A–D1**; **match arm sugar** (**D130**); **return-type
+Crema-lite **Phase A–D2**; **match arm sugar** (**D130**); **return-type
 inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **combined import** (**D127**); **`std/io`+`Net`+`Http`** (**D126**);
 **`std/logging`** (**D125**); LSP nav; **D124** diagnostics.
@@ -76,12 +80,13 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **Crema-lite** — remaining D+ (htmx / persistence / sessions) only if
-   useful. `POST /api/orders` already dogfoods **`std/json`**. App/domain
-   stays example-only. Host/wire is product **`std/http` + `std/http/server`**
-   (**D136**/**D139**). Query/form/cookies are builtin `Map` (headers stay
-   `Array<Header>`). `Set-Cookie` is a `Cookie` value (**D142**).
-   File-based routing is **parked**
+1. **Crema-lite** — remaining D+ (htmx / sessions) only if useful.
+   `POST /api/orders` dogfoods **`std/json`**; catalog + orders live in
+   **`/tmp/crema.db`** via **`std/sqlite`** (app-owned schema; no product
+   migrate). App/domain stays example-only. Host/wire is product
+   **`std/http` + `std/http/server`** (**D136**/**D139**). Query/form/cookies
+   are builtin `Map` (headers stay `Array<Header>`). `Set-Cookie` is a
+   `Cookie` value (**D142**). File-based routing is **parked**
    ([`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)).
 2. Editor only when DX forces it.
 
@@ -90,7 +95,7 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 1. **Crema-lite experiment** — remaining checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    (app under `examples/http/`; host/wire already in `std/`; **JSON
-   `POST /api/orders` shipped**). Further D+ only if useful.  
+   `POST /api/orders` + SQLite persist shipped**). Further D+ only if useful.  
 2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
@@ -149,7 +154,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); policy stays in the app. |
-| SQLite | Amalgamation in `libthoxa_rt` (**D143**). Write `sql"… {value} …"` (**D144**); holes quote themselves. `exec`/`query` take `Sql`. No named `ffi` root. |
+| SQLite | Amalgamation in `libthoxa_rt` (**D143**). Write `sql"… {value} …"` (**D144**); holes quote themselves. `exec`/`query` take `Sql`. No named `ffi` root. No product `thoxa migrate` — apps own schema files. |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
@@ -182,7 +187,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 12. If built-in validation: [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md)
     (on master, not product; syntax open)
 13. If SQLite: [`docs/decisions.md`](docs/decisions.md) (**D143** / **D144**) —
-    amalgamation in `vendor/sqlite`; `sql"… {value} …"`
+    amalgamation in `vendor/sqlite`; `sql"… {value} …"`. Crema persist is
+    example-only (`examples/http` `/tmp/crema.db`); no product migrate.
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

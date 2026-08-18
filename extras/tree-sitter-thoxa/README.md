@@ -5,7 +5,9 @@ tokenizes rather than fully parses: keywords, casing-based type-vs-value
 identifiers, `#`/`##` comments, string/char/number literals, and operators.
 A small **JSX island** recognises `<tag>…</tag>` so highlights can paint
 markup captures (`@tag`, `@attribute`, `@markup.italic`) without becoming
-a full CST. `Array<Int64>` stays punctuation.
+a full CST. `Array<Int64>` stays punctuation. A **SQL island** recognises
+glued `sql"…"` (no space); `{holes}` stay Thoxa and the rest is injected
+as SQL (`queries/injections.scm`).
 
 ## Why so thin?
 

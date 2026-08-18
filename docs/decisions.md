@@ -29,7 +29,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D143 | Product SQLite is amalgamation + interpolated literals | **Amalgamation** in `vendor/sqlite` (3.53.4) compiled into `libthoxa_rt.a` (`SQLITE_THREADSAFE=0`, no load_extension). Thin RT `thoxa_sql_*` (Int64 handles; no stored `Address`). **`std/sqlite`:** `open` / `Db.exec` / `Db.query` / `close`; rows are `Row(cells: Map<String, SqlValue>)` with `SqlNull \| SqlInt \| SqlFloat \| SqlText`. **Injection (amended D144):** write `sql"… {value} …"`; holes are embedded as SQL. `lit` / `ident` remain as fragment helpers. Not `?` + a bind list. No named `ffi` root. | **Shipped.** Sample-driven (D97). Gate: `sqlite`. **Call surface → D144.** No blobs / prepared binds / transactions API / Crema persist yet. |
+| D143 | Product SQLite is amalgamation + interpolated literals | **Amalgamation** in `vendor/sqlite` (3.53.4) compiled into `libthoxa_rt.a` (`SQLITE_THREADSAFE=0`, no load_extension). Thin RT `thoxa_sql_*` (Int64 handles; no stored `Address`). **`std/sqlite`:** `open` / `Db.exec` / `Db.query` / `close`; rows are `Row(cells: Map<String, SqlValue>)` with `SqlNull \| SqlInt \| SqlFloat \| SqlText`. **Injection (amended D144):** write `sql"… {value} …"`; holes are embedded as SQL. `lit` / `ident` remain as fragment helpers. Not `?` + a bind list. No named `ffi` root. | **Shipped.** Sample-driven (D97). Gate: `sqlite`. **Call surface → D144.** No blobs / prepared binds / transactions API. **No product `thoxa migrate`** — apps own schema. Crema persist is example-only (`examples/http` `/tmp/crema.db`). |
 
 ## 2026-08-18 — `Set-Cookie` builder
 
@@ -324,7 +324,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
 | D71 | DX glue root | **`extras/`** with `tree-sitter-thoxa` + `zed` | Non-product personal DX; not mixed into `crates/`. Room for future `extras/vscode` etc. |
-| D75 | Thin grammar | Lexer-level tree-sitter only (keywords, casing, literals, comments, operators); no full CST | Churn isolation. Semantic tokens from `thoxa lsp` refine function/variable. Committed `src/parser.c`; Zed pins `[grammars.thoxa].rev` to a commit that contains it (`file://` repo path). |
+| D75 | Thin grammar | Lexer-level tree-sitter only (keywords, casing, literals, comments, operators); no full CST | Churn isolation. Semantic tokens from `thoxa lsp` refine function/variable. Committed `src/parser.c`; Zed pins `[grammars.thoxa].rev` to a commit that contains it (`file://` repo path). Highlighting islands (not a CST): JSX tags; glued `sql"…"` with SQL injection over `sql_text` (`injections.scm`). |
 
 ## 2026-07-20 — Editor PR2: `thoxa lsp`
 

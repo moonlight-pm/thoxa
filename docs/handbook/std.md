@@ -200,9 +200,20 @@ import sqlite from "std/sqlite"
 import { ident } from "std/sqlite"
 
 let db = sqlite.open(":memory:")?
-db.exec(sql"create table orders (slug text, qty integer)")?
-db.exec(sql"insert into orders(slug, qty) values ({slug}, {qty})")?
-let rows = db.query(sql"select slug, qty from {ident(table)?}")?
+db.exec(sql"
+    CREATE TABLE orders (
+        slug TEXT,
+        qty  INTEGER
+    )
+")?
+db.exec(sql"
+    INSERT INTO orders (slug, qty)
+    VALUES ({slug}, {qty})
+")?
+let rows = db.query(sql"
+    SELECT slug, qty
+    FROM {ident(table)?}
+")?
 ```
 
 | Surface | Notes |
@@ -217,7 +228,8 @@ let rows = db.query(sql"select slug, qty from {ident(table)?}")?
 | Numbers | `{qty}` → digits |
 
 A plain `"… {slug} …"` string is still concatenation. `sql"…"` is the
-safe form. `sql "…"` (space) is not a tag.
+safe form. `sql "…"` (space) is not a tag. Both `"…"` and `sql"…"` may
+span lines; newlines are kept (no dedent).
 
 Not shipped: blobs, prepared `?` binds, explicit transactions, extension
 loading, general `tag"…"` interpolators.

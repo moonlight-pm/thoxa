@@ -256,11 +256,101 @@
           "named": true
         },
         {
+          "type": "sql_string",
+          "named": true
+        },
+        {
           "type": "string",
           "named": true
         },
         {
           "type": "type_identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "sql_embed",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "boolean",
+          "named": true
+        },
+        {
+          "type": "bracket",
+          "named": true
+        },
+        {
+          "type": "char",
+          "named": true
+        },
+        {
+          "type": "delimiter",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "jsx_element",
+          "named": true
+        },
+        {
+          "type": "jsx_embed",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "operator",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        },
+        {
+          "type": "type_identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "sql_string",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "sql_close",
+          "named": true
+        },
+        {
+          "type": "sql_embed",
+          "named": true
+        },
+        {
+          "type": "sql_open",
+          "named": true
+        },
+        {
+          "type": "sql_text",
           "named": true
         }
       ]
@@ -546,6 +636,18 @@
   {
     "type": "return",
     "named": false
+  },
+  {
+    "type": "sql_close",
+    "named": true
+  },
+  {
+    "type": "sql_open",
+    "named": true
+  },
+  {
+    "type": "sql_text",
+    "named": true
   },
   {
     "type": "string",

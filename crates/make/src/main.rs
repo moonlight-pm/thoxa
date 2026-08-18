@@ -510,10 +510,10 @@ Install target: ~/.local/share/zed/extensions/installed/thoxa/
 
     // Language config + highlights (cheap; skip for --grammar only).
     if mode != ZedMode::Grammar {
-        eprintln!("==> languages/thoxa (config + highlights)");
+        eprintln!("==> languages/thoxa (config + highlights + injections)");
         let lang_src = extras.join("zed/languages/thoxa");
         let lang_dst = zed_ext.join("languages/thoxa");
-        for name in ["config.toml", "highlights.scm"] {
+        for name in ["config.toml", "highlights.scm", "injections.scm"] {
             let from = lang_src.join(name);
             let to = lang_dst.join(name);
             if let Err(e) = fs::copy(&from, &to) {

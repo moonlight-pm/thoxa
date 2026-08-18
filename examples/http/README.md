@@ -10,11 +10,19 @@ Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std**
 fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
-    match server.serve(routes.port, routes.handle) {
-        Pass => 0
+    match store.open() {
         Fail(error) {
-            warn("server error: {error}")
+            warn("store error: {error}")
             1
+        }
+        Pass {
+            match server.serve(routes.port, routes.handle) {
+                Pass => 0
+                Fail(error) {
+                    warn("server error: {error}")
+                    1
+                }
+            }
         }
     }
 }
@@ -26,8 +34,8 @@ fn main() {
 |-------|------|------|
 | **host** | `std/http/server` | Accept loop, body read, HEAD, keep-alive |
 | **wire** | `std/http` | Parse/write, query/form/cookie Maps, `Cookie` / `withCookie`, redirects |
-| **app** | `app/` | Type-body `GET`/`POST` clauses, free `handle`, pages/domain |
-| **entry** | `main.thx` | Logging + `server.serve(routes.port, routes.handle)` |
+| **app** | `app/` | Type-body `GET`/`POST` clauses, free `handle`, pages/domain, SQLite store |
+| **entry** | `main.thx` | Logging + `store.open` + `server.serve(routes.port, routes.handle)` |
 | **assets** | `web/` | Static files |
 
 ```text
@@ -38,6 +46,7 @@ Main → server.serve(port, handle)
 app → std/http/static          miss → files under web/
 app → std/http                query / form / cookies / Set-Cookie / 303
 app → std/json                POST /api/orders decode/encode
+app → std/sqlite              /tmp/crema.db (catalog + orders)
 ```
 
 **Routing shape (what you have now):**
@@ -59,13 +68,19 @@ cargo make run examples/http
 
 Port **9091** (`routes.port`).
 
-JSON order API (`std/json` **D141**):
+JSON order API (`std/json` **D141**; rows in `/tmp/crema.db`):
 
 ```bash
 curl -s -X POST -H 'Content-Type: application/json' \
   -d '{"slug":"mocha","qty":2}' http://127.0.0.1:9091/api/orders
-# {"ok":true,"slug":"mocha","name":"Mocha","qty":2,"unitCents":600,"totalCents":1200}
+# {"ok":true,"id":1,"slug":"mocha","name":"Mocha","qty":2,"unitCents":600,"totalCents":1200}
+curl -s http://127.0.0.1:9091/api/orders
+# [{"id":1,"slug":"mocha",…}]
 ```
+
+The catalog is seeded from `app/models.thx` on boot. Schema lives in
+`app/store.thx` (`CREATE TABLE IF NOT EXISTS` + upsert). Delete
+`/tmp/crema.db` to start clean. There is no product `thoxa migrate`.
 
 ## Layout
 
@@ -74,7 +89,7 @@ examples/http/
   main.thx
   app/
     routes.thx    # type-body GET/POST, handle, static fallback
-    pages.thx layout.thx api.thx models.thx customer.thx
+    pages.thx layout.thx api.thx models.thx customer.thx store.thx
   web/
 ```
 
@@ -86,6 +101,7 @@ type Routes {
     GET "/menu" (request: Request) -> Response { … }
     GET "/menu/:slug" (slug: String, request: Request) -> Response { … }
     GET "/api/health" -> Response { … }
+    GET "/api/orders" -> Response { … }
     POST "/api/orders" (request: Request) -> Response { … }
     POST "/" (request: Request) -> Response { … }
 }

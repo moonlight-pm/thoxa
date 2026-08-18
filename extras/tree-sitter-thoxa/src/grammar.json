@@ -19,6 +19,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "sql_string"
+        },
+        {
+          "type": "SYMBOL",
           "name": "keyword"
         },
         {
@@ -568,6 +572,90 @@
           }
         ]
       }
+    },
+    "sql_string": {
+      "type": "PREC_DYNAMIC",
+      "value": 15,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "ALIAS",
+            "content": {
+              "type": "TOKEN",
+              "content": {
+                "type": "STRING",
+                "value": "sql\""
+              }
+            },
+            "named": true,
+            "value": "sql_open"
+          },
+          {
+            "type": "REPEAT",
+            "content": {
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "sql_text"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "sql_embed"
+                }
+              ]
+            }
+          },
+          {
+            "type": "ALIAS",
+            "content": {
+              "type": "IMMEDIATE_TOKEN",
+              "content": {
+                "type": "STRING",
+                "value": "\""
+              }
+            },
+            "named": true,
+            "value": "sql_close"
+          }
+        ]
+      }
+    },
+    "sql_text": {
+      "type": "IMMEDIATE_TOKEN",
+      "content": {
+        "type": "PATTERN",
+        "value": "([^\"\\\\{]|\\\\.)+"
+      }
+    },
+    "sql_embed": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "IMMEDIATE_TOKEN",
+            "content": {
+              "type": "STRING",
+              "value": "{"
+            }
+          },
+          "named": false,
+          "value": "{"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_embed_token"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "}"
+        }
+      ]
     },
     "char": {
       "type": "TOKEN",

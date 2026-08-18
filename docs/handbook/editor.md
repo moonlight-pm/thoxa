@@ -37,7 +37,7 @@ restart again.
 | Feature | Notes |
 |---------|--------|
 | Diagnostics | Same engine as `thoxa check` (**D124**). **Multi-diag** + **structured codes** (`THX…`), help text (folded into the LSP message), and `relatedInformation` when labels exist. **Unused imports** are **warnings** (`THX010`, severity Warning). Parse recovery still typechecks the rest of a function after a bad token. Programs with `fn main` reject bare top-level statements with a clear span. Mid-expression recovery is still limited. |
-| Syntax color | Tree-sitter Thoxa grammar |
+| Syntax color | Tree-sitter Thoxa grammar. `sql"…"` injects Zed's SQL grammar into the body; `{holes}` stay Thoxa |
 | Hover | Signature + contiguous `##` docs. Unannotated free **`fn`** show **typecheck return type** (**D129** inference, e.g. `Trial<Void, String>`, `Int64`); unannotated methods/`extern` still default **`-> Void`** unless annotated; **`main` → `Int64`**; fallback same if lower failed. **`let` / `mut`** show `let a: Type` when nav has a type hint (annotation or inferred init). **Call arguments** show the formal (`backlog: Int64` on `listen(16)`) when the callee is resolvable (local or cross-module) |
 | Go to definition | Incl. some cross-module (`./`, `~/`) |
 | Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, ctor, method/fn return (generic head + type-param subst), copy-let, match payload, if/else, block, **match**, **module-level let** inits, or **`?` on Trial/May** (success type) |

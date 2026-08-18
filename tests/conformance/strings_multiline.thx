@@ -1,0 +1,23 @@
+## Newlines are allowed inside `"…"` and `sql"…"` (kept, not dedented).
+import sqlite from "std/sqlite"
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let block = "line1
+line2"
+    info("[{block}]")
+
+    let name = "Ada"
+    info("hi
+{name}")
+
+    let qty = 2
+    let query = sql"
+        SELECT {qty}
+    "
+    info("sql={query.text.count}")
+    0
+}

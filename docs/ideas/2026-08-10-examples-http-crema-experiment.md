@@ -57,7 +57,7 @@ examples/http/
   main.thx                 # std/http/server.serve(routes.port, routes.handle)
   app/
     routes.thx             # type Routes { GET/POST … }, handle, port
-    pages.thx layout.thx api.thx models.thx customer.thx
+    pages.thx layout.thx api.thx models.thx customer.thx store.thx
   web/
   README.md
 ```
@@ -144,12 +144,13 @@ curl -s  'http://127.0.0.1:9091/menu?q=chocolate' # Cold Brew + Mocha
 curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 ```
 
-### Phase D+ — JSON POST (partial) + parked rest
+### Phase D+ — JSON POST + persist (partial) + parked rest
 
 | Step | Status | Notes |
 |------|--------|-------|
 | D1 `POST /api/orders` | **done** | `std/json` `decode`/`encode`; body `{"slug","qty"}`; 200 priced ticket / 400 `{ok:false}` |
-| D2 htmx-ish partials, persistence, sessions | **parked** | `std/sqlite` (**D143**) exists if persist becomes useful |
+| D2 persistence | **done** | App `store.thx`; `/tmp/crema.db`; drinks seeded + orders persisted; `GET /api/orders`. No product `thoxa migrate` |
+| D3 htmx-ish partials, sessions | **parked** | only if useful |
 
 ---
 
@@ -162,7 +163,7 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 | `#[route]` | functions in `Api.thx` |
 | Manual `Router::builder` | type-body `GET`/`POST` clauses on `Routes` → `route(req)` |
 | `path_param` | `:slug` capture → `Drink(slug)` (and friends) on the route value |
-| Models / seed | `Models.thx` constants |
+| Models / seed | `models.thx` types + seed; `store.thx` SQLite |
 | `current_customer(cx)` | Phase B `Customer.thx` |
 | `view!` | JSX `Node` tags (`type Page` + `.html()`) |
 
@@ -178,7 +179,7 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
-**As of last update:** **Phase A–D1 complete**. Host/wire promoted to
+**As of last update:** **Phase A–D2 complete**. Host/wire promoted to
 **`std/http` + `std/http/server` (**D136**/**D139**)** — example `framework/` removed.
 **D137:** `queryParam` / `formField` / `cookie` / `htmlResponse` + Str
 `parseUInt` / `splitOnce`. **D142:** `Cookie` / `withCookie` / `clearCookie`
@@ -188,8 +189,10 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 + HTTP/1.1 keep-alive. **Map dogfood (D134):** query/form/cookies are
 `Map<String, String>`. Headers stay `Array<Header>` (no std flip).
 **D135:** `Drink.roast: Roast` + `DrinkCard(d: Drink)`.
-**D141:** `POST /api/orders` via `std/json` `decode`/`encode`. Remaining D+
-(htmx / persistence / sessions) only if wanted — domain stays example-only.
+**D141:** `POST /api/orders` via `std/json` `decode`/`encode`.
+**D2:** `std/sqlite` file at `/tmp/crema.db` (app-owned schema; no product
+migrate). Remaining D+ (htmx / sessions) only if wanted — domain stays
+example-only.
 
 ### Language / design notes (experiment)
 

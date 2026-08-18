@@ -7,17 +7,26 @@
 
 import server from "std/http/server"
 import routes from "./app/routes"
+import store from "./app/store"
 import { Pass, Fail } from "std/fallible"
 import logging, { warn } from "std/logging"
 
 fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
-    match server.serve(routes.port, routes.handle) {
-        Pass => 0
+    match store.open() {
         Fail(error) {
-            warn("server error: {error}")
+            warn("store error: {error}")
             1
+        }
+        Pass {
+            match server.serve(routes.port, routes.handle) {
+                Pass => 0
+                Fail(error) {
+                    warn("server error: {error}")
+                    1
+                }
+            }
         }
     }
 }

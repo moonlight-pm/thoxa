@@ -255,6 +255,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// `"…"` may span lines. Newlines are kept (no dedent). Same for `sql"…"`.
     fn string(&mut self, start: usize) -> Result<Token> {
         self.pos += 1;
         let mut out = String::new();
@@ -630,6 +631,15 @@ mod tests {
         assert!(!tokens.iter().any(|t| matches!(t.kind, TokenKind::Float(_))));
         assert!(matches!(&tokens[0].kind, TokenKind::Int(1)));
         assert!(matches!(&tokens[2].kind, TokenKind::Int(5)));
+    }
+
+    #[test]
+    fn multiline_string_is_one_token() {
+        let tokens = Lexer::new("\"a\nb\"").tokenize().unwrap();
+        assert!(
+            matches!(&tokens[0].kind, TokenKind::String(s) if s == "a\nb"),
+            "{tokens:?}"
+        );
     }
 
     #[test]

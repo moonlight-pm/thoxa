@@ -12,6 +12,9 @@
  * JSX island: tag trees are parsed just enough to paint them with markup
  * captures (`@tag`, `@attribute`, `@markup`). Not a full CST. `Array<Int64>`
  * stays punctuation — a tag must self-close or have a matching close.
+ *
+ * SQL island: glued `sql"…"` (no space, same as the compiler) is a tagged
+ * string. Inner `{…}` holes stay Thoxa; the rest is injected as SQL in Zed.
  */
 module.exports = grammar({
   name: 'thoxa',
@@ -33,6 +36,7 @@ module.exports = grammar({
 
     _token: $ => choice(
       $.jsx_element,
+      $.sql_string,
       $.keyword,
       $.boolean,
       $.type_identifier,
@@ -147,6 +151,21 @@ module.exports = grammar({
     // lexer-level grammar colours the whole literal (interpolation refinement is
     // deferred). `\\.` covers escapes; `{{`/`}}` are just literal characters.
     string: _ => token(seq('"', repeat(choice(/[^"\\]/, /\\./)), '"')),
+
+    // `sql"…"` — tag glued to the quote (a space is an ordinary ident + string).
+    sql_string: $ => prec.dynamic(15, seq(
+      alias(token('sql"'), $.sql_open),
+      repeat(choice($.sql_text, $.sql_embed)),
+      alias(token.immediate('"'), $.sql_close),
+    )),
+
+    sql_text: _ => token.immediate(/([^"\\{]|\\.)+/),
+
+    sql_embed: $ => seq(
+      alias(token.immediate('{'), '{'),
+      repeat($._embed_token),
+      '}',
+    ),
 
     char: _ => token(seq("'", choice(/[^'\\]/, /\\./), "'")),
 

@@ -1,6 +1,6 @@
-## App layer — in-memory drink catalog (domain data).
+## App layer — drink catalog types + seed (rows live in SQLite).
 
-import { Has, Not, May } from "std/fallible"
+import { Pass, Fail, Trial } from "std/fallible"
 import { containsIgnoreCaseAscii, isEmpty, trim } from "std/str"
 
 export type Dark
@@ -34,7 +34,28 @@ export fn formatPrice(cents!: Int64) -> String {
     }
 }
 
-export fn allDrinks() -> Array<Drink> {
+export fn roastKey(roast: Roast) -> String {
+    match roast {
+        Dark => "dark"
+        Medium => "medium"
+        Light => "light"
+    }
+}
+
+export fn roastFromKey(key!: String) -> Trial<Roast, String> {
+    if key == "dark" {
+        Pass(Dark())
+    } else if key == "medium" {
+        Pass(Medium())
+    } else if key == "light" {
+        Pass(Light())
+    } else {
+        Fail("unknown roast {key}")
+    }
+}
+
+## Catalog seed written into SQLite on boot (source of truth for drinks).
+export fn seedDrinks() -> Array<Drink> {
     [
         Drink(
             slug: "espresso",
@@ -81,26 +102,13 @@ export fn allDrinks() -> Array<Drink> {
     ]
 }
 
-export fn findBySlug(slug!: String) -> May<Drink> {
-    for drink in allDrinks() {
-        if drink.slug == slug {
-            return Has(drink)
-        }
-    }
-    Not()
-}
-
-export fn drinkCount() -> Int64 {
-    allDrinks().count
-}
-
-export fn searchDrinks(needle!: String) -> Array<Drink> {
+export fn filterDrinks(drinks!: Array<Drink>, needle!: String) -> Array<Drink> {
     let query = trim(needle)
     if isEmpty(query) {
-        allDrinks()
+        drinks
     } else {
         mut matches: Array<Drink> = []
-        for drink in allDrinks() {
+        for drink in drinks {
             if drinkMatches(drink, query) {
                 matches.append(drink)
             }

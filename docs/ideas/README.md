@@ -11,7 +11,7 @@ locked and (if needed) scheduled. Living priority never lives here — see root
 | [immutable values / structural sharing](2026-07-21-immutable-values.md) | sleeping | No refs; COW/persistent DS; peers (Clojure/Swift/…); impact + design spectra vs D4/D54/D50/D8 |
 | [webapp SSR / components](2026-07-21-webapp-ssr-components.md) | sleeping | HTML `Node` tree + optional tag sugar; SSR-first; sum not `is`; desugar to library |
 | [agent DX from Zerolang](2026-08-09-agent-dx-from-zerolang.md) | sleeping | Parked agent patterns; **promoted** slice is structured diagnostics freeze (D124) |
-| [examples/http Crema-lite](2026-08-10-examples-http-crema-experiment.md) | **active experiment** | `std/http/server.serve` (D132/D136/D139); type-body `GET`/`POST`; Phase A–D1 (`POST /api/orders`); domain stays example-only; living checklist |
+| [examples/http Crema-lite](2026-08-10-examples-http-crema-experiment.md) | **active experiment** | `std/http/server.serve` (D132/D136/D139); type-body `GET`/`POST`; Phase A–D2 (`POST /api/orders` + `/tmp/crema.db`); domain stays example-only; living checklist |
 | [FCF + closures + ORC](2026-08-11-first-class-functions-and-orc.md) | sleeping | Full fn values / JS-like capture / cycle collector **parked**. **C** (typed fn pointers + bound methods) **promoted** → **D132** / [`../specs/2026-08-13-function-pointers.md`](../specs/2026-08-13-function-pointers.md) |
 | [router clause syntax](2026-08-12-router-clause-syntax-experiment.md) | **on master** (not freeze) | Type-body `GET "/…"` → handlers + `route(req) -> Response`; LSP; no D-id / handbook |
 | [JSX / tag literals + `Node`](2026-08-13-jsx-node-syntax-experiment.md) | **on master** (not freeze) | Builtin `Node` + `.html()`; `{e}` children/attrs; spreads; no D-id / handbook |

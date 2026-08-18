@@ -23,7 +23,7 @@ change. See [`progress-model.md`](progress-model.md).
 **D137** Str parse + Http wrappers;
 **D136** `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
 JSX `Node` match + `Attr` + `{...}` spreads **on master**; D133/D134 Map;
-D132 fn pointers; Crema-lite Phase A–D1 (`POST /api/orders`) + `Roast` /
+D132 fn pointers; Crema-lite Phase A–D2 (`POST /api/orders` + `/tmp/crema.db`) + `Roast` /
 `DrinkCard`; type-body
 route clauses + JSX/`Node` + **`-->` nowait** **partial** on master — not
 freeze)
@@ -45,7 +45,7 @@ freeze)
 | value-match | Literals + or + bind/`else` + guards + `=>` | shipped | `match_value`, `match_or`, `match_bind`, `match_guard`, `match_arm_sugar` | D87, D108, D110, D111, **D130** | — | yes |
 | match-discard | `Pass(_)` / `Fail(_)` + bare tag-only | shipped | `match_discard`, `match_arm_sugar` | D66, **D130** | — | yes |
 | user-types | User `type` + methods (scalars) | shipped | `types` | R3 | — | yes |
-| string | String, interpolation, `.count`, simple RC | shipped | `strings`, `sqlite` | R4, **D144** | `sql"…"` tagged interpolator (sql only). Perceus later; `\xHH` string escapes | yes |
+| string | String, interpolation, `.count`, simple RC | shipped | `strings`, `strings_multiline`, `sqlite` | R4, **D144** | `sql"…"` tagged interpolator (sql only). Newlines kept in `"…"` / `sql"…"` (no dedent). Perceus later; `\xHH` string escapes | yes |
 | string-eq | String `==` / `!=` | shipped | `router` (uses) | D60 | — | yes |
 | bytes | Bytes API + slice + find→May + insertAt/removeAt + equals | shipped | `bytes`, `splice` | D14–D18, D36–D37, D46′/D85, D55 | String→Bytes is `fromString` only; **no** `"…" as Bytes` (D15 rejected) | yes |
 | buffer | Growable Buffer COW → freeze | shipped | `buffer` | D50–D52 | — | yes |
@@ -82,7 +82,7 @@ freeze)
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err`, `http_helpers` | D69, R9, **D126**, **D136**, **D137**, **D142** | Product **`std/net`** + **`std/http`**; `receiveRequest` / `sendAll`; `Request.query`; header/query/form/cookie helpers + `queryParam`/`formField`/`cookie`/`htmlResponse`; `Cookie` / `withCookie` / `clearCookie`; 303/403/405; Fail is String | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126**, **D139** | Product **`std/http/static`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/net` + `std/http` + `std/http/static` | yes |
-| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/http/server.serve(routes.port, routes.handle)`** (**D132**/**D136**/**D139**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C + **D1** `POST /api/orders` (`CreateOrder.read`, `qty: Qty` where `>= 1`). Pages are JSX `Node`. **Gaps:** remaining D+ parked; unknown slug still domain. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
+| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/http/server.serve(routes.port, routes.handle)`** (**D132**/**D136**/**D139**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C + **D1** `POST /api/orders` (`CreateOrder.read`, `qty: Qty` where `>= 1`) + **D2** `/tmp/crema.db` (`app/store.thx`; drinks + orders). Pages are JSX `Node`. **Gaps:** remaining D+ (htmx / sessions) parked; unknown slug still domain; no product migrate. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 
@@ -123,7 +123,7 @@ freeze)
 | std-http-static | Static-file `Router` in `std/http/static` | shipped | `router`, `http_server` | **D126**, **D139** | GET+HEAD; small MIME table; depends on Io+Http+Logging | yes |
 | std-http-server | HTTP/1.1 host loop in `std/http/server` | shipped | `http_host` | **D136**, **D139** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
 | std-json | Dynamic `Json` tree in `std/json` | shipped | `json`, `json_read` | **D141**; idea [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md) | `decode` / `encode`. `JInt` vs `JFloat` as charter. Fail String. This branch also: `Issue`, `readJson`, `asObj` / `*Field`, `errorObject`. No derive, no pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` (Crema keeps that in `examples/http`) | yes |
-| std-sqlite | Embedded SQLite in `std/sqlite` | shipped | `sqlite` | **D143**, **D144** | Amalgamation in `vendor/sqlite` → `libthoxa_rt`. `open` / `exec` / `query` / `close`. Write `sql"… {value} …"` (tagged interpolator; `exec`/`query` take `Sql`). Rows `Row` + `SqlValue`. **Gaps:** no blobs, no prepare/bind API, no explicit transactions, no Crema persist, no general tagged templates | yes |
+| std-sqlite | Embedded SQLite in `std/sqlite` | shipped | `sqlite` | **D143**, **D144** | Amalgamation in `vendor/sqlite` → `libthoxa_rt`. `open` / `exec` / `query` / `close`. Write `sql"… {value} …"` (tagged interpolator; `exec`/`query` take `Sql`). Rows `Row` + `SqlValue`. Crema dogfoods file-backed open at `/tmp/crema.db` (example-only). **Gaps:** no blobs, no prepare/bind API, no explicit transactions, no product migrate, no general tagged templates | yes |
 
 ## Editor / LSP
 
@@ -137,7 +137,7 @@ freeze)
 | lsp-nav | hover / def / refs / outline / rename | partial | unit | D77–D79 | Typed-member stack + package-tree refs/rename; **`?` unwraps Trial/May**; **call-arg hover**; hover shows **D129** inferred/`->` returns; **`let`/`mut` hover prefers nav `ty_hint`** (`let a: Response`). Residual rare untyped exprs | partial |
 | lsp-workspace | `workspace/symbol` package search | shipped | unit | editor plan | Open buffers + package-tree disk (main.thx/`.git` root); query substring; cap 100 | yes |
 | lsp-xmodule | Cross-module jump (`./` `~/` / `std/`) | partial | unit | D78 | `std/` go-to-def covered; open buffer wins over disk; **`~/` from nested files uses nearest `main.thx`**; **typed members after namespace + `?`** (e.g. `net.createSocket()?; server.reuseAddr`) | partial |
-| tree-sitter-zed | Grammar + Zed extension extras | shipped | `cargo make zed` | editor plan | Not full IDE | yes |
+| tree-sitter-zed | Grammar + Zed extension extras | shipped | `cargo make zed` | editor plan, **D75** | Thin lexer grammar. JSX island; glued `sql"…"` island with SQL injection (`injections.scm`). Not a full CST / IDE | yes |
 | mir-on-resolver | MIR lower on shared resolver | planned | — | editor plan | **Deferred architecture** (PR5 resolver ships for LSP; MIR still own env — not polish residual) | no |
 
 ## Runtime / heap

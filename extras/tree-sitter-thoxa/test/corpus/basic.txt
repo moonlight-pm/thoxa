@@ -169,6 +169,50 @@ let q = <Page title="Home"><br /></Page>
       (type_identifier))))
 
 ==================
+sql tagged string
+==================
+
+let q = sql"SELECT {qty} FROM drinks"
+let r = sql "not-a-tag"
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (sql_string
+    (sql_open)
+    (sql_text)
+    (sql_embed
+      (identifier))
+    (sql_text)
+    (sql_close))
+  (keyword)
+  (identifier)
+  (operator)
+  (identifier)
+  (string))
+
+==================
+sql multiline
+==================
+
+sql"
+  CREATE TABLE t (
+    id INTEGER
+  )
+"
+
+---
+
+(source_file
+  (sql_string
+    (sql_open)
+    (sql_text)
+    (sql_close)))
+
+==================
 module, extern, match
 ==================
 

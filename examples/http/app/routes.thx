@@ -33,6 +33,10 @@ type Routes {
         api.health()
     }
 
+    GET "/api/orders" -> Response {
+        api.listOrders()
+    }
+
     POST "/api/orders" (request: Request) -> Response {
         api.createOrder(request)
     }

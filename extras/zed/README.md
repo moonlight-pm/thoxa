@@ -59,6 +59,7 @@ diagnostics and grammar coloring still work.
 ## Smoke checklist
 
 1. Open `tests/conformance/hello.thx` → keywords, types, strings, comments colored.
+   Open `examples/http/app/store.thx` → `sql"…"` body uses SQL colors; `{holes}` stay Thoxa.
 2. Break a type, e.g. body `if 3 { 0 } 0` → red squiggle (`if` condition must be Bool).
 3. Fix it → squiggle clears.
 4. (Optional) with `semantic_tokens = "combined"`, `main` / `println` look like functions.

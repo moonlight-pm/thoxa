@@ -2,13 +2,22 @@
 
 import layout, { Page } from "./layout"
 import models, { Drink, formatPrice, roastLabel } from "./models"
+import store, { DrinkMiss, DrinkHit } from "./store"
 import customer from "./customer"
 import http, { Response, notFound, htmlResponse } from "std/http"
-import { Has, Not, May } from "std/fallible"
+import { Has, Not, May, Pass, Fail } from "std/fallible"
 import { isEmpty, trim } from "std/str"
 
 export fn home(customerName!: String) -> Response {
-    let drinkCount = models.drinkCount()
+    match store.drinkCount() {
+        Fail(error) => storeFailed(error)
+        Pass(drinkCount) {
+            homePage(customerName, drinkCount)
+        }
+    }
+}
+
+fn homePage(customerName!: String, drinkCount!: Int64) -> Response {
     htmlResponse(
         <Page title="Home" customer={customerName}>
             <section class="hero">
@@ -67,7 +76,20 @@ fn drinkCards(drinks!: Array<Drink>) -> Array<Node> {
 
 export fn menu(customerName!: String, query!: String) -> Response {
     let needle = trim(query)
-    let drinks = models.searchDrinks(needle)
+    match store.searchDrinks(needle) {
+        Fail(error) => storeFailed(error)
+        Pass(drinks) {
+            match store.drinkCount() {
+                Fail(error) => storeFailed(error)
+                Pass(total) {
+                    menuPage(customerName, needle, drinks, total)
+                }
+            }
+        }
+    }
+}
+
+fn menuPage(customerName!: String, needle!: String, drinks!: Array<Drink>, total!: Int64) -> Response {
     let items = drinkCards(drinks)
     let emptyNote = if drinks.count == 0 {
         <p class="muted">Nothing matches. The barista suggests an espresso.</p>
@@ -79,7 +101,7 @@ export fn menu(customerName!: String, query!: String) -> Response {
     } else {
         <p class="muted">
             <a href="/menu">Clear search</a>
-            {" · showing {drinks.count} of {models.drinkCount()}"}
+            {" · showing {drinks.count} of {total}"}
         </p>
     }
     htmlResponse(
@@ -100,12 +122,26 @@ export fn menu(customerName!: String, query!: String) -> Response {
 }
 
 export fn drink(slug!: String, customerName!: String) -> Response {
-    match models.findBySlug(slug) {
-        Not => notFound()
-        Has(drink) {
-            drinkPage(drink, customerName)
+    match store.findBySlug(slug) {
+        Fail(error) => storeFailed(error)
+        Pass(found) {
+            match found {
+                DrinkMiss => notFound()
+                DrinkHit(drink) {
+                    drinkPage(drink, customerName)
+                }
+            }
         }
     }
+}
+
+fn storeFailed(error!: String) -> Response {
+    http.response(
+        500,
+        "Internal Server Error",
+        "text/plain; charset=utf-8",
+        Bytes.fromString("store error: {error}\n")
+    )
 }
 
 fn drinkPage(drink!: Drink, customerName!: String) -> Response {

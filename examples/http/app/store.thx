@@ -1,0 +1,210 @@
+## App layer — file-backed SQLite store (example-only, not product std).
+## Path is `/tmp/crema.db` until a product locator exists.
+
+import models, { Drink } from "./models"
+import sqlite, { Db, Row, SqlInt, SqlText, SqlValue } from "std/sqlite"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+export type OrderRow(
+    id: Int64,
+    slug: String,
+    name: String,
+    qty: Int64,
+    unitCents: Int64,
+    totalCents: Int64
+)
+
+export type DrinkMiss
+export type DrinkHit(drink: Drink)
+export type DrinkLookup = DrinkMiss | DrinkHit
+
+export let path = "/tmp/crema.db"
+
+## Int64 only: a module-level `Db` literal currently mis-emits as `Sql` in C.
+mut handle = 0
+
+export fn open() -> Trial<Void, String> {
+    let opened = sqlite.open(path)?
+    opened.exec(sql"
+        CREATE TABLE IF NOT EXISTS drinks (
+            slug        TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            notes       TEXT NOT NULL,
+            price_cents INTEGER NOT NULL,
+            roast       TEXT NOT NULL
+        )
+    ")?
+    opened.exec(sql"
+        CREATE TABLE IF NOT EXISTS orders (
+            id          INTEGER PRIMARY KEY,
+            slug        TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            qty         INTEGER NOT NULL,
+            unit_cents  INTEGER NOT NULL,
+            total_cents INTEGER NOT NULL
+        )
+    ")?
+    handle = opened.handle
+    seedDrinks()?
+    info("store {path}")
+    Pass(Void)
+}
+
+fn seedDrinks() -> Trial<Void, String> {
+    for drink in models.seedDrinks() {
+        upsertDrink(drink)?
+    }
+    Pass(Void)
+}
+
+fn upsertDrink(drink!: Drink) -> Trial<Void, String> {
+    let db = requireDb()?
+    let slug = drink.slug
+    let name = drink.name
+    let notes = drink.notes
+    let priceCents = drink.priceCents
+    let roast = models.roastKey(drink.roast)
+    db.exec(sql"
+        INSERT INTO drinks (slug, name, notes, price_cents, roast)
+        VALUES ({slug}, {name}, {notes}, {priceCents}, {roast})
+        ON CONFLICT (slug) DO UPDATE SET
+            name        = excluded.name,
+            notes       = excluded.notes,
+            price_cents = excluded.price_cents,
+            roast       = excluded.roast
+    ")
+}
+
+export fn allDrinks() -> Trial<Array<Drink>, String> {
+    let db = requireDb()?
+    let rows = db.query(sql"
+        SELECT slug, name, notes, price_cents, roast
+        FROM drinks
+        ORDER BY rowid
+    ")?
+    mut drinks: Array<Drink> = []
+    for row in rows {
+        drinks.append(drinkFromRow(row)?)
+    }
+    Pass(drinks)
+}
+
+export fn drinkCount() -> Trial<Int64, String> {
+    let db = requireDb()?
+    let rows = db.query(sql"
+        SELECT COUNT(*) AS n
+        FROM drinks
+    ")?
+    if rows.count == 0 {
+        Fail("drink count: empty result")
+    } else {
+        intCell(rows[0], "n")
+    }
+}
+
+export fn findBySlug(slug!: String) -> Trial<DrinkLookup, String> {
+    let db = requireDb()?
+    let rows = db.query(sql"
+        SELECT slug, name, notes, price_cents, roast
+        FROM drinks
+        WHERE slug = {slug}
+        LIMIT 1
+    ")?
+    if rows.count == 0 {
+        Pass(DrinkMiss())
+    } else {
+        Pass(DrinkHit(drink: drinkFromRow(rows[0])?))
+    }
+}
+
+export fn searchDrinks(needle!: String) -> Trial<Array<Drink>, String> {
+    let drinks = allDrinks()?
+    Pass(models.filterDrinks(drinks, needle))
+}
+
+export fn insertOrder(
+    slug!: String,
+    name!: String,
+    qty!: Int64,
+    unitCents!: Int64,
+    totalCents!: Int64
+) -> Trial<Int64, String> {
+    let db = requireDb()?
+    db.exec(sql"
+        INSERT INTO orders (slug, name, qty, unit_cents, total_cents)
+        VALUES ({slug}, {name}, {qty}, {unitCents}, {totalCents})
+    ")?
+    Pass(db.lastInsertRowid())
+}
+
+export fn listOrders() -> Trial<Array<OrderRow>, String> {
+    let db = requireDb()?
+    let rows = db.query(sql"
+        SELECT id, slug, name, qty, unit_cents, total_cents
+        FROM orders
+        ORDER BY id
+    ")?
+    mut orders: Array<OrderRow> = []
+    for row in rows {
+        orders.append(orderFromRow(row)?)
+    }
+    Pass(orders)
+}
+
+fn requireDb() -> Trial<Db, String> {
+    if handle == 0 {
+        Fail("store is closed")
+    } else {
+        Pass(Db(handle: handle))
+    }
+}
+
+fn drinkFromRow(row!: Row) -> Trial<Drink, String> {
+    let slug = textCell(row, "slug")?
+    let name = textCell(row, "name")?
+    let notes = textCell(row, "notes")?
+    let priceCents = intCell(row, "price_cents")?
+    let roast = models.roastFromKey(textCell(row, "roast")?)?
+    Pass(Drink(
+        slug: slug,
+        name: name,
+        notes: notes,
+        priceCents: priceCents,
+        roast: roast
+    ))
+}
+
+fn orderFromRow(row!: Row) -> Trial<OrderRow, String> {
+    Pass(OrderRow(
+        id: intCell(row, "id")?,
+        slug: textCell(row, "slug")?,
+        name: textCell(row, "name")?,
+        qty: intCell(row, "qty")?,
+        unitCents: intCell(row, "unit_cents")?,
+        totalCents: intCell(row, "total_cents")?
+    ))
+}
+
+fn cell(row!: Row, key!: String) -> Trial<SqlValue, String> {
+    let cells = row.cells
+    let found: May<SqlValue> = cells[key]
+    match found {
+        Not => Fail("missing column {key}")
+        Has(value) => Pass(value)
+    }
+}
+
+fn textCell(row!: Row, key!: String) -> Trial<String, String> {
+    match cell(row, key)? {
+        SqlText(value) => Pass(value)
+        else => Fail("{key}: expected text")
+    }
+}
+
+fn intCell(row!: Row, key!: String) -> Trial<Int64, String> {
+    match cell(row, key)? {
+        SqlInt(value) => Pass(value)
+        else => Fail("{key}: expected integer")
+    }
+}

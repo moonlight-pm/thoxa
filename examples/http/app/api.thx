@@ -1,9 +1,9 @@
 ## App layer — non-page HTTP handlers (no HTML shell).
 
-import models from "./models"
+import store, { DrinkMiss, DrinkHit, OrderRow } from "./store"
 import http, { Request, Response, ok } from "std/http"
-import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { Json, JBool, JObj, encode, Issue, issueRejected, errorObject } from "std/json"
+import { Pass, Fail, Trial } from "std/fallible"
+import { Json, JArr, JBool, JInt, JObj, JStr, encode, Issue, Rejected, issueRejected, errorObject } from "std/json"
 
 export fn health() -> Response {
     ok(Bytes.fromString("ok\n"), "text/plain; charset=utf-8")
@@ -19,28 +19,83 @@ export fn createOrder(request!: Request) -> Response {
         Fail(error) => jsonIssue(error)
         Pass(order) {
             match placeOrder(order) {
-                Fail(error) => jsonIssue(error)
+                Fail(error) => placeOrderFail(error)
                 Pass(ticket) => jsonOk(ticketOk(ticket))
             }
         }
     }
 }
 
-type Ticket(slug: String, name: String, qty: Int64, unitCents: Int64, totalCents: Int64)
+type Ticket(id: Int64, slug: String, name: String, qty: Int64, unitCents: Int64, totalCents: Int64)
 
-fn placeOrder(order!: CreateOrder) -> Trial<Ticket, Issue> {
-    match models.findBySlug(order.slug) {
-        Not => Fail(issueRejected("slug", "unknown drink"))
-        Has(drink) {
-            Pass(Ticket(
-                slug: drink.slug,
-                name: drink.name,
-                qty: order.qty,
-                unitCents: drink.priceCents,
-                totalCents: drink.priceCents * order.qty
-            ))
+export fn listOrders() -> Response {
+    match store.listOrders() {
+        Fail(error) => jsonStoreFail(error)
+        Pass(rows) {
+            mut items: Array<Json> = []
+            for row in rows {
+                items.append(orderJson(row))
+            }
+            jsonOk(JArr(items))
         }
     }
+}
+
+fn placeOrder(order!: CreateOrder) -> Trial<Ticket, Issue> {
+    match store.findBySlug(order.slug) {
+        Fail(error) => Fail(issueRejected("store", error))
+        Pass(found) {
+            match found {
+                DrinkMiss => Fail(issueRejected("slug", "unknown drink"))
+                DrinkHit(drink) {
+                    let qty = order.qty
+                    let unitCents = drink.priceCents
+                    let totalCents = unitCents * qty
+                    match store.insertOrder(drink.slug, drink.name, qty, unitCents, totalCents) {
+                        Fail(error) => Fail(issueRejected("store", error))
+                        Pass(id) {
+                            Pass(Ticket(
+                                id: id,
+                                slug: drink.slug,
+                                name: drink.name,
+                                qty: qty,
+                                unitCents: unitCents,
+                                totalCents: totalCents
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn placeOrderFail(error!: Issue) -> Response {
+    match error {
+        Rejected(path, reason) {
+            if path == "store" {
+                jsonStoreFail(reason)
+            } else {
+                jsonIssue(error)
+            }
+        }
+        else => jsonIssue(error)
+    }
+}
+
+fn orderJson(row!: OrderRow) -> Json {
+    mut fields: Map<String, Json> = Map()
+    fields.set("id", JInt(row.id))
+    fields.set("slug", JStr(row.slug))
+    fields.set("name", JStr(row.name))
+    fields.set("qty", JInt(row.qty))
+    fields.set("unitCents", JInt(row.unitCents))
+    fields.set("totalCents", JInt(row.totalCents))
+    JObj(fields)
+}
+
+fn jsonStoreFail(error!: String) -> Response {
+    jsonResponse(500, "Internal Server Error", errorObject(issueRejected("store", error)))
 }
 
 fn ticketOk(ticket!: Ticket) -> Json {

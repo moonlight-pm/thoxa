@@ -130,7 +130,8 @@ Freezes:
 
 **Sample dogfood (not a phase flip):** `examples/http` Crema-lite **experiment**
 (`std/http/server.serve(routes.port, routes.handle)` **D132**/**D136**/**D139**; type-body
-`GET`/`POST`; JSX `Node` pages; app/domain under `examples/http/`; charter
+`GET`/`POST`; JSX `Node` pages; `/tmp/crema.db` via **`std/sqlite`**; app/domain
+under `examples/http/`; charter
 [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md);
 accept loop uses **D128** + **`--> serveOne`** + keep-alive), `examples/kilo` shipped
 and exercised; continue matrix gaps when samples force them.

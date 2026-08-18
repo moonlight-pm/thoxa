@@ -48,3 +48,13 @@
 (jsx_text) @markup.italic
 
 (jsx_embed ["{" "}"] @punctuation.special)
+
+; ── SQL island: `sql"…"` tagged interpolator ──────────────────────────────
+;   sql" / "       → @keyword / @string
+;   SQL body       → @string (Zed injects the SQL grammar over sql_text)
+;   {holes}        → @punctuation.special (Thoxa, not SQL)
+
+(sql_open) @keyword
+(sql_close) @string
+(sql_text) @string
+(sql_embed ["{" "}"] @punctuation.special)
