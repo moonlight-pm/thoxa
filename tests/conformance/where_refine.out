@@ -9,3 +9,4 @@ mocha:2
 ERR:need integer >= 1, got 0
 line:n: expected integer >= 1, got 0
 {"slug":"mocha","qty":2}
+slug:expected "espresso" | "mocha", got chai

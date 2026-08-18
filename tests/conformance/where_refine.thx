@@ -7,6 +7,7 @@ type Qty = Int64 where >= 1 "need {expected}, got {value}"
 type Dozen = Qty where <= 12
 type Order(slug: String, qty: Qty)
 type Line(n: Int64 where >= 1)
+type DrinkSlug = String where "espresso" | "mocha"
 
 fn showQ(t: Trial<Qty, Issue>) -> String {
     match t {
@@ -52,6 +53,10 @@ fn main() -> Int64 {
     match Order.read("{{\"slug\":\"mocha\",\"qty\":2}}") {
         Fail(e) => info("enc:{message(e)}")
         Pass(o) => info(o.encode())
+    }
+    match DrinkSlug.from("chai") {
+        Fail(e) => info("slug:{message(e)}")
+        Pass(s) => info("slugok:{s}")
     }
     0
 }

@@ -78,10 +78,9 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 ### Proceed order
 
-1. **Built-in validation** — `Type.read` + `where` + `T.from` + `.encode` on
-   this branch (gates `json_read`, `where_refine`). Next: Issue sum / May /
-   nested-read RC, or literal-union slugs. Do not merge to master until the
-   surface sticks.  
+1. **Built-in validation** — `Type.read` + `where` + `T.from` + `.encode` +
+   literal-union slugs on this branch. Next: Issue sum / May / nested-read
+   RC. Do not merge to master until the surface sticks.  
 2. **Crema-lite experiment** — remaining checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    (app under `examples/http/`; host/wire already in `std/`; **JSON

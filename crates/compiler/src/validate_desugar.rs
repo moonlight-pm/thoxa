@@ -949,10 +949,7 @@ fn fail_atom_at(val: &str, base: &str, atom: &WhereAtom, path_var: &str) -> Expr
 }
 
 fn fail_where_at(val: &str, base: &str, expr: &WhereExpr, path_var: &str) -> Expr {
-    let expected = match expr {
-        WhereExpr::Atom(a) => crate::refine::expected_desc(&a.pred, base),
-        _ => "this refinement".into(),
-    };
+    let expected = crate::refine::expected_clause(expr, base);
     fail_issue_at(val, &expected, None, path_var)
 }
 

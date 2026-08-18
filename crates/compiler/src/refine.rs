@@ -50,6 +50,14 @@ pub fn fill_template(tmpl: &str, value: &str, expected: &str, path: &str) -> Str
         .replace("{path}", path)
 }
 
+pub fn expected_clause(expr: &WhereExpr, base: &str) -> String {
+    match expr {
+        WhereExpr::Atom(a) => expected_desc(&a.pred, base),
+        WhereExpr::Or(a, b) => format!("{} | {}", expected_clause(a, base), expected_clause(b, base)),
+        WhereExpr::And(a, b) => format!("{} & {}", expected_clause(a, base), expected_clause(b, base)),
+    }
+}
+
 pub fn expected_desc(pred: &WherePred, base: &str) -> String {
     let noun = match base {
         "String" | "Array" => "length",

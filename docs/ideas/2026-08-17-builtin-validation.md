@@ -237,6 +237,7 @@ double-frees). Path is dotted. `message` is generated or written.
    — **done.** `{value}` / `{expected}` / `{path}` fill at runtime. Inline
    `Int64 where >= 1` on a field is checked in `read`. `t.encode()` /
    `t.toJson()`. Crema Ticket uses `toJson` + `ok`.
-4. Literal-union slugs if we want unknown-drink as a type error.
+4. **Literal-union slugs** — **done.** `type DrinkSlug = String where "espresso" | …`.
+   Crema `CreateOrder.slug: DrinkSlug`. Or-clause expected text lists members.
 5. Restore `Issue` as `Missing | Mismatch | Rejected` when residual-sum RC is
    fixed. May fields. Nested `read` after a failed `read` heap-corrupt.
