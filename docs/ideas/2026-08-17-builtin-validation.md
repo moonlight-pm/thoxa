@@ -39,7 +39,7 @@ export fn createOrder(req!: Request) -> Response {
 
 ---
 
-## Locked (do not re-litigate on this branch)
+## Locked (do not re-litigate)
 
 1. **Type-first.** Define the input type; `read` / `from` inhabit it. No Zod
    schema values, no combinator library, no traits.
