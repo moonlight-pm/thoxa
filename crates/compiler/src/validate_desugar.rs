@@ -20,7 +20,7 @@ const FALLIBLE_PATH: &str = "std/fallible";
 
 const JSON_CORE: &[&str] = &["Json", "Issue", "readJson", "asObj"];
 
-const FALLIBLE_NAMES: &[&str] = &["Pass", "Fail", "Trial"];
+const FALLIBLE_NAMES: &[&str] = &["Pass", "Fail", "Trial", "Has", "Not", "May"];
 
 pub fn desugar_package(package: &mut Package) -> Result<()> {
     let import_maps = loader::build_import_maps(package)?;
@@ -124,6 +124,7 @@ fn desugar_module_with(
             extra.push(gen_encode(&td));
             json_need.insert("Issue".into());
             json_need.insert("issueMismatch".into());
+            json_need.insert("issueRejected".into());
             json_need.insert("encode".into());
             json_need.insert(json_ctor_for_base(base).into());
             any = true;
@@ -154,8 +155,12 @@ fn desugar_module_with(
             }
             if p.ty.where_clause.is_some() {
                 json_need.insert("issueMismatch".into());
+                json_need.insert("issueRejected".into());
                 json_need.insert("Issue".into());
                 json_need.insert("joinPath".into());
+            }
+            if p.ty.name == "May" {
+                json_need.insert("isNull".into());
             }
         }
         extra.push(gen_from_json(&td, module_id, world, resolve)?);
@@ -228,6 +233,7 @@ enum Shape {
     Bool,
     Float,
     Array(Box<Shape>),
+    May(Box<Shape>),
     Product(String),
     Refined { name: String, base: String },
 }
@@ -267,6 +273,29 @@ fn need_json_names(shape: &Shape, need: &mut HashSet<String>) {
                 }
                 Shape::Float => {
                     need.insert("asFloat".into());
+                }
+                _ => {}
+            }
+        }
+        Shape::May(inner) => {
+            need.insert("isNull".into());
+            need.insert("joinPath".into());
+            need_json_names(inner, need);
+            match inner.as_ref() {
+                Shape::Str => {
+                    need.insert("asStr".into());
+                }
+                Shape::Int => {
+                    need.insert("asInt".into());
+                }
+                Shape::Bool => {
+                    need.insert("asBool".into());
+                }
+                Shape::Float => {
+                    need.insert("asFloat".into());
+                }
+                Shape::Product(_) => {
+                    need.insert("joinPath".into());
                 }
                 _ => {}
             }
@@ -315,6 +344,9 @@ fn need_encode_names(shape: &Shape, need: &mut HashSet<String>) {
             need.insert("JArr".into());
             need_encode_names(elem, need);
         }
+        Shape::May(inner) => {
+            need_encode_names(inner, need);
+        }
     }
 }
 
@@ -340,7 +372,14 @@ fn shape_of(
             }
             TypeArg::Int { .. } => None,
         },
-        // May fields: deferred (RC/expect around generated Has/Not). v0 is required fields.
+        "May" if ty.args.len() == 1 => match &ty.args[0] {
+            TypeArg::Type(elem) => {
+                let inner = shape_of(elem, module_id, world, resolve, visiting)?;
+                Some(Shape::May(Box::new(inner)))
+            }
+            TypeArg::Int { .. } => None,
+        },
+        // remaining named types: refined aliases / readable products
         other => {
             let (def_mod, def_name) = resolve.get(module_id)?.get(other)?.clone();
             let td = world.get(&def_mod)?.get(&def_name)?;
@@ -548,7 +587,64 @@ fn field_value(field: &str, shape: &Shape, ty: &TypeExpr) -> Expr {
             );
             convert_array(raw, elem, arr_path, ty)
         }
+        Shape::May(inner) => may_field_value(field, inner),
     }
+}
+
+fn may_field_value(field: &str, inner: &Shape) -> Expr {
+    let path = call(
+        "joinPath",
+        vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field))],
+    );
+    let inner_ty = ty_of_shape(inner);
+    let may_ty = ty_may(inner_ty.clone());
+    match_expr(
+        method_call(name("m"), "get", vec![Arg::Pos(str_lit(field))]),
+        vec![
+            match_arm_block(
+                "Not",
+                vec![],
+                vec![let_bind_ty("absent", false, may_ty.clone(), call("Not", vec![]))],
+                Some(name("absent")),
+            ),
+            match_arm_block(
+                "Has",
+                vec![Some("raw".into())],
+                vec![],
+                Some(if_expr(
+                    call("isNull", vec![Arg::Pos(name("raw"))]),
+                    Block {
+                        items: vec![let_bind_ty(
+                            "absent",
+                            false,
+                            may_ty.clone(),
+                            call("Not", vec![]),
+                        )],
+                        tail: Some(Box::new(name("absent"))),
+                        span: dummy(),
+                    },
+                    Some(Block {
+                        items: vec![
+                            let_bind_ty(
+                                "one",
+                                false,
+                                inner_ty,
+                                try_expr(convert_value(name("raw"), inner, path)),
+                            ),
+                            let_bind_ty(
+                                "present",
+                                false,
+                                may_ty,
+                                call("Has", vec![Arg::Pos(name("one"))]),
+                            ),
+                        ],
+                        tail: Some(Box::new(name("present"))),
+                        span: dummy(),
+                    }),
+                )),
+            ),
+        ],
+    )
 }
 
 fn convert_array(raw: Expr, elem: &Shape, path: Expr, ty: &TypeExpr) -> Expr {
@@ -625,6 +721,24 @@ fn convert_value(val: Expr, shape: &Shape, path: Expr) -> Expr {
             method_call(name(tn), "from", vec![Arg::Pos(val), Arg::Pos(path)])
         }
         Shape::Array(elem) => convert_array(val, elem, path, &ty_array(ty_named("Json"))),
+        Shape::May(inner) => {
+            if_expr(
+                call("isNull", vec![Arg::Pos(val.clone())]),
+                Block {
+                    items: vec![],
+                    tail: Some(Box::new(call("Not", vec![]))),
+                    span: dummy(),
+                },
+                Some(Block {
+                    items: vec![],
+                    tail: Some(Box::new(call(
+                        "Has",
+                        vec![Arg::Pos(try_expr(convert_value(val, inner, path)))],
+                    ))),
+                    span: dummy(),
+                }),
+            )
+        }
     }
 }
 
@@ -665,6 +779,7 @@ fn shape_base(shape: &Shape) -> &'static str {
         Shape::Bool => "Bool",
         Shape::Float => "Float64",
         Shape::Array(_) => "Array",
+        Shape::May(_) => "optional",
         Shape::Product(_) => "object",
         Shape::Refined { base, .. } => match base.as_str() {
             "String" => "String",
@@ -752,14 +867,39 @@ fn gen_to_json(
                 p.name_span,
             )
         })?;
-        items.push(BlockItem::Expr(method_call(
-            name("m"),
-            "set",
-            vec![
-                Arg::Pos(str_lit(&p.name)),
-                Arg::Pos(encode_field_value(&p.name, &shape)),
-            ],
-        )));
+        match &shape {
+            Shape::May(inner) => {
+                items.push(BlockItem::Expr(match_expr(
+                    field(name("v"), &p.name),
+                    vec![
+                        match_arm_block("Not", vec![], vec![], None),
+                        match_arm_block(
+                            "Has",
+                            vec![Some("x".into())],
+                            vec![BlockItem::Expr(method_call(
+                                name("m"),
+                                "set",
+                                vec![
+                                    Arg::Pos(str_lit(&p.name)),
+                                    Arg::Pos(encode_elem_value(name("x"), inner)),
+                                ],
+                            ))],
+                            None,
+                        ),
+                    ],
+                )));
+            }
+            _ => {
+                items.push(BlockItem::Expr(method_call(
+                    name("m"),
+                    "set",
+                    vec![
+                        Arg::Pos(str_lit(&p.name)),
+                        Arg::Pos(encode_field_value(&p.name, &shape)),
+                    ],
+                )));
+            }
+        }
     }
     Ok(Function {
         exported: false,
@@ -784,6 +924,7 @@ fn encode_field_value(field_name: &str, shape: &Shape) -> Expr {
         Shape::Float => call("JFloat", vec![Arg::Pos(src)]),
         Shape::Product(_) | Shape::Refined { .. } => method_call(src, "toJson", vec![]),
         Shape::Array(elem) => encode_array(src, elem),
+        Shape::May(inner) => encode_elem_value(src, inner),
     }
 }
 
@@ -836,6 +977,7 @@ fn encode_elem_value(src: Expr, shape: &Shape) -> Expr {
         Shape::Float => call("JFloat", vec![Arg::Pos(src)]),
         Shape::Product(_) | Shape::Refined { .. } => method_call(src, "toJson", vec![]),
         Shape::Array(elem) => encode_array(src, elem),
+        Shape::May(inner) => encode_elem_value(src, inner),
     }
 }
 
@@ -956,11 +1098,9 @@ fn fail_where_at(val: &str, base: &str, expr: &WhereExpr, path_var: &str) -> Exp
 fn fail_issue_at(val: &str, expected: &str, tmpl: Option<&str>, path_var: &str) -> Expr {
     let issue = if let Some(t) = tmpl {
         call(
-            "Issue",
+            "issueRejected",
             vec![
                 Arg::Pos(name(path_var)),
-                Arg::Pos(str_lit(expected)),
-                Arg::Pos(interp_val(val)),
                 Arg::Pos(template_expr_at(t, val, expected, path_var)),
             ],
         )
@@ -1048,6 +1188,38 @@ fn if_expr(cond: Expr, then_branch: Block, else_branch: Option<Block>) -> Expr {
             else_branch,
         },
         span: dummy(),
+    }
+}
+
+fn match_expr(scrutinee: Expr, arms: Vec<MatchArm>) -> Expr {
+    Expr {
+        kind: ExprKind::Match {
+            scrutinee: Box::new(scrutinee),
+            arms,
+        },
+        span: dummy(),
+    }
+}
+
+fn match_arm_block(
+    name: &str,
+    binds: Vec<Option<String>>,
+    items: Vec<BlockItem>,
+    tail: Option<Expr>,
+) -> MatchArm {
+    MatchArm {
+        pattern: Pattern::Variant {
+            name: name.into(),
+            binds,
+            bind_span: dummy(),
+            span: dummy(),
+        },
+        guard: None,
+        body: Block {
+            items,
+            tail: tail.map(Box::new),
+            span: dummy(),
+        },
     }
 }
 
@@ -1172,6 +1344,31 @@ fn ty_array(elem: TypeExpr) -> TypeExpr {
         union_members: None,
         fn_type: None,
         where_clause: None,
+    }
+}
+
+fn ty_may(inner: TypeExpr) -> TypeExpr {
+    TypeExpr {
+        name: "May".into(),
+        args: vec![TypeArg::Type(inner)],
+        span: dummy(),
+        lit: None,
+        mark: None,
+        union_members: None,
+        fn_type: None,
+        where_clause: None,
+    }
+}
+
+fn ty_of_shape(shape: &Shape) -> TypeExpr {
+    match shape {
+        Shape::Str => ty_named("String"),
+        Shape::Int => ty_named("Int64"),
+        Shape::Bool => ty_named("Bool"),
+        Shape::Float => ty_named("Float64"),
+        Shape::Array(elem) => ty_array(ty_of_shape(elem)),
+        Shape::May(inner) => ty_may(ty_of_shape(inner)),
+        Shape::Product(n) | Shape::Refined { name: n, .. } => ty_named(n),
     }
 }
 
@@ -1337,6 +1534,27 @@ mod tests {
             .collect();
         assert!(names.contains(&"__read_Order"));
         assert!(names.contains(&"__fromJson_Order"));
+    }
+
+    #[test]
+    fn generates_read_for_may_field() {
+        let m = parse_desugar(
+            r#"
+            import { Json } from "std/json"
+            import { May } from "std/fallible"
+            type Opt(note: May<String>, n: Int64)
+            "#,
+        );
+        let names: Vec<_> = m
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Function(f) => Some(f.name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(names.contains(&"__read_Opt"));
+        assert!(names.contains(&"__fromJson_Opt"));
     }
 
     #[test]

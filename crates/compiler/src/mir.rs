@@ -7885,12 +7885,13 @@ fn lower_map_get(
     {
         let saved = std::mem::take(&mut ctx.stmts);
         ctx.stmts = else_body;
-        // MapGet of heap ptrs is a borrow of the slot. The found path then
-        // copies that pointer into Has, the May union, and the result place;
-        // end-of-fn drops every copy. Two Dups match those extra owners
-        // (ArrayGet of heap elems Dups once because it returns the elem
-        // place directly, not a May).
-        if array_elem_is_heap(val_ty) {
+        // MapGet is a borrow of the slot (User memcpy / heap-ptr load). The
+        // found path then copies that value into Has, the May union, and the
+        // result place; end-of-fn drops every copy. Two Dups match those extra
+        // owners (ArrayGet of heap elems Dups once because it returns the elem
+        // place directly, not a May). User values need the same retain —
+        // dropping Json/Header walks inner heaps.
+        if needs_drop(val_ty) {
             ctx.stmts.push(Stmt::Dup {
                 place: out.clone(),
                 ty: val_ty.clone(),

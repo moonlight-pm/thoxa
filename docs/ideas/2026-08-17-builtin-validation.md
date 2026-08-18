@@ -205,15 +205,19 @@ let o = CreateOrder.read(body)?   ## syntax + shape + refinements
 
 ---
 
-## `Issue` (v0 product — sum later)
+## `Issue` (sum)
 
 ```thx
-type Issue(path: String, expected: String, got: String, message: String)
+type Missing(path: String)
+type Mismatch(path: String, expected: String, got: String)
+type Rejected(path: String, reason: String)
+type Issue = Missing | Mismatch | Rejected
 ```
 
-Factories: `issueMissing` / `issueMismatch` / `issueRejected`. The designed
-sum (`Missing | Mismatch | Rejected`) waits on residual-union RC (`?` rewrap
-double-frees). Path is dotted. `message` is generated or written.
+Factories: `issueMissing` / `issueMismatch` / `issueRejected`. Generated
+shape/refinement fails are `Mismatch`; written templates and parse errors
+are `Rejected`; absent keys are `Missing`. Path is dotted. `message(e)`
+fills generated text.
 
 ---
 
@@ -239,5 +243,7 @@ double-frees). Path is dotted. `message` is generated or written.
    `t.toJson()`. Crema Ticket uses `toJson` + `ok`.
 4. **Literal-union slugs** — **done.** `type DrinkSlug = String where "espresso" | …`.
    Crema `CreateOrder.slug: DrinkSlug`. Or-clause expected text lists members.
-5. Restore `Issue` as `Missing | Mismatch | Rejected` when residual-sum RC is
-   fixed. May fields. Nested `read` after a failed `read` heap-corrupt.
+5. **`Issue` sum + May fields + nested-read RC** — **done.**
+   `Issue = Missing | Mismatch | Rejected`. `May<T>` fields treat missing
+   and JSON null as `Not`. Map.get of User is a slot borrow + retain, so
+   a nested `read` after a failed `read` no longer heap-corrupts.

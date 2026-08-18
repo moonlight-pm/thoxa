@@ -1,12 +1,13 @@
 ## Type.read of constructor-param products (builtin validation slice 1).
 import { Issue, message, decode } from "std/json"
-import { Pass, Fail, Trial } from "std/fallible"
+import { Pass, Fail, Trial, Has, Not, May } from "std/fallible"
 import logging, { info } from "std/logging"
 
 type Order(slug: String, qty: Int64)
 type Note(text: String)
 type Wrap(inner: Order)
 type Line(items: Array<Order>)
+type OptNote(text: May<String>, n: Int64)
 
 fn showOrder(t: Trial<Order, Issue>) -> String {
     match t {
@@ -29,6 +30,18 @@ fn showLine(t: Trial<Line, Issue>) -> String {
     }
 }
 
+fn showOpt(t: Trial<OptNote, Issue>) -> String {
+    match t {
+        Fail(e) => "ERR:{message(e)}"
+        Pass(note) {
+            match note.text {
+                Not => "opt:{note.n}:none"
+                Has(s) => "opt:{note.n}:{s}"
+            }
+        }
+    }
+}
+
 fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
@@ -40,6 +53,14 @@ fn main() -> Int64 {
     info(showOrder(Order.read("{{\"qty\":2}}")))
     info(showOrder(Order.read("[]")))
     info(showOrder(Order.read("[")))
+
+    ## Nested read after a failed read (heap-corrupt regression).
+    info(showWrap(Wrap.read("{{\"inner\":{{\"slug\":\"y\",\"qty\":3}}}}")))
+
+    info(showOpt(OptNote.read("{{\"n\":1}}")))
+    info(showOpt(OptNote.read("{{\"text\":null,\"n\":2}}")))
+    info(showOpt(OptNote.read("{{\"text\":\"hi\",\"n\":3}}")))
+    info(showOpt(OptNote.read("{{\"text\":1,\"n\":4}}")))
 
     match decode("true") {
         Fail(e) => info("tree:{e}")

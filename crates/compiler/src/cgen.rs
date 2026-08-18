@@ -1839,15 +1839,18 @@ fn emit_map_get(
     val_ty: &Ty,
 ) {
     match val_ty {
-        Ty::User(type_name) => {
+        Ty::User(_) => {
+            // Borrow the slot (memcpy, no elem_dup). MIR then Dups `needs_drop`
+            // values the same way as MapGet of String/Array/Map (Has + result).
+            // elem_dup here plus those Dups freed the value while the map still
+            // held it — nested Type.read after another read then heap-corrupted.
             let _ = writeln!(
                 out,
-                "{pad}{} = thoxa_map_get_elem({}, {}, &{}, {});",
+                "{pad}{} = thoxa_map_get_elem({}, {}, &{}, NULL);",
                 found.name,
                 map.name,
                 c_map_key_bits(&key.name),
-                dest.name,
-                array_user_elem_dup_fn(type_name)
+                dest.name
             );
         }
         Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {

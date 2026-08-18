@@ -1,5 +1,6 @@
 ## Map with User values + Map as a constructor field.
 import logging from "std/logging"
+import { Has, Not, May } from "std/fallible"
 type Header(name: String, value: String) {
     export fn label() -> String {
         "{name}={value}"
@@ -14,6 +15,14 @@ fn main() -> Int64 {
 
     mut m: Map<String, Header> = Map()
     m.set("h", Header(name: "Host", value: "ex"))
+    match m.get("h") {
+        Has(h) => logging.info("get1={h.label()}")
+        Not => logging.info("get1=missing")
+    }
+    match m.get("h") {
+        Has(h) => logging.info("get2={h.label()}")
+        Not => logging.info("get2=missing")
+    }
     for k, h in m {
         logging.info("got={h.label()}")
     }

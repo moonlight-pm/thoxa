@@ -18,9 +18,10 @@ export type JObj(value: Map<String, Json>)
 export type Json = JNull | JBool | JInt | JFloat | JStr | JArr | JObj
 
 ## Shape / refinement failures for Type.read (builtin validation experiment).
-## One product (not Missing|Mismatch|Rejected) so Trial residual is not a
-## nested sum — `?` rewrap of union residuals currently double-frees.
-export type Issue(path: String, expected: String, got: String, message: String)
+export type Missing(path: String)
+export type Mismatch(path: String, expected: String, got: String)
+export type Rejected(path: String, reason: String)
+export type Issue = Missing | Mismatch | Rejected
 
 type Parsed(value: Json, pos: Int64)
 type Cut(text: String, pos: Int64)
@@ -93,41 +94,61 @@ export fn isNull(v!: Json) -> Bool {
 }
 
 export fn message(e!: Issue) -> String {
-    e.message
+    match e {
+        Missing(path) => "{path} is required"
+        Mismatch(path, expected, got) {
+            if path.count == 0 {
+                "expected {expected}, got {got}"
+            } else {
+                "{path}: expected {expected}, got {got}"
+            }
+        }
+        Rejected(_, reason) => reason
+    }
 }
 
 export fn issueMissing(path!: String) -> Issue {
-    Issue(path, "", "missing", "{path} is required")
+    Missing(path)
 }
 
 export fn issueMismatch(path!: String, expected!: String, got!: String) -> Issue {
-    let msg = if path.count == 0 {
-        "expected {expected}, got {got}"
-    } else {
-        "{path}: expected {expected}, got {got}"
-    }
-    Issue(path, expected, got, msg)
+    Mismatch(path, expected, got)
 }
 
 export fn issueRejected(path!: String, reason!: String) -> Issue {
-    Issue(path, "", "", reason)
+    Rejected(path, reason)
 }
 
 export fn errorObject(e!: Issue) -> Json {
     mut m: Map<String, Json> = Map()
     m.set("ok", JBool(false))
-    m.set("path", JStr(e.path))
-    m.set("error", JStr(e.message))
-    if e.expected.count > 0 {
-        m.set("expected", JStr(e.expected))
-        m.set("got", JStr(e.got))
+    match e {
+        Missing(path) {
+            m.set("path", JStr(path))
+            m.set("error", JStr("{path} is required"))
+        }
+        Mismatch(path, expected, got) {
+            let msg = if path.count == 0 {
+                "expected {expected}, got {got}"
+            } else {
+                "{path}: expected {expected}, got {got}"
+            }
+            m.set("path", JStr(path))
+            m.set("error", JStr(msg))
+            m.set("expected", JStr(expected))
+            m.set("got", JStr(got))
+        }
+        Rejected(path, reason) {
+            m.set("path", JStr(path))
+            m.set("error", JStr(reason))
+        }
     }
     JObj(m)
 }
 
 export fn readJson(s!: String) -> Trial<Json, Issue> {
     match decode(s) {
-        Fail(e) => Fail(Issue("", "json", "invalid", "bad json: {e}"))
+        Fail(e) => Fail(Rejected("", "bad json: {e}"))
         Pass(v) => Pass(v)
     }
 }

@@ -5,4 +5,9 @@ ERR:slug: expected string, got integer
 ERR:slug is required
 ERR:expected object, got array
 ERR:bad json: unexpected end
+w:y:3
+opt:1:none
+opt:2:none
+opt:3:hi
+ERR:text: expected string, got integer
 tree:ok
