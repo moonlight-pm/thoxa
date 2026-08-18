@@ -4,7 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-17 (**D141** `std/json` `decode`/`encode` + Crema
+**As of:** 2026-08-17 (**branch** `experiment/builtin-validation` — types as
+inhabitation; syntax open;
+**D141** `std/json` `decode`/`encode` + Crema
 `POST /api/orders`;
 **D140** `Float64`;
 **D139** HTTP hosts under `std/http/`;
@@ -62,29 +64,36 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **Crema-lite** — remaining D+ (htmx / persistence / sessions) only if
+1. **Built-in validation** (this branch) — types as inhabitation; refinements
+   are real types; compile-time when the value is constant; messages optional
+   (generated otherwise). Syntax still open. Charter:
+   [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md).
+2. **Crema-lite** — remaining D+ (htmx / persistence / sessions) only if
    useful. `POST /api/orders` already dogfoods **`std/json`**. App/domain
    stays example-only. Host/wire is product **`std/http` + `std/http/server`**
    (**D136**/**D139**). Query/form/cookies are builtin `Map` (headers stay
    `Array<Header>`). File-based routing is **parked**
    ([`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)).
-2. Editor only when DX forces it.
+3. Editor only when DX forces it.
 
 ### Proceed order
 
-1. **Crema-lite experiment** — remaining checklist in
+1. **Built-in validation** — `Type.read` + `where` + `T.from` on this branch
+   (gates `json_read`, `where_refine`). Next: encode, message templates, or
+   the residual-sum RC hole. Do not merge to master until the surface sticks.  
+2. **Crema-lite experiment** — remaining checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    (app under `examples/http/`; host/wire already in `std/`; **JSON
    `POST /api/orders` shipped**). Further D+ only if useful.  
-2. **Editor depth** — only when DX forces it. Freezes:
+3. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).  
-3. **Deferred: all session / shell residual** — redir polish, line editor,
+4. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+5. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
@@ -163,6 +172,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 11. If JSON: [`docs/decisions.md`](docs/decisions.md) (**D141**) +
     [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
     + **D140** (`Float64`)
+12. If built-in validation: [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md)
+    (this branch; syntax open)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

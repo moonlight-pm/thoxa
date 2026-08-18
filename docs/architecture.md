@@ -5,7 +5,8 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-17 (**D141** `std/json` `decode`/`encode`;
+**As of:** 2026-08-17 (**branch** `experiment/builtin-validation` `Type.read`;
+**D141** `std/json` `decode`/`encode`;
 **D139** HTTP hosts under `std/http/`;
 **D138** kebab-case modules + `main.thx` entry;
 **D137** Str parse + Http wrappers; **D136**
@@ -34,7 +35,7 @@ step `.so` on the happy path.
 | Stage | Location | Notes |
 |-------|----------|--------|
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL. Program `run`/`build` stamp package+std+runtime+compiler and skip `cc` when fresh. |
-| Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. **Experiments:** type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`); tag literals desugar in the parser to `__jsx_el` / `__jsx_child` / `{...}` spreads |
+| Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar`, `validate_desugar` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. **Experiments:** type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`); tag literals desugar in the parser to `__jsx_el` / `__jsx_child` / `{...}` spreads; **`Type.read` / `Type.fromJson`** generate `__read_T` / `__fromJson_T` (`validate_desugar.rs`, this branch) |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
 | MIR | `mir.rs` | RC; generic monomorphs; `std/fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**); route-clause bodies after desugar; builtin **`Ty::Node`** (`Element` / `Text` / `Fragment` / `Attr`; `html_el` / `html_text` / `html_frag` / `html_render`); **`Ty::Fn`** unboxed pair (**D132**) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body; D132 thunks + `ThoxaFn` |

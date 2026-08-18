@@ -169,6 +169,53 @@ pub struct TypeExpr {
     pub union_members: Option<Vec<TypeExpr>>,
     /// Function type `(a: T) -> R` (D132). When set, `name`/`lit`/`union_members` unused.
     pub fn_type: Option<Box<FnType>>,
+    /// `T where …` refinement (builtin validation experiment).
+    pub where_clause: Option<WhereClause>,
+}
+
+/// `where >= 1 & <= 12 "…"`.
+#[derive(Debug, Clone)]
+pub struct WhereClause {
+    pub expr: WhereExpr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum WhereExpr {
+    And(Box<WhereExpr>, Box<WhereExpr>),
+    Or(Box<WhereExpr>, Box<WhereExpr>),
+    Atom(WhereAtom),
+}
+
+#[derive(Debug, Clone)]
+pub struct WhereAtom {
+    pub pred: WherePred,
+    pub message: Option<String>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum WherePred {
+    Ge(WhereLit),
+    Le(WhereLit),
+    Gt(WhereLit),
+    Lt(WhereLit),
+    Eq(WhereLit),
+    Ne(WhereLit),
+    /// Inclusive range. Missing end is unbounded.
+    Range {
+        lo: Option<WhereLit>,
+        hi: Option<WhereLit>,
+    },
+    /// Membership (`where "espresso"`).
+    Lit(WhereLit),
+}
+
+#[derive(Debug, Clone)]
+pub enum WhereLit {
+    Int(i64),
+    Float(f64),
+    String(String),
 }
 
 /// `(name: Type, …) -> Ret` in type position (D132).

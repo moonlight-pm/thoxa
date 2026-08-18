@@ -1,0 +1,49 @@
+## Type.read of constructor-param products (builtin validation slice 1).
+import { Issue, message, decode } from "std/json"
+import { Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Order(slug: String, qty: Int64)
+type Note(text: String)
+type Wrap(inner: Order)
+type Line(items: Array<Order>)
+
+fn showOrder(t: Trial<Order, Issue>) -> String {
+    match t {
+        Fail(e) => "ERR:{message(e)}"
+        Pass(o) => "{o.slug}:{o.qty}"
+    }
+}
+
+fn showWrap(t: Trial<Wrap, Issue>) -> String {
+    match t {
+        Fail(e) => "ERR:{message(e)}"
+        Pass(w) => "w:{w.inner.slug}:{w.inner.qty}"
+    }
+}
+
+fn showLine(t: Trial<Line, Issue>) -> String {
+    match t {
+        Fail(e) => "ERR:{message(e)}"
+        Pass(line) => "n:{line.items.count}"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    info(showWrap(Wrap.read("{{\"inner\":{{\"slug\":\"x\",\"qty\":1}}}}")))
+    info(showLine(Line.read("{{\"items\":[{{\"slug\":\"a\",\"qty\":1}},{{\"slug\":\"b\",\"qty\":2}}]}}")))
+    info(showOrder(Order.read("{{\"slug\":\"mocha\",\"qty\":2}}")))
+    info(showOrder(Order.read("{{\"slug\":1,\"qty\":2}}")))
+    info(showOrder(Order.read("{{\"qty\":2}}")))
+    info(showOrder(Order.read("[]")))
+    info(showOrder(Order.read("[")))
+
+    match decode("true") {
+        Fail(e) => info("tree:{e}")
+        Pass => info("tree:ok")
+    }
+    0
+}

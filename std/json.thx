@@ -17,6 +17,11 @@ export type JArr(value: Array<Json>)
 export type JObj(value: Map<String, Json>)
 export type Json = JNull | JBool | JInt | JFloat | JStr | JArr | JObj
 
+## Shape / refinement failures for Type.read (builtin validation experiment).
+## One product (not Missing|Mismatch|Rejected) so Trial residual is not a
+## nested sum — `?` rewrap of union residuals currently double-frees.
+export type Issue(path: String, expected: String, got: String, message: String)
+
 type Parsed(value: Json, pos: Int64)
 type Cut(text: String, pos: Int64)
 
@@ -55,6 +60,157 @@ export fn decode(s!: String) -> Trial<Json, String> {
         } else {
             Pass(got.value)
         }
+    }
+}
+
+## --- Issue / shape helpers (Type.read) ------------------------------------
+
+export fn joinPath(parent!: String, key!: String) -> String {
+    if parent.count == 0 {
+        key
+    } else {
+        "{parent}.{key}"
+    }
+}
+
+export fn kind(v!: Json) -> String {
+    match v {
+        JNull => "null"
+        JBool => "boolean"
+        JInt => "integer"
+        JFloat => "float"
+        JStr => "string"
+        JArr => "array"
+        JObj => "object"
+    }
+}
+
+export fn isNull(v!: Json) -> Bool {
+    match v {
+        JNull => true
+        else => false
+    }
+}
+
+export fn message(e!: Issue) -> String {
+    e.message
+}
+
+export fn issueMissing(path!: String) -> Issue {
+    Issue(path, "", "missing", "{path} is required")
+}
+
+export fn issueMismatch(path!: String, expected!: String, got!: String) -> Issue {
+    let msg = if path.count == 0 {
+        "expected {expected}, got {got}"
+    } else {
+        "{path}: expected {expected}, got {got}"
+    }
+    Issue(path, expected, got, msg)
+}
+
+export fn issueRejected(path!: String, reason!: String) -> Issue {
+    Issue(path, "", "", reason)
+}
+
+export fn errorObject(e!: Issue) -> Json {
+    mut m: Map<String, Json> = Map()
+    m.set("ok", JBool(false))
+    m.set("path", JStr(e.path))
+    m.set("error", JStr(e.message))
+    if e.expected.count > 0 {
+        m.set("expected", JStr(e.expected))
+        m.set("got", JStr(e.got))
+    }
+    JObj(m)
+}
+
+export fn readJson(s!: String) -> Trial<Json, Issue> {
+    match decode(s) {
+        Fail(e) => Fail(Issue("", "json", "invalid", "bad json: {e}"))
+        Pass(v) => Pass(v)
+    }
+}
+
+export fn asObj(v!: Json, path!: String) -> Trial<Map<String, Json>, Issue> {
+    match v {
+        JObj(m) => Pass(m)
+        else => Fail(issueMismatch(path, "object", kind(v)))
+    }
+}
+
+export fn asStr(v!: Json, path!: String) -> Trial<String, Issue> {
+    match v {
+        JStr(s) => Pass(s)
+        else => Fail(issueMismatch(path, "string", kind(v)))
+    }
+}
+
+export fn asInt(v!: Json, path!: String) -> Trial<Int64, Issue> {
+    match v {
+        JInt(n) => Pass(n)
+        else => Fail(issueMismatch(path, "integer", kind(v)))
+    }
+}
+
+export fn asBool(v!: Json, path!: String) -> Trial<Bool, Issue> {
+    match v {
+        JBool(b) => Pass(b)
+        else => Fail(issueMismatch(path, "boolean", kind(v)))
+    }
+}
+
+export fn asFloat(v!: Json, path!: String) -> Trial<Float64, Issue> {
+    match v {
+        JFloat(f) => Pass(f)
+        else => Fail(issueMismatch(path, "float", kind(v)))
+    }
+}
+
+export fn asArr(v!: Json, path!: String) -> Trial<Array<Json>, Issue> {
+    match v {
+        JArr(xs) => Pass(xs)
+        else => Fail(issueMismatch(path, "array", kind(v)))
+    }
+}
+
+export fn field(m!: Map<String, Json>, key!: String, path!: String) -> Trial<Json, Issue> {
+    let p = joinPath(path, key)
+    match m.get(key) {
+        Not => Fail(issueMissing(p))
+        Has(v) => Pass(v)
+    }
+}
+
+export fn strField(m!: Map<String, Json>, key!: String, path!: String) -> Trial<String, Issue> {
+    let p = joinPath(path, key)
+    match m.get(key) {
+        Not => Fail(issueMissing(p))
+        Has(v) => asStr(v, p)
+    }
+}
+
+export fn intField(m!: Map<String, Json>, key!: String, path!: String) -> Trial<Int64, Issue> {
+    let p = joinPath(path, key)
+    match m.get(key) {
+        Not => Fail(issueMissing(p))
+        Has(v) => asInt(v, p)
+    }
+}
+
+export fn boolField(m!: Map<String, Json>, key!: String, path!: String) -> Trial<Bool, Issue> {
+    let p = joinPath(path, key)
+    match m.get(key) {
+        Not => Fail(issueMissing(p))
+        Has(v) => asBool(v, p)
+    }
+}
+
+export fn floatField(m!: Map<String, Json>, key!: String, path!: String) -> Trial<Float64, Issue> {
+    let p = joinPath(path, key)
+    match m.get(key) {
+        Not => Fail(issueMissing(p))
+        Has(v) => asFloat(v, p)
     }
 }
 

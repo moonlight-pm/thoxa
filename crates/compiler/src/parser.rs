@@ -602,7 +602,7 @@ impl Parser {
     fn parse_union_members(&mut self) -> Result<Vec<TypeExpr>> {
         let mut members = Vec::new();
         loop {
-            members.push(self.parse_type_atom()?);
+            members.push(self.parse_type_with_where()?);
             if self.at(TokenKind::Pipe) {
                 self.bump();
                 continue;
@@ -735,7 +735,7 @@ impl Parser {
 
     /// Type in any position: atom or inline member-set `A | B` (D131).
     fn parse_type(&mut self) -> Result<TypeExpr> {
-        let first = self.parse_type_atom()?;
+        let first = self.parse_type_with_where()?;
         if !self.at(TokenKind::Pipe) {
             return Ok(first);
         }
@@ -743,7 +743,7 @@ impl Parser {
         let mut members = vec![first];
         while self.at(TokenKind::Pipe) {
             self.bump();
-            members.push(self.parse_type_atom()?);
+            members.push(self.parse_type_with_where()?);
         }
         let end = members.last().map(|m| m.span.end).unwrap_or(start);
         Ok(TypeExpr {
@@ -754,7 +754,24 @@ impl Parser {
             mark: None,
             union_members: Some(members),
             fn_type: None,
+            where_clause: None,
         })
+    }
+
+    fn parse_type_with_where(&mut self) -> Result<TypeExpr> {
+        let mut ty = self.parse_type_atom()?;
+        if self.at(TokenKind::Where) {
+            let start = ty.span.start;
+            self.bump();
+            let expr = self.parse_where_or()?;
+            let end = self.prev_span().end;
+            ty.where_clause = Some(WhereClause {
+                expr,
+                span: Span::new(start, end),
+            });
+            ty.span = Span::new(start, end);
+        }
+        Ok(ty)
     }
 
     /// Single type atom: named, generic app, or literal (`0`, `true`, `"x"`).
@@ -774,6 +791,7 @@ impl Parser {
                 mark,
                 union_members: None,
                 fn_type: None,
+                where_clause: None,
             });
         }
         if self.at(TokenKind::True) || self.at(TokenKind::False) {
@@ -790,6 +808,7 @@ impl Parser {
                 mark,
                 union_members: None,
                 fn_type: None,
+                where_clause: None,
             });
         }
         if let TokenKind::String(ref s) = self.current().kind.clone() {
@@ -806,11 +825,23 @@ impl Parser {
                 mark,
                 union_members: None,
                 fn_type: None,
+                where_clause: None,
             });
         }
 
         if self.at(TokenKind::LParen) {
-            return self.parse_fn_type();
+            if self.is_fn_type_lparen() {
+                return self.parse_fn_type();
+            }
+            let start = self.peek_span();
+            self.bump();
+            let mut inner = self.parse_type()?;
+            self.expect_kind(&TokenKind::RParen)?;
+            let mark = self.parse_type_mark();
+            let end = mark.map(|_| self.prev_span().end).unwrap_or(self.prev_span().end);
+            inner.mark = mark.or(inner.mark);
+            inner.span = Span::new(start.start, end);
+            return Ok(inner);
         }
 
         let (name, start_span) = self.expect_ident()?;
@@ -845,6 +876,7 @@ impl Parser {
             mark,
             union_members: None,
             fn_type: None,
+            where_clause: None,
         })
     }
 
@@ -890,7 +922,166 @@ impl Parser {
             mark: None,
             union_members: None,
             fn_type: Some(Box::new(crate::ast::FnType { params, ret })),
+            where_clause: None,
         })
+    }
+
+    fn is_fn_type_lparen(&self) -> bool {
+        let i = self.pos + 1;
+        if i >= self.tokens.len() {
+            return false;
+        }
+        match &self.tokens[i].kind {
+            TokenKind::RParen => true,
+            TokenKind::Ident(_) => {
+                let j = i + 1;
+                j < self.tokens.len() && matches!(self.tokens[j].kind, TokenKind::Colon)
+            }
+            _ => false,
+        }
+    }
+
+    fn parse_where_or(&mut self) -> Result<WhereExpr> {
+        let mut left = self.parse_where_and()?;
+        while self.at(TokenKind::Pipe) {
+            self.bump();
+            let right = self.parse_where_and()?;
+            left = WhereExpr::Or(Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn parse_where_and(&mut self) -> Result<WhereExpr> {
+        let mut left = self.parse_where_primary()?;
+        while self.at(TokenKind::Amp) {
+            self.bump();
+            let right = self.parse_where_primary()?;
+            left = WhereExpr::And(Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn parse_where_primary(&mut self) -> Result<WhereExpr> {
+        if self.at(TokenKind::LParen) {
+            self.bump();
+            let inner = self.parse_where_or()?;
+            self.expect_kind(&TokenKind::RParen)?;
+            return Ok(inner);
+        }
+        let start = self.peek_span();
+        let pred = self.parse_where_pred()?;
+        let message = if let TokenKind::String(s) = &self.current().kind {
+            let s = s.clone();
+            self.bump();
+            Some(s)
+        } else {
+            None
+        };
+        let end = self.prev_span().end;
+        Ok(WhereExpr::Atom(WhereAtom {
+            pred,
+            message,
+            span: Span::new(start.start, end),
+        }))
+    }
+
+    fn parse_where_pred(&mut self) -> Result<WherePred> {
+        if self.at(TokenKind::Ge) {
+            self.bump();
+            return Ok(WherePred::Ge(self.parse_where_lit()?));
+        }
+        if self.at(TokenKind::Le) {
+            self.bump();
+            return Ok(WherePred::Le(self.parse_where_lit()?));
+        }
+        if self.at(TokenKind::RAngle) {
+            self.bump();
+            return Ok(WherePred::Gt(self.parse_where_lit()?));
+        }
+        if self.at(TokenKind::LAngle) {
+            self.bump();
+            return Ok(WherePred::Lt(self.parse_where_lit()?));
+        }
+        if self.at(TokenKind::EqEq) {
+            self.bump();
+            return Ok(WherePred::Eq(self.parse_where_lit()?));
+        }
+        if self.at(TokenKind::Ne) {
+            self.bump();
+            return Ok(WherePred::Ne(self.parse_where_lit()?));
+        }
+        if self.at(TokenKind::DotDot) {
+            self.bump();
+            let hi = Some(self.parse_where_lit()?);
+            return Ok(WherePred::Range { lo: None, hi });
+        }
+        // `1..64` / `1..=64` / `"espresso"` / `0`
+        let lo = self.parse_where_lit()?;
+        if self.at(TokenKind::DotDot) || self.at(TokenKind::DotDotEq) {
+            self.bump();
+            let hi = if self.at_where_lit() {
+                Some(self.parse_where_lit()?)
+            } else {
+                None
+            };
+            return Ok(WherePred::Range { lo: Some(lo), hi });
+        }
+        Ok(WherePred::Lit(lo))
+    }
+
+    fn at_where_lit(&self) -> bool {
+        matches!(
+            self.current().kind,
+            TokenKind::Int(_)
+                | TokenKind::Float(_)
+                | TokenKind::String(_)
+                | TokenKind::Minus
+        )
+    }
+
+    fn parse_where_lit(&mut self) -> Result<WhereLit> {
+        if self.at(TokenKind::Minus) {
+            self.bump();
+            match &self.current().kind {
+                TokenKind::Int(n) => {
+                    let n = *n;
+                    self.bump();
+                    return Ok(WhereLit::Int(-n));
+                }
+                TokenKind::Float(n) => {
+                    let n = *n;
+                    self.bump();
+                    return Ok(WhereLit::Float(-n));
+                }
+                _ => {
+                    return Err(Error::at(
+                        "expected number after `-` in where clause",
+                        self.peek_span(),
+                    ));
+                }
+            }
+        }
+        match &self.current().kind {
+            TokenKind::Int(n) => {
+                let n = *n;
+                self.bump();
+                Ok(WhereLit::Int(n))
+            }
+            TokenKind::Float(n) => {
+                let n = *n;
+                self.bump();
+                Ok(WhereLit::Float(n))
+            }
+            TokenKind::String(s) => {
+                let s = s.clone();
+                self.bump();
+                Ok(WhereLit::String(s))
+            }
+            _ => Err(Error::at(
+                "expected a literal in where clause (`1`, `1.5`, `\"x\"`)",
+                self.peek_span(),
+            )),
+        }
     }
 
     /// Optional trailing `!` (extract) or `?` (residual) on a type (D118).
@@ -1450,7 +1641,7 @@ impl Parser {
             if self.at(TokenKind::Dot) {
                 let start = expr.span.start;
                 self.bump();
-                let (name, name_span) = self.expect_ident()?;
+                let (name, name_span) = self.expect_member_name()?;
                 if self.at(TokenKind::LParen) {
                     self.bump();
                     let args = self.parse_arg_list()?;
@@ -2401,6 +2592,26 @@ impl Parser {
         }
     }
 
+    fn expect_member_name(&mut self) -> Result<(String, Span)> {
+        match &self.current().kind {
+            TokenKind::Ident(s) => {
+                let s = s.clone();
+                let span = self.current().span;
+                self.bump();
+                Ok((s, span))
+            }
+            TokenKind::From => {
+                let span = self.current().span;
+                self.bump();
+                Ok(("from".into(), span))
+            }
+            _ => Err(Error::at(
+                format!("expected identifier, found {:?}", self.current().kind),
+                self.peek_span(),
+            )),
+        }
+    }
+
     fn expect_ident(&mut self) -> Result<(String, Span)> {
         match &self.current().kind {
             TokenKind::Ident(s) => {
@@ -2581,6 +2792,7 @@ fn jsx_type_name(name: &str, span: Span) -> TypeExpr {
         mark: None,
         union_members: None,
         fn_type: None,
+        where_clause: None,
     }
 }
 
@@ -2593,6 +2805,7 @@ fn jsx_array_attr_ty(span: Span) -> TypeExpr {
         mark: None,
         union_members: None,
         fn_type: None,
+        where_clause: None,
     }
 }
 
@@ -2723,6 +2936,7 @@ fn jsx_name_from_token(kind: &TokenKind) -> Option<String> {
         TokenKind::Or => Some("or".into()),
         TokenKind::Not => Some("not".into()),
         TokenKind::Extern => Some("extern".into()),
+        TokenKind::Where => Some("where".into()),
         _ => None,
     }
 }
@@ -3083,6 +3297,43 @@ mod tests {
             }
             _ => panic!("expected function"),
         }
+    }
+
+    #[test]
+    fn parse_where_on_alias_and_field() {
+        let module = parse(
+            r#"
+            type Qty = Int64 where >= 1 "must be at least 1"
+            type Port = Int64 where (1..1023) | (8080..8090)
+            type Order(slug: String where 1..64, qty: Qty)
+            "#,
+        );
+        let Item::Type(qty) = &module.items[0] else {
+            panic!("qty");
+        };
+        let members = qty.union_members.as_ref().unwrap();
+        assert_eq!(members[0].name, "Int64");
+        let w = members[0].where_clause.as_ref().unwrap();
+        match &w.expr {
+            WhereExpr::Atom(a) => {
+                assert!(matches!(a.pred, WherePred::Ge(WhereLit::Int(1))));
+                assert_eq!(a.message.as_deref(), Some("must be at least 1"));
+            }
+            _ => panic!("expected atom"),
+        }
+        let Item::Type(port) = &module.items[1] else {
+            panic!("port");
+        };
+        let pw = port.union_members.as_ref().unwrap()[0]
+            .where_clause
+            .as_ref()
+            .unwrap();
+        assert!(matches!(pw.expr, WhereExpr::Or(_, _)));
+        let Item::Type(order) = &module.items[2] else {
+            panic!("order");
+        };
+        assert!(order.params[0].ty.where_clause.is_some());
+        assert_eq!(order.params[1].ty.name, "Qty");
     }
 
     #[test]

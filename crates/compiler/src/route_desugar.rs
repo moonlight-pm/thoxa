@@ -782,6 +782,7 @@ fn ty_named(name: &str) -> TypeExpr {
         mark: None,
         union_members: None,
         fn_type: None,
+        where_clause: None,
     }
 }
 
@@ -794,6 +795,7 @@ fn ty_array(elem: TypeExpr) -> TypeExpr {
         mark: None,
         union_members: None,
         fn_type: None,
+        where_clause: None,
     }
 }
 

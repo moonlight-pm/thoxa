@@ -3,19 +3,22 @@
 import models from "./models"
 import http, { Request, Response, ok } from "std/http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { Json, JNull, JBool, JInt, JFloat, JStr, JArr, JObj, decode, encode } from "std/json"
+import { Json, JBool, JInt, JStr, JObj, encode, Issue, issueRejected, errorObject } from "std/json"
 
 export fn health() -> Response {
     ok(Bytes.fromString("ok\n"), "text/plain; charset=utf-8")
 }
 
+type Qty = Int64 where >= 1
+type CreateOrder(slug: String, qty: Qty)
+
 ## POST /api/orders — `{"slug":"mocha","qty":2}` → priced ticket.
 export fn createOrder(req!: Request) -> Response {
-    match decode(req.body.toString()) {
-        Fail(e) => jsonErr("bad json: {e}")
-        Pass(v) {
-            match placeOrder(v) {
-                Fail(e) => jsonErr(e)
+    match CreateOrder.read(req.body.toString()) {
+        Fail(e) => jsonIssue(e)
+        Pass(o) {
+            match placeOrder(o) {
+                Fail(e) => jsonIssue(e)
                 Pass(ticket) => jsonOk(ticketJson(ticket))
             }
         }
@@ -24,69 +27,17 @@ export fn createOrder(req!: Request) -> Response {
 
 type Ticket(slug: String, name: String, qty: Int64, unitCents: Int64, totalCents: Int64)
 
-fn placeOrder(v!: Json) -> Trial<Ticket, String> {
-    match v {
-        JObj(m) {
-            let slug = fieldStr(m, "slug")?
-            let qty = fieldInt(m, "qty")?
-            if qty < 1 {
-                Fail("qty must be at least 1")
-            } else {
-                match models.findBySlug(slug) {
-                    Not => Fail("unknown drink")
-                    Has(d) {
-                        Pass(Ticket(
-                            slug: d.slug,
-                            name: d.name,
-                            qty: qty,
-                            unitCents: d.priceCents,
-                            totalCents: d.priceCents * qty
-                        ))
-                    }
-                }
-            }
-        }
-        JNull => Fail("expected object")
-        JBool => Fail("expected object")
-        JInt => Fail("expected object")
-        JFloat => Fail("expected object")
-        JStr => Fail("expected object")
-        JArr => Fail("expected object")
-    }
-}
-
-fn fieldStr(m!: Map<String, Json>, key!: String) -> Trial<String, String> {
-    let got: May<Json> = m.get(key)
-    match got {
-        Not => Fail("missing {key}")
-        Has(v) {
-            match v {
-                JStr(s) => Pass(s)
-                JNull => Fail("{key} must be a string")
-                JBool => Fail("{key} must be a string")
-                JInt => Fail("{key} must be a string")
-                JFloat => Fail("{key} must be a string")
-                JArr => Fail("{key} must be a string")
-                JObj => Fail("{key} must be a string")
-            }
-        }
-    }
-}
-
-fn fieldInt(m!: Map<String, Json>, key!: String) -> Trial<Int64, String> {
-    let got: May<Json> = m.get(key)
-    match got {
-        Not => Fail("missing {key}")
-        Has(v) {
-            match v {
-                JInt(n) => Pass(n)
-                JNull => Fail("{key} must be an integer")
-                JBool => Fail("{key} must be an integer")
-                JFloat => Fail("{key} must be an integer")
-                JStr => Fail("{key} must be an integer")
-                JArr => Fail("{key} must be an integer")
-                JObj => Fail("{key} must be an integer")
-            }
+fn placeOrder(o!: CreateOrder) -> Trial<Ticket, Issue> {
+    match models.findBySlug(o.slug) {
+        Not => Fail(issueRejected("slug", "unknown drink"))
+        Has(d) {
+            Pass(Ticket(
+                slug: d.slug,
+                name: d.name,
+                qty: o.qty,
+                unitCents: d.priceCents,
+                totalCents: d.priceCents * o.qty
+            ))
         }
     }
 }
@@ -106,11 +57,8 @@ fn jsonOk(v!: Json) -> Response {
     jsonRes(200, "OK", v)
 }
 
-fn jsonErr(msg!: String) -> Response {
-    mut m: Map<String, Json> = Map()
-    m.set("ok", JBool(false))
-    m.set("error", JStr(msg))
-    jsonRes(400, "Bad Request", JObj(m))
+fn jsonIssue(e!: Issue) -> Response {
+    jsonRes(400, "Bad Request", errorObject(e))
 }
 
 fn jsonRes(status!: Int64, reason!: String, v!: Json) -> Response {

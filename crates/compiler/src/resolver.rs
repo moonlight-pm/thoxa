@@ -242,6 +242,11 @@ pub fn resolve_module(module: &Module) -> Resolution {
         Ok(()) => &desugared,
         Err(_) => module,
     };
+    let mut desugared = module.clone();
+    let module = match crate::validate_desugar::desugar_module(&mut desugared) {
+        Ok(()) => &desugared,
+        Err(_) => module,
+    };
     let mut r = Resolver {
         module,
         res: Resolution::default(),

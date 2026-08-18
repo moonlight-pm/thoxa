@@ -11,7 +11,9 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-17 (**D141** `std/json` `decode`/`encode`;
+**As of:** 2026-08-17 (**branch** `experiment/builtin-validation` slice 1
+`Type.read`;
+**D141** `std/json` `decode`/`encode`;
 **D140** `Float64`;
 **D139** HTTP hosts under `std/http/`;
 **D138** kebab-case module files + `main.thx` entry **shipped**;
@@ -59,6 +61,7 @@ freeze)
 | pkg-main | Dir entry `main.thx` | shipped | `pkgmain` | D68, **D138** | Filename is kebab-case `main.thx` (D138) | yes |
 | route-clauses | Type-body `GET "/…"` → `route(req) -> Response` | partial | unit (`route_desugar`, LSP); Crema dogfood | idea [`ideas/2026-08-12-router-clause-syntax-experiment.md`](ideas/2026-08-12-router-clause-syntax-experiment.md) | **On master, not freeze / no D-id.** String wrap + `Response` pass-through; `Int64`/`String` captures; multi-segment; optional `req`. **Gaps:** no conformance `.thx`; no handbook; no JSON/form; miss is `notFound()` (no fallthrough). Crema dogfoods via `examples/http` `type Routes`. | no |
 | jsx-node | Tag literals + builtin `Node` / `.html()` | partial | `jsx` | idea [`ideas/2026-08-13-jsx-node-syntax-experiment.md`](ideas/2026-08-13-jsx-node-syntax-experiment.md) | **On master, not freeze / no D-id.** Eager PascalCase → `Type(…).view(children:)`; `{e}` children are String / Int64 / Float64 / Bool / Node / Array&lt;Node&gt;; `{e}` attrs stringify String / Int64 / Float64 / Bool; void tags; boolean attrs; empty `<>` is Node; no import. `<tag` (no space) is JSX, including after another expr; `a < b` (spaces) is comparison; glued `a<b` is an error. `Node` matches as `Element \| Text \| Fragment` (same `ThoxaHtml*` tree). Ambient `Attr` / `Element` / `Text` / `Fragment`. HTML `{...Array<Attr>}` and component `{...product}` spreads. Crema pages dogfood (`examples/http` `Page`). **Gaps:** no handbook; `.html()` method hover thin. | no |
+| type-read | `Type.read` / `where` refinements | partial | `json_read`, `where_refine` | idea [`ideas/2026-08-17-builtin-validation.md`](ideas/2026-08-17-builtin-validation.md) | **Experiment branch, not master / no D-id.** `type Qty = Int64 where >= 1`; `&` / `\|` / parens; `Qty.from`; literal inhabitation; Qty→base coerce. `Type.read` of products. **Gaps:** custom message templates not filled at runtime (generated text); field-level `where` parsed but `read` wants a named refined type; no May fields; no handbook; nested `read` after a failed `read` can heap-corrupt; `Issue` is a product not a sum. | no |
 
 ## FFI and C layout
 
@@ -76,7 +79,7 @@ freeze)
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err`, `http_helpers` | D69, R9, **D126**, **D136**, **D137** | Product **`std/net`** + **`std/http`**; `receiveRequest` / `sendAll`; `Request.query`; header/query/form/cookie helpers + `queryParam`/`formField`/`cookie`/`htmlResponse`; 303/403/405; Fail is String | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126**, **D139** | Product **`std/http/static`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/net` + `std/http` + `std/http/static` | yes |
-| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/http/server.serve(routes.port, routes.handle)`** (**D132**/**D136**/**D139**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C + **D1** `POST /api/orders` (`std/json` **D141**); pages are JSX `Node` (`DrinkCard(d: Drink)`, `roast: Roast` — **D135**). Query/form/cookies/`htmlResponse` are product Http (**D137**). **Gaps:** remaining D+ (htmx / persistence / sessions) parked. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
+| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/http/server.serve(routes.port, routes.handle)`** (**D132**/**D136**/**D139**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C + **D1** `POST /api/orders` (`CreateOrder.read`, `qty: Qty` where `>= 1`). Pages are JSX `Node`. **Gaps:** remaining D+ parked; unknown slug still domain. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 
@@ -116,7 +119,7 @@ freeze)
 | std-http | HTTP/1.1 protocol in `std/http` | shipped | `http_parse`, `http`, `http_wire`, `http_helpers` | **D126**, **D136**, **D137** | `Request.query` kept; body empty at parse (host fills). Helpers: `headerGet`, query/form/cookie Maps + `queryParam`/`formField`/`cookie`, `htmlResponse` (`Node`), `seeOther`, `finalize` / keep-alive. Still no syscalls | yes |
 | std-http-static | Static-file `Router` in `std/http/static` | shipped | `router`, `http_server` | **D126**, **D139** | GET+HEAD; small MIME table; depends on Io+Http+Logging | yes |
 | std-http-server | HTTP/1.1 host loop in `std/http/server` | shipped | `http_host` | **D136**, **D139** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
-| std-json | Dynamic `Json` tree in `std/json` | shipped | `json` | **D141**; idea [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md) | `decode` / `encode`. `JInt` vs `JFloat` as charter. Fail String. No derive, no pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` (Crema keeps that in `examples/http`) | yes |
+| std-json | Dynamic `Json` tree in `std/json` | shipped | `json`, `json_read` | **D141**; idea [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md) | `decode` / `encode`. `JInt` vs `JFloat` as charter. Fail String. This branch also: `Issue`, `readJson`, `asObj` / `*Field`, `errorObject`. No derive, no pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` (Crema keeps that in `examples/http`) | yes |
 
 ## Editor / LSP
 

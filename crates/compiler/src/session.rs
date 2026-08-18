@@ -328,6 +328,7 @@ fn make_step_method(stmts: Vec<BlockItem>) -> Method {
             mark: None,
             union_members: None,
             fn_type: None,
+            where_clause: None,
         }),
         body: Block {
             items,
@@ -372,6 +373,7 @@ fn make_session_main() -> Function {
             mark: None,
             union_members: None,
             fn_type: None,
+            where_clause: None,
         }),
         body: Block {
             items: vec![],

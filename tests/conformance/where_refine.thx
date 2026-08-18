@@ -1,0 +1,48 @@
+## `type T = Int64 where …` + Type.read / Type.from (builtin validation).
+import { Issue, message } from "std/json"
+import { Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Qty = Int64 where >= 1
+type Dozen = Qty where <= 12
+type Order(slug: String, qty: Qty)
+
+fn showQ(t: Trial<Qty, Issue>) -> String {
+    match t {
+        Fail(e) => "ERR:{message(e)}"
+        Pass(q) => "ok:{q}"
+    }
+}
+
+fn showO(t: Trial<Order, Issue>) -> String {
+    match t {
+        Fail(e) => "ERR:{message(e)}"
+        Pass(o) => "{o.slug}:{o.qty}"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let a: Qty = 2
+    info("lit:{a}")
+    let n: Int64 = a
+    info("base:{n}")
+    info("{a + 40}")
+
+    info(showQ(Qty.from(3)))
+    info(showQ(Qty.from(0)))
+    match Dozen.from(5) {
+        Fail(e) => info("ERR:{message(e)}")
+        Pass(q) => info("ok:{q}")
+    }
+    match Dozen.from(13) {
+        Fail(e) => info("ERR:{message(e)}")
+        Pass(q) => info("ok:{q}")
+    }
+
+    info(showO(Order.read("{{\"slug\":\"mocha\",\"qty\":2}}")))
+    info(showO(Order.read("{{\"slug\":\"mocha\",\"qty\":0}}")))
+    0
+}

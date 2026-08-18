@@ -791,6 +791,9 @@ struct FieldInfo {
     mutable: bool,
     /// Constructor-param default (`type T(x: Int64 = 0)`); ignored for body fields.
     default: Option<Expr>,
+    /// Field-level `where` (validation experiment).
+    #[allow(dead_code)]
+    where_clause: Option<crate::ast::WhereClause>,
 }
 
 /// Per-module free-name resolution maps (for default-arg scope — D116).
@@ -812,6 +815,14 @@ struct TypeInfo {
     def_mod: String,
     /// D118: union alias arms (ordered). `None` for ordinary product / C-layout types.
     sum: Option<SumInfo>,
+    /// `type Qty = Int64 where …` — one-field wrapper (`value`) over `base`.
+    refined: Option<RefinedInfo>,
+}
+
+#[derive(Clone)]
+struct RefinedInfo {
+    base: Ty,
+    clause: crate::ast::WhereClause,
 }
 
 /// Resolved union alias (D118).
@@ -1226,6 +1237,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     // Experiment: type-body `GET "/…"` → private methods + `route` (no std coupling).
     let mut package = package.clone();
     crate::route_desugar::desugar_package(&mut package)?;
+    crate::validate_desugar::desugar_package(&mut package)?;
     let package = &package;
 
     // May/Trial live in `std/fallible` and must be imported (no ambient inject).
@@ -1320,6 +1332,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                     zero_init: !td.fields.is_empty() && td.union_members.is_none(),
                     def_mod: m.id.clone(),
                     sum: None,
+                    refined: None,
                 },
             );
             if td.exported {
@@ -1381,14 +1394,74 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     // Fill type fields with resolved types (concrete AST defs only).
     // Independent type-shape errors are collected for LSP multi-diag.
     let mut type_reg_errors: Vec<Error> = Vec::new();
+    // Refined aliases (`type Qty = Int64 where …`) may nest; resolve until stable.
+    let mut refined_progress = true;
+    let mut refined_failed: HashSet<String> = HashSet::new();
+    while refined_progress {
+        refined_progress = false;
+        for (mod_id, mangled, td) in &type_defs {
+            if refined_failed.contains(mangled) {
+                continue;
+            }
+            if types_info.get(mangled).and_then(|i| i.refined.as_ref()).is_some() {
+                continue;
+            }
+            let Some(members) = &td.union_members else {
+                continue;
+            };
+            let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
+            match try_refined_alias(members, td, &types_info, &name_map) {
+                Ok(Some(refined)) => {
+                    let fields = vec![FieldInfo {
+                        name: "value".into(),
+                        ty: refined.base.clone(),
+                        mutable: false,
+                        default: None,
+                        where_clause: None,
+                    }];
+                    let info = types_info.get_mut(mangled).unwrap();
+                    info.fields = fields.clone();
+                    info.zero_init = false;
+                    info.sum = None;
+                    info.refined = Some(refined);
+                    type_layouts.push(TypeLayout {
+                        name: mangled.clone(),
+                        fields: fields
+                            .iter()
+                            .map(|f| FieldLayout {
+                                name: f.name.clone(),
+                                c_name: sanitize_field(&f.name),
+                                ty: f.ty.clone(),
+                            })
+                            .collect(),
+                        sum: None,
+                        sum_scalar: None,
+                    });
+                    refined_progress = true;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    refined_failed.insert((*mangled).clone());
+                    type_reg_errors.push(e);
+                }
+            }
+        }
+    }
+    if !type_reg_errors.is_empty() {
+        return Err(errors_to_multi(type_reg_errors));
+    }
     for (mod_id, mangled, td) in &type_defs {
+        if types_info.get(mangled).and_then(|i| i.refined.as_ref()).is_some() {
+            continue;
+        }
         let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
         match resolve_type_def_shape(td, &types_info, &name_map) {
-            Ok((fields, zero_init, sum_info)) => {
+            Ok((fields, zero_init, sum_info, refined)) => {
                 let info = types_info.get_mut(mangled).unwrap();
                 info.fields = fields.clone();
                 info.zero_init = zero_init;
                 info.sum = sum_info.clone();
+                info.refined = refined;
                 let sum_layout = sum_info.as_ref().map(|s| {
                     s.variants
                         .iter()
@@ -1927,7 +2000,12 @@ fn resolve_type_def_shape(
     td: &TypeDef,
     types_info: &HashMap<String, TypeInfo>,
     name_map: &HashMap<String, String>,
-) -> Result<(Vec<FieldInfo>, bool, Option<SumInfo>)> {
+) -> Result<(
+    Vec<FieldInfo>,
+    bool,
+    Option<SumInfo>,
+    Option<RefinedInfo>,
+)> {
     let mut fields: Vec<FieldInfo> = Vec::new();
     let zero_init;
     let mut sum_info: Option<SumInfo> = None;
@@ -1939,6 +2017,16 @@ fn resolve_type_def_shape(
                 "union type cannot have constructor params, body fields, or methods",
                 td.name_span,
             ));
+        }
+        if let Some(refined) = try_refined_alias(members, td, types_info, name_map)? {
+            let fields = vec![FieldInfo {
+                name: "value".into(),
+                ty: refined.base.clone(),
+                mutable: false,
+                default: None,
+                where_clause: None,
+            }];
+            return Ok((fields, false, None, Some(refined)));
         }
         zero_init = false;
         let mut variants = Vec::new();
@@ -2141,6 +2229,7 @@ fn resolve_type_def_shape(
                 ty,
                 mutable: f.mutable,
                 default: None,
+                where_clause: None,
             });
         }
     } else {
@@ -2172,10 +2261,68 @@ fn resolve_type_def_shape(
                 ty,
                 mutable: false,
                 default: p.default.clone(),
+                where_clause: p.ty.where_clause.clone(),
             });
         }
     }
-    Ok((fields, zero_init, sum_info))
+    Ok((fields, zero_init, sum_info, None))
+}
+
+fn try_refined_alias(
+    members: &[TypeExpr],
+    td: &TypeDef,
+    types_info: &HashMap<String, TypeInfo>,
+    name_map: &HashMap<String, String>,
+) -> Result<Option<RefinedInfo>> {
+    if members.len() != 1 {
+        return Ok(None);
+    }
+    let mem = &members[0];
+    let extra = mem.where_clause.clone();
+    let base_ty = resolve_ty(
+        &TypeExpr {
+            where_clause: None,
+            ..mem.clone()
+        },
+        types_info,
+        name_map,
+    );
+    let Ok(base_ty) = base_ty else {
+        return Ok(None);
+    };
+    let (base, clause) = match &base_ty {
+        Ty::Int64 | Ty::Float64 | Ty::String | Ty::Bool => {
+            let Some(w) = extra else {
+                return Ok(None);
+            };
+            (base_ty, w)
+        }
+        Ty::User(n) => {
+            let Some(inner) = types_info.get(n).and_then(|i| i.refined.clone()) else {
+                return Ok(None);
+            };
+            let clause = if let Some(w) = extra {
+                crate::ast::WhereClause {
+                    expr: crate::refine::and_clauses(&inner.clause.expr, &w.expr),
+                    span: w.span,
+                }
+            } else {
+                inner.clause
+            };
+            (inner.base, clause)
+        }
+        _ => return Ok(None),
+    };
+    crate::refine::check_templates(&clause)?;
+    let base_name = match &base {
+        Ty::Int64 => "Int64",
+        Ty::Float64 => "Float64",
+        Ty::String => "String",
+        Ty::Bool => "Bool",
+        _ => "value",
+    };
+    crate::refine::reject_empty(base_name, &clause, td.name_span)?;
+    Ok(Some(RefinedInfo { base, clause }))
 }
 
 fn errors_to_multi(errors: Vec<Error>) -> Error {
@@ -2297,6 +2444,7 @@ fn field_info(name: &str, ty: Ty) -> FieldInfo {
         ty,
         mutable: false,
         default: None,
+        where_clause: None,
     }
 }
 
@@ -2314,6 +2462,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             zero_init: false,
             def_mod: String::new(),
             sum: None,
+            refined: None,
         },
     );
     type_layouts.push(TypeLayout {
@@ -2345,6 +2494,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             zero_init: false,
             def_mod: String::new(),
             sum: None,
+            refined: None,
         },
     );
     types_info.insert(
@@ -2355,6 +2505,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             zero_init: false,
             def_mod: String::new(),
             sum: None,
+            refined: None,
         },
     );
     types_info.insert(
@@ -2365,6 +2516,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             zero_init: false,
             def_mod: String::new(),
             sum: None,
+            refined: None,
         },
     );
 }
@@ -4475,6 +4627,7 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
                         .collect(),
                     ret: ty_to_type_expr(ret, span),
                 })),
+                where_clause: None,
             };
         }
         other => (format!("{other:?}"), vec![]),
@@ -4487,6 +4640,7 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
         mark: None,
         union_members: None,
         fn_type: None,
+        where_clause: None,
     }
 }
 
@@ -4510,6 +4664,7 @@ fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
                     .collect(),
                 ret: subst_type_expr(&ft.ret, subst),
             })),
+            where_clause: te.where_clause.clone(),
         };
     }
     if let Some(members) = &te.union_members {
@@ -4521,6 +4676,7 @@ fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
             mark: te.mark,
             union_members: Some(members.iter().map(|m| subst_type_expr(m, subst)).collect()),
             fn_type: None,
+            where_clause: te.where_clause.clone(),
         };
     }
     if te.args.is_empty() {
@@ -4549,6 +4705,7 @@ fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
         mark: te.mark,
         union_members: None,
         fn_type: None,
+        where_clause: te.where_clause.clone(),
     }
 }
 
@@ -4613,6 +4770,7 @@ fn instantiate_product_mono(
             ty,
             mutable: false,
             default: p.default.clone(),
+            where_clause: p.ty.where_clause.clone(),
         });
     }
 
@@ -4638,6 +4796,7 @@ fn instantiate_product_mono(
             zero_init: false,
             def_mod: gdef.def_mod.clone(),
             sum: None,
+            refined: None,
         },
     );
     layouts.push(layout);
@@ -4999,6 +5158,7 @@ fn instantiate_union_mono(
         zero_init: false,
         def_mod: gdef.def_mod.clone(),
         sum: Some(sum),
+        refined: None,
     };
     let layout = TypeLayout {
         name: mono.clone(),
@@ -6345,12 +6505,23 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
                             (p, expect)
                         }
                         None => {
+                            if let Some(p) = try_refine_coerce(
+                                ctx,
+                                place.clone(),
+                                &ty,
+                                &expect,
+                                expr_as_type_lit(init).as_ref(),
+                                *name_span,
+                            )? {
+                                (p, expect)
+                            } else {
                             return Err(Error::at(
                                 format!(
                                     "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
                                 ),
                                 *name_span,
                             ));
+                            }
                         }
                     }
                 } else {
@@ -6686,12 +6857,12 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         ExprKind::Int(n) => {
             let p = ctx.fresh("i");
             ctx.assign(p.clone(), Ty::Int64, RValue::Int(*n));
-            Ok((p, Ty::Int64))
+            inhabit_literal(ctx, p, Ty::Int64, crate::ast::WhereLit::Int(*n), expect, expr.span)
         }
         ExprKind::Float(n) => {
             let p = ctx.fresh("f");
             ctx.assign(p.clone(), Ty::Float64, RValue::Float(*n));
-            Ok((p, Ty::Float64))
+            inhabit_literal(ctx, p, Ty::Float64, crate::ast::WhereLit::Float(*n), expect, expr.span)
         }
         ExprKind::Bool(b) => {
             let p = ctx.fresh("b");
@@ -6701,7 +6872,14 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         ExprKind::String(s) => {
             let p = ctx.fresh("s");
             ctx.assign(p.clone(), Ty::String, RValue::StringLit(s.clone()));
-            Ok((p, Ty::String))
+            inhabit_literal(
+                ctx,
+                p,
+                Ty::String,
+                crate::ast::WhereLit::String(s.clone()),
+                expect,
+                expr.span,
+            )
         }
         ExprKind::Interpolate(parts) => lower_interpolate(ctx, parts, expr.span),
         ExprKind::Name(name) => {
@@ -7974,6 +8152,30 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                             span,
                         ));
                     }
+                    other if refined_info(&ctx.types, &other).is_some() => {
+                        let (inner, ity) = unwrap_refined(ctx, v, &other)?;
+                        match &ity {
+                            Ty::String => inner,
+                            Ty::Int64 | Ty::Float64 | Ty::Bool => {
+                                let p = ctx.fresh("rts");
+                                ctx.assign(
+                                    p.clone(),
+                                    Ty::String,
+                                    RValue::ToString {
+                                        value: inner,
+                                        from: ity,
+                                    },
+                                );
+                                p
+                            }
+                            _ => {
+                                return Err(Error::at(
+                                    format!("cannot interpolate {other:?} into String"),
+                                    span,
+                                ));
+                            }
+                        }
+                    }
                     other => {
                         return Err(Error::at(
                             format!("cannot interpolate {other:?} into String"),
@@ -8463,10 +8665,15 @@ fn lower_method_call(
     method_span: Span,
     args: &[Arg],
 ) -> Result<(Place, Ty)> {
-    // Static methods: `Bytes.fromString(…)`
+    // Static methods: `Bytes.fromString(…)`, `Type.read` / `Type.fromJson`.
     if let ExprKind::Name(type_name) = &receiver.kind {
         if type_name == "Bytes" && ctx.lookup(type_name).is_none() {
             return lower_bytes_static(ctx, method, args, method_span);
+        }
+        if matches!(method, "read" | "fromJson" | "from") && ctx.lookup(type_name).is_none() {
+            if let Some(mangled_ty) = ctx.resolve_type_name(type_name) {
+                return lower_type_read_static(ctx, &mangled_ty, method, args, method_span);
+            }
         }
         // Namespace: `mu.add(…)`, `geometry.Point(…)`
         if let Some(mod_id) = ctx.namespaces.get(type_name).cloned() {
@@ -8550,6 +8757,30 @@ fn lower_method_call(
                 format!("no exported member `{method}` on namespace `{type_name}`"),
                 method_span,
             ));
+        }
+    }
+    // `api.CreateOrder.read(s)` — type qualifier under a namespace.
+    if matches!(method, "read" | "fromJson") {
+        if let ExprKind::Field {
+            base,
+            name: ty_name,
+            ..
+        } = &receiver.kind
+        {
+            if let ExprKind::Name(ns) = &base.kind {
+                if let Some(mod_id) = ctx.namespaces.get(ns).cloned() {
+                    let exp = ctx.module_exports.get(&mod_id).cloned().unwrap_or_default();
+                    if let Some(mangled_ty) = exp.types.get(ty_name) {
+                        return lower_type_read_static(
+                            ctx,
+                            mangled_ty,
+                            method,
+                            args,
+                            method_span,
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -8676,6 +8907,80 @@ fn lower_method_call(
             method_span,
         )),
     }
+}
+
+fn type_source_name(info: &TypeInfo, mangled_ty: &str) -> String {
+    let prefix = format!("{}_", info.def_mod);
+    if !info.def_mod.is_empty() && mangled_ty.starts_with(&prefix) {
+        mangled_ty[prefix.len()..].to_string()
+    } else {
+        mangled_ty.to_string()
+    }
+}
+
+fn lookup_generated_read_fn(ctx: &LowerCtx, info: &TypeInfo, mangled_ty: &str, method: &str) -> Option<String> {
+    let src = type_source_name(info, mangled_ty);
+    let short = format!("__{method}_{src}");
+    if ctx.fns.contains_key(&short) {
+        return Some(short);
+    }
+    if !info.def_mod.is_empty() {
+        let long = format!("{}_{short}", info.def_mod);
+        if ctx.fns.contains_key(&long) {
+            return Some(long);
+        }
+    }
+    None
+}
+
+fn lower_type_read_static(
+    ctx: &mut LowerCtx,
+    mangled_ty: &str,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let info = ctx
+        .types
+        .get(mangled_ty)
+        .ok_or_else(|| Error::at(format!("unknown type `{mangled_ty}`"), span))?
+        .clone();
+    if info.sum.is_some() {
+        return Err(Error::at(
+            format!("cannot `{method}` a union type (read is for constructor-param products)"),
+            span,
+        ));
+    }
+    if info.zero_init {
+        return Err(Error::at(
+            format!("cannot `{method}` a C-layout / body-field type"),
+            span,
+        ));
+    }
+    let Some(mangled_fn) = lookup_generated_read_fn(ctx, &info, mangled_ty, method) else {
+        return Err(Error::at(
+            format!(
+                "type `{}` cannot be read — only constructor-param products of \
+                 String, Int64, Float64, Bool, Array, May, and nested readable products",
+                type_source_name(&info, mangled_ty)
+            ),
+            span,
+        ));
+    };
+    let sig = ctx
+        .fns
+        .get(&mangled_fn)
+        .ok_or_else(|| Error::at(format!("internal: missing `{mangled_fn}`"), span))?
+        .clone();
+    let arg_places = resolve_call_args_with_defaults(
+        ctx,
+        &sig.params,
+        &sig.defaults,
+        args,
+        span,
+        &sig.def_mod,
+    )?;
+    emit_call_result(ctx, Callee::User(sig.mangled.clone()), arg_places, sig.ret)
 }
 
 fn lower_bytes_static(
@@ -9773,6 +10078,15 @@ fn lower_arg_for_formal(
         Ok(p)
     } else if can_numeric_cast(&ty, formal_ty) {
         coerce_place(ctx, p, &ty, formal_ty, expr.span)
+    } else if let Some(rp) = try_refine_coerce(
+        ctx,
+        p.clone(),
+        &ty,
+        formal_ty,
+        expr_as_type_lit(expr).as_ref(),
+        expr.span,
+    )? {
+        Ok(rp)
     } else if let Some(p) = try_sum_coerce(
         ctx,
         p,
@@ -10153,6 +10467,7 @@ fn ensure_lit_type(
         zero_init: false,
         def_mod: def_mod.to_string(),
         sum: Some(sum),
+        refined: None,
     };
     let layout = TypeLayout {
         name: name.clone(),
@@ -10290,6 +10605,7 @@ fn ensure_member_set_type(
         zero_init: false,
         def_mod: def_mod.to_string(),
         sum: Some(sum),
+        refined: None,
     };
     let layout = TypeLayout {
         name: name.clone(),
@@ -10651,6 +10967,11 @@ fn can_coerce_ty(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool 
     }
     if ty_eq(types, from, to) {
         return true;
+    }
+    if let Some(rf) = refined_info(types, from) {
+        if &rf.base == to {
+            return true;
+        }
     }
     let Ty::User(to_n) = to else {
         return false;
@@ -12195,6 +12516,8 @@ fn lower_binary(
 ) -> Result<(Place, Ty)> {
     let (l, lt) = lower_expr(ctx, left)?;
     let (r, rt) = lower_expr(ctx, right)?;
+    let (l, lt) = unwrap_refined(ctx, l, &lt)?;
+    let (r, rt) = unwrap_refined(ctx, r, &rt)?;
     match op {
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
             if is_float(&lt) || is_float(&rt) {
@@ -12841,6 +13164,22 @@ fn form_unbound_method(
         .get(type_name)
         .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?
         .clone();
+    if matches!(method, "read" | "fromJson") {
+        if let Some(mangled_fn) = lookup_generated_read_fn(ctx, &info, type_name, method) {
+            let sig = ctx.fns.get(&mangled_fn).unwrap().clone();
+            refuse_fn_value(sig.multi_clause, false, method, span)?;
+            let ty = fn_ty_of_sig(&sig.params, &sig.ret);
+            return Ok(make_fn_value(
+                ctx,
+                None,
+                None,
+                FnTarget::Free {
+                    mangled: sig.mangled.clone(),
+                },
+                ty,
+            ));
+        }
+    }
     let sig = info
         .methods
         .get(method)
@@ -13132,6 +13471,126 @@ fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Re
 }
 
 /// Coerce a place to a target type when a conversion is defined (FFI integer widths).
+fn refined_info<'a>(types: &'a HashMap<String, TypeInfo>, ty: &Ty) -> Option<&'a RefinedInfo> {
+    match ty {
+        Ty::User(n) => types.get(n).and_then(|i| i.refined.as_ref()),
+        _ => None,
+    }
+}
+
+fn unwrap_refined(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+) -> Result<(Place, Ty)> {
+    let Some(base) = refined_info(&ctx.types, from).map(|i| i.base.clone()) else {
+        return Ok((place, from.clone()));
+    };
+    let p = ctx.fresh("unref");
+    ctx.assign(
+        p.clone(),
+        base.clone(),
+        RValue::Field {
+            base: place,
+            field: sanitize_field("value"),
+        },
+    );
+    Ok((p, base))
+}
+
+fn wrap_refined(ctx: &mut LowerCtx, value: Place, refined_ty: &Ty, span: Span) -> Result<Place> {
+    let Ty::User(name) = refined_ty else {
+        return Err(Error::at("internal: wrap_refined on non-user", span));
+    };
+    let p = ctx.fresh("refn");
+    ctx.assign(
+        p.clone(),
+        refined_ty.clone(),
+        RValue::StructLit {
+            type_name: name.clone(),
+            fields: vec![value],
+        },
+    );
+    if needs_drop(refined_ty) {
+        ctx.stmts.push(Stmt::Dup {
+            place: p.clone(),
+            ty: refined_ty.clone(),
+        });
+    }
+    Ok(p)
+}
+
+fn inhabit_literal(
+    ctx: &mut LowerCtx,
+    place: Place,
+    lit_ty: Ty,
+    lit: crate::ast::WhereLit,
+    expect: Option<&Ty>,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let Some(exp) = expect else {
+        return Ok((place, lit_ty));
+    };
+    let Some(info) = refined_info(&ctx.types, exp).cloned() else {
+        return Ok((place, lit_ty));
+    };
+    if info.base != lit_ty {
+        return Ok((place, lit_ty));
+    }
+    let base_name = match &lit_ty {
+        Ty::Int64 => "Int64",
+        Ty::Float64 => "Float64",
+        Ty::String => "String",
+        _ => "value",
+    };
+    if !crate::refine::lit_inhabits(base_name, &info.clause.expr, &lit) {
+        let got = crate::refine::lit_show(&lit);
+        return Err(Error::at(
+            crate::refine::generated_message("", "this refinement", &got),
+            span,
+        ));
+    }
+    let wrapped = wrap_refined(ctx, place, exp, span)?;
+    Ok((wrapped, exp.clone()))
+}
+
+fn try_refine_coerce(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    to: &Ty,
+    lit: Option<&crate::ast::TypeLit>,
+    span: Span,
+) -> Result<Option<Place>> {
+    let _ = lit;
+    // Refined → base (and refined → looser refined via base).
+    let from_ref = refined_info(&ctx.types, from).cloned();
+    let to_ref = refined_info(&ctx.types, to).cloned();
+    if let Some(rf) = from_ref {
+        if &rf.base == to {
+            let (p, _) = unwrap_refined(ctx, place, from)?;
+            return Ok(Some(p));
+        }
+        if let Some(rt) = to_ref {
+            if rf.base == rt.base {
+                let (p, _) = unwrap_refined(ctx, place, from)?;
+                if refine_implies(&rf.clause.expr, &rt.clause.expr, &rf.base) {
+                    return Ok(Some(wrap_refined(ctx, p, to, span)?));
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn refine_implies(from: &crate::ast::WhereExpr, to: &crate::ast::WhereExpr, base: &Ty) -> bool {
+    if base != &Ty::Int64 {
+        return false;
+    }
+    // Conservative: only when `from` is `to & extra` (syntactic) or equal.
+    format!("{from:?}") == format!("{to:?}")
+}
+
 fn coerce_place(ctx: &mut LowerCtx, place: Place, from: &Ty, to: &Ty, span: Span) -> Result<Place> {
     if from == to {
         return Ok(place);
@@ -13463,6 +13922,7 @@ fn ensure_synthetic_sum(
         zero_init: false,
         def_mod: ctx.module_id.clone(),
         sum: Some(sum),
+        refined: None,
     };
     let layout = TypeLayout {
         name: syn_name.clone(),
