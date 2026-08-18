@@ -4,6 +4,11 @@ Multi-route HTTP/1.1 example in pure Thoxa. **Experiment, not product std**
 (the coffee-shop app). Host and wire helpers are product
 `std/http` + `std/http/server` (**D136**/**D139**).
 
+**Initial charter (A–D2) is done:** SSR pages, forms/cookies, search, JSON
+`POST /api/orders`, SQLite persist. **Next** is Phase **E**
+(HTML-over-the-wire cafe — own tiny runtime, not HTMX). Charter:
+[`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](../../docs/ideas/2026-08-10-examples-http-crema-experiment.md).
+
 ## Main (what you write to boot)
 
 ```thx

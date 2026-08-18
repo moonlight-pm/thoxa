@@ -129,12 +129,16 @@ Freezes:
 - ~~Diverging `loop` (Never / no dummy tail)~~ (**D128**)
 
 **Sample dogfood (not a phase flip):** `examples/http` Crema-lite **experiment**
-(`std/http/server.serve(routes.port, routes.handle)` **D132**/**D136**/**D139**; type-body
-`GET`/`POST`; JSX `Node` pages; `/tmp/crema.db` via **`std/sqlite`**; app/domain
-under `examples/http/`; charter
+— **initial charter A–D2 complete**; Phase **E** is HTML-over-the-wire cafe
+dogfood (not vendored HTMX; idea
+[`ideas/2026-08-18-html-over-the-wire.md`](ideas/2026-08-18-html-over-the-wire.md)).
+Host is `std/http/server.serve(routes.port, routes.handle)`
+(**D132**/**D136**/**D139**); type-body `GET`/`POST`; JSX `Node` pages;
+`/tmp/crema.db` via **`std/sqlite`**; app/domain under `examples/http/`;
+charter
 [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md);
-accept loop uses **D128** + **`--> serveOne`** + keep-alive), `examples/kilo` shipped
-and exercised; continue matrix gaps when samples force them.
+accept loop uses **D128** + **`--> serveOne`** + keep-alive. `examples/kilo`
+shipped and exercised; continue matrix gaps when samples force them.
 
 **Horizon / deferred until CURRENT says so:**
 

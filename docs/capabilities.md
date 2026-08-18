@@ -23,8 +23,9 @@ change. See [`progress-model.md`](progress-model.md).
 **D137** Str parse + Http wrappers;
 **D136** `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
 JSX `Node` match + `Attr` + `{...}` spreads **on master**; D133/D134 Map;
-D132 fn pointers; Crema-lite Phase A–D2 (`POST /api/orders` + `/tmp/crema.db`) + `Roast` /
-`DrinkCard`; type-body
+D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
+`/tmp/crema.db`) + `Roast` / `DrinkCard`; Phase **E** HTML-over-the-wire next;
+type-body
 route clauses + JSX/`Node` + **`-->` nowait** **partial** on master — not
 freeze)
 
@@ -82,7 +83,7 @@ freeze)
 | net-http | Net sockets + parse/write Request/Response | shipped | `http`, `http_wire`, `http_parse`, `http_net_err`, `http_helpers` | D69, R9, **D126**, **D136**, **D137**, **D142** | Product **`std/net`** + **`std/http`**; `receiveRequest` / `sendAll`; `Request.query`; header/query/form/cookie helpers + `queryParam`/`formField`/`cookie`/`htmlResponse`; `Cookie` / `withCookie` / `clearCookie`; 303/403/405; Fail is String | yes |
 | router | Router type `handle(Request) -> Response` | shipped | `router` | D70, **D126**, **D139** | Product **`std/http/static`** (`Router`); GET+HEAD; index.html; 403/404/405 | yes |
 | http-server | Bounded multi-request static server | shipped | `http_server` | D67 | Uses `std/net` + `std/http` + `std/http/static` | yes |
-| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/http/server.serve(routes.port, routes.handle)`** (**D132**/**D136**/**D139**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; Phase A–C + **D1** `POST /api/orders` (`CreateOrder.read`, `qty: Qty` where `>= 1`) + **D2** `/tmp/crema.db` (`app/store.thx`; drinks + orders). Pages are JSX `Node`. **Gaps:** remaining D+ (htmx / sessions) parked; unknown slug still domain; no product migrate. Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
+| examples-http | Runnable HTTP example (Crema-lite experiment) | partial | manual (`cargo make run examples/http`) | examples | Port 9091; **`std/http/server.serve(routes.port, routes.handle)`** (**D132**/**D136**/**D139**); type-body `GET`/`POST` on `Routes` + free `handle` static fallback; **Phase A–D2 complete:** pages (JSX `Node`), forms/cookies, `?q=` search, **D1** `POST /api/orders` (`CreateOrder.read`, `qty: Qty`, `slug: DrinkSlug`) + **D2** `/tmp/crema.db` (`app/store.thx`). JSON API is the codec demo; HTML is full-document SSR. **Gaps:** no HTML order form; no fragment routes; no swap runtime; no SSE / WebSocket; cookie is a name, not a session; drink-page slug is still `String` (JSON path uses the union); no product migrate. Expansion: Phase **E** [`ideas/2026-08-18-html-over-the-wire.md`](ideas/2026-08-18-html-over-the-wire.md). Charter: [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md) | limited |
 | examples-kilo | Terminal text editor (kilo port) | shipped | manual (real TTY); user-tested | examples | **Ctrl-Q** quit (3× if dirty). Needs TTY. Termios via `Bytes` buffers. Highlight recomputed (no Array of User-with-Array fields). Empty-buffer edit needs D122. | yes |
 | main-args | `fn main(arguments: Array<String>)` + CLI forward | shipped | unit / examples | D121 | `thoxa run path.thx arg…` forwards args; argv[0] is binary path | yes |
 

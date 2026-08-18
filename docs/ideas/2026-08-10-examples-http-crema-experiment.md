@@ -1,14 +1,18 @@
 # Experiment: `examples/http` Crema-lite (Topcoat-shaped app dogfood)
 
-**Status:** **active experiment** — app/domain is not product surface; not a freeze.
-Host/wire helpers were promoted to **`std/http` + `std/http/server` (**D136**/**D139**)**.
-**Date:** 2026-08-10  
+**Status:** **active experiment** — **initial charter (A–D2) complete**.
+App/domain is not product surface; not a freeze. Host/wire helpers were
+promoted to **`std/http` + `std/http/server` (**D136**/**D139**)**.
+**Expansion:** Phase **E** — HTML-over-the-wire cafe (see
+[`2026-08-18-html-over-the-wire.md`](2026-08-18-html-over-the-wire.md)).
+**Date:** 2026-08-10 (expansion 2026-08-18)  
 **Home:** [`examples/http/`](../../examples/http/)  
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) (focus) · this file (charter + checklist) ·
 [`examples/http/README.md`](../../examples/http/README.md) (run + layout)  
-**Related ideas:** [webapp SSR / components](2026-07-21-webapp-ssr-components.md)
-(language-level components — **out of scope** here; pages now use experiment
-JSX / `Node` tags, not a component system)
+**Related ideas:** [HTML-over-the-wire](2026-08-18-html-over-the-wire.md)
+(web-app dogfood); [JSX / `Node`](2026-08-13-jsx-node-syntax-experiment.md);
+[webapp SSR / components](2026-07-21-webapp-ssr-components.md)
+(sleeping longer fork — not a component system)
 
 ---
 
@@ -16,7 +20,10 @@ JSX / `Node` tags, not a component system)
 
 Grow the HTTP example from a **static-file demo** into a small **multi-route
 server app** inspired by [Topcoat](https://github.com/tokio-rs/topcoat)
-patterns (coffee-shop / manual-router shape), without building a framework.
+patterns (coffee-shop / manual-router shape). **A–D2** proved the host/wire
+and language gaps. **Phase E** uses the same cafe to dogfood Thoxa as a
+**whole-app web stack** (SSR + fragments + tiny runtime) without putting
+cafe domain in `std/` and without vendoring a JS framework.
 
 Inspiration sources (read-only):
 
@@ -44,9 +51,10 @@ This experiment **dogfoods** that stack under realistic app structure.
 
 - `view!` / component macros / client signals / shards / procedures  
 - Async runtime, ORM, Tailwind asset pipeline  
-- Module-tree auto-routing  
+- Module-tree auto-routing (file-based routing stays **parked**)  
 - Middleware / layer stacks  
-- Growing product `std/` with coffee-shop domain types
+- Growing product `std/` with coffee-shop domain types  
+- Vendoring HTMX / Unpoly / Turbo / LiveView (same *paradigm*, own runtime)
 
 ---
 
@@ -144,13 +152,40 @@ curl -s  'http://127.0.0.1:9091/menu?q=chocolate' # Cold Brew + Mocha
 curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 ```
 
-### Phase D+ — JSON POST + persist (partial) + parked rest
+### Phase D — JSON POST + persist (initial charter; **complete**)
 
 | Step | Status | Notes |
 |------|--------|-------|
-| D1 `POST /api/orders` | **done** | `std/json` `decode`/`encode`; body `{"slug","qty"}`; 200 priced ticket / 400 `{ok:false}` |
+| D1 `POST /api/orders` | **done** | `std/json` `decode`/`encode`; `CreateOrder.read` (`qty: Qty` where `>= 1`, `slug: DrinkSlug`); 200 priced ticket / 400 `{ok:false}` |
 | D2 persistence | **done** | App `store.thx`; `/tmp/crema.db`; drinks seeded + orders persisted; `GET /api/orders`. No product `thoxa migrate` |
-| D3 htmx-ish partials, sessions | **parked** | only if useful |
+| D3 htmx-ish partials, sessions | **superseded** | Was parked “only if useful.” Replaced by Phase **E** (not vendored HTMX) |
+
+**Initial charter (A–D2) is finished.** The JSON order API stays as the codec /
+`Type.read` demo. Further cafe work is **web-stack dogfood**, not more
+coffee-shop domain in `std/`.
+
+### Phase E — HTML-over-the-wire cafe (web-framework dogfood)
+
+**Goal:** The cafe UI is SSR HTML + cacheable fragments + a tiny own runtime.
+Protocol and non-goals:
+[`2026-08-18-html-over-the-wire.md`](2026-08-18-html-over-the-wire.md).
+
+| Step | Status | Notes |
+|------|--------|-------|
+| E0 Charter + CURRENT pointer | **done** | this file + html-over-the-wire idea |
+| E1 HTML order on the drink page | **pending** | `POST` form, PRG or ticket HTML; no JS; JSON `/api/orders` stays |
+| E2 Cacheable fragment routes | **pending** | Own GET URLs (e.g. menu items, ticket); not `HX-Request` content negotiation |
+| E3 Tiny swap runtime in `web/` | **pending** | Example JS; `thx-get` / `thx-post` / `thx-target`; progressive enhancement |
+| E4 Sessions + flash (example) | **pending** | Beyond the name cookie; CSRF if POSTs stay cookie-authed |
+| E5 Live board via SSE | **pending** | Forces streaming / chunked HTTP; not WebSockets |
+| E6 WebSockets | **parked** | Only if a sample needs client→server chatter SSE cannot do |
+
+**Phase E smoke (as slices land — not a gate yet)**
+
+```bash
+# E1 — form works with JS off
+curl -sD- -X POST -d 'slug=mocha&qty=2' http://127.0.0.1:9091/orders
+```
 
 ---
 
@@ -179,7 +214,8 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
-**As of last update:** **Phase A–D2 complete**. Host/wire promoted to
+**As of last update:** **Phase A–D2 complete** (initial charter). **Phase E**
+is the active expansion (E0 done; E1 next). Host/wire promoted to
 **`std/http` + `std/http/server` (**D136**/**D139**)** — example `framework/` removed.
 **D137:** `queryParam` / `formField` / `cookie` / `htmlResponse` + Str
 `parseUInt` / `splitOnce`. **D142:** `Cookie` / `withCookie` / `clearCookie`
@@ -191,8 +227,7 @@ curl -s  'http://127.0.0.1:9091/menu?q=zzz'       # empty + hint
 **D135:** `Drink.roast: Roast` + `DrinkCard(d: Drink)`.
 **D141:** `POST /api/orders` via `std/json` `decode`/`encode`.
 **D2:** `std/sqlite` file at `/tmp/crema.db` (app-owned schema; no product
-migrate). Remaining D+ (htmx / sessions) only if wanted — domain stays
-example-only.
+migrate). Domain stays example-only. Do not vendor HTMX.
 
 ### Language / design notes (experiment)
 

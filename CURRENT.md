@@ -4,8 +4,10 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-18 (**built-in validation** on master, not product — types as
-inhabitation; syntax open;
+**As of:** 2026-08-18 (Crema **A–D2 complete**; Phase **E** HTML-over-the-wire
+is next — not vendored HTMX;
+**built-in validation** on master, not product — types as inhabitation;
+syntax open;
 Crema **D2** persist `/tmp/crema.db`;
 **D144** `sql"…"` tagged interpolator;
 **D143** `std/sqlite` amalgamation;
@@ -20,8 +22,7 @@ Crema **D2** persist `/tmp/crema.db`;
 `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
 JSX `Node` is `Element | Text | Fragment` + `{...}` spreads **on master**;
 D133/D134 Map; D132 fn pointers; `-->` nowait **on master**, not freeze /
-not handbook; Crema-lite Phase A–D2 dogfoods product `http` / `http/server` /
-`json` / `sqlite`)
+not handbook)
 
 ---
 
@@ -47,7 +48,7 @@ Crema `POST /api/orders`);
 pointers** (**D132**); **`-->` nowait**
 (colorless wait; Net parks; `HttpServer` `--> serveOne` + keep-alive);
 **multi-clause functions** (**D131**);
-Crema-lite **Phase A–D2**; **match arm sugar** (**D130**); **return-type
+Crema-lite **Phase A–D2 complete**; **match arm sugar** (**D130**); **return-type**
 inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **combined import** (**D127**); **`std/io`+`Net`+`Http`** (**D126**);
 **`std/logging`** (**D125**); LSP nav; **D124** diagnostics.
@@ -80,22 +81,26 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **Crema-lite** — remaining D+ (htmx / sessions) only if useful.
-   `POST /api/orders` dogfoods **`std/json`**; catalog + orders live in
-   **`/tmp/crema.db`** via **`std/sqlite`** (app-owned schema; no product
-   migrate). App/domain stays example-only. Host/wire is product
-   **`std/http` + `std/http/server`** (**D136**/**D139**). Query/form/cookies
-   are builtin `Map` (headers stay `Array<Header>`). `Set-Cookie` is a
-   `Cookie` value (**D142**). File-based routing is **parked**
-   ([`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)).
+1. **Crema Phase E — HTML-over-the-wire.** Initial charter **A–D2 is
+   done**. Next slice is **E1** (HTML order form on the drink page; no JS).
+   Then fragment URLs, a tiny own swap runtime, sessions/flash, SSE.
+   WebSockets stay parked. Do **not** vendor HTMX. Idea
+   [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md).
+   Checklist
+   [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
+   `POST /api/orders` stays the JSON / `Type.read` demo. Catalog + orders
+   live in **`/tmp/crema.db`**. App/domain stays example-only. Host/wire is
+   product **`std/http` + `std/http/server`**. File-based routing is
+   **parked**.
 2. Editor only when DX forces it.
 
 ### Proceed order
 
-1. **Crema-lite experiment** — remaining checklist in
+1. **Crema Phase E** — checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   (app under `examples/http/`; host/wire already in `std/`; **JSON
-   `POST /api/orders` + SQLite persist shipped**). Further D+ only if useful.  
+   (app under `examples/http/`; host/wire already in `std/`; **A–D2
+   shipped**). First open step: **E1** HTML order form. Protocol:
+   [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md).  
 2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
@@ -181,6 +186,7 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 9. If D138 / module files: [`docs/decisions.md`](docs/decisions.md) (D138) — kebab-case stems, path-qualified ids; file-based routing parked in [`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)
 10. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    + **D136** / **D137** / **D139** / **D142** in [`docs/decisions.md`](docs/decisions.md)
+    + Phase E protocol [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md)
 11. If JSON: [`docs/decisions.md`](docs/decisions.md) (**D141**) +
     [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
     + **D140** (`Float64`)
