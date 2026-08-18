@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-17 (**branch** `experiment/builtin-validation` — types as
+**As of:** 2026-08-18 (**built-in validation** on master, not product — types as
 inhabitation; syntax open;
 **D141** `std/json` `decode`/`encode` + Crema
 `POST /api/orders`;
@@ -61,41 +61,38 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
   `Element | Text | Fragment` (same tree); `{...attrs}` / `{...props}`
   spreads; gate `jsx`. No D-id / handbook. Crema pages dogfood it
   (`app/layout.thx` `Page` + `app/pages.thx`).
+- Built-in validation (idea
+  [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md);
+  capability `type-read` **partial**). `Type.read` / `where` / `T.from` /
+  `.encode`; `Issue = Missing | Mismatch | Rejected`; `May<T>` fields;
+  closed slugs are literal unions and subtype `String`. No D-id / handbook.
+  Crema `CreateOrder` dogfoods it.
 
 **In progress / next:**
 
-1. **Built-in validation** (this branch) — types as inhabitation; refinements
-   are real types; compile-time when the value is constant; messages optional
-   (generated otherwise). Syntax still open. Charter:
-   [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md).
-2. **Crema-lite** — remaining D+ (htmx / persistence / sessions) only if
+1. **Crema-lite** — remaining D+ (htmx / persistence / sessions) only if
    useful. `POST /api/orders` already dogfoods **`std/json`**. App/domain
    stays example-only. Host/wire is product **`std/http` + `std/http/server`**
    (**D136**/**D139**). Query/form/cookies are builtin `Map` (headers stay
    `Array<Header>`). File-based routing is **parked**
    ([`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)).
-3. Editor only when DX forces it.
+2. Editor only when DX forces it.
 
 ### Proceed order
 
-1. **Built-in validation** — `Type.read` + `where` + `T.from` + `.encode` +
-   `Issue` sum + `May` fields on this branch. Closed slugs are literal
-   unions (`type DrinkSlug = "espresso" | …`) and subtype `String`. Nested
-   `read` after a failed `read` is RC-clean. Do not merge to master until
-   the surface sticks.  
-2. **Crema-lite experiment** — remaining checklist in
+1. **Crema-lite experiment** — remaining checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    (app under `examples/http/`; host/wire already in `std/`; **JSON
    `POST /api/orders` shipped**). Further D+ only if useful.  
-3. **Editor depth** — only when DX forces it. Freezes:
+2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).  
-4. **Deferred: all session / shell residual** — redir polish, line editor,
+3. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-5. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
@@ -175,7 +172,7 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
     [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
     + **D140** (`Float64`)
 12. If built-in validation: [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md)
-    (this branch; syntax open)
+    (on master, not product; syntax open)
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

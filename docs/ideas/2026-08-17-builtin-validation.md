@@ -1,12 +1,11 @@
 # Experiment: built-in validation (types as inhabitation)
 
-**Status:** **experiment branch** `experiment/builtin-validation` — design
-open, not on master, not a freeze, not handbook. No D-id yet.  
-**Date:** 2026-08-17  
+**Status:** **on master, not product** — design open, not a freeze, not
+handbook. No D-id yet.  
+**Date:** 2026-08-17 (merged 2026-08-18)  
 **Sparked by:** Crema `POST /api/orders` (`examples/http/app/api.thx`) — shape
 and refinements restated as match piles; D141 tree codec is not the validator.  
-**Pickup:** this file · branch `experiment/builtin-validation` · root
-[`CURRENT.md`](../../CURRENT.md)  
+**Pickup:** this file · root [`CURRENT.md`](../../CURRENT.md)  
 **Related:** [`2026-08-15-json-codec.md`](2026-08-15-json-codec.md) (tree
 `decode`/`encode` stays); JSX / interp closed tables (same “compiler can see
 the type”); [`2026-08-15-tostring-repr-and-traits.md`](2026-08-15-tostring-repr-and-traits.md)
