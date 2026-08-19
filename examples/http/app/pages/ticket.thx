@@ -1,0 +1,50 @@
+## GET /orders/:id and GET /orders/:id/ticket (fragment).
+
+import { Page } from "~/app/ui/page"
+import appHttp from "~/app/http"
+import models, { formatPrice } from "~/app/models"
+import store, { OrderMiss, OrderHit, OrderRow } from "~/app/store"
+import http, { Request, Response } from "std/http"
+import { Pass, Fail } from "std/fallible"
+
+export fn page(id!: Int64, request!: Request) -> Response {
+    match store.findOrder(id) {
+        Fail(error) => appHttp.storeFailed(request, error)
+        Pass(found) {
+            match found {
+                OrderMiss => appHttp.missing(request)
+                OrderHit(row) {
+                    http.htmlResponse(
+                        <Page title="Ticket {row.id}" request={request}>
+                            <p class="back"><a href="/menu">← Back to the menu</a></p>
+                            {ticketCard(row)}
+                        </Page>
+                    )
+                }
+            }
+        }
+    }
+}
+
+export fn fragment(id!: Int64, request!: Request) -> Response {
+    match store.findOrder(id) {
+        Fail(error) => appHttp.storeFailed(request, error)
+        Pass(found) {
+            match found {
+                OrderMiss => appHttp.missing(request)
+                OrderHit(row) => appHttp.cachedFragment(request, ticketCard(row), "private, max-age=300")
+            }
+        }
+    }
+}
+
+fn ticketCard(row!: OrderRow) -> Node {
+    let unit = formatPrice(row.unitCents)
+    let total = formatPrice(row.totalCents)
+    <article class="drink" id="ticket">
+        <h1>Ticket \#{row.id}</h1>
+        <p class="notes">{row.qty} × {row.name}</p>
+        <p class="muted">{unit} each</p>
+        <p class="price">{total}</p>
+    </article>
+}

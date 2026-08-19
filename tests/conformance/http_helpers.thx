@@ -166,6 +166,9 @@ fn main() -> Int64 {
     let closed = http.finalize("GET", ok, false)
     info("fin={closed.body.count} {connOf(closed)}")
 
+    let missing = http.htmlResponseStatus(404, "Not Found", <p>gone</p>)
+    info("html-st={missing.status} {missing.headers[0].value}")
+
     let frag = http.htmlFragment(<p>hi</p>)
     info("frag={frag.status} {frag.headers[0].value}")
     info("frag-body={frag.body.toString()}")

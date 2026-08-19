@@ -1,0 +1,75 @@
+## App UI — HTML shell. Flash, greeting, and current-nav live here once.
+
+import session from "~/app/session"
+import http, { Request } from "std/http"
+import { isEmpty, startsWith } from "std/str"
+
+fn flashBanner(request!: Request) -> Node {
+    let text = session.takeFlash(request)
+    if isEmpty(text) {
+        <></>
+    } else {
+        <p class="flash">{text}</p>
+    }
+}
+
+fn navExtra(request!: Request) -> Node {
+    let customer = session.greeting(request)
+    if isEmpty(customer) {
+        <></>
+    } else {
+        <p class="nav-hi">Hi, {customer}</p>
+    }
+}
+
+fn navLink(href!: String, label!: String, path!: String) -> Node {
+    let current = if href == "/" {
+        path == "/"
+    } else {
+        if path == href {
+            true
+        } else {
+            startsWith(path, "{href}/")
+        }
+    }
+    if current {
+        <a href={href} class="current">{label}</a>
+    } else {
+        <a href={href}>{label}</a>
+    }
+}
+
+export fn csrfField(request!: Request) -> Node {
+    <input type="hidden" name="csrf" value={session.csrf(request)} />
+}
+
+export type Page(title: String, request: Request) {
+    export fn view(children: Array<Node>) -> Node {
+        <html lang="en">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>{title} · Little Crema</title>
+                <link rel="stylesheet" href="/style.css" />
+                <script src="/crema.js" defer></script>
+            </head>
+            <body>
+                <header>
+                    <nav>
+                        <a class="brand" href="/">Little Crema</a>
+                        {navLink("/menu", "Menu", request.path)}
+                        {navLink("/live", "Board", request.path)}
+                        {navExtra(request)}
+                    </nav>
+                </header>
+                <main>
+                    {flashBanner(request)}
+                    {children}
+                </main>
+                <footer>
+                    <p>Six drinks · example-only server · not product std.</p>
+                </footer>
+            </body>
+        </html>
+    }
+}

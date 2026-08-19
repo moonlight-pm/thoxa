@@ -1,0 +1,84 @@
+## App layer — HTML document helpers (example-only).
+
+import { Page } from "./ui/page"
+import http, { Request, Response } from "std/http"
+import { Issue, Rejected, message, issueRejected } from "std/json"
+
+export fn okPage(request!: Request, title!: String, body!: Node) -> Response {
+    http.htmlResponse(
+        <Page title={title} request={request}>{body}</Page>
+    )
+}
+
+export fn failPage(
+    request!: Request,
+    status!: Int64,
+    reason!: String,
+    title!: String,
+    body!: Node
+) -> Response {
+    http.htmlResponseStatus(
+        status,
+        reason,
+        <Page title={title} request={request}>{body}</Page>
+    )
+}
+
+export fn missing(request!: Request) -> Response {
+    failPage(
+        request,
+        404,
+        "Not Found",
+        "Not found",
+        <>
+            <h1>Not on the board</h1>
+            <p class="muted">That pour isn't here. The menu still is.</p>
+            <p class="back"><a href="/menu">← Back to the menu</a></p>
+        </>
+    )
+}
+
+export fn storeFailed(request!: Request, error!: String) -> Response {
+    failPage(
+        request,
+        500,
+        "Internal Server Error",
+        "Counter",
+        <>
+            <h1>The counter jammed</h1>
+            <p class="muted">{error}</p>
+        </>
+    )
+}
+
+export fn formFailed(request!: Request, error!: Issue) -> Response {
+    let detail = match error {
+        Rejected(path, reason) {
+            if path == "store" {
+                "The counter could not write that ticket."
+            } else {
+                message(error)
+            }
+        }
+        else => message(error)
+    }
+    failPage(
+        request,
+        400,
+        "Bad Request",
+        "Form",
+        <>
+            <h1>Could not take that</h1>
+            <p class="muted">{detail}</p>
+            <p class="back"><a href="/menu">← Back to the menu</a></p>
+        </>
+    )
+}
+
+export fn csrfRejected() -> Issue {
+    issueRejected("csrf", "that form expired — refresh and try again")
+}
+
+export fn cachedFragment(request!: Request, root!: Node, cacheControl!: String) -> Response {
+    http.cached(request, http.htmlFragment(root), cacheControl)
+}

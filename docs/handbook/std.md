@@ -29,7 +29,7 @@ import sqlite, { lit, ident } from "std/sqlite"
 | `std/logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
 | `std/io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
 | `std/net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
-| `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**/**D142**/**D145**/**D146**): parse/write, query/form/cookie helpers, `htmlResponse` / `htmlFragment`, `cached` / ETag, `Cookie` / `withCookie`, `streamed()` / `peerFd` |
+| `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**/**D142**/**D145**/**D146**): parse/write, query/form/cookie helpers, `htmlResponse` / `htmlResponseStatus` / `htmlFragment`, `cached` / ETag, `Cookie` / `withCookie`, `streamed()` / `peerFd` |
 | `std/http/server` | HTTP/1.1 host loop (**D136**/**D139**/**D146**): `serve` / `serveOne` / `readBody`; SSE `beginEventStream` / `sendEvent` |
 | `std/http/static` | Static-file `Router` (**D126**/**D139**); depends on io + http |
 | `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
@@ -117,12 +117,13 @@ leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
 | Stream | `Request.peerFd` (host fd, else 0); `streamed()` (status 0 — handler owns the socket) |
 | Maps | `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`; `urlDecode` |
 | Cookies | `Cookie` (`.header()`), `SameSite`, `withCookie`, `clearCookie` (**D142**) |
-| Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `htmlFragment`, `notModified`, `cached` / `etagOf` / `withCache`, `response` / `responseHead` |
+| Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `htmlResponseStatus`, `htmlFragment`, `notModified`, `cached` / `etagOf` / `withCache`, `response` / `responseHead` |
 | Connection | `wantsKeepAlive`, `finalize` (HEAD drops body; rewrites `Connection`) |
 
 `htmlResponse` takes a builtin `Node` and sends `<!DOCTYPE html>` plus
-`root.html()` as `text/html; charset=utf-8`. `htmlFragment` is the same
-without the doctype (a snippet). `cached(req, res, cacheControl)` attaches a
+`root.html()` as `text/html; charset=utf-8` (status 200). `htmlResponseStatus`
+is the same at a chosen status (HTML 404 / 400). `htmlFragment` is the snippet
+without the doctype. `cached(req, res, cacheControl)` attaches a
 strong content-hash `ETag` and `Cache-Control`; a matching `If-None-Match`
 returns **304**. Cache *policy* (`private, no-cache` vs `max-age`) stays in
 the caller. `cookie` looks up one name on the `Cookie` header (empty value

@@ -1,0 +1,74 @@
+## GET /menu/:slug and POST /orders.
+
+import { Page, csrfField } from "~/app/ui/page"
+import appHttp from "~/app/http"
+import models, { Drink, formatPrice, roastLabel } from "~/app/models"
+import store, { DrinkMiss, DrinkHit } from "~/app/store"
+import orders from "~/app/orders"
+import session from "~/app/session"
+import live from "~/app/live"
+import http, { Request, Response } from "std/http"
+import { Pass, Fail } from "std/fallible"
+
+export fn page(slug!: String, request!: Request) -> Response {
+    match store.findBySlug(slug) {
+        Fail(error) => appHttp.storeFailed(request, error)
+        Pass(found) {
+            match found {
+                DrinkMiss => appHttp.missing(request)
+                DrinkHit(drink) => drinkPage(drink, request)
+            }
+        }
+    }
+}
+
+fn drinkPage(drink!: Drink, request!: Request) -> Response {
+    let price = formatPrice(drink.priceCents)
+    http.htmlResponse(
+        <Page title={drink.name} request={request}>
+            <p class="back"><a href="/menu">← Back to the menu</a></p>
+            <article class="drink">
+                <h1>{drink.name}</h1>
+                <p class="badge">{roastLabel(drink.roast)}</p>
+                <p class="notes">{drink.notes}</p>
+                <p class="price">{price}</p>
+            </article>
+            {orderForm(drink, request)}
+            <div id="ticket"></div>
+        </Page>
+    )
+}
+
+fn orderForm(drink!: Drink, request!: Request) -> Node {
+    <section class="card-form">
+        <h2>Order a {drink.name}</h2>
+        <p class="muted">Works without JavaScript. The counter writes a ticket.</p>
+        <form method="post" action="/orders" thx-post="/orders" thx-target="#ticket" thx-swap="inner">
+            {csrfField(request)}
+            <input type="hidden" name="slug" value={drink.slug} />
+            <label for="qty">Quantity</label>
+            <input id="qty" name="qty" type="number" min="1" value="1" required />
+            <button type="submit">Place order</button>
+        </form>
+    </section>
+}
+
+export fn submit(request!: Request) -> Response {
+    if not session.checkCsrf(request, request.body) {
+        appHttp.formFailed(request, appHttp.csrfRejected())
+    } else {
+        match orders.fromForm(request.body) {
+            Fail(error) => appHttp.formFailed(request, error)
+            Pass(order) {
+                match orders.place(order) {
+                    Fail(error) => appHttp.formFailed(request, error)
+                    Pass(ticket) {
+                        session.setFlash(request, "Poured {ticket.qty} × {ticket.name}.")
+                        live.broadcast()
+                        http.seeOther("/orders/{ticket.id}")
+                    }
+                }
+            }
+        }
+    }
+}

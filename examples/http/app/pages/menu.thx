@@ -1,0 +1,69 @@
+## GET /menu and GET /menu/items (fragment).
+
+import { Page } from "~/app/ui/page"
+import { drinkCards } from "~/app/ui/drink-card"
+import appHttp from "~/app/http"
+import store, { MenuView } from "~/app/store"
+import http, { Request, Response } from "std/http"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import { isEmpty, trim } from "std/str"
+
+export fn page(request!: Request) -> Response {
+    match load(request) {
+        Fail(error) => appHttp.storeFailed(request, error)
+        Pass(view) {
+            http.htmlResponse(
+                <Page title="Menu" request={request}>
+                    <h1>The menu</h1>
+                    <form class="search" method="get" action="/menu" thx-get="/menu/items" thx-target="#menu-results" thx-swap="inner" thx-push>
+                        <label for="q">Search the menu</label>
+                        <div class="search-row">
+                            <input id="q" name="q" type="search" value={view.needle} placeholder="espresso, chocolate, light…" />
+                            <button type="submit">Search</button>
+                        </div>
+                    </form>
+                    <div id="menu-results">{results(view)}</div>
+                </Page>
+            )
+        }
+    }
+}
+
+export fn items(request!: Request) -> Response {
+    match load(request) {
+        Fail(error) => appHttp.storeFailed(request, error)
+        Pass(view) => appHttp.cachedFragment(request, results(view), "private, no-cache")
+    }
+}
+
+fn load(request!: Request) -> Trial<MenuView, String> {
+    store.menuView(needleOf(request))
+}
+
+fn needleOf(request!: Request) -> String {
+    match http.queryParam(request, "q") {
+        Not => ""
+        Has(value) { trim(value) }
+    }
+}
+
+fn results(view!: MenuView) -> Node {
+    let emptyNote = if view.drinks.count == 0 {
+        <p class="muted">Nothing matches. The barista suggests an espresso.</p>
+    } else {
+        <></>
+    }
+    let clear = if isEmpty(view.needle) {
+        <></>
+    } else {
+        <p class="muted">
+            <a href="/menu" thx-get="/menu/items" thx-target="#menu-results" thx-push>Clear search</a>
+            {" · showing {view.drinks.count} of {view.total}"}
+        </p>
+    }
+    <>
+        {clear}
+        {emptyNote}
+        <ul id="menu-items" class="menu">{drinkCards(view.drinks)}</ul>
+    </>
+}

@@ -17,7 +17,7 @@ mut livePeers = emptyLive()
 
 fn boardOf(rows!: Array<OrderRow>) -> Node {
     if rows.count == 0 {
-        <p class="muted" id="board">No tickets yet. Pour something.</p>
+        <p class="muted" id="board" aria-live="polite">No tickets yet. Pour something.</p>
     } else {
         mut items: Array<Node> = []
         for row in rows {
@@ -28,13 +28,13 @@ fn boardOf(rows!: Array<OrderRow>) -> Node {
                 </li>
             )
         }
-        <ul id="board" class="menu">{items}</ul>
+        <ul id="board" class="menu" aria-live="polite">{items}</ul>
     }
 }
 
 export fn boardNode() -> Node {
     match store.listOrders() {
-        Fail(_) => <p class="muted" id="board">The board is closed.</p>
+        Fail(_) => <p class="muted" id="board" aria-live="polite">The board is closed.</p>
         Pass(rows) => boardOf(rows)
     }
 }

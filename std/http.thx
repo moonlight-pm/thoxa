@@ -450,7 +450,12 @@ export fn cookie(req!: Request, name!: String) -> May<String> {
 }
 
 export fn htmlResponse(root!: Node) -> Response {
-    ok(Bytes.fromString("<!DOCTYPE html>\n{root.html()}"), "text/html; charset=utf-8")
+    htmlResponseStatus(200, "OK", root)
+}
+
+## Full document at a non-200 status (HTML 404 / 400 pages).
+export fn htmlResponseStatus(status!: Int64, reason!: String, root!: Node) -> Response {
+    response(status, reason, "text/html; charset=utf-8", Bytes.fromString("<!DOCTYPE html>\n{root.html()}"))
 }
 
 ## Snippet HTML (no doctype). Pair with `cached` for fragment GETs.

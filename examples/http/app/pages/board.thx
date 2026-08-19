@@ -1,0 +1,21 @@
+## GET /live and GET /events (SSE).
+
+import { Page } from "~/app/ui/page"
+import live from "~/app/live"
+import http, { Request, Response } from "std/http"
+
+export fn page(request!: Request) -> Response {
+    http.htmlResponse(
+        <Page title="Board" request={request}>
+            <h1>The board</h1>
+            <p class="muted">Tickets land here as they pour. Open in another tab and order.</p>
+            <div thx-sse="/events" thx-target="#board" thx-swap="outer">
+                {live.boardNode()}
+            </div>
+        </Page>
+    )
+}
+
+export fn events(request!: Request) -> Response {
+    live.subscribe(request)
+}

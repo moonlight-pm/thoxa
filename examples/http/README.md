@@ -122,10 +122,20 @@ The catalog is seeded from `app/models.thx` on boot. Schema lives in
 examples/http/
   main.thx
   app/
-    routes.thx    # type-body GET/POST, handle, static fallback
-    pages.thx layout.thx api.thx orders.thx models.thx session.thx live.thx store.thx
+    routes.thx           # type-body GET/POST, session wrap, static then JSX 404
+    http.thx             # okPage / missing / formFailed / cachedFragment
+    pages/               # one module per URL group (`~/app/…` imports)
+      home.thx menu.thx drink.thx ticket.thx board.thx
+    ui/
+      page.thx           # <Page title request> — flash, greeting, current nav
+      drink-card.thx
+    api.thx orders.thx models.thx session.thx live.thx store.thx
   web/
+    crema.js style.css
 ```
+
+Nested files cannot `../` (D31). They import from the package root:
+`import { Page } from "~/app/ui/page"`.
 
 ### App writes the routes
 

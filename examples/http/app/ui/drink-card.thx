@@ -1,0 +1,23 @@
+## App UI — one drink on the menu.
+
+import models, { Drink, formatPrice, roastLabel } from "~/app/models"
+
+export type DrinkCard(drink: Drink) {
+    export fn view(children: Array<Node>) -> Node {
+        <li class="card">
+            <a href={"/menu/{drink.slug}"}>
+                <span class="name">{drink.name}</span>
+                <span class="meta">{roastLabel(drink.roast)} · {formatPrice(drink.priceCents)}</span>
+                <span class="notes">{drink.notes}</span>
+            </a>
+        </li>
+    }
+}
+
+export fn drinkCards(drinks!: Array<Drink>) -> Array<Node> {
+    mut items: Array<Node> = []
+    for drink in drinks {
+        items.append(<DrinkCard drink={drink} />)
+    }
+    items
+}

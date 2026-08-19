@@ -1,0 +1,78 @@
+## GET / and POST / (sign-in).
+
+import { Page, csrfField } from "~/app/ui/page"
+import appHttp from "~/app/http"
+import store from "~/app/store"
+import session from "~/app/session"
+import http, { Request, Response } from "std/http"
+import { Has, Not, May, Pass, Fail } from "std/fallible"
+import { isEmpty, trim } from "std/str"
+
+export fn page(request!: Request) -> Response {
+    match store.drinkCount() {
+        Fail(error) => appHttp.storeFailed(request, error)
+        Pass(drinkCount) {
+            http.htmlResponse(
+                <Page title="Home" request={request}>
+                    <section class="hero">
+                        <h1>Little Crema</h1>
+                        <p class="lede">Six drinks, one tiny counter, and a Thoxa feature in every pour.</p>
+                        <p><a class="button" href="/menu">Browse the menu</a></p>
+                        <p class="muted" data-count={drinkCount}>{drinkCount} drinks brewed fresh daily.</p>
+                    </section>
+                    {welcome(request)}
+                </Page>
+            )
+        }
+    }
+}
+
+fn welcome(request!: Request) -> Node {
+    let customerName = session.greeting(request)
+    if isEmpty(customerName) {
+        <section class="card-form">
+            <h2>Are you a regular?</h2>
+            <p class="muted">Leave your name and the counter remembers you.</p>
+            <form method="post" action="/">
+                {csrfField(request)}
+                <label for="name">Your name</label>
+                <input id="name" name="name" type="text" placeholder="Ada" required />
+                <button type="submit">Remember me</button>
+            </form>
+        </section>
+    } else {
+        <section class="card-form">
+            <h2>Welcome back, {customerName}</h2>
+            <p class="muted">Your usual table is free.</p>
+            <form method="post" action="/">
+                {csrfField(request)}
+                <input type="hidden" name="name" value="" />
+                <button type="submit" class="outline">Not {customerName}?</button>
+            </form>
+        </section>
+    }
+}
+
+export fn signIn(request!: Request) -> Response {
+    let redirect = http.seeOther("/")
+    if not session.checkCsrf(request, request.body) {
+        appHttp.formFailed(request, appHttp.csrfRejected())
+    } else {
+        match http.formField(request.body, "name") {
+            Not {
+                redirect
+            }
+            Has(raw) {
+                let name = trim(raw)
+                if isEmpty(name) {
+                    session.setName(request, "")
+                    session.setFlash(request, "Name forgotten.")
+                } else {
+                    session.setName(request, name)
+                    session.setFlash(request, "Welcome, {name}.")
+                }
+                redirect
+            }
+        }
+    }
+}

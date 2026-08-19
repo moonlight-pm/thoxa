@@ -1,44 +1,48 @@
 ## App — type-body route clauses + free `handle` (D132).
 ## `Routes` is the compiler surface (`GET "/…"` → generated `route(req)`).
-## `handle` falls through to static files on 404.
-## No listen/accept/parse/send.
+## `handle` falls through to static files, then a JSX 404.
 
-import pages from "./pages"
+import home from "./pages/home"
+import menu from "./pages/menu"
+import drink from "./pages/drink"
+import ticket from "./pages/ticket"
+import board from "./pages/board"
 import api from "./api"
 import session from "./session"
+import appHttp from "./http"
 import httpStatic from "std/http/static"
-## `notFound` is required: generated `route` calls it on miss.
 import http, { Request, Response, notFound, badRequest } from "std/http"
-import { Has, Not, May } from "std/fallible"
 
 let staticRoot = "examples/http/web"
 export let port = 9091
 
-## ── Route clauses (desugars to generated `route(req: Request) -> Response`) ────
-
 type Routes {
     GET "/" (request: Request) -> Response {
-        pages.home(request)
+        home.page(request)
+    }
+
+    POST "/" (request: Request) -> Response {
+        home.signIn(request)
     }
 
     GET "/live" (request: Request) -> Response {
-        pages.board(request)
+        board.page(request)
     }
 
     GET "/events" (request: Request) -> Response {
-        pages.events(request)
+        board.events(request)
     }
 
     GET "/menu" (request: Request) -> Response {
-        pages.menu(request)
+        menu.page(request)
     }
 
     GET "/menu/items" (request: Request) -> Response {
-        pages.menuItems(request)
+        menu.items(request)
     }
 
     GET "/menu/:slug" (slug: String, request: Request) -> Response {
-        pages.drink(slug, request)
+        drink.page(slug, request)
     }
 
     GET "/api/health" -> Response {
@@ -54,19 +58,15 @@ type Routes {
     }
 
     POST "/orders" (request: Request) -> Response {
-        pages.submitOrder(request)
+        drink.submit(request)
     }
 
     GET "/orders/:id/ticket" (id: Int64, request: Request) -> Response {
-        pages.orderTicketFragment(id, request)
+        ticket.fragment(id, request)
     }
 
     GET "/orders/:id" (id: Int64, request: Request) -> Response {
-        pages.orderTicket(id, request)
-    }
-
-    POST "/" (request: Request) -> Response {
-        pages.signIn(request)
+        ticket.page(id, request)
     }
 }
 
@@ -79,7 +79,12 @@ export fn handle(request!: Request) -> Response {
     let bound = session.ensure(request)
     let response = Routes().route(bound)
     if response.status == 404 {
-        session.bindCookie(serveStatic(bound), bound)
+        let files = serveStatic(bound)
+        if files.status == 404 {
+            session.bindCookie(appHttp.missing(bound), bound)
+        } else {
+            session.bindCookie(files, bound)
+        }
     } else {
         session.bindCookie(response, bound)
     }

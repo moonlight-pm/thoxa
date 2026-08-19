@@ -127,6 +127,14 @@ export fn searchDrinks(needle!: String) -> Trial<Array<Drink>, String> {
     Pass(models.filterDrinks(drinks, needle))
 }
 
+export type MenuView(needle: String, drinks: Array<Drink>, total: Int64)
+
+export fn menuView(needle!: String) -> Trial<MenuView, String> {
+    let drinks = searchDrinks(needle)?
+    let total = drinkCount()?
+    Pass(MenuView(needle: needle, drinks: drinks, total: total))
+}
+
 export fn insertOrder(
     slug!: String,
     name!: String,

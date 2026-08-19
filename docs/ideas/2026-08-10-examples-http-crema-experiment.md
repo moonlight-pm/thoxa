@@ -65,7 +65,9 @@ examples/http/
   main.thx                 # std/http/server.serve(routes.port, routes.handle)
   app/
     routes.thx             # type Routes { GET/POST … }, handle, port
-    pages.thx layout.thx api.thx orders.thx models.thx session.thx live.thx store.thx
+    pages/{home,menu,drink,ticket,board}.thx
+    ui/page.thx ui/drink-card.thx
+    http.thx api.thx orders.thx models.thx session.thx live.thx store.thx
   web/
   README.md
 ```
