@@ -92,12 +92,6 @@ export fn menu(customerName!: String, query!: String) -> Response {
 }
 
 fn menuPage(customerName!: String, needle!: String, drinks!: Array<Drink>, total!: Int64) -> Response {
-    let items = drinkCards(drinks)
-    let emptyNote = if drinks.count == 0 {
-        <p class="muted">Nothing matches. The barista suggests an espresso.</p>
-    } else {
-        <></>
-    }
     let clear = if isEmpty(needle) {
         <></>
     } else {
@@ -117,10 +111,42 @@ fn menuPage(customerName!: String, needle!: String, drinks!: Array<Drink>, total
                 </div>
             </form>
             {clear}
-            {emptyNote}
-            <ul class="menu">{items}</ul>
+            {menuResults(drinks)}
         </Page>
     )
+}
+
+fn menuResults(drinks!: Array<Drink>) -> Node {
+    let emptyNote = if drinks.count == 0 {
+        <p class="muted">Nothing matches. The barista suggests an espresso.</p>
+    } else {
+        <></>
+    }
+    <>
+        {emptyNote}
+        <ul id="menu-items" class="menu">{drinkCards(drinks)}</ul>
+    </>
+}
+
+export fn menuItems(request!: Request) -> Response {
+    let needle = trim(menuQuery(request))
+    match store.searchDrinks(needle) {
+        Fail(error) => storeFailed(error)
+        Pass(drinks) {
+            http.cached(
+                request,
+                http.htmlFragment(menuResults(drinks)),
+                "private, no-cache"
+            )
+        }
+    }
+}
+
+fn menuQuery(request!: Request) -> String {
+    match http.queryParam(request, "q") {
+        Not => ""
+        Has(value) { value }
+    }
 }
 
 export fn drink(slug!: String, customerName!: String) -> Response {
@@ -201,19 +227,41 @@ export fn orderTicket(id!: Int64, customerName!: String) -> Response {
 }
 
 fn ticketPage(row!: OrderRow, customerName!: String) -> Response {
-    let unit = formatPrice(row.unitCents)
-    let total = formatPrice(row.totalCents)
     htmlResponse(
         <Page title="Ticket {row.id}" customer={customerName}>
             <p class="back"><a href="/menu">← Back to the menu</a></p>
-            <article class="drink">
-                <h1>Ticket \#{row.id}</h1>
-                <p class="notes">{row.qty} × {row.name}</p>
-                <p class="muted">{unit} each</p>
-                <p class="price">{total}</p>
-            </article>
+            {ticketCard(row)}
         </Page>
     )
+}
+
+fn ticketCard(row!: OrderRow) -> Node {
+    let unit = formatPrice(row.unitCents)
+    let total = formatPrice(row.totalCents)
+    <article class="drink" id="ticket">
+        <h1>Ticket \#{row.id}</h1>
+        <p class="notes">{row.qty} × {row.name}</p>
+        <p class="muted">{unit} each</p>
+        <p class="price">{total}</p>
+    </article>
+}
+
+export fn orderTicketFragment(id!: Int64, request!: Request) -> Response {
+    match store.findOrder(id) {
+        Fail(error) => storeFailed(error)
+        Pass(found) {
+            match found {
+                OrderMiss => notFound()
+                OrderHit(row) {
+                    http.cached(
+                        request,
+                        http.htmlFragment(ticketCard(row)),
+                        "private, max-age=300"
+                    )
+                }
+            }
+        }
+    }
 }
 
 fn orderFailed(customerName!: String, error!: Issue) -> Response {

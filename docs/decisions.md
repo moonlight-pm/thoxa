@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-19 — HTML fragments + cache validators
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D145 | Fragment HTML + content-hash ETag | **`std/http`:** `htmlFragment(root)` is `root.html()` as `text/html` (no doctype). `etagOf(body)` is a strong quoted 8-digit hex FNV-1a-32. `ifNoneMatch` / `etagFresh` (`*` or listed token). `notModified` is 304 empty. `withCache` appends `ETag` + `Cache-Control`. `cached(req, res, cacheControl)` 304s when `If-None-Match` matches. Not weak ETags, not `Last-Modified`, not `Vary`. | **Shipped.** Sample-driven (D97/D136): Crema Phase **E2** fragment GETs. Gate: `http_helpers`. Cache *policy* (`private, no-cache` vs `max-age`) stays at the call site. |
+
 ## 2026-08-18 — `sql"…"` tagged interpolator
 
 | ID | Decision | Choice | Notes |

@@ -90,7 +90,7 @@ over ad-hoc scripts (D10).
 | `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; `diagnostic`/`error`; session/command/repl; lsp/ |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `crates/make/` | xtask (`cargo make`) |
-| `std/` | Product standard library (`std/…`; Io/Net/Http/HttpStatic **D126**; `http/server` **D136**/**D139**; `json` **D141**; `sqlite` **D143**/**D144**) |
+| `std/` | Product standard library (`std/…`; Io/Net/Http/HttpStatic **D126**; `http/server` **D136**/**D139**; `json` **D141**; `sqlite` **D143**/**D144**; fragments/ETag **D145**) |
 | `tests/conformance/` | `*.thx` + `*.out` |
 | `extras/` | Non-product DX; dogfood shell (product REPL is bare `thoxa`) |
 | `examples/` | Runnable demos (not conformance); `examples/http`, `examples/kilo` |

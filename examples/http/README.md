@@ -82,6 +82,17 @@ curl -s http://127.0.0.1:9091/orders/N
 # Ticket N · 2 × Mocha
 ```
 
+Cacheable fragments (**E2**, no layout; content-hash `ETag`):
+
+```bash
+curl -sD- 'http://127.0.0.1:9091/menu/items?q=mocha'
+# 200 + ETag + Cache-Control: private, no-cache
+curl -sD- -H 'If-None-Match: "<etag>"' 'http://127.0.0.1:9091/menu/items?q=mocha'
+# 304
+curl -s http://127.0.0.1:9091/orders/N/ticket
+# <article id="ticket">…</article>
+```
+
 JSON order API (`std/json` **D141**; rows in `/tmp/crema.db`):
 
 ```bash
@@ -113,11 +124,13 @@ examples/http/
 type Routes {
     GET "/" (request: Request) -> Response { … }
     GET "/menu" (request: Request) -> Response { … }
+    GET "/menu/items" (request: Request) -> Response { … }
     GET "/menu/:slug" (slug: String, request: Request) -> Response { … }
     GET "/api/health" -> Response { … }
     GET "/api/orders" -> Response { … }
     POST "/api/orders" (request: Request) -> Response { … }
     POST "/orders" (request: Request) -> Response { … }
+    GET "/orders/:id/ticket" (id: Int64, request: Request) -> Response { … }
     GET "/orders/:id" (id: Int64, request: Request) -> Response { … }
     POST "/" (request: Request) -> Response { … }
 }

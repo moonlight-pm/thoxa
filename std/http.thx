@@ -3,7 +3,7 @@
 ## Hosts complete the body via `std/http/server.readBody`. Fail payloads are String.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { toLowerAscii, trim, split, splitOnce, parseUInt, isEmpty } from "std/str"
+import { toLowerAscii, trim, split, splitOnce, parseUInt, isEmpty, contains, substring } from "std/str"
 
 ## One header field: name and value as Strings (ASCII for this demo).
 export type Header(name: String, value: String)
@@ -447,6 +447,92 @@ export fn cookie(req!: Request, name!: String) -> May<String> {
 
 export fn htmlResponse(root!: Node) -> Response {
     ok(Bytes.fromString("<!DOCTYPE html>\n{root.html()}"), "text/html; charset=utf-8")
+}
+
+## Snippet HTML (no doctype). Pair with `cached` for fragment GETs.
+export fn htmlFragment(root!: Node) -> Response {
+    ok(Bytes.fromString(root.html()), "text/html; charset=utf-8")
+}
+
+## 304 Not Modified — empty body. Send ETag / Cache-Control via `cached`.
+export fn notModified() -> Response {
+    Response(
+        status: 304,
+        reason: "Not Modified",
+        headers: [
+            Header(name: "Content-Length", value: "0"),
+            Header(name: "Connection", value: "close"),
+        ],
+        body: Bytes(0)
+    )
+}
+
+## Strong ETag: quoted 8-digit hex of a 32-bit FNV-1a over `body`.
+export fn etagOf(body!: Bytes) -> String {
+    "\"{hex8(fnv32(body))}\""
+}
+
+export fn ifNoneMatch(req!: Request) -> May<String> {
+    headerGet(req, "If-None-Match")
+}
+
+## True when `If-None-Match` is `*` or lists `etag` (quoted token).
+export fn etagFresh(req!: Request, etag!: String) -> Bool {
+    match ifNoneMatch(req) {
+        Not => false
+        Has(header) {
+            let raw = trim(header)
+            if raw == "*" {
+                true
+            } else {
+                contains(raw, etag)
+            }
+        }
+    }
+}
+
+export fn withCache(res!: Response, cacheControl!: String, etag!: String) -> Response {
+    withHeader(withHeader(res, "ETag", etag), "Cache-Control", cacheControl)
+}
+
+## Attach validators. Unchanged body + matching `If-None-Match` → 304.
+export fn cached(req!: Request, res!: Response, cacheControl!: String) -> Response {
+    let tag = etagOf(res.body)
+    if etagFresh(req, tag) {
+        withCache(notModified(), cacheControl, tag)
+    } else {
+        withCache(res, cacheControl, tag)
+    }
+}
+
+fn fnv32(body!: Bytes) -> Int64 {
+    let mask = 4294967295
+    mut hash = 2166136261
+    mut i = 0
+    loop {
+        if i >= body.count {
+            break
+        }
+        hash = (hash ^ body.get(i)) & mask
+        hash = (hash * 16777619) & mask
+        i = i + 1
+    }
+    hash
+}
+
+fn hex8(n!: Int64) -> String {
+    let digits = "0123456789abcdef"
+    mut out = ""
+    mut shift = 28
+    loop {
+        if shift < 0 {
+            break
+        }
+        let nibble = (n >> shift) & 15
+        out = "{out}{substring(digits, nibble, nibble + 1)}"
+        shift = shift - 4
+    }
+    out
 }
 
 export fn urlDecode(s!: String) -> String {

@@ -166,5 +166,32 @@ fn main() -> Int64 {
     let closed = http.finalize("GET", ok, false)
     info("fin={closed.body.count} {connOf(closed)}")
 
+    let frag = http.htmlFragment(<p>hi</p>)
+    info("frag={frag.status} {frag.headers[0].value}")
+    info("frag-body={frag.body.toString()}")
+    let tag = http.etagOf(frag.body)
+    info("etag={tag}")
+    let warm = http.cached(r11, frag, "private, no-cache")
+    info("warm={warm.status} {headerNamed(warm, \"ETag\")} {headerNamed(warm, \"Cache-Control\")}")
+    mut inm: Array<Header> = []
+    inm.append(Header(name: "If-None-Match", value: tag))
+    let reval = emptyReq("GET", "HTTP/1.1", inm)
+    let cold = http.cached(reval, http.htmlFragment(<p>hi</p>), "private, no-cache")
+    info("fresh={cold.status} {cold.body.count} {headerNamed(cold, \"ETag\")}")
+    mut other: Array<Header> = []
+    other.append(Header(name: "If-None-Match", value: "\"deadbeef\""))
+    let staleReq = emptyReq("GET", "HTTP/1.1", other)
+    let stale = http.cached(staleReq, http.htmlFragment(<p>hi</p>), "private, no-cache")
+    info("stale={stale.status} {stale.body.count}")
+
     0
+}
+
+fn headerNamed(res!: Response, name!: String) -> String {
+    for h in res.headers {
+        if h.name == name {
+            return h.value
+        }
+    }
+    "-"
 }

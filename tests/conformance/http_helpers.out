@@ -27,3 +27,9 @@ ka10=false
 ka10ka=true
 head=0 keep-alive
 fin=3 close
+frag=200 text/html; charset=utf-8
+frag-body=<p>hi</p>
+etag="7d606879"
+warm=200 "7d606879" private, no-cache
+fresh=304 0 "7d606879"
+stale=200 9

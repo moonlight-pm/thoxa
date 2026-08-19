@@ -25,6 +25,10 @@ type Routes {
         pages.menu(customer.greeting(request), menuQuery(request))
     }
 
+    GET "/menu/items" (request: Request) -> Response {
+        pages.menuItems(request)
+    }
+
     GET "/menu/:slug" (slug: String, request: Request) -> Response {
         pages.drink(slug, customer.greeting(request))
     }
@@ -43,6 +47,10 @@ type Routes {
 
     POST "/orders" (request: Request) -> Response {
         pages.submitOrder(request)
+    }
+
+    GET "/orders/:id/ticket" (id: Int64, request: Request) -> Response {
+        pages.orderTicketFragment(id, request)
     }
 
     GET "/orders/:id" (id: Int64, request: Request) -> Response {
