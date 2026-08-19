@@ -172,6 +172,15 @@ h1 {
   color: var(--muted);
 }
 
+.flash {
+  background: var(--card);
+  border: 1px solid var(--accent);
+  color: var(--fg);
+  border-radius: 0.35rem;
+  padding: 0.55rem 0.8rem;
+  margin: 0 0 1.25rem;
+}
+
 .card-form {
   margin: 2.5rem auto 0;
   max-width: 22rem;

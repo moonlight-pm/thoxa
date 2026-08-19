@@ -1,0 +1,168 @@
+## App layer — in-memory session bag (example-only).
+## Cookie `crema` is an opaque id. Name, flash, and CSRF live on the server.
+
+import http, { Request, Response, Header, Cookie } from "std/http"
+import env from "std/env"
+import { Has, Not, May } from "std/fallible"
+import { isEmpty, toLowerAscii } from "std/str"
+
+let cookieName = "crema"
+let maxAgeSeconds = 2592000
+
+type Bag(
+    id: String,
+    name: String,
+    flash: String,
+    csrf: String
+)
+
+fn emptyBags() -> Map<String, Bag> {
+    mut bags: Map<String, Bag> = Map()
+    bags
+}
+
+mut bags = emptyBags()
+mut nextSerial = 0
+
+fn newToken() -> String {
+    nextSerial = nextSerial + 1
+    "s{nextSerial}x{env.localHms()}"
+}
+
+fn newBag() -> Bag {
+    Bag(id: newToken(), name: "", flash: "", csrf: newToken())
+}
+
+fn sidOf(request!: Request) -> May<String> {
+    http.cookie(request, cookieName)
+}
+
+fn bagOf(request!: Request) -> May<Bag> {
+    match sidOf(request) {
+        Not => Not()
+        Has(id) {
+            bags[id]
+        }
+    }
+}
+
+fn put(bag!: Bag) {
+    bags.set(bag.id, bag)
+}
+
+fn withCookieHeader(request!: Request, id!: String) -> Request {
+    mut headers: Array<Header> = []
+    for header in request.headers {
+        if toLowerAscii(header.name) != "cookie" {
+            headers.append(header)
+        }
+    }
+    match http.headerGet(request, "Cookie") {
+        Not {
+            headers.append(Header(name: "Cookie", value: "{cookieName}={id}"))
+        }
+        Has(raw) {
+            headers.append(Header(name: "Cookie", value: "{raw}; {cookieName}={id}"))
+        }
+    }
+    Request(
+        method: request.method,
+        path: request.path,
+        query: request.query,
+        version: request.version,
+        headers: headers,
+        body: request.body,
+        peerFd: request.peerFd
+    )
+}
+
+## Create a bag when the cookie is missing or unknown; stamp it on the request
+## so later reads in this turn see the same id (safe with `--> serveOne`).
+export fn ensure(request!: Request) -> Request {
+    match sidOf(request) {
+        Has(id) {
+            if bags.has(id) {
+                request
+            } else {
+                issue(request)
+            }
+        }
+        Not => issue(request)
+    }
+}
+
+fn issue(request!: Request) -> Request {
+    let bag = newBag()
+    put(bag)
+    withCookieHeader(request, bag.id)
+}
+
+export fn bindCookie(response!: Response, request!: Request) -> Response {
+    match sidOf(request) {
+        Not => response
+        Has(id) {
+            http.withCookie(response, Cookie(
+                name: cookieName,
+                value: id,
+                httpOnly: true,
+                sameSite: "Lax",
+                maxAge: Has(maxAgeSeconds)
+            ))
+        }
+    }
+}
+
+export fn greeting(request!: Request) -> String {
+    match bagOf(request) {
+        Not => ""
+        Has(bag) { bag.name }
+    }
+}
+
+export fn csrf(request!: Request) -> String {
+    match bagOf(request) {
+        Not => ""
+        Has(bag) { bag.csrf }
+    }
+}
+
+export fn takeFlash(request!: Request) -> String {
+    match bagOf(request) {
+        Not => ""
+        Has(bag) {
+            let text = bag.flash
+            put(Bag(id: bag.id, name: bag.name, flash: "", csrf: bag.csrf))
+            text
+        }
+    }
+}
+
+export fn setFlash(request!: Request, text!: String) {
+    match bagOf(request) {
+        Not { }
+        Has(bag) {
+            put(Bag(id: bag.id, name: bag.name, flash: text, csrf: bag.csrf))
+        }
+    }
+}
+
+export fn setName(request!: Request, name!: String) {
+    match bagOf(request) {
+        Not { }
+        Has(bag) {
+            put(Bag(id: bag.id, name: name, flash: bag.flash, csrf: bag.csrf))
+        }
+    }
+}
+
+export fn checkCsrf(request!: Request, body!: Bytes) -> Bool {
+    let want = csrf(request)
+    if isEmpty(want) {
+        false
+    } else {
+        match http.formField(body, "csrf") {
+            Not => false
+            Has(got) { got == want }
+        }
+    }
+}

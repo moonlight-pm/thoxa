@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-19 — SSE / socket takeover
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D146 | Handler can own the peer for SSE | **`Request.peerFd`** (Int64, default 0) is host-filled by `std/http/server`. **`streamed()`** is status `0`; `serveOne` skips `writeResponse`, drains until close, then closes. **`beginEventStream` / `sendEvent`** write `text/event-stream`. Not chunked encoding, not WebSockets, not `fn` fields on Response (D48). | **Shipped.** Sample-driven (Crema Phase **E5**). Gate: `http_helpers` (`streamed=0`); live path is example-only (`examples/http` `/events`). |
+
 ## 2026-08-19 — HTML fragments + cache validators
 
 | ID | Decision | Choice | Notes |

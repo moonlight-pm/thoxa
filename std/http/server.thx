@@ -95,7 +95,8 @@ export fn readRequest(peer!: Socket) -> Trial<Request, String> {
                     query: "",
                     version: "",
                     headers: headers,
-                    body: Bytes(0)
+                    body: Bytes(0),
+                    peerFd: peer.fd
                 ))
             } else {
                 match http.parseRequest(raw) {
@@ -114,7 +115,8 @@ export fn readRequest(peer!: Socket) -> Trial<Request, String> {
                                     query: req.query,
                                     version: req.version,
                                     headers: req.headers,
-                                    body: body
+                                    body: body,
+                                    peerFd: peer.fd
                                 ))
                             }
                         }
@@ -138,7 +140,8 @@ fn requestForHandle(req!: Request) -> Request {
         query: req.query,
         version: req.version,
         headers: req.headers,
-        body: req.body
+        body: req.body,
+        peerFd: req.peerFd
     )
 }
 
@@ -157,6 +160,33 @@ export fn writeResponse(
         Fail(e) {
             Fail(e)
         }
+    }
+}
+
+fn drainUntilClose(peer!: Socket) {
+    loop {
+        let chunk = peer.receive()
+        if chunk.count == 0 {
+            break
+        }
+    }
+}
+
+## SSE prelude. Handler writes events with `sendEvent`, then returns `streamed()`.
+export fn beginEventStream(peer!: Socket) -> Trial<Void, String> {
+    let prelude = Bytes.fromString(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n"
+    )
+    match peer.sendAll(prelude) {
+        Pass(_) => Pass(Void)
+        Fail(error) => Fail(error)
+    }
+}
+
+export fn sendEvent(peer!: Socket, data!: String) -> Trial<Void, String> {
+    match peer.sendAll(Bytes.fromString("data: {data}\n\n")) {
+        Pass(_) => Pass(Void)
+        Fail(error) => Fail(error)
     }
 }
 
@@ -184,6 +214,11 @@ export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
                 }
                 let keep = http.wantsKeepAlive(req.version, req)
                 let res = handle(requestForHandle(req))
+                if res.status == 0 {
+                    info("{req.method} {req.path} -> streamed")
+                    drainUntilClose(peer)
+                    break
+                }
                 info("{req.method} {req.path} -> {res.status} {res.reason}")
                 match writeResponse(peer, req.method, res, keep) {
                     Fail(se) {

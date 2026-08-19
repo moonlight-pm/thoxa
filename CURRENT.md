@@ -4,8 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-19 (Crema **E3** `crema.js` swap runtime; **E2** fragment
-GETs + **D145** `htmlFragment` / `cached`; Phase **E** next is sessions/flash;
+**As of:** 2026-08-19 (Crema Phase **E** complete through **E5**; **E6**
+WebSockets **parked**; **D146** SSE `peerFd` / `streamed()`;
+**E4** sessions + flash + CSRF; **E3** `crema.js`; **E2** + **D145**;
 Crema **A–D2 complete**; HTML-over-the-wire — not vendored HTMX;
 **built-in validation** on master, not product — types as inhabitation;
 syntax open;
@@ -31,7 +32,9 @@ not handbook)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** Crema **E3** `web/crema.js` (`thx-get` / `thx-post`);
+**Shipped recently:** Crema **E4–E5** (sessions/flash/CSRF + SSE board);
+**D146** `Request.peerFd` / `streamed()` / `beginEventStream`;
+Crema **E3** `web/crema.js` (`thx-get` / `thx-post`);
 **D145** `htmlFragment` / `etagOf` / `cached`;
 Crema **E2** `GET /menu/items` + `GET /orders/:id/ticket`;
 multiline `"…"` / `sql"…"` gated (`strings_multiline`);
@@ -85,36 +88,22 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **In progress / next:**
 
-1. **Crema Phase E — HTML-over-the-wire.** Initial charter **A–D2 is
-   done**. **E1–E3 done** (HTML orders; fragments + ETag; `crema.js`).
-   Next slice is **E4** (sessions + flash). Then SSE.
-   WebSockets stay parked. Do **not** vendor HTMX. Idea
-   [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md).
-   Checklist
-   [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md).
-   `POST /api/orders` stays the JSON / `Type.read` demo. Catalog + orders
-   live in **`/tmp/crema.db`**. App/domain stays example-only. Host/wire is
-   product **`std/http` + `std/http/server`**. File-based routing is
-   **parked**.
-2. Editor only when DX forces it.
+1. **Editor only when DX forces it.** Crema Phase **E** is complete through
+   **E5** (HTML-over-the-wire cafe: orders, fragments, `crema.js`, sessions,
+   SSE). **E6 WebSockets stay parked.** Do **not** vendor HTMX.
+2. Crema leftovers (product migrate, file-based routing) stay parked.
 
 ### Proceed order
 
-1. **Crema Phase E** — checklist in
-   [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   (app under `examples/http/`; host/wire already in `std/`; **A–D2
-   shipped**, **E1–E3 shipped**). First open step: **E4** sessions + flash.
-   Protocol:
-   [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md).  
-2. **Editor depth** — only when DX forces it. Freezes:
+1. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).  
-3. **Deferred: all session / shell residual** — redir polish, line editor,
+2. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
@@ -153,7 +142,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
 | `extras/shell` | Dogfood only; product face is bare `thoxa` |
-| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); **`std/json`** (**D141**); **`std/sqlite`** (**D143**); fragments + ETag (**D145**); `ffi` deferred |
+| `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); **`std/json`** (**D141**); **`std/sqlite`** (**D143**); fragments + ETag (**D145**); SSE takeover (**D146**); `ffi` deferred |
 | Logging / print | **`std/logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
 | Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
@@ -163,7 +152,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
-| HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); `htmlFragment` / `etagOf` / `cached` (**D145**). Cookie and `Cache-Control` *policy* stay in the app. |
+| HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); `htmlFragment` / `etagOf` / `cached` (**D145**). **`peerFd` + `streamed()`** (**D146**) for SSE takeover. Cookie and `Cache-Control` *policy* stay in the app. |
 | SQLite | Amalgamation in `libthoxa_rt` (**D143**). Write `sql"… {value} …"` (**D144**); holes quote themselves. `exec`/`query` take `Sql`. No named `ffi` root. No product `thoxa migrate` — apps own schema files. |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
@@ -190,7 +179,7 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
    [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md)  
 9. If D138 / module files: [`docs/decisions.md`](docs/decisions.md) (D138) — kebab-case stems, path-qualified ids; file-based routing parked in [`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)
 10. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   + **D136** / **D137** / **D139** / **D142** / **D145** in [`docs/decisions.md`](docs/decisions.md)
+   + **D136** / **D137** / **D139** / **D142** / **D145** / **D146** in [`docs/decisions.md`](docs/decisions.md)
     + Phase E protocol [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md)
 11. If JSON: [`docs/decisions.md`](docs/decisions.md) (**D141**) +
     [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)

@@ -114,6 +114,7 @@ leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
 | `parseRequest` | `Trial<Request, String>`; requires `\r\n\r\n`; path is query-stripped |
 | `writeResponse` | Status line + headers + body → `Bytes` |
 | Lookup | `headerGet`, `contentLength`, `queryMap`, `queryParam`, `formField`, `cookie` |
+| Stream | `Request.peerFd` (host fd, else 0); `streamed()` (status 0 — handler owns the socket) |
 | Maps | `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`; `urlDecode` |
 | Cookies | `Cookie` (`.header()`), `SameSite`, `withCookie`, `clearCookie` (**D142**) |
 | Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `htmlFragment`, `notModified`, `cached` / `etagOf` / `withCache`, `response` / `responseHead` |
@@ -144,6 +145,7 @@ Host loop over `std/net`. Completes `Request.body` (64 KiB cap).
 | `bindListen(port)` | `createSocket` + reuse + bind + listen |
 | `readBody` / `readRequest` | `Content-Length` entity; empty method/path = quiet close |
 | `writeResponse(peer, method, res, keepAlive)` | `finalize` + `sendAll` |
+| `beginEventStream` / `sendEvent` | SSE prelude + `data:` lines (**D146**). `streamed()` skips the normal write |
 
 HEAD is answered by GET handlers; `finalize` still sees the real method.
 

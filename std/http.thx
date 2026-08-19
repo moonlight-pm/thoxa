@@ -16,7 +16,10 @@ export type Request(
     query: String,
     version: String,
     headers: Array<Header>,
-    body: Bytes
+    body: Bytes,
+    ## Host-only. `std/http/server` fills this with the peer fd so a handler
+    ## can take over the socket (SSE). `parseRequest` leaves 0.
+    peerFd: Int64 = 0
 )
 
 ## A response to serialize: status line, headers, body.
@@ -214,7 +217,8 @@ fn parseRequestBody(
         query: query,
         version: version,
         headers: headers,
-        body: body
+        body: body,
+        peerFd: 0
     ))
 }
 
@@ -496,6 +500,11 @@ export fn withCache(res!: Response, cacheControl!: String, etag!: String) -> Res
 }
 
 ## Attach validators. Unchanged body + matching `If-None-Match` → 304.
+## Handler already wrote the socket (SSE). Host must not `writeResponse`.
+export fn streamed() -> Response {
+    Response(status: 0, reason: "streamed", headers: [], body: Bytes(0))
+}
+
 export fn cached(req!: Request, res!: Response, cacheControl!: String) -> Response {
     let tag = etagOf(res.body)
     if etagFresh(req, tag) {

@@ -82,6 +82,11 @@ curl -s http://127.0.0.1:9091/orders/N
 # Ticket N · 2 × Mocha
 ```
 
+Session (**E4**): opaque `crema` cookie, flash after PRG, CSRF on form POSTs.
+
+Live board (**E5**): `GET /live` + `GET /events` (`text/event-stream`).
+`thx-sse` swaps `#board` when a ticket lands.
+
 Swap runtime (**E3**, example-only `web/crema.js`): menu search uses
 `thx-get="/menu/items"`; drink order uses `thx-post="/orders"` then loads
 `/orders/N/ticket`. Forms still work with JavaScript off.
@@ -118,7 +123,7 @@ examples/http/
   main.thx
   app/
     routes.thx    # type-body GET/POST, handle, static fallback
-    pages.thx layout.thx api.thx orders.thx models.thx customer.thx store.thx
+    pages.thx layout.thx api.thx orders.thx models.thx session.thx live.thx store.thx
   web/
 ```
 
@@ -127,6 +132,8 @@ examples/http/
 ```thx
 type Routes {
     GET "/" (request: Request) -> Response { … }
+    GET "/live" (request: Request) -> Response { … }
+    GET "/events" (request: Request) -> Response { … }
     GET "/menu" (request: Request) -> Response { … }
     GET "/menu/items" (request: Request) -> Response { … }
     GET "/menu/:slug" (slug: String, request: Request) -> Response { … }

@@ -4,41 +4,58 @@ import layout, { Page } from "./layout"
 import models, { Drink, formatPrice, roastLabel } from "./models"
 import store, { DrinkMiss, DrinkHit, OrderMiss, OrderHit, OrderRow } from "./store"
 import orders from "./orders"
-import customer from "./customer"
+import session from "./session"
+import live from "./live"
 import http, { Request, Response, notFound, htmlResponse } from "std/http"
 import { Has, Not, May, Pass, Fail } from "std/fallible"
 import { isEmpty, trim } from "std/str"
-import { Issue, Rejected, message } from "std/json"
+import { Issue, Rejected, message, issueRejected } from "std/json"
 
-export fn home(customerName!: String) -> Response {
+export fn home(request!: Request) -> Response {
     match store.drinkCount() {
         Fail(error) => storeFailed(error)
         Pass(drinkCount) {
-            homePage(customerName, drinkCount)
+            homePage(request, drinkCount)
         }
     }
 }
 
-fn homePage(customerName!: String, drinkCount!: Int64) -> Response {
+fn homePage(request!: Request, drinkCount!: Int64) -> Response {
+    let customerName = session.greeting(request)
     htmlResponse(
         <Page title="Home" customer={customerName}>
+            {flashBanner(request)}
             <section class="hero">
                 <h1>Little Crema</h1>
                 <p class="lede">Six drinks, one tiny counter, and a Thoxa feature in every pour.</p>
                 <p><a class="button" href="/menu">Browse the menu</a></p>
                 <p class="muted" data-count={drinkCount}>{drinkCount} drinks brewed fresh daily.</p>
             </section>
-            {homeCard(customerName)}
+            {homeCard(customerName, session.csrf(request))}
         </Page>
     )
 }
 
-fn homeCard(customerName!: String) -> Node {
+fn flashBanner(request!: Request) -> Node {
+    let text = session.takeFlash(request)
+    if isEmpty(text) {
+        <></>
+    } else {
+        <p class="flash">{text}</p>
+    }
+}
+
+fn csrfField(token!: String) -> Node {
+    <input type="hidden" name="csrf" value={token} />
+}
+
+fn homeCard(customerName!: String, token!: String) -> Node {
     if isEmpty(customerName) {
         <section class="card-form">
             <h2>Are you a regular?</h2>
             <p class="muted">Leave your name and the counter remembers you.</p>
             <form method="post" action="/">
+                {csrfField(token)}
                 <label for="name">Your name</label>
                 <input id="name" name="name" type="text" placeholder="Ada" required />
                 <button type="submit">Remember me</button>
@@ -49,6 +66,7 @@ fn homeCard(customerName!: String) -> Node {
             <h2>Welcome back, {customerName}</h2>
             <p class="muted">Your usual table is free.</p>
             <form method="post" action="/">
+                {csrfField(token)}
                 <input type="hidden" name="name" value="" />
                 <button type="submit" class="outline">Not {customerName}?</button>
             </form>
@@ -76,24 +94,25 @@ fn drinkCards(drinks!: Array<Drink>) -> Array<Node> {
     items
 }
 
-export fn menu(customerName!: String, query!: String) -> Response {
-    let needle = trim(query)
+export fn menu(request!: Request) -> Response {
+    let needle = trim(menuQuery(request))
     match store.searchDrinks(needle) {
         Fail(error) => storeFailed(error)
         Pass(drinks) {
             match store.drinkCount() {
                 Fail(error) => storeFailed(error)
                 Pass(total) {
-                    menuPage(customerName, needle, drinks, total)
+                    menuPage(request, needle, drinks, total)
                 }
             }
         }
     }
 }
 
-fn menuPage(customerName!: String, needle!: String, drinks!: Array<Drink>, total!: Int64) -> Response {
+fn menuPage(request!: Request, needle!: String, drinks!: Array<Drink>, total!: Int64) -> Response {
     htmlResponse(
-        <Page title="Menu" customer={customerName}>
+        <Page title="Menu" customer={session.greeting(request)}>
+            {flashBanner(request)}
             <h1>The menu</h1>
             <form class="search" method="get" action="/menu" thx-get="/menu/items" thx-target="#menu-results" thx-swap="inner" thx-push>
                 <label for="q">Search the menu</label>
@@ -154,14 +173,14 @@ fn menuQuery(request!: Request) -> String {
     }
 }
 
-export fn drink(slug!: String, customerName!: String) -> Response {
+export fn drink(slug!: String, request!: Request) -> Response {
     match store.findBySlug(slug) {
         Fail(error) => storeFailed(error)
         Pass(found) {
             match found {
                 DrinkMiss => notFound()
                 DrinkHit(drink) {
-                    drinkPage(drink, customerName)
+                    drinkPage(drink, request)
                 }
             }
         }
@@ -177,10 +196,11 @@ fn storeFailed(error!: String) -> Response {
     )
 }
 
-fn drinkPage(drink!: Drink, customerName!: String) -> Response {
+fn drinkPage(drink!: Drink, request!: Request) -> Response {
     let price = formatPrice(drink.priceCents)
     htmlResponse(
-        <Page title={drink.name} customer={customerName}>
+        <Page title={drink.name} customer={session.greeting(request)}>
+            {flashBanner(request)}
             <p class="back"><a href="/menu">← Back to the menu</a></p>
             <article class="drink">
                 <h1>{drink.name}</h1>
@@ -188,17 +208,18 @@ fn drinkPage(drink!: Drink, customerName!: String) -> Response {
                 <p class="notes">{drink.notes}</p>
                 <p class="price">{price}</p>
             </article>
-            {orderForm(drink)}
+            {orderForm(drink, session.csrf(request))}
             <div id="ticket"></div>
         </Page>
     )
 }
 
-fn orderForm(drink!: Drink) -> Node {
+fn orderForm(drink!: Drink, token!: String) -> Node {
     <section class="card-form">
         <h2>Order a {drink.name}</h2>
         <p class="muted">Works without JavaScript. The counter writes a ticket.</p>
         <form method="post" action="/orders" thx-post="/orders" thx-target="#ticket" thx-swap="inner">
+            {csrfField(token)}
             <input type="hidden" name="slug" value={drink.slug} />
             <label for="qty">Quantity</label>
             <input id="qty" name="qty" type="number" min="1" value="1" required />
@@ -208,33 +229,46 @@ fn orderForm(drink!: Drink) -> Node {
 }
 
 export fn submitOrder(request!: Request) -> Response {
-    let customerName = customer.greeting(request)
-    match orders.fromForm(request.body) {
-        Fail(error) => orderFailed(customerName, error)
-        Pass(order) {
-            match orders.place(order) {
-                Fail(error) => orderFailed(customerName, error)
-                Pass(ticket) => http.seeOther("/orders/{ticket.id}")
+    let customerName = session.greeting(request)
+    if not session.checkCsrf(request, request.body) {
+        orderFailed(customerName, csrfRejected())
+    } else {
+        match orders.fromForm(request.body) {
+            Fail(error) => orderFailed(customerName, error)
+            Pass(order) {
+                match orders.place(order) {
+                    Fail(error) => orderFailed(customerName, error)
+                    Pass(ticket) {
+                        session.setFlash(request, "Poured {ticket.qty} × {ticket.name}.")
+                        live.broadcast()
+                        http.seeOther("/orders/{ticket.id}")
+                    }
+                }
             }
         }
     }
 }
 
-export fn orderTicket(id!: Int64, customerName!: String) -> Response {
+fn csrfRejected() -> Issue {
+    issueRejected("csrf", "that form expired — refresh and try again")
+}
+
+export fn orderTicket(id!: Int64, request!: Request) -> Response {
     match store.findOrder(id) {
         Fail(error) => storeFailed(error)
         Pass(found) {
             match found {
                 OrderMiss => notFound()
-                OrderHit(row) => ticketPage(row, customerName)
+                OrderHit(row) => ticketPage(row, request)
             }
         }
     }
 }
 
-fn ticketPage(row!: OrderRow, customerName!: String) -> Response {
+fn ticketPage(row!: OrderRow, request!: Request) -> Response {
     htmlResponse(
-        <Page title="Ticket {row.id}" customer={customerName}>
+        <Page title="Ticket {row.id}" customer={session.greeting(request)}>
+            {flashBanner(request)}
             <p class="back"><a href="/menu">← Back to the menu</a></p>
             {ticketCard(row)}
         </Page>
@@ -303,18 +337,42 @@ fn htmlStatus(status!: Int64, reason!: String, root!: Node) -> Response {
     )
 }
 
-export fn signIn(body!: Bytes) -> Response {
+export fn board(request!: Request) -> Response {
+    htmlResponse(
+        <Page title="Board" customer={session.greeting(request)}>
+            {flashBanner(request)}
+            <h1>The board</h1>
+            <p class="muted">Tickets land here as they pour. Open in another tab and order.</p>
+            <div thx-sse="/events" thx-target="#board" thx-swap="outer">
+                {live.boardNode()}
+            </div>
+        </Page>
+    )
+}
+
+export fn events(request!: Request) -> Response {
+    live.subscribe(request)
+}
+
+export fn signIn(request!: Request) -> Response {
     let redirect = http.seeOther("/")
-    match http.formField(body, "name") {
-        Not {
-            redirect
-        }
-        Has(raw) {
-            let name = trim(raw)
-            if isEmpty(name) {
-                customer.withForget(redirect)
-            } else {
-                customer.withRemember(redirect, name)
+    if not session.checkCsrf(request, request.body) {
+        orderFailed(session.greeting(request), csrfRejected())
+    } else {
+        match http.formField(request.body, "name") {
+            Not {
+                redirect
+            }
+            Has(raw) {
+                let name = trim(raw)
+                if isEmpty(name) {
+                    session.setName(request, "")
+                    session.setFlash(request, "Name forgotten.")
+                } else {
+                    session.setName(request, name)
+                    session.setFlash(request, "Welcome, {name}.")
+                }
+                redirect
             }
         }
     }

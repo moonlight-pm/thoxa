@@ -184,6 +184,9 @@ fn main() -> Int64 {
     let stale = http.cached(staleReq, http.htmlFragment(<p>hi</p>), "private, no-cache")
     info("stale={stale.status} {stale.body.count}")
 
+    let taken = http.streamed()
+    info("streamed={taken.status}")
+
     0
 }
 

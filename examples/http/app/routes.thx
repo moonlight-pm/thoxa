@@ -5,7 +5,7 @@
 
 import pages from "./pages"
 import api from "./api"
-import customer from "./customer"
+import session from "./session"
 import httpStatic from "std/http/static"
 ## `notFound` is required: generated `route` calls it on miss.
 import http, { Request, Response, notFound, badRequest } from "std/http"
@@ -18,11 +18,19 @@ export let port = 9091
 
 type Routes {
     GET "/" (request: Request) -> Response {
-        pages.home(customer.greeting(request))
+        pages.home(request)
+    }
+
+    GET "/live" (request: Request) -> Response {
+        pages.board(request)
+    }
+
+    GET "/events" (request: Request) -> Response {
+        pages.events(request)
     }
 
     GET "/menu" (request: Request) -> Response {
-        pages.menu(customer.greeting(request), menuQuery(request))
+        pages.menu(request)
     }
 
     GET "/menu/items" (request: Request) -> Response {
@@ -30,7 +38,7 @@ type Routes {
     }
 
     GET "/menu/:slug" (slug: String, request: Request) -> Response {
-        pages.drink(slug, customer.greeting(request))
+        pages.drink(slug, request)
     }
 
     GET "/api/health" -> Response {
@@ -54,18 +62,11 @@ type Routes {
     }
 
     GET "/orders/:id" (id: Int64, request: Request) -> Response {
-        pages.orderTicket(id, customer.greeting(request))
+        pages.orderTicket(id, request)
     }
 
     POST "/" (request: Request) -> Response {
-        pages.signIn(request.body)
-    }
-}
-
-fn menuQuery(request!: Request) -> String {
-    match http.queryParam(request, "q") {
-        Not => ""
-        Has(value) { value }
+        pages.signIn(request)
     }
 }
 
@@ -75,10 +76,11 @@ fn serveStatic(request!: Request) -> Response {
 }
 
 export fn handle(request!: Request) -> Response {
-    let response = Routes().route(request)
+    let bound = session.ensure(request)
+    let response = Routes().route(bound)
     if response.status == 404 {
-        serveStatic(request)
+        session.bindCookie(serveStatic(bound), bound)
     } else {
-        response
+        session.bindCookie(response, bound)
     }
 }

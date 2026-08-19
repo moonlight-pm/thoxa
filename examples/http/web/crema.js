@@ -147,4 +147,17 @@
         load(state.thxUrl, state.thxTarget, state.thxSwap || "inner", null);
         syncSearchBox(window.location.href);
     });
+
+    document.querySelectorAll("[thx-sse]").forEach(function (element) {
+        var url = attr(element, "thx-sse");
+        var targetSel = attr(element, "thx-target");
+        if (!url || !targetSel) {
+            return;
+        }
+        var how = attr(element, "thx-swap") || "inner";
+        var source = new EventSource(url);
+        source.onmessage = function (event) {
+            apply(event.data, targetSel, how, null, url);
+        };
+    });
 })();

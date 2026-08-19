@@ -59,13 +59,15 @@ grows only when a helper is clearly not cafe-specific (D97).
 | Routes | Type-body `GET`/`POST` on `Routes` |
 | Forms / cookies | Name cookie, PRG sign-in, `Cookie` / `withCookie`; **E1** HTML `POST /orders` + ticket page |
 | Fragments | **E2** `GET /menu/items?q=` + `GET /orders/:id/ticket`; **D145** `htmlFragment` + content-hash ETag / 304 |
-| Swap runtime | **E3** `web/crema.js` — `thx-get` / `thx-post` / `thx-target` (example-only) |
+| Swap runtime | **E3** `web/crema.js` — `thx-get` / `thx-post` / `thx-target` / `thx-sse` (example-only) |
+| Sessions | **E4** opaque `crema` cookie; flash; CSRF on form POSTs (in-memory) |
+| SSE | **E5** `/live` board + `/events` stream (**D146**) |
 | Persist | `/tmp/crema.db` |
 | JSON demo | `POST /api/orders` + `CreateOrder.read` |
 | HTTP host | One `Response` blob, `Content-Length`, keep-alive, `--> serveOne` |
 
-Missing for this idea: sessions beyond a name cookie, CSRF, flash,
-**streaming responses** (SSE), WebSocket upgrade.
+Missing for this idea: WebSocket upgrade (parked). Session bag is
+process-local, not sqlite.
 
 ## 90% fundamentals (target, not a ship list)
 
@@ -79,10 +81,10 @@ Missing for this idea: sessions beyond a name cookie, CSRF, flash,
 | Fragment GET/POST | Search, order ticket, lists | **have** (E2 + **D145**) |
 | Tiny swap runtime | Click/submit → fetch HTML → swap | **have** (`web/crema.js`; example-only) |
 | History | `pushState` + popstate re-fetch | same runtime |
-| Sessions | “your tickets”, not just a name | example cookie / sqlite; std later |
-| CSRF | Cookie POSTs | example token; std later |
-| Flash | “Order placed” after redirect | example |
-| SSE | Live order board / “now brewing” | **forces streaming HTTP** |
+| Sessions | “your tickets”, not just a name | **have** (example Map; not sqlite) |
+| CSRF | Cookie POSTs | **have** (hidden `csrf` on forms) |
+| Flash | “Order placed” after redirect | **have** |
+| SSE | Live order board / “now brewing” | **have** (**D146**) |
 | Static assets | CSS, the runtime itself | **have** `std/http/static` |
 | Validation | `Type.read` / `where` | **on master**; dogfood forms too |
 | Persist | sqlite | **have** |

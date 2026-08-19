@@ -2,6 +2,7 @@
 
 import store, { OrderRow } from "./store"
 import orders, { CreateOrder, Ticket } from "./orders"
+import live from "./live"
 import http, { Request, Response, ok } from "std/http"
 import { Pass, Fail } from "std/fallible"
 import { Json, JArr, JBool, JInt, JObj, JStr, encode, Issue, Rejected, issueRejected, errorObject } from "std/json"
@@ -17,7 +18,10 @@ export fn createOrder(request!: Request) -> Response {
         Pass(order) {
             match orders.place(order) {
                 Fail(error) => placeOrderFail(error)
-                Pass(ticket) => jsonOk(ticketOk(ticket))
+                Pass(ticket) {
+                    live.broadcast()
+                    jsonOk(ticketOk(ticket))
+                }
             }
         }
     }
