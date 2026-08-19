@@ -57,7 +57,7 @@ grows only when a helper is clearly not cafe-specific (D97).
 |-------|------|
 | SSR pages | JSX `Node` + `htmlResponse` + `type Page` |
 | Routes | Type-body `GET`/`POST` on `Routes` |
-| Forms / cookies | Name cookie, PRG sign-in, `Cookie` / `withCookie` |
+| Forms / cookies | Name cookie, PRG sign-in, `Cookie` / `withCookie`; **E1** HTML `POST /orders` + ticket page |
 | Persist | `/tmp/crema.db` |
 | JSON demo | `POST /api/orders` + `CreateOrder.read` |
 | HTTP host | One `Response` blob, `Content-Length`, keep-alive, `--> serveOne` |

@@ -68,6 +68,7 @@ legal constructor-param fields.
 
 ## Gaps
 
+- `#` in JSX text is a line comment (lexer), so `Ticket #{id}` never closes the tag — write `Ticket {id}`  
 - Boolean-without-value beyond `name="name"` (bare `disabled` still serializes `disabled="disabled"`)  
 - Hyphenated attrs parse; `data-*` ok  
 - `.html()` method has no dedicated hover (type `Node` does)  

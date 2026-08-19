@@ -65,7 +65,7 @@ examples/http/
   main.thx                 # std/http/server.serve(routes.port, routes.handle)
   app/
     routes.thx             # type Routes { GET/POST … }, handle, port
-    pages.thx layout.thx api.thx models.thx customer.thx store.thx
+    pages.thx layout.thx api.thx orders.thx models.thx customer.thx store.thx
   web/
   README.md
 ```
@@ -173,7 +173,7 @@ Protocol and non-goals:
 | Step | Status | Notes |
 |------|--------|-------|
 | E0 Charter + CURRENT pointer | **done** | this file + html-over-the-wire idea |
-| E1 HTML order on the drink page | **pending** | `POST` form, PRG or ticket HTML; no JS; JSON `/api/orders` stays |
+| E1 HTML order on the drink page | **done** | `POST /orders` form on `/menu/:slug`; PRG `303` → `GET /orders/:id`; `Qty` / `DrinkSlug` via `fromForm`; JSON `/api/orders` stays |
 | E2 Cacheable fragment routes | **pending** | Own GET URLs (e.g. menu items, ticket); not `HX-Request` content negotiation |
 | E3 Tiny swap runtime in `web/` | **pending** | Example JS; `thx-get` / `thx-post` / `thx-target`; progressive enhancement |
 | E4 Sessions + flash (example) | **pending** | Beyond the name cookie; CSRF if POSTs stay cookie-authed |
@@ -185,6 +185,8 @@ Protocol and non-goals:
 ```bash
 # E1 — form works with JS off
 curl -sD- -X POST -d 'slug=mocha&qty=2' http://127.0.0.1:9091/orders
+# 303 Location: /orders/N
+curl -s http://127.0.0.1:9091/orders/N   # Ticket N · 2 × Mocha
 ```
 
 ---
@@ -215,7 +217,7 @@ curl -sD- -X POST -d 'slug=mocha&qty=2' http://127.0.0.1:9091/orders
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
 **As of last update:** **Phase A–D2 complete** (initial charter). **Phase E**
-is the active expansion (E0 done; E1 next). Host/wire promoted to
+is the active expansion (E0–E1 done; E2 next). Host/wire promoted to
 **`std/http` + `std/http/server` (**D136**/**D139**)** — example `framework/` removed.
 **D137:** `queryParam` / `formField` / `cookie` / `htmlResponse` + Str
 `parseUInt` / `splitOnce`. **D142:** `Cookie` / `withCookie` / `clearCookie`
@@ -235,6 +237,7 @@ migrate). Domain stays example-only. Do not vendor HTMX.
 |-----|------------|----------------|
 | Constructor-param fields must be Int64 / Bool / String / Bytes / Array / Map — **not** user sum types | **Done (D135):** `Drink.roast: Roast` + `DrinkCard(d: Drink)`. **D140** also allows `Float64` fields. | Shipped |
 | String interp treats `{…}` as interpolation | Path params use `:slug` not `{slug}` | Document; escape story later if needed |
+| `#` starts a line comment (including inside JSX text) | Ticket heading is `Ticket {id}`, not `Ticket #{id}` | JSX text vs comment is a real gap if we want `#` in markup |
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
 | `server.serve(app)` needs typed `App` without fn values | **Done (D132):** `serve(port, handle)`; framework imports no app types | Traits still separate. Full FCF parked |

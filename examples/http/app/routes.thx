@@ -8,7 +8,7 @@ import api from "./api"
 import customer from "./customer"
 import httpStatic from "std/http/static"
 ## `notFound` is required: generated `route` calls it on miss.
-import http, { Request, Response, notFound } from "std/http"
+import http, { Request, Response, notFound, badRequest } from "std/http"
 import { Has, Not, May } from "std/fallible"
 
 let staticRoot = "examples/http/web"
@@ -39,6 +39,14 @@ type Routes {
 
     POST "/api/orders" (request: Request) -> Response {
         api.createOrder(request)
+    }
+
+    POST "/orders" (request: Request) -> Response {
+        pages.submitOrder(request)
+    }
+
+    GET "/orders/:id" (id: Int64, request: Request) -> Response {
+        pages.orderTicket(id, customer.greeting(request))
     }
 
     POST "/" (request: Request) -> Response {

@@ -1,32 +1,27 @@
-## App layer — non-page HTTP handlers (no HTML shell).
+## App layer — JSON HTTP handlers (no HTML shell).
 
-import store, { DrinkMiss, DrinkHit, OrderRow } from "./store"
+import store, { OrderRow } from "./store"
+import orders, { CreateOrder, Ticket } from "./orders"
 import http, { Request, Response, ok } from "std/http"
-import { Pass, Fail, Trial } from "std/fallible"
+import { Pass, Fail } from "std/fallible"
 import { Json, JArr, JBool, JInt, JObj, JStr, encode, Issue, Rejected, issueRejected, errorObject } from "std/json"
 
 export fn health() -> Response {
     ok(Bytes.fromString("ok\n"), "text/plain; charset=utf-8")
 }
 
-type Qty = Int64 where >= 1
-type DrinkSlug = "espresso" | "cold-brew" | "cappuccino" | "flat-white" | "pour-over" | "mocha"
-type CreateOrder(slug: DrinkSlug, qty: Qty)
-
 ## POST /api/orders — `{"slug":"mocha","qty":2}` → priced ticket.
 export fn createOrder(request!: Request) -> Response {
     match CreateOrder.read(request.body.toString()) {
         Fail(error) => jsonIssue(error)
         Pass(order) {
-            match placeOrder(order) {
+            match orders.place(order) {
                 Fail(error) => placeOrderFail(error)
                 Pass(ticket) => jsonOk(ticketOk(ticket))
             }
         }
     }
 }
-
-type Ticket(id: Int64, slug: String, name: String, qty: Int64, unitCents: Int64, totalCents: Int64)
 
 export fn listOrders() -> Response {
     match store.listOrders() {
@@ -37,35 +32,6 @@ export fn listOrders() -> Response {
                 items.append(orderJson(row))
             }
             jsonOk(JArr(items))
-        }
-    }
-}
-
-fn placeOrder(order!: CreateOrder) -> Trial<Ticket, Issue> {
-    match store.findBySlug(order.slug) {
-        Fail(error) => Fail(issueRejected("store", error))
-        Pass(found) {
-            match found {
-                DrinkMiss => Fail(issueRejected("slug", "unknown drink"))
-                DrinkHit(drink) {
-                    let qty = order.qty
-                    let unitCents = drink.priceCents
-                    let totalCents = unitCents * qty
-                    match store.insertOrder(drink.slug, drink.name, qty, unitCents, totalCents) {
-                        Fail(error) => Fail(issueRejected("store", error))
-                        Pass(id) {
-                            Pass(Ticket(
-                                id: id,
-                                slug: drink.slug,
-                                name: drink.name,
-                                qty: qty,
-                                unitCents: unitCents,
-                                totalCents: totalCents
-                            ))
-                        }
-                    }
-                }
-            }
         }
     }
 }

@@ -19,6 +19,10 @@ export type DrinkMiss
 export type DrinkHit(drink: Drink)
 export type DrinkLookup = DrinkMiss | DrinkHit
 
+export type OrderMiss
+export type OrderHit(order: OrderRow)
+export type OrderLookup = OrderMiss | OrderHit
+
 export let path = "/tmp/crema.db"
 
 ## Int64 only: a module-level `Db` literal currently mis-emits as `Sql` in C.
@@ -136,6 +140,21 @@ export fn insertOrder(
         VALUES ({slug}, {name}, {qty}, {unitCents}, {totalCents})
     ")?
     Pass(db.lastInsertRowid())
+}
+
+export fn findOrder(id!: Int64) -> Trial<OrderLookup, String> {
+    let db = requireDb()?
+    let rows = db.query(sql"
+        SELECT id, slug, name, qty, unit_cents, total_cents
+        FROM orders
+        WHERE id = {id}
+        LIMIT 1
+    ")?
+    if rows.count == 0 {
+        Pass(OrderMiss())
+    } else {
+        Pass(OrderHit(order: orderFromRow(rows[0])?))
+    }
 }
 
 export fn listOrders() -> Trial<Array<OrderRow>, String> {

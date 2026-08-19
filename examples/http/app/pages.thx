@@ -2,11 +2,13 @@
 
 import layout, { Page } from "./layout"
 import models, { Drink, formatPrice, roastLabel } from "./models"
-import store, { DrinkMiss, DrinkHit } from "./store"
+import store, { DrinkMiss, DrinkHit, OrderMiss, OrderHit, OrderRow } from "./store"
+import orders from "./orders"
 import customer from "./customer"
-import http, { Response, notFound, htmlResponse } from "std/http"
+import http, { Request, Response, notFound, htmlResponse } from "std/http"
 import { Has, Not, May, Pass, Fail } from "std/fallible"
 import { isEmpty, trim } from "std/str"
+import { Issue, Rejected, message } from "std/json"
 
 export fn home(customerName!: String) -> Response {
     match store.drinkCount() {
@@ -155,7 +157,95 @@ fn drinkPage(drink!: Drink, customerName!: String) -> Response {
                 <p class="notes">{drink.notes}</p>
                 <p class="price">{price}</p>
             </article>
+            {orderForm(drink)}
         </Page>
+    )
+}
+
+fn orderForm(drink!: Drink) -> Node {
+    <section class="card-form">
+        <h2>Order a {drink.name}</h2>
+        <p class="muted">Works without JavaScript. The counter writes a ticket.</p>
+        <form method="post" action="/orders">
+            <input type="hidden" name="slug" value={drink.slug} />
+            <label for="qty">Quantity</label>
+            <input id="qty" name="qty" type="number" min="1" value="1" required />
+            <button type="submit">Place order</button>
+        </form>
+    </section>
+}
+
+export fn submitOrder(request!: Request) -> Response {
+    let customerName = customer.greeting(request)
+    match orders.fromForm(request.body) {
+        Fail(error) => orderFailed(customerName, error)
+        Pass(order) {
+            match orders.place(order) {
+                Fail(error) => orderFailed(customerName, error)
+                Pass(ticket) => http.seeOther("/orders/{ticket.id}")
+            }
+        }
+    }
+}
+
+export fn orderTicket(id!: Int64, customerName!: String) -> Response {
+    match store.findOrder(id) {
+        Fail(error) => storeFailed(error)
+        Pass(found) {
+            match found {
+                OrderMiss => notFound()
+                OrderHit(row) => ticketPage(row, customerName)
+            }
+        }
+    }
+}
+
+fn ticketPage(row!: OrderRow, customerName!: String) -> Response {
+    let unit = formatPrice(row.unitCents)
+    let total = formatPrice(row.totalCents)
+    htmlResponse(
+        <Page title="Ticket {row.id}" customer={customerName}>
+            <p class="back"><a href="/menu">← Back to the menu</a></p>
+            <article class="drink">
+                <h1>Ticket {row.id}</h1>
+                <p class="notes">{row.qty} × {row.name}</p>
+                <p class="muted">{unit} each</p>
+                <p class="price">{total}</p>
+            </article>
+        </Page>
+    )
+}
+
+fn orderFailed(customerName!: String, error!: Issue) -> Response {
+    let detail = match error {
+        Rejected(path, reason) {
+            if path == "store" {
+                "The counter could not write that ticket."
+            } else {
+                message(error)
+            }
+        }
+        else => message(error)
+    }
+    htmlStatus(
+        400,
+        "Bad Request",
+        <Page title="Order" customer={customerName}>
+            <p class="back"><a href="/menu">← Back to the menu</a></p>
+            <section class="card-form">
+                <h2>Could not place that order</h2>
+                <p class="muted">{detail}</p>
+            </section>
+        </Page>
+    )
+}
+
+fn htmlStatus(status!: Int64, reason!: String, root!: Node) -> Response {
+    http.response(
+        status,
+        reason,
+        "text/html; charset=utf-8",
+        Bytes.fromString("<!DOCTYPE html>\n{root.html()}")
     )
 }
 

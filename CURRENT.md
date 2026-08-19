@@ -82,8 +82,9 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **In progress / next:**
 
 1. **Crema Phase E — HTML-over-the-wire.** Initial charter **A–D2 is
-   done**. Next slice is **E1** (HTML order form on the drink page; no JS).
-   Then fragment URLs, a tiny own swap runtime, sessions/flash, SSE.
+   done**. **E1 done** (HTML `POST /orders` + ticket `GET /orders/:id`).
+   Next slice is **E2** (cacheable fragment URLs). Then a tiny own swap
+   runtime, sessions/flash, SSE.
    WebSockets stay parked. Do **not** vendor HTMX. Idea
    [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md).
    Checklist
@@ -99,7 +100,8 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 1. **Crema Phase E** — checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    (app under `examples/http/`; host/wire already in `std/`; **A–D2
-   shipped**). First open step: **E1** HTML order form. Protocol:
+   shipped**, **E1 shipped**). First open step: **E2** cacheable fragments.
+   Protocol:
    [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md).  
 2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)

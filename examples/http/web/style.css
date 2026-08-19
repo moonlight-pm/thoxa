@@ -199,7 +199,8 @@ h1 {
   color: var(--muted);
 }
 
-.card-form input[type="text"] {
+.card-form input[type="text"],
+.card-form input[type="number"] {
   font: inherit;
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--border);

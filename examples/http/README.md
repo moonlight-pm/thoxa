@@ -73,6 +73,15 @@ cargo make run examples/http
 
 Port **9091** (`routes.port`).
 
+HTML order (JS off; **E1**):
+
+```bash
+curl -sD- -X POST -d 'slug=mocha&qty=2' http://127.0.0.1:9091/orders
+# 303 Location: /orders/N
+curl -s http://127.0.0.1:9091/orders/N
+# Ticket N · 2 × Mocha
+```
+
 JSON order API (`std/json` **D141**; rows in `/tmp/crema.db`):
 
 ```bash
@@ -94,7 +103,7 @@ examples/http/
   main.thx
   app/
     routes.thx    # type-body GET/POST, handle, static fallback
-    pages.thx layout.thx api.thx models.thx customer.thx store.thx
+    pages.thx layout.thx api.thx orders.thx models.thx customer.thx store.thx
   web/
 ```
 
@@ -108,6 +117,8 @@ type Routes {
     GET "/api/health" -> Response { … }
     GET "/api/orders" -> Response { … }
     POST "/api/orders" (request: Request) -> Response { … }
+    POST "/orders" (request: Request) -> Response { … }
+    GET "/orders/:id" (id: Int64, request: Request) -> Response { … }
     POST "/" (request: Request) -> Response { … }
 }
 ```
