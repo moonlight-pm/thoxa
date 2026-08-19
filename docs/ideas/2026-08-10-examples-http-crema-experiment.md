@@ -237,7 +237,7 @@ migrate). Domain stays example-only. Do not vendor HTMX.
 |-----|------------|----------------|
 | Constructor-param fields must be Int64 / Bool / String / Bytes / Array / Map — **not** user sum types | **Done (D135):** `Drink.roast: Roast` + `DrinkCard(d: Drink)`. **D140** also allows `Float64` fields. | Shipped |
 | String interp treats `{…}` as interpolation | Path params use `:slug` not `{slug}` | Document; escape story later if needed |
-| `#` starts a line comment (including inside JSX text) | Ticket heading is `Ticket {id}`, not `Ticket #{id}` | JSX text vs comment is a real gap if we want `#` in markup |
+| `#` starts a line comment (including inside JSX text) | Literal hash is `\#` (`Ticket \#{id}`) | Shipped (JSX text unescape) |
 | Session desugar only tracked `{}` depth (mangled multi-line type fields) | **Fixed** — nesting tracks `()` / `[]` too | Shipped compiler fix |
 | Multi-file package diags painted on open buffer | **Fixed** — `Error.path` + per-URI publish | Shipped compiler/LSP fix |
 | `server.serve(app)` needs typed `App` without fn values | **Done (D132):** `serve(port, handle)`; framework imports no app types | Traits still separate. Full FCF parked |

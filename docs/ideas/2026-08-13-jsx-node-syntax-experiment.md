@@ -43,7 +43,7 @@ logging.info(n.html())
 | `{e}` | Children: `String` → escaped text; `Int64`/`Bool` → stringify then text; `Node` → identity; `Array<Node>` → splice. Attrs: `String` / `Int64` / `Bool` (stringify; `true`/`false`) |
 | Spreads | HTML `{...xs}` is `Array<Attr>` (later attrs win by append order). Component `{...p}` copies ctor fields of a product `p` (later named props win) |
 | `<` vs tag | `<name` / `<>` (no space after `<`) is JSX, including after another expr. Comparison is `a < b` (space after `<`). Glued `a<b` / `n<3` is an error. |
-| Raw text | Source slice (lexer `Junk` so `'` / `·` survive); whitespace-only gaps dropped |
+| Raw text | Source slice (lexer `Junk` so `'` / `·` survive); whitespace-only gaps dropped. Bare `#` is still a line comment. **`\#` is a literal `#`** (`Ticket \#{n}` → `Ticket #3`). |
 | Void tags | `br` `hr` `img` `input` `meta` `link` — no close in `.html()` |
 | Boolean attrs | `disabled` → `disabled="disabled"` |
 | Hover | `Node`, `Element`, `Text`, `Fragment`, `Attr` are LSP builtins |
@@ -68,7 +68,6 @@ legal constructor-param fields.
 
 ## Gaps
 
-- `#` in JSX text is a line comment (lexer), so `Ticket #{id}` never closes the tag — write `Ticket {id}`  
 - Boolean-without-value beyond `name="name"` (bare `disabled` still serializes `disabled="disabled"`)  
 - Hyphenated attrs parse; `data-*` ok  
 - `.html()` method has no dedicated hover (type `Node` does)  

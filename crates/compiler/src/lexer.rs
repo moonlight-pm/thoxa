@@ -205,6 +205,14 @@ impl<'a> Lexer<'a> {
             b'>' if self.peek(1) == Some(b'=') => self.simple(TokenKind::Ge, start, 2),
             b'>' => self.simple(TokenKind::RAngle, start, 1),
             b'"' => self.string(start),
+            // `\#` is a literal `#` (JSX text). Bare `#` remains a line comment.
+            b'\\' if self.peek(1) == Some(b'#') => {
+                self.pos += 2;
+                Ok(Token {
+                    kind: TokenKind::Junk("#".into()),
+                    span: Span::new(start, self.pos),
+                })
+            }
             b if b.is_ascii_digit() => self.number(start),
             // Standalone `_` → Ident("_") (ordinary name). Match patterns special-case it
             // as discard (D66); `_foo` is still not an identifier (alpha-only start).
@@ -649,6 +657,43 @@ mod tests {
             err.message.contains("Float32"),
             "{}",
             err.message
+        );
+    }
+
+    #[test]
+    fn escaped_hash_is_not_a_comment() {
+        let tokens = Lexer::new("<h1>Ticket \\#{n}</h1>").tokenize().unwrap();
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(&t.kind, TokenKind::Junk(s) if s == "#")),
+            "expected Junk(\"#\") for `\\#`: {tokens:?}"
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(&t.kind, TokenKind::Ident(s) if s == "n")),
+            "`\\#` must not eat `{{n}}`: {tokens:?}"
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(&t.kind, TokenKind::Ident(s) if s == "h1")),
+            "`\\#` must not eat `</h1>`: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn hash_still_starts_a_line_comment() {
+        let tokens = Lexer::new("a # hidden\nb").tokenize().unwrap();
+        let kinds: Vec<&TokenKind> = tokens
+            .iter()
+            .map(|t| &t.kind)
+            .filter(|k| !matches!(k, TokenKind::Eof))
+            .collect();
+        assert!(
+            matches!(kinds.as_slice(), [TokenKind::Ident(a), TokenKind::Ident(b)] if a == "a" && b == "b"),
+            "{kinds:?}"
         );
     }
 }

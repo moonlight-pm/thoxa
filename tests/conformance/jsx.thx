@@ -66,5 +66,12 @@ fn main() -> Int64 {
     logging.info(kindName(<p>Hi</p>))
     logging.info(kindName(Text(s: "a")))
     logging.info(kindName(Fragment(kids: [<b>1</b>])))
+
+    ## `#` is a comment. `\#` is a literal hash in JSX text.
+    let number = 3
+    let hashed = <h1>Ticket \#{number}</h1>
+    logging.info(hashed.html())
+    let cafe = <p>c\#aff</p>
+    logging.info(cafe.html())
     0
 }

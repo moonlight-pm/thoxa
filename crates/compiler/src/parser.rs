@@ -2684,15 +2684,27 @@ fn scan_jsx_text(source: &str, from: usize) -> (String, usize) {
         return (String::new(), from);
     }
     let mut i = from;
-    while i < bytes.len() && bytes[i] != b'<' && bytes[i] != b'{' {
-        i += 1;
+    let mut raw = String::new();
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'<' || b == b'{' {
+            break;
+        }
+        // `\#` → literal `#`. Bare `#` is a comment (already stripped from tokens).
+        if b == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'#' {
+            raw.push('#');
+            i += 2;
+            continue;
+        }
+        let ch = source[i..].chars().next().unwrap();
+        raw.push(ch);
+        i += ch.len_utf8();
     }
-    let raw = &source[from..i];
     // Drop whitespace-only gaps (between tags). Keep spaces next to `{e}`.
     let text = if raw.trim().is_empty() {
         String::new()
     } else {
-        raw.to_string()
+        raw
     };
     (text, i)
 }

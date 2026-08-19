@@ -207,7 +207,7 @@ fn ticketPage(row!: OrderRow, customerName!: String) -> Response {
         <Page title="Ticket {row.id}" customer={customerName}>
             <p class="back"><a href="/menu">← Back to the menu</a></p>
             <article class="drink">
-                <h1>Ticket {row.id}</h1>
+                <h1>Ticket \#{row.id}</h1>
                 <p class="notes">{row.qty} × {row.name}</p>
                 <p class="muted">{unit} each</p>
                 <p class="price">{total}</p>
