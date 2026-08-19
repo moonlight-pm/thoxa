@@ -16,7 +16,7 @@ maturity lives in [`capabilities.md`](capabilities.md).
 **D138** kebab-case modules + `main.thx` entry;
 **D137** Str parse + Http wrappers; **D136**
 `std/http/server` + `Request.query`; **D135** nested User / Node ctor fields;
-JSX `Node` is `Element | Text | Fragment` + `{...}` spreads on master;
+JSX `Node` is `Element | Text | Fragment` + `{...}` spreads + `{for}` lists on master;
 D133/D134 Map; D132 fn pointers; route-clause + `-->` nowait on master, not
 freeze; program `run`/`build` reuse stamped binaries)
 

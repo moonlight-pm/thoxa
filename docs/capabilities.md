@@ -25,7 +25,7 @@ Crema **E2** fragment GETs;
 **D138** kebab-case module files + `main.thx` entry **shipped**;
 **D137** Str parse + Http wrappers;
 **D136** `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
-JSX `Node` match + `Attr` + `{...}` spreads **on master**; D133/D134 Map;
+JSX `Node` match + `Attr` + `{...}` spreads + `{for}` lists **on master**; D133/D134 Map;
 D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 `/tmp/crema.db`) + `Roast` / `DrinkCard`; Phase **E** through **E5** (E6 parked);
 type-body

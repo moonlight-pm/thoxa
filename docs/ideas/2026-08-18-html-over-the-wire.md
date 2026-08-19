@@ -57,7 +57,7 @@ grows only when a helper is clearly not cafe-specific (D97).
 |-------|------|
 | SSR pages | JSX `Node` + `htmlResponse` + `type Page` |
 | Routes | Type-body `GET`/`POST` on `Routes` |
-| Forms / cookies | Name cookie, PRG sign-in, `Cookie` / `withCookie`; **E1** HTML `POST /orders` + ticket page |
+| Forms / cookies | **E4** session cookie `crema`; PRG sign-in; **E1** HTML `POST /orders` + ticket page |
 | Fragments | **E2** `GET /menu/items?q=` + `GET /orders/:id/ticket`; **D145** `htmlFragment` + content-hash ETag / 304 |
 | Swap runtime | **E3** `web/crema.js` — `thx-get` / `thx-post` / `thx-target` / `thx-sse` (example-only) |
 | Sessions | **E4** opaque `crema` cookie; flash; CSRF on form POSTs (in-memory) |

@@ -4,8 +4,10 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-19 (Crema Phase **E** complete through **E5**; **E6**
-WebSockets **parked**; **D146** SSE `peerFd` / `streamed()`;
+**As of:** 2026-08-19 (Crema pages under `app/pages/` + `ui/page.thx`;
+JSX `{for}` lists + bare `disabled`; **`having`/`else` parked indefinitely**;
+Crema Phase **E** complete through **E5**; **E6** WebSockets **parked**;
+**D146** SSE `peerFd` / `streamed()`;
 **E4** sessions + flash + CSRF; **E3** `crema.js`; **E2** + **D145**;
 Crema **A–D2 complete**; HTML-over-the-wire — not vendored HTMX;
 **built-in validation** on master, not product — types as inhabitation;
@@ -32,7 +34,9 @@ not handbook)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** Crema **E4–E5** (sessions/flash/CSRF + SSE board);
+**Shipped recently:** Crema page split (`app/pages/` + `ui/`); JSX `{for}` +
+bare boolean attrs; **`having`/`else` parked**;
+Crema **E4–E5** (sessions/flash/CSRF + SSE board);
 **D146** `Request.peerFd` / `streamed()` / `beginEventStream`;
 Crema **E3** `web/crema.js` (`thx-get` / `thx-post`);
 **D145** `htmlFragment` / `etagOf` / `cached`;
