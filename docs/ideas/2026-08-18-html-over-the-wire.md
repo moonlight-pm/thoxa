@@ -59,12 +59,13 @@ grows only when a helper is clearly not cafe-specific (D97).
 | Routes | Type-body `GET`/`POST` on `Routes` |
 | Forms / cookies | Name cookie, PRG sign-in, `Cookie` / `withCookie`; **E1** HTML `POST /orders` + ticket page |
 | Fragments | **E2** `GET /menu/items?q=` + `GET /orders/:id/ticket`; **D145** `htmlFragment` + content-hash ETag / 304 |
+| Swap runtime | **E3** `web/crema.js` — `thx-get` / `thx-post` / `thx-target` (example-only) |
 | Persist | `/tmp/crema.db` |
 | JSON demo | `POST /api/orders` + `CreateOrder.read` |
 | HTTP host | One `Response` blob, `Content-Length`, keep-alive, `--> serveOne` |
 
-Missing for this idea: a swap runtime, sessions beyond a name cookie, CSRF,
-flash, **streaming responses** (SSE), WebSocket upgrade.
+Missing for this idea: sessions beyond a name cookie, CSRF, flash,
+**streaming responses** (SSE), WebSocket upgrade.
 
 ## 90% fundamentals (target, not a ship list)
 
@@ -76,7 +77,7 @@ flash, **streaming responses** (SSE), WebSocket upgrade.
 | Layouts + components | `type Page` / `DrinkCard` | **have** (JSX experiment) |
 | HTML forms + PRG | Mutations without an API | **have** sign-in; order form is next |
 | Fragment GET/POST | Search, order ticket, lists | **have** (E2 + **D145**) |
-| Tiny swap runtime | Click/submit → fetch HTML → swap | `examples/http/web/` JS |
+| Tiny swap runtime | Click/submit → fetch HTML → swap | **have** (`web/crema.js`; example-only) |
 | History | `pushState` + popstate re-fetch | same runtime |
 | Sessions | “your tickets”, not just a name | example cookie / sqlite; std later |
 | CSRF | Cookie POSTs | example token; std later |

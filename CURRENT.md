@@ -4,8 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-19 (Crema **E2** fragment GETs + **D145** `htmlFragment` /
-`cached`; Phase **E** next is the tiny swap runtime;
+**As of:** 2026-08-19 (Crema **E3** `crema.js` swap runtime; **E2** fragment
+GETs + **D145** `htmlFragment` / `cached`; Phase **E** next is sessions/flash;
 Crema **A–D2 complete**; HTML-over-the-wire — not vendored HTMX;
 **built-in validation** on master, not product — types as inhabitation;
 syntax open;
@@ -31,7 +31,8 @@ not handbook)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **D145** `htmlFragment` / `etagOf` / `cached`;
+**Shipped recently:** Crema **E3** `web/crema.js` (`thx-get` / `thx-post`);
+**D145** `htmlFragment` / `etagOf` / `cached`;
 Crema **E2** `GET /menu/items` + `GET /orders/:id/ticket`;
 multiline `"…"` / `sql"…"` gated (`strings_multiline`);
 Zed SQL injection on `sql"…"`;
@@ -85,8 +86,8 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **In progress / next:**
 
 1. **Crema Phase E — HTML-over-the-wire.** Initial charter **A–D2 is
-   done**. **E1–E2 done** (HTML orders; cacheable fragments + ETag).
-   Next slice is **E3** (tiny own swap runtime). Then sessions/flash, SSE.
+   done**. **E1–E3 done** (HTML orders; fragments + ETag; `crema.js`).
+   Next slice is **E4** (sessions + flash). Then SSE.
    WebSockets stay parked. Do **not** vendor HTMX. Idea
    [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md).
    Checklist
@@ -102,7 +103,7 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 1. **Crema Phase E** — checklist in
    [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    (app under `examples/http/`; host/wire already in `std/`; **A–D2
-   shipped**, **E1–E2 shipped**). First open step: **E3** tiny swap runtime.
+   shipped**, **E1–E3 shipped**). First open step: **E4** sessions + flash.
    Protocol:
    [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md).  
 2. **Editor depth** — only when DX forces it. Freezes:

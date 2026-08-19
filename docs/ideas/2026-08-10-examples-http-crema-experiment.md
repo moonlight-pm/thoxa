@@ -175,7 +175,7 @@ Protocol and non-goals:
 | E0 Charter + CURRENT pointer | **done** | this file + html-over-the-wire idea |
 | E1 HTML order on the drink page | **done** | `POST /orders` form on `/menu/:slug`; PRG `303` → `GET /orders/:id`; `Qty` / `DrinkSlug` via `fromForm`; JSON `/api/orders` stays |
 | E2 Cacheable fragment routes | **done** | `GET /menu/items?q=` + `GET /orders/:id/ticket`; `htmlFragment` + **D145** `cached`; menu `private, no-cache`; ticket `private, max-age=300` |
-| E3 Tiny swap runtime in `web/` | **pending** | Example JS; `thx-get` / `thx-post` / `thx-target`; progressive enhancement |
+| E3 Tiny swap runtime in `web/` | **done** | `web/crema.js`; `thx-get` / `thx-post` / `thx-target` / `thx-swap` / `thx-push`; search + order; JS off still full page |
 | E4 Sessions + flash (example) | **pending** | Beyond the name cookie; CSRF if POSTs stay cookie-authed |
 | E5 Live board via SSE | **pending** | Forces streaming / chunked HTTP; not WebSockets |
 | E6 WebSockets | **parked** | Only if a sample needs client→server chatter SSE cannot do |
@@ -222,7 +222,7 @@ curl -s http://127.0.0.1:9091/orders/N/ticket   # <article> only
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.
 
 **As of last update:** **Phase A–D2 complete** (initial charter). **Phase E**
-is the active expansion (E0–E2 done; E3 next). Host/wire promoted to
+is the active expansion (E0–E3 done; E4 next). Host/wire promoted to
 **`std/http` + `std/http/server` (**D136**/**D139**)** — example `framework/` removed.
 **D137:** `queryParam` / `formField` / `cookie` / `htmlResponse` + Str
 `parseUInt` / `splitOnce`. **D142:** `Cookie` / `withCookie` / `clearCookie`

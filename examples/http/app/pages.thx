@@ -92,37 +92,37 @@ export fn menu(customerName!: String, query!: String) -> Response {
 }
 
 fn menuPage(customerName!: String, needle!: String, drinks!: Array<Drink>, total!: Int64) -> Response {
-    let clear = if isEmpty(needle) {
-        <></>
-    } else {
-        <p class="muted">
-            <a href="/menu">Clear search</a>
-            {" · showing {drinks.count} of {total}"}
-        </p>
-    }
     htmlResponse(
         <Page title="Menu" customer={customerName}>
             <h1>The menu</h1>
-            <form class="search" method="get" action="/menu">
+            <form class="search" method="get" action="/menu" thx-get="/menu/items" thx-target="#menu-results" thx-swap="inner" thx-push>
                 <label for="q">Search the menu</label>
                 <div class="search-row">
                     <input id="q" name="q" type="search" value={needle} placeholder="espresso, chocolate, light…" />
                     <button type="submit">Search</button>
                 </div>
             </form>
-            {clear}
-            {menuResults(drinks)}
+            <div id="menu-results">{menuResults(needle, drinks, total)}</div>
         </Page>
     )
 }
 
-fn menuResults(drinks!: Array<Drink>) -> Node {
+fn menuResults(needle!: String, drinks!: Array<Drink>, total!: Int64) -> Node {
     let emptyNote = if drinks.count == 0 {
         <p class="muted">Nothing matches. The barista suggests an espresso.</p>
     } else {
         <></>
     }
+    let clear = if isEmpty(needle) {
+        <></>
+    } else {
+        <p class="muted">
+            <a href="/menu" thx-get="/menu/items" thx-target="#menu-results" thx-push>Clear search</a>
+            {" · showing {drinks.count} of {total}"}
+        </p>
+    }
     <>
+        {clear}
         {emptyNote}
         <ul id="menu-items" class="menu">{drinkCards(drinks)}</ul>
     </>
@@ -133,11 +133,16 @@ export fn menuItems(request!: Request) -> Response {
     match store.searchDrinks(needle) {
         Fail(error) => storeFailed(error)
         Pass(drinks) {
-            http.cached(
-                request,
-                http.htmlFragment(menuResults(drinks)),
-                "private, no-cache"
-            )
+            match store.drinkCount() {
+                Fail(error) => storeFailed(error)
+                Pass(total) {
+                    http.cached(
+                        request,
+                        http.htmlFragment(menuResults(needle, drinks, total)),
+                        "private, no-cache"
+                    )
+                }
+            }
         }
     }
 }
@@ -184,6 +189,7 @@ fn drinkPage(drink!: Drink, customerName!: String) -> Response {
                 <p class="price">{price}</p>
             </article>
             {orderForm(drink)}
+            <div id="ticket"></div>
         </Page>
     )
 }
@@ -192,7 +198,7 @@ fn orderForm(drink!: Drink) -> Node {
     <section class="card-form">
         <h2>Order a {drink.name}</h2>
         <p class="muted">Works without JavaScript. The counter writes a ticket.</p>
-        <form method="post" action="/orders">
+        <form method="post" action="/orders" thx-post="/orders" thx-target="#ticket" thx-swap="inner">
             <input type="hidden" name="slug" value={drink.slug} />
             <label for="qty">Quantity</label>
             <input id="qty" name="qty" type="number" min="1" value="1" required />

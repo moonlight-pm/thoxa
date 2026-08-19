@@ -74,6 +74,9 @@ fn contentTypeFor(path!: String) -> String {
     if ext == ".css" {
         return "text/css"
     }
+    if ext == ".js" {
+        return "text/javascript"
+    }
     if ext == ".txt" {
         return "text/plain"
     }

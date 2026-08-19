@@ -154,6 +154,7 @@ HEAD is answered by GET handlers; `finalize` still sees the real method.
 | `Router(root: String)` | `handle(req) -> Response` — always a Response (never Trial) |
 | Methods | **GET** and **HEAD** only; else **405** + `Allow` |
 | Paths | Absolute (`/…`); `.` / `..` → 404; directories serve `index.html` |
+| Types | `.html` `text/html`; `.css` `text/css`; `.js` `text/javascript`; `.txt` `text/plain`; else octet-stream |
 | Errors | Permission denied → **403** (logged); missing → **404**; other Io → log + 404 |
 
 Runnable demo: `cargo make run examples/http` (Crema-lite **experiment** —

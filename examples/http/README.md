@@ -82,6 +82,10 @@ curl -s http://127.0.0.1:9091/orders/N
 # Ticket N · 2 × Mocha
 ```
 
+Swap runtime (**E3**, example-only `web/crema.js`): menu search uses
+`thx-get="/menu/items"`; drink order uses `thx-post="/orders"` then loads
+`/orders/N/ticket`. Forms still work with JavaScript off.
+
 Cacheable fragments (**E2**, no layout; content-hash `ETag`):
 
 ```bash
