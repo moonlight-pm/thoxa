@@ -73,12 +73,13 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 - Tag literals + builtin **`Node`** (idea
   [`docs/ideas/2026-08-13-jsx-node-syntax-experiment.md`](docs/ideas/2026-08-13-jsx-node-syntax-experiment.md);
   capability `jsx-node` **partial**). No import; `.html()`; `{e}` children
-  are String / Int64 / Float64 / Bool / Node / Array<Node>; `{e}` attrs stringify
-  Int64 / Float64 / Bool the same way; `<tag` (no space) is JSX
+  are String / Int64 / Float64 / Bool / Node / Array<Node>; `{for x in xs { child }}`
+  collects Array<Node>; `{e}` attrs stringify Int64 / Float64 / Bool the same
+  way; bare `disabled` renders as `disabled`; `<tag` (no space) is JSX
   including after another expr, `a < b` (spaces) is comparison; `Node` is
   `Element | Text | Fragment` (same tree); `{...attrs}` / `{...props}`
   spreads; gate `jsx`. No D-id / handbook. Crema pages dogfood it
-  (`app/layout.thx` `Page` + `app/pages.thx`).
+  (`app/ui/page.thx` + `app/pages/`).
 - Built-in validation (idea
   [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md);
   capability `type-read` **partial**). `Type.read` / `where` / `T.from` /

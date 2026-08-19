@@ -1,7 +1,7 @@
 ## GET /menu and GET /menu/items (fragment).
 
 import { Page } from "~/app/ui/page"
-import { drinkCards } from "~/app/ui/drink-card"
+import { DrinkCard } from "~/app/ui/drink-card"
 import appHttp from "~/app/http"
 import store, { MenuView } from "~/app/store"
 import http, { Request, Response } from "std/http"
@@ -64,6 +64,6 @@ fn results(view!: MenuView) -> Node {
     <>
         {clear}
         {emptyNote}
-        <ul id="menu-items" class="menu">{drinkCards(view.drinks)}</ul>
+        <ul id="menu-items" class="menu">{for drink in view.drinks { <DrinkCard drink={drink} /> }}</ul>
     </>
 }

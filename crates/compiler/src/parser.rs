@@ -2077,11 +2077,11 @@ impl Parser {
         }
         let (name, name_span) = self.parse_jsx_attr_name()?;
         if !self.at(TokenKind::Eq) {
-            // Boolean attribute: `disabled` → value `"disabled"`.
+            // Boolean attribute: `disabled` → empty value (render as `disabled`).
             return Ok(JsxAttr::Pair {
-                name: name.clone(),
+                name,
                 name_span,
-                value: jsx_string_lit(name, name_span),
+                value: jsx_string_lit(String::new(), name_span),
             });
         }
         self.expect_kind(&TokenKind::Eq)?;
@@ -2179,6 +2179,12 @@ impl Parser {
             }
             if self.at(TokenKind::LBrace) {
                 self.bump();
+                if self.at(TokenKind::For) {
+                    let for_expr = self.parse_for()?;
+                    self.expect_kind(&TokenKind::RBrace)?;
+                    kids.push(jsx_child_wrap(desugar_jsx_for(for_expr)?));
+                    continue;
+                }
                 let e = self.parse_expr()?;
                 self.expect_kind(&TokenKind::RBrace)?;
                 kids.push(jsx_child_wrap(e));
@@ -2842,6 +2848,71 @@ fn jsx_type_name(name: &str, span: Span) -> TypeExpr {
         fn_type: None,
         where_clause: None,
     }
+}
+
+fn jsx_array_node_ty(span: Span) -> TypeExpr {
+    TypeExpr {
+        name: "Array".into(),
+        args: vec![TypeArg::Type(jsx_type_name("Node", span))],
+        span,
+        lit: None,
+        mark: None,
+        union_members: None,
+        fn_type: None,
+        where_clause: None,
+    }
+}
+
+/// `{for x in xs { child }}` → collect `Array<Node>` (does not change statement `for`).
+fn desugar_jsx_for(for_expr: Expr) -> Result<Expr> {
+    let span = for_expr.span;
+    let collect = format!("__jsx_for_{}", span.start);
+    let ExprKind::For { body, .. } = &for_expr.kind else {
+        return Err(Error::at("internal: expected `for` in JSX embed", span));
+    };
+    let Some(tail) = &body.tail else {
+        return Err(Error::at(
+            "JSX `{for}` body must yield a child (last expression)",
+            span,
+        ));
+    };
+    let append = Expr {
+        kind: ExprKind::MethodCall {
+            receiver: Box::new(jsx_name_expr(&collect, span)),
+            method: "append".into(),
+            method_span: span,
+            args: vec![Arg::Pos(jsx_child_wrap(*tail.clone()))],
+        },
+        span,
+    };
+    let mut new_body = body.clone();
+    new_body.items.push(BlockItem::Expr(append));
+    new_body.tail = None;
+    let mut new_for = for_expr;
+    match &mut new_for.kind {
+        ExprKind::For { body, .. } => *body = new_body,
+        _ => unreachable!(),
+    }
+    Ok(Expr {
+        kind: ExprKind::Block(Block {
+            items: vec![
+                BlockItem::Let {
+                    name: collect.clone(),
+                    name_span: span,
+                    mutable: true,
+                    ty: Some(jsx_array_node_ty(span)),
+                    init: Expr {
+                        kind: ExprKind::ArrayLit(Vec::new()),
+                        span,
+                    },
+                },
+                BlockItem::Expr(new_for),
+            ],
+            tail: Some(Box::new(jsx_name_expr(&collect, span))),
+            span,
+        }),
+        span,
+    })
 }
 
 fn jsx_array_attr_ty(span: Span) -> TypeExpr {
@@ -3691,6 +3762,28 @@ mod tests {
         "#,
         );
         assert!(err.contains("does not match"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn parse_jsx_for_collect() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let n = <ul>{for x in xs { <li>{x}</li> }}</ul>
+                0
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        let BlockItem::Let { init, .. } = &f.body.items[0] else {
+            panic!("expected let");
+        };
+        match &init.kind {
+            ExprKind::Call { callee, .. } => assert_eq!(callee, "__jsx_el"),
+            other => panic!("expected __jsx_el, got {other:?}"),
+        }
     }
 
     #[test]

@@ -19,16 +19,12 @@ fn boardOf(rows!: Array<OrderRow>) -> Node {
     if rows.count == 0 {
         <p class="muted" id="board" aria-live="polite">No tickets yet. Pour something.</p>
     } else {
-        mut items: Array<Node> = []
-        for row in rows {
-            items.append(
-                <li>
-                    <span class="name">{row.qty} × {row.name}</span>
-                    <span class="meta">ticket {row.id} · {formatPrice(row.totalCents)}</span>
-                </li>
-            )
-        }
-        <ul id="board" class="menu" aria-live="polite">{items}</ul>
+        <ul id="board" class="menu" aria-live="polite">{for row in rows {
+            <li>
+                <span class="name">{row.qty} × {row.name}</span>
+                <span class="meta">ticket {row.id} · {formatPrice(row.totalCents)}</span>
+            </li>
+        }}</ul>
     }
 }
 

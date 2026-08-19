@@ -40,12 +40,12 @@ logging.info(n.html())
 | Component | PascalCase `<Card title="Hi">…</Card>` → `Card(title: "Hi").view(children: […])` (eager) |
 | Fragment | `<>…</>` → fragment `Node` (empty `<>` included) |
 | Ctors | Ambient `Element(tag, attrs, kids)`, `Text(s)`, `Fragment(kids)`, `Attr(name, value)` — no import |
-| `{e}` | Children: `String` → escaped text; `Int64`/`Bool` → stringify then text; `Node` → identity; `Array<Node>` → splice. Attrs: `String` / `Int64` / `Bool` (stringify; `true`/`false`) |
+| `{e}` | Children: `String` → escaped text; `Int64`/`Bool` → stringify then text; `Node` → identity; `Array<Node>` → splice. **`{for x in xs { child }}`** collects `Array<Node>` (statement `for` is unchanged). Attrs: `String` / `Int64` / `Bool` (stringify; `true`/`false`) |
 | Spreads | HTML `{...xs}` is `Array<Attr>` (later attrs win by append order). Component `{...p}` copies ctor fields of a product `p` (later named props win) |
 | `<` vs tag | `<name` / `<>` (no space after `<`) is JSX, including after another expr. Comparison is `a < b` (space after `<`). Glued `a<b` / `n<3` is an error. |
 | Raw text | Source slice (lexer `Junk` so `'` / `·` survive); whitespace-only gaps dropped. Bare `#` is still a line comment. **`\#` is a literal `#`** (`Ticket \#{n}` → `Ticket #3`). |
 | Void tags | `br` `hr` `img` `input` `meta` `link` — no close in `.html()` |
-| Boolean attrs | `disabled` → `disabled="disabled"` |
+| Boolean attrs | Bare `disabled` → `disabled` (empty value; no `="…"`) |
 | Hover | `Node`, `Element`, `Text`, `Fragment`, `Attr` are LSP builtins |
 
 No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
@@ -69,7 +69,6 @@ legal constructor-param fields.
 
 ## Gaps
 
-- Boolean-without-value beyond `name="name"` (bare `disabled` still serializes `disabled="disabled"`)  
 - Hyphenated attrs parse; `data-*` ok  
 - `.html()` method has no dedicated hover (type `Node` does)  
 - Tree-sitter island colors tags; fragments/`<>` highlighting is best-effort  

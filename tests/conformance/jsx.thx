@@ -73,5 +73,9 @@ fn main() -> Int64 {
     logging.info(hashed.html())
     let cafe = <p>c\#aff</p>
     logging.info(cafe.html())
+
+    let names = ["Espresso", "Mocha"]
+    let listed = <ul>{for name in names { <li>{name}</li> }}</ul>
+    logging.info(listed.html())
     0
 }

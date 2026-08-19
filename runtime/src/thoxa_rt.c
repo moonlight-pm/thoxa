@@ -2697,9 +2697,12 @@ static void html_render_into(const ThoxaHtml *n, HtmlBuf *b) {
         if (a.name) {
             html_buf_app(b, a.name->data, a.name->len);
         }
-        html_buf_cstr(b, "=\"");
-        html_buf_esc_attr(b, a.value);
-        html_buf_cstr(b, "\"");
+        /* Empty value = boolean attribute (`disabled`, not `disabled="disabled"`). */
+        if (a.value && a.value->len > 0) {
+            html_buf_cstr(b, "=\"");
+            html_buf_esc_attr(b, a.value);
+            html_buf_cstr(b, "\"");
+        }
     }
     html_buf_cstr(b, ">");
     if (!html_is_void(n->tag)) {

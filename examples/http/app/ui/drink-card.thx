@@ -14,10 +14,4 @@ export type DrinkCard(drink: Drink) {
     }
 }
 
-export fn drinkCards(drinks!: Array<Drink>) -> Array<Node> {
-    mut items: Array<Node> = []
-    for drink in drinks {
-        items.append(<DrinkCard drink={drink} />)
-    }
-    items
-}
+
