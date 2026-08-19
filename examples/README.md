@@ -12,7 +12,7 @@ cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt   # needs a TTY
 
 | Path | What |
 |------|------|
-| [`http/`](http/) | **Crema-lite experiment** — `std/http/server.serve(routes.port, routes.handle)` (**D132**/**D136**/**D139**); query/form/cookies are `Map` (**D134**); app under `app/`; port **9091**; domain is not product std |
+| [`http/`](http/) | **Crema-lite experiment** — Phase **E** through **E5** (fragments, `crema.js`, sessions, SSE); `std/http/server.serve` (**D132**/**D136**/**D139**/**D146**); port **9091**; domain is not product std |
 | [`kilo/`](kilo/) | Terminal text editor — **Ctrl-Q** quit (3× if dirty); real TTY required |
 
 Oracle reference copies (history only):

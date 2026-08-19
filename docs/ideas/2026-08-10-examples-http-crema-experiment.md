@@ -65,7 +65,7 @@ examples/http/
   main.thx                 # std/http/server.serve(routes.port, routes.handle)
   app/
     routes.thx             # type Routes { GET/POST … }, handle, port
-    pages.thx layout.thx api.thx orders.thx models.thx customer.thx store.thx
+    pages.thx layout.thx api.thx orders.thx models.thx session.thx live.thx store.thx
   web/
   README.md
 ```
@@ -219,7 +219,7 @@ curl -sN http://127.0.0.1:9091/events
 1. Read this file’s **Phases** table (truth for experiment progress).  
 2. Read `examples/http/README.md` (as-built layout).  
 3. **Do not** add coffee-shop domain to `std/`. Host/wire already shipped
-   (**D136** / **D137** / **D142**).
+   (**D136** / **D137** / **D142** / **D145** / **D146**).
 4. If blocked by language: document under Phase step as `blocked`, fix language
    as its own CURRENT slice, return here.  
 5. After any step: flip checklist rows + update `CURRENT.md` Now line.

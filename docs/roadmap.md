@@ -129,8 +129,8 @@ Freezes:
 - ~~Diverging `loop` (Never / no dummy tail)~~ (**D128**)
 
 **Sample dogfood (not a phase flip):** `examples/http` Crema-lite **experiment**
-— **initial charter A–D2 complete**; Phase **E** is HTML-over-the-wire cafe
-dogfood (not vendored HTMX; idea
+— **initial charter A–D2 complete**; Phase **E** through **E5** (HTML-over-the-wire
+cafe, not vendored HTMX; **E6** WebSockets parked; idea
 [`ideas/2026-08-18-html-over-the-wire.md`](ideas/2026-08-18-html-over-the-wire.md)).
 Host is `std/http/server.serve(routes.port, routes.handle)`
 (**D132**/**D136**/**D139**); type-body `GET`/`POST`; JSX `Node` pages;

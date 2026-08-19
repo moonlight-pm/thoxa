@@ -5,7 +5,9 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-18 (**built-in validation** on master, not product; `Type.read`;
+**As of:** 2026-08-19 (**D146** SSE `peerFd` / `streamed()`;
+**D145** `htmlFragment` / `cached`;
+**built-in validation** on master, not product; `Type.read`;
 **D144** `sql"…"`;
 **D143** `std/sqlite`;
 **D142** `Cookie` / `withCookie`;

@@ -105,7 +105,7 @@ tells the page something changed.”
 ## Runtime sketch (example-only until promoted)
 
 A few kilobytes. No build step. Served as a static file. Layout includes
-`<script src="/crema.js" defer></script>` (name TBD).
+`<script src="/crema.js" defer></script>`.
 
 Declarative attrs (hyphenated; JSX already allows `data-*` / custom names):
 
@@ -115,7 +115,7 @@ Declarative attrs (hyphenated; JSX already allows `data-*` / custom names):
 …
 </form>
 
-<div thx-sse="/orders/live" thx-target="#board" thx-swap="inner"></div>
+<div thx-sse="/events" thx-target="#board" thx-swap="outer"></div>
 ```
 
 v0 behavior:

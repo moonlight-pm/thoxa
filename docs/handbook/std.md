@@ -29,8 +29,8 @@ import sqlite, { lit, ident } from "std/sqlite"
 | `std/logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
 | `std/io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
 | `std/net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
-| `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**/**D142**/**D145**): parse/write, query/form/cookie helpers, `htmlResponse` / `htmlFragment`, `cached` / ETag, `Cookie` / `withCookie` |
-| `std/http/server` | HTTP/1.1 host loop (**D136**/**D139**): `serve` / `serveOne` / `readBody` |
+| `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**/**D142**/**D145**/**D146**): parse/write, query/form/cookie helpers, `htmlResponse` / `htmlFragment`, `cached` / ETag, `Cookie` / `withCookie`, `streamed()` / `peerFd` |
+| `std/http/server` | HTTP/1.1 host loop (**D136**/**D139**/**D146**): `serve` / `serveOne` / `readBody`; SSE `beginEventStream` / `sendEvent` |
 | `std/http/static` | Static-file `Router` (**D126**/**D139**); depends on io + http |
 | `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `std/str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`splitOnce`/`join`/`lines`, `parseUInt`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
