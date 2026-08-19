@@ -1,6 +1,7 @@
 # Idea: postfix `having` / `else` for `May` (and maybe `Trial`)
 
-**Status:** sleeping — do not implement yet.  
+**Status:** **parked indefinitely** — 2026-08-19. Do not implement. `match` on
+`Has` / `Not` is enough; postfix `having` / `else` does not earn a keyword.  
 **Sparked by:** nested `match` on `Bytes.find` → `May<Int64>` in `parseRequest`
 (was `tests/conformance/httplib/Http.thx`; product surface is now **`std/Http`**).  
 **Related:** D85 (`May` / `Has` / `Not` / `?`), D63 (early `return`), D69 (`parseRequest`).

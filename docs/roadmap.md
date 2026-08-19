@@ -160,5 +160,6 @@ shipped and exercised; continue matrix gaps when samples force them.
 
 ## Parked ideas (not phases)
 
-See [`ideas/`](ideas/) — having/else May sugar, immutable values / structural
-sharing, webapp SSR components. Promote to a freeze + D-id before scheduling.
+See [`ideas/`](ideas/) — immutable values / structural sharing, webapp SSR
+components. **`having` / `else` May sugar is parked indefinitely.** Promote
+other sketches to a freeze + D-id before scheduling.

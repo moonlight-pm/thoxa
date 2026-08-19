@@ -114,6 +114,7 @@ Crema **domain** (pages, models, cookies policy) stays in `examples/http/`.
 
 **Explicit holds:**
 
+- **`having` / `else` May sugar** (parked indefinitely — `match` is enough)
 - **Crema domain in `std/`** (pages/models/layout — example-only)
 - **All session / shell residual** (parked by user direction)
 - Inventing shell dialect (`if`/`for`/full `$` forest)
