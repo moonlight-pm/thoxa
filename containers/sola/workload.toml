@@ -1,0 +1,25 @@
+# sola.computer teaser.
+# Apply: wicketctl workload apply aulos --file containers/sola/workload.toml --confirm
+#
+# Stable ids assigned on first apply (L1/L2 paths use these, not the name).
+
+schema = "wicket.workload/v0"
+
+[workload]
+id = "wl-f2835fc5634e"
+name = "sola"
+
+[[containers]]
+name = "web"
+image = "registry.wicket.cloud/sola-landing:latest"
+ports = [{ name = "http" }]
+
+[[routes]]
+host = "sola.computer"
+container = "web"
+port = "http"
+
+[[databases]]
+id = "db-2aedc3c87a1b"
+name = "news"
+container = "web"

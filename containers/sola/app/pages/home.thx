@@ -1,0 +1,190 @@
+## GET / and POST /signup — Paper Teaser · Desktop / Mobile.
+
+import { Page } from "~/app/ui/page"
+import store, { Added, Duplicate, BadEmail } from "~/app/store"
+import http, { Request, Response } from "std/http"
+import { Has, Not, Pass, Fail } from "std/fallible"
+import { warn } from "std/logging"
+
+export fn page(request!: Request) -> Response {
+    http.htmlResponse(
+        <Page title="Sola" request={request}>
+            {hero(request)}
+            {highlights()}
+            {roster()}
+            {footer()}
+        </Page>
+    )
+}
+
+export fn missing(request!: Request) -> Response {
+    http.htmlResponseStatus(
+        404,
+        "Not Found",
+        <Page title="Not found · Sola" request={request}>
+            <section class="panel">
+                <h1>No such page</h1>
+                <p class="lede">That path is not on this site.</p>
+                <p><a class="btn" href="/">Back to Sola</a></p>
+            </section>
+        </Page>
+    )
+}
+
+export fn signup(request!: Request) -> Response {
+    match http.formField(request.body, "email") {
+        Not {
+            http.seeOther("/?error=missing#notify")
+        }
+        Has(raw) {
+            match store.addEmail(raw) {
+                Fail(error) {
+                    warn("signup store: {error}")
+                    http.htmlResponseStatus(
+                        500,
+                        "Internal Server Error",
+                        <Page title="Could not save · Sola" request={request}>
+                            <section class="panel">
+                                <h1>Could not save that</h1>
+                                <p class="lede">The store did not take the address. Try again in a moment.</p>
+                                <p><a class="btn" href="/#notify">Back to the form</a></p>
+                            </section>
+                        </Page>
+                    )
+                }
+                Pass(outcome) {
+                    match outcome {
+                        Added {
+                            http.seeOther("/?ok=1#notify")
+                        }
+                        Duplicate {
+                            http.seeOther("/?ok=dup#notify")
+                        }
+                        BadEmail {
+                            http.seeOther("/?error=invalid#notify")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn hero(request!: Request) -> Node {
+    <section class="hero" id="notify">
+        <p class="eyebrow">
+            <span class="dot" aria-hidden="true"></span>
+            Wayland desktop · pure Rust · NixOS
+        </p>
+        <div class="headline">
+            <h1>Sola Desktop</h1>
+            <p class="lede">For Linux workstations that also have to be gaming machines.</p>
+        </div>
+        <p class="pill">ISO in progress · not yet released</p>
+        {flash(request)}
+        <form class="signup" method="post" action="/signup">
+            <label class="sr-only" for="email">Email</label>
+            <input
+                id="email"
+                name="email"
+                type="email"
+                autocomplete="email"
+                placeholder="you@example.com"
+                required
+            />
+            <button type="submit" class="btn">Notify me</button>
+        </form>
+        <p class="micro">One email when the ISO is ready. Nothing else.</p>
+    </section>
+}
+
+type Spec(label: String, body: String)
+
+fn specItems() -> Array<Spec> {
+    [
+        Spec(
+            label: "Steam",
+            body: "First-class support, through XWayland and River"
+        ),
+        Spec(
+            label: "Theming",
+            body: "System-wide, applied while apps are running"
+        ),
+        Spec(
+            label: "Architecture",
+            body: "Modular — a crashed component restarts, the session survives"
+        ),
+        Spec(
+            label: "Control",
+            body: "Agent-drivable end to end through solactl"
+        ),
+    ]
+}
+
+fn specRow(item!: Spec) -> Node {
+    <article class="spec">
+        <p class="spec-label">{item.label}</p>
+        <p class="spec-body">{item.body}</p>
+    </article>
+}
+
+fn highlights() -> Node {
+    <section class="highlights" aria-label="Highlights">
+        <div class="spec-list">
+            {for item in specItems() { specRow(item) }}
+        </div>
+    </section>
+}
+
+fn roster() -> Node {
+    <section class="roster">
+        <p class="eyebrow">In the session</p>
+        <p class="apps">Shell · Terminal · Browser · Agent · Mail · Steam</p>
+        <p class="note">The shell is stable in daily use. First-party apps are early and incomplete.</p>
+    </section>
+}
+
+fn footer() -> Node {
+    <footer>
+        <div class="footer-brand">
+            <span class="mark sm muted" aria-hidden="true"></span>
+            <span class="wordmark">Sola</span>
+            <span class="domain">sola.computer</span>
+        </div>
+        <p class="footer-note">Early build · not a finished OS release</p>
+    </footer>
+}
+
+fn flash(request!: Request) -> Node {
+    match http.queryParam(request, "ok") {
+        Has(code) {
+            if code == "1" {
+                <p class="flash ok" role="status">You're on the list. We'll write when the ISO is ready.</p>
+            } else {
+                if code == "dup" {
+                    <p class="flash ok" role="status">That address is already on the list.</p>
+                } else {
+                    <></>
+                }
+            }
+        }
+        Not {
+            match http.queryParam(request, "error") {
+                Has(code) {
+                    if code == "missing" {
+                        <p class="flash bad" role="alert">Enter an email address.</p>
+                    } else {
+                        if code == "invalid" {
+                            <p class="flash bad" role="alert">That does not look like an email address.</p>
+                        } else {
+                            <></>
+                        }
+                    }
+                }
+                Not {
+                    <></>
+                }
+            }
+        }
+    }
+}

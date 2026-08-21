@@ -1,0 +1,39 @@
+## HTML shell for sola.computer (Paper Teaser).
+
+import http, { Request } from "std/http"
+
+export type Page(title: String, request: Request) {
+    export fn view(children: Array<Node>) -> Node {
+        <html lang="en">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>{title}</title>
+                <meta
+                    name="description"
+                    content="Sola is a Wayland desktop for Linux workstations that also have to be gaming machines. Pure Rust. ISO in progress."
+                />
+                <link rel="icon" href="/flower.svg" type="image/svg+xml" />
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" />
+                <link
+                    rel="stylesheet"
+                    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+                />
+                <link rel="stylesheet" href="/style.css" />
+            </head>
+            <body>
+                <header>
+                    <nav aria-label="Primary">
+                        <a class="brand" href="/">
+                            <span class="mark" aria-hidden="true"></span>
+                            <span class="wordmark">Sola</span>
+                        </a>
+                        <p class="nav-status">Coming soon</p>
+                    </nav>
+                </header>
+                {children}
+            </body>
+        </html>
+    }
+}

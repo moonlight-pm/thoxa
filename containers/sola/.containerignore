@@ -1,0 +1,17 @@
+*
+!runtime/
+!runtime/include/
+!runtime/include/**
+!runtime/src/
+!runtime/src/**
+!vendor/
+!vendor/sqlite/
+!vendor/sqlite/**
+!target/
+!target/thoxa/
+!target/thoxa/c/
+!target/thoxa/c/sola.c
+!containers/
+!containers/sola/
+!containers/sola/web/
+!containers/sola/web/**
