@@ -244,7 +244,7 @@ export fn serve(
     handle!: (req: Request) -> Response
 ) -> Trial<Void, String> {
     let listener = bindListen(port)?
-    info("http server listening on 127.0.0.1:{port}")
+    info("http://127.0.0.1:{port}/")
     loop {
         match listener.accept() {
             Fail(e) {

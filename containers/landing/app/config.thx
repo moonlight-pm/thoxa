@@ -1,0 +1,89 @@
+## Process env for the landing container.
+##
+## Listen (first set wins):
+##   PORT                Wicket-assigned (preferred)
+##   WICKET_PORT_HTTP    Wicket named port `http`
+##   THOXA_PORT          local / image default (8088 locally; image 8080)
+##
+## SQLite file (first set wins):
+##   WICKET_DATABASE_NEWS   Wicket `--database news` (`sqlite:///…`)
+##   THOXA_DATABASE         local / image default
+##
+##   THOXA_STATIC        asset root (default containers/landing/web)
+
+import env, { getenvOr } from "std/env"
+import { Has, Not, May } from "std/fallible"
+import { parseUInt, startsWith, removePrefix, isEmpty } from "std/str"
+
+export fn databasePath() -> String {
+    let raw = firstNonEmpty(["WICKET_DATABASE_NEWS", "THOXA_DATABASE"])
+    if isEmpty(raw) {
+        sqlitePath("/tmp/thoxa-news.sqlite")
+    } else {
+        sqlitePath(raw)
+    }
+}
+
+fn firstNonEmpty(names!: Array<String>) -> String {
+    mut found = ""
+    for name in names {
+        if isEmpty(found) {
+            let value = env.getenv(name)
+            if not isEmpty(value) {
+                found = value
+            }
+        }
+    }
+    found
+}
+
+fn sqlitePath(raw!: String) -> String {
+    if startsWith(raw, "sqlite://") {
+        removePrefix(raw, "sqlite://")
+    } else {
+        raw
+    }
+}
+
+export fn listenPort() -> Int64 {
+    match portFromEnv("PORT") {
+        Has(n) => n
+        Not {
+            match portFromEnv("WICKET_PORT_HTTP") {
+                Has(n) => n
+                Not {
+                    match portFromEnv("THOXA_PORT") {
+                        Has(n) => n
+                        Not => 8088
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn portFromEnv(name!: String) -> May<Int64> {
+    match parseUInt(env.getenv(name)) {
+        Not => Not()
+        Has(n) {
+            if n > 0 {
+                if n < 65536 {
+                    Has(n)
+                } else {
+                    Not()
+                }
+            } else {
+                Not()
+            }
+        }
+    }
+}
+
+export fn staticRoot() -> String {
+    let root = getenvOr("THOXA_STATIC", "containers/landing/web")
+    if isEmpty(root) {
+        "containers/landing/web"
+    } else {
+        root
+    }
+}

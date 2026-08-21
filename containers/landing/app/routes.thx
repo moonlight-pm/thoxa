@@ -1,0 +1,35 @@
+## Landing routes + static fallback.
+
+import home from "./pages/home"
+import config from "./config"
+import httpStatic from "std/http/static"
+import http, { Request, Response, notFound } from "std/http"
+
+export fn listenPort() -> Int64 {
+    config.listenPort()
+}
+
+type Routes {
+    GET "/" (request: Request) -> Response {
+        home.page(request)
+    }
+
+    POST "/signup" (request: Request) -> Response {
+        home.signup(request)
+    }
+}
+
+export fn handle(request!: Request) -> Response {
+    let response = Routes().route(request)
+    if response.status == 404 {
+        let files = httpStatic.Router(root: config.staticRoot())
+        let served = files.handle(request)
+        if served.status == 404 {
+            home.missing(request)
+        } else {
+            served
+        }
+    } else {
+        response
+    }
+}

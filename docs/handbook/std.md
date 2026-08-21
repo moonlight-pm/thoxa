@@ -141,7 +141,7 @@ Host loop over `std/net`. Completes `Request.body` (64 KiB cap).
 
 | Surface | Notes |
 |---------|--------|
-| `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132**) |
+| `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132**). Logs `http://127.0.0.1:{port}/` |
 | `serveOne(peer, handle)` | One keep-alive connection |
 | `bindListen(port)` | `createSocket` + reuse + bind + listen |
 | `readBody` / `readRequest` | `Content-Length` entity; empty method/path = quiet close |
@@ -157,12 +157,14 @@ HEAD is answered by GET handlers; `finalize` still sees the real method.
 | `Router(root: String)` | `handle(req) -> Response` — always a Response (never Trial) |
 | Methods | **GET** and **HEAD** only; else **405** + `Allow` |
 | Paths | Absolute (`/…`); `.` / `..` → 404; directories serve `index.html` |
-| Types | `.html` `text/html`; `.css` `text/css`; `.js` `text/javascript`; `.txt` `text/plain`; else octet-stream |
+| Types | `.html` `text/html`; `.css` `text/css`; `.js` `text/javascript`; `.txt` `text/plain`; `.jpg`/`.jpeg` `image/jpeg`; `.png` `.gif` `.svg` `.webp` `.ico`; `.woff`/`.woff2`; else octet-stream |
 | Errors | Permission denied → **403** (logged); missing → **404**; other Io → log + 404 |
 
-Runnable demo: `cargo make run examples/http` (Crema-lite **experiment** —
+Runnable demos: `cargo make run examples/http` (Crema-lite **experiment** —
 `server.serve(routes.port, routes.handle)` on product `http` / `http/server` / `http/static`;
 app/domain is not product std; see `examples/http/README.md`).
+`cargo make run containers/landing` — thoxa.dev (port **8088**; news sign-up).
+`cargo make run containers/sola` — sola.computer teaser (port **8089**; ISO notify).
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
 hex → black SGR.

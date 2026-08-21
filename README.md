@@ -30,6 +30,12 @@ cargo make run tests/conformance/hello.thx
 # Example: Little Crema (multi-route; Ctrl-C to stop; port 9091)
 cargo make run examples/http
 
+# thoxa.dev landing (news sign-up; Ctrl-C to stop; port 8088)
+cargo make run containers/landing
+
+# sola.computer teaser (ISO notify; Ctrl-C to stop; port 8089)
+cargo make run containers/sola
+
 # Example: kilo editor (needs a real TTY; Ctrl-Q to quit)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
 
@@ -60,6 +66,7 @@ runtime/          C runtime (thoxa_rt)
 std/              product standard library (std/… imports)
 tests/conformance definition of done (.thx + .out)
 examples/         runnable demos (http server, kilo editor)
+containers/       deployed Thoxa programs (landing = thoxa.dev; sola = sola.computer)
 vendor/           vendored upstream (TinyCC for session libtcc; SQLite amalgamation)
 docs/             canonical engineering + handbook
 CURRENT.md        living session handoff

@@ -4,6 +4,8 @@ about=HTTP/1.1 200 OK
 css-status=200
 css-type-ok
 css=HTTP/1.1 200 OK
+jpg-status=200
+jpg-type-ok
 trav-status=404
 trav=HTTP/1.1 404 Not Found
 miss=HTTP/1.1 404 Not Found

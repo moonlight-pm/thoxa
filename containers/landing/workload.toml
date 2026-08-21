@@ -1,0 +1,25 @@
+# thoxa.dev landing.
+# Apply: wicketctl workload apply aulos --file containers/landing/workload.toml --confirm
+#
+# Stable ids assigned on first apply (L1/L2 paths use these, not the name).
+
+schema = "wicket.workload/v0"
+
+[workload]
+id = "wl-cada9b4cd855"
+name = "thoxa"
+
+[[containers]]
+name = "web"
+image = "registry.wicket.cloud/thoxa-landing:latest"
+ports = [{ name = "http" }]
+
+[[routes]]
+host = "thoxa.dev"
+container = "web"
+port = "http"
+
+[[databases]]
+id = "db-0369127b0c76"
+name = "news"
+container = "web"

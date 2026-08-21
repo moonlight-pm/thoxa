@@ -1,0 +1,41 @@
+## HTML shell for thoxa.dev.
+
+import http, { Request } from "std/http"
+
+export type Page(title: String, request: Request) {
+    export fn view(children: Array<Node>) -> Node {
+        <html lang="en">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>{title}</title>
+                <meta name="description" content="Thoxa is a native systems language: expression-oriented, errors as values, compiled to C. The thoxa prompt is the language, not a second dialect." />
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" />
+                <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" />
+                <link rel="stylesheet" href="/style.css" />
+            </head>
+            <body>
+                <header>
+                    <nav aria-label="Primary">
+                        <a class="brand" href="/">
+                            <img class="medallion" src="/medallion.jpg" width="40" height="40" alt="" />
+                            <span class="wordmark">Thoxa</span>
+                        </a>
+                        <div class="nav-links">
+                            <a href="#now">Now</a>
+                            <a href="#example">Example</a>
+                            <a href="#surface">Surface</a>
+                            <a href="#news">News</a>
+                        </div>
+                        <a class="btn btn-nav" href="#news">Sign up</a>
+                    </nav>
+                </header>
+                {children}
+                <footer>
+                    <p>Pre-alpha. Linux.</p>
+                </footer>
+            </body>
+        </html>
+    }
+}

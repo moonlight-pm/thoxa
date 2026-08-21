@@ -56,6 +56,19 @@ fn main() -> Int64 {
     let r2 = writeResponse(resp2)
     logging.info("css={statusOf(r2)}")
 
+    ## Image MIME (landing assets; sample-driven)
+    let respJpg = router.handle(makeGet("/pixel.jpg"))
+    logging.info("jpg-status={respJpg.status}")
+    if respJpg.headers[0].name == "Content-Type" {
+        if respJpg.headers[0].value == "image/jpeg" {
+            logging.info("jpg-type-ok")
+        } else {
+            logging.info("jpg-type-missing")
+        }
+    } else {
+        logging.info("jpg-type-missing")
+    }
+
     ## Path traversal → 404 (bind Response: status + wire)
     let resp3 = router.handle(makeGet("/../secret"))
     logging.info("trav-status={resp3.status}")

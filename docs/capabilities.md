@@ -11,7 +11,9 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-19 (**D146** SSE `peerFd` / `streamed()`;
+**As of:** 2026-08-21 (`containers/landing` thoxa.dev live;
+`containers/sola` sola.computer teaser live; static JPEG/font MIME;
+**D146** SSE `peerFd` / `streamed()`;
 Crema **E4–E5**; **D145** `htmlFragment` / `cached`;
 Crema **E2** fragment GETs;
 **built-in validation** on master, not product;
@@ -124,7 +126,7 @@ freeze)
 | std-io | File I/O in `std/io` | shipped | `file_io`, `file_type`, `file_write`, `file_seek`, `file_openmode`, `logging_sink` | **D126** | Linux `extern` open/read/write/lseek; Fail String; no Windows | yes |
 | std-net | TCP sockets in `std/net` | shipped | `http`, `http_wire`, `http_net_err` | **D126** | IPv4 stream; `receiveRequest` / `sendAll`; Fail String; Linux sockaddr pack | yes |
 | std-http | HTTP/1.1 protocol in `std/http` | shipped | `http_parse`, `http`, `http_wire`, `http_helpers` | **D126**, **D136**, **D137**, **D142**, **D145**, **D146** | `Request.query` kept; body empty at parse (host fills). Helpers: `headerGet`, query/form/cookie Maps + `queryParam`/`formField`/`cookie`, `htmlResponse` / `htmlResponseStatus` / `htmlFragment` (`Node`), `etagOf` / `cached` / `notModified`, `Cookie` / `withCookie` / `clearCookie`, `seeOther`, `finalize` / keep-alive, `streamed()` + `peerFd` (**D146**). Still no syscalls. No `Expires` / cookie-octet escape / weak ETags / `Last-Modified` / WebSockets | yes |
-| std-http-static | Static-file `Router` in `std/http/static` | shipped | `router`, `http_server` | **D126**, **D139** | GET+HEAD; MIME `.html` / `.css` / `.js` / `.txt`; depends on Io+Http+Logging | yes |
+| std-http-static | Static-file `Router` in `std/http/static` | shipped | `router`, `http_server` | **D126**, **D139** | GET+HEAD; MIME `.html` / `.css` / `.js` / `.txt` plus jpeg/png/gif/svg/webp/ico/woff/woff2 (`router` + `containers/landing`); else octet-stream. Depends on Io+Http+Logging | yes |
 | std-http-server | HTTP/1.1 host loop in `std/http/server` | shipped | `http_host` | **D136**, **D139**, **D146** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`; `beginEventStream` / `sendEvent`; status 0 skips write. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
 | std-json | Dynamic `Json` tree in `std/json` | shipped | `json`, `json_read` | **D141**; idea [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md) | `decode` / `encode`. `JInt` vs `JFloat` as charter. Fail String. This branch also: `Issue`, `readJson`, `asObj` / `*Field`, `errorObject`. No derive, no pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` (Crema keeps that in `examples/http`) | yes |
 | std-sqlite | Embedded SQLite in `std/sqlite` | shipped | `sqlite` | **D143**, **D144** | Amalgamation in `vendor/sqlite` → `libthoxa_rt`. `open` / `exec` / `query` / `close`. Write `sql"… {value} …"` (tagged interpolator; `exec`/`query` take `Sql`). Rows `Row` + `SqlValue`. Crema dogfoods file-backed open at `/tmp/crema.db` (example-only). **Gaps:** no blobs, no prepare/bind API, no explicit transactions, no product migrate, no general tagged templates | yes |

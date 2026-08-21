@@ -1,0 +1,96 @@
+## SQLite news sign-ups. Schema is owned here (no product migrate).
+
+import config from "./config"
+import sqlite, { Db } from "std/sqlite"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+import { isEmpty, trim, toLowerAscii, contains, splitOnce } from "std/str"
+
+export type Added
+export type Duplicate
+export type BadEmail
+export type Signup = Added | Duplicate | BadEmail
+
+## Int64 only: a module-level `Db` literal currently mis-emits as `Sql` in C.
+mut handle = 0
+
+export fn open() -> Trial<Void, String> {
+    let path = config.databasePath()
+    let opened = sqlite.open(path)?
+    opened.exec(sql"
+        CREATE TABLE IF NOT EXISTS news (
+            id         INTEGER PRIMARY KEY,
+            email      TEXT NOT NULL COLLATE NOCASE,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            UNIQUE(email)
+        )
+    ")?
+    handle = opened.handle
+    info("store {path}")
+    Pass(Void)
+}
+
+export fn addEmail(raw!: String) -> Trial<Signup, String> {
+    match normalizeEmail(raw) {
+        Not {
+            Pass(BadEmail())
+        }
+        Has(email) {
+            let db = requireDb()?
+            db.exec(sql"
+                INSERT OR IGNORE INTO news (email) VALUES ({email})
+            ")?
+            if db.changes() == 0 {
+                Pass(Duplicate())
+            } else {
+                Pass(Added())
+            }
+        }
+    }
+}
+
+fn normalizeEmail(raw!: String) -> May<String> {
+    let email = toLowerAscii(trim(raw))
+    if isEmpty(email) {
+        Not()
+    } else {
+        if email.count > 320 {
+            Not()
+        } else {
+            if contains(email, " ") {
+                Not()
+            } else {
+                if looksLikeEmail(email) {
+                    Has(email)
+                } else {
+                    Not()
+                }
+            }
+        }
+    }
+}
+
+fn looksLikeEmail(email!: String) -> Bool {
+    match splitOnce(email, "@") {
+        Not => false
+        Has(cut) {
+            if isEmpty(cut.before) {
+                false
+            } else {
+                if isEmpty(cut.after) {
+                    false
+                } else {
+                    contains(cut.after, ".")
+                }
+            }
+        }
+    }
+}
+
+fn requireDb() -> Trial<Db, String> {
+    if handle == 0 {
+        Fail("store is closed")
+    } else {
+        Pass(Db(handle: handle))
+    }
+}

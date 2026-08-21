@@ -4,7 +4,11 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-19 (Crema pages under `app/pages/` + `ui/page.thx`;
+**As of:** 2026-08-21 (`containers/landing` = thoxa.dev news sign-up, live on
+aulos as workload `thoxa` / `https://thoxa.dev/`;
+`containers/sola` = sola.computer Paper teaser + ISO notify, live on aulos
+as workload `sola` / `https://sola.computer/`;
+static JPEG/font MIME; Crema pages under `app/pages/` + `ui/page.thx`;
 JSX `{for}` lists + bare `disabled`; **`having`/`else` parked indefinitely**;
 Crema Phase **E** complete through **E5**; **E6** WebSockets **parked**;
 **D146** SSE `peerFd` / `streamed()`;
@@ -115,6 +119,8 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups. Further **`std/` growth is sample-driven** (D97/D136).
 Crema **domain** (pages, models, cookies policy) stays in `examples/http/`.
+Public sites are **`containers/landing`** (thoxa.dev) and
+**`containers/sola`** (sola.computer) — not `examples/`, not `extras/`.
 
 **Explicit holds:**
 
@@ -207,6 +213,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 cargo make test
 cargo test -p thoxa --lib
 cargo make run examples/http
+cargo make run containers/landing
+cargo make run containers/sola
 cargo run -p thoxa -- tests/conformance/param_defaults.thx
 printf 'echo hi\nexit\n' | cargo run -p thoxa --
 ```
