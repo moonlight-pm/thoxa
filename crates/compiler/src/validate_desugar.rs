@@ -1,4 +1,4 @@
-//! Experiment: generate `Type.read` / `Type.fromJson` helpers for constructor-param
+//! D149: generate `Type.read` / `Type.fromJson` helpers for constructor-param
 //! products (builtin validation, slice 1 — no `where` yet).
 //!
 //! For each eligible product type in a non-`std/` module, emit:

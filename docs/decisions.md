@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-23 — Refinements + `Type.read`
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D149 | Validation is types as inhabitation | **`where`** refinements are real types (`Qty` is not `Int64`). Literal inhabitation at compile time; `T.from` / `T.read` at runtime → `Trial<T, Issue>`. `Issue` in **`std/json`**. Tree `decode`/`encode` stay (**D141**). Closed slugs are literal unions <: String. Qty→base implicit; reverse is `from`. Compiler-attached methods (no traits). Fail-fast. | **Shipped.** Freeze [`specs/2026-08-23-type-read.md`](specs/2026-08-23-type-read.md). Gates: `json_read`, `where_refine`, `sums_literal`. Amends D141 (`Issue` + typed `read`). Punted: collect-all, `May<Int64 where …>`, cross-field `where`. Dogfood: Crema `CreateOrder`. |
+
 ## 2026-08-22 — `-->` nowait
 
 | ID | Decision | Choice | Notes |
@@ -65,7 +71,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D141 | Product JSON codec is a dynamic `Json` tree | `std/json`: `Json = JNull \| JBool \| JInt \| JFloat \| JStr \| JArr \| JObj`. **`decode(s) -> Trial<Json, String>`**; **`encode(v) -> String`**. Integers without `.` / exponent are `JInt` (out-of-range Int64 fails). Every other JSON number is `JFloat` via `strtod` (non-finite fails). Arrays / objects recurse through `Array<Json>` / `Map<String, Json>`. No derive, no pretty-print, no comments / trailing commas / NaN tokens, no HTTP helper in this module. | **Shipped.** Sample-driven (D97); charter [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md). Face is encode/decode (codec pair), not JS parse/stringify. Enables union-member fields that are `Float64` / `Array` / `Map` / User (was a stale scalar-only check). Array/Map of **sums** now RC the live arm. `Map<K,V>` seeds `May<V>` so `.get` works for User values. RT: `thoxa_f64_from_string` / `thoxa_f64_is_finite`. Gate: `json`. Crema dogfood: `POST /api/orders`. |
+| D141 | Product JSON codec is a dynamic `Json` tree | `std/json`: `Json = JNull \| JBool \| JInt \| JFloat \| JStr \| JArr \| JObj`. **`decode(s) -> Trial<Json, String>`**; **`encode(v) -> String`**. Integers without `.` / exponent are `JInt` (out-of-range Int64 fails). Every other JSON number is `JFloat` via `strtod` (non-finite fails). Arrays / objects recurse through `Array<Json>` / `Map<String, Json>`. No pretty-print, no comments / trailing commas / NaN tokens, no HTTP helper in this module. | **Shipped.** Sample-driven (D97); charter [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md). Face is encode/decode (codec pair), not JS parse/stringify. Enables union-member fields that are `Float64` / `Array` / `Map` / User (was a stale scalar-only check). Array/Map of **sums** now RC the live arm. `Map<K,V>` seeds `May<V>` so `.get` works for User values. RT: `thoxa_f64_from_string` / `thoxa_f64_is_finite`. Gate: `json`. Crema dogfood: `POST /api/orders`. **Typed `T.read` / `Issue` → D149.** |
 
 ## 2026-08-15 — Float64
 

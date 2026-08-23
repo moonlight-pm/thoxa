@@ -1,11 +1,12 @@
 # Experiment: built-in validation (types as inhabitation)
 
-**Status:** **on master, not product** — design open, not a freeze, not
-handbook. No D-id yet.  
-**Date:** 2026-08-17 (merged 2026-08-18)  
+**Status:** **shipped** — 2026-08-23 (**D149**). Freeze
+[`../specs/2026-08-23-type-read.md`](../specs/2026-08-23-type-read.md).
+Handbook [`../handbook/language.md`](../handbook/language.md).  
+**Date:** 2026-08-17 (updated 2026-08-23)  
 **Sparked by:** Crema `POST /api/orders` (`examples/http/app/api.thx`) — shape
 and refinements restated as match piles; D141 tree codec is not the validator.  
-**Pickup:** this file · root [`CURRENT.md`](../../CURRENT.md)  
+**Pickup:** freeze · D149 · capability `type-read`  
 **Related:** [`2026-08-15-json-codec.md`](2026-08-15-json-codec.md) (tree
 `decode`/`encode` stays); JSX / interp closed tables (same “compiler can see
 the type”); [`2026-08-15-tostring-repr-and-traits.md`](2026-08-15-tostring-repr-and-traits.md)
@@ -234,7 +235,7 @@ fills generated text.
 - Regex, email, custom predicates
 - Route-clause JSON binding (call `T.read` from the handler)
 - Changing tree `decode`’s `Fail(String)`
-- Handbook / D-id until the surface sticks
+- Handbook / D-id until the surface sticks — **done (D149)**
 
 ---
 

@@ -11,14 +11,13 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-22 (**D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
+**As of:** 2026-08-23 (**D149** `where` / `Type.read` **shipped**;
+**D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
 `containers/landing` thoxa.dev live;
 `containers/sola` sola.computer teaser live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 Crema **E4–E5**; **D145** `htmlFragment` / `cached`;
 Crema **E2** fragment GETs;
-**built-in validation** on master, not product;
-`Type.read`;
 **D144** `sql"…"`;
 **D143** `std/sqlite`;
 **D142** `Cookie` / `withCookie` / `clearCookie`;
@@ -70,7 +69,7 @@ route clauses **partial** on master — not freeze)
 | pkg-main | Dir entry `main.thx` | shipped | `pkgmain` | D68, **D138** | Filename is kebab-case `main.thx` (D138) | yes |
 | route-clauses | Type-body `GET "/…"` → `route(req) -> Response` | partial | unit (`route_desugar`, LSP); Crema dogfood | idea [`ideas/2026-08-12-router-clause-syntax-experiment.md`](ideas/2026-08-12-router-clause-syntax-experiment.md) | **On master, not freeze / no D-id.** String wrap + `Response` pass-through; `Int64`/`String` captures; multi-segment; optional `req`. **Gaps:** no conformance `.thx`; no handbook; no JSON/form; miss is `notFound()` (no fallthrough). Crema dogfoods via `examples/http` `type Routes`. | no |
 | jsx-node | Tag literals + builtin `Node` / `.html()` | shipped | `jsx` | **D147**; freeze [`specs/2026-08-22-jsx-node.md`](specs/2026-08-22-jsx-node.md) | Eager PascalCase → `Type(…).view(children:)`; `{e}` children are String / Int64 / Float64 / Bool / Node / Array&lt;Node&gt;; `{for x in xs { child }}` collects Array&lt;Node&gt;; `{e}` attrs stringify String / Int64 / Float64 / Bool; void tags; bare boolean attrs render as `disabled`; empty `<>` is Node; no import. `<tag` (no space) is JSX, including after another expr; `a < b` (spaces) is comparison; glued `a<b` is an error. `Node` matches as `Element \| Text \| Fragment` (same `ThoxaHtml*` tree). Ambient `Attr` / `Element` / `Text` / `Fragment`. HTML `{...Array<Attr>}` and component `{...product}` spreads. Crema pages dogfood (`examples/http` `Page`). Bare `#` is a line comment; **`\#` in JSX text is a literal `#`**. **Gaps:** Tree-sitter `<>` highlighting best-effort; `.html()` method hover is the general MIR-builtin hole (type `Node` hover names it). No `"{n}"` interpolation of Node (use `.html()`). | yes |
-| type-read | `Type.read` / `where` / `.encode` | partial | `json_read`, `where_refine`, `sums_literal` | idea [`ideas/2026-08-17-builtin-validation.md`](ideas/2026-08-17-builtin-validation.md) | **On master, not freeze / no D-id.** `type Qty = Int64 where >= 1`; `&` / `\|` / parens; `Qty.from`; literal inhabitation; Qty→base coerce; `{value}`/`{expected}`/`{path}` templates; field-level `where` on `read`; `.toJson` / `.encode`; `Issue = Missing \| Mismatch \| Rejected`; `May<T>` fields (missing/null → `Not`); nested `read` after a failed `read` is RC-clean (Map.get of User is a slot borrow + retain). Closed slugs are literal unions (`type DrinkSlug = "espresso" \| "mocha"`) — a string-literal union is a subtype of `String` (same for `0\|1` <: Int64, `true\|false` <: Bool); `T.from` / `T.read` on the union. **Gaps:** no handbook; no collect-all; no `May<Int64 where …>` (write `May<Qty>`). | no |
+| type-read | `Type.read` / `where` / `.encode` | shipped | `json_read`, `where_refine`, `sums_literal` | **D149**; freeze [`specs/2026-08-23-type-read.md`](specs/2026-08-23-type-read.md) | `type Qty = Int64 where >= 1`; `&` / `\|` / parens; `Qty.from`; literal inhabitation; Qty→base coerce; `{value}`/`{expected}`/`{path}` templates; field-level `where` on `read`; `.toJson` / `.encode`; `Issue = Missing \| Mismatch \| Rejected` in `std/json`; `May<T>` fields (missing/null → `Not`). Closed slugs are literal unions (`type DrinkSlug = "espresso" \| "mocha"`) <: String. **Gaps:** no collect-all; no `May<Int64 where …>` (write `May<Qty>`); no cross-field product `where`; Tree-sitter `where` color may still be ident. | yes |
 
 ## FFI and C layout
 
@@ -128,7 +127,7 @@ route clauses **partial** on master — not freeze)
 | std-http | HTTP/1.1 protocol in `std/http` | shipped | `http_parse`, `http`, `http_wire`, `http_helpers` | **D126**, **D136**, **D137**, **D142**, **D145**, **D146** | `Request.query` kept; body empty at parse (host fills). Helpers: `headerGet`, query/form/cookie Maps + `queryParam`/`formField`/`cookie`, `htmlResponse` / `htmlResponseStatus` / `htmlFragment` (`Node`), `etagOf` / `cached` / `notModified`, `Cookie` / `withCookie` / `clearCookie`, `seeOther`, `finalize` / keep-alive, `streamed()` + `peerFd` (**D146**). Still no syscalls. No `Expires` / cookie-octet escape / weak ETags / `Last-Modified` / WebSockets | yes |
 | std-http-static | Static-file `Router` in `std/http/static` | shipped | `router`, `http_server` | **D126**, **D139** | GET+HEAD; MIME `.html` / `.css` / `.js` / `.txt` plus jpeg/png/gif/svg/webp/ico/woff/woff2 (`router` + `containers/landing`); else octet-stream. Depends on Io+Http+Logging | yes |
 | std-http-server | HTTP/1.1 host loop in `std/http/server` | shipped | `http_host` | **D136**, **D139**, **D146** | `serve(port, handle)` + `serveOne` keep-alive; `readBody` (64 KiB); `bindListen`; `beginEventStream` / `sendEvent`; status 0 skips write. Depends on Net+Http+Logging. Infinite `serve` is product face (gate uses `serveOne`) | yes |
-| std-json | Dynamic `Json` tree in `std/json` | shipped | `json`, `json_read` | **D141**; idea [`ideas/2026-08-15-json-codec.md`](ideas/2026-08-15-json-codec.md) | `decode` / `encode`. `JInt` vs `JFloat` as charter. Fail String. This branch also: `Issue`, `readJson`, `asObj` / `*Field`, `errorObject`. No derive, no pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` (Crema keeps that in `examples/http`) | yes |
+| std-json | Dynamic `Json` tree in `std/json` | shipped | `json`, `json_read` | **D141**, **D149** | `decode` / `encode`. `JInt` vs `JFloat` as charter. Fail String. **`Issue`** / `message` for typed `T.read` (**D149**). Also: `readJson`, `asObj` / `*Field`, `errorObject`. No pretty, no comments / trailing commas / NaN tokens, no `jsonResponse` (Crema keeps that in `examples/http`) | yes |
 | std-sqlite | Embedded SQLite in `std/sqlite` | shipped | `sqlite` | **D143**, **D144** | Amalgamation in `vendor/sqlite` → `libthoxa_rt`. `open` / `exec` / `query` / `close`. Write `sql"… {value} …"` (tagged interpolator; `exec`/`query` take `Sql`). Rows `Row` + `SqlValue`. Crema dogfoods file-backed open at `/tmp/crema.db` (example-only). **Gaps:** no blobs, no prepare/bind API, no explicit transactions, no product migrate, no general tagged templates | yes |
 
 ## Editor / LSP

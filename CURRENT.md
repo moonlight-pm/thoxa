@@ -4,7 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-22 (**D148** `-->` nowait **shipped**; **D147** builtin
+**As of:** 2026-08-23 (**D149** `where` / `Type.read` **shipped**;
+**D148** `-->` nowait **shipped**; **D147** builtin
 `Node` + tag literals **shipped**;
 `containers/landing` = thoxa.dev news sign-up, live on
 aulos as workload `thoxa` / `https://thoxa.dev/`;
@@ -16,8 +17,7 @@ Crema Phase **E** complete through **E5**; **E6** WebSockets **parked**;
 **D146** SSE `peerFd` / `streamed()`;
 **E4** sessions + flash + CSRF; **E3** `crema.js`; **E2** + **D145**;
 Crema **A–D2 complete**; HTML-over-the-wire — not vendored HTMX;
-**built-in validation** on master, not product — types as inhabitation;
-syntax open;
+**D149** types as inhabitation (`where` / `Type.read`);
 Crema **D2** persist `/tmp/crema.db`;
 **D144** `sql"…"` tagged interpolator;
 **D143** `std/sqlite` amalgamation;
@@ -38,9 +38,11 @@ D133/D134 Map; D132 fn pointers; **D148** `-->` nowait)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **D148** `--> name(args)` nowait (freeze + handbook;
-gates `start_*` / `http_host`); **D147** builtin `Node` + tag literals (freeze +
-handbook; gate `jsx`); Crema page split (`app/pages/` + `ui/`); JSX `{for}` +
+**Shipped recently:** **D149** `where` / `Type.read` (freeze + handbook;
+gates `json_read` / `where_refine` / `sums_literal`); **D148** `--> name(args)`
+nowait (freeze + handbook; gates `start_*` / `http_host`); **D147** builtin
+`Node` + tag literals (freeze + handbook; gate `jsx`); Crema page split
+(`app/pages/` + `ui/`); JSX `{for}` +
 bare boolean attrs; **`having`/`else` parked**;
 Crema **E4–E5** (sessions/flash/CSRF + SSE board);
 **D146** `Request.peerFd` / `streamed()` / `beginEventStream`;
@@ -72,21 +74,15 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **On master, not product:**
 
-- Type-body `GET "/…"` desugar + LSP (idea)
+- Type-body `GET "/…"` desugar + LSP (idea
   [`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md);
   capability `route-clauses` **partial**). No D-id / handbook. Crema dogfoods
-  the clauses (example-only).
-- Built-in validation (idea
-  [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md);
-  capability `type-read` **partial**). `Type.read` / `where` / `T.from` /
-  `.encode`; `Issue = Missing | Mismatch | Rejected`; `May<T>` fields;
-  closed slugs are literal unions and subtype `String`. No D-id / handbook.
-  Crema `CreateOrder` dogfoods it.
+  the clauses (example-only). Needs a conformance `.thx`.
 
 **In progress / next:**
 
-1. Harvest remaining **on master, not product** surfaces (same order):
-   **`Type.read` / `where`**, then **route clauses**.
+1. Harvest remaining **on master, not product:** **route clauses**
+   (conformance `.thx` first, then freeze + handbook).
 2. **Editor only when DX forces it.** Crema Phase **E** is complete through
    **E5** (HTML-over-the-wire cafe: orders, fragments, `crema.js`, sessions,
    SSE). **E6 WebSockets stay parked.** Do **not** vendor HTMX.
@@ -94,17 +90,17 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 ### Proceed order
 
-1. **`Type.read` / `where`** — lock the idea (syntax still open) + handbook.
-2. **Route clauses** — needs a conformance `.thx` first (still HTTP-shaped).
-3. **Editor depth** — only when DX forces it. Freezes:
+1. **Route clauses** — needs a conformance `.thx` first (still HTTP-shaped),
+   then freeze + D-id + handbook.
+2. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
-4. **Deferred: all session / shell residual** — redir polish, line editor,
+3. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-5. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
@@ -162,6 +158,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
 | Node / tag literals | Builtin **`Node`** (`Element \| Text \| Fragment`) + JSX tags (**D147**). No import. PascalCase is `Type(…).view(children:)`. `{e}` children/attrs stringify String / Int64 / Float64 / Bool; `{for}` collects `Array<Node>`. `.html()` is the markup codec — not generic `toString`. Comparison `<` needs a space (`a < b`). |
+| Refinements / `Type.read` | `where` refinements are real types (**D149**). `T.read` / `T.from` → `Trial<T, Issue>` (`Issue` in `std/json`). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No collect-all; no cross-field `where`; write `May<Qty>`. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
@@ -189,12 +186,11 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 10. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
    + **D136** / **D137** / **D139** / **D142** / **D145** / **D146** in [`docs/decisions.md`](docs/decisions.md)
     + Phase E protocol [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md)
-11. If JSON: [`docs/decisions.md`](docs/decisions.md) (**D141**) +
-    [`docs/ideas/2026-08-15-json-codec.md`](docs/ideas/2026-08-15-json-codec.md)
+11. If JSON / `Type.read`: [`docs/decisions.md`](docs/decisions.md) (**D141** tree,
+    **D149** refinements) + freeze
+    [`docs/specs/2026-08-23-type-read.md`](docs/specs/2026-08-23-type-read.md)
     + **D140** (`Float64`)
-12. If built-in validation: [`docs/ideas/2026-08-17-builtin-validation.md`](docs/ideas/2026-08-17-builtin-validation.md)
-    (on master, not product; syntax open)
-13. If SQLite: [`docs/decisions.md`](docs/decisions.md) (**D143** / **D144**) —
+12. If SQLite: [`docs/decisions.md`](docs/decisions.md) (**D143** / **D144**) —
     amalgamation in `vendor/sqlite`; `sql"… {value} …"`. Crema persist is
     example-only (`examples/http` `/tmp/crema.db`); no product migrate.
 

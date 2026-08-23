@@ -18,7 +18,7 @@ locked and (if needed) scheduled. Living priority never lives here — see root
 | [`toString` / `repr` / interpolation](2026-08-15-tostring-repr-and-traits.md) | sleeping | Do not replace `.html()` with generic `toString`; Display is not a traits forcing function |
 | [file-based routing](2026-08-15-file-based-routing.md) | **parked** | Path-from-tree for Crema; captures/layouts as filenames deferred. Kebab-case modules split out → **D138** |
 | [`std/json` codec](2026-08-15-json-codec.md) | **shipped** (**D141**) | Dynamic `Json` tree; `decode` / `encode`. Crema `POST /api/orders` dogfoods it |
-| [built-in validation](2026-08-17-builtin-validation.md) | **on master, not product** | Types as inhabitation; refinements are real types; compile-time when constant. Closed slugs are literal unions <: String. |
+| [built-in validation](2026-08-17-builtin-validation.md) | **shipped** (**D149**) | Freeze [`../specs/2026-08-23-type-read.md`](../specs/2026-08-23-type-read.md); handbook language |
 | [HTML-over-the-wire](2026-08-18-html-over-the-wire.md) | **active experiment** | SSR + cacheable fragments + tiny own runtime (not HTMX). SSE before WebSockets. Crema Phase E dogfoods it |
 
 **Rules of thumb**

@@ -86,7 +86,7 @@ process-local, not sqlite.
 | Flash | “Order placed” after redirect | **have** |
 | SSE | Live order board / “now brewing” | **have** (**D146**) |
 | Static assets | CSS, the runtime itself | **have** `std/http/static` |
-| Validation | `Type.read` / `where` | **on master**; dogfood forms too |
+| Validation | `Type.read` / `where` | **D149**; dogfood forms too |
 | Persist | sqlite | **have** |
 
 **Out until a sample forces them:**

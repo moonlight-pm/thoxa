@@ -60,8 +60,9 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Heap | `String` (interpolation, `.count`, `\xHH` escapes, **newlines kept**), `sql"…"` tagged interpolator (**D144**, may span lines), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`), builtin **`Node`** (tag literals, **D147**) |
 | User types | `type Name(fields) { methods }` — including heap fields, **Node**, and nested user types / sums (**D135**); method field write-back. Recursive fields are an error (use `Array` / `Map`) |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
-| Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"`. Member product fields may be scalars (incl. `Float64`), String/Bytes, User, `Array`, or `Map` (**D141**) |
+| Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"`. Member product fields may be scalars (incl. `Float64`), String/Bytes, User, `Array`, or `Map` (**D141**). String-literal unions subtype `String` (**D149**) |
 | Literal types | Bare `"home"`, `0`, `true` are types in formals / returns / annotations; inline `"a" \| "b"` in those positions too (**D131**) |
+| Refinements | `type Qty = Int64 where >= 1` — real types; `T.read` / `T.from` (**D149**) |
 | Multi-clause fns | Same name, different formal types → one function (type-driven match sugar, **D131**) |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
@@ -96,6 +97,45 @@ residual mark use the same `?` operator.
 **Reference counting:** simple single-threaded RC (dup on copy, drop at function
 end for **locals**). Module-level heap bindings outlive the function that wrote
 them (D122). Precise RC / Perceus is **not** shipped.
+
+## Refinements and `Type.read`
+
+A type is a predicate. **`where`** narrows it; **`T.read` / `T.from`** inhabit
+it (**D149**). Not a schema library and not traits.
+
+```thx
+import { Issue, message } from "std/json"
+import { Pass, Fail, Trial } from "std/fallible"
+
+type Qty = Int64 where >= 1
+type DrinkSlug = "espresso" | "mocha"
+type CreateOrder(slug: DrinkSlug, qty: Qty)
+
+let a: Qty = 2              ## literal inhabits
+let n: Int64 = a            ## Qty → Int64 is implicit
+## let b: Qty = n           ## type error — use Qty.from(n)
+match CreateOrder.read(body) {
+    Fail(e) => info(message(e))
+    Pass(o) => info(o.encode())
+}
+```
+
+| Piece | Behavior |
+|-------|----------|
+| `where` | After a type. Inside: `&` and, `\|` or, parens. Outside, `\|` is still a union |
+| Ranges | On `Int64` / `Float64` = the value; on `String` / `Array` = `.count` |
+| Messages | Optional template after a conjunct (`{value}`, `{expected}`, `{path}`) |
+| Narrowing | `type Dozen = Qty where <= 12` intersects clauses. Empty types are errors |
+| `T.from(x)` | Runtime base / string → `Trial<T, Issue>` |
+| `T.read(s)` | JSON string → `Trial<T, Issue>` (tree `decode` first, then shape + `where`) |
+| `t.encode()` / `t.toJson()` | Back to compact JSON / `Json` |
+| `Issue` | `Missing \| Mismatch \| Rejected` in [`std/json`](std.md). Fail-fast. `message(e)` |
+| `May<T>` fields | Missing or JSON `null` → `Not`. Write `May<Qty>`, not `May<Int64 where …>` |
+
+Closed slugs are **literal unions** (`"espresso" \| "mocha"`), a subtype of
+`String` — prefer that over `String where "a" \| "b"`. Tree `decode` /
+`encode` of `Json` stay **D141** (`Fail(String)` for syntax). No collect-all,
+no cross-field `where` on a product, no regex.
 
 ## Control flow
 

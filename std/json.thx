@@ -17,7 +17,7 @@ export type JArr(value: Array<Json>)
 export type JObj(value: Map<String, Json>)
 export type Json = JNull | JBool | JInt | JFloat | JStr | JArr | JObj
 
-## Shape / refinement failures for Type.read (builtin validation experiment).
+## Shape / refinement failures for Type.read (D149).
 export type Missing(path: String)
 export type Mismatch(path: String, expected: String, got: String)
 export type Rejected(path: String, reason: String)

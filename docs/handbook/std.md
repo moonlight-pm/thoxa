@@ -38,7 +38,7 @@ import sqlite, { lit, ident } from "std/sqlite"
 | `std/ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
 | `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
 | `std/git` | `branchName` / `branchSuffix` / `branch` / `branchHere` / `isRepo` / `repoRoot` / `isDetached` / `headLine` via `.git/HEAD` |
-| `std/json` | Dynamic `Json` tree (**D141**): `decode` / `encode` |
+| `std/json` | Dynamic `Json` tree (**D141**): `decode` / `encode`. **`Issue`** + `message` for **`Type.read`** (**D149**) |
 | `std/sqlite` | Embedded SQLite (**D143**/**D144**): `open` / `exec` / `query`; `sql"…"` |
 
 ### Logging (default logger)
@@ -196,7 +196,9 @@ Object literals in Thoxa strings need `{{` / `}}` (`"{{\"qty\":2}}"` is
 | `encode(v)` | Compact JSON. Object keys in insertion order |
 | Numbers | No `.` / exponent → `JInt` (Int64 range or fail). Else `JFloat`. Non-finite fails |
 | Strings | Escapes `\" \\ \/ \b \f \n \r \t \uXXXX` including surrogate pairs |
-| Not shipped | Derive of user types, pretty-print, comments, trailing commas, `NaN` / `Infinity` tokens, `jsonResponse` |
+| `Issue` | `Missing \| Mismatch \| Rejected` — fail-fast shape/refinement for **`Type.read`** (**D149**). `message(e)` |
+| Typed read | Compiler-attached `T.read(s)` / `T.from(x)` / `t.encode()` — language, not a derive. See [language.md](language.md#refinements-and-typeread) |
+| Not shipped | Pretty-print, comments, trailing commas, `NaN` / `Infinity` tokens, `jsonResponse`, collect-all issues |
 
 ### Sqlite (`std/sqlite`)
 
