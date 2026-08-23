@@ -25,7 +25,7 @@ pub const TOP_LEVEL_STMT_WITH_MAIN_MSG: &str =
      (only import / type / fn / let allowed here; omit `main` for a session script)";
 
 /// HTTP method idents recognized as route clauses inside a type body only
-/// (experiment/router-clause-syntax). Not reserved keywords elsewhere.
+/// (**D150**). Not reserved keywords elsewhere.
 fn is_route_http_method(s: &str) -> bool {
     matches!(
         s,

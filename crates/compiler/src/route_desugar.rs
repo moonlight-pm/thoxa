@@ -1,4 +1,4 @@
-//! Experiment: desugar type-body route clauses (`GET "/…" { … }`) into ordinary
+//! D150: desugar type-body route clauses (`GET "/…" { … }`) into ordinary
 //! free-function handlers + a generated `route` method on the type.
 //!
 //! Handlers are module-level `fn __{Type}_route_N` (not type methods) because
@@ -90,7 +90,7 @@ fn desugar_type(td: &mut TypeDef) -> Result<(Vec<Function>, DesugarFlags)> {
     if !td.params.is_empty() || !td.fields.is_empty() {
         return Err(Error::at(
             "route clauses on types with constructor params or body fields \
-             are not supported in this experiment (use a nullary type)",
+             are not supported (use a nullary type)",
             td.name_span,
         ));
     }

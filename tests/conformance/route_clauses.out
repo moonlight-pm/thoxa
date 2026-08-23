@@ -1,0 +1,11 @@
+200|root
+200|Home
+200|ok
+200|tag:mocha
+200|user:42
+200|GET:42
+400|Bad Request: invalid userId
+404|Not Found
+404|Not Found
+200|hi
+404|Not Found

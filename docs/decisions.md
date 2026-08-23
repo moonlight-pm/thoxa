@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-23 — Type-body route clauses
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D150 | Product HTTP routes are type-body clauses | `GET "/…"` / `POST` / … on a **nullary** type desugar to free-fn handlers + **`route(req: Request) -> Response`**. String bodies wrap `ok(…, "text/plain")`; `-> Response` pass-through; miss `notFound()`; `Int64`/`String` captures; optional `Request` formal. Compiler **names** userland `Request` / `Response` / `ok` / `notFound` / `badRequest` — no lang-items. | **Shipped.** Freeze [`specs/2026-08-23-route-clauses.md`](specs/2026-08-23-route-clauses.md). Gate: `route_clauses`. Punted: JSON/form bind, fallthrough, router fields, file-based routing. Dogfood: Crema `type Routes`. |
+
 ## 2026-08-23 — Refinements + `Type.read`
 
 | ID | Decision | Choice | Notes |

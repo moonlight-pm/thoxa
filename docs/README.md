@@ -63,6 +63,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`specs/2026-08-22-jsx-node.md`](specs/2026-08-22-jsx-node.md) | Builtin `Node` + tag literals | **shipped** (D147) |
 | [`specs/2026-08-22-start-tasks.md`](specs/2026-08-22-start-tasks.md) | `--> name(args)` nowait | **shipped** (D148) |
 | [`specs/2026-08-23-type-read.md`](specs/2026-08-23-type-read.md) | `where` refinements + `Type.read` | **shipped** (D149) |
+| [`specs/2026-08-23-route-clauses.md`](specs/2026-08-23-route-clauses.md) | Type-body `GET "/…"` | **shipped** (D150) |
 
 ## Related trees (not under `docs/`)
 

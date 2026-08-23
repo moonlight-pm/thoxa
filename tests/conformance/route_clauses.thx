@@ -1,0 +1,78 @@
+## Type-body `GET "/…"` → generated `route(req) -> Response` (D150).
+import http, { Request, Response, ok, notFound, badRequest } from "std/http"
+import { trim } from "std/str"
+import logging, { info } from "std/logging"
+
+type Routes {
+    GET "/" {
+        "root"
+    }
+
+    GET "/home" {
+        "Home"
+    }
+
+    GET "/health" -> Response {
+        ok(Bytes.fromString("ok"), "text/plain")
+    }
+
+    GET "/tag/:slug" (slug: String) -> String {
+        "tag:{slug}"
+    }
+
+    GET "/user/:userId" (userId: Int64) -> String {
+        "user:{userId}"
+    }
+
+    GET "/user/:userId/edit" (request: Request, userId: Int64) -> String {
+        "{request.method}:{userId}"
+    }
+
+    POST "/echo" (request: Request) -> Response {
+        ok(request.body, "text/plain")
+    }
+}
+
+fn req(method!: String, path!: String) -> Request {
+    Request(
+        method: method,
+        path: path,
+        query: "",
+        version: "HTTP/1.1",
+        headers: [],
+        body: Bytes(0)
+    )
+}
+
+fn reqBody(method!: String, path!: String, body!: String) -> Request {
+    Request(
+        method: method,
+        path: path,
+        query: "",
+        version: "HTTP/1.1",
+        headers: [],
+        body: Bytes.fromString(body)
+    )
+}
+
+fn show(res!: Response) -> String {
+    "{res.status}|{trim(res.body.toString())}"
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let routes = Routes()
+    info(show(routes.route(req("GET", "/"))))
+    info(show(routes.route(req("GET", "/home"))))
+    info(show(routes.route(req("GET", "/health"))))
+    info(show(routes.route(req("GET", "/tag/mocha"))))
+    info(show(routes.route(req("GET", "/user/42"))))
+    info(show(routes.route(req("GET", "/user/42/edit"))))
+    info(show(routes.route(req("GET", "/user/abc"))))
+    info(show(routes.route(req("GET", "/nope"))))
+    info(show(routes.route(req("POST", "/home"))))
+    info(show(routes.route(reqBody("POST", "/echo", "hi"))))
+    info(show(routes.route(req("GET", "/echo"))))
+    0
+}

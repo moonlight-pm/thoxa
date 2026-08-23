@@ -4,7 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-23 (**D149** `where` / `Type.read` **shipped**;
+**As of:** 2026-08-23 (**D150** route clauses **shipped**; **D149** `where` /
+`Type.read` **shipped**;
 **D148** `-->` nowait **shipped**; **D147** builtin
 `Node` + tag literals **shipped**;
 `containers/landing` = thoxa.dev news sign-up, live on
@@ -38,7 +39,8 @@ D133/D134 Map; D132 fn pointers; **D148** `-->` nowait)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **D149** `where` / `Type.read` (freeze + handbook;
+**Shipped recently:** **D150** type-body `GET "/…"` (freeze + handbook; gate
+`route_clauses`); **D149** `where` / `Type.read` (freeze + handbook;
 gates `json_read` / `where_refine` / `sums_literal`); **D148** `--> name(args)`
 nowait (freeze + handbook; gates `start_*` / `http_host`); **D147** builtin
 `Node` + tag literals (freeze + handbook; gate `jsx`); Crema page split
@@ -72,35 +74,27 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **combined import** (**D127**); **`std/io`+`Net`+`Http`** (**D126**);
 **`std/logging`** (**D125**); LSP nav; **D124** diagnostics.
 
-**On master, not product:**
-
-- Type-body `GET "/…"` desugar + LSP (idea
-  [`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md);
-  capability `route-clauses` **partial**). No D-id / handbook. Crema dogfoods
-  the clauses (example-only). Needs a conformance `.thx`.
+**On master, not product:** none (JSX / `-->` / `Type.read` / route clauses
+harvested **D147–D150**).
 
 **In progress / next:**
 
-1. Harvest remaining **on master, not product:** **route clauses**
-   (conformance `.thx` first, then freeze + handbook).
-2. **Editor only when DX forces it.** Crema Phase **E** is complete through
+1. **Editor only when DX forces it.** Crema Phase **E** is complete through
    **E5** (HTML-over-the-wire cafe: orders, fragments, `crema.js`, sessions,
    SSE). **E6 WebSockets stay parked.** Do **not** vendor HTMX.
-3. Crema leftovers (product migrate, file-based routing) stay parked.
+2. Crema leftovers (product migrate, file-based routing) stay parked.
 
 ### Proceed order
 
-1. **Route clauses** — needs a conformance `.thx` first (still HTTP-shaped),
-   then freeze + D-id + handbook.
-2. **Editor depth** — only when DX forces it. Freezes:
+1. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
-3. **Deferred: all session / shell residual** — redir polish, line editor,
+2. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
@@ -159,6 +153,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
 | Node / tag literals | Builtin **`Node`** (`Element \| Text \| Fragment`) + JSX tags (**D147**). No import. PascalCase is `Type(…).view(children:)`. `{e}` children/attrs stringify String / Int64 / Float64 / Bool; `{for}` collects `Array<Node>`. `.html()` is the markup codec — not generic `toString`. Comparison `<` needs a space (`a < b`). |
 | Refinements / `Type.read` | `where` refinements are real types (**D149**). `T.read` / `T.from` → `Trial<T, Issue>` (`Issue` in `std/json`). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No collect-all; no cross-field `where`; write `May<Qty>`. |
+| Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. No JSON/form bind; no fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
@@ -184,8 +179,9 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
    [`docs/specs/2026-08-22-jsx-node.md`](docs/specs/2026-08-22-jsx-node.md)  
 9. If D138 / module files: [`docs/decisions.md`](docs/decisions.md) (D138) — kebab-case stems, path-qualified ids; file-based routing parked in [`docs/ideas/2026-08-15-file-based-routing.md`](docs/ideas/2026-08-15-file-based-routing.md)
 10. If Crema / HTTP std: [`docs/ideas/2026-08-10-examples-http-crema-experiment.md`](docs/ideas/2026-08-10-examples-http-crema-experiment.md)
-   + **D136** / **D137** / **D139** / **D142** / **D145** / **D146** in [`docs/decisions.md`](docs/decisions.md)
+   + **D136** / **D137** / **D139** / **D142** / **D145** / **D146** / **D150** in [`docs/decisions.md`](docs/decisions.md)
     + Phase E protocol [`docs/ideas/2026-08-18-html-over-the-wire.md`](docs/ideas/2026-08-18-html-over-the-wire.md)
+    + route freeze [`docs/specs/2026-08-23-route-clauses.md`](docs/specs/2026-08-23-route-clauses.md)
 11. If JSON / `Type.read`: [`docs/decisions.md`](docs/decisions.md) (**D141** tree,
     **D149** refinements) + freeze
     [`docs/specs/2026-08-23-type-read.md`](docs/specs/2026-08-23-type-read.md)

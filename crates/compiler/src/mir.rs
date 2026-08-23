@@ -1234,7 +1234,7 @@ pub fn lower_package(package: &Package) -> Result<Program> {
 
 /// Lower a multi-file package with explicit options.
 pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Program> {
-    // Experiment: type-body `GET "/…"` → private methods + `route` (no std coupling).
+    // D150: type-body `GET "/…"` → handlers + `route` (names Request/Response/ok).
     let mut package = package.clone();
     crate::route_desugar::desugar_package(&mut package)?;
     crate::validate_desugar::desugar_package(&mut package)?;

@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-23 (**D149** `where` / `Type.read` **shipped**;
+**As of:** 2026-08-23 (**D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
 **D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
 `containers/landing` thoxa.dev live;
 `containers/sola` sola.computer teaser live; static JPEG/font MIME;
@@ -30,8 +30,7 @@ Crema **E2** fragment GETs;
 D133/D134 Map;
 D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 `/tmp/crema.db`) + `Roast` / `DrinkCard`; Phase **E** through **E5** (E6 parked);
-type-body
-route clauses **partial** on master — not freeze)
+**D150** type-body route clauses shipped)
 
 ---
 
@@ -67,7 +66,7 @@ route clauses **partial** on master — not freeze)
 | param-defaults | Formal defaults M3 (+ methods/ctors/`!`/extern) | shipped | `param_defaults`, `defaults_mod`, `param_bang_defaults` | D98, D106, D116 | `!` and extern formals may default (call-site fill); non-default cannot follow defaulted; free names use defining module | yes |
 | modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate`, `import_combined` | D30–D35, D122, **D127**, **D138** | Combined `import ns, { a } from "…"` shipped. Library files are kebab-case modules, not types (**D138**); ids path-qualified. `~/` is nearest ancestor `main.thx` (else entry dir) so nested-file check/LSP match directory packages. Nested import/type in functions deferred (D91); module mut heap (Array/String/Map) must not end-of-fn drop (D122) | yes |
 | pkg-main | Dir entry `main.thx` | shipped | `pkgmain` | D68, **D138** | Filename is kebab-case `main.thx` (D138) | yes |
-| route-clauses | Type-body `GET "/…"` → `route(req) -> Response` | partial | unit (`route_desugar`, LSP); Crema dogfood | idea [`ideas/2026-08-12-router-clause-syntax-experiment.md`](ideas/2026-08-12-router-clause-syntax-experiment.md) | **On master, not freeze / no D-id.** String wrap + `Response` pass-through; `Int64`/`String` captures; multi-segment; optional `req`. **Gaps:** no conformance `.thx`; no handbook; no JSON/form; miss is `notFound()` (no fallthrough). Crema dogfoods via `examples/http` `type Routes`. | no |
+| route-clauses | Type-body `GET "/…"` → `route(req) -> Response` | shipped | `route_clauses`; unit (`route_desugar`, LSP) | **D150**; freeze [`specs/2026-08-23-route-clauses.md`](specs/2026-08-23-route-clauses.md) | String wrap + `Response` pass-through; `Int64`/`String` captures; multi-segment; optional `Request` formal. Miss is `notFound()` (no fallthrough). Nullary type only. Crema dogfoods via `examples/http` `type Routes`. **Gaps:** no JSON/form auto-bind; no fallthrough; no router fields. | yes |
 | jsx-node | Tag literals + builtin `Node` / `.html()` | shipped | `jsx` | **D147**; freeze [`specs/2026-08-22-jsx-node.md`](specs/2026-08-22-jsx-node.md) | Eager PascalCase → `Type(…).view(children:)`; `{e}` children are String / Int64 / Float64 / Bool / Node / Array&lt;Node&gt;; `{for x in xs { child }}` collects Array&lt;Node&gt;; `{e}` attrs stringify String / Int64 / Float64 / Bool; void tags; bare boolean attrs render as `disabled`; empty `<>` is Node; no import. `<tag` (no space) is JSX, including after another expr; `a < b` (spaces) is comparison; glued `a<b` is an error. `Node` matches as `Element \| Text \| Fragment` (same `ThoxaHtml*` tree). Ambient `Attr` / `Element` / `Text` / `Fragment`. HTML `{...Array<Attr>}` and component `{...product}` spreads. Crema pages dogfood (`examples/http` `Page`). Bare `#` is a line comment; **`\#` in JSX text is a literal `#`**. **Gaps:** Tree-sitter `<>` highlighting best-effort; `.html()` method hover is the general MIR-builtin hole (type `Node` hover names it). No `"{n}"` interpolation of Node (use `.html()`). | yes |
 | type-read | `Type.read` / `where` / `.encode` | shipped | `json_read`, `where_refine`, `sums_literal` | **D149**; freeze [`specs/2026-08-23-type-read.md`](specs/2026-08-23-type-read.md) | `type Qty = Int64 where >= 1`; `&` / `\|` / parens; `Qty.from`; literal inhabitation; Qty→base coerce; `{value}`/`{expected}`/`{path}` templates; field-level `where` on `read`; `.toJson` / `.encode`; `Issue = Missing \| Mismatch \| Rejected` in `std/json`; `May<T>` fields (missing/null → `Not`). Closed slugs are literal unions (`type DrinkSlug = "espresso" \| "mocha"`) <: String. **Gaps:** no collect-all; no `May<Int64 where …>` (write `May<Qty>`); no cross-field product `where`; Tree-sitter `where` color may still be ident. | yes |
 

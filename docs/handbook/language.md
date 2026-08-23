@@ -274,6 +274,45 @@ before exiting. One OS thread (not `fork` / not threads).
 `std/http/server.serve` uses `--> serveOne` per accept so keep-alive peers can
 park without stalling the listener. See [std.md](std.md).
 
+## Route clauses
+
+HTTP methods in a **type body** are routes (**D150**). The type must be
+nullary (no constructor params / fields). The compiler generates
+`route(req: Request) -> Response`.
+
+```thx
+import http, { Request, Response, ok, notFound, badRequest } from "std/http"
+
+type Routes {
+    GET "/home" {
+        "Home"
+    }
+
+    GET "/user/:userId" (userId: Int64) -> String {
+        "user {userId}"
+    }
+
+    POST "/echo" (request: Request) -> Response {
+        ok(request.body, "text/plain")
+    }
+}
+
+let res = Routes().route(req)
+```
+
+| Piece | Behavior |
+|-------|----------|
+| Verbs | `GET` `POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS` |
+| String / omitted `->` | Wrap `ok(…, "text/plain")` |
+| `-> Response` | Pass through |
+| Miss | `notFound()` — no fallthrough |
+| Captures | `:name` in any segment; `String` or `Int64` (bad digits → `badRequest("invalid {name}")`) |
+| `Request` formal | Optional, any name; not a path capture |
+| Imports | Module must import the names the desugar calls (`Request`, `Response`, `ok`, `notFound`, and `badRequest` if any `Int64` capture) |
+
+`route` reads `req.method` / `req.path` only. JSON / form bodies are
+**not** compiler work — call `T.read` in the handler. See [std.md](std.md).
+
 ## Arrays and maps (value collections)
 
 `Array<T>` and `Map<K, V>` are heap values with Swift / `Buffer` copy-on-write

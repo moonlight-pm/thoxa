@@ -1,8 +1,9 @@
 # Experiment: router clause syntax (type-body `GET` / `PUT` …)
 
-**Status:** **landed on master** (2026-08-13) — compiler surface complete.  
-**Date:** 2026-08-12  
-**Not** a freeze, **not** handbook / capabilities “shipped.” No D-id yet.
+**Status:** **shipped** — 2026-08-23 (**D150**). Freeze
+[`../specs/2026-08-23-route-clauses.md`](../specs/2026-08-23-route-clauses.md).
+Handbook [`../handbook/language.md`](../handbook/language.md).  
+**Date:** 2026-08-12 (updated 2026-08-23)
 
 ---
 
@@ -49,7 +50,7 @@ No lang-items. JSON / form bodies are **not** compiler work.
 - General macros / attribute macros  
 - Compiler-hardcoded `Request<T>` / `Response<T>` / JSON / form codecs  
 - Lang-items for path matching  
-- Shipping handbook / capabilities “shipped” / freeze (Crema dogfood is example-only)  
+- Shipping handbook / capabilities “shipped” / freeze — **done (D150)**  
 - First-class function values for a runtime route table  
 
 ---
@@ -123,7 +124,7 @@ cargo run -p thoxa -- emit-c scratch/router_clause.thx
 | 10 `Int64` + multi-segment + `req` | **done** | generated helpers; 400 on bad int |
 | 11 Path-match helper in std | **n/a** | generated `__routeSegments` instead |
 | 12 Compiler surface | **done** | merged to master |
-| 13 Crema dogfood / freeze | **dogfood done** | `examples/http` uses type-body `GET`/`POST`; still not handbook / no D-id |
+| 13 Crema dogfood / freeze | **done (D150)** | `examples/http` uses type-body `GET`/`POST`; gate `route_clauses` |
 
 ---
 
@@ -168,5 +169,5 @@ Base: master at FCF park note (`969b6d7` lineage).
 
 ## Pickup
 
-On master. This file + `docs/ideas/README.md` row. Do **not** promote to
-`docs/specs/` or capabilities until a keep decision.
+Freeze [`../specs/2026-08-23-route-clauses.md`](../specs/2026-08-23-route-clauses.md)
+· D150 · capability `route-clauses`.

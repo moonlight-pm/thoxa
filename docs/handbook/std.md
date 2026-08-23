@@ -141,7 +141,7 @@ Host loop over `std/net`. Completes `Request.body` (64 KiB cap).
 
 | Surface | Notes |
 |---------|--------|
-| `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132** handle, **D148** nowait). Logs `http://127.0.0.1:{port}/` |
+| `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132** handle, **D148** nowait). Logs `http://127.0.0.1:{port}/`. App `handle` is often `Routes().route` (**D150**) |
 | `serveOne(peer, handle)` | One keep-alive connection |
 | `bindListen(port)` | `createSocket` + reuse + bind + listen |
 | `readBody` / `readRequest` | `Content-Length` entity; empty method/path = quiet close |

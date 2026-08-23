@@ -133,7 +133,7 @@ Freezes:
 cafe, not vendored HTMX; **E6** WebSockets parked; idea
 [`ideas/2026-08-18-html-over-the-wire.md`](ideas/2026-08-18-html-over-the-wire.md)).
 Host is `std/http/server.serve(routes.port, routes.handle)`
-(**D132**/**D136**/**D139**); type-body `GET`/`POST`; JSX `Node` pages (**D147**);
+(**D132**/**D136**/**D139**); type-body `GET`/`POST` (**D150**); JSX `Node` pages (**D147**);
 `CreateOrder.read` (**D149**);
 `/tmp/crema.db` via **`std/sqlite`**; app/domain under `examples/http/`;
 charter
