@@ -17,9 +17,9 @@ deferred. **`having`/`else` parked indefinitely.**
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **D151** LSan conformance gate; **D150** route clauses
-(`route_clauses`); **D149** `where` / `Type.read`; **D148** `--> name(args)`;
-**D147** JSX / `Node`.
+**Shipped recently:** **D152** match-bind / union-match / used-global RC;
+**D151** LSan conformance gate; **D150** route clauses (`route_clauses`);
+**D149** `where` / `Type.read`; **D148** `--> name(args)`; **D147** JSX / `Node`.
 
 **On master, not product:** none.
 

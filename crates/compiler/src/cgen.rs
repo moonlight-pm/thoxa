@@ -345,12 +345,19 @@ fn collect_user_array_elems_function(f: &Function, out: &mut Vec<String>) {
 
 fn emit_global(out: &mut String, g: &GlobalVar, is_static: bool) {
     let stor = if is_static { "static " } else { "" };
-    if is_heap_ty(&g.ty) {
-        let _ = writeln!(out, "{stor}{} {} = NULL;", c_ty(&g.ty), g.name);
-    } else if matches!(g.ty, Ty::Fn { .. } | Ty::User(_)) {
-        let _ = writeln!(out, "{stor}{} {} = {{0}};", c_ty(&g.ty), g.name);
+    // Heap / User module globals must remain observable. `-O1` DSE otherwise
+    // drops the store of unused `sqlite.null` and LSan reports the string.
+    let keep = if needs_drop_ty(&g.ty) {
+        " __attribute__((used))"
     } else {
-        let _ = writeln!(out, "{stor}{} {};", c_ty(&g.ty), g.name);
+        ""
+    };
+    if is_heap_ty(&g.ty) {
+        let _ = writeln!(out, "{stor}{} {}{keep} = NULL;", c_ty(&g.ty), g.name);
+    } else if matches!(g.ty, Ty::Fn { .. } | Ty::User(_)) {
+        let _ = writeln!(out, "{stor}{} {}{keep} = {{0}};", c_ty(&g.ty), g.name);
+    } else {
+        let _ = writeln!(out, "{stor}{} {}{keep};", c_ty(&g.ty), g.name);
     }
 }
 

@@ -19,11 +19,17 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-23 — Simple RC balance (match / init)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D152 | Close three LSan-proven extra-retain holes | (1) Value-match bare bind: `assign` of heap `Use` already Dups — do not Dup again. (2) Union/Node match result place is `note_drop_place` so inner `match` Trials (`readFile`) are dropped. (3) Module heap/User globals get `__attribute__((used))` so `-O1` DSE cannot drop unused stores (`sqlite.null`). | **Shipped.** Gate: `match_bind`, `logging_sink`, `file_io`/`file_seek`/`file_type`/`file_write`, `strings_multiline` now LSan-clean. Does not close loop temps / HTTP over-dup / Buffer COW. |
+
 ## 2026-08-23 — LeakSanitizer conformance gate
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D151 | Heap leak gate is GCC/Clang LeakSanitizer on batch `cc` | `cargo make test` links each conformance program with `-fsanitize=leak` (`THOXA_SANITIZE=leak`). Product `thoxa run` stays unsanitized (`target/thoxa/bin/`). Sanitized bins: `target/thoxa/bin-leak/` (or `bin-address` for `THOXA_SANITIZE=address`). Session/libtcc steps ignore the sanitizer (cannot link liblsan). Tests not yet RC-clean live in `tests/conformance/lsan-skip` — stdout still gated; a skip that becomes LSan-clean **fails** until removed. Valgrind is not in the tree (not a host dep). ASan is optional, not the default gate (ucontext fibers). | **Shipped.** Does not unpark Perceus. Module-init heap temps are dropped (D122 globals kept). Residual: loop interpolation temps, HTTP Request/`Array<Header>` over-dup (D69), JSON parse/encode temps, Buffer COW + extra call-site dup (`buffer` panics under LSan). |
+| D151 | Heap leak gate is GCC/Clang LeakSanitizer on batch `cc` | `cargo make test` links each conformance program with `-fsanitize=leak` (`THOXA_SANITIZE=leak`). Product `thoxa run` stays unsanitized (`target/thoxa/bin/`). Sanitized bins: `target/thoxa/bin-leak/` (or `bin-address` for `THOXA_SANITIZE=address`). Session/libtcc steps ignore the sanitizer (cannot link liblsan). Tests not yet RC-clean live in `tests/conformance/lsan-skip` — stdout still gated; a skip that becomes LSan-clean **fails** until removed. Valgrind is not in the tree (not a host dep). ASan is optional, not the default gate (ucontext fibers). | **Shipped.** Does not unpark Perceus. Module-init heap temps are dropped (D122 globals kept). **D152** closed match-bind extra Dup, union-match result drop, unused-global DSE. Residual: loop interpolation temps, HTTP Request/`Array<Header>` over-dup (D69), JSON parse/encode temps, Buffer COW + extra call-site dup (`buffer` panics under LSan). |
 
 ## 2026-08-23 — Type-body route clauses
 

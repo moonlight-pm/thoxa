@@ -10,10 +10,6 @@ array_heap_elems
 array_user
 buffer
 control_flow
-file_io
-file_seek
-file_type
-file_write
 http
 http_helpers
 http_host
@@ -23,9 +19,7 @@ http_wire
 json
 json_read
 jsx
-logging_sink
 maps
-match_bind
 multi_clause
 route_clauses
 router
@@ -36,5 +30,4 @@ sqlite
 start_keepalive
 start_net
 stdlib
-strings_multiline
 where_refine

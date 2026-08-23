@@ -11943,6 +11943,9 @@ fn lower_match_node(
     }
     ctx.stmts.extend(acc);
     let ty = result_ty.unwrap_or(Ty::Void);
+    if needs_drop(&ty) {
+        ctx.note_drop_place(&result_place, &ty);
+    }
     Ok((result_place, ty))
 }
 
@@ -12310,6 +12313,9 @@ fn lower_match_sum(
 
     // Result place is declared zeroed with other locals; arms assign into it.
     let ty = result_ty.unwrap_or(Ty::Void);
+    if needs_drop(&ty) {
+        ctx.note_drop_place(&result_place, &ty);
+    }
     Ok((result_place, ty))
 }
 
@@ -12485,14 +12491,9 @@ fn lower_match_value(
         let p = Place {
             name: sanitize_name(name),
         };
-        // Bind to scrutinee; Dup heap so arm can drop without freeing caller.
+        // Bind to scrutinee. `assign` of a heap `Use` already Dups so the arm can
+        // drop `s` without freeing the caller / match scrutinee.
         ctx.assign(p.clone(), scrut_ty.clone(), RValue::Use(scrut_p.clone()));
-        if needs_drop(&scrut_ty) {
-            ctx.stmts.push(Stmt::Dup {
-                place: p.clone(),
-                ty: scrut_ty.clone(),
-            });
-        }
         ctx.define(name, scrut_ty.clone(), false, p);
     }
     let catch_val = lower_block_into(ctx, &catch_arm.body, &result_ty)?;
