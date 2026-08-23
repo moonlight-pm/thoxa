@@ -60,6 +60,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | Multi-clause fn/method = type-driven match sugar | **shipped** (D131) |
 | [`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md) | Function types + free/unbound/bound methods | **shipped** (D132; no closures) |
 | [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) | Swift/Buffer COW + builtin `Map<K, V>` | **shipped** (D133/D134) |
+| [`specs/2026-08-22-jsx-node.md`](specs/2026-08-22-jsx-node.md) | Builtin `Node` + tag literals | **shipped** (D147) |
 
 ## Related trees (not under `docs/`)
 

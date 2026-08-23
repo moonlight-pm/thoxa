@@ -120,7 +120,7 @@ leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
 | Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `htmlResponseStatus`, `htmlFragment`, `notModified`, `cached` / `etagOf` / `withCache`, `response` / `responseHead` |
 | Connection | `wantsKeepAlive`, `finalize` (HEAD drops body; rewrites `Connection`) |
 
-`htmlResponse` takes a builtin `Node` and sends `<!DOCTYPE html>` plus
+`htmlResponse` takes a builtin `Node` (**D147**) and sends `<!DOCTYPE html>` plus
 `root.html()` as `text/html; charset=utf-8` (status 200). `htmlResponseStatus`
 is the same at a chosen status (HTML 404 / 400). `htmlFragment` is the snippet
 without the doctype. `cached(req, res, cacheControl)` attaches a

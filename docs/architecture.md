@@ -5,7 +5,8 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-21 (`containers/landing` thoxa.dev live; `containers/sola` sola.computer live; static JPEG/font MIME;
+**As of:** 2026-08-22 (**D147** JSX/`Node` shipped;
+`containers/landing` thoxa.dev live; `containers/sola` sola.computer live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 **D145** `htmlFragment` / `cached`;
 **built-in validation** on master, not product; `Type.read`;
@@ -17,7 +18,6 @@ maturity lives in [`capabilities.md`](capabilities.md).
 **D138** kebab-case modules + `main.thx` entry;
 **D137** Str parse + Http wrappers; **D136**
 `std/http/server` + `Request.query`; **D135** nested User / Node ctor fields;
-JSX `Node` is `Element | Text | Fragment` + `{...}` spreads + `{for}` lists on master;
 D133/D134 Map; D132 fn pointers; route-clause + `-->` nowait on master, not
 freeze; program `run`/`build` reuse stamped binaries)
 
@@ -41,7 +41,7 @@ step `.so` on the happy path.
 | Stage | Location | Notes |
 |-------|----------|--------|
 | CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL. Program `run`/`build` stamp package+std+runtime+compiler and skip `cc` when fresh. |
-| Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar`, `validate_desugar`, `refine` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. **Experiments:** type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`); tag literals desugar in the parser to `__jsx_el` / `__jsx_child` / `{...}` spreads; **`Type.read` / `where` / `T.from`** generate `__read_T` / `__fromJson_T` / `__from_T` (`validate_desugar.rs` + `refine.rs`) |
+| Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar`, `validate_desugar`, `refine` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. Tag literals desugar in the parser to `__jsx_el` / `__jsx_child` / `{...}` spreads (**D147**). **Experiments:** type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`); **`Type.read` / `where` / `T.from`** generate `__read_T` / `__fromJson_T` / `__from_T` (`validate_desugar.rs` + `refine.rs`) |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
 | MIR | `mir.rs` | RC; generic monomorphs; `std/fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**); route-clause bodies after desugar; builtin **`Ty::Node`** (`Element` / `Text` / `Fragment` / `Attr`; `html_el` / `html_text` / `html_frag` / `html_render`); **`Ty::Fn`** unboxed pair (**D132**) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body; D132 thunks + `ThoxaFn` |
@@ -150,3 +150,4 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 | Editor / LSP | [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md) |
 | Session / REPL | [`specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md) |
 | Map / value collections | [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) |
+| Node / tag literals | [`specs/2026-08-22-jsx-node.md`](specs/2026-08-22-jsx-node.md) (**D147**) |

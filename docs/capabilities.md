@@ -11,7 +11,8 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-21 (`containers/landing` thoxa.dev live;
+**As of:** 2026-08-22 (**D147** JSX/`Node` **shipped**;
+`containers/landing` thoxa.dev live;
 `containers/sola` sola.computer teaser live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 Crema **E4–E5**; **D145** `htmlFragment` / `cached`;
@@ -27,12 +28,11 @@ Crema **E2** fragment GETs;
 **D138** kebab-case module files + `main.thx` entry **shipped**;
 **D137** Str parse + Http wrappers;
 **D136** `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
-JSX `Node` match + `Attr` + `{...}` spreads + `{for}` lists **on master**; D133/D134 Map;
+D133/D134 Map;
 D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 `/tmp/crema.db`) + `Roast` / `DrinkCard`; Phase **E** through **E5** (E6 parked);
 type-body
-route clauses + JSX/`Node` + **`-->` nowait** **partial** on master — not
-freeze)
+route clauses + **`-->` nowait** **partial** on master — not freeze)
 
 ---
 
@@ -69,7 +69,7 @@ freeze)
 | modules | import/export, `./` `~/`, module let/mut | shipped | `modules`, `namespaces`, `modstate`, `import_combined` | D30–D35, D122, **D127**, **D138** | Combined `import ns, { a } from "…"` shipped. Library files are kebab-case modules, not types (**D138**); ids path-qualified. `~/` is nearest ancestor `main.thx` (else entry dir) so nested-file check/LSP match directory packages. Nested import/type in functions deferred (D91); module mut heap (Array/String/Map) must not end-of-fn drop (D122) | yes |
 | pkg-main | Dir entry `main.thx` | shipped | `pkgmain` | D68, **D138** | Filename is kebab-case `main.thx` (D138) | yes |
 | route-clauses | Type-body `GET "/…"` → `route(req) -> Response` | partial | unit (`route_desugar`, LSP); Crema dogfood | idea [`ideas/2026-08-12-router-clause-syntax-experiment.md`](ideas/2026-08-12-router-clause-syntax-experiment.md) | **On master, not freeze / no D-id.** String wrap + `Response` pass-through; `Int64`/`String` captures; multi-segment; optional `req`. **Gaps:** no conformance `.thx`; no handbook; no JSON/form; miss is `notFound()` (no fallthrough). Crema dogfoods via `examples/http` `type Routes`. | no |
-| jsx-node | Tag literals + builtin `Node` / `.html()` | partial | `jsx` | idea [`ideas/2026-08-13-jsx-node-syntax-experiment.md`](ideas/2026-08-13-jsx-node-syntax-experiment.md) | **On master, not freeze / no D-id.** Eager PascalCase → `Type(…).view(children:)`; `{e}` children are String / Int64 / Float64 / Bool / Node / Array&lt;Node&gt;; `{for x in xs { child }}` collects Array&lt;Node&gt;; `{e}` attrs stringify String / Int64 / Float64 / Bool; void tags; bare boolean attrs render as `disabled`; empty `<>` is Node; no import. `<tag` (no space) is JSX, including after another expr; `a < b` (spaces) is comparison; glued `a<b` is an error. `Node` matches as `Element \| Text \| Fragment` (same `ThoxaHtml*` tree). Ambient `Attr` / `Element` / `Text` / `Fragment`. HTML `{...Array<Attr>}` and component `{...product}` spreads. Crema pages dogfood (`examples/http` `Page`). Bare `#` is a line comment; **`\#` in JSX text is a literal `#`**. **Gaps:** no handbook; `.html()` method hover thin. | no |
+| jsx-node | Tag literals + builtin `Node` / `.html()` | shipped | `jsx` | **D147**; freeze [`specs/2026-08-22-jsx-node.md`](specs/2026-08-22-jsx-node.md) | Eager PascalCase → `Type(…).view(children:)`; `{e}` children are String / Int64 / Float64 / Bool / Node / Array&lt;Node&gt;; `{for x in xs { child }}` collects Array&lt;Node&gt;; `{e}` attrs stringify String / Int64 / Float64 / Bool; void tags; bare boolean attrs render as `disabled`; empty `<>` is Node; no import. `<tag` (no space) is JSX, including after another expr; `a < b` (spaces) is comparison; glued `a<b` is an error. `Node` matches as `Element \| Text \| Fragment` (same `ThoxaHtml*` tree). Ambient `Attr` / `Element` / `Text` / `Fragment`. HTML `{...Array<Attr>}` and component `{...product}` spreads. Crema pages dogfood (`examples/http` `Page`). Bare `#` is a line comment; **`\#` in JSX text is a literal `#`**. **Gaps:** Tree-sitter `<>` highlighting best-effort; `.html()` method hover is the general MIR-builtin hole (type `Node` hover names it). No `"{n}"` interpolation of Node (use `.html()`). | yes |
 | type-read | `Type.read` / `where` / `.encode` | partial | `json_read`, `where_refine`, `sums_literal` | idea [`ideas/2026-08-17-builtin-validation.md`](ideas/2026-08-17-builtin-validation.md) | **On master, not freeze / no D-id.** `type Qty = Int64 where >= 1`; `&` / `\|` / parens; `Qty.from`; literal inhabitation; Qty→base coerce; `{value}`/`{expected}`/`{path}` templates; field-level `where` on `read`; `.toJson` / `.encode`; `Issue = Missing \| Mismatch \| Rejected`; `May<T>` fields (missing/null → `Not`); nested `read` after a failed `read` is RC-clean (Map.get of User is a slot borrow + retain). Closed slugs are literal unions (`type DrinkSlug = "espresso" \| "mocha"`) — a string-literal union is a subtype of `String` (same for `0\|1` <: Int64, `true\|false` <: Bool); `T.from` / `T.read` on the union. **Gaps:** no handbook; no collect-all; no `May<Int64 where …>` (write `May<Qty>`). | no |
 
 ## FFI and C layout

@@ -1,10 +1,9 @@
 # Experiment: first-class tag literals + builtin `Node`
 
-**Status:** **landed on master** (2026-08-13; Node sum + `Attr` + spreads
-2026-08-15) — compiler + runtime surface complete; Crema pages rewritten
-onto tags.  
-**Date:** 2026-08-13 (updated 2026-08-15)  
-**Not** a freeze, **not** handbook / capabilities “shipped.” No D-id yet.  
+**Status:** **shipped** — 2026-08-22 (**D147**). Freeze
+[`../specs/2026-08-22-jsx-node.md`](../specs/2026-08-22-jsx-node.md).
+Handbook [`../handbook/language.md`](../handbook/language.md).  
+**Date:** 2026-08-13 (updated 2026-08-22)  
 **Demo:** [`scratch/jsx.thx`](../../scratch/jsx.thx)  
 **Gate:** conformance `jsx`  
 **Earlier parking lot:** [webapp SSR / components](2026-07-21-webapp-ssr-components.md)
@@ -40,7 +39,7 @@ logging.info(n.html())
 | Component | PascalCase `<Card title="Hi">…</Card>` → `Card(title: "Hi").view(children: […])` (eager) |
 | Fragment | `<>…</>` → fragment `Node` (empty `<>` included) |
 | Ctors | Ambient `Element(tag, attrs, kids)`, `Text(s)`, `Fragment(kids)`, `Attr(name, value)` — no import |
-| `{e}` | Children: `String` → escaped text; `Int64`/`Bool` → stringify then text; `Node` → identity; `Array<Node>` → splice. **`{for x in xs { child }}`** collects `Array<Node>` (statement `for` is unchanged). Attrs: `String` / `Int64` / `Bool` (stringify; `true`/`false`) |
+| `{e}` | Children: `String` → escaped text; `Int64`/`Float64`/`Bool` → stringify then text; `Node` → identity; `Array<Node>` → splice. **`{for x in xs { child }}`** collects `Array<Node>` (statement `for` is unchanged). Attrs: `String` / `Int64` / `Float64` / `Bool` (stringify; `true`/`false`) |
 | Spreads | HTML `{...xs}` is `Array<Attr>` (later attrs win by append order). Component `{...p}` copies ctor fields of a product `p` (later named props win) |
 | `<` vs tag | `<name` / `<>` (no space after `<`) is JSX, including after another expr. Comparison is `a < b` (space after `<`). Glued `a<b` / `n<3` is an error. |
 | Raw text | Source slice (lexer `Junk` so `'` / `·` survive); whitespace-only gaps dropped. Bare `#` is still a line comment. **`\#` is a literal `#`** (`Ticket \#{n}` → `Ticket #3`). |
@@ -56,8 +55,7 @@ No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
 
 ## Non-goals (this landing)
 
-- `className`, hydration / client VDOM  
-- Handbook / D-id / freeze  
+- `className`, hydration / client VDOM
 
 ## Dogfood
 
@@ -67,13 +65,15 @@ No user-facing `el` / `child` / `html` import. Desugar names are `__jsx_*`
 `n.html()` + `<!DOCTYPE html>` in `htmlResponse`. `Node` and user types are
 legal constructor-param fields.
 
-## Gaps
+## Gaps (honest leftovers — freeze Gaps, not a new experiment)
 
-- Hyphenated attrs parse; `data-*` ok  
-- `.html()` method has no dedicated hover (type `Node` does)  
-- Tree-sitter island colors tags; fragments/`<>` highlighting is best-effort  
+- `.html()` method has no dedicated hover (type `Node` does) — same hole as
+  other MIR builtins
+- Tree-sitter island colors tags; fragments/`<>` highlighting is best-effort
 - Generic `toString` / `repr` / interpolation of `Node` **parked** — see
   [`2026-08-15-tostring-repr-and-traits.md`](2026-08-15-tostring-repr-and-traits.md)
   (not a traits forcing function; do not delete `.html()`)
 
-Pickup: root `CURRENT.md` (focus) · this file · capability `jsx-node`.
+Pickup: freeze
+[`../specs/2026-08-22-jsx-node.md`](../specs/2026-08-22-jsx-node.md) · D147 ·
+capability `jsx-node`.

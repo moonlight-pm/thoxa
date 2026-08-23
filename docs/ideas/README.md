@@ -14,7 +14,7 @@ locked and (if needed) scheduled. Living priority never lives here — see root
 | [examples/http Crema-lite](2026-08-10-examples-http-crema-experiment.md) | **active experiment** | **A–D2 + E1–E5 complete.** **E6** WebSockets parked. Domain stays example-only |
 | [FCF + closures + ORC](2026-08-11-first-class-functions-and-orc.md) | sleeping | Full fn values / JS-like capture / cycle collector **parked**. **C** (typed fn pointers + bound methods) **promoted** → **D132** / [`../specs/2026-08-13-function-pointers.md`](../specs/2026-08-13-function-pointers.md) |
 | [router clause syntax](2026-08-12-router-clause-syntax-experiment.md) | **on master** (not freeze) | Type-body `GET "/…"` → handlers + `route(req) -> Response`; LSP; no D-id / handbook |
-| [JSX / tag literals + `Node`](2026-08-13-jsx-node-syntax-experiment.md) | **on master** (not freeze) | Builtin `Node` + `.html()`; `{e}` children/attrs; spreads; no D-id / handbook |
+| [JSX / tag literals + `Node`](2026-08-13-jsx-node-syntax-experiment.md) | **shipped** (**D147**) | Freeze [`../specs/2026-08-22-jsx-node.md`](../specs/2026-08-22-jsx-node.md); handbook language |
 | [`toString` / `repr` / interpolation](2026-08-15-tostring-repr-and-traits.md) | sleeping | Do not replace `.html()` with generic `toString`; Display is not a traits forcing function |
 | [file-based routing](2026-08-15-file-based-routing.md) | **parked** | Path-from-tree for Crema; captures/layouts as filenames deferred. Kebab-case modules split out → **D138** |
 | [`std/json` codec](2026-08-15-json-codec.md) | **shipped** (**D141**) | Dynamic `Json` tree; `decode` / `encode`. Crema `POST /api/orders` dogfoods it |

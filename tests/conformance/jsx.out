@@ -1,6 +1,7 @@
 <section class="card"><h1>Hi</h1><p>Hello, Ada &amp; Co</p><br><input disabled><em>ok</em></section>
 <div class="gap"></div>
 <p>6 drinks</p>
+<span data-p="2.5">2.5</span>
 <p>under ten</p>
 <input data-n="6" data-ok="true" value="Ada &amp; Co">
 <div class="box" id="x" data-k="v">z</div>

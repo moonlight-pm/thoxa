@@ -38,6 +38,8 @@ fn main() -> Int64 {
     let gap = <div class="gap">{<></>}</div>
     let drinks = 6
     let count = <p>{drinks} drinks</p>
+    let price = 2.5
+    let priced = <span data-p={price}>{price}</span>
     let flagged = true
     let attrs = <input data-n={drinks} data-ok={flagged} value={name} />
     ## `<` after another expr is a tag when glued (`<p>`), comparison when spaced (`< 10`).
@@ -50,6 +52,7 @@ fn main() -> Int64 {
     logging.info(n.html())
     logging.info(gap.html())
     logging.info(count.html())
+    logging.info(priced.html())
     logging.info(tail.html())
     logging.info(attrs.html())
 

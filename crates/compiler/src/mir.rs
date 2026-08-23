@@ -9292,7 +9292,7 @@ fn lower_html_attr(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Plac
     let (p, ty) = lower_expr(ctx, expr)?;
     match &ty {
         Ty::String => Ok((p, Ty::String)),
-        Ty::Int64 | Ty::Bool => {
+        Ty::Int64 | Ty::Float64 | Ty::Bool => {
             let s = stringify_place(ctx, p, ty, expr.span)?;
             Ok((s, Ty::String))
         }
@@ -9302,7 +9302,7 @@ fn lower_html_attr(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Plac
         }
         other => Err(Error::at(
             format!(
-                "JSX attribute must be String, Int64, or Bool, got {}",
+                "JSX attribute must be String, Int64, Float64, or Bool, got {}",
                 display_ty(other)
             ),
             expr.span,
@@ -9361,7 +9361,7 @@ fn lower_html_child(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
             emit_call_result(ctx, Callee::Builtin("html_frag".into()), vec![p], Ty::Node)
         }
         // Same scalars string interp accepts — `{n}` is a text node, not a wrap.
-        Ty::Int64 | Ty::Bool => {
+        Ty::Int64 | Ty::Float64 | Ty::Bool => {
             let s = stringify_place(ctx, p, ty, expr.span)?;
             emit_call_result(ctx, Callee::Builtin("html_text".into()), vec![s], Ty::Node)
         }
@@ -9371,7 +9371,7 @@ fn lower_html_child(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
         }
         other => Err(Error::at(
             format!(
-                "JSX embed must be String, Int64, Bool, Node, or Array<Node>, got {}",
+                "JSX embed must be String, Int64, Float64, Bool, Node, or Array<Node>, got {}",
                 display_ty(other)
             ),
             expr.span,

@@ -2754,7 +2754,7 @@ fn jsx_child_wrap(expr: Expr) -> Expr {
     }
 }
 
-/// HTML attr `{e}` — MIR stringifies Int64/Bool the same way children do.
+/// HTML attr `{e}` — MIR stringifies Int64/Float64/Bool the same way children do.
 fn jsx_attr_wrap(expr: Expr) -> Expr {
     let span = expr.span;
     Expr {

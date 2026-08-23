@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-22 — Builtin Node + tag literals
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D147 | Product HTML trees are builtin `Node` + tag literals | Ambient **`Node`** (`Element \| Text \| Fragment`, same `ThoxaHtml*` tree). Tags `<div>` / `<>` (no space after `<`); comparison is `a < b`. PascalCase is eager `Type(…).view(children:)`. `{e}` children: String / Int64 / Float64 / Bool / Node / `Array<Node>`; `{for x in xs { child }}` collects `Array<Node>`. Attrs stringify the same scalars; bare `disabled` is boolean. HTML `{...Array<Attr>}` appends; component `{...product}` copies ctor fields. `.html() -> String` (escaped; void tags `br hr img input meta link`). No import. Keep `.html()` — do not fold into generic `toString`. | **Shipped.** Freeze [`specs/2026-08-22-jsx-node.md`](specs/2026-08-22-jsx-node.md). Gate: `jsx`. Amends D140 (JSX stringify includes Float64). Field storage stays **D135**. `htmlResponse` / `htmlFragment` stay **D137** / **D145**. Punted: interpolation of `Node`, client VDOM, Tree-sitter `<>` polish, dedicated `.html()` hover. |
+
 ## 2026-08-19 — SSE / socket takeover
 
 | ID | Decision | Choice | Notes |

@@ -57,7 +57,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Area | Shipped |
 |------|---------|
 | Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Float64`, `Bool`, `Void` |
-| Heap | `String` (interpolation, `.count`, `\xHH` escapes, **newlines kept**), `sql"…"` tagged interpolator (**D144**, may span lines), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`) |
+| Heap | `String` (interpolation, `.count`, `\xHH` escapes, **newlines kept**), `sql"…"` tagged interpolator (**D144**, may span lines), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`), builtin **`Node`** (tag literals, **D147**) |
 | User types | `type Name(fields) { methods }` — including heap fields, **Node**, and nested user types / sums (**D135**); method field write-back. Recursive fields are an error (use `Array` / `Map`) |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
 | Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"`. Member product fields may be scalars (incl. `Float64`), String/Bytes, User, `Array`, or `Map` (**D141**) |
@@ -66,7 +66,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/fallible` with `?` / `match` (ok/err may nest) |
-| Equality | String `==` / `!=`; usual scalar compares (including `Float64`). Comparison `<` needs a space after it (`a < b`, not `a<b`) |
+| Equality | String `==` / `!=`; usual scalar compares (including `Float64`). Comparison `<` needs a space after it (`a < b`, not `a<b`) — glued `<name` is a [tag](#tag-literals-and-node-jsx) |
 
 **`Float64` (**D140**):** IEEE-754 binary64. Literals `1.5`, `1e2`, `1.5e-1`,
 `3.14f64`. `1..5` is still a range (a `.` is a fraction only when a digit
@@ -112,8 +112,8 @@ for the outer. `while` / `for` still yield `Void` (they can finish).
 ## Match
 
 - **Trial / May / user unions / `Node`:** constructor arms (`Pass(x)` / `Fail(e)`,
-  `Has(x)` / `Not`, `Element(tag, attrs, kids)` / `Text(s)` / `Fragment(kids)`,
-  custom tags), discard `_`, optional **`if` guards**
+  `Has(x)` / `Not`, `Element(tag, attrs, kids)` / `Text(s)` / `Fragment(kids)`
+  for **D147** `Node`, custom tags), discard `_`, optional **`if` guards**
   (`Pos(n) if n > 0 { … }` — binds visible to the guard; guarded arms do not
   exhaust a tag).
 - **Tag-only bare ctors:** bare `Pass` / `Fail` / `Has` / user tags match the
@@ -250,6 +250,49 @@ for k, v in lit {
 - **Iteration:** `for x in arr`; `for k, v in map` (insertion order).
   `.keys()` / `.values()` snapshot to `Array`.
 - Fixed `Array<T, N>` and Bytes splice are unchanged (inline / functional).
+
+## Tag literals and Node (JSX)
+
+Builtin **`Node`** is an HTML tree: `Element | Text | Fragment` (same value).
+No import. Tags are **expressions**. `n.html()` is escaped markup (no doctype,
+no pretty indent). **D147.**
+
+```thx
+type Card(title: String) {
+    export fn view(children: Array<Node>) -> Node {
+        <section class="card">
+            <h1>{title}</h1>
+            {children}
+        </section>
+    }
+}
+
+let n = <Card title="Hi">
+    <p>Hello, {name}</p>
+    <input disabled />
+</Card>
+info(n.html())
+```
+
+| Piece | Behavior |
+|-------|----------|
+| HTML tag | `<div class="x">…</div>` — hyphenated names (`data-*`) ok |
+| Component | PascalCase `<Card title="Hi">…</Card>` is eager `Card(…).view(children:)` — a type that **produces** `Node`, not a subtype |
+| Fragment | `<>…</>` (empty `<>` is a valid `Node`) |
+| `{e}` children | `String` (escaped text); `Int64` / `Float64` / `Bool` (stringify, same as interpolation); `Node`; `Array<Node>` splices |
+| `{for x in xs { child }}` | Collects `Array<Node>` (child position only; statement `for` is unchanged) |
+| Attrs | `"…"` or `{e}` (same scalars as children). Bare `disabled` renders as `disabled` |
+| Spreads | HTML `{...xs}` is `Array<Attr>` (later attrs append). Component `{...p}` copies product fields |
+| `<` vs tag | `<name` / `<>` with **no space** after `<` is a tag, including after another expr. Compare with `a < b`. Glued `a<b` is an error |
+| Raw text | Whitespace-only gaps drop. Bare `#` is a line comment. **`\#` is a literal `#`** |
+| Void tags | `br` `hr` `img` `input` `meta` `link` — no close in `.html()` |
+| Match | `Element(tag, attrs, kids)` / `Text(s)` / `Fragment(kids)` |
+| Ctors | Ambient `Element` / `Text` / `Fragment` / `Attr` |
+
+`std/http.htmlResponse(root)` sends `<!DOCTYPE html>` plus `root.html()`.
+`htmlFragment` is the snippet without the doctype. See [std.md](std.md).
+
+`Node` does **not** interpolate in `"{n}"` — use `.html()`.
 
 ## Methods and field write-back
 
