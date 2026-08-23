@@ -82,6 +82,8 @@ apocrypha/        history + Python oracle (not product)
 | `target/c/` | C runtime objects + `libthoxa_rt.a` |
 | `target/thoxa/c/` | Generated C from Thoxa sources |
 | `target/thoxa/bin/` | Linked Thoxa program binaries + freshness `*.stamp` |
+| `target/thoxa/bin-leak/` | LSan-linked programs (`THOXA_SANITIZE=leak`; **D151**) |
+| `target/thoxa/bin-address/` | ASan-linked programs (`THOXA_SANITIZE=address`) |
 
 `cargo make clean` removes `target/c` and `target/thoxa`.  
 `cargo make clean --all` also removes `target/rust`.

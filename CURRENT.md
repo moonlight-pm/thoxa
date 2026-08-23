@@ -4,9 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-23. Language harvest **D147–D150** shipped (JSX/`Node`,
-`-->` nowait, `where`/`Type.read`, type-body route clauses). **D151**
-LeakSanitizer is the conformance leak gate (`lsan-skip` ratchet).
+**As of:** 2026-08-23. Language harvest **D147–D150** shipped. **D151**
+LeakSanitizer is the conformance leak gate; **D152** closed match-bind /
+union-match / unused-global RC (`lsan-skip` ratchet).
 `containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
 Crema Phase **E** through **E5**; **E6** WebSockets parked. Session/shell
 deferred. **`having`/`else` parked indefinitely.**
@@ -104,7 +104,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Refinements / `Type.read` | `where` refinements are real types (**D149**). `T.read` / `T.from` → `Trial<T, Issue>` (`Issue` in `std/json`). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No collect-all; no cross-field `where`; write `May<Qty>`. |
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. No JSON/form bind; no fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
-| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Residue: `tests/conformance/lsan-skip` (ratchet — a skip that goes clean must be removed). Not Perceus. Session/libtcc unsanitized. |
+| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Residue: `tests/conformance/lsan-skip` (ratchet — a skip that goes clean must be removed). Not Perceus. Session/libtcc unsanitized. |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
 | Diagnostics | Structured IR → pretty check + `--json` + rich LSP (**D124** shipped); agent-only extras parked |
@@ -139,6 +139,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 12. If SQLite: [`docs/decisions.md`](docs/decisions.md) (**D143** / **D144**) —
     amalgamation in `vendor/sqlite`; `sql"… {value} …"`. Crema persist is
     example-only (`examples/http` `/tmp/crema.db`); no product migrate.
+13. If RC / leaks: [`docs/decisions.md`](docs/decisions.md) (**D151** LSan gate,
+    **D152** match/init balance) + `tests/conformance/lsan-skip`.
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

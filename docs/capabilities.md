@@ -29,8 +29,7 @@ Crema **E2** fragment GETs;
 **D136** `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
 D133/D134 Map;
 D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
-`/tmp/crema.db`) + `Roast` / `DrinkCard`; Phase **E** through **E5** (E6 parked);
-**D150** type-body route clauses shipped)
+`/tmp/crema.db`) + `Roast` / `DrinkCard`; Phase **E** through **E5** (E6 parked))
 
 ---
 
