@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-22 (**D147** JSX/`Node` **shipped**;
+**As of:** 2026-08-22 (**D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
 `containers/landing` thoxa.dev live;
 `containers/sola` sola.computer teaser live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
@@ -32,7 +32,7 @@ D133/D134 Map;
 D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 `/tmp/crema.db`) + `Roast` / `DrinkCard`; Phase **E** through **E5** (E6 parked);
 type-body
-route clauses + **`-->` nowait** **partial** on master — not freeze)
+route clauses **partial** on master — not freeze)
 
 ---
 
@@ -58,7 +58,7 @@ route clauses + **`-->` nowait** **partial** on master — not freeze)
 | mut-assign | `mut` + assign + method field write-back | shipped | `bytes`, `method_field_writeback` | R5, D107 | — | yes |
 | control-flow | while / loop / for / break / continue | shipped | `control_flow`, `loops`, `loop_diverge` | D47, D55, **D128** | `loop` without `break` diverges (Never); `while`/`for` still Void | yes |
 | early-return | `return` / `return expr` | shipped | `early_return` | D63 | — | yes |
-| start-tasks | `--> name(args)` — begin a call; do not wait | partial | `start_tasks`, `start_nested`, `start_net`, `start_keepalive`, `http_host` | on master, not freeze | No Future / `async` / `run`. Token `-->` only (not a word). Free Thoxa fns only; `--> { }` later. Net parks. `std/http/server` `--> serveOne` + keep-alive (**D136**). No handbook / D-id | no |
+| start-tasks | `--> name(args)` — begin a call; do not wait | shipped | `start_tasks`, `start_nested`, `start_net`, `start_keepalive`, `http_host` | **D148**; freeze [`specs/2026-08-22-start-tasks.md`](specs/2026-08-22-start-tasks.md) | Token `-->` only (not a word). Named free Thoxa fns only; expression is `Void`; return dropped. Net parks. `std/http/server` `--> serveOne` + keep-alive (**D136**). **Gaps:** no Future / `async` / `run`; `--> { }` later; no `-->` of a pointer / method / extern. | yes |
 | return-infer | Unannotated free-fn return from body exits | shipped | `return_infer` | **D129**; [`specs/2026-08-10-return-type-inference.md`](specs/2026-08-10-return-type-inference.md) | Unannotated **methods** still default `Void` (not body-inferred yet); recursive/mutual unannotated free fns → annotate; bare Pass/Fail alone → annotate; LSP hover shows free-fn inferred types after lower | yes |
 | array-dyn | Dynamic `Array<T>` (incl. User) + insertAt/removeAt | shipped | `arrays`, `array_user`, `array_heap_elems`, `splice` | D53–D55, D62, D65; **D133** | Write-back `Void` on `mut` places (Swift/Buffer COW). `let` aliases do not see writes. | yes |
 | map | Builtin `Map<K, V>` + `{k:v}` + `for k, v` | shipped | `maps`, `maps_user`, `json` | **D134**; D133; **D141**; [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) | Keys v0 String/Int64/Bool (User types are **values**, not keys). Values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `.get`→May / write-back `.set`; ident keys; insertion order. `Map<K,V>` seeds `May<V>` so `.get` works without a nested annotation. Crema dogfoods query/form/cookies as `Map<String, String>`. **Gaps:** User keys wait on structural product `==` + private field hash (not Eq/Hash traits; not pointer identity). No `==` on Map. No `std/http` header flip. | yes |

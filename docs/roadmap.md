@@ -137,7 +137,7 @@ Host is `std/http/server.serve(routes.port, routes.handle)`
 `/tmp/crema.db` via **`std/sqlite`**; app/domain under `examples/http/`;
 charter
 [`ideas/2026-08-10-examples-http-crema-experiment.md`](ideas/2026-08-10-examples-http-crema-experiment.md);
-accept loop uses **D128** + **`--> serveOne`** + keep-alive. `examples/kilo`
+accept loop uses **D128** + **`--> serveOne`** (**D148**) + keep-alive. `examples/kilo`
 shipped and exercised; continue matrix gaps when samples force them.
 
 **Horizon / deferred until CURRENT says so:**

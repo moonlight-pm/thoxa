@@ -4,7 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-22 (**D147** builtin `Node` + tag literals **shipped**;
+**As of:** 2026-08-22 (**D148** `-->` nowait **shipped**; **D147** builtin
+`Node` + tag literals **shipped**;
 `containers/landing` = thoxa.dev news sign-up, live on
 aulos as workload `thoxa` / `https://thoxa.dev/`;
 `containers/sola` = sola.computer Paper teaser + ISO notify, live on aulos
@@ -29,8 +30,7 @@ Crema **D2** persist `/tmp/crema.db`;
 **D137** Str `parseUInt`/`splitOnce` + Http
 `queryParam`/`formField`/`cookie`/`htmlResponse`; **D136**
 `Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
-D133/D134 Map; D132 fn pointers; `-->` nowait **on master**, not freeze /
-not handbook)
+D133/D134 Map; D132 fn pointers; **D148** `-->` nowait)
 
 ---
 
@@ -38,7 +38,8 @@ not handbook)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **D147** builtin `Node` + tag literals (freeze +
+**Shipped recently:** **D148** `--> name(args)` nowait (freeze + handbook;
+gates `start_*` / `http_host`); **D147** builtin `Node` + tag literals (freeze +
 handbook; gate `jsx`); Crema page split (`app/pages/` + `ui/`); JSX `{for}` +
 bare boolean attrs; **`having`/`else` parked**;
 Crema **E4–E5** (sessions/flash/CSRF + SSE board);
@@ -61,8 +62,8 @@ Crema `POST /api/orders`);
 **HTTP host / wire** (**D136** — `Request.query`,
 `std/http` helpers, `std/http/server`); **Node + nested User ctor fields**
 (**D135**); **Map + value collections** (**D133/D134**); **function
-pointers** (**D132**); **`-->` nowait**
-(colorless wait; Net parks; `HttpServer` `--> serveOne` + keep-alive);
+pointers** (**D132**); **`-->` nowait** (**D148**;
+colorless wait; Net parks; `HttpServer` `--> serveOne` + keep-alive);
 **multi-clause functions** (**D131**);
 Crema-lite **Phase A–D2 complete**; **match arm sugar** (**D130**); **return-type**
 inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
@@ -71,11 +72,7 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 **On master, not product:**
 
-- Colorless wait + **`--> name(args)`** (capability `start-tasks` **partial**).
-  No Future / `async` / `run`. Token only (not a word). `--> { }` later.
-  No D-id / handbook. Crema dogfoods it. Review: `scratch/async.thx`
-  (gitignored).
-- Type-body `GET "/…"` desugar + LSP (idea
+- Type-body `GET "/…"` desugar + LSP (idea)
   [`docs/ideas/2026-08-12-router-clause-syntax-experiment.md`](docs/ideas/2026-08-12-router-clause-syntax-experiment.md);
   capability `route-clauses` **partial**). No D-id / handbook. Crema dogfoods
   the clauses (example-only).
@@ -89,7 +86,7 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 **In progress / next:**
 
 1. Harvest remaining **on master, not product** surfaces (same order):
-   **`-->` nowait**, then **`Type.read` / `where`**, then **route clauses**.
+   **`Type.read` / `where`**, then **route clauses**.
 2. **Editor only when DX forces it.** Crema Phase **E** is complete through
    **E5** (HTML-over-the-wire cafe: orders, fragments, `crema.js`, sessions,
    SSE). **E6 WebSockets stay parked.** Do **not** vendor HTMX.
@@ -97,20 +94,17 @@ inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
 
 ### Proceed order
 
-1. **`-->` nowait** — freeze + D-id + handbook. Capability `start-tasks`
-   **partial**. Gate already exists (`start_tasks`, …). No Future / `async` /
-   `run`; `--> { }` still later.
-2. **`Type.read` / `where`** — lock the idea (syntax still open) + handbook.
-3. **Route clauses** — needs a conformance `.thx` first (still HTTP-shaped).
-4. **Editor depth** — only when DX forces it. Freezes:
+1. **`Type.read` / `where`** — lock the idea (syntax still open) + handbook.
+2. **Route clauses** — needs a conformance `.thx` first (still HTTP-shaped).
+3. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
-5. **Deferred: all session / shell residual** — redir polish, line editor,
+4. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-6. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
+5. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
    a CURRENT line until samples force it.
 
@@ -159,6 +153,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Match arms | Bare ctor = tag-only; `=>` single-expr body or `{ }` multi-stmt (**D130**); `->` types only |
 | Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **shipped**). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |
+| Nowait | Token **`--> name(args)`** starts a named free Thoxa function (**D148**). `Void`; return dropped. Colorless: Net parks; `main` drains. No Future / `async` / `--> { }` / pointer `-->`. |
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
@@ -184,7 +179,8 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 3. [`docs/capabilities.md`](docs/capabilities.md) — rows for the slice  
 4. One freeze if building that domain  
 5. [`docs/decisions.md`](docs/decisions.md) only when reopening surface  
-6. If D132: [`docs/specs/2026-08-13-function-pointers.md`](docs/specs/2026-08-13-function-pointers.md)  
+6. If D132 / D148: [`docs/specs/2026-08-13-function-pointers.md`](docs/specs/2026-08-13-function-pointers.md)
+   + [`docs/specs/2026-08-22-start-tasks.md`](docs/specs/2026-08-22-start-tasks.md) (`-->`)  
 7. If D133/D134: [`docs/specs/2026-08-14-map-and-value-collections.md`](docs/specs/2026-08-14-map-and-value-collections.md)  
 8. If D135 / JSX `Node`: [`docs/decisions.md`](docs/decisions.md) (**D135**
    fields, **D147** tags) + freeze

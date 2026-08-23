@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-22 (**D147** JSX/`Node` shipped;
+**As of:** 2026-08-22 (**D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
 `containers/landing` thoxa.dev live; `containers/sola` sola.computer live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 **D145** `htmlFragment` / `cached`;
@@ -18,7 +18,7 @@ maturity lives in [`capabilities.md`](capabilities.md).
 **D138** kebab-case modules + `main.thx` entry;
 **D137** Str parse + Http wrappers; **D136**
 `std/http/server` + `Request.query`; **D135** nested User / Node ctor fields;
-D133/D134 Map; D132 fn pointers; route-clause + `-->` nowait on master, not
+D133/D134 Map; D132 fn pointers; route-clause on master, not
 freeze; program `run`/`build` reuse stamped binaries)
 
 ---
@@ -44,7 +44,7 @@ step `.so` on the happy path.
 | Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar`, `validate_desugar`, `refine` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. Tag literals desugar in the parser to `__jsx_el` / `__jsx_child` / `{...}` spreads (**D147**). **Experiments:** type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`); **`Type.read` / `where` / `T.from`** generate `__read_T` / `__fromJson_T` / `__from_T` (`validate_desugar.rs` + `refine.rs`) |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
 | MIR | `mir.rs` | RC; generic monomorphs; `std/fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**); route-clause bodies after desugar; builtin **`Ty::Node`** (`Element` / `Text` / `Fragment` / `Attr`; `html_el` / `html_text` / `html_frag` / `html_render`); **`Ty::Fn`** unboxed pair (**D132**) |
-| Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body; D132 thunks + `ThoxaFn` |
+| Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body; D132 thunks + `ThoxaFn`; **D148** start thunks + `thoxa_sched_drain` after `main` / session step |
 | Session | `session.rs`, `command.rs`, `std/shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/fallible` + `std/logging` (+ deps) |
 | Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast`; inject deps |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; build stamps `THOXA_GIT_HASH` / dirty |
@@ -129,7 +129,7 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 ## Runtime notes
 
 - Heap today: `String`, `Bytes`, dynamic `Array`, `Map`, `Buffer` — simple RC.
-- Cooperative tasks (on master, not freeze): `thoxa_task_start` /
+- Cooperative tasks (**D148**): `thoxa_task_start` /
   `thoxa_wait_ms` / `thoxa_wait_fd` / `thoxa_sched_drain` — one OS thread,
   stackful fibers; poll + timers. `std/net` accept/connect/recv/send go
   through `thoxa_*` and park on EAGAIN. Generated `main` drains after
@@ -151,3 +151,4 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 | Session / REPL | [`specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md) |
 | Map / value collections | [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) |
 | Node / tag literals | [`specs/2026-08-22-jsx-node.md`](specs/2026-08-22-jsx-node.md) (**D147**) |
+| Nowait `-->` | [`specs/2026-08-22-start-tasks.md`](specs/2026-08-22-start-tasks.md) (**D148**) |

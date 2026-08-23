@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-08-22 — `-->` nowait
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D148 | Product nowait is token `--> name(args)` | Begin a **named free Thoxa function**; do not wait. Expression type **`Void`**; callee return dropped. Token only (not a word). One OS thread; stackful fibers; Net parks; `main` / session step **drain until idle**. No Future / `async` / `run`. No `--> { }`. No `-->` of a pointer, method, extern, or type. | **Shipped.** Freeze [`specs/2026-08-22-start-tasks.md`](specs/2026-08-22-start-tasks.md). Gates: `start_tasks`, `start_nested`, `start_net`, `start_keepalive`, `http_host`. Amends D132 (named-fn `-->` is product; pointer `-->` still out). Dogfood: `std/http/server` `--> serveOne`. |
+
 ## 2026-08-22 — Builtin Node + tag literals
 
 | ID | Decision | Choice | Notes |

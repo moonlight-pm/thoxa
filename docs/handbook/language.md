@@ -154,7 +154,8 @@ let n = apply2(Counter.add, c, 7)  # unbound: extra self argument
 They may be arguments, returns, locals, and **module** `let`/`mut`. They may
 **not** be constructor fields or array elements (type error). No `==`, no
 `-->` of a pointer, no nested `fn`. Multi-clause and `extern` functions cannot
-be taken as values.
+be taken as values. To start a **named** function without waiting, see
+[`-->`](#nowait) below.
 
 Parameter defaults (M3 subset) on free functions, **methods**, **constructor
 params**, and **`!` formals** (including `extern` — defaults expand at the
@@ -209,6 +210,29 @@ Rules (v0):
 Bare literal types and inline member-sets (`"a" | "b"`) are also valid in
 formals, returns, and annotations in general. Singleton alias:
 `type Home = "home"`.
+
+## Nowait
+
+Token **`-->`** begins a named free-function call and does **not** wait for it
+(**D148**). Not a word (`async` / `go` / `spawn`). Expression type is **`Void`**;
+the callee’s return is dropped. No Future / `Task` handle.
+
+```thx
+--> tick("a")
+--> serveOne(peer, handle)
+```
+
+Callee is **one ident** in scope (`--> name(args)`), including defaults. Import
+a name to start a function from another module. **Not:** a function pointer,
+`instance.method`, `extern`, or `--> { … }`.
+
+The process is **colorless**: user code does not write `await`. `std/net`
+socket ops park the current task when they would block. If the callee never
+parks, it finishes before `-->` returns. Generated `main` waits until idle
+before exiting. One OS thread (not `fork` / not threads).
+
+`std/http/server.serve` uses `--> serveOne` per accept so keep-alive peers can
+park without stalling the listener. See [std.md](std.md).
 
 ## Arrays and maps (value collections)
 

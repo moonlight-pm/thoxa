@@ -90,7 +90,7 @@ typedef struct ThoxaShellState {
 int32_t thoxa_pipe(int32_t fds_out[2]);
 
 /*
- * Cooperative tasks (experiment/implicit-async). One OS thread; `start` enqueues
+ * Cooperative tasks (D148). One OS thread; `thoxa_task_start` enqueues
  * a thunk; `thoxa_wait_ms` parks the current task; `thoxa_sched_drain` runs
  * until idle. Generated `main` drains after `thoxa_fn_main`.
  */
