@@ -36,9 +36,12 @@ This experiment **dogfoods** that stack under realistic app structure.
 ## Hard rules
 
 1. **App/domain stays in `examples/http/`.** Pages, models, cookie policy, and
-   route clauses are not product std. Host/wire already live in `std/` (**D136**).
-2. **Not official product.** Handbook must not present Crema-lite routing /
-   layouts as language features. Capability row stays an **example** experiment.
+   Crema’s `type Routes` table stay example-only. Host/wire is `std/` (**D136**).
+   Type-body route *syntax* is product (**D150**); JSX/`Node` **D147**;
+   `where`/`Type.read` **D149**; `-->` **D148**.
+2. **Not official product cafe.** Handbook documents those language surfaces,
+   not Crema domain (drinks, sessions, `crema.js`). Capability `examples-http`
+   stays an **example** experiment.
 3. **Language breaks allowed.** If the sample is blocked by a real language
    gap, stop, fix the language (conformance + CURRENT), then resume. Further
    std helpers only when they are clearly product (sample-driven, D97).

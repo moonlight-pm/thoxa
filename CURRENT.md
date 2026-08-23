@@ -4,34 +4,11 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-23 (**D150** route clauses **shipped**; **D149** `where` /
-`Type.read` **shipped**;
-**D148** `-->` nowait **shipped**; **D147** builtin
-`Node` + tag literals **shipped**;
-`containers/landing` = thoxa.dev news sign-up, live on
-aulos as workload `thoxa` / `https://thoxa.dev/`;
-`containers/sola` = sola.computer Paper teaser + ISO notify, live on aulos
-as workload `sola` / `https://sola.computer/`;
-static JPEG/font MIME; Crema pages under `app/pages/` + `ui/page.thx`;
-JSX `{for}` lists + bare `disabled`; **`having`/`else` parked indefinitely**;
-Crema Phase **E** complete through **E5**; **E6** WebSockets **parked**;
-**D146** SSE `peerFd` / `streamed()`;
-**E4** sessions + flash + CSRF; **E3** `crema.js`; **E2** + **D145**;
-Crema **A–D2 complete**; HTML-over-the-wire — not vendored HTMX;
-**D149** types as inhabitation (`where` / `Type.read`);
-Crema **D2** persist `/tmp/crema.db`;
-**D144** `sql"…"` tagged interpolator;
-**D143** `std/sqlite` amalgamation;
-**D142** `Cookie` / `withCookie` / `clearCookie`;
-**D141** `std/json` `decode`/`encode` + Crema
-`POST /api/orders`;
-**D140** `Float64`;
-**D139** HTTP hosts under `std/http/`;
-**D138** kebab-case module files **shipped**;
-**D137** Str `parseUInt`/`splitOnce` + Http
-`queryParam`/`formField`/`cookie`/`htmlResponse`; **D136**
-`Request.query` + `std/http/server`; **D135** Node + nested User ctor fields;
-D133/D134 Map; D132 fn pointers; **D148** `-->` nowait)
+**As of:** 2026-08-23. Language harvest **D147–D150** shipped (JSX/`Node`,
+`-->` nowait, `where`/`Type.read`, type-body route clauses).
+`containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
+Crema Phase **E** through **E5**; **E6** WebSockets parked. Session/shell
+deferred. **`having`/`else` parked indefinitely.**
 
 ---
 
@@ -39,43 +16,10 @@ D133/D134 Map; D132 fn pointers; **D148** `-->` nowait)
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **D150** type-body `GET "/…"` (freeze + handbook; gate
-`route_clauses`); **D149** `where` / `Type.read` (freeze + handbook;
-gates `json_read` / `where_refine` / `sums_literal`); **D148** `--> name(args)`
-nowait (freeze + handbook; gates `start_*` / `http_host`); **D147** builtin
-`Node` + tag literals (freeze + handbook; gate `jsx`); Crema page split
-(`app/pages/` + `ui/`); JSX `{for}` +
-bare boolean attrs; **`having`/`else` parked**;
-Crema **E4–E5** (sessions/flash/CSRF + SSE board);
-**D146** `Request.peerFd` / `streamed()` / `beginEventStream`;
-Crema **E3** `web/crema.js` (`thx-get` / `thx-post`);
-**D145** `htmlFragment` / `etagOf` / `cached`;
-Crema **E2** `GET /menu/items` + `GET /orders/:id/ticket`;
-multiline `"…"` / `sql"…"` gated (`strings_multiline`);
-Zed SQL injection on `sql"…"`;
-Crema persist (`/tmp/crema.db`);
-**`sql"…"`** (**D144**);
-**`std/sqlite`** (**D143**);
-**`Cookie` / `withCookie`** (**D142**);
-**`std/json`** (**D141** — `decode` / `encode`;
-Crema `POST /api/orders`);
-**`Float64`** (**D140**);
-**HTTP hosts under `std/http/`** (**D139**);
-**kebab-case modules** (**D138**);
-**HTTP leftover helpers** (**D137**);
-**HTTP host / wire** (**D136** — `Request.query`,
-`std/http` helpers, `std/http/server`); **Node + nested User ctor fields**
-(**D135**); **Map + value collections** (**D133/D134**); **function
-pointers** (**D132**); **`-->` nowait** (**D148**;
-colorless wait; Net parks; `HttpServer` `--> serveOne` + keep-alive);
-**multi-clause functions** (**D131**);
-Crema-lite **Phase A–D2 complete**; **match arm sugar** (**D130**); **return-type**
-inference** (**D129** + LSP hover); **diverging `loop`** (**D128**);
-**combined import** (**D127**); **`std/io`+`Net`+`Http`** (**D126**);
-**`std/logging`** (**D125**); LSP nav; **D124** diagnostics.
+**Shipped recently:** **D150** route clauses (`route_clauses`); **D149**
+`where` / `Type.read`; **D148** `--> name(args)`; **D147** JSX / `Node`.
 
-**On master, not product:** none (JSX / `-->` / `Type.read` / route clauses
-harvested **D147–D150**).
+**On master, not product:** none.
 
 **In progress / next:**
 

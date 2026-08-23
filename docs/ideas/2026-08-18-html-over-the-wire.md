@@ -8,11 +8,11 @@ grow the coffee-shop domain into `std/`.
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · Crema checklist
 [`2026-08-10-examples-http-crema-experiment.md`](2026-08-10-examples-http-crema-experiment.md)
 (Phase E) · this file (protocol + runtime).  
-**Related:** [JSX / `Node`](2026-08-13-jsx-node-syntax-experiment.md) (SSR
-tree, on master); [webapp SSR / components](2026-07-21-webapp-ssr-components.md)
-(sleeping longer fork); [route clauses](2026-08-12-router-clause-syntax-experiment.md);
-[file-based routing](2026-08-15-file-based-routing.md) (**parked**);
-[built-in validation](2026-08-17-builtin-validation.md).
+**Related:** [JSX / `Node`](2026-08-13-jsx-node-syntax-experiment.md) (**D147**);
+[webapp SSR / components](2026-07-21-webapp-ssr-components.md)
+(sleeping longer fork); [route clauses](2026-08-12-router-clause-syntax-experiment.md)
+(**D150**); [file-based routing](2026-08-15-file-based-routing.md) (**parked**);
+[built-in validation](2026-08-17-builtin-validation.md) (**D149**).
 
 ---
 
@@ -76,8 +76,8 @@ process-local, not sqlite.
 | Need | Why it’s 90% | First home |
 |------|----------------|------------|
 | Full-document SSR | First paint, no-JS, SEO, simple | **have** |
-| Layouts + components | `type Page` / `DrinkCard` | **have** (JSX experiment) |
-| HTML forms + PRG | Mutations without an API | **have** sign-in; order form is next |
+| Layouts + components | `type Page` / `DrinkCard` | **have** (JSX **D147**) |
+| HTML forms + PRG | Mutations without an API | **have** sign-in + HTML order form |
 | Fragment GET/POST | Search, order ticket, lists | **have** (E2 + **D145**) |
 | Tiny swap runtime | Click/submit → fetch HTML → swap | **have** (`web/crema.js`; example-only) |
 | History | `pushState` + popstate re-fetch | same runtime |

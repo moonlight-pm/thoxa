@@ -17,7 +17,7 @@ maturity lives in [`capabilities.md`](capabilities.md).
 **D138** kebab-case modules + `main.thx` entry;
 **D137** Str parse + Http wrappers; **D136**
 `std/http/server` + `Request.query`; **D135** nested User / Node ctor fields;
-D133/D134 Map; D132 fn pointers; **D150** route clauses; program `run`/`build` reuse stamped binaries)
+D133/D134 Map; D132 fn pointers; program `run`/`build` reuse stamped binaries)
 
 ---
 
