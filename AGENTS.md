@@ -64,7 +64,7 @@ diaries. Authority order and rules:
 ## Commands
 
 ```bash
-cargo make test              # conformance (preferred day-to-day gate)
+cargo make test              # conformance + LeakSanitizer (preferred day-to-day gate)
 cargo make run path.thx
 cargo make shell             # product session REPL (bare thoxa)
 cargo make shell --login     # clean login-like env

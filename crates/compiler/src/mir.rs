@@ -1764,12 +1764,20 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             );
             let (place, ty) = lower_expr(&mut ctx, &g.init)?;
             // Move init value into global place.
+            let global_place = Place {
+                name: place_name.clone(),
+            };
             ctx.assign(
-                Place {
-                    name: place_name.clone(),
-                },
+                global_place.clone(),
                 ty.clone(),
                 RValue::Use(place),
+            );
+            // Drop init temps (`_s0` from `"stderr"`) but not the global (D122).
+            insert_function_drops(
+                &mut ctx.stmts,
+                &Some(global_place),
+                &ty,
+                &ctx.drop_places,
             );
             init_stmts.extend(ctx.stmts);
 

@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-23 (**D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
+**As of:** 2026-08-23 (**D151** LeakSanitizer conformance gate; **D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
 **D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
 `containers/landing` thoxa.dev live;
 `containers/sola` sola.computer teaser live; static JPEG/font MIME;
@@ -38,7 +38,7 @@ D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel | `run`/`build` reuse `target/thoxa/bin/*` when package / `std/` / runtime / compiler are unchanged (`THOXA_FORCE_BUILD=1` to skip). No incremental `cc`. | yes |
+| driver-cgen | Compile-to-C driver, hello, C emit | shipped | `hello` | kernel; **D151** | `run`/`build` reuse `target/thoxa/bin/*` when package / `std/` / runtime / compiler are unchanged (`THOXA_FORCE_BUILD=1` to skip). No incremental `cc`. `THOXA_SANITIZE=leak` / `address` links to `target/thoxa/bin-leak/` / `bin-address/` (batch `cc` only). | yes |
 | lets-arith-if | `let`, arith, `if` | shipped | `arithmetic`, `lets_if` | R1 | Integer arith. Float → **floats** / **D140**. | yes |
 | floats | `Float64` type + literals + arith | shipped | `floats` | **D140** | No `Float32`. No `%`. No float match arms / literal types. No float Map keys. Int→`Float64` coerce only. Interp/JSX stringify shortest round-trip. | yes |
 | multi-clause | Same-name multi-clause fn/method = match sugar on formal types | shipped | `multi_clause` | **D131**; [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | Pattern formals / cross-arity / composition / `extern` multi-clause out of v0. D16 std factories still separate. Bare singleton lit types + inline `\|` in formals shipped as typespace substrate. | yes |
@@ -148,7 +148,7 @@ D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| simple-rc | Single-threaded RC String/Bytes/Array/Map | partial | strings/bytes/arrays/maps | kernel D4-ish; **D122** | Module mut heap not end-of-fn dropped (D122). Perceus precision later | partial |
+| simple-rc | Single-threaded RC String/Bytes/Array/Map | partial | `cargo make test` (LSan); `hello` / `user_rc` | kernel D4-ish; **D122**; **D151** | Module mut heap not end-of-fn dropped (D122). Module-init temps are dropped. **Gaps:** `tests/conformance/lsan-skip` (loop interpolation temps, HTTP `Trial<Request>` / `Array<Header>` over-dup, JSON parse/encode temps, Buffer COW + call-site extra dup — `buffer` panics under LSan). No cycle collector. No language `Drop` for File/Socket/Db. Perceus precision later | partial |
 | spawn-wait | `thoxa_spawn_wait` for session | shipped | session / extras | D86 | Not a general language spawn surface | no |
 | perceus | Precise RC / Perceus | idea | — | kernel | Deferred megawork | no |
 | effects | Algebraic effects | idea | — | kernel | Out until forced | no |

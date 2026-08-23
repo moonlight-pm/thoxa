@@ -1,0 +1,40 @@
+# Conformance programs that are not yet LeakSanitizer-clean.
+# `cargo make test` still runs them (stdout must match) but ignores a
+# non-zero LSan/RC exit. If a listed test becomes LSan-clean, the suite
+# fails until that name is removed from this file.
+#
+# Typical residue: loop interpolation temps, HTTP Request/Array<Header>
+# over-dup (D69), JSON parse/encode temps, Buffer COW + extra call-site dup.
+
+array_heap_elems
+array_user
+buffer
+control_flow
+file_io
+file_seek
+file_type
+file_write
+http
+http_helpers
+http_host
+http_parse
+http_server
+http_wire
+json
+json_read
+jsx
+logging_sink
+maps
+match_bind
+multi_clause
+route_clauses
+router
+session_cmd
+session_pipe
+session_redir
+sqlite
+start_keepalive
+start_net
+stdlib
+strings_multiline
+where_refine

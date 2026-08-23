@@ -5,7 +5,8 @@
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-08-23. Language harvest **D147–D150** shipped (JSX/`Node`,
-`-->` nowait, `where`/`Type.read`, type-body route clauses).
+`-->` nowait, `where`/`Type.read`, type-body route clauses). **D151**
+LeakSanitizer is the conformance leak gate (`lsan-skip` ratchet).
 `containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
 Crema Phase **E** through **E5**; **E6** WebSockets parked. Session/shell
 deferred. **`having`/`else` parked indefinitely.**
@@ -16,8 +17,9 @@ deferred. **`having`/`else` parked indefinitely.**
 
 **Session / shell remains deferred.**
 
-**Shipped recently:** **D150** route clauses (`route_clauses`); **D149**
-`where` / `Type.read`; **D148** `--> name(args)`; **D147** JSX / `Node`.
+**Shipped recently:** **D151** LSan conformance gate; **D150** route clauses
+(`route_clauses`); **D149** `where` / `Type.read`; **D148** `--> name(args)`;
+**D147** JSX / `Node`.
 
 **On master, not product:** none.
 
@@ -40,10 +42,13 @@ deferred. **`having`/`else` parked indefinitely.**
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
 3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
    until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
-   a CURRENT line until samples force it.
+   a CURRENT line until samples force it. **Do not start Perceus** while
+   `tests/conformance/lsan-skip` is non-empty — that list is simple-RC
+   correctness, not precision.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
-conformance green-ups. Further **`std/` growth is sample-driven** (D97/D136).
+conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
+delete its line). Further **`std/` growth is sample-driven** (D97/D136).
 Crema **domain** (pages, models, cookies policy) stays in `examples/http/`.
 Public sites are **`containers/landing`** (thoxa.dev) and
 **`containers/sola`** (sola.computer) — not `examples/`, not `extras/`.
@@ -99,6 +104,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Refinements / `Type.read` | `where` refinements are real types (**D149**). `T.read` / `T.from` → `Trial<T, Issue>` (`Issue` in `std/json`). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No collect-all; no cross-field `where`; write `May<Qty>`. |
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. No JSON/form bind; no fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
+| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Residue: `tests/conformance/lsan-skip` (ratchet — a skip that goes clean must be removed). Not Perceus. Session/libtcc unsanitized. |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
 | Diagnostics | Structured IR → pretty check + `--json` + rich LSP (**D124** shipped); agent-only extras parked |

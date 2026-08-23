@@ -3,7 +3,7 @@
 **Date:** 2026-07-18  
 **Status:** historical (freeze; ladder complete)  
 **Implementation:** shipped  
-**Gaps:** Perceus, effects, full oracle SPEC — deferred (see roadmap / capabilities)  
+**Gaps:** Perceus, effects, full oracle SPEC — deferred (see roadmap / capabilities). LeakSanitizer gate **D151** (as-built: `cargo make test`; residue `tests/conformance/lsan-skip`).  
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)  
 **Repo:** `Thoxa` (native product; Python oracle archived under `apocrypha/old/ThoxaPython`)
 

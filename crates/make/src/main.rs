@@ -2,6 +2,7 @@
 //!
 //! Project automation without shell scripts.
 
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -44,11 +45,11 @@ Thoxa xtask (`cargo make …`)
 Build tree (everything under target/):
     target/rust/     Cargo (compiler, xtask)
     target/c/        C runtime (libthoxa_rt.a)
-    target/thoxa/    Thoxa products (c/, bin/)
+    target/thoxa/    Thoxa products (c/, bin/, bin-leak/)
 
 Commands:
     cargo make runtime              Build libthoxa_rt.a + compile_commands.json
-    cargo make test                 Run conformance suite
+    cargo make test                 Run conformance suite (LeakSanitizer)
     cargo make run <file.thx|dir>   Compile and run a program
     cargo make shell                Product session REPL (bare `thoxa`)
     cargo make shell --login        Same, clean login-like env (test default-shell readiness)
@@ -361,10 +362,12 @@ fn cmd_test() -> i32 {
     if ensure_thoxa_built() != 0 {
         return 1;
     }
-    // Build runtime once
+    // Build unsanitized runtime once (LSan is link-only on the program binary).
     if run_thoxa(&["runtime"]) != 0 {
         return 1;
     }
+
+    eprintln!("conformance (LeakSanitizer; THOXA_SANITIZE=leak)");
 
     let conf = workspace_root().join("tests/conformance");
     if !conf.is_dir() {
@@ -391,8 +394,10 @@ fn cmd_test() -> i32 {
         return 1;
     }
 
+    let skip = load_lsan_skip(&conf);
     let thoxa = thoxa_bin_path();
     let mut passed = 0;
+    let mut skipped = 0;
     let mut failed = 0;
 
     for entry in &entries {
@@ -409,30 +414,48 @@ fn cmd_test() -> i32 {
             String::new()
         };
 
-        let output = Command::new(&thoxa)
-            .args(["run", entry.to_str().unwrap()])
+        let mut cmd = Command::new(&thoxa);
+        cmd.args(["run", entry.to_str().unwrap()])
             .current_dir(workspace_root())
             .env("THOXA_ROOT", workspace_root())
-            .output();
+            .env("THOXA_SANITIZE", "leak");
+        if env::var_os("LSAN_OPTIONS").is_none() {
+            cmd.env("LSAN_OPTIONS", "detect_leaks=1:print_suppressions=0");
+        }
+        let output = cmd.output();
+        let known_skip = skip.contains(&name);
 
         match output {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 let status = out.status.code().unwrap_or(1);
-                if status != 0 {
-                    eprintln!("FAIL {name}: exit {status}");
-                    eprintln!("{}", String::from_utf8_lossy(&out.stderr));
-                    failed += 1;
-                    continue;
-                }
                 if stdout != expected {
                     eprintln!("FAIL {name}: stdout mismatch");
                     eprintln!("  expected: {expected:?}");
                     eprintln!("  got:      {stdout:?}");
+                    if status != 0 {
+                        eprintln!("{}", String::from_utf8_lossy(&out.stderr));
+                    }
                     failed += 1;
+                    continue;
+                }
+                if status == 0 {
+                    if known_skip {
+                        eprintln!(
+                            "FAIL {name}: LeakSanitizer-clean — remove from tests/conformance/lsan-skip"
+                        );
+                        failed += 1;
+                    } else {
+                        eprintln!("ok   {name}");
+                        passed += 1;
+                    }
+                } else if known_skip {
+                    eprintln!("skip {name} (lsan)");
+                    skipped += 1;
                 } else {
-                    eprintln!("ok   {name}");
-                    passed += 1;
+                    eprintln!("FAIL {name}: exit {status}");
+                    eprintln!("{}", String::from_utf8_lossy(&out.stderr));
+                    failed += 1;
                 }
             }
             Err(e) => {
@@ -442,12 +465,24 @@ fn cmd_test() -> i32 {
         }
     }
 
-    eprintln!("{passed} passed, {failed} failed");
+    eprintln!("{passed} passed, {skipped} lsan-skip, {failed} failed");
     if failed > 0 {
         1
     } else {
         0
     }
+}
+
+fn load_lsan_skip(conf: &Path) -> HashSet<String> {
+    let path = conf.join("lsan-skip");
+    let Ok(text) = fs::read_to_string(&path) else {
+        return HashSet::new();
+    };
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_string)
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

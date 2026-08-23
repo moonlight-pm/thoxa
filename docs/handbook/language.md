@@ -96,7 +96,9 @@ residual mark use the same `?` operator.
 
 **Reference counting:** simple single-threaded RC (dup on copy, drop at function
 end for **locals**). Module-level heap bindings outlive the function that wrote
-them (D122). Precise RC / Perceus is **not** shipped.
+them (D122). `cargo make test` links programs with LeakSanitizer (**D151**);
+tests not yet clean are listed in `tests/conformance/lsan-skip`. Precise RC /
+Perceus is **not** shipped.
 
 ## Refinements and `Type.read`
 

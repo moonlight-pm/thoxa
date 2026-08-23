@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-23 (**D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
+**As of:** 2026-08-23 (**D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
 `containers/landing` thoxa.dev live; `containers/sola` sola.computer live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 **D145** `htmlFragment` / `cached`;
@@ -38,7 +38,7 @@ step `.so` on the happy path.
 
 | Stage | Location | Notes |
 |-------|----------|--------|
-| CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL. Program `run`/`build` stamp package+std+runtime+compiler and skip `cc` when fresh. |
+| CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL. Program `run`/`build` stamp package+std+runtime+compiler and skip `cc` when fresh. `THOXA_SANITIZE=leak` / `address` (**D151**) |
 | Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar`, `validate_desugar`, `refine` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. Tag literals desugar in the parser to `__jsx_el` / `__jsx_child` / `{...}` spreads (**D147**). **`Type.read` / `where` / `T.from`** generate `__read_T` / `__fromJson_T` / `__from_T` (`validate_desugar.rs` + `refine.rs`, **D149**). Type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`, **D150**) |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
 | MIR | `mir.rs` | RC; generic monomorphs; `std/fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**); route-clause bodies after desugar; builtin **`Ty::Node`** (`Element` / `Text` / `Fragment` / `Attr`; `html_el` / `html_text` / `html_frag` / `html_render`); **`Ty::Fn`** unboxed pair (**D132**) |
@@ -110,6 +110,8 @@ Everything generated lives under one tree:
 | `target/c/tinycc/` | Installed libtcc + libtcc1 (from `build.rs`) |
 | `target/thoxa/c/` | Generated C from Thoxa sources |
 | `target/thoxa/bin/` | Linked Thoxa program binaries + sidecar `*.stamp` |
+| `target/thoxa/bin-leak/` | LSan-linked programs (`THOXA_SANITIZE=leak`; **D151**) |
+| `target/thoxa/bin-address/` | ASan-linked programs (`THOXA_SANITIZE=address`) |
 | `target/thoxa/repl/` | Optional session keep-C dumps; no step `.so` on libtcc path |
 
 Prefer `cargo make …` over ad-hoc scripts. `cargo make clean` removes `target/c`
@@ -127,6 +129,7 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 ## Runtime notes
 
 - Heap today: `String`, `Bytes`, dynamic `Array`, `Map`, `Buffer` — simple RC.
+  Conformance leak gate: GCC/Clang LeakSanitizer (**D151**).
 - Cooperative tasks (**D148**): `thoxa_task_start` /
   `thoxa_wait_ms` / `thoxa_wait_fd` / `thoxa_sched_drain` — one OS thread,
   stackful fibers; poll + timers. `std/net` accept/connect/recv/send go

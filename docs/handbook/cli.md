@@ -55,7 +55,7 @@ and `diagnostics[]` with `code`, `severity`, `message`, `path`, 1-based
 Prefer **`cargo make`** helpers from a workspace checkout:
 
 ```bash
-cargo make test              # conformance suite
+cargo make test              # conformance suite (LeakSanitizer; D151)
 cargo make run path.thx
 cargo make run examples/http # Crema-lite HTTP example (port 9091; experiment)
 # kilo editor (real TTY; Ctrl-Q quit, 3× if dirty)
@@ -76,6 +76,8 @@ cargo make zed               # sync Zed extras + LSP binary
 | `target/c/` | Runtime objects + `libthoxa_rt.a` |
 | `target/thoxa/c/` | Generated C |
 | `target/thoxa/bin/` | Linked program binaries + `*.stamp` (freshness fingerprint) |
+| `target/thoxa/bin-leak/` | LSan-linked programs (`THOXA_SANITIZE=leak`) |
+| `target/thoxa/bin-address/` | ASan-linked programs (`THOXA_SANITIZE=address`) |
 
 ## Environment (selected)
 
@@ -87,5 +89,6 @@ cargo make zed               # sync Zed extras + LSP binary
 | `THOXA_NORC` | Skip session rc when set |
 | `THOXA_STATUS` | Set by REPL host for prompt helpers |
 | `THOXA_FORCE_BUILD` | Set to `1` to ignore the program-binary stamp and rebuild |
+| `THOXA_SANITIZE` | Batch `cc` only: `leak` (LeakSanitizer) or `address` (ASan). Product default is unset. Session/libtcc ignores this. |
 
 Details for session: [session.md](session.md).

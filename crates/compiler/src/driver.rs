@@ -379,6 +379,65 @@ pub fn emit_c(opts: &BuildOptions) -> Result<PathBuf> {
 /// Set to `1` / `true` / `yes` to ignore the program-binary stamp.
 pub const FORCE_BUILD_ENV: &str = "THOXA_FORCE_BUILD";
 
+/// Batch `cc` sanitizer: `leak` (LeakSanitizer) or `address` (ASan, includes LSan).
+/// Session/libtcc steps ignore this (in-process tcc cannot link liblsan).
+pub const SANITIZE_ENV: &str = "THOXA_SANITIZE";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SanitizeMode {
+    None,
+    Leak,
+    Address,
+}
+
+fn sanitize_mode() -> Result<SanitizeMode> {
+    match std::env::var(SANITIZE_ENV) {
+        Err(_) => Ok(SanitizeMode::None),
+        Ok(raw) => {
+            let value = raw.trim();
+            if value.is_empty() || value == "0" || value.eq_ignore_ascii_case("none") {
+                Ok(SanitizeMode::None)
+            } else if value.eq_ignore_ascii_case("leak") || value.eq_ignore_ascii_case("lsan") {
+                Ok(SanitizeMode::Leak)
+            } else if value.eq_ignore_ascii_case("address") || value.eq_ignore_ascii_case("asan") {
+                Ok(SanitizeMode::Address)
+            } else {
+                Err(Error::new(format!(
+                    "unknown {SANITIZE_ENV}={raw:?} (use leak, address, or unset)"
+                )))
+            }
+        }
+    }
+}
+
+fn sanitize_bin_dir_name(mode: SanitizeMode) -> &'static str {
+    match mode {
+        SanitizeMode::None => "bin",
+        SanitizeMode::Leak => "bin-leak",
+        SanitizeMode::Address => "bin-address",
+    }
+}
+
+fn sanitize_cc_args(mode: SanitizeMode) -> &'static [&'static str] {
+    match mode {
+        SanitizeMode::None => &["-std=c11", "-O2"],
+        SanitizeMode::Leak => &[
+            "-std=c11",
+            "-O1",
+            "-g",
+            "-fno-omit-frame-pointer",
+            "-fsanitize=leak",
+        ],
+        SanitizeMode::Address => &[
+            "-std=c11",
+            "-O1",
+            "-g",
+            "-fno-omit-frame-pointer",
+            "-fsanitize=address",
+        ],
+    }
+}
+
 fn force_build() -> bool {
     matches!(
         std::env::var(FORCE_BUILD_ENV).as_deref(),
@@ -451,7 +510,13 @@ fn input_fingerprint(opts: &BuildOptions) -> String {
     files.dedup();
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    "v1".hash(&mut hasher);
+    "v2".hash(&mut hasher);
+    match sanitize_mode() {
+        Ok(SanitizeMode::None) => "sanitize:none".hash(&mut hasher),
+        Ok(SanitizeMode::Leak) => "sanitize:leak".hash(&mut hasher),
+        Ok(SanitizeMode::Address) => "sanitize:address".hash(&mut hasher),
+        Err(_) => "sanitize:invalid".hash(&mut hasher),
+    }
     opts.source.hash(&mut hasher);
     std_root.hash(&mut hasher);
     for f in files {
@@ -490,10 +555,11 @@ fn write_stamp(opts: &BuildOptions, bin: &Path) {
 }
 
 pub fn build(opts: &BuildOptions) -> Result<BuildArtifacts> {
+    let sanitize = sanitize_mode()?;
     if !opts.emit_c_only {
         ensure_runtime()?;
         let name = output_stem(opts);
-        let bin_dir = thoxa_target_dir().join("bin");
+        let bin_dir = thoxa_target_dir().join(sanitize_bin_dir_name(sanitize));
         let bin_path = bin_dir.join(&name);
         let c_path = thoxa_target_dir().join("c").join(format!("{name}.c"));
         if is_fresh(opts, &bin_path) {
@@ -517,12 +583,12 @@ pub fn build(opts: &BuildOptions) -> Result<BuildArtifacts> {
     ensure_runtime()?;
 
     let name = output_stem(opts);
-    let bin_dir = thoxa_target_dir().join("bin");
+    let bin_dir = thoxa_target_dir().join(sanitize_bin_dir_name(sanitize));
     fs::create_dir_all(&bin_dir).map_err(|e| Error::new(e.to_string()))?;
     let bin_path = bin_dir.join(&name);
 
     let status = host_tool("cc")
-        .args(["-std=c11", "-O2"])
+        .args(sanitize_cc_args(sanitize))
         .arg(&c_path)
         .arg("-I")
         .arg(runtime_include_dir())
@@ -533,8 +599,17 @@ pub fn build(opts: &BuildOptions) -> Result<BuildArtifacts> {
         .status()
         .map_err(|e| Error::new(format!("failed to spawn cc: {e}")))?;
     if !status.success() {
+        let hint = match sanitize {
+            SanitizeMode::None => String::new(),
+            SanitizeMode::Leak => {
+                format!(" ({SANITIZE_ENV}=leak needs GCC/Clang liblsan)")
+            }
+            SanitizeMode::Address => {
+                format!(" ({SANITIZE_ENV}=address needs GCC/Clang libasan)")
+            }
+        };
         return Err(Error::new(format!(
-            "cc failed linking {}",
+            "cc failed linking {}{hint}",
             bin_path.display()
         )));
     }
