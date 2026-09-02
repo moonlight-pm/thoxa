@@ -7,7 +7,7 @@
 **Gate:** `cargo make test` with empty `tests/conformance/lsan-skip`; then a
 bounded ASan pass (see §4)
 **Gaps:**
-- 9 conformance programs still listed in `tests/conformance/lsan-skip`
+- 6 conformance programs still listed in `tests/conformance/lsan-skip`
 - LSan does not catch use-after-free or most double-frees
 - ASan is optional (`THOXA_SANITIZE=address`), not the default (ucontext fibers)
 - Session / libtcc steps are unsanitized
@@ -126,13 +126,13 @@ claimed no UAF). Map `.get` of a heap value explicitly Dups twice to feed Has
 trees allocate many temps; some are class 1 (loops), some class 3 (missing
 note_drop_place).
 
-Leftovers D152 did **not** close (same “Dup then `assign(Use)`” shape):
+Leftovers D152 did **not** close — **shipped this slice:**
 
-- **Node catch-all bind** (`lower_match_node`): `assign(Use)` already Dups,
-  then a second `Stmt::Dup` on `sbind`. Value-match bind was fixed; Node was
-  not. `jsx` is in `lsan-skip`.
-- **Multi-clause return**: explicit Dup of the arm value, then
-  `assign(Use)` Dups again. `multi_clause` is in `lsan-skip`.
+- **Node catch-all bind** no longer double-Dups (`assign(Use)` is enough).
+- **Multi-clause** arm result uses one `assign(Use)` Dup; clause refine
+  payload is `note_drop_place`'d. `for` loop vars get fresh C names (nested
+  `for name` must not NULL an outer `let name`).
+  Gates: `jsx`, `multi_clause`, `sqlite`.
 
 ### 4. Nested `Array` / `Map` literals — **shipped**
 
@@ -150,20 +150,17 @@ ASan is most likely to mis-handle.
 
 ---
 
-## `lsan-skip` (9 of ~94 programs; was 25 before overwrite-drop)
+## `lsan-skip` (6 of ~94 programs; was 25 before overwrite-drop)
 
 Ratchet: stdout still gated; a skip that becomes LSan-clean **fails** until
 the name is removed.
 
 | Skip | Likely class | Confidence |
 |------|--------------|------------|
-| `multi_clause` | C (arm Dup + `assign(Use)` Dup) | high |
-| `jsx` | C (Node catch-all extra Dup + tree) | med |
 | `json` | C (parse/encode temps) | med |
 | `http_server` / `http_host` | C (D69 leftover) + fiber | med |
-| `sqlite` | C (sql interpolator temps) | med |
 | `start_net` / `start_keepalive` | C (task pack) + fiber | med |
-| `stdlib` | C (heap arrays / helpers) | med |
+| `stdlib` | C (`split` / `replaceAll` string temps) | med |
 
 ---
 
@@ -177,8 +174,7 @@ the name is removed.
    a listed reason. ASan does **not** become the default `cargo make test`
    until fibers are compatible or excepted in the harness.
 3. Handbook RC paragraph still matches shipped policy (dup on copy, drop at
-   end of lifetime including overwrite; params borrowed unless a later D-id
-   changes that).
+   end of lifetime including overwrite; heap params owned **D154**).
 
 **Not done when:** Perceus lands, `lsan-skip` is merely shorter, or only
 `control_flow` is clean.
@@ -191,10 +187,9 @@ the name is removed.
    the RHS still reads the place; cgen NULLs pointer locals after Drop.
 2. **Nested Array/Map literals — shipped.** Gate `arrays_nested`.
 3. **COW vs params — shipped (D154).** Gate `buffer`.
-4. **Remaining extra-retain.** Node catch-all leftover Dup; multi-clause
-   Dup+`assign(Use)`; HTTP D69 (`Trial<Request>` / `Array<Header>`); then
-   JSON, JSX trees, sqlite interpolator, session Bytes, start-task packs.
-   Each skip that goes clean is deleted in the same change.
+4. **Remaining extra-retain.** JSON encode/decode temps; `stdlib`
+   split/replace; HTTP host/server; start-task packs. Node catch-all,
+   multi-clause refine drop, and for-in unique places **shipped**.
 5. **Bounded ASan.** After (1)–(4) have shrunk the skip list: run
    `THOXA_SANITIZE=address` on non-fiber programs; file what it finds as
    simple-RC bugs, not as a reason to start Perceus.

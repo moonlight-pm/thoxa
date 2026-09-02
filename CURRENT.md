@@ -5,9 +5,9 @@
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-09-02. **D153** simple-RC correctness is **Now** (not Perceus).
-Overwrite-drop of live heap places shipped (`lsan-skip` 25 → 10). Nested
-`Array`/`Map` literals are `HEAP_ELEMS`. Heap params owned (**D154**; `buffer`
-LSan-clean). Language
+Overwrite-drop of live heap places shipped. Nested `Array`/`Map` literals are
+`HEAP_ELEMS`. Heap params owned (**D154**). Extra-retain closed `jsx` /
+`multi_clause` / `sqlite` (`lsan-skip` 25 → 6). Language
 harvest **D147–D150** shipped. **D151** LeakSanitizer is the conformance leak
 gate; **D152** closed match-bind / union-match / unused-global RC.
 `containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
@@ -27,20 +27,18 @@ then a bounded ASan pass. **Not Perceus.** Freeze:
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
 HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
 
-**Shipped recently:** **D154** callee-owned heap params (`buffer`); **D153**
-nested `Array`/`Map` literals; overwrite-drop; **D152** match-bind /
-union-match / used-global RC; **D151** LSan conformance gate; **D150** route
-clauses; **D149** `where` / `Type.read`; **D148** `--> name(args)`; **D147**
-JSX / `Node`.
+**Shipped recently:** extra-retain (`jsx` / `multi_clause` / `sqlite` LSan-clean:
+Node catch-all one Dup, multi-clause refine drop, for-in unique places);
+**D154** callee-owned heap params (`buffer`); **D153** nested Array/Map lits;
+overwrite-drop; **D152** match-bind / union-match / used-global RC.
 
 **On master, not product:** none.
 
 ### Proceed order
 
-1. **Remaining extra-retain** — Node catch-all leftover Dup; multi-clause
-   Dup+`assign(Use)`; leftover HTTP (`http_host` / `http_server`); JSON; JSX;
-   sqlite; start-task; `stdlib`. Delete each skip that goes clean in the same
-   change.
+1. **Remaining extra-retain** — JSON encode/decode temps; `stdlib` split/replace;
+   leftover HTTP (`http_host` / `http_server`); start-task. Delete each skip
+   that goes clean in the same change.
 2. **Bounded ASan** — after the skip list shrinks: `THOXA_SANITIZE=address` on
    non-fiber programs. ASan is **not** the default `cargo make test` while
    ucontext fibers remain.

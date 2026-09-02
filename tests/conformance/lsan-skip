@@ -3,16 +3,13 @@
 # non-zero LSan/RC exit. If a listed test becomes LSan-clean, the suite
 # fails until that name is removed from this file.
 #
-# Overwrite-drop + callee-owned heap params (D154) closed loop temps and
-# Buffer COW. Residue: extra Dup (D69 HTTP host, JSON, Node, multi-clause),
-# sqlite / start-task, stdlib.
+# Overwrite-drop + D154 + extra-retain (Node catch-all, multi-clause refine
+# drop, for-in unique places). Residue: JSON encode/decode temps, stdlib
+# split/replace, HTTP host/server, start-task.
 
 http_host
 http_server
 json
-jsx
-multi_clause
-sqlite
 start_keepalive
 start_net
 stdlib

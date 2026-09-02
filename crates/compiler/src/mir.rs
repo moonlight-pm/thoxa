@@ -5590,12 +5590,7 @@ fn lower_multi_clause_cascade(
                     ));
                 }
             };
-            if needs_drop(ret_ty) {
-                ctx.stmts.push(Stmt::Dup {
-                    place: coerced.clone(),
-                    ty: ret_ty.clone(),
-                });
-            }
+            // `assign` of a heap `Use` already Dups (D152 leftover was a second Dup).
             ctx.assign(rp.clone(), ret_ty.clone(), RValue::Use(coerced));
         }
         let body = std::mem::take(&mut ctx.stmts);
@@ -5722,6 +5717,7 @@ fn refine_formal_to_clause(
                             place: pp.clone(),
                             ty: v.ty.clone(),
                         });
+                        ctx.note_drop_place(&pp, &v.ty);
                     }
                     return Ok(pp);
                 }
@@ -7558,10 +7554,8 @@ fn lower_for_array(
     ctx.assign(idx.clone(), Ty::Int64, RValue::Int(0));
 
     // Loop variable lives across iterations; end-of-fn drops the last value.
-    // Each iteration: drop previous (NULL first), then load + own the next element.
-    let elem_p = Place {
-        name: sanitize_name(name),
-    };
+    // Fresh C name so a nested `for x` does not NULL an outer `let x` (jsx).
+    let elem_p = ctx.fresh(&format!("fv_{}", sanitize_name(name)));
     init_place(ctx, &elem_p, &elem_ty)?;
 
     let outer = std::mem::take(&mut ctx.stmts);
@@ -8054,12 +8048,8 @@ fn lower_for_map(
     );
     let idx = ctx.fresh("mi");
     ctx.assign(idx.clone(), Ty::Int64, RValue::Int(0));
-    let key_p = Place {
-        name: sanitize_name(kname),
-    };
-    let val_p = Place {
-        name: sanitize_name(vname),
-    };
+    let key_p = ctx.fresh(&format!("fk_{}", sanitize_name(kname)));
+    let val_p = ctx.fresh(&format!("fv_{}", sanitize_name(vname)));
     init_place(ctx, &key_p, &key_ty)?;
     init_place(ctx, &val_p, &val_ty)?;
     let outer = std::mem::take(&mut ctx.stmts);
@@ -11887,13 +11877,8 @@ fn lower_match_node(
                     catch_all_done = true;
                     let outer = std::mem::take(&mut ctx.stmts);
                     let bound = ctx.fresh("sbind");
+                    // `assign` of a heap `Use` already Dups (same as union catch-all / D152).
                     ctx.assign(bound.clone(), Ty::Node, RValue::Use(scrut_p.clone()));
-                    if needs_drop(&Ty::Node) {
-                        ctx.stmts.push(Stmt::Dup {
-                            place: bound.clone(),
-                            ty: Ty::Node,
-                        });
-                    }
                     ctx.define(name, Ty::Node, false, bound);
                     lower_block_items(ctx, &arm.body.items)?;
                     let arm_val = match &arm.body.tail {

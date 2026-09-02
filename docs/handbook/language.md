@@ -357,7 +357,8 @@ for k, v in lit {
 - **Map writes:** `.set` / `.remove` / `m[k] =` write back. Missing `.remove`
   is a no-op.
 - **Iteration:** `for x in arr`; `for k, v in map` (insertion order).
-  `.keys()` / `.values()` snapshot to `Array`.
+  `.keys()` / `.values()` snapshot to `Array`. The loop variable is a nested
+  binding — an outer `let x` is unchanged after the loop.
 - Fixed `Array<T, N>` and Bytes splice are unchanged (inline / functional).
 
 ## Tag literals and Node (JSX)
