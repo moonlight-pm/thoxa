@@ -135,7 +135,28 @@ claimed no UAF). Map `.get` of a heap value explicitly Dups twice to feed Has
 trees allocate many temps; some are class 1 (loops), some class 3 (missing
 note_drop_place).
 
-### 4. Fibers and sanitizers
+Leftovers D152 did **not** close (same “Dup then `assign(Use)`” shape):
+
+- **Node catch-all bind** (`lower_match_node`): `assign(Use)` already Dups,
+  then a second `Stmt::Dup` on `sbind`. Value-match bind was fixed; Node was
+  not. `jsx` is in `lsan-skip`.
+- **Multi-clause return**: explicit Dup of the arm value, then
+  `assign(Use)` Dups again. `multi_clause` is in `lsan-skip`.
+
+### 4. Nested `Array` / `Map` literals (possible UAF, ungated)
+
+`is_array_elem_ty` allows `Array` and `Map` as elements. `emit_array_lit`
+treats heap elems as **only** `String | Bytes | Node` and sends everything
+else (including nested Array/Map) through `thoxa_array_from_i64` with
+**no `HEAP_ELEMS`**. Inner objects are stored as raw `int64_t` bits. The
+inner literal temps are still in `drop_places` and drop at function end —
+if the outer array is returned or kept, those inners dangle.
+
+No conformance program today is `Array<Array<_>>` / `Array<Map<…>>`. This
+is **not** LSan-skip residue; it is an ungated UAF class. Add a test; set
+`HEAP_ELEMS` (or `from_ptrs`) for nested Array/Map the same as String.
+
+### 5. Fibers and sanitizers
 
 `-->` packs args with an extra retain, starts a fiber, thunk drops args and
 the dropped return. Fiber stacks are `malloc` + `ucontext` (`THOXA_FIBER_STACK`
@@ -156,9 +177,9 @@ the name is removed.
 | `stdlib` | A (helpers / loops) | med |
 | `where_refine` | A + C (read temps) | med |
 | `json` / `json_read` | A (parse loops) + C | med |
-| `jsx` | A (`{for}`) + C (Node tree) | med |
-| `maps` | A (iter) + B (COW set) + C (MapGet dups) | med |
-| `multi_clause` | C (arm result Dup + assign Dup) | med |
+| `jsx` | A (`{for}`) + C (Node catch-all extra Dup + tree) | med |
+| `maps` | A (iter interp) + B (COW set) + C (MapGet dups) | high |
+| `multi_clause` | C (arm Dup + `assign(Use)` Dup) | high |
 | `buffer` | B (panic) | high |
 | `array_heap_elems` / `array_user` | B + C (elem RC) | med |
 | `http` `http_parse` `http_helpers` `http_wire` `http_server` `http_host` `router` `route_clauses` | C (D69) + A (header loops) | high for C |
@@ -193,19 +214,26 @@ the name is removed.
    value first — same as `reassign_name`. Heap locals are NULL-initialized, so
    the first Drop is a no-op. Do **not** Drop `assign_no_drop` sum extracts.
    Watch User `ArrayGet` (already field-drops prior ownership). Expected
-   first gate: `control_flow` leaves `lsan-skip`.
-2. **COW vs params.** Either drop unique objects written back onto params, or
+   first gate: `control_flow` leaves `lsan-skip`. Likely also `maps` (interp
+   in `for k, v`) and `start_keepalive` (heap `let` in `loop`).
+2. **Nested Array/Map literals.** `emit_array_lit` must treat nested Array/Map
+   as heap elems (`HEAP_ELEMS` / `from_ptrs`), not `from_i64`. Add a
+   conformance program (none exists). This is potential UAF, not a skip.
+3. **COW vs params.** Either drop unique objects written back onto params, or
    stop treating a COW-mutated param as borrowed. Must not reintroduce D122
    (do not drop module globals) or double-drop caller args. Gate: `buffer`
    LSan-clean **and** no panic.
-3. **Remaining extra-retain.** HTTP D69 (`Trial<Request>` / `Array<Header>`),
-   then JSON, Node/JSX, sqlite interpolator, session Bytes, start-task packs.
+4. **Remaining extra-retain.** Node catch-all leftover Dup; multi-clause
+   Dup+`assign(Use)`; HTTP D69 (`Trial<Request>` / `Array<Header>`); then
+   JSON, JSX trees, sqlite interpolator, session Bytes, start-task packs.
    Each skip that goes clean is deleted in the same change.
-4. **Bounded ASan.** After (1)–(3) have shrunk the skip list: run
+5. **Bounded ASan.** After (1)–(4) have shrunk the skip list: run
    `THOXA_SANITIZE=address` on non-fiber programs; file what it finds as
    simple-RC bugs, not as a reason to start Perceus.
-5. **Named later (not this wave):** language `Drop` for File/Socket/Db;
-   cycle collector; session/libtcc sanitizer (parked with session); Perceus.
+6. **Named later (not this wave):** language `Drop` for File/Socket/Db
+   (`Socket.close` today does not set `fd = -1`); cycle collector;
+   `thoxa_alloc` size wrap; fiber stack guard pages; session/libtcc
+   sanitizer (parked with session); Perceus.
 
 ---
 

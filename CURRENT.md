@@ -36,23 +36,27 @@ used-global RC; **D151** LSan conformance gate; **D150** route clauses;
 1. **Overwrite-drop** — MIR `assign` of a live `needs_drop` place must Drop the
    old occupant first (loop interp / name-read temps). First gate:
    `control_flow` leaves `lsan-skip`.
-2. **COW vs borrowed params** — Buffer/Array/Map write-back onto a param that
+2. **Nested Array/Map literals** — `emit_array_lit` currently `from_i64`s nested
+   Array/Map (no `HEAP_ELEMS`); inner temps drop at fn end → possible UAF.
+   Add a conformance test; no skip exists today.
+3. **COW vs borrowed params** — Buffer/Array/Map write-back onto a param that
    the callee never drops. Gate: `buffer` LSan-clean and no panic.
-3. **Remaining extra-retain** — HTTP `Trial<Request>` / `Array<Header>` (D69),
-   then JSON, Node/JSX, sqlite, session, start-task packs. Delete each skip
-   that goes clean in the same change.
-4. **Bounded ASan** — after the skip list shrinks: `THOXA_SANITIZE=address` on
+4. **Remaining extra-retain** — Node catch-all leftover Dup; multi-clause
+   Dup+`assign(Use)`; HTTP `Trial<Request>` / `Array<Header>` (D69); then JSON,
+   JSX, sqlite, session, start-task packs. Delete each skip that goes clean
+   in the same change.
+5. **Bounded ASan** — after the skip list shrinks: `THOXA_SANITIZE=address` on
    non-fiber programs. ASan is **not** the default `cargo make test` while
    ucontext fibers remain.
-5. **Editor depth** — only when DX forces it. Freezes:
+6. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
-6. **Deferred: all session / shell residual** — redir polish, line editor,
+7. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-7. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, language
+8. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, language
    `Drop` for File/Socket/Db, cycle collector. Multi-logger (`initLog`) is
    trajectory under D125, not a CURRENT line until samples force it.
    **Do not start Perceus** while `tests/conformance/lsan-skip` is non-empty.
