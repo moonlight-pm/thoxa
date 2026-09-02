@@ -5,7 +5,8 @@
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-09-02. **D153** simple-RC correctness is **Now** (not Perceus).
-Overwrite-drop of live heap places shipped (`lsan-skip` 25 → 10). Language
+Overwrite-drop of live heap places shipped (`lsan-skip` 25 → 10). Nested
+`Array`/`Map` literals are `HEAP_ELEMS`. Language
 harvest **D147–D150** shipped. **D151** LeakSanitizer is the conformance leak
 gate; **D152** closed match-bind / union-match / unused-global RC.
 `containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
@@ -25,36 +26,34 @@ then a bounded ASan pass. **Not Perceus.** Freeze:
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
 HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
 
-**Shipped recently:** **D153** overwrite-drop (loop heap temps; `control_flow`
-and 14 others left `lsan-skip`); **D152** match-bind / union-match /
-used-global RC; **D151** LSan conformance gate; **D150** route clauses;
-**D149** `where` / `Type.read`; **D148** `--> name(args)`; **D147** JSX / `Node`.
+**Shipped recently:** **D153** nested `Array`/`Map` literals (`arrays_nested`);
+overwrite-drop (loop heap temps; `control_flow` and 14 others left
+`lsan-skip`); **D152** match-bind / union-match / used-global RC; **D151** LSan
+conformance gate; **D150** route clauses; **D149** `where` / `Type.read`;
+**D148** `--> name(args)`; **D147** JSX / `Node`.
 
 **On master, not product:** none.
 
 ### Proceed order
 
-1. **Nested Array/Map literals** — `emit_array_lit` currently `from_i64`s nested
-   Array/Map (no `HEAP_ELEMS`); inner temps drop at fn end → possible UAF.
-   Add a conformance test; no skip exists today.
-2. **COW vs borrowed params** — Buffer/Array/Map write-back onto a param that
+1. **COW vs borrowed params** — Buffer/Array/Map write-back onto a param that
    the callee never drops. Gate: `buffer` LSan-clean and no panic.
-3. **Remaining extra-retain** — Node catch-all leftover Dup; multi-clause
+2. **Remaining extra-retain** — Node catch-all leftover Dup; multi-clause
    Dup+`assign(Use)`; leftover HTTP (`http_host` / `http_server`); JSON; JSX;
    sqlite; start-task; `stdlib`. Delete each skip that goes clean in the same
    change.
-4. **Bounded ASan** — after the skip list shrinks: `THOXA_SANITIZE=address` on
+3. **Bounded ASan** — after the skip list shrinks: `THOXA_SANITIZE=address` on
    non-fiber programs. ASan is **not** the default `cargo make test` while
    ucontext fibers remain.
-5. **Editor depth** — only when DX forces it. Freezes:
+4. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
-6. **Deferred: all session / shell residual** — redir polish, line editor,
+5. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-7. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, language
+6. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, language
    `Drop` for File/Socket/Db, cycle collector. Multi-logger (`initLog`) is
    trajectory under D125, not a CURRENT line until samples force it.
    **Do not start Perceus** while `tests/conformance/lsan-skip` is non-empty.

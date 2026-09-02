@@ -138,18 +138,11 @@ Leftovers D152 did **not** close (same “Dup then `assign(Use)`” shape):
 - **Multi-clause return**: explicit Dup of the arm value, then
   `assign(Use)` Dups again. `multi_clause` is in `lsan-skip`.
 
-### 4. Nested `Array` / `Map` literals (possible UAF, ungated)
+### 4. Nested `Array` / `Map` literals — **shipped**
 
-`is_array_elem_ty` allows `Array` and `Map` as elements. `emit_array_lit`
-treats heap elems as **only** `String | Bytes | Node` and sends everything
-else (including nested Array/Map) through `thoxa_array_from_i64` with
-**no `HEAP_ELEMS`**. Inner objects are stored as raw `int64_t` bits. The
-inner literal temps are still in `drop_places` and drop at function end —
-if the outer array is returned or kept, those inners dangle.
-
-No conformance program today is `Array<Array<_>>` / `Array<Map<…>>`. This
-is **not** LSan-skip residue; it is an ungated UAF class. Add a test; set
-`HEAP_ELEMS` (or `from_ptrs`) for nested Array/Map the same as String.
+`emit_array_lit` uses `thoxa_array_from_ptrs` (`HEAP_ELEMS`) for nested
+Array/Map, same as String/Bytes/Node. Gate: `arrays_nested` (return a
+`Array<Array<String>>` so inner temps drop while the outer lives).
 
 ### 5. Fibers and sanitizers
 
@@ -201,9 +194,7 @@ the name is removed.
 
 1. **Overwrite-drop — shipped.** `assign` Drops the previous occupant unless
    the RHS still reads the place; cgen NULLs pointer locals after Drop.
-2. **Nested Array/Map literals.** `emit_array_lit` must treat nested Array/Map
-   as heap elems (`HEAP_ELEMS` / `from_ptrs`), not `from_i64`. Add a
-   conformance program (none exists). This is potential UAF, not a skip.
+2. **Nested Array/Map literals — shipped.** Gate `arrays_nested`.
 3. **COW vs params.** Either drop unique objects written back onto params, or
    stop treating a COW-mutated param as borrowed. Must not reintroduce D122
    (do not drop module globals) or double-drop caller args. Gate: `buffer`

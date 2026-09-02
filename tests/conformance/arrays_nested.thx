@@ -1,0 +1,32 @@
+## Nested Array/Map literals must HEAP_ELEMS (D153). Returning the outer
+## must not dangle after inner temps drop.
+import logging from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+fn grid() -> Array<Array<String>> {
+    [["x", "y"], ["z"]]
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let row = ["a", "b"]
+    let rows = [row, ["c"]]
+    logging.info("rows={rows.count} r0={rows[0].count} r1={rows[1].count}")
+    logging.info("a={rows[0][0]} c={rows[1][0]}")
+
+    let g = grid()
+    logging.info("g={g.count} x={g[0][0]} z={g[1][0]}")
+
+    let maps: Array<Map<String, Int64>> = [{ n: 1 }, { n: 2 }]
+    logging.info("maps={maps.count}")
+    match maps[1].get("n") {
+        Has(value) => logging.info("n={value}")
+        Not => logging.info("n=missing")
+    }
+
+    let empty: Array<Array<Int64>> = []
+    logging.info("empty={empty.count}")
+    0
+}

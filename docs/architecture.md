@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-09-02 (**D153** overwrite-drop shipped, `lsan-skip` 25→10; simple-RC correctness CURRENT; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
+**As of:** 2026-09-02 (**D153** overwrite-drop + nested Array/Map lits shipped, `lsan-skip` 25→10; simple-RC correctness CURRENT; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
 `containers/landing` thoxa.dev live; `containers/sola` sola.computer live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 **D145** `htmlFragment` / `cached`;

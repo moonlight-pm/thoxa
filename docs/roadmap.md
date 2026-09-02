@@ -31,9 +31,9 @@ capability rows for feature-level progress.
 - Conformance suite under `tests/conformance/`.
 
 **Remaining:** simple-RC correctness is **CURRENT** (**D153**) — overwrite-drop
-shipped (`lsan-skip` 10 left), then nested Array/Map literals, COW-vs-params,
-extra-retain, bounded ASan. Ladder itself stays done; do not re-open R0–R9.
-Perceus stays horizon.
+and nested Array/Map literals shipped (`lsan-skip` 10 left); next is
+COW-vs-params, extra-retain, bounded ASan. Ladder itself stays done; do not
+re-open R0–R9. Perceus stays horizon.
 
 Freeze: [`specs/2026-07-18-thoxa-native-kernel-design.md`](specs/2026-07-18-thoxa-native-kernel-design.md)  
 RC campaign: [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md)  

@@ -1660,7 +1660,10 @@ fn c_ty(ty: &Ty) -> String {
 }
 
 fn emit_array_lit(out: &mut String, elems: &[crate::mir::Place], elem_ty: &Ty) {
-    let heap = matches!(elem_ty, Ty::String | Ty::Bytes | Ty::Node);
+    let heap = matches!(
+        elem_ty,
+        Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. }
+    );
     if let Ty::User(type_name) = elem_ty {
         let cty = c_type_name(type_name);
         let dup = array_user_elem_dup_fn(type_name);

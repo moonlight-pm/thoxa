@@ -345,7 +345,8 @@ for k, v in lit {
 
 - **Array writes** (`.append` / `.dropLast` / `.insertAt` / `.removeAt` /
   `a[i] =`) require a `mut` place and return `Void`. Index get `a[i]` still
-  panics out of range.
+  panics out of range. Nested `Array` / `Map` elements are heap-RC (a
+  returned `[["x"]]` keeps the inner arrays).
 - **Map keys:** `String`, `Int64`, `Bool`. Ident keys in `{ Cookie: … }`
   are the string `"Cookie"`. Empty `{}` is still a block; empty map is `Map()`.
   A `type Header(…)` may be a **value** (`Map<String, Header>`), not a key.
