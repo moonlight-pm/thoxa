@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-08-23 (**D152** match/init RC; **D151** LeakSanitizer conformance gate; **D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
+**As of:** 2026-09-02 (**D153** simple-RC correctness is CURRENT; **D152** match/init RC; **D151** LeakSanitizer conformance gate; **D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
 **D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
 `containers/landing` thoxa.dev live;
 `containers/sola` sola.computer teaser live; static JPEG/font MIME;
@@ -147,9 +147,9 @@ D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 
 | ID | Capability | Status | Gate | Spec / D-ids | Gaps | Handbook |
 |----|------------|--------|------|--------------|------|----------|
-| simple-rc | Single-threaded RC String/Bytes/Array/Map | partial | `cargo make test` (LSan); `hello` / `user_rc` / `match_bind` / `file_io` / `logging_sink` / `strings_multiline` | kernel D4-ish; **D122**; **D151**; **D152** | Module mut heap not end-of-fn dropped (D122). Module-init temps are dropped; unused module heap globals are `__attribute__((used))`. Value-match bind and union-match result places are RC-balanced (**D152**). **Gaps:** `tests/conformance/lsan-skip` (loop interpolation temps, HTTP `Trial<Request>` / `Array<Header>` over-dup, JSON parse/encode temps, Buffer COW + call-site extra dup — `buffer` panics under LSan). No cycle collector. No language `Drop` for File/Socket/Db. Perceus precision later | partial |
+| simple-rc | Single-threaded RC String/Bytes/Array/Map | partial | `cargo make test` (LSan); `hello` / `user_rc` / `match_bind` / `file_io` / `logging_sink` / `strings_multiline` | kernel D4/D8; **D122**; **D151**; **D152**; **D153**; freeze [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md) | Module mut heap not end-of-fn dropped (D122). Module-init temps are dropped; unused module heap globals are `__attribute__((used))`. Value-match bind and union-match result places are RC-balanced (**D152**). **Gaps (D153 campaign):** 25 names in `tests/conformance/lsan-skip`. Class A — `assign` overwrites heap places without Drop (loop interp / name-read temps; poster `control_flow`). Class B — Buffer/Array/Map COW write-back onto borrowed params (`buffer` panics under LSan). Class C — extra retain (HTTP `Trial<Request>` / `Array<Header>` D69, JSON, Node, sqlite, session, start-task). LSan does not catch UAF; ASan is optional (ucontext fibers). No cycle collector. No language `Drop` for File/Socket/Db. Perceus precision later | partial |
 | spawn-wait | `thoxa_spawn_wait` for session | shipped | session / extras | D86 | Not a general language spawn surface | no |
-| perceus | Precise RC / Perceus | idea | — | kernel | Deferred megawork | no |
+| perceus | Precise RC / Perceus | idea | — | kernel D8; **D153** | Deferred megawork. **Do not start** while `lsan-skip` is non-empty (simple-RC correctness, not precision) | no |
 | effects | Algebraic effects | idea | — | kernel | Out until forced | no |
 
 ## Meta / docs

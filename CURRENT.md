@@ -4,9 +4,10 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-08-23. Language harvest **D147–D150** shipped. **D151**
-LeakSanitizer is the conformance leak gate; **D152** closed match-bind /
-union-match / unused-global RC (`lsan-skip` ratchet).
+**As of:** 2026-09-02. **D153** simple-RC correctness is **Now** (not Perceus).
+Language harvest **D147–D150** shipped. **D151** LeakSanitizer is the
+conformance leak gate; **D152** closed match-bind / union-match / unused-global
+RC (`lsan-skip` ratchet — 25 programs still listed).
 `containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
 Crema Phase **E** through **E5**; **E6** WebSockets parked. Session/shell
 deferred. **`having`/`else` parked indefinitely.**
@@ -15,36 +16,46 @@ deferred. **`having`/`else` parked indefinitely.**
 
 ## Now
 
-**Session / shell remains deferred.**
+**Simple-RC correctness (memory safety).** Empty `tests/conformance/lsan-skip`,
+then a bounded ASan pass. **Not Perceus.** Freeze:
+[`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
+(**D153**).
 
-**Shipped recently:** **D152** match-bind / union-match / used-global RC;
-**D151** LSan conformance gate; **D150** route clauses (`route_clauses`);
+**Session / shell remains deferred.** Editor only when DX forces it. Crema
+Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
+HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
+
+**Shipped recently:** **D153** campaign lock; **D152** match-bind / union-match /
+used-global RC; **D151** LSan conformance gate; **D150** route clauses;
 **D149** `where` / `Type.read`; **D148** `--> name(args)`; **D147** JSX / `Node`.
 
 **On master, not product:** none.
 
-**In progress / next:**
-
-1. **Editor only when DX forces it.** Crema Phase **E** is complete through
-   **E5** (HTML-over-the-wire cafe: orders, fragments, `crema.js`, sessions,
-   SSE). **E6 WebSockets stay parked.** Do **not** vendor HTMX.
-2. Crema leftovers (product migrate, file-based routing) stay parked.
-
 ### Proceed order
 
-1. **Editor depth** — only when DX forces it. Freezes:
+1. **Overwrite-drop** — MIR `assign` of a live `needs_drop` place must Drop the
+   old occupant first (loop interp / name-read temps). First gate:
+   `control_flow` leaves `lsan-skip`.
+2. **COW vs borrowed params** — Buffer/Array/Map write-back onto a param that
+   the callee never drops. Gate: `buffer` LSan-clean and no panic.
+3. **Remaining extra-retain** — HTTP `Trial<Request>` / `Array<Header>` (D69),
+   then JSON, Node/JSX, sqlite, session, start-task packs. Delete each skip
+   that goes clean in the same change.
+4. **Bounded ASan** — after the skip list shrinks: `THOXA_SANITIZE=address` on
+   non-fiber programs. ASan is **not** the default `cargo make test` while
+   ucontext fibers remain.
+5. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
-2. **Deferred: all session / shell residual** — redir polish, line editor,
+6. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root — not default
-   until CURRENT says so. Multi-logger (`initLog`) is trajectory under D125, not
-   a CURRENT line until samples force it. **Do not start Perceus** while
-   `tests/conformance/lsan-skip` is non-empty — that list is simple-RC
-   correctness, not precision.
+7. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, language
+   `Drop` for File/Socket/Db, cycle collector. Multi-logger (`initLog`) is
+   trajectory under D125, not a CURRENT line until samples force it.
+   **Do not start Perceus** while `tests/conformance/lsan-skip` is non-empty.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
@@ -65,6 +76,7 @@ Public sites are **`containers/landing`** (thoxa.dev) and
 - Treating “expand std/” as its own priority line
 - **`"…" as Bytes`** or cast-as-encode for String→Bytes (use `Bytes.fromString`;
   D15 **rejected**)
+- **Perceus** while `tests/conformance/lsan-skip` is non-empty (**D153**)
 
 Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 [`docs/capabilities.md`](docs/capabilities.md).
@@ -104,7 +116,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Refinements / `Type.read` | `where` refinements are real types (**D149**). `T.read` / `T.from` → `Trial<T, Issue>` (`Issue` in `std/json`). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No collect-all; no cross-field `where`; write `May<Qty>`. |
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. No JSON/form bind; no fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
-| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Residue: `tests/conformance/lsan-skip` (ratchet — a skip that goes clean must be removed). Not Perceus. Session/libtcc unsanitized. |
+| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Residue: `tests/conformance/lsan-skip` (ratchet — a skip that goes clean must be removed). Simple-RC correctness is **CURRENT** until that list is empty (**D153**). Not Perceus. Session/libtcc unsanitized. ASan optional, not default (ucontext fibers). |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
 | Diagnostics | Structured IR → pretty check + `--json` + rich LSP (**D124** shipped); agent-only extras parked |
@@ -139,8 +151,10 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 12. If SQLite: [`docs/decisions.md`](docs/decisions.md) (**D143** / **D144**) —
     amalgamation in `vendor/sqlite`; `sql"… {value} …"`. Crema persist is
     example-only (`examples/http` `/tmp/crema.db`); no product migrate.
-13. If RC / leaks: [`docs/decisions.md`](docs/decisions.md) (**D151** LSan gate,
-    **D152** match/init balance) + `tests/conformance/lsan-skip`.
+13. If RC / leaks / memory safety: freeze
+    [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
+    + [`docs/decisions.md`](docs/decisions.md) (**D153** campaign, **D151** LSan
+    gate, **D152** match/init balance) + `tests/conformance/lsan-skip`.
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

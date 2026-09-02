@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-08-23 (**D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
+**As of:** 2026-09-02 (**D153** simple-RC correctness CURRENT; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
 `containers/landing` thoxa.dev live; `containers/sola` sola.computer live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 **D145** `htmlFragment` / `cached`;
@@ -129,7 +129,9 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 ## Runtime notes
 
 - Heap today: `String`, `Bytes`, dynamic `Array`, `Map`, `Buffer` — simple RC.
-  Conformance leak gate: GCC/Clang LeakSanitizer (**D151**).
+  Conformance leak gate: GCC/Clang LeakSanitizer (**D151**). Simple-RC
+  correctness campaign (**D153**): empty `lsan-skip` before Perceus; freeze
+  [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md).
 - Cooperative tasks (**D148**): `thoxa_task_start` /
   `thoxa_wait_ms` / `thoxa_wait_fd` / `thoxa_sched_drain` — one OS thread,
   stackful fibers; poll + timers. `std/net` accept/connect/recv/send go
@@ -155,3 +157,4 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 | Nowait `-->` | [`specs/2026-08-22-start-tasks.md`](specs/2026-08-22-start-tasks.md) (**D148**) |
 | Refinements / `Type.read` | [`specs/2026-08-23-type-read.md`](specs/2026-08-23-type-read.md) (**D149**) |
 | Route clauses | [`specs/2026-08-23-route-clauses.md`](specs/2026-08-23-route-clauses.md) (**D150**) |
+| Simple-RC correctness | [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md) (**D153**) |
