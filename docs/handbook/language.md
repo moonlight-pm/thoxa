@@ -101,7 +101,8 @@ LeakSanitizer (**D151**); tests not yet clean are listed in
 `tests/conformance/lsan-skip`. Match binds and union-match results drop with
 the rest of the function (**D152**). Overwrite of a live heap local drops the
 previous occupant (**D153**). Heap arguments are copies the callee owns
-(**D154**). Precise RC / Perceus is **not** shipped.
+(**D154**). `return` / `?` drop every live heap local, including temps
+created later in a loop. Precise RC / Perceus is **not** shipped.
 
 ## Refinements and `Type.read`
 

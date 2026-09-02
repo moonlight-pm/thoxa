@@ -3,13 +3,8 @@
 # non-zero LSan/RC exit. If a listed test becomes LSan-clean, the suite
 # fails until that name is removed from this file.
 #
-# Overwrite-drop + D154 + extra-retain (Node catch-all, multi-clause refine
-# drop, for-in unique places). Residue: JSON encode/decode temps, stdlib
-# split/replace, HTTP host/server, start-task.
+# Early-return drops now use the final drop_places set (JSON freeze return
+# after escape temps). Residue: stdlib split/replace, http_server.
 
-http_host
 http_server
-json
-start_keepalive
-start_net
 stdlib

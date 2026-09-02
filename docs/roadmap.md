@@ -32,8 +32,8 @@ capability rows for feature-level progress.
 
 **Remaining:** simple-RC correctness is **CURRENT** (**D153**) — overwrite-drop,
 nested Array/Map literals, and callee-owned heap params (**D154**) shipped
-(`lsan-skip` 6 left); next is leftover extra-retain (JSON / stdlib / HTTP /
-start-task), then bounded ASan. Ladder itself
+(`lsan-skip` 2 left); next is `stdlib` split/replace and `http_server`, then
+bounded ASan. Ladder itself
 stays done; do not re-open R0–R9. Perceus stays horizon.
 
 Freeze: [`specs/2026-07-18-thoxa-native-kernel-design.md`](specs/2026-07-18-thoxa-native-kernel-design.md)  

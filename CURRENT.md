@@ -6,8 +6,9 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
 **As of:** 2026-09-02. **D153** simple-RC correctness is **Now** (not Perceus).
 Overwrite-drop of live heap places shipped. Nested `Array`/`Map` literals are
-`HEAP_ELEMS`. Heap params owned (**D154**). Extra-retain closed `jsx` /
-`multi_clause` / `sqlite` (`lsan-skip` 25 → 6). Language
+`HEAP_ELEMS`. Heap params owned (**D154**). Early-return drops use the final
+`drop_places` set (`json` / `http_host` / start-task LSan-clean; `lsan-skip`
+25 → 2). Language
 harvest **D147–D150** shipped. **D151** LeakSanitizer is the conformance leak
 gate; **D152** closed match-bind / union-match / unused-global RC.
 `containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
@@ -27,18 +28,17 @@ then a bounded ASan pass. **Not Perceus.** Freeze:
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
 HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
 
-**Shipped recently:** extra-retain (`jsx` / `multi_clause` / `sqlite` LSan-clean:
-Node catch-all one Dup, multi-clause refine drop, for-in unique places);
-**D154** callee-owned heap params (`buffer`); **D153** nested Array/Map lits;
-overwrite-drop; **D152** match-bind / union-match / used-global RC.
+**Shipped recently:** early-return drops from the final `drop_places` set
+(`json`, `http_host`, `start_net`, `start_keepalive`); extra-retain `jsx` /
+`multi_clause` / `sqlite`; **D154** callee-owned heap params; **D153** nested
+Array/Map lits; overwrite-drop; **D152** match/init RC.
 
 **On master, not product:** none.
 
 ### Proceed order
 
-1. **Remaining extra-retain** — JSON encode/decode temps; `stdlib` split/replace;
-   leftover HTTP (`http_host` / `http_server`); start-task. Delete each skip
-   that goes clean in the same change.
+1. **Remaining extra-retain** — `stdlib` split/replace temps; `http_server`.
+   Delete each skip that goes clean in the same change.
 2. **Bounded ASan** — after the skip list shrinks: `THOXA_SANITIZE=address` on
    non-fiber programs. ASan is **not** the default `cargo make test` while
    ucontext fibers remain.

@@ -5317,6 +5317,7 @@ fn lower_function(
     ctx.route_clause = is_generated_route_handler(&f.name);
 
     let ret = lower_block_value(&mut ctx, &f.body, &ret_ty)?;
+    ctx.stmts = fill_early_return_drops(ctx.stmts, &ctx.drop_places, &ret_ty);
     insert_function_drops(&mut ctx.stmts, &ret, &ret_ty, &ctx.drop_places);
 
     Ok(Function {
@@ -5384,6 +5385,7 @@ fn lower_multi_free(
     }
 
     let ret = lower_multi_clause_cascade(&mut ctx, clauses, &domain_places, &ret_ty)?;
+    ctx.stmts = fill_early_return_drops(ctx.stmts, &ctx.drop_places, &ret_ty);
     insert_function_drops(&mut ctx.stmts, &ret, &ret_ty, &ctx.drop_places);
 
     let params: Vec<(String, Ty)> = domain_params
@@ -5489,6 +5491,7 @@ fn lower_multi_method(
     }
 
     let ret = lower_multi_clause_cascade(&mut ctx, clauses, &domain_places, &ret_ty)?;
+    ctx.stmts = fill_early_return_drops(ctx.stmts, &ctx.drop_places, &ret_ty);
     insert_function_drops(&mut ctx.stmts, &ret, &ret_ty, &ctx.drop_places);
 
     let params: Vec<(String, Ty)> = domain_params
@@ -6276,6 +6279,7 @@ fn lower_method(
     }
 
     let ret = lower_block_value(&mut ctx, &m.body, &ret_ty)?;
+    ctx.stmts = fill_early_return_drops(ctx.stmts, &ctx.drop_places, &ret_ty);
     insert_function_drops(&mut ctx.stmts, &ret, &ret_ty, &ctx.drop_places);
 
     Ok(Function {
@@ -7225,37 +7229,79 @@ fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<
     }
 }
 
-/// Drop live `needs_drop` locals (except moved return value), then `Return`.
-/// Same set as end-of-fn `insert_function_drops` (includes owned heap params, D154).
-fn push_early_return(ctx: &mut LowerCtx, ret: Option<Place>, ret_ty: &Ty) {
-    append_return_with_drops(&mut ctx.stmts, &ctx.drop_places, ret, ret_ty);
+/// Emit `Return` only. Drops are filled after the whole function is lowered
+/// (`fill_early_return_drops`) so loop temps assigned later still get dropped
+/// (JSON `return Pass(freeze())` after an escape iteration).
+fn push_early_return(ctx: &mut LowerCtx, ret: Option<Place>, _ret_ty: &Ty) {
+    ctx.stmts.push(Stmt::Return { value: ret });
 }
 
-/// Shared drop-then-return for explicit `return` and `?` Fail paths.
 fn append_return_with_drops(
     stmts: &mut Vec<Stmt>,
-    drop_places: &[(String, Ty)],
+    _drop_places: &[(String, Ty)],
     ret: Option<Place>,
-    ret_ty: &Ty,
+    _ret_ty: &Ty,
 ) {
-    let skip = if needs_drop(ret_ty) {
-        ret.as_ref().map(|p| p.name.clone())
-    } else {
-        None
-    };
-    let mut seen = std::collections::HashSet::new();
-    for (name, ty) in drop_places {
-        if skip.as_ref() == Some(name) {
-            continue;
-        }
-        if seen.insert(name.clone()) {
-            stmts.push(Stmt::Drop {
-                place: Place { name: name.clone() },
-                ty: ty.clone(),
-            });
+    stmts.push(Stmt::Return { value: ret });
+}
+
+/// Before every `Return`, drop the final `drop_places` set (NULL locals are
+/// no-ops). Snapshots taken while lowering missed temps assigned later in a loop.
+fn fill_early_return_drops(
+    stmts: Vec<Stmt>,
+    drop_places: &[(String, Ty)],
+    ret_ty: &Ty,
+) -> Vec<Stmt> {
+    let mut out = Vec::with_capacity(stmts.len());
+    for stmt in stmts {
+        match stmt {
+            Stmt::Return { value } => {
+                let skip = if needs_drop(ret_ty) {
+                    value.as_ref().map(|p| p.name.clone())
+                } else {
+                    None
+                };
+                let mut seen = std::collections::HashSet::new();
+                for (name, ty) in drop_places {
+                    if skip.as_ref() == Some(name) {
+                        continue;
+                    }
+                    if seen.insert(name.clone()) {
+                        out.push(Stmt::Drop {
+                            place: Place { name: name.clone() },
+                            ty: ty.clone(),
+                        });
+                    }
+                }
+                out.push(Stmt::Return { value });
+            }
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => out.push(Stmt::If {
+                cond,
+                then_body: fill_early_return_drops(then_body, drop_places, ret_ty),
+                else_body: fill_early_return_drops(else_body, drop_places, ret_ty),
+            }),
+            Stmt::Loop { body } => out.push(Stmt::Loop {
+                body: fill_early_return_drops(body, drop_places, ret_ty),
+            }),
+            Stmt::ForRange {
+                index,
+                end,
+                inclusive,
+                body,
+            } => out.push(Stmt::ForRange {
+                index,
+                end,
+                inclusive,
+                body: fill_early_return_drops(body, drop_places, ret_ty),
+            }),
+            other => out.push(other),
         }
     }
-    stmts.push(Stmt::Return { value: ret });
+    out
 }
 
 fn lower_loop(ctx: &mut LowerCtx, body: &Block, _span: Span) -> Result<(Place, Ty)> {

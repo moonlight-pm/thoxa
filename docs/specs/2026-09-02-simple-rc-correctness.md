@@ -7,7 +7,7 @@
 **Gate:** `cargo make test` with empty `tests/conformance/lsan-skip`; then a
 bounded ASan pass (see §4)
 **Gaps:**
-- 6 conformance programs still listed in `tests/conformance/lsan-skip`
+- 2 conformance programs still listed in `tests/conformance/lsan-skip` (`stdlib`, `http_server`)
 - LSan does not catch use-after-free or most double-frees
 - ASan is optional (`THOXA_SANITIZE=address`), not the default (ucontext fibers)
 - Session / libtcc steps are unsanitized
@@ -150,16 +150,14 @@ ASan is most likely to mis-handle.
 
 ---
 
-## `lsan-skip` (6 of ~94 programs; was 25 before overwrite-drop)
+## `lsan-skip` (2 of ~94 programs; was 25 before overwrite-drop)
 
 Ratchet: stdout still gated; a skip that becomes LSan-clean **fails** until
 the name is removed.
 
 | Skip | Likely class | Confidence |
 |------|--------------|------------|
-| `json` | C (parse/encode temps) | med |
-| `http_server` / `http_host` | C (D69 leftover) + fiber | med |
-| `start_net` / `start_keepalive` | C (task pack) + fiber | med |
+| `http_server` | C (keep-alive / response temps) | med |
 | `stdlib` | C (`split` / `replaceAll` string temps) | med |
 
 ---
@@ -187,9 +185,9 @@ the name is removed.
    the RHS still reads the place; cgen NULLs pointer locals after Drop.
 2. **Nested Array/Map literals — shipped.** Gate `arrays_nested`.
 3. **COW vs params — shipped (D154).** Gate `buffer`.
-4. **Remaining extra-retain.** JSON encode/decode temps; `stdlib`
-   split/replace; HTTP host/server; start-task packs. Node catch-all,
-   multi-clause refine drop, and for-in unique places **shipped**.
+4. **Remaining extra-retain.** Early-return drops from the **final**
+   `drop_places` set **shipped** (`json`, `http_host`, `start_net`,
+   `start_keepalive`). Left: `stdlib` split/replace; `http_server`.
 5. **Bounded ASan.** After (1)–(4) have shrunk the skip list: run
    `THOXA_SANITIZE=address` on non-fiber programs; file what it finds as
    simple-RC bugs, not as a reason to start Perceus.
