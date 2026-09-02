@@ -3,31 +3,17 @@
 # non-zero LSan/RC exit. If a listed test becomes LSan-clean, the suite
 # fails until that name is removed from this file.
 #
-# Typical residue: loop interpolation temps, HTTP Request/Array<Header>
-# over-dup (D69), JSON parse/encode temps, Buffer COW + extra call-site dup.
+# Overwrite-drop (D153 slice 1) closed loop temps. Residue: Buffer COW vs
+# borrowed params, extra Dup (D69 HTTP host, JSON, Node, multi-clause),
+# sqlite / session-adjacent start-task, stdlib.
 
-array_heap_elems
-array_user
 buffer
-control_flow
-http
-http_helpers
 http_host
-http_parse
 http_server
-http_wire
 json
-json_read
 jsx
-maps
 multi_clause
-route_clauses
-router
-session_cmd
-session_pipe
-session_redir
 sqlite
 start_keepalive
 start_net
 stdlib
-where_refine

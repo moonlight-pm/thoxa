@@ -524,8 +524,7 @@ fn display_type_base(mangled_base: &str) -> String {
 fn display_mono_arg(arg: &str) -> String {
     match arg {
         "Void" | "Never" | "Int32" | "Int64" | "UInt32" | "UInt64" | "Byte" | "Float64"
-        | "Bool" | "String"
-        | "Bytes" | "Buffer" => arg.to_string(),
+        | "Bool" | "String" | "Bytes" | "Buffer" => arg.to_string(),
         a if a.starts_with("Array_") => {
             format!("Array<{}>", display_mono_arg(&a["Array_".len()..]))
         }
@@ -609,6 +608,54 @@ fn needs_drop(ty: &Ty) -> bool {
             | Ty::User(_)
             | Ty::Fn { .. }
     )
+}
+
+/// True when evaluating `value` reads `place` (must not Drop it first).
+fn rvalue_uses_place(value: &RValue, place: &Place) -> bool {
+    let uses = |p: &Place| p == place;
+    match value {
+        RValue::Use(p) => uses(p),
+        RValue::Int(_)
+        | RValue::Float(_)
+        | RValue::Bool(_)
+        | RValue::StringLit(_)
+        | RValue::Null
+        | RValue::StructZero { .. }
+        | RValue::MapNew { .. } => false,
+        RValue::Unary { arg, .. }
+        | RValue::ToString { value: arg, .. }
+        | RValue::Cast { value: arg, .. } => uses(arg),
+        RValue::Binary { left, right, .. } | RValue::StringConcat { left, right } => {
+            uses(left) || uses(right)
+        }
+        RValue::Call { callee, args } => {
+            args.iter().any(uses) || matches!(callee, Callee::Indirect { fun, .. } if uses(fun))
+        }
+        RValue::StructLit { fields, .. }
+        | RValue::FixedArrayLit { elems: fields, .. }
+        | RValue::ArrayLit { elems: fields, .. } => fields.iter().any(uses),
+        RValue::Field { base, .. }
+        | RValue::SumTag { place: base, .. }
+        | RValue::SumPayload { base, .. } => uses(base),
+        RValue::Index { base, index, .. }
+        | RValue::FixedIndex { base, index }
+        | RValue::ArrayGet {
+            arr: base, index, ..
+        } => uses(base) || uses(index),
+        RValue::SumInject { payload, .. } => uses(payload),
+        RValue::ArrayAppend { arr, item, .. } => uses(arr) || uses(item),
+        RValue::ArrayDropLast { arr, .. } => uses(arr),
+        RValue::ArrayInsertAt { arr, at, item, .. } => uses(arr) || uses(at) || uses(item),
+        RValue::ArrayRemoveAt { arr, at, .. } => uses(arr) || uses(at),
+        RValue::MapSet { map, key, val, .. } => uses(map) || uses(key) || uses(val),
+        RValue::MapRemove { map, key, .. } => uses(map) || uses(key),
+        RValue::MapGet { map, key, out, .. } => uses(map) || uses(key) || uses(out),
+        RValue::MapKeyAt { map, index } | RValue::MapValAt { map, index, .. } => {
+            uses(map) || uses(index)
+        }
+        RValue::MapKeys { map, .. } | RValue::MapValues { map, .. } => uses(map),
+        RValue::MakeFn { recv, .. } => recv.as_ref().is_some_and(uses),
+    }
 }
 
 /// True when `ty` is the diverging bottom type (no value produced).
@@ -1110,6 +1157,15 @@ impl LowerCtx {
                 });
             }
         }
+        // Loop / re-bind: the C local is reused. Drop the previous occupant
+        // first (NULL-init makes the first Drop a no-op). Skip when the RHS
+        // still reads `place` (COW MapSet / Array append write-back).
+        if needs_drop(&ty) && !rvalue_uses_place(&value, &place) {
+            self.stmts.push(Stmt::Drop {
+                place: place.clone(),
+                ty: ty.clone(),
+            });
+        }
         self.note_drop_place(&place, &ty);
         self.stmts.push(Stmt::Assign { place, ty, value });
     }
@@ -1171,13 +1227,7 @@ impl LowerCtx {
             ));
         }
         let bound = binding.place.clone();
-        if needs_drop(&expect) {
-            self.stmts.push(Stmt::Drop {
-                place: bound.clone(),
-                ty: expect.clone(),
-            });
-        }
-        // Dup so the RHS temp and the binding both own (end-of-fn drops both).
+        // `assign` Drops the old heap occupant, then Dups the RHS temp so both own.
         // FixedArray: cgen copies element-wise on `Use` (C arrays are not assignable).
         self.assign(bound.clone(), ty.clone(), RValue::Use(place));
         // Write through receiver for method field bindings.
@@ -1403,7 +1453,11 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             if refined_failed.contains(mangled) {
                 continue;
             }
-            if types_info.get(mangled).and_then(|i| i.refined.as_ref()).is_some() {
+            if types_info
+                .get(mangled)
+                .and_then(|i| i.refined.as_ref())
+                .is_some()
+            {
                 continue;
             }
             let Some(members) = &td.union_members else {
@@ -1451,7 +1505,11 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         return Err(errors_to_multi(type_reg_errors));
     }
     for (mod_id, mangled, td) in &type_defs {
-        if types_info.get(mangled).and_then(|i| i.refined.as_ref()).is_some() {
+        if types_info
+            .get(mangled)
+            .and_then(|i| i.refined.as_ref())
+            .is_some()
+        {
             continue;
         }
         let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
@@ -1767,18 +1825,9 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
             let global_place = Place {
                 name: place_name.clone(),
             };
-            ctx.assign(
-                global_place.clone(),
-                ty.clone(),
-                RValue::Use(place),
-            );
+            ctx.assign(global_place.clone(), ty.clone(), RValue::Use(place));
             // Drop init temps (`_s0` from `"stderr"`) but not the global (D122).
-            insert_function_drops(
-                &mut ctx.stmts,
-                &Some(global_place),
-                &ty,
-                &ctx.drop_places,
-            );
+            insert_function_drops(&mut ctx.stmts, &Some(global_place), &ty, &ctx.drop_places);
             init_stmts.extend(ctx.stmts);
 
             let ginfo = GlobalInfo {
@@ -2008,12 +2057,7 @@ fn resolve_type_def_shape(
     td: &TypeDef,
     types_info: &HashMap<String, TypeInfo>,
     name_map: &HashMap<String, String>,
-) -> Result<(
-    Vec<FieldInfo>,
-    bool,
-    Option<SumInfo>,
-    Option<RefinedInfo>,
-)> {
+) -> Result<(Vec<FieldInfo>, bool, Option<SumInfo>, Option<RefinedInfo>)> {
     let mut fields: Vec<FieldInfo> = Vec::new();
     let zero_init;
     let mut sum_info: Option<SumInfo> = None;
@@ -6533,7 +6577,7 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
                             )? {
                                 (p, expect)
                             } else {
-                            return Err(Error::at(
+                                return Err(Error::at(
                                 format!(
                                     "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
                                 ),
@@ -6875,12 +6919,26 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         ExprKind::Int(n) => {
             let p = ctx.fresh("i");
             ctx.assign(p.clone(), Ty::Int64, RValue::Int(*n));
-            inhabit_literal(ctx, p, Ty::Int64, crate::ast::WhereLit::Int(*n), expect, expr.span)
+            inhabit_literal(
+                ctx,
+                p,
+                Ty::Int64,
+                crate::ast::WhereLit::Int(*n),
+                expect,
+                expr.span,
+            )
         }
         ExprKind::Float(n) => {
             let p = ctx.fresh("f");
             ctx.assign(p.clone(), Ty::Float64, RValue::Float(*n));
-            inhabit_literal(ctx, p, Ty::Float64, crate::ast::WhereLit::Float(*n), expect, expr.span)
+            inhabit_literal(
+                ctx,
+                p,
+                Ty::Float64,
+                crate::ast::WhereLit::Float(*n),
+                expect,
+                expr.span,
+            )
         }
         ExprKind::Bool(b) => {
             let p = ctx.fresh("b");
@@ -8284,9 +8342,11 @@ fn find_sql_type(ctx: &LowerCtx) -> Option<String> {
 
 fn is_sql_type(ctx: &LowerCtx, ty: &Ty) -> bool {
     match ty {
-        Ty::User(name) => find_sql_type(ctx).as_deref() == Some(name.as_str())
-            || name == "std_sqlite_Sql"
-            || name.ends_with("_Sql"),
+        Ty::User(name) => {
+            find_sql_type(ctx).as_deref() == Some(name.as_str())
+                || name == "std_sqlite_Sql"
+                || name.ends_with("_Sql")
+        }
         _ => false,
     }
 }
@@ -8381,11 +8441,7 @@ fn sql_embed_piece(ctx: &mut LowerCtx, v: Place, ty: Ty, span: Span) -> Result<P
     }
 }
 
-fn lower_sql_interpolate(
-    ctx: &mut LowerCtx,
-    parts: &[InterpPart],
-    span: Span,
-) -> Result<Place> {
+fn lower_sql_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Result<Place> {
     if parts.is_empty() {
         let p = ctx.fresh("s");
         ctx.assign(p.clone(), Ty::String, RValue::StringLit(String::new()));
@@ -8415,10 +8471,7 @@ fn lower_sql_interpolate(
                 ctx.assign(
                     p.clone(),
                     Ty::String,
-                    RValue::StringConcat {
-                        left,
-                        right: piece,
-                    },
+                    RValue::StringConcat { left, right: piece },
                 );
                 p
             }
@@ -8999,13 +9052,7 @@ fn lower_method_call(
                 if let Some(mod_id) = ctx.namespaces.get(ns).cloned() {
                     let exp = ctx.module_exports.get(&mod_id).cloned().unwrap_or_default();
                     if let Some(mangled_ty) = exp.types.get(ty_name) {
-                        return lower_type_read_static(
-                            ctx,
-                            mangled_ty,
-                            method,
-                            args,
-                            method_span,
-                        );
+                        return lower_type_read_static(ctx, mangled_ty, method, args, method_span);
                     }
                 }
             }
@@ -9167,7 +9214,12 @@ fn type_source_name(info: &TypeInfo, mangled_ty: &str) -> String {
     }
 }
 
-fn lookup_generated_read_fn(ctx: &LowerCtx, info: &TypeInfo, mangled_ty: &str, method: &str) -> Option<String> {
+fn lookup_generated_read_fn(
+    ctx: &LowerCtx,
+    info: &TypeInfo,
+    mangled_ty: &str,
+    method: &str,
+) -> Option<String> {
     let src = type_source_name(info, mangled_ty);
     let short = format!("__{method}_{src}");
     if ctx.fns.contains_key(&short) {
@@ -9194,9 +9246,7 @@ fn lower_type_read_static(
         .get(mangled_ty)
         .ok_or_else(|| Error::at(format!("unknown type `{mangled_ty}`"), span))?
         .clone();
-    if info.sum.is_some()
-        && lookup_generated_read_fn(ctx, &info, mangled_ty, method).is_none()
-    {
+    if info.sum.is_some() && lookup_generated_read_fn(ctx, &info, mangled_ty, method).is_none() {
         return Err(Error::at(
             format!("cannot `{method}` a union type (read is for constructor-param products and closed literal unions)"),
             span,
@@ -9223,14 +9273,8 @@ fn lower_type_read_static(
         .get(&mangled_fn)
         .ok_or_else(|| Error::at(format!("internal: missing `{mangled_fn}`"), span))?
         .clone();
-    let arg_places = resolve_call_args_with_defaults(
-        ctx,
-        &sig.params,
-        &sig.defaults,
-        args,
-        span,
-        &sig.def_mod,
-    )?;
+    let arg_places =
+        resolve_call_args_with_defaults(ctx, &sig.params, &sig.defaults, args, span, &sig.def_mod)?;
     emit_call_result(ctx, Callee::User(sig.mangled.clone()), arg_places, sig.ret)
 }
 
@@ -11198,12 +11242,7 @@ fn lit_sum_widens_to(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> b
 }
 
 /// Materialize a pure-literal union as its base (`"r"|"w"` → String, `0|1` → Int64).
-fn emit_lit_widen(
-    ctx: &mut LowerCtx,
-    place: Place,
-    from: &Ty,
-    to: &Ty,
-) -> Result<Option<Place>> {
+fn emit_lit_widen(ctx: &mut LowerCtx, place: Place, from: &Ty, to: &Ty) -> Result<Option<Place>> {
     if !lit_sum_widens_to(&ctx.types, from, to) {
         return Ok(None);
     }
@@ -11268,11 +11307,7 @@ fn emit_lit_widen(
     Ok(Some(out))
 }
 
-fn maybe_widen_lit_sum(
-    ctx: &mut LowerCtx,
-    place: Place,
-    ty: &Ty,
-) -> Result<Option<(Place, Ty)>> {
+fn maybe_widen_lit_sum(ctx: &mut LowerCtx, place: Place, ty: &Ty) -> Result<Option<(Place, Ty)>> {
     let to = if is_pure_lit_sum_of_kind(&ctx.types, ty, LitKind::String) {
         Ty::String
     } else if is_pure_lit_sum_of_kind(&ctx.types, ty, LitKind::Int) {
@@ -12999,10 +13034,7 @@ fn lower_binary(
             }
             if is_float(&lt) || is_float(&rt) {
                 if !(is_float(&lt) || is_int(&lt)) || !(is_float(&rt) || is_int(&rt)) {
-                    return Err(Error::at(
-                        format!("cannot compare {lt:?} and {rt:?}"),
-                        span,
-                    ));
+                    return Err(Error::at(format!("cannot compare {lt:?} and {rt:?}"), span));
                 }
                 let left = if lt == Ty::Float64 {
                     l
@@ -13845,11 +13877,7 @@ fn refined_info<'a>(types: &'a HashMap<String, TypeInfo>, ty: &Ty) -> Option<&'a
     }
 }
 
-fn unwrap_refined(
-    ctx: &mut LowerCtx,
-    place: Place,
-    from: &Ty,
-) -> Result<(Place, Ty)> {
+fn unwrap_refined(ctx: &mut LowerCtx, place: Place, from: &Ty) -> Result<(Place, Ty)> {
     let Some(base) = refined_info(&ctx.types, from).map(|i| i.base.clone()) else {
         return Ok((place, from.clone()));
     };

@@ -2112,6 +2112,9 @@ fn emit_rc(
     match ty {
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node => {
             let _ = writeln!(out, "{pad}{op}({});", place.name);
+            if !dup {
+                let _ = writeln!(out, "{pad}{} = NULL;", place.name);
+            }
         }
         Ty::Map { val, .. } => {
             if dup {
@@ -2123,8 +2126,10 @@ fn emit_rc(
                     place.name,
                     array_user_elem_drop_fn(type_name)
                 );
+                let _ = writeln!(out, "{pad}{} = NULL;", place.name);
             } else {
                 let _ = writeln!(out, "{pad}thoxa_map_drop({});", place.name);
+                let _ = writeln!(out, "{pad}{} = NULL;", place.name);
             }
         }
         Ty::Array { elem } => {
@@ -2139,8 +2144,10 @@ fn emit_rc(
                     place.name,
                     array_user_elem_drop_fn(type_name)
                 );
+                let _ = writeln!(out, "{pad}{} = NULL;", place.name);
             } else {
                 let _ = writeln!(out, "{pad}thoxa_array_drop({});", place.name);
+                let _ = writeln!(out, "{pad}{} = NULL;", place.name);
             }
         }
         Ty::Fn { .. } => {

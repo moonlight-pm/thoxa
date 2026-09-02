@@ -2,12 +2,12 @@
 
 **Date:** 2026-09-02
 **Status:** target (freeze)
-**Implementation:** partial (gate **D151**, match/init **D152**; campaign **D153** open)
+**Implementation:** partial (gate **D151**, match/init **D152**; overwrite-drop **shipped**; campaign **D153** open)
 **Decision:** D153 (extends D8 / D151 / D152; does not unpark Perceus)
 **Gate:** `cargo make test` with empty `tests/conformance/lsan-skip`; then a
 bounded ASan pass (see §4)
 **Gaps:**
-- 25 conformance programs still listed in `tests/conformance/lsan-skip`
+- 10 conformance programs still listed in `tests/conformance/lsan-skip`
 - LSan does not catch use-after-free or most double-frees
 - ASan is optional (`THOXA_SANITIZE=address`), not the default (ucontext fibers)
 - Session / libtcc steps are unsanitized
@@ -105,18 +105,13 @@ that pointer back onto the binding **without** going through `assign`’s Dup
 
 ## Systematic holes (evidence)
 
-### 1. `assign` overwrites without dropping
+### 1. `assign` overwrites without dropping — **shipped**
 
-`LowerCtx::assign` Dups a heap `Use`, notes the place, then `Assign`s. It does
-**not** Drop the previous occupant. `reassign_name` (`mut x = …`) does Drop
-first. Loop bodies are lowered **once**; interpolation pieces, concat temps,
-and name-read `_dup*` places are reused every iteration. `insert_function_drops`
-dedupes by name and drops once at fn end — every earlier occupant leaks.
-
-`control_flow` is the poster case (`"{label(i)}"` in `for i in 1..=15`). The
-same shape shows up anywhere a heap temp is assigned in a `while` / `loop` /
-`for` (JSON parse, HTTP header loops, map iteration logging, JSX `{for}`,
-`stdlib` helpers).
+`LowerCtx::assign` now Drops the previous `needs_drop` occupant unless the RHS
+still reads that place (COW MapSet / Array append write-back). Cgen NULLs
+pointer locals after Drop so a reused temp (module-init `_s0` across globals)
+is not dropped twice. `control_flow`, `maps`, `http_parse`, session scripts,
+and others left `lsan-skip`.
 
 ### 2. Borrowed params + COW write-back
 
@@ -166,26 +161,21 @@ ASan is most likely to mis-handle.
 
 ---
 
-## `lsan-skip` (25 of ~93 programs)
+## `lsan-skip` (10 of ~93 programs; was 25 before overwrite-drop)
 
 Ratchet: stdout still gated; a skip that becomes LSan-clean **fails** until
 the name is removed.
 
 | Skip | Likely class | Confidence |
 |------|--------------|------------|
-| `control_flow` | A (interp in for-range) | high |
-| `stdlib` | A (helpers / loops) | med |
-| `where_refine` | A + C (read temps) | med |
-| `json` / `json_read` | A (parse loops) + C | med |
-| `jsx` | A (`{for}`) + C (Node catch-all extra Dup + tree) | med |
-| `maps` | A (iter interp) + B (COW set) + C (MapGet dups) | high |
+| `buffer` | B (COW vs borrowed param) | high |
 | `multi_clause` | C (arm Dup + `assign(Use)` Dup) | high |
-| `buffer` | B (panic) | high |
-| `array_heap_elems` / `array_user` | B + C (elem RC) | med |
-| `http` `http_parse` `http_helpers` `http_wire` `http_server` `http_host` `router` `route_clauses` | C (D69) + A (header loops) | high for C |
-| `session_cmd` `session_pipe` `session_redir` | C (Bytes/String command temps) | med |
+| `jsx` | C (Node catch-all extra Dup + tree) | med |
+| `json` | C (parse/encode temps) | med |
+| `http_server` / `http_host` | C (D69 leftover) + fiber | med |
 | `sqlite` | C (sql interpolator temps) | med |
-| `start_net` `start_keepalive` | C (task pack) + fiber | med |
+| `start_net` / `start_keepalive` | C (task pack) + fiber | med |
+| `stdlib` | C (heap arrays / helpers) | med |
 
 ---
 
@@ -209,13 +199,8 @@ the name is removed.
 
 ## Proceed order (one slice at a time)
 
-1. **Overwrite-drop.** When `assign` (and any other heap store that reuses a
-   place) writes a `needs_drop` local that is already live, Drop the old
-   value first — same as `reassign_name`. Heap locals are NULL-initialized, so
-   the first Drop is a no-op. Do **not** Drop `assign_no_drop` sum extracts.
-   Watch User `ArrayGet` (already field-drops prior ownership). Expected
-   first gate: `control_flow` leaves `lsan-skip`. Likely also `maps` (interp
-   in `for k, v`) and `start_keepalive` (heap `let` in `loop`).
+1. **Overwrite-drop — shipped.** `assign` Drops the previous occupant unless
+   the RHS still reads the place; cgen NULLs pointer locals after Drop.
 2. **Nested Array/Map literals.** `emit_array_lit` must treat nested Array/Map
    as heap elems (`HEAP_ELEMS` / `from_ptrs`), not `from_i64`. Add a
    conformance program (none exists). This is potential UAF, not a skip.

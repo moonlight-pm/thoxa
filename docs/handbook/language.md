@@ -94,12 +94,13 @@ Defined as `May<T> = Has<T!> | Not?` and `Trial<P, F> = Pass<P!> | Fail<F?>`.
 compatible Trial monomorphs, including across modules). User unions with a
 residual mark use the same `?` operator.
 
-**Reference counting:** simple single-threaded RC (dup on copy, drop at function
-end for **locals**). Module-level heap bindings outlive the function that wrote
-them (D122). `cargo make test` links programs with LeakSanitizer (**D151**);
-tests not yet clean are listed in `tests/conformance/lsan-skip`. Match binds
-and union-match results drop with the rest of the function (**D152**). Precise
-RC / Perceus is **not** shipped.
+**Reference counting:** simple single-threaded RC (dup on copy, drop when a
+local is overwritten or the function ends). Module-level heap bindings outlive
+the function that wrote them (D122). `cargo make test` links programs with
+LeakSanitizer (**D151**); tests not yet clean are listed in
+`tests/conformance/lsan-skip`. Match binds and union-match results drop with
+the rest of the function (**D152**). Overwrite of a live heap local drops the
+previous occupant (**D153**). Precise RC / Perceus is **not** shipped.
 
 ## Refinements and `Type.read`
 
