@@ -1188,6 +1188,17 @@ impl LowerCtx {
         self.drop_places.push((place.name.clone(), ty.clone()));
     }
 
+    /// Caller moved this place into a Thoxa callee (D154). Do not drop it here.
+    fn forget_drop_place(&mut self, place: &Place) -> Option<Ty> {
+        let ty = self
+            .drop_places
+            .iter()
+            .find(|(name, _)| name == &place.name)
+            .map(|(_, ty)| ty.clone());
+        self.drop_places.retain(|(name, _)| name != &place.name);
+        ty
+    }
+
     fn is_global_place(&self, place: &Place) -> bool {
         // Module-mangled globals are `g_<Module>_<name>` (see `mangle_global`).
         place.name.starts_with("g_")
@@ -5299,8 +5310,8 @@ fn lower_function(
         let place = Place {
             name: sanitize_name(&p.name),
         };
-        // Params are borrowed from the caller (same as end-of-fn drops: Assign only).
-        // Do not register them in drop_places — early return / `?` must not drop them.
+        // Heap params are owned (D154): caller moved the Dup'd copy in.
+        ctx.note_drop_place(&place, &ty);
         ctx.define(&p.name, ty, false, place);
     }
     ctx.route_clause = is_generated_route_handler(&f.name);
@@ -5367,6 +5378,7 @@ fn lower_multi_free(
         let place = Place {
             name: sanitize_name(name),
         };
+        ctx.note_drop_place(&place, ty);
         ctx.define(name, ty.clone(), false, place.clone());
         domain_places.push((name.clone(), place, ty.clone()));
     }
@@ -5471,6 +5483,7 @@ fn lower_multi_method(
         let place = Place {
             name: sanitize_name(name),
         };
+        ctx.note_drop_place(&place, ty);
         ctx.define(name, ty.clone(), false, place.clone());
         domain_places.push((name.clone(), place, ty.clone()));
     }
@@ -6261,7 +6274,8 @@ fn lower_method(
         let place = Place {
             name: sanitize_name(&p.name),
         };
-        // Params borrowed from caller — not in drop_places (see lower_function).
+        // Heap params owned (D154). `_self` stays borrowed (pointer, D107).
+        ctx.note_drop_place(&place, &ty);
         ctx.define(&p.name, ty, false, place);
     }
 
@@ -7216,8 +7230,7 @@ fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<
 }
 
 /// Drop live `needs_drop` locals (except moved return value), then `Return`.
-/// Set matches end-of-fn `insert_function_drops` / `collect_drop_places`: **Assign**
-/// places only (params are never registered in `drop_places`).
+/// Same set as end-of-fn `insert_function_drops` (includes owned heap params, D154).
 fn push_early_return(ctx: &mut LowerCtx, ret: Option<Place>, ret_ty: &Ty) {
     append_return_with_drops(&mut ctx.stmts, &ctx.drop_places, ret, ret_ty);
 }
@@ -9152,10 +9165,19 @@ fn lower_method_call(
                             ));
                         }
                         let sig = ctx.fns.get(&mangled_fn).unwrap().clone();
+                        // By-value generated fn; Dup so the method-like call
+                        // does not consume the receiver (D154).
+                        let pass = if needs_drop(&recv_ty) {
+                            let copy = ctx.fresh("enc");
+                            ctx.assign(copy.clone(), recv_ty.clone(), RValue::Use(recv_p));
+                            copy
+                        } else {
+                            recv_p
+                        };
                         return emit_call_result(
                             ctx,
                             Callee::User(sig.mangled.clone()),
-                            vec![recv_p],
+                            vec![pass],
                             sig.ret,
                         );
                     }
@@ -10065,6 +10087,39 @@ fn lower_bytes_method(
     }
 }
 
+/// Callee already owns the object; poison the caller local so a later
+/// overwrite-drop is a no-op (loop temps passed into `info`, etc.).
+fn clear_moved_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) {
+    match ty {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
+            ctx.assign_no_drop(place.clone(), ty.clone(), RValue::Null);
+        }
+        Ty::User(name) => {
+            ctx.assign_no_drop(
+                place.clone(),
+                ty.clone(),
+                RValue::StructZero {
+                    type_name: name.clone(),
+                },
+            );
+        }
+        Ty::Fn { .. } => {
+            ctx.assign_no_drop(
+                place.clone(),
+                ty.clone(),
+                RValue::MakeFn {
+                    recv: None,
+                    recv_ty: None,
+                    target: FnTarget::Free {
+                        mangled: String::new(),
+                    },
+                },
+            );
+        }
+        _ => {}
+    }
+}
+
 /// Emit a call that either assigns a result or is evaluated for side effects (Void).
 fn emit_call_result(
     ctx: &mut LowerCtx,
@@ -10072,15 +10127,34 @@ fn emit_call_result(
     args: Vec<Place>,
     ret: Ty,
 ) -> Result<(Place, Ty)> {
-    if ret == Ty::Void {
+    let moved = heap_args_to_move(&callee, &args);
+    let mut cleared: Vec<(Place, Ty)> = Vec::new();
+    for arg in &moved {
+        if let Some(ty) = ctx.forget_drop_place(arg) {
+            cleared.push((arg.clone(), ty));
+        }
+    }
+    let result = if ret == Ty::Void {
         ctx.stmts.push(Stmt::Eval(RValue::Call { callee, args }));
         let p = ctx.fresh("u");
         ctx.assign(p.clone(), Ty::Int64, RValue::Int(0));
-        Ok((p, Ty::Void))
+        (p, Ty::Void)
     } else {
         let p = ctx.fresh("mcall");
         ctx.assign(p.clone(), ret.clone(), RValue::Call { callee, args });
-        Ok((p, ret))
+        (p, ret)
+    };
+    for (place, ty) in cleared {
+        clear_moved_place(ctx, &place, &ty);
+    }
+    Ok(result)
+}
+
+fn heap_args_to_move(callee: &Callee, args: &[Place]) -> Vec<Place> {
+    match callee {
+        Callee::User(_) | Callee::Indirect { .. } => args.to_vec(),
+        Callee::Method { .. } => args.iter().skip(1).cloned().collect(),
+        Callee::Builtin(_) | Callee::Extern { .. } => Vec::new(),
     }
 }
 

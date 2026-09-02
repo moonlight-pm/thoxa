@@ -100,7 +100,8 @@ the function that wrote them (D122). `cargo make test` links programs with
 LeakSanitizer (**D151**); tests not yet clean are listed in
 `tests/conformance/lsan-skip`. Match binds and union-match results drop with
 the rest of the function (**D152**). Overwrite of a live heap local drops the
-previous occupant (**D153**). Precise RC / Perceus is **not** shipped.
+previous occupant (**D153**). Heap arguments are copies the callee owns
+(**D154**). Precise RC / Perceus is **not** shipped.
 
 ## Refinements and `Type.read`
 

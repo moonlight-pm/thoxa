@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-09-02 — Heap params are owned copies
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D154 | Heap arguments are moved into the callee | `needs_drop` params are in `drop_places` (dropped at fn end / early return). Caller forgets the Dup'd arg temp and NULLs it after the call. Method `_self` stays borrowed (D107 pointer). Extern / builtin args stay caller-owned. `-->` pack still Dups; thunk does not drop pack slots after the call (callee already dropped). Amends **D63** (heap params now drop on `return` / `?`). Gate: `buffer` LSan-clean, value semantics `grown(c)` leaves caller count unchanged. | **Shipped.** D153 campaign slice. |
+
 ## 2026-09-02 — Simple-RC correctness is CURRENT
 
 | ID | Decision | Choice | Notes |
@@ -438,7 +444,7 @@ Plan: [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-nativ
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D63 | Early `return` | `return` / `return expr` as expression (like `break`); type-checked against enclosing `fn`/`method` return type | Bare `return` only for `Void`; MIR `Stmt::Return { value: Option<Place> }`; drop live `needs_drop` **Assign** locals before early return / `?` Fail (same set as end-of-fn `collect_drop_places` — **not params**; caller still owns args); exits function from inside loops. **No ASI:** optional value is parsed whenever the next token can start an expression (newline does not end a bare `return`); write `return` then `}` / non-expr, or put the following statement after a non-expr-start token — intentional `return expr` may span lines. |
+| D63 | Early `return` | `return` / `return expr` as expression (like `break`); type-checked against enclosing `fn`/`method` return type | Bare `return` only for `Void`; MIR `Stmt::Return { value: Option<Place> }`; drop live `needs_drop` locals before early return / `?` Fail (same set as end-of-fn `insert_function_drops`; heap params included as of **D154**); exits function from inside loops. **No ASI:** optional value is parsed whenever the next token can start an expression (newline does not end a bare `return`); write `return` then `}` / non-expr, or put the following statement after a non-expr-start token — intentional `return expr` may span lines. |
 
 ## 2026-07-20 — Array&lt;User&gt; elements (PR3)
 

@@ -30,10 +30,10 @@ capability rows for feature-level progress.
 - R0–R9 + post-R9 through bounded HTTP server, modules, extern, C-layout.
 - Conformance suite under `tests/conformance/`.
 
-**Remaining:** simple-RC correctness is **CURRENT** (**D153**) — overwrite-drop
-and nested Array/Map literals shipped (`lsan-skip` 10 left); next is
-COW-vs-params, extra-retain, bounded ASan. Ladder itself stays done; do not
-re-open R0–R9. Perceus stays horizon.
+**Remaining:** simple-RC correctness is **CURRENT** (**D153**) — overwrite-drop,
+nested Array/Map literals, and callee-owned heap params (**D154**) shipped
+(`lsan-skip` 9 left); next is extra-retain, then bounded ASan. Ladder itself
+stays done; do not re-open R0–R9. Perceus stays horizon.
 
 Freeze: [`specs/2026-07-18-thoxa-native-kernel-design.md`](specs/2026-07-18-thoxa-native-kernel-design.md)  
 RC campaign: [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md)  

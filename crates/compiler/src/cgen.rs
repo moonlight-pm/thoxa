@@ -734,17 +734,16 @@ fn emit_start_thunk(
             out.push_str("    (void)data;\n");
         }
     }
+    // Callee owns heap args (D154). Pack slots alias the param; do not drop again.
     for (i, ty) in arg_tys.iter().enumerate() {
         if needs_drop_ty(ty) {
-            emit_rc(
+            emit_clear_place(
                 out,
                 "    ",
                 &crate::mir::Place {
                     name: format!("p->a{i}"),
                 },
                 ty,
-                false,
-                types,
             );
         }
     }
@@ -2100,6 +2099,22 @@ fn push_user_array_elem_ty(elem_ty: &Ty, out: &mut Vec<String>) {
         if !out.iter().any(|n| n == name) {
             out.push(name.clone());
         }
+    }
+}
+
+/// Zero a heap place without dropping (ownership already transferred).
+fn emit_clear_place(out: &mut String, pad: &str, place: &crate::mir::Place, ty: &Ty) {
+    match ty {
+        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
+            let _ = writeln!(out, "{pad}{} = NULL;", place.name);
+        }
+        Ty::Fn { .. } => {
+            let _ = writeln!(out, "{pad}{} = (ThoxaFn){{0}};", place.name);
+        }
+        Ty::User(_) => {
+            let _ = writeln!(out, "{pad}{} = ({}){{0}};", place.name, c_ty(ty));
+        }
+        _ => {}
     }
 }
 

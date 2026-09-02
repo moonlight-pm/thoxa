@@ -3,11 +3,10 @@
 # non-zero LSan/RC exit. If a listed test becomes LSan-clean, the suite
 # fails until that name is removed from this file.
 #
-# Overwrite-drop (D153 slice 1) closed loop temps. Residue: Buffer COW vs
-# borrowed params, extra Dup (D69 HTTP host, JSON, Node, multi-clause),
-# sqlite / session-adjacent start-task, stdlib.
+# Overwrite-drop + callee-owned heap params (D154) closed loop temps and
+# Buffer COW. Residue: extra Dup (D69 HTTP host, JSON, Node, multi-clause),
+# sqlite / start-task, stdlib.
 
-buffer
 http_host
 http_server
 json

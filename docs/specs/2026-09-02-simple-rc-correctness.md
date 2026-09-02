@@ -2,12 +2,12 @@
 
 **Date:** 2026-09-02
 **Status:** target (freeze)
-**Implementation:** partial (gate **D151**, match/init **D152**; overwrite-drop **shipped**; campaign **D153** open)
+**Implementation:** partial (gate **D151**, match/init **D152**; overwrite-drop **shipped**; callee-owned heap params **D154 shipped**; campaign **D153** open)
 **Decision:** D153 (extends D8 / D151 / D152; does not unpark Perceus)
 **Gate:** `cargo make test` with empty `tests/conformance/lsan-skip`; then a
 bounded ASan pass (see §4)
 **Gaps:**
-- 10 conformance programs still listed in `tests/conformance/lsan-skip`
+- 9 conformance programs still listed in `tests/conformance/lsan-skip`
 - LSan does not catch use-after-free or most double-frees
 - ASan is optional (`THOXA_SANITIZE=address`), not the default (ucontext fibers)
 - Session / libtcc steps are unsanitized
@@ -113,14 +113,10 @@ pointer locals after Drop so a reused temp (module-init `_s0` across globals)
 is not dropped twice. `control_flow`, `maps`, `http_parse`, session scripts,
 and others left `lsan-skip`.
 
-### 2. Borrowed params + COW write-back
+### 2. Borrowed params + COW write-back — **shipped (D154)**
 
-Caller name-read Dups the argument (pass-by-value copy). Callee does not drop
-the param. A mutating method (`Buffer.append`, `Array.insertAt`, `Map.set`)
-may COW-replace the param with a unique object. That unique is abandoned.
-
-`tests/conformance/buffer.thx` `grown(seed: Buffer)` is this path. Docs record
-that `buffer` **panics** under LSan — treat as RC imbalance, not hygiene.
+Heap params are owned copies: callee drops them; caller forgets the Dup'd temp
+and NULLs it after the call. Method `_self` stays borrowed. Gate: `buffer`.
 
 ### 3. Extra Dup on constructed / matched heap
 
@@ -154,14 +150,13 @@ ASan is most likely to mis-handle.
 
 ---
 
-## `lsan-skip` (10 of ~93 programs; was 25 before overwrite-drop)
+## `lsan-skip` (9 of ~94 programs; was 25 before overwrite-drop)
 
 Ratchet: stdout still gated; a skip that becomes LSan-clean **fails** until
 the name is removed.
 
 | Skip | Likely class | Confidence |
 |------|--------------|------------|
-| `buffer` | B (COW vs borrowed param) | high |
 | `multi_clause` | C (arm Dup + `assign(Use)` Dup) | high |
 | `jsx` | C (Node catch-all extra Dup + tree) | med |
 | `json` | C (parse/encode temps) | med |
@@ -195,10 +190,7 @@ the name is removed.
 1. **Overwrite-drop — shipped.** `assign` Drops the previous occupant unless
    the RHS still reads the place; cgen NULLs pointer locals after Drop.
 2. **Nested Array/Map literals — shipped.** Gate `arrays_nested`.
-3. **COW vs params.** Either drop unique objects written back onto params, or
-   stop treating a COW-mutated param as borrowed. Must not reintroduce D122
-   (do not drop module globals) or double-drop caller args. Gate: `buffer`
-   LSan-clean **and** no panic.
+3. **COW vs params — shipped (D154).** Gate `buffer`.
 4. **Remaining extra-retain.** Node catch-all leftover Dup; multi-clause
    Dup+`assign(Use)`; HTTP D69 (`Trial<Request>` / `Array<Header>`); then
    JSON, JSX trees, sqlite interpolator, session Bytes, start-task packs.
