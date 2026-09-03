@@ -11,10 +11,43 @@ fn main() -> Int64 {
         Fail(e) {
             logging.info("create-fail={e}")
         }
-        Pass(s) {
-            s.close()
+        Pass(first) {
+            if first.isOpen() {
+                logging.info("first-open")
+            } else {
+                logging.info("first-already-closed")
+            }
+            first.close()
+            if first.isOpen() {
+                logging.info("still-open")
+            } else {
+                logging.info("first-closed")
+            }
+            ## Double-close must not close a later socket that reused the fd.
+            match createSocket() {
+                Fail(e) {
+                    logging.info("second-create-fail={e}")
+                }
+                Pass(second) {
+                    first.close()
+                    if first.isOpen() {
+                        logging.info("first-reopened")
+                    } else {
+                        logging.info("double-close-ok")
+                    }
+                    match second.bind(0) {
+                        Pass(_) {
+                            logging.info("second-bind-ok")
+                        }
+                        Fail(e) {
+                            logging.info("second-bind-fail={e}")
+                        }
+                    }
+                    second.close()
+                }
+            }
             ## Operations on a closed fd should Fail with "…: Bad file descriptor".
-            match s.bind(0) {
+            match first.bind(0) {
                 Pass(_) {
                     logging.info("unexpected-bind-ok")
                 }
@@ -22,7 +55,7 @@ fn main() -> Int64 {
                     logging.info("closed-bind={e}")
                 }
             }
-            match s.listen(1) {
+            match first.listen(1) {
                 Pass(_) {
                     logging.info("unexpected-listen-ok")
                 }

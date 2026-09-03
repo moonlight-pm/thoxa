@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,8 +24,53 @@ void thoxa_panic(const char *msg) {
     abort();
 }
 
+static size_t size_add(size_t a, size_t b) {
+    if (a > SIZE_MAX - b) {
+        thoxa_panic("allocation size overflow");
+    }
+    return a + b;
+}
+
+static size_t size_mul(size_t a, size_t b) {
+    if (a != 0 && b > SIZE_MAX / a) {
+        thoxa_panic("allocation size overflow");
+    }
+    return a * b;
+}
+
+static size_t size_dbl(size_t n) {
+    if (n > SIZE_MAX / 2) {
+        thoxa_panic("allocation size overflow");
+    }
+    return n * 2;
+}
+
+static size_t string_payload_size(size_t len) {
+    return size_add(sizeof(size_t), size_add(len, 1));
+}
+
+static size_t bytes_payload_size(size_t len) {
+    return size_add(sizeof(size_t), len);
+}
+
+static void *grow_buf(void *ptr, size_t *cap, size_t need) {
+    if (ptr && need <= *cap) {
+        return ptr;
+    }
+    size_t ncap = *cap ? *cap : 8;
+    while (ncap < need) {
+        ncap = size_dbl(ncap);
+    }
+    void *grown = realloc(ptr, ncap);
+    if (!grown) {
+        thoxa_panic("out of memory");
+    }
+    *cap = ncap;
+    return grown;
+}
+
 void *thoxa_alloc(size_t payload_size, uint16_t type_tag) {
-    size_t total = sizeof(ThoxaHeader) + payload_size;
+    size_t total = size_add(sizeof(ThoxaHeader), payload_size);
     ThoxaHeader *h = (ThoxaHeader *)calloc(1, total);
     if (!h) {
         thoxa_panic("out of memory");
@@ -47,6 +93,9 @@ void thoxa_dup(void *ptr) {
     ThoxaHeader *h = header_of(ptr);
     if (!h) {
         return;
+    }
+    if (h->refcount == SIZE_MAX) {
+        thoxa_panic("refcount overflow");
     }
     h->refcount += 1;
 }
@@ -106,7 +155,7 @@ ThoxaFn thoxa_fn_bind(
     void (*release)(void *payload),
     void *code
 ) {
-    ThoxaFnBox *box = (ThoxaFnBox *)calloc(1, sizeof(ThoxaFnBox) + (size_t)size);
+    ThoxaFnBox *box = (ThoxaFnBox *)calloc(1, size_add(sizeof(ThoxaFnBox), (size_t)size));
     if (!box) {
         thoxa_panic("out of memory");
     }
@@ -127,6 +176,9 @@ ThoxaFn thoxa_fn_bind(
 void thoxa_fn_retain(ThoxaFn *fn) {
     if (!fn || !fn->recv) {
         return;
+    }
+    if (fn->recv->rc == UINT32_MAX) {
+        thoxa_panic("refcount overflow");
     }
     fn->recv->rc += 1;
 }
@@ -151,7 +203,7 @@ void thoxa_fn_release(ThoxaFn *fn) {
 /* --- String ------------------------------------------------------------- */
 
 ThoxaString *thoxa_string_new(const char *bytes, size_t len) {
-    size_t payload = sizeof(size_t) + len + 1;
+    size_t payload = string_payload_size(len);
     ThoxaString *s = (ThoxaString *)thoxa_alloc(payload, THOXA_TAG_STRING);
     s->len = len;
     if (len > 0 && bytes) {
@@ -246,8 +298,8 @@ ThoxaString *thoxa_string_from_bool(bool v) {
 ThoxaString *thoxa_string_concat(const ThoxaString *a, const ThoxaString *b) {
     size_t alen = a ? a->len : 0;
     size_t blen = b ? b->len : 0;
-    size_t len = alen + blen;
-    size_t payload = sizeof(size_t) + len + 1;
+    size_t len = size_add(alen, blen);
+    size_t payload = string_payload_size(len);
     ThoxaString *s = (ThoxaString *)thoxa_alloc(payload, THOXA_TAG_STRING);
     s->len = len;
     if (alen > 0) {
@@ -327,7 +379,7 @@ int32_t thoxa_write_line_fd(int32_t fd, const char *s) {
 
 ThoxaBytes *thoxa_bytes_from_string(const ThoxaString *s) {
     size_t len = s ? s->len : 0;
-    size_t payload = sizeof(size_t) + len;
+    size_t payload = bytes_payload_size(len);
     ThoxaBytes *b = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
     b->len = len;
     if (len > 0 && s) {
@@ -341,7 +393,7 @@ ThoxaBytes *thoxa_bytes_new(int64_t len) {
         thoxa_panic("Bytes length must be non-negative");
     }
     size_t n = (size_t)len;
-    size_t payload = sizeof(size_t) + n;
+    size_t payload = bytes_payload_size(n);
     ThoxaBytes *b = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
     b->len = n;
     /* thoxa_alloc uses calloc — payload is already zeroed. */
@@ -380,7 +432,7 @@ ThoxaBytes *thoxa_bytes_slice(const ThoxaBytes *b, int64_t start, int64_t end) {
         thoxa_panic("Bytes.slice out of range");
     }
     size_t n = (size_t)(end - start);
-    size_t payload = sizeof(size_t) + n;
+    size_t payload = bytes_payload_size(n);
     ThoxaBytes *out = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
     out->len = n;
     if (n > 0) {
@@ -444,8 +496,8 @@ ThoxaBytes *thoxa_bytes_insert_at(const ThoxaBytes *b, int64_t at, int64_t byte)
         thoxa_panic("Bytes.insertAt out of range");
     }
     size_t pos = (size_t)at;
-    size_t n = old_len + 1;
-    size_t payload = sizeof(size_t) + n;
+    size_t n = size_add(old_len, 1);
+    size_t payload = bytes_payload_size(n);
     ThoxaBytes *out = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
     out->len = n;
     if (pos > 0 && b) {
@@ -467,7 +519,7 @@ ThoxaBytes *thoxa_bytes_remove_at(const ThoxaBytes *b, int64_t at) {
     }
     size_t pos = (size_t)at;
     size_t n = b->len - 1;
-    size_t payload = sizeof(size_t) + n;
+    size_t payload = bytes_payload_size(n);
     ThoxaBytes *out = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
     out->len = n;
     if (pos > 0) {
@@ -482,7 +534,7 @@ ThoxaBytes *thoxa_bytes_remove_at(const ThoxaBytes *b, int64_t at) {
 /* --- Buffer ------------------------------------------------------------- */
 
 static size_t buffer_payload_size(size_t cap) {
-    return sizeof(size_t) + sizeof(size_t) + cap;
+    return size_add(size_add(sizeof(size_t), sizeof(size_t)), cap);
 }
 
 static ThoxaBuffer *buffer_alloc(size_t len, size_t cap) {
@@ -514,10 +566,7 @@ int64_t thoxa_buffer_capacity(const ThoxaBuffer *b) {
 static size_t buffer_next_cap(size_t cap, size_t need) {
     size_t c = cap == 0 ? 8 : cap;
     while (c < need) {
-        if (c > (SIZE_MAX / 2)) {
-            thoxa_panic("Buffer capacity overflow");
-        }
-        c *= 2;
+        c = size_dbl(c);
     }
     return c;
 }
@@ -563,7 +612,7 @@ static ThoxaBuffer *buffer_reserve_unique(ThoxaBuffer *b, size_t need) {
 
 ThoxaBuffer *thoxa_buffer_append(ThoxaBuffer *b, int64_t byte) {
     size_t old_len = b ? b->len : 0;
-    b = buffer_reserve_unique(b, old_len + 1);
+    b = buffer_reserve_unique(b, size_add(old_len, 1));
     b->data[b->len] = (uint8_t)(byte & 0xFF);
     b->len += 1;
     return b;
@@ -572,7 +621,7 @@ ThoxaBuffer *thoxa_buffer_append(ThoxaBuffer *b, int64_t byte) {
 ThoxaBuffer *thoxa_buffer_append_bytes(ThoxaBuffer *b, const ThoxaBytes *src) {
     size_t add = src ? src->len : 0;
     size_t old_len = b ? b->len : 0;
-    b = buffer_reserve_unique(b, old_len + add);
+    b = buffer_reserve_unique(b, size_add(old_len, add));
     if (add > 0 && src) {
         memcpy(b->data + b->len, src->data, add);
         b->len += add;
@@ -582,7 +631,7 @@ ThoxaBuffer *thoxa_buffer_append_bytes(ThoxaBuffer *b, const ThoxaBytes *src) {
 
 ThoxaBytes *thoxa_buffer_freeze(const ThoxaBuffer *b) {
     size_t n = b ? b->len : 0;
-    size_t payload = sizeof(size_t) + n;
+    size_t payload = bytes_payload_size(n);
     ThoxaBytes *out = (ThoxaBytes *)thoxa_alloc(payload, THOXA_TAG_BYTES);
     out->len = n;
     if (n > 0 && b) {
@@ -595,7 +644,7 @@ ThoxaBytes *thoxa_buffer_freeze(const ThoxaBuffer *b) {
 
 static size_t array_payload_size(size_t cap, uint32_t elem_size) {
     /* offsetof accounts for padding before the flexible data[] array. */
-    return offsetof(ThoxaArray, data) + (size_t)cap * (size_t)elem_size;
+    return size_add(offsetof(ThoxaArray, data), size_mul(cap, (size_t)elem_size));
 }
 
 static ThoxaArray *array_alloc(size_t len, size_t cap, uint32_t flags, uint32_t elem_size) {
@@ -650,7 +699,7 @@ static void array_copy_items(ThoxaArray *dst, const ThoxaArray *src, size_t n) {
             *array_i64(dst, i) = slot;
         }
     } else {
-        memcpy(dst->data, src->data, n * (size_t)src->elem_size);
+        memcpy(dst->data, src->data, size_mul(n, (size_t)src->elem_size));
     }
 }
 
@@ -676,7 +725,7 @@ static void array_copy_range(
         memcpy(
             array_slot(dst, dst_off),
             array_slot_c(src, src_off),
-            n * (size_t)src->elem_size
+            size_mul(n, (size_t)src->elem_size)
         );
     }
 }
@@ -691,7 +740,7 @@ static void array_copy_items_ex(
     if (n == 0 || !src) {
         return;
     }
-    memcpy(dst->data, src->data, n * (size_t)src->elem_size);
+    memcpy(dst->data, src->data, size_mul(n, (size_t)src->elem_size));
     if (elem_dup) {
         for (size_t i = 0; i < n; i++) {
             elem_dup(array_slot(dst, i));
@@ -714,7 +763,7 @@ static void array_copy_range_ex(
     memcpy(
         array_slot(dst, dst_off),
         array_slot_c(src, src_off),
-        n * (size_t)src->elem_size
+        size_mul(n, (size_t)src->elem_size)
     );
     if (elem_dup) {
         for (size_t i = 0; i < n; i++) {
@@ -739,7 +788,7 @@ ThoxaArray *thoxa_array_new_ex(uint32_t elem_size, uint32_t flags) {
 ThoxaArray *thoxa_array_from_i64(const int64_t *items, size_t len) {
     ThoxaArray *a = array_alloc(len, len, 0, (uint32_t)sizeof(int64_t));
     if (len > 0 && items) {
-        memcpy(a->data, items, len * sizeof(int64_t));
+        memcpy(a->data, items, size_mul(len, sizeof(int64_t)));
     }
     return a;
 }
@@ -764,7 +813,7 @@ ThoxaArray *thoxa_array_from_elems(
 ) {
     ThoxaArray *a = array_alloc(len, len, flags, elem_size);
     if (len > 0 && items) {
-        memcpy(a->data, items, len * (size_t)elem_size);
+        memcpy(a->data, items, size_mul(len, (size_t)elem_size));
     }
     if (elem_dup) {
         for (size_t i = 0; i < len; i++) {
@@ -881,8 +930,9 @@ ThoxaArray *thoxa_array_set_elem(
 ThoxaArray *thoxa_array_append_i64(ThoxaArray *a, int64_t v) {
     size_t old_len = a ? a->len : 0;
     uint32_t flags = a ? a->flags : 0;
+    size_t new_len = size_add(old_len, 1);
     ThoxaArray *n =
-        array_alloc(old_len + 1, old_len + 1, flags, (uint32_t)sizeof(int64_t));
+        array_alloc(new_len, new_len, flags, (uint32_t)sizeof(int64_t));
     array_copy_items(n, a, old_len);
     if (array_heap_elems(n)) {
         void *p = (void *)(intptr_t)v;
@@ -897,9 +947,10 @@ ThoxaArray *thoxa_array_append_i64(ThoxaArray *a, int64_t v) {
 
 ThoxaArray *thoxa_array_append_ptr(ThoxaArray *a, void *p) {
     size_t old_len = a ? a->len : 0;
+    size_t new_len = size_add(old_len, 1);
     ThoxaArray *n = array_alloc(
-        old_len + 1,
-        old_len + 1,
+        new_len,
+        new_len,
         THOXA_ARRAY_FLAG_HEAP_ELEMS,
         (uint32_t)sizeof(int64_t)
     );
@@ -908,7 +959,7 @@ ThoxaArray *thoxa_array_append_ptr(ThoxaArray *a, void *p) {
         array_copy_items(n, a, old_len);
     } else if (a && old_len > 0) {
         /* Copy slots without element dup if source was non-heap (shouldn't happen). */
-        memcpy(n->data, a->data, old_len * sizeof(int64_t));
+        memcpy(n->data, a->data, size_mul(old_len, sizeof(int64_t)));
     }
     thoxa_dup(p);
     *array_i64(n, old_len) = (int64_t)(intptr_t)p;
@@ -932,7 +983,8 @@ ThoxaArray *thoxa_array_append_elem(
     if (!elem) {
         thoxa_panic("array append_elem null elem");
     }
-    ThoxaArray *n = array_alloc(old_len + 1, old_len + 1, flags, elem_size);
+    size_t new_len = size_add(old_len, 1);
+    ThoxaArray *n = array_alloc(new_len, new_len, flags, elem_size);
     array_copy_items_ex(n, a, old_len, elem_dup);
     memcpy(array_slot(n, old_len), elem, (size_t)elem_size);
     if (elem_dup) {
@@ -996,8 +1048,9 @@ ThoxaArray *thoxa_array_insert_at_i64(ThoxaArray *a, int64_t at, int64_t v) {
     }
     size_t pos = (size_t)at;
     uint32_t flags = a ? a->flags : 0;
+    size_t new_len = size_add(old_len, 1);
     ThoxaArray *n =
-        array_alloc(old_len + 1, old_len + 1, flags, (uint32_t)sizeof(int64_t));
+        array_alloc(new_len, new_len, flags, (uint32_t)sizeof(int64_t));
     array_copy_range(n, 0, a, 0, pos);
     if (array_heap_elems(n)) {
         void *p = (void *)(intptr_t)v;
@@ -1017,9 +1070,10 @@ ThoxaArray *thoxa_array_insert_at_ptr(ThoxaArray *a, int64_t at, void *p) {
         thoxa_panic("Array.insertAt out of range");
     }
     size_t pos = (size_t)at;
+    size_t new_len = size_add(old_len, 1);
     ThoxaArray *n = array_alloc(
-        old_len + 1,
-        old_len + 1,
+        new_len,
+        new_len,
         THOXA_ARRAY_FLAG_HEAP_ELEMS,
         (uint32_t)sizeof(int64_t)
     );
@@ -1065,7 +1119,8 @@ ThoxaArray *thoxa_array_insert_at_elem(
         thoxa_panic("array insert_at_elem null elem");
     }
     size_t pos = (size_t)at;
-    ThoxaArray *n = array_alloc(old_len + 1, old_len + 1, flags, elem_size);
+    size_t new_len = size_add(old_len, 1);
+    ThoxaArray *n = array_alloc(new_len, new_len, flags, elem_size);
     array_copy_range_ex(n, 0, a, 0, pos, elem_dup);
     memcpy(array_slot(n, pos), elem, (size_t)elem_size);
     if (elem_dup) {
@@ -1208,9 +1263,9 @@ static size_t map_slot_size(const ThoxaMap *m) {
 }
 
 static size_t map_payload_size(size_t slot_cap, size_t idx_cap, uint32_t val_size) {
-    return offsetof(ThoxaMap, data)
-        + slot_cap * map_slot_size_sz(val_size)
-        + idx_cap * sizeof(int32_t);
+    size_t slots = size_mul(slot_cap, map_slot_size_sz(val_size));
+    size_t idx = size_mul(idx_cap, sizeof(int32_t));
+    return size_add(offsetof(ThoxaMap, data), size_add(slots, idx));
 }
 
 static MapSlotHead *map_slot(ThoxaMap *m, size_t i) {
@@ -1454,10 +1509,13 @@ static ThoxaMap *map_ensure_unique(ThoxaMap *m, ThoxaArrayElemFn elem_dup, Thoxa
 }
 
 static ThoxaMap *map_grow_slots(ThoxaMap *m, ThoxaArrayElemFn elem_dup, ThoxaArrayElemFn elem_drop) {
-    size_t new_slots = m->slot_cap * 2;
+    size_t new_slots = size_dbl(m->slot_cap);
     size_t new_idx = m->idx_cap;
+    if (m->len > SIZE_MAX / 4 || new_idx > SIZE_MAX / 3) {
+        thoxa_panic("allocation size overflow");
+    }
     if (m->len * 4 >= new_idx * 3) {
-        new_idx *= 2;
+        new_idx = size_dbl(new_idx);
     }
     ThoxaMap *n =
         map_alloc(new_slots, new_idx, m->key_kind, m->val_kind, m->val_size);
@@ -1858,14 +1916,12 @@ static int map_ident_safe(const char *s, size_t n) {
     return 1;
 }
 
-static void map_buf_grow(char **buf, size_t *cap, size_t *used, size_t need) {
-    while (*used + need >= *cap) {
-        *cap *= 2;
-        *buf = (char *)realloc(*buf, *cap);
-        if (!*buf) {
-            thoxa_panic("out of memory");
-        }
+static void map_buf_grow(char **buf, size_t *cap, size_t *used, size_t extra) {
+    size_t want = size_add(*used, extra);
+    if (want < *cap) {
+        return;
     }
+    *buf = (char *)grow_buf(*buf, cap, size_add(want, 1));
 }
 
 static void map_buf_app(char **buf, size_t *cap, size_t *used, const char *s, size_t n) {
@@ -1876,7 +1932,7 @@ static void map_buf_app(char **buf, size_t *cap, size_t *used, const char *s, si
 
 ThoxaString *thoxa_map_to_string(const ThoxaMap *m, int val_is_string) {
     size_t n = m ? m->len : 0;
-    size_t cap = 16 + n * 24;
+    size_t cap = size_add(16, size_mul(n, 24));
     char *buf = (char *)malloc(cap);
     if (!buf) {
         thoxa_panic("out of memory");
@@ -1934,7 +1990,7 @@ ThoxaString *thoxa_map_to_string(const ThoxaMap *m, int val_is_string) {
 ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a) {
     /* Build via snprintf into a growable temp, then own as ThoxaString. */
     size_t n = a ? a->len : 0;
-    size_t cap = 16 + n * 24;
+    size_t cap = size_add(16, size_mul(n, 24));
     char *buf = (char *)malloc(cap);
     if (!buf) {
         thoxa_panic("out of memory");
@@ -1943,13 +1999,7 @@ ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a) {
     buf[used++] = '[';
     for (size_t i = 0; i < n; i++) {
         if (i > 0) {
-            if (used + 2 >= cap) {
-                cap *= 2;
-                buf = (char *)realloc(buf, cap);
-                if (!buf) {
-                    thoxa_panic("out of memory");
-                }
-            }
+            buf = (char *)grow_buf(buf, &cap, size_add(used, 2));
             buf[used++] = ',';
             buf[used++] = ' ';
         }
@@ -1959,23 +2009,11 @@ ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a) {
             free(buf);
             thoxa_panic("array toString failed");
         }
-        while (used + (size_t)w + 1 >= cap) {
-            cap *= 2;
-            buf = (char *)realloc(buf, cap);
-            if (!buf) {
-                thoxa_panic("out of memory");
-            }
-        }
+        buf = (char *)grow_buf(buf, &cap, size_add(used, size_add((size_t)w, 1)));
         memcpy(buf + used, tmp, (size_t)w);
         used += (size_t)w;
     }
-    if (used + 1 >= cap) {
-        cap = used + 2;
-        buf = (char *)realloc(buf, cap);
-        if (!buf) {
-            thoxa_panic("out of memory");
-        }
-    }
+    buf = (char *)grow_buf(buf, &cap, size_add(used, 2));
     buf[used++] = ']';
     buf[used] = '\0';
     ThoxaString *s = thoxa_string_new(buf, used);
@@ -1989,7 +2027,7 @@ ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a) {
     size_t cap = 16;
     for (size_t i = 0; i < n; i++) {
         ThoxaString *el = (ThoxaString *)(intptr_t)(*array_i64_c(a, i));
-        cap += (el ? el->len : 0) + 4;
+        cap = size_add(cap, size_add(el ? el->len : 0, 4));
     }
     char *buf = (char *)malloc(cap);
     if (!buf) {
@@ -2005,13 +2043,7 @@ ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a) {
         ThoxaString *el = (ThoxaString *)(intptr_t)(*array_i64_c(a, i));
         const char *cstr = el ? thoxa_string_cstr(el) : "";
         size_t elen = el ? el->len : 0;
-        while (used + elen + 3 >= cap) {
-            cap *= 2;
-            buf = (char *)realloc(buf, cap);
-            if (!buf) {
-                thoxa_panic("out of memory");
-            }
-        }
+        buf = (char *)grow_buf(buf, &cap, size_add(used, size_add(elen, 3)));
         /* Oracle display of String is bare content without quotes in arrays? */
         /* Python repr of list of str uses quotes; oracle arrays.out uses bare ints.
          * For strings: match Python list display with quotes. */
@@ -2612,19 +2644,7 @@ typedef struct {
 } HtmlBuf;
 
 static void html_buf_grow(HtmlBuf *b, size_t more) {
-    if (b->len + more <= b->cap) {
-        return;
-    }
-    size_t ncap = b->cap ? b->cap : 64;
-    while (ncap < b->len + more) {
-        ncap *= 2;
-    }
-    char *nd = (char *)realloc(b->data, ncap);
-    if (!nd) {
-        thoxa_panic("out of memory");
-    }
-    b->data = nd;
-    b->cap = ncap;
+    b->data = (char *)grow_buf(b->data, &b->cap, size_add(b->len, more));
 }
 
 static void html_buf_app(HtmlBuf *b, const char *s, size_t n) {

@@ -98,7 +98,7 @@ IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 | Surface | Notes |
 |---------|--------|
 | `createSocket()` | `Trial<Socket, String>` |
-| `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close` |
+| `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close`, `isOpen`. `close` writes `fd = -1` (second close is a no-op, same as `File`) |
 | `receive()` | One `recv` chunk (empty on close/error) |
 | `receiveRequest()` | Until `\r\n\r\n` or 64 KiB cap / peer close |
 | `send` / `sendAll` | One write vs drain partial writes |

@@ -1,2 +1,6 @@
+first-open
+first-closed
+double-close-ok
+second-bind-ok
 closed-bind=bind: Bad file descriptor
 closed-listen=listen: Bad file descriptor

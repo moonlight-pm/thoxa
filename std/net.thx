@@ -61,7 +61,13 @@ fn portOf(addr!: Bytes) -> Int64 {
     addr.get(2) * 256 + addr.get(3)
 }
 
+## Open TCP handle. `fd` is Int64 for ctor-param field rules; written back to
+## -1 on successful close (same D107 write-back as File).
 export type Socket(fd: Int64) {
+    export fn isOpen() -> Bool {
+        fd >= 0
+    }
+
     export fn reuseAddr() -> Trial<Void, String> {
         let on = Bytes(intSize)
         on.set(0, 1)
@@ -205,9 +211,12 @@ export type Socket(fd: Int64) {
         Fail("sendAll: internal")
     }
 
-    export fn close() -> Void {
-        sysClose(fd)
-        Void
+    ## Close the fd once; subsequent closes are no-ops. Uses field write-back.
+    export fn close() {
+        if fd >= 0 {
+            sysClose(fd)
+            fd = -1
+        }
     }
 }
 

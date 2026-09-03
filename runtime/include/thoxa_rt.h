@@ -116,6 +116,7 @@ typedef struct ThoxaHeader {
     uint32_t reserved;
 } ThoxaHeader;
 
+/* Panics if `sizeof(ThoxaHeader) + payload_size` wraps. */
 void *thoxa_alloc(size_t payload_size, uint16_t type_tag);
 void thoxa_dup(void *ptr);
 void thoxa_drop(void *ptr);

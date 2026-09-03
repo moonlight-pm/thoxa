@@ -131,7 +131,8 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 - Heap today: `String`, `Bytes`, dynamic `Array`, `Map`, `Buffer` — simple RC.
   Conformance leak gate: GCC/Clang LeakSanitizer (**D151**). Simple-RC
   correctness campaign (**D153**) gate done: empty `lsan-skip` and documented
-  ASan (`cargo make test-asan`, non-fiber). Perceus not unparked. Freeze
+  ASan (`cargo make test-asan`, non-fiber). `thoxa_alloc` panics if header
+  plus payload wraps `size_t`. Perceus not unparked. Freeze
   [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md).
 - Cooperative tasks (**D148**): `thoxa_task_start` /
   `thoxa_wait_ms` / `thoxa_wait_fd` / `thoxa_sched_drain` — one OS thread,
