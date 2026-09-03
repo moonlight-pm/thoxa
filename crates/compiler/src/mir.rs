@@ -57,6 +57,8 @@ pub struct TypeLayout {
     /// Pure-literal-only unions: C type is this narrow scalar (tag as value), not a struct.
     /// Byte-up: Byte / UInt16 / UInt32 / UInt64 by arm count (D118 §6).
     pub sum_scalar: Option<Ty>,
+    /// D155: product has `fn drop()` — values are heap boxes (header + payload).
+    pub has_drop: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -592,6 +594,13 @@ fn free_fn_display_key(mangled: &str, is_main: bool) -> String {
         }
     }
     mangled.to_string()
+}
+
+fn type_has_drop(types: &HashMap<String, TypeInfo>, ty: &Ty) -> bool {
+    match ty {
+        Ty::User(name) => types.get(name).is_some_and(|info| info.methods.contains_key("drop")),
+        _ => false,
+    }
 }
 
 /// True when a local of this type needs an end-of-scope drop.
@@ -1501,6 +1510,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                             .collect(),
                         sum: None,
                         sum_scalar: None,
+                        has_drop: false,
                     });
                     refined_progress = true;
                 }
@@ -1560,6 +1570,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
                         .collect(),
                     sum: sum_layout,
                     sum_scalar,
+                    has_drop: false,
                 });
             }
             Err(e) => type_reg_errors.push(e),
@@ -1613,6 +1624,35 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
     }
     if !method_reg_errors.is_empty() {
         return Err(errors_to_multi(method_reg_errors));
+    }
+
+    // D155: products with `fn drop()` are heap-boxed; mark layouts.
+    let mut drop_errors: Vec<Error> = Vec::new();
+    for layout in &mut type_layouts {
+        let Some(info) = types_info.get(&layout.name) else {
+            continue;
+        };
+        if !info.methods.contains_key("drop") {
+            continue;
+        }
+        if layout.sum.is_some() {
+            drop_errors.push(Error::new(format!(
+                "`drop` is not allowed on union type `{}`",
+                layout.name
+            )));
+            continue;
+        }
+        if info.zero_init {
+            drop_errors.push(Error::new(format!(
+                "`drop` is not allowed on C-layout type `{}`",
+                layout.name
+            )));
+            continue;
+        }
+        layout.has_drop = true;
+    }
+    if !drop_errors.is_empty() {
+        return Err(errors_to_multi(drop_errors));
     }
 
     // ---------- Phase 2: functions + externs ----------
@@ -2544,6 +2584,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
         ],
         sum: None,
         sum_scalar: None,
+        has_drop: false,
     });
     types_info.insert(
         "Element".into(),
@@ -2966,6 +3007,17 @@ fn merge_method_clauses(
                 ));
             }
         }
+        if m.name == "drop" {
+            if !params.is_empty() {
+                return Err(Error::at(
+                    "`drop` takes no parameters (the value is the receiver)",
+                    m.name_span,
+                ));
+            }
+            if ret != Ty::Void {
+                return Err(Error::at("`drop` must return Void", m.name_span));
+            }
+        }
         return Ok((
             MethodSig {
                 params,
@@ -2976,6 +3028,13 @@ fn merge_method_clauses(
                 multi_clause: false,
             },
             None,
+        ));
+    }
+
+    if clauses[0].name == "drop" {
+        return Err(Error::at(
+            "`drop` cannot be multi-clause",
+            clauses[0].name_span,
         ));
     }
 
@@ -4850,6 +4909,7 @@ fn instantiate_product_mono(
             .collect(),
         sum: None,
         sum_scalar: None,
+        has_drop: false,
     };
     types.insert(
         mono.clone(),
@@ -5237,6 +5297,7 @@ fn instantiate_union_mono(
                 .collect(),
         ),
         sum_scalar,
+        has_drop: false,
     };
     types.insert(mono, info);
     layouts.push(layout);
@@ -9052,7 +9113,8 @@ fn lower_method_call(
                         },
                     );
                     // StructLit copies field pointers; take our own refs so arg temps can drop.
-                    if needs_drop(&ty) {
+                    // Drop types are already a unique box (D155); duping the box leaks.
+                    if needs_drop(&ty) && !type_has_drop(&ctx.types, &ty) {
                         ctx.stmts.push(Stmt::Dup {
                             place: p.clone(),
                             ty: ty.clone(),
@@ -10883,6 +10945,7 @@ fn ensure_lit_type(
             payload_ty: Ty::Void,
         }]),
         sum_scalar: Some(pure_lit_scalar_ty(1)),
+        has_drop: false,
     };
     types.insert(name.clone(), info);
     layouts.push(layout);
@@ -11021,6 +11084,7 @@ fn ensure_member_set_type(
         } else {
             None
         },
+        has_drop: false,
     };
     types.insert(name.clone(), info);
     layouts.push(layout);
@@ -13872,7 +13936,8 @@ fn lower_call(
                         },
                     );
                     // StructLit copies field pointers; take our own refs so arg temps can drop.
-                    if needs_drop(&ty) {
+                    // Drop types are already a unique box (D155); duping the box leaks.
+                    if needs_drop(&ty) && !type_has_drop(&ctx.types, &ty) {
                         ctx.stmts.push(Stmt::Dup {
                             place: p.clone(),
                             ty: ty.clone(),
@@ -14410,6 +14475,7 @@ fn ensure_synthetic_sum(
         fields: Vec::new(),
         sum: Some(layout_vars),
         sum_scalar: None,
+        has_drop: false,
     };
 
     ctx.types.insert(syn_name.clone(), info.clone());

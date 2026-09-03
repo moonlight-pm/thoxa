@@ -80,6 +80,14 @@ export type Db(handle: Int64) {
         }
     }
 
+    ## Last RC closes if the caller forgot (D155).
+    export fn drop() {
+        if handle != 0 {
+            sysSqlClose(handle)
+            handle = 0
+        }
+    }
+
     export fn exec(sql!: Sql) -> Trial<Void, String> {
         if handle == 0 {
             Fail("sqlite exec: closed handle")

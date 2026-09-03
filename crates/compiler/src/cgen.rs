@@ -159,7 +159,7 @@ pub fn emit_program_with(
         BodySet::All | BodySet::SessionNoMain => {
             // Single-TU session (libtcc) and full programs: own globals.
             for g in &program.globals {
-                emit_global(&mut out, g, /*is_static*/ true);
+                emit_global(&mut out, g, /*is_static*/ true, &program.types);
             }
             if !program.globals.is_empty() {
                 out.push('\n');
@@ -168,7 +168,7 @@ pub fn emit_program_with(
         BodySet::SessionBaseOnly if emit_globals_and_init => {
             // Non-static: step.so must resolve these symbols at link time.
             for g in &program.globals {
-                emit_global(&mut out, g, /*is_static*/ false);
+                emit_global(&mut out, g, /*is_static*/ false, &program.types);
             }
             if !program.globals.is_empty() {
                 out.push('\n');
@@ -176,7 +176,7 @@ pub fn emit_program_with(
         }
         BodySet::SessionStepOnly => {
             for g in &program.globals {
-                emit_global_extern(&mut out, g);
+                emit_global_extern(&mut out, g, &program.types);
             }
             if !program.globals.is_empty() {
                 out.push('\n');
@@ -195,9 +195,10 @@ pub fn emit_program_with(
         {
             continue;
         }
-        emit_proto(&mut out, f);
+        emit_proto(&mut out, f, &program.types);
     }
     out.push('\n');
+    emit_drop_dtors(&mut out, &program.types);
     emit_fn_support(&mut out, program, &program.types);
 
     // Module initializer (top-level let/mut values).
@@ -217,7 +218,18 @@ pub fn emit_program_with(
             if *ty == Ty::Void {
                 continue;
             }
-            emit_local_decl(&mut out, name, ty);
+            emit_local_decl(&mut out, name, ty, &program.types);
+        }
+        let mut boxed: HashSet<String> = HashSet::new();
+        for (name, ty) in &locals {
+            if is_boxed_user(ty, &program.types) {
+                boxed.insert(name.clone());
+            }
+        }
+        for g in &program.globals {
+            if is_boxed_user(&g.ty, &program.types) {
+                boxed.insert(g.name.clone());
+            }
         }
         let mut init_start = 0usize;
         emit_stmts(
@@ -227,6 +239,7 @@ pub fn emit_program_with(
             &program.types,
             &mut init_start,
             "module_init",
+            &boxed,
         );
         out.push_str("}\n\n");
     }
@@ -343,7 +356,7 @@ fn collect_user_array_elems_function(f: &Function, out: &mut Vec<String>) {
     }
 }
 
-fn emit_global(out: &mut String, g: &GlobalVar, is_static: bool) {
+fn emit_global(out: &mut String, g: &GlobalVar, is_static: bool, types: &[TypeLayout]) {
     let stor = if is_static { "static " } else { "" };
     // Heap / User module globals must remain observable. `-O1` DSE otherwise
     // drops the store of unused `sqlite.null` and LSan reports the string.
@@ -352,8 +365,13 @@ fn emit_global(out: &mut String, g: &GlobalVar, is_static: bool) {
     } else {
         ""
     };
-    if is_heap_ty(&g.ty) {
-        let _ = writeln!(out, "{stor}{} {}{keep} = NULL;", c_ty(&g.ty), g.name);
+    if is_heap_ty(&g.ty, types) {
+        let _ = writeln!(
+            out,
+            "{stor}{} {}{keep} = NULL;",
+            c_val_ty(&g.ty, types),
+            g.name
+        );
     } else if matches!(g.ty, Ty::Fn { .. } | Ty::User(_)) {
         let _ = writeln!(out, "{stor}{} {}{keep} = {{0}};", c_ty(&g.ty), g.name);
     } else {
@@ -361,8 +379,8 @@ fn emit_global(out: &mut String, g: &GlobalVar, is_static: bool) {
     }
 }
 
-fn emit_global_extern(out: &mut String, g: &GlobalVar) {
-    let _ = writeln!(out, "extern {} {};", c_ty(&g.ty), g.name);
+fn emit_global_extern(out: &mut String, g: &GlobalVar, types: &[TypeLayout]) {
+    let _ = writeln!(out, "extern {} {};", c_val_ty(&g.ty, types), g.name);
 }
 
 fn layout_deps(t: &TypeLayout) -> Vec<String> {
@@ -392,7 +410,7 @@ fn emit_typedefs_topo(out: &mut String, types: &[TypeLayout]) {
         guard += 1;
         if guard > types.len() + 2 {
             for t in remaining {
-                emit_typedef(out, t);
+                emit_typedef(out, t, types);
             }
             break;
         }
@@ -403,7 +421,7 @@ fn emit_typedefs_topo(out: &mut String, types: &[TypeLayout]) {
                 .iter()
                 .all(|d| !names.contains(d) || done.contains(d));
             if ready {
-                emit_typedef(out, t);
+                emit_typedef(out, t, types);
                 done.insert(t.name.clone());
                 progressed = true;
             } else {
@@ -412,7 +430,7 @@ fn emit_typedefs_topo(out: &mut String, types: &[TypeLayout]) {
         }
         if !progressed {
             for t in next {
-                emit_typedef(out, t);
+                emit_typedef(out, t, types);
             }
             break;
         }
@@ -420,7 +438,7 @@ fn emit_typedefs_topo(out: &mut String, types: &[TypeLayout]) {
     }
 }
 
-fn emit_typedef(out: &mut String, t: &TypeLayout) {
+fn emit_typedef(out: &mut String, t: &TypeLayout, types: &[TypeLayout]) {
     if t.name == "Attr" {
         // Layout lives in thoxa_rt.h as `Thoxa_Attr`.
         return;
@@ -447,7 +465,12 @@ fn emit_typedef(out: &mut String, t: &TypeLayout) {
         if !payload_vars.is_empty() {
             out.push_str("    union {\n");
             for v in payload_vars {
-                let _ = writeln!(out, "        {} v{};", c_ty(&v.payload_ty), v.tag);
+                let _ = writeln!(
+                    out,
+                    "        {} v{};",
+                    c_val_ty(&v.payload_ty, types),
+                    v.tag
+                );
             }
             out.push_str("    } u;\n");
         }
@@ -462,11 +485,21 @@ fn emit_typedef(out: &mut String, t: &TypeLayout) {
                 // No C field for Void (Pass(Void) is empty product).
             }
             Ty::FixedArray { elem, len } => {
-                let _ = writeln!(out, "    {} {}[{len}];", c_ty(elem), f.c_name);
+                let _ = writeln!(
+                    out,
+                    "    {} {}[{len}];",
+                    c_val_ty(elem, types),
+                    f.c_name
+                );
                 nfields += 1;
             }
             other => {
-                let _ = writeln!(out, "    {} {};", c_ty(other), f.c_name);
+                let _ = writeln!(
+                    out,
+                    "    {} {};",
+                    c_val_ty(other, types),
+                    f.c_name
+                );
                 nfields += 1;
             }
         }
@@ -477,15 +510,15 @@ fn emit_typedef(out: &mut String, t: &TypeLayout) {
     let _ = writeln!(out, "}} {};\n", c_type_name(&t.name));
 }
 
-fn emit_proto(out: &mut String, f: &Function) {
+fn emit_proto(out: &mut String, f: &Function, types: &[TypeLayout]) {
     let c_name = c_fn_name(f);
-    let ret = c_ty(&f.ret_ty);
+    let ret = c_val_ty(&f.ret_ty, types);
     let _ = write!(out, "{ret} {c_name}(");
-    emit_params(out, f);
+    emit_params(out, f, types);
     out.push_str(");\n");
 }
 
-fn emit_params(out: &mut String, f: &Function) {
+fn emit_params(out: &mut String, f: &Function, types: &[TypeLayout]) {
     let mut first = true;
     if let Some((name, ty)) = &f.receiver {
         // D107: User receivers are pointers so method field write-back mutates
@@ -506,7 +539,7 @@ fn emit_params(out: &mut String, f: &Function) {
             out.push_str(", ");
         }
         first = false;
-        let _ = write!(out, "{} {}", c_ty(ty), name);
+        let _ = write!(out, "{} {}", c_val_ty(ty, types), name);
     }
 }
 
@@ -531,9 +564,9 @@ fn emit_function(
     }
 
     let c_name = c_fn_name(f);
-    let ret = c_ty(&f.ret_ty);
+    let ret = c_val_ty(&f.ret_ty, types);
     let _ = write!(out, "{ret} {c_name}(");
-    emit_params(out, f);
+    emit_params(out, f, types);
     out.push_str(") {\n");
 
     let mut locals: Vec<(String, Ty)> = Vec::new();
@@ -559,11 +592,28 @@ fn emit_function(
         if *ty == Ty::Void {
             continue;
         }
-        emit_local_decl(out, name, ty);
+        emit_local_decl(out, name, ty, types);
+    }
+
+    let mut boxed: HashSet<String> = HashSet::new();
+    if let Some((name, ty)) = &f.receiver {
+        if is_boxed_user(ty, types) {
+            boxed.insert(name.clone());
+        }
+    }
+    for (name, ty) in &f.params {
+        if is_boxed_user(ty, types) {
+            boxed.insert(name.clone());
+        }
+    }
+    for (name, ty) in &locals {
+        if is_boxed_user(ty, types) {
+            boxed.insert(name.clone());
+        }
     }
 
     let mut start_id = 0usize;
-    emit_stmts(out, &f.body, 1, types, &mut start_id, &f.name);
+    emit_stmts(out, &f.body, 1, types, &mut start_id, &f.name, &boxed);
 
     match (&f.ret, &f.ret_ty) {
         (Some(_), Ty::Void) | (Some(_), Ty::Never) => {}
@@ -577,11 +627,111 @@ fn emit_function(
     out.push_str("}\n");
 }
 
-fn is_heap_ty(ty: &Ty) -> bool {
+fn is_heap_ty(ty: &Ty, types: &[TypeLayout]) -> bool {
     matches!(
         ty,
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. }
-    )
+    ) || is_boxed_user(ty, types)
+}
+
+fn is_boxed_user(ty: &Ty, types: &[TypeLayout]) -> bool {
+    match ty {
+        Ty::User(name) => is_boxed_user_name(name, types),
+        _ => false,
+    }
+}
+
+fn is_boxed_user_name(name: &str, types: &[TypeLayout]) -> bool {
+    types.iter().any(|t| t.name == name && t.has_drop)
+}
+
+fn c_val_ty(ty: &Ty, types: &[TypeLayout]) -> String {
+    if is_boxed_user(ty, types) {
+        format!("{}*", c_ty(ty))
+    } else {
+        c_ty(ty)
+    }
+}
+
+fn user_dtor_name(type_name: &str) -> String {
+    format!("thoxa_dtor_{type_name}")
+}
+
+fn emit_drop_dtors(out: &mut String, types: &[TypeLayout]) {
+    let mut any = false;
+    for t in types {
+        if t.has_drop {
+            let _ = writeln!(out, "static void {}(void *p);", user_dtor_name(&t.name));
+            any = true;
+        }
+    }
+    for t in types {
+        if !t.has_drop {
+            continue;
+        }
+        let cty = c_type_name(&t.name);
+        let dtor = user_dtor_name(&t.name);
+        let _ = writeln!(out, "static void {dtor}(void *p) {{");
+        let _ = writeln!(out, "    {cty} *_self = ({cty} *)p;");
+        let _ = writeln!(out, "    if (!_self) {{ return; }}");
+        let _ = writeln!(out, "    {}(_self);", c_method_name(&t.name, "drop"));
+        for f in &t.fields {
+            if !needs_drop_ty(&f.ty) {
+                continue;
+            }
+            let nested = crate::mir::Place {
+                name: format!("_self->{}", f.c_name),
+            };
+            emit_rc(out, "    ", &nested, &f.ty, false, types);
+        }
+        out.push_str("}\n");
+        any = true;
+    }
+    if any {
+        out.push('\n');
+    }
+}
+
+fn emit_boxed_struct_lit(
+    out: &mut String,
+    pad: &str,
+    place: &crate::mir::Place,
+    type_name: &str,
+    fields: &[crate::mir::Place],
+    types: &[TypeLayout],
+) {
+    let cty = c_type_name(type_name);
+    let _ = writeln!(
+        out,
+        "{pad}{} = ({cty} *)thoxa_alloc(sizeof({cty}), THOXA_TAG_USER);",
+        place.name
+    );
+    let _ = writeln!(
+        out,
+        "{pad}thoxa_set_dtor({}, {});",
+        place.name,
+        user_dtor_name(type_name)
+    );
+    let Some(layout) = types.iter().find(|t| t.name == type_name) else {
+        return;
+    };
+    let mut fi = 0usize;
+    for f in &layout.fields {
+        if matches!(f.ty, Ty::Void) {
+            continue;
+        }
+        if let Some(src) = fields.get(fi) {
+            let _ = writeln!(
+                out,
+                "{pad}{}->{} = {};",
+                place.name, f.c_name, src.name
+            );
+            if is_heap_ty(&f.ty, types) {
+                let _ = writeln!(out, "{pad}thoxa_dup({}->{});", place.name, f.c_name);
+            }
+        }
+        fi += 1;
+    }
 }
 
 /// Pure-literal union stored as a narrow scalar (not a tagged struct).
@@ -609,7 +759,11 @@ fn needs_drop_ty(ty: &Ty) -> bool {
 }
 
 /// Declare a local with a safe zero value (so branch-skipped drops are no-ops).
-fn emit_local_decl(out: &mut String, name: &str, ty: &Ty) {
+fn emit_local_decl(out: &mut String, name: &str, ty: &Ty, types: &[TypeLayout]) {
+    if is_boxed_user(ty, types) {
+        let _ = writeln!(out, "    {} {} = NULL;", c_val_ty(ty, types), name);
+        return;
+    }
     match ty {
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
             let _ = writeln!(out, "    {} {} = NULL;", c_ty(ty), name);
@@ -684,7 +838,7 @@ fn emit_start_thunk(
     let thunk = format!("thoxa_thunk_{label}_{id}");
     let _ = writeln!(out, "typedef struct {pack} {{");
     for (i, ty) in arg_tys.iter().enumerate() {
-        let _ = writeln!(out, "    {} a{i};", c_ty(ty));
+        let _ = writeln!(out, "    {} a{i};", c_val_ty(ty, types));
     }
     if arg_tys.is_empty() {
         out.push_str("    int unused;\n");
@@ -709,7 +863,7 @@ fn emit_start_thunk(
                 }
                 out.push_str(");\n");
             } else {
-                let _ = writeln!(out, "    {} ret;", c_ty(ret_ty));
+                let _ = writeln!(out, "    {} ret;", c_val_ty(ret_ty, types));
                 let _ = write!(out, "    ret = {cfn}(");
                 for i in 0..arg_tys.len() {
                     if i > 0 {
@@ -744,6 +898,7 @@ fn emit_start_thunk(
                     name: format!("p->a{i}"),
                 },
                 ty,
+                types,
             );
         }
     }
@@ -817,6 +972,7 @@ fn emit_stmts(
     types: &[TypeLayout],
     start_id: &mut usize,
     fn_label: &str,
+    boxed: &HashSet<String>,
 ) {
     let pad = "    ".repeat(indent);
     for s in stmts {
@@ -834,9 +990,19 @@ fn emit_stmts(
                     val_ty,
                 } = value
                 {
-                    emit_map_get(out, &pad, place, map, key, dest, val_ty);
+                    emit_map_get(out, &pad, place, map, key, dest, val_ty, types);
                 } else if let RValue::MapValAt { map, index, val_ty } = value {
                     match val_ty {
+                        Ty::User(type_name) if is_boxed_user_name(type_name, types) => {
+                            let _ = writeln!(
+                                out,
+                                "{pad}{} = ({})thoxa_map_val_ptr_at({}, {});",
+                                place.name,
+                                c_val_ty(val_ty, types),
+                                map.name,
+                                index.name
+                            );
+                        }
                         Ty::User(type_name) => {
                             emit_rc(out, &pad, place, &Ty::User(type_name.clone()), false, types);
                             let _ = writeln!(
@@ -884,7 +1050,7 @@ fn emit_stmts(
                         }
                     }
                 } else if let RValue::MapKeyAt { map, index } = value {
-                    if is_heap_ty(ty) {
+                    if is_heap_ty(ty, types) {
                         let _ = writeln!(
                             out,
                             "{pad}{} = ({})(intptr_t)thoxa_map_key_at({}, {});",
@@ -915,6 +1081,17 @@ fn emit_stmts(
                     elem_ty: Ty::User(type_name),
                 } = value
                 {
+                    if is_boxed_user_name(type_name, types) {
+                        let _ = writeln!(
+                            out,
+                            "{pad}{} = ({})thoxa_array_get_ptr({}, {});",
+                            place.name,
+                            c_val_ty(ty, types),
+                            arr.name,
+                            index.name
+                        );
+                        continue;
+                    }
                     emit_rc(out, &pad, place, &Ty::User(type_name.clone()), false, types);
                     let _ = writeln!(
                         out,
@@ -940,6 +1117,26 @@ fn emit_stmts(
                             e.name
                         );
                     }
+                } else if let RValue::StructZero { .. } = value {
+                    if is_boxed_user(ty, types) {
+                        let _ = writeln!(out, "{pad}{} = NULL;", place.name);
+                    } else {
+                        let _ = write!(out, "{pad}{} = ", place.name);
+                        emit_rvalue(out, value, types, boxed);
+                        out.push_str(";\n");
+                    }
+                } else if let RValue::StructLit {
+                    type_name,
+                    fields,
+                } = value
+                {
+                    if is_boxed_user(ty, types) {
+                        emit_boxed_struct_lit(out, &pad, place, type_name, fields, types);
+                    } else {
+                        let _ = write!(out, "{pad}{} = ", place.name);
+                        emit_rvalue(out, value, types, boxed);
+                        out.push_str(";\n");
+                    }
                 } else if let (Ty::FixedArray { elem, len }, RValue::Use(src)) = (ty, value) {
                     // Whole fixed-array copy (locals / temps): element loop, no C array assign.
                     let _ = writeln!(out, "{pad}for (uint64_t _fa = 0; _fa < {len}; _fa++) {{");
@@ -953,7 +1150,7 @@ fn emit_stmts(
                     let _ = writeln!(out, "{pad}}}");
                 } else {
                     let _ = write!(out, "{pad}{} = ", place.name);
-                    emit_rvalue(out, value, types);
+                    emit_rvalue(out, value, types, boxed);
                     out.push_str(";\n");
                 }
             }
@@ -963,7 +1160,7 @@ fn emit_stmts(
                 ty,
                 value,
             } => {
-                let acc = recv_access(base);
+                let acc = recv_access(base, boxed);
                 if let Ty::FixedArray { elem, len } = ty {
                     // Whole fixed-array field store (C arrays not assignable).
                     let _ = writeln!(out, "{pad}for (uint64_t _fa = 0; _fa < {len}; _fa++) {{");
@@ -981,7 +1178,7 @@ fn emit_stmts(
                 }
                 // Heap field store: drop previous field ownership, then share
                 // `value` (MIR Dup keeps a live local when needed).
-                if is_heap_ty(ty) {
+                if is_heap_ty(ty, types) {
                     let _ = writeln!(out, "{pad}thoxa_drop({}{}{});", base.name, acc, field);
                     let _ = writeln!(
                         out,
@@ -989,7 +1186,7 @@ fn emit_stmts(
                         base.name,
                         acc,
                         field,
-                        c_ty(ty),
+                        c_val_ty(ty, types),
                         value.name
                     );
                     let _ = writeln!(out, "{pad}thoxa_dup({});", value.name);
@@ -1000,7 +1197,7 @@ fn emit_stmts(
                         base.name,
                         acc,
                         field,
-                        c_ty(ty),
+                        c_val_ty(ty, types),
                         value.name
                     );
                 }
@@ -1012,7 +1209,7 @@ fn emit_stmts(
                 ty,
                 value,
             } => {
-                let acc = recv_access(base);
+                let acc = recv_access(base, boxed);
                 let _ = writeln!(
                     out,
                     "{pad}{}{}{}[{}] = ({}){};",
@@ -1067,6 +1264,13 @@ fn emit_stmts(
                     );
                 }
                 Ty::User(type_name) => {
+                    if is_boxed_user_name(type_name, types) {
+                        let _ = writeln!(
+                            out,
+                            "{pad}{} = thoxa_array_set_ptr({}, {}, {});",
+                            base.name, base.name, index.name, value.name
+                        );
+                    } else {
                     let _ = writeln!(
                         out,
                         "{pad}{} = thoxa_array_set_elem({}, {}, &{}, {}, {});",
@@ -1077,6 +1281,7 @@ fn emit_stmts(
                         array_user_elem_dup_fn(type_name),
                         array_user_elem_drop_fn(type_name)
                     );
+                    }
                 }
                 _ => {
                     let _ = writeln!(
@@ -1088,7 +1293,7 @@ fn emit_stmts(
             },
             Stmt::Eval(rv) => {
                 let _ = write!(out, "{pad}");
-                emit_rvalue(out, rv, types);
+                emit_rvalue(out, rv, types, boxed);
                 out.push_str(";\n");
             }
             Stmt::Start { args, arg_tys, .. } => {
@@ -1101,18 +1306,18 @@ fn emit_stmts(
                 else_body,
             } => {
                 let _ = writeln!(out, "{pad}if ({}) {{", cond.name);
-                emit_stmts(out, then_body, indent + 1, types, start_id, fn_label);
+                emit_stmts(out, then_body, indent + 1, types, start_id, fn_label, boxed);
                 if else_body.is_empty() {
                     let _ = writeln!(out, "{pad}}}");
                 } else {
                     let _ = writeln!(out, "{pad}}} else {{");
-                    emit_stmts(out, else_body, indent + 1, types, start_id, fn_label);
+                    emit_stmts(out, else_body, indent + 1, types, start_id, fn_label, boxed);
                     let _ = writeln!(out, "{pad}}}");
                 }
             }
             Stmt::Loop { body } => {
                 let _ = writeln!(out, "{pad}while (1) {{");
-                emit_stmts(out, body, indent + 1, types, start_id, fn_label);
+                emit_stmts(out, body, indent + 1, types, start_id, fn_label, boxed);
                 let _ = writeln!(out, "{pad}}}");
             }
             Stmt::ForRange {
@@ -1128,7 +1333,7 @@ fn emit_stmts(
                     "{pad}for (; {} {} {}; {} = {} + INT64_C(1)) {{",
                     index.name, cmp, end.name, index.name, index.name
                 );
-                emit_stmts(out, body, indent + 1, types, start_id, fn_label);
+                emit_stmts(out, body, indent + 1, types, start_id, fn_label, boxed);
                 let _ = writeln!(out, "{pad}}}");
             }
             Stmt::Break => {
@@ -1155,7 +1360,12 @@ fn emit_stmts(
     }
 }
 
-fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
+fn emit_rvalue(
+    out: &mut String,
+    rv: &RValue,
+    types: &[TypeLayout],
+    boxed: &HashSet<String>,
+) {
     let _ = types;
     match rv {
         RValue::Use(p) => {
@@ -1317,8 +1527,13 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                         out.push_str(", ");
                     }
                     // First arg is the User receiver — pass address (D107).
+                    // Drop types are already boxes (D155).
                     if i == 0 {
-                        let _ = write!(out, "&{}", a.name);
+                        if is_boxed_user_name(type_name, types) {
+                            out.push_str(&a.name);
+                        } else {
+                            let _ = write!(out, "&{}", a.name);
+                        }
                     } else {
                         out.push_str(&a.name);
                     }
@@ -1381,14 +1596,14 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             let _ = write!(out, "({}){{0}}", c_type_name(type_name));
         }
         RValue::Field { base, field } => {
-            let _ = write!(out, "{}{}{}", base.name, recv_access(base), field);
+            let _ = write!(out, "{}{}{}", base.name, recv_access(base, boxed), field);
         }
         RValue::Index { base, field, index } => {
             let _ = write!(
                 out,
                 "{}{}{}[{}]",
                 base.name,
-                recv_access(base),
+                recv_access(base, boxed),
                 field,
                 index.name
             );
@@ -1445,13 +1660,20 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             out.push('}');
         }
         RValue::ArrayLit { elems, elem_ty } => {
-            emit_array_lit(out, elems, elem_ty);
+            emit_array_lit(out, elems, elem_ty, types);
         }
         RValue::ArrayGet { .. } => {
             // Handled specially in Stmt::Assign (out-param).
             out.push_str("/* bad ArrayGet as rvalue */");
         }
         RValue::ArrayAppend { arr, item, elem_ty } => match elem_ty {
+            Ty::User(type_name) if is_boxed_user_name(type_name, types) => {
+                let _ = write!(
+                    out,
+                    "thoxa_array_append_ptr({}, {})",
+                    arr.name, item.name
+                );
+            }
             Ty::User(type_name) => {
                 let _ = write!(
                     out,
@@ -1468,6 +1690,9 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             }
         },
         RValue::ArrayDropLast { arr, elem_ty } => match elem_ty {
+            Ty::User(type_name) if is_boxed_user_name(type_name, types) => {
+                let _ = write!(out, "thoxa_array_drop_last({})", arr.name);
+            }
             Ty::User(type_name) => {
                 let _ = write!(
                     out,
@@ -1487,6 +1712,13 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             item,
             elem_ty,
         } => match elem_ty {
+            Ty::User(type_name) if is_boxed_user_name(type_name, types) => {
+                let _ = write!(
+                    out,
+                    "thoxa_array_insert_at_ptr({}, {}, {})",
+                    arr.name, at.name, item.name
+                );
+            }
             Ty::User(type_name) => {
                 let _ = write!(
                     out,
@@ -1523,8 +1755,8 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                 out,
                 "thoxa_map_new({}, {}, {})",
                 map_key_kind_c(key_ty),
-                map_val_kind_c(val_ty),
-                map_val_size_c(val_ty)
+                map_val_kind_c(val_ty, types),
+                map_val_size_c(val_ty, types)
             );
         }
         RValue::MapSet {
@@ -1533,10 +1765,10 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
             val,
             val_ty,
             ..
-        } => emit_map_set(out, map, key, val, val_ty),
+        } => emit_map_set(out, map, key, val, val_ty, types),
         RValue::MapRemove {
             map, key, val_ty, ..
-        } => emit_map_remove(out, map, key, val_ty),
+        } => emit_map_remove(out, map, key, val_ty, types),
         RValue::MapGet { .. } => {
             out.push_str("/* bad MapGet as rvalue */");
         }
@@ -1591,6 +1823,16 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                     out.push_str("thoxa_fn_free(NULL)");
                 }
                 (Some(r), Some(Ty::User(tn)), FnTarget::Method { bound: true, .. }) => {
+                    if is_boxed_user_name(tn, types) {
+                        let _ = write!(
+                            out,
+                            "thoxa_fn_bind(&{}, (uint32_t)sizeof(void *), {}, {}, (void *){})",
+                            r.name,
+                            fn_payload_retain_name(tn),
+                            fn_payload_release_name(tn),
+                            thunk
+                        );
+                    } else {
                     let _ = write!(
                         out,
                         "thoxa_fn_bind(&{}, (uint32_t)sizeof({}), {}, {}, (void *){})",
@@ -1600,6 +1842,7 @@ fn emit_rvalue(out: &mut String, rv: &RValue, types: &[TypeLayout]) {
                         fn_payload_release_name(tn),
                         thunk
                     );
+                    }
                 }
                 _ => {
                     let _ = write!(out, "thoxa_fn_free((void *){})", thunk);
@@ -1658,12 +1901,32 @@ fn c_ty(ty: &Ty) -> String {
     }
 }
 
-fn emit_array_lit(out: &mut String, elems: &[crate::mir::Place], elem_ty: &Ty) {
+fn emit_array_lit(
+    out: &mut String,
+    elems: &[crate::mir::Place],
+    elem_ty: &Ty,
+    types: &[TypeLayout],
+) {
     let heap = matches!(
         elem_ty,
         Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. }
-    );
+    ) || is_boxed_user(elem_ty, types);
     if let Ty::User(type_name) = elem_ty {
+        if is_boxed_user_name(type_name, types) {
+            if elems.is_empty() {
+                let _ = write!(out, "thoxa_array_new(1)");
+                return;
+            }
+            out.push_str("thoxa_array_from_ptrs((void *const[]){");
+            for (i, e) in elems.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                let _ = write!(out, "(void *){}", e.name);
+            }
+            let _ = write!(out, "}}, {})", elems.len());
+            return;
+        }
         let cty = c_type_name(type_name);
         let dup = array_user_elem_dup_fn(type_name);
         if elems.is_empty() {
@@ -1739,8 +2002,9 @@ fn map_key_kind_c(ty: &Ty) -> &'static str {
     }
 }
 
-fn map_val_kind_c(ty: &Ty) -> &'static str {
+fn map_val_kind_c(ty: &Ty, types: &[TypeLayout]) -> &'static str {
     match ty {
+        Ty::User(_) if is_boxed_user(ty, types) => "THOXA_MAP_VAL_PTR",
         Ty::User(_) => "THOXA_MAP_VAL_USER",
         Ty::String | Ty::Bytes | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
             "THOXA_MAP_VAL_PTR"
@@ -1749,8 +2013,9 @@ fn map_val_kind_c(ty: &Ty) -> &'static str {
     }
 }
 
-fn map_val_size_c(ty: &Ty) -> String {
+fn map_val_size_c(ty: &Ty, types: &[TypeLayout]) -> String {
     match ty {
+        Ty::User(_) if is_boxed_user(ty, types) => "(uint32_t)sizeof(int64_t)".into(),
         Ty::User(n) => format!("(uint32_t)sizeof({})", c_type_name(n)),
         _ => "(uint32_t)sizeof(int64_t)".into(),
     }
@@ -1762,8 +2027,18 @@ fn emit_map_set(
     key: &crate::mir::Place,
     val: &crate::mir::Place,
     val_ty: &Ty,
+    types: &[TypeLayout],
 ) {
     match val_ty {
+        Ty::User(_) if is_boxed_user(val_ty, types) => {
+            let _ = write!(
+                out,
+                "thoxa_map_set_ptr({}, {}, {})",
+                map.name,
+                c_map_key_bits(&key.name),
+                val.name
+            );
+        }
         Ty::User(type_name) => {
             let _ = write!(
                 out,
@@ -1819,8 +2094,17 @@ fn emit_map_remove(
     map: &crate::mir::Place,
     key: &crate::mir::Place,
     val_ty: &Ty,
+    types: &[TypeLayout],
 ) {
     if let Ty::User(type_name) = val_ty {
+        if is_boxed_user_name(type_name, types) {
+            let _ = write!(
+                out,
+                "thoxa_map_remove({}, {})",
+                map.name,
+                c_map_key_bits(&key.name)
+            );
+        } else {
         let _ = write!(
             out,
             "thoxa_map_remove_ex({}, {}, {}, {})",
@@ -1829,6 +2113,7 @@ fn emit_map_remove(
             array_user_elem_dup_fn(type_name),
             array_user_elem_drop_fn(type_name)
         );
+        }
     } else {
         let _ = write!(
             out,
@@ -1847,8 +2132,19 @@ fn emit_map_get(
     key: &crate::mir::Place,
     dest: &crate::mir::Place,
     val_ty: &Ty,
+    types: &[TypeLayout],
 ) {
     match val_ty {
+        Ty::User(_) if is_boxed_user(val_ty, types) => {
+            let _ = writeln!(
+                out,
+                "{pad}{} = thoxa_map_get_ptr({}, {}, (void **)&{});",
+                found.name,
+                map.name,
+                c_map_key_bits(&key.name),
+                dest.name
+            );
+        }
         Ty::User(_) => {
             // Borrow the slot (memcpy, no elem_dup). MIR then Dups `needs_drop`
             // values the same way as MapGet of String/Array/Map (Has + result).
@@ -2103,11 +2399,23 @@ fn push_user_array_elem_ty(elem_ty: &Ty, out: &mut Vec<String>) {
 }
 
 /// Zero a heap place without dropping (ownership already transferred).
-fn emit_clear_place(out: &mut String, pad: &str, place: &crate::mir::Place, ty: &Ty) {
+fn emit_clear_place(
+    out: &mut String,
+    pad: &str,
+    place: &crate::mir::Place,
+    ty: &Ty,
+    types: &[TypeLayout],
+) {
+    if is_boxed_user(ty, types)
+        || matches!(
+            ty,
+            Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. }
+        )
+    {
+        let _ = writeln!(out, "{pad}{} = NULL;", place.name);
+        return;
+    }
     match ty {
-        Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
-            let _ = writeln!(out, "{pad}{} = NULL;", place.name);
-        }
         Ty::Fn { .. } => {
             let _ = writeln!(out, "{pad}{} = (ThoxaFn){{0}};", place.name);
         }
@@ -2179,6 +2487,13 @@ fn emit_rc(
             let Some(layout) = types.iter().find(|t| t.name == *name) else {
                 return;
             };
+            if layout.has_drop {
+                let _ = writeln!(out, "{pad}{op}({});", place.name);
+                if !dup {
+                    let _ = writeln!(out, "{pad}{} = NULL;", place.name);
+                }
+                return;
+            }
             // Tagged sum: only the live arm's payload participates (D118 heap payloads).
             if let Some(variants) = &layout.sum {
                 let any = variants.iter().any(|v| needs_drop_ty(&v.payload_ty));
@@ -2245,9 +2560,9 @@ fn c_method_name(type_name: &str, method: &str) -> String {
     format!("thoxa_m_{type_name}_{method}")
 }
 
-/// Method receiver `_self` is a pointer (D107); all other struct places use `.`.
-fn recv_access(base: &crate::mir::Place) -> &'static str {
-    if base.name == "_self" {
+/// Method receiver `_self` is a pointer (D107); Drop boxes are pointers too (D155).
+fn recv_access(base: &crate::mir::Place, boxed: &HashSet<String>) -> &'static str {
+    if base.name == "_self" || boxed.contains(&base.name) {
         "->"
     } else {
         "."
@@ -2310,6 +2625,21 @@ fn emit_fn_support(out: &mut String, program: &Program, types: &[TypeLayout]) {
 }
 
 fn emit_fn_payload_rc(out: &mut String, type_name: &str, types: &[TypeLayout]) {
+    if is_boxed_user_name(type_name, types) {
+        let _ = writeln!(
+            out,
+            "static void {}(void *p) {{",
+            fn_payload_retain_name(type_name)
+        );
+        out.push_str("    thoxa_dup(*(void **)p);\n}\n");
+        let _ = writeln!(
+            out,
+            "static void {}(void *p) {{",
+            fn_payload_release_name(type_name)
+        );
+        out.push_str("    thoxa_drop(*(void **)p);\n    *(void **)p = NULL;\n}\n");
+        return;
+    }
     let cty = c_type_name(type_name);
     let _ = writeln!(
         out,
@@ -2356,9 +2686,22 @@ fn emit_fn_thunk(out: &mut String, target: &FnTarget, program: &Program) {
             let Some(f) = program.functions.iter().find(|f| f.name == *mangled) else {
                 return;
             };
-            emit_thunk_sig(out, &thunk_c_name(target), &f.params, &f.ret_ty);
+            emit_thunk_sig(
+                out,
+                &thunk_c_name(target),
+                &f.params,
+                &f.ret_ty,
+                &program.types,
+            );
             out.push_str("    (void)recv;\n");
-            emit_thunk_invoke(out, &c_free_fn_name(mangled), &f.params, &f.ret_ty, false);
+            emit_thunk_invoke(
+                out,
+                &c_free_fn_name(mangled),
+                &f.params,
+                &f.ret_ty,
+                false,
+                &program.types,
+            );
             out.push_str("}\n");
         }
         FnTarget::Method {
@@ -2375,12 +2718,25 @@ fn emit_fn_thunk(out: &mut String, target: &FnTarget, program: &Program) {
                 return;
             };
             if *bound {
-                emit_thunk_sig(out, &thunk_c_name(target), &f.params, &f.ret_ty);
-                let cty = c_type_name(type_name);
-                let _ = writeln!(
+                emit_thunk_sig(
                     out,
-                    "    {cty} *_self = ({cty} *)thoxa_fn_payload((ThoxaFnBox *)recv);"
+                    &thunk_c_name(target),
+                    &f.params,
+                    &f.ret_ty,
+                    &program.types,
                 );
+                let cty = c_type_name(type_name);
+                if is_boxed_user_name(type_name, &program.types) {
+                    let _ = writeln!(
+                        out,
+                        "    {cty} *_self = *({cty} **)thoxa_fn_payload((ThoxaFnBox *)recv);"
+                    );
+                } else {
+                    let _ = writeln!(
+                        out,
+                        "    {cty} *_self = ({cty} *)thoxa_fn_payload((ThoxaFnBox *)recv);"
+                    );
+                }
                 if f.ret_ty == Ty::Void || f.ret_ty == Ty::Never {
                     let _ = write!(out, "    {}(_self", c_method_name(type_name, method));
                 } else {
@@ -2396,7 +2752,13 @@ fn emit_fn_thunk(out: &mut String, target: &FnTarget, program: &Program) {
                     params.push((n.clone(), t.clone()));
                 }
                 params.extend(f.params.iter().cloned());
-                emit_thunk_sig(out, &thunk_c_name(target), &params, &f.ret_ty);
+                emit_thunk_sig(
+                    out,
+                    &thunk_c_name(target),
+                    &params,
+                    &f.ret_ty,
+                    &program.types,
+                );
                 out.push_str("    (void)recv;\n");
                 emit_thunk_invoke(
                     out,
@@ -2404,6 +2766,7 @@ fn emit_fn_thunk(out: &mut String, target: &FnTarget, program: &Program) {
                     &params,
                     &f.ret_ty,
                     true,
+                    &program.types,
                 );
             }
             out.push_str("}\n");
@@ -2411,15 +2774,21 @@ fn emit_fn_thunk(out: &mut String, target: &FnTarget, program: &Program) {
     }
 }
 
-fn emit_thunk_sig(out: &mut String, name: &str, params: &[(String, Ty)], ret: &Ty) {
+fn emit_thunk_sig(
+    out: &mut String,
+    name: &str,
+    params: &[(String, Ty)],
+    ret: &Ty,
+    types: &[TypeLayout],
+) {
     let r = if *ret == Ty::Void || *ret == Ty::Never {
         "void".to_string()
     } else {
-        c_ty(ret)
+        c_val_ty(ret, types)
     };
     let _ = write!(out, "static {r} {name}(void *recv");
     for (n, t) in params {
-        let _ = write!(out, ", {} {}", c_ty(t), n);
+        let _ = write!(out, ", {} {}", c_val_ty(t, types), n);
     }
     out.push_str(") {\n");
 }
@@ -2430,6 +2799,7 @@ fn emit_thunk_invoke(
     params: &[(String, Ty)],
     ret: &Ty,
     first_user_is_self_ptr: bool,
+    types: &[TypeLayout],
 ) {
     if *ret == Ty::Void || *ret == Ty::Never {
         let _ = write!(out, "    {c_name}(");
@@ -2440,7 +2810,11 @@ fn emit_thunk_invoke(
         if i > 0 {
             out.push_str(", ");
         }
-        if i == 0 && first_user_is_self_ptr && matches!(t, Ty::User(_)) {
+        if i == 0
+            && first_user_is_self_ptr
+            && matches!(t, Ty::User(_))
+            && !is_boxed_user(t, types)
+        {
             let _ = write!(out, "&{n}");
         } else {
             out.push_str(n);

@@ -79,6 +79,7 @@ void *thoxa_alloc(size_t payload_size, uint16_t type_tag) {
     h->type_tag = type_tag;
     h->flags = 0;
     h->reserved = 0;
+    h->dtor = NULL;
     return (void *)(h + 1);
 }
 
@@ -87,6 +88,14 @@ static ThoxaHeader *header_of(void *ptr) {
         return NULL;
     }
     return ((ThoxaHeader *)ptr) - 1;
+}
+
+void thoxa_set_dtor(void *ptr, void (*dtor)(void *payload)) {
+    ThoxaHeader *h = header_of(ptr);
+    if (!h) {
+        return;
+    }
+    h->dtor = dtor;
 }
 
 void thoxa_dup(void *ptr) {
@@ -125,6 +134,11 @@ void thoxa_drop(void *ptr) {
     }
     h->refcount -= 1;
     if (h->refcount == 0) {
+        void (*dtor)(void *) = h->dtor;
+        h->dtor = NULL;
+        if (dtor) {
+            dtor(ptr);
+        }
         if (h->type_tag == THOXA_TAG_HTML) {
             thoxa_html_free_payload((ThoxaHtml *)ptr);
         }

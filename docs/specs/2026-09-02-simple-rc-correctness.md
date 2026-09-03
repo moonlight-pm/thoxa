@@ -10,7 +10,7 @@ ASan pass on non-fiber programs (`cargo make test-asan`)
 - LSan does not catch use-after-free or most double-frees
 - ASan is optional (`cargo make test-asan` / `THOXA_SANITIZE=address`), not the default (ucontext fibers)
 - Session / libtcc steps are unsanitized
-- No language `Drop` for File / Socket / Db (explicit `.close` still required; `Socket.close` now matches `File` / `Db` and clears the handle)
+- Language `drop()` is **D155** (File / Socket / Db); explicit `.close` still valid and inert
 - No cycle collector
 - Perceus precision is **not** this freeze
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
@@ -213,9 +213,10 @@ No class-D use-after-free / double-free fired. ASan is **not** the default
 7. **`Socket.close` handle clear — shipped.** Same D107 write-back as
    `File` / `Db`: `fd = -1`; second close is a no-op. Gate: `http_net_err`.
    Not language `Drop`.
-8. **Named later (not this wave):** language `Drop` for File/Socket/Db;
-   cycle collector; fiber stack guard pages; session/libtcc sanitizer
-   (parked with session); Perceus.
+8. **Resource `drop` — shipped as D155** (not this freeze). File/Socket/Db.
+9. **Named later (not this wave):** cycle collector; fiber stack guard pages;
+   session/libtcc sanitizer (parked with session); Perceus; `drop` on unions /
+   C-layout.
 
 ---
 

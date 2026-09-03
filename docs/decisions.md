@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-09-03 — Resource `drop` on last RC
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D155 | A product may define `fn drop()`; last RC runs it | Constructor-param products with `export fn drop()` (no formals, `Void`) are heap boxes (header + payload). Generic `thoxa_drop` calls the dtor at refcount 0. Copies share the box. Explicit `close` must leave the handle inert. Not on unions, C-layout, or multi-clause. `File` / `Socket` / `Db` ship `drop()` as close. Freeze [`specs/2026-09-03-resource-drop.md`](specs/2026-09-03-resource-drop.md). | **Shipped.** Gate: `file_drop`. Does not unpark Perceus or a cycle collector. Amends class E of D153 (still no language `Drop` word / linear types). |
+
 ## 2026-09-02 — Heap params are owned copies
 
 | ID | Decision | Choice | Notes |

@@ -4,7 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-09-03. **D153** simple-RC **gate is done** (empty `lsan-skip` +
+**As of:** 2026-09-03. **D155** resource `drop()` on last RC (`File` / `Socket` /
+`Db`). **D153** simple-RC **gate is done** (empty `lsan-skip` +
 documented ASan). Alloc size wrap panics; `Socket.close` clears `fd`.
 **Not Perceus.** Overwrite-drop, nested `Array`/`Map`
 `HEAP_ELEMS`, heap params owned (**D154**), early-return final `drop_places`,
@@ -18,9 +19,11 @@ deferred. **`having`/`else` parked indefinitely.**
 
 ## Now
 
-**No active language campaign.** D153 simple-RC gate is done (`lsan-skip`
-empty; bounded ASan 2026-09-03). **Not Perceus** (still deferred megawork).
-Freeze:
+**No active language campaign.** **D155** resource `drop` shipped. D153
+simple-RC gate is done (`lsan-skip` empty; bounded ASan 2026-09-03).
+**Not Perceus** (still deferred megawork). Freezes:
+[`docs/specs/2026-09-03-resource-drop.md`](docs/specs/2026-09-03-resource-drop.md)
+(**D155**);
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
@@ -28,7 +31,8 @@ Freeze:
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
 HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
 
-**Shipped recently:** `thoxa_alloc` size wrap + `Socket.close` clears `fd`
+**Shipped recently:** **D155** `fn drop()` last-RC boxes (`file_drop`; File /
+Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
 (`http_net_err`); bounded ASan pass (88 non-fiber clean; 6 `-->` programs
 excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
 early-return drops from the final `drop_places` set; extra-retain `jsx` /
@@ -47,12 +51,12 @@ lits; overwrite-drop; **D152** match/init RC.
 2. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, language
-   `Drop` for File/Socket/Db, cycle collector. Multi-logger (`initLog`) is
-   trajectory under D125, not a CURRENT line until samples force it.
-   Perceus is **not unparked** by the D153 gate. Remaining named-later
-   runtime: fiber stack guard pages (session/libtcc sanitizer stays parked
-   with session).
+3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, cycle
+   collector. Multi-logger (`initLog`) is trajectory under D125, not a
+   CURRENT line until samples force it. Perceus is **not unparked**.
+   Remaining named-later runtime: fiber stack guard pages (session/libtcc
+   sanitizer stays parked with session). `drop` on unions / C-layout is
+   out of D155 v0.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
@@ -113,7 +117,8 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Refinements / `Type.read` | `where` refinements are real types (**D149**). `T.read` / `T.from` → `Trial<T, Issue>` (`Issue` in `std/json`). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No collect-all; no cross-field `where`; write `May<Qty>`. |
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. No JSON/form bind; no fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
-| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Heap params owned (**D154**). If/match result places overwrite-drop. `tests/conformance/lsan-skip` is empty (ratchet). Bounded ASan (**D153**, 2026-09-03): 88 non-fiber programs clean; `cargo make test-asan` is optional, not the default (ucontext fibers in `asan-skip`). `thoxa_alloc` panics on size wrap; `Socket.close` clears `fd`. Not Perceus. Session/libtcc unsanitized. |
+| Resource `drop` | Product `fn drop()` on last RC (**D155**). Heap box; copies share. `File` / `Socket` / `Db` close in `drop`. Explicit `close` stays inert. No unions / C-layout / multi-clause `drop`. Not Perceus. |
+| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Heap params owned (**D154**). If/match result places overwrite-drop. `tests/conformance/lsan-skip` is empty (ratchet). Bounded ASan (**D153**, 2026-09-03): 88 non-fiber programs clean; `cargo make test-asan` is optional, not the default (ucontext fibers in `asan-skip`). `thoxa_alloc` panics on size wrap; `Socket.close` clears `fd`. Resource `drop` **D155**. Not Perceus. Session/libtcc unsanitized. |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
 | Diagnostics | Structured IR → pretty check + `--json` + rich LSP (**D124** shipped); agent-only extras parked |
@@ -151,8 +156,9 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 13. If RC / leaks / memory safety: freeze
     [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
     + [`docs/decisions.md`](docs/decisions.md) (**D153** campaign gate done,
-    **D151** LSan gate, **D152** match/init balance) + `tests/conformance/lsan-skip`
-    + `tests/conformance/asan-skip`.
+    **D151** LSan gate, **D152** match/init balance, **D155** resource `drop`)
+    + freeze [`docs/specs/2026-09-03-resource-drop.md`](docs/specs/2026-09-03-resource-drop.md)
+    + `tests/conformance/lsan-skip` + `tests/conformance/asan-skip`.
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.

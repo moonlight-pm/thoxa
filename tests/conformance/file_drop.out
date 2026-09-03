@@ -1,0 +1,6 @@
+alias-open
+shared-closed
+double-close-ok
+read-closed
+forgot-close-read=hello from file
+

@@ -72,6 +72,14 @@ export type File(fd: Int64) {
         }
     }
 
+    ## Last RC closes if the caller forgot (D155).
+    export fn drop() {
+        if fd >= 0 {
+            sysClose(fd)
+            fd = -1
+        }
+    }
+
     ## Read remaining contents from the current offset (does not close).
     export fn readAll() -> Trial<Bytes, String> {
         if fd < 0 {

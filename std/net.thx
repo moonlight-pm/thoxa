@@ -218,6 +218,14 @@ export type Socket(fd: Int64) {
             fd = -1
         }
     }
+
+    ## Last RC closes if the caller forgot (D155).
+    export fn drop() {
+        if fd >= 0 {
+            sysClose(fd)
+            fd = -1
+        }
+    }
 }
 
 export fn createSocket() -> Trial<Socket, String> {

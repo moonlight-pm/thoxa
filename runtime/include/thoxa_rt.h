@@ -17,6 +17,7 @@ extern "C" {
 #define THOXA_TAG_ARRAY  4
 #define THOXA_TAG_HTML   5
 #define THOXA_TAG_MAP    6
+#define THOXA_TAG_USER   7
 
 /* Element slots: heap pointers (String/Bytes) bitcast into 8-byte slots. */
 #define THOXA_ARRAY_FLAG_HEAP_ELEMS 1u
@@ -114,10 +115,12 @@ typedef struct ThoxaHeader {
     uint16_t type_tag;
     uint16_t flags;
     uint32_t reserved;
+    void (*dtor)(void *payload);
 } ThoxaHeader;
 
 /* Panics if `sizeof(ThoxaHeader) + payload_size` wraps. */
 void *thoxa_alloc(size_t payload_size, uint16_t type_tag);
+void thoxa_set_dtor(void *ptr, void (*dtor)(void *payload));
 void thoxa_dup(void *ptr);
 void thoxa_drop(void *ptr);
 

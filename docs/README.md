@@ -65,6 +65,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`specs/2026-08-23-type-read.md`](specs/2026-08-23-type-read.md) | `where` refinements + `Type.read` | **shipped** (D149) |
 | [`specs/2026-08-23-route-clauses.md`](specs/2026-08-23-route-clauses.md) | Type-body `GET "/…"` | **shipped** (D150) |
 | [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md) | Simple-RC correctness (LSan empty, then ASan) | **shipped** (D153 gate 2026-09-03; ASan not default; Perceus not unparked) |
+| [`specs/2026-09-03-resource-drop.md`](specs/2026-09-03-resource-drop.md) | Last-RC `fn drop()` boxes | **shipped** (D155; File/Socket/Db) |
 
 ## Related trees (not under `docs/`)
 

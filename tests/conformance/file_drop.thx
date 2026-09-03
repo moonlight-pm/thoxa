@@ -1,0 +1,58 @@
+## D155: File.drop closes on last RC; aliases share the box; explicit close is a no-op.
+import { openFile } from "std/io"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    match openFile("tests/conformance/io_data/sample.txt") {
+        Fail(e) {
+            logging.info("open-fail={e}")
+        }
+        Pass(f) {
+            let g = f
+            if f.isOpen() {
+                logging.info("alias-open")
+            } else {
+                logging.info("alias-closed")
+            }
+            g.close()
+            if f.isOpen() {
+                logging.info("after-close-still-open")
+            } else {
+                logging.info("shared-closed")
+            }
+            ## Second close / drop must be a no-op (fd already -1).
+            f.close()
+            logging.info("double-close-ok")
+            match f.readAll() {
+                Pass(_) {
+                    logging.info("read-after-close")
+                }
+                Fail(_) {
+                    logging.info("read-closed")
+                }
+            }
+        }
+    }
+
+    ## Forget close: drop() must still close so a later open of the same path works.
+    match openFile("tests/conformance/io_data/sample.txt") {
+        Fail(e) {
+            logging.info("reopen-fail={e}")
+        }
+        Pass(h) {
+            match h.readAll() {
+                Pass(body) {
+                    logging.info("forgot-close-read={body.toString()}")
+                }
+                Fail(e) {
+                    logging.info("forgot-close-fail={e}")
+                }
+            }
+        }
+    }
+    0
+}

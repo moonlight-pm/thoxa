@@ -102,7 +102,10 @@ the rest of the function (**D152**). Overwrite of a live heap local drops the
 previous occupant, including `if` / `match` results reused in a loop
 (**D153**). Heap arguments are copies the callee owns
 (**D154**). `return` / `?` drop every live heap local, including temps
-created later in a loop. Optional AddressSanitizer (`cargo make test-asan`)
+created later in a loop. A product may define `fn drop()` with no formals
+and `Void` return (**D155**): values are heap boxes; last RC runs `drop`
+then frees. `File` / `Socket` / `Db` close that way; explicit `close` is
+still a no-op afterward. Optional AddressSanitizer (`cargo make test-asan`)
 covers use-after-free on non-fiber programs; it is not the default suite
 (ucontext fibers). Precise RC / Perceus is **not** shipped.
 

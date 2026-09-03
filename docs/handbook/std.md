@@ -86,7 +86,7 @@ message).
 |---------|--------|
 | `readFile` / `writeFile` / `appendFile` | Whole-file helpers; close on both success and failure after open |
 | `openFile(path, flags = oRdonly, mode = oMode644)` | Returns `File` |
-| `File` | `readAll`, `write`, `seek`, `position`, `close`, `isOpen` |
+| `File` | `readAll`, `write`, `seek`, `position`, `close`, `isOpen`. Last RC runs `drop()` which closes (**D155**) |
 | `OpenMode` | `Rdonly \| Wronly \| Rdwr` + `openModeBits` |
 | Flag lets | `oRdonly` / `oWronly` / `oRdwr` / `oCreat` / `oTrunc` / `oAppend` / `oMode644` |
 | Seek | `seekSet` / `seekCur` / `seekEnd` |
@@ -98,7 +98,7 @@ IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 | Surface | Notes |
 |---------|--------|
 | `createSocket()` | `Trial<Socket, String>` |
-| `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close`, `isOpen`. `close` writes `fd = -1` (second close is a no-op, same as `File`) |
+| `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close`, `isOpen`. `close` writes `fd = -1` (second close is a no-op, same as `File`). Last RC runs `drop()` which closes (**D155**) |
 | `receive()` | One `recv` chunk (empty on close/error) |
 | `receiveRequest()` | Until `\r\n\r\n` or 64 KiB cap / peer close |
 | `send` / `sendAll` | One write vs drain partial writes |
@@ -232,6 +232,7 @@ let rows = db.query(sql"
 |---------|--------|
 | `sql"…"` | Tagged interpolator → `Sql`. Import `std/sqlite` so `Sql` exists |
 | `open(path)` | `Trial<Db, String>`. `":memory:"` is allowed |
+| `Db` | `exec` / `query` / `close` / `isOpen`. Last RC runs `drop()` which closes (**D155**) |
 | `Db.exec` / `Db.query` | Take `Sql`. `query` → `Array<Row>` |
 | `Row` | `cells: Map<String, SqlValue>` |
 | `SqlValue` | `SqlNull \| SqlInt \| SqlFloat \| SqlText` |
