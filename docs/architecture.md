@@ -128,7 +128,8 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 
 ## Runtime notes
 
-- Heap today: `String`, `Bytes`, dynamic `Array`, `Map`, `Buffer` — simple RC.
+- Heap today: `String`, `Bytes`, dynamic `Array`, `Map`, `Buffer`, and
+  `fn drop()` products (**D155**) — simple RC.
   Conformance leak gate: GCC/Clang LeakSanitizer (**D151**). Simple-RC
   correctness campaign (**D153**) gate done: empty `lsan-skip` and documented
   ASan (`cargo make test-asan`, non-fiber). `thoxa_alloc` panics if header

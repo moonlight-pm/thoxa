@@ -48,7 +48,7 @@ an empty `lsan-skip` “memory safe.”
 | **B. COW vs borrowed param** | Mutating Buffer/Array/Map replaces a param the callee never drops | LSan; `buffer` can **panic** (drop-on-zero), not only leak | High — closer to UB |
 | **C. Extra retain** | Dup without a matching Drop (`Trial<Request>`, `Array<Header>`, JSON/Node temps) | LSan; D69 already named HTTP | Medium — leak, documented no UAF |
 | **D. Use-after-free / double-free** | Unbalanced Drop, field walk after free, memcpy of User | Runtime `drop on zero refcount` panic; **ASan not default** | High if present — **under-tested** |
-| **E. Resource handles** | `File` / `Socket` / `Db` are `Int64` fds; User drop does not close | Not LSan (unless `detect_fd_leaks`) | Medium — not heap RC |
+| **E. Resource handles** | `File` / `Socket` / `Db` fds; last RC runs `drop()` which closes (**D155**) | Not LSan unless `detect_fd_leaks`; `file_drop` | Closed for those three; no `drop` on unions / C-layout |
 | **F. Cycles** | `Array`/`Map` of User can retain a cycle | No collector | Low today; real if graphs appear |
 | **G. Precision** | Unique objects cloned instead of reused | Perceus | Out of scope |
 
@@ -66,24 +66,24 @@ in a fiber or an HTTP keep-alive path.
 
 ## As-built RC (do not re-derive)
 
-**Layout.** Heap header is `ThoxaHeader { refcount, type_tag, flags, reserved }`
-in front of the payload (`thoxa_alloc` / `thoxa_dup` / `thoxa_drop`).
+**Layout.** Heap header is `ThoxaHeader { refcount, type_tag, flags, reserved,
+dtor }` in front of the payload (`thoxa_alloc` / `thoxa_dup` / `thoxa_drop`).
 `String` / `Bytes` / `Buffer` / `Node` share that header. `Array` / `Map` have
 typed dup/drop (heap elems walked on last drop; User elems via `*_ex`
 callbacks). Function values use a separate `ThoxaFnBox.rc` (**D132**).
-Refcounts are **non-atomic**. One OS thread; `-->` is stackful ucontext fibers
-(**D148**).
+Products with `fn drop()` are `THOXA_TAG_USER` boxes (**D155**). Refcounts are
+**non-atomic**. One OS thread; `-->` is stackful ucontext fibers (**D148**).
 
 **Needs drop.** MIR `needs_drop`: String, Bytes, Buffer, Node, Array, Map,
-User (always — cgen walks fields), Fn. Scalars and C-layout structs do not.
-`File` / `Socket` / `Db` are User-with-Int64: dropping them does **not** close
-the fd.
+User (always — cgen walks fields, or `thoxa_drop` the box when `has_drop`),
+Fn. Scalars and C-layout structs do not. `File` / `Socket` / `Db` `drop()`
+closes the handle (**D155**).
 
 **Insert policy (phase A, D8).** Dup on copy (`assign` of `Use` for
 `needs_drop`; name-read of a heap binding always dups into a fresh temp).
 Drop at function end for noted locals (`insert_function_drops`), except the
-returned place (move). Params are **borrowed** — not in `drop_places` (early
-return / `?` must not drop caller-owned args). Module `g_*` globals are never
+returned place (move). Heap params are **owned** (**D154**) — in `drop_places`;
+method `_self` stays borrowed. Module `g_*` globals are never
 end-of-fn dropped (**D122**); init temps are. Unused heap/User globals are
 `__attribute__((used))` so `-O1` DSE cannot delete the store (**D152**).
 

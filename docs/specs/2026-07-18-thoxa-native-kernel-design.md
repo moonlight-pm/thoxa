@@ -3,7 +3,7 @@
 **Date:** 2026-07-18  
 **Status:** historical (freeze; ladder complete)  
 **Implementation:** shipped  
-**Gaps:** Perceus, effects, full oracle SPEC — deferred (see roadmap / capabilities). LeakSanitizer gate **D151**; match/init RC **D152**; simple-RC correctness campaign **D153** (as-built: `cargo make test`; `lsan-skip` empty; bounded ASan 2026-09-03; freeze [`2026-09-02-simple-rc-correctness.md`](2026-09-02-simple-rc-correctness.md)).  
+**Gaps:** Perceus, effects, full oracle SPEC — deferred (see roadmap / capabilities). LeakSanitizer gate **D151**; match/init RC **D152**; simple-RC correctness campaign **D153** (as-built: `cargo make test`; `lsan-skip` empty; bounded ASan 2026-09-03; freeze [`2026-09-02-simple-rc-correctness.md`](2026-09-02-simple-rc-correctness.md)); resource `drop` **D155**.  
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)  
 **Repo:** `Thoxa` (native product; Python oracle archived under `apocrypha/old/ThoxaPython`)
 
