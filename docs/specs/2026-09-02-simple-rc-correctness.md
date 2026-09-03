@@ -31,7 +31,7 @@ Correct means: every heap object that the compiler claims to own is retained
 exactly as many times as it is dropped, and a drop at refcount 0 frees nested
 heap (and only then). Leaks, extra retains, missing overwrite-drops, and
 drop-on-zero panics are all simple-RC bugs. Perceus reuse is a later MIR pass
-(D8) and is forbidden while `lsan-skip` is non-empty.
+(D8). The D153 gate does **not** unpark it.
 
 This freeze is the campaign, not a new value model.
 
@@ -186,6 +186,9 @@ No class-D use-after-free / double-free fired. ASan is **not** the default
    until fibers are compatible or excepted in the harness.
 3. Handbook RC paragraph still matches shipped policy (dup on copy, drop at
    end of lifetime including overwrite; heap params owned **D154**).
+
+**Gate status:** items 1–3 satisfied 2026-09-03. Named-later work (language
+`Drop`, cycle collector, ASan as default) stays out of this freeze.
 
 **Not done when:** Perceus lands, `lsan-skip` is merely shorter, or only
 `control_flow` is clean.

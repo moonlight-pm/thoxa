@@ -146,8 +146,9 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
     example-only (`examples/http` `/tmp/crema.db`); no product migrate.
 13. If RC / leaks / memory safety: freeze
     [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
-    + [`docs/decisions.md`](docs/decisions.md) (**D153** campaign, **D151** LSan
-    gate, **D152** match/init balance) + `tests/conformance/lsan-skip`.
+    + [`docs/decisions.md`](docs/decisions.md) (**D153** campaign gate done,
+    **D151** LSan gate, **D152** match/init balance) + `tests/conformance/lsan-skip`
+    + `tests/conformance/asan-skip`.
 
 **End of slice:** [`.grok/skills/thoxa-progress-docs/SKILL.md`](.grok/skills/thoxa-progress-docs/SKILL.md).  
 **No** one-off handoff files.
