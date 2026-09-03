@@ -2,12 +2,12 @@
 
 **Date:** 2026-09-02
 **Status:** target (freeze)
-**Implementation:** partial (gate **D151**, match/init **D152**; overwrite-drop **shipped**; callee-owned heap params **D154 shipped**; campaign **D153** open)
+**Implementation:** partial (gate **D151**, match/init **D152**; overwrite-drop **shipped**; callee-owned heap params **D154 shipped**; if/match result overwrite-drop **shipped**, `lsan-skip` empty; bounded ASan **not yet**; campaign **D153** open)
 **Decision:** D153 (extends D8 / D151 / D152; does not unpark Perceus)
 **Gate:** `cargo make test` with empty `tests/conformance/lsan-skip`; then a
 bounded ASan pass (see §4)
 **Gaps:**
-- 2 conformance programs still listed in `tests/conformance/lsan-skip` (`stdlib`, `http_server`)
+- Bounded ASan pass on non-fiber programs has not been run
 - LSan does not catch use-after-free or most double-frees
 - ASan is optional (`THOXA_SANITIZE=address`), not the default (ucontext fibers)
 - Session / libtcc steps are unsanitized
@@ -145,20 +145,19 @@ Array/Map, same as String/Bytes/Node. Gate: `arrays_nested` (return a
 `-->` packs args with an extra retain, starts a fiber, thunk drops args and
 the dropped return. Fiber stacks are `malloc` + `ucontext` (`THOXA_FIBER_STACK`
 128 KiB). ASan + ucontext is why ASan is not the default gate (**D151**).
-`start_net` / `start_keepalive` are in `lsan-skip`; they are also the programs
-ASan is most likely to mis-handle.
+`start_net` / `start_keepalive` are LSan-clean; they are still the programs
+ASan is most likely to mis-handle (ucontext fibers).
 
 ---
 
-## `lsan-skip` (2 of ~94 programs; was 25 before overwrite-drop)
+## `lsan-skip` (empty; was 25 before overwrite-drop)
 
 Ratchet: stdout still gated; a skip that becomes LSan-clean **fails** until
-the name is removed.
+the name is removed. If/match result overwrite-drop closed `stdlib`
+(`split` / `replaceAll` loop `_if`) and `http_server` (match result in
+`for path in paths`).
 
-| Skip | Likely class | Confidence |
-|------|--------------|------------|
-| `http_server` | C (keep-alive / response temps) | med |
-| `stdlib` | C (`split` / `replaceAll` string temps) | med |
+No names remain.
 
 ---
 
@@ -185,12 +184,12 @@ the name is removed.
    the RHS still reads the place; cgen NULLs pointer locals after Drop.
 2. **Nested Array/Map literals — shipped.** Gate `arrays_nested`.
 3. **COW vs params — shipped (D154).** Gate `buffer`.
-4. **Remaining extra-retain.** Early-return drops from the **final**
-   `drop_places` set **shipped** (`json`, `http_host`, `start_net`,
-   `start_keepalive`). Left: `stdlib` split/replace; `http_server`.
-5. **Bounded ASan.** After (1)–(4) have shrunk the skip list: run
-   `THOXA_SANITIZE=address` on non-fiber programs; file what it finds as
-   simple-RC bugs, not as a reason to start Perceus.
+4. **Remaining extra-retain — shipped.** Early-return drops from the **final**
+   `drop_places` set (`json`, `http_host`, `start_net`, `start_keepalive`).
+   If/match result places overwrite-drop (`stdlib` split/replaceAll,
+   `http_server` match-in-loop). `lsan-skip` is empty.
+5. **Bounded ASan.** Run `THOXA_SANITIZE=address` on non-fiber programs; file
+   what it finds as simple-RC bugs, not as a reason to start Perceus.
 6. **Named later (not this wave):** language `Drop` for File/Socket/Db
    (`Socket.close` today does not set `fd = -1`); cycle collector;
    `thoxa_alloc` size wrap; fiber stack guard pages; session/libtcc
@@ -215,5 +214,5 @@ the name is removed.
 - Conformance `.thx` + `.out` + LSan-clean is done for a skip.
 - Prefer one hole class per slice.
 - Runtime `drop on zero refcount` panics are failures, not “LSan noise.”
-- Do not start Perceus while `lsan-skip` is non-empty.
+- Do not start Perceus until the bounded ASan pass is done.
 - Product `thoxa run` stays unsanitized (D151) unless a later D-id says otherwise.

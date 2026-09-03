@@ -11786,18 +11786,9 @@ fn finish_match_arm_ty(
                 *result_ty = Some(ty.clone());
             }
             if ty != Ty::Void {
-                // Share ownership of heap result with the arm temp (dropped at fn end).
-                if needs_drop(&ty) {
-                    body.push(Stmt::Dup {
-                        place: p.clone(),
-                        ty: ty.clone(),
-                    });
-                }
-                body.push(Stmt::Assign {
-                    place: result_place.clone(),
-                    ty: ty.clone(),
-                    value: RValue::Use(p),
-                });
+                // Own a ref in the shared result place. Overwrite-drop the previous
+                // occupant so a match inside a loop does not leak (stdlib split).
+                assign_result_place(body, result_place, p, &ty);
             }
             Ok(ty)
         }
@@ -12860,6 +12851,33 @@ fn unify_match_arm_tys(a: &Ty, b: &Ty, span: Span) -> Result<Ty> {
     }
 }
 
+/// Assign a heap if/match result into a reused out place: Dup the source, drop
+/// the previous occupant, then store. Raw `Assign` leaked the prior string when
+/// `split` / `replaceAll` reused `_if` across loop iterations.
+fn assign_result_place(body: &mut Vec<Stmt>, dest: &Place, src: Place, ty: &Ty) {
+    if *ty == Ty::Void {
+        return;
+    }
+    if &src == dest {
+        return;
+    }
+    if needs_drop(ty) {
+        body.push(Stmt::Dup {
+            place: src.clone(),
+            ty: ty.clone(),
+        });
+        body.push(Stmt::Drop {
+            place: dest.clone(),
+            ty: ty.clone(),
+        });
+    }
+    body.push(Stmt::Assign {
+        place: dest.clone(),
+        ty: ty.clone(),
+        value: RValue::Use(src),
+    });
+}
+
 fn assign_match_result(
     body: &mut Vec<Stmt>,
     out: &Option<Place>,
@@ -12867,17 +12885,7 @@ fn assign_match_result(
     result_ty: &Ty,
 ) {
     if let (Some(out_p), Some(v)) = (out, val) {
-        if needs_drop(result_ty) {
-            body.push(Stmt::Dup {
-                place: v.clone(),
-                ty: result_ty.clone(),
-            });
-        }
-        body.push(Stmt::Assign {
-            place: out_p.clone(),
-            ty: result_ty.clone(),
-            value: RValue::Use(v),
-        });
+        assign_result_place(body, out_p, v, result_ty);
     }
 }
 
@@ -12904,12 +12912,9 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
         Ty::Float64 => ctx.assign(place.clone(), ty.clone(), RValue::Float(0.0)),
         Ty::Bool => ctx.assign(place.clone(), ty.clone(), RValue::Bool(false)),
         Ty::String | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Array { .. } | Ty::Map { .. } => {
-            ctx.note_drop_place(place, ty);
-            ctx.stmts.push(Stmt::Assign {
-                place: place.clone(),
-                ty: ty.clone(),
-                value: RValue::Null,
-            });
+            // `assign` of Null overwrite-drops: a loop that re-inits `_if` / `_m`
+            // must free the previous occupant, not just NULL the C local.
+            ctx.assign(place.clone(), ty.clone(), RValue::Null);
         }
         Ty::Void | Ty::Never => {}
         Ty::Fn { .. } => {
@@ -12974,12 +12979,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                         | Ty::Node
                         | Ty::Array { .. }
                         | Ty::Map { .. } => {
-                            ctx.note_drop_place(&fp, &f.ty);
-                            ctx.stmts.push(Stmt::Assign {
-                                place: fp.clone(),
-                                ty: f.ty.clone(),
-                                value: RValue::Null,
-                            });
+                            ctx.assign(fp.clone(), f.ty.clone(), RValue::Null);
                         }
                         Ty::User(_) => {
                             init_place(ctx, &fp, &f.ty)?;
@@ -14161,17 +14161,8 @@ fn lower_if(
     let mut then_body = std::mem::take(&mut ctx.stmts);
     if let (Some(out_p), Some(tp)) = (&out, then_place) {
         // Own a ref in `out` so branch temps can be dropped safely.
-        if needs_drop(&result_ty) {
-            then_body.push(Stmt::Dup {
-                place: tp.clone(),
-                ty: result_ty.clone(),
-            });
-        }
-        then_body.push(Stmt::Assign {
-            place: out_p.clone(),
-            ty: result_ty.clone(),
-            value: RValue::Use(tp),
-        });
+        // Overwrite-drop the previous occupant (loop-reused `_if`).
+        assign_result_place(&mut then_body, out_p, tp, &result_ty);
     }
 
     let else_body = if let Some(eb) = else_branch {
@@ -14180,17 +14171,7 @@ fn lower_if(
         ctx.pop_scope();
         let mut body = std::mem::take(&mut ctx.stmts);
         if let (Some(out_p), Some(ep)) = (&out, else_place) {
-            if needs_drop(&result_ty) {
-                body.push(Stmt::Dup {
-                    place: ep.clone(),
-                    ty: result_ty.clone(),
-                });
-            }
-            body.push(Stmt::Assign {
-                place: out_p.clone(),
-                ty: result_ty.clone(),
-                value: RValue::Use(ep),
-            });
+            assign_result_place(&mut body, out_p, ep, &result_ty);
         }
         body
     } else {

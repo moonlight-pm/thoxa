@@ -97,10 +97,10 @@ residual mark use the same `?` operator.
 **Reference counting:** simple single-threaded RC (dup on copy, drop when a
 local is overwritten or the function ends). Module-level heap bindings outlive
 the function that wrote them (D122). `cargo make test` links programs with
-LeakSanitizer (**D151**); tests not yet clean are listed in
-`tests/conformance/lsan-skip`. Match binds and union-match results drop with
+LeakSanitizer (**D151**). Match binds and union-match results drop with
 the rest of the function (**D152**). Overwrite of a live heap local drops the
-previous occupant (**D153**). Heap arguments are copies the callee owns
+previous occupant, including `if` / `match` results reused in a loop
+(**D153**). Heap arguments are copies the callee owns
 (**D154**). `return` / `?` drop every live heap local, including temps
 created later in a loop. Precise RC / Perceus is **not** shipped.
 

@@ -3,8 +3,6 @@
 # non-zero LSan/RC exit. If a listed test becomes LSan-clean, the suite
 # fails until that name is removed from this file.
 #
-# Early-return drops now use the final drop_places set (JSON freeze return
-# after escape temps). Residue: stdlib split/replace, http_server.
-
-http_server
-stdlib
+# Empty: if/match result overwrite-drop closed `stdlib` split/replaceAll
+# and `http_server` match-in-loop. Remaining D153 work is a bounded ASan
+# pass (LSan does not catch use-after-free).
