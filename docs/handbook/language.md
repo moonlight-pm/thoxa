@@ -102,7 +102,9 @@ the rest of the function (**D152**). Overwrite of a live heap local drops the
 previous occupant, including `if` / `match` results reused in a loop
 (**D153**). Heap arguments are copies the callee owns
 (**D154**). `return` / `?` drop every live heap local, including temps
-created later in a loop. Precise RC / Perceus is **not** shipped.
+created later in a loop. Optional AddressSanitizer (`cargo make test-asan`)
+covers use-after-free on non-fiber programs; it is not the default suite
+(ucontext fibers). Precise RC / Perceus is **not** shipped.
 
 ## Refinements and `Type.read`
 

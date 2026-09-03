@@ -23,6 +23,7 @@ fn main() {
         }
         "runtime" => cmd_runtime(),
         "test" => cmd_test(),
+        "test-asan" => cmd_test_asan(),
         "run" => cmd_run(&args),
         "shell" => cmd_shell(&args),
         "build" => cmd_build(&args),
@@ -45,11 +46,12 @@ Thoxa xtask (`cargo make …`)
 Build tree (everything under target/):
     target/rust/     Cargo (compiler, xtask)
     target/c/        C runtime (libthoxa_rt.a)
-    target/thoxa/    Thoxa products (c/, bin/, bin-leak/)
+    target/thoxa/    Thoxa products (c/, bin/, bin-leak/, bin-address/)
 
 Commands:
     cargo make runtime              Build libthoxa_rt.a + compile_commands.json
     cargo make test                 Run conformance suite (LeakSanitizer)
+    cargo make test-asan            Conformance under ASan (non-fiber; not default)
     cargo make run <file.thx|dir>   Compile and run a program
     cargo make shell                Product session REPL (bare `thoxa`)
     cargo make shell --login        Same, clean login-like env (test default-shell readiness)
@@ -241,20 +243,14 @@ fn login_path(thoxa_bin_dir: &Path, home: &Path) -> String {
         }
     };
     push(&mut parts, thoxa_bin_dir.display().to_string());
-    push(
-        &mut parts,
-        home.join(".local/bin").display().to_string(),
-    );
+    push(&mut parts, home.join(".local/bin").display().to_string());
     push(
         &mut parts,
         home.join(".nix-profile/bin").display().to_string(),
     );
     push(&mut parts, "/run/wrappers/bin".into());
     if !user.is_empty() {
-        push(
-            &mut parts,
-            format!("/etc/profiles/per-user/{user}/bin"),
-        );
+        push(&mut parts, format!("/etc/profiles/per-user/{user}/bin"));
     }
     push(&mut parts, "/nix/var/nix/profiles/default/bin".into());
     push(&mut parts, "/run/current-system/sw/bin".into());
@@ -349,7 +345,10 @@ fn cmd_clean(args: &[String]) -> i32 {
         }
         // Drop empty target/ if present
         let target = root.join("target");
-        if target.is_dir() && fs::read_dir(&target).map(|mut d| d.next().is_none()).unwrap_or(false)
+        if target.is_dir()
+            && fs::read_dir(&target)
+                .map(|mut d| d.next().is_none())
+                .unwrap_or(false)
         {
             let _ = fs::remove_dir(&target);
         }
@@ -358,16 +357,39 @@ fn cmd_clean(args: &[String]) -> i32 {
     0
 }
 
+enum ConformanceGate {
+    /// Default `cargo make test` — LeakSanitizer. `lsan-skip` is a ratchet.
+    Leak,
+    /// Optional `cargo make test-asan` — AddressSanitizer on non-fiber
+    /// programs. `asan-skip` excepts `-->` fibers (ucontext); not a ratchet.
+    Address,
+}
+
 fn cmd_test() -> i32 {
+    run_conformance(ConformanceGate::Leak)
+}
+
+fn cmd_test_asan() -> i32 {
+    run_conformance(ConformanceGate::Address)
+}
+
+fn run_conformance(gate: ConformanceGate) -> i32 {
     if ensure_thoxa_built() != 0 {
         return 1;
     }
-    // Build unsanitized runtime once (LSan is link-only on the program binary).
+    // Runtime objects stay unsanitized; sanitizers are link-only on the program.
     if run_thoxa(&["runtime"]) != 0 {
         return 1;
     }
 
-    eprintln!("conformance (LeakSanitizer; THOXA_SANITIZE=leak)");
+    match gate {
+        ConformanceGate::Leak => {
+            eprintln!("conformance (LeakSanitizer; THOXA_SANITIZE=leak)");
+        }
+        ConformanceGate::Address => {
+            eprintln!("conformance (AddressSanitizer; THOXA_SANITIZE=address; non-fiber)");
+        }
+    }
 
     let conf = workspace_root().join("tests/conformance");
     if !conf.is_dir() {
@@ -394,7 +416,10 @@ fn cmd_test() -> i32 {
         return 1;
     }
 
-    let skip = load_lsan_skip(&conf);
+    let skip = match gate {
+        ConformanceGate::Leak => load_skip_names(&conf.join("lsan-skip")),
+        ConformanceGate::Address => load_skip_names(&conf.join("asan-skip")),
+    };
     let thoxa = thoxa_bin_path();
     let mut passed = 0;
     let mut skipped = 0;
@@ -406,6 +431,13 @@ fn cmd_test() -> i32 {
         } else {
             entry.file_stem().unwrap().to_string_lossy().into_owned()
         };
+        let known_skip = skip.contains(&name);
+        // ASan: do not run excepted fiber programs (ucontext is not a ratchet).
+        if known_skip && matches!(gate, ConformanceGate::Address) {
+            eprintln!("skip {name} (asan: ucontext fibers)");
+            skipped += 1;
+            continue;
+        }
         // Sibling `.out`: `hello.thx` → `hello.out`; package dir `pkgmain/` → `pkgmain.out`.
         let out_path = conf.join(format!("{name}.out"));
         let expected = if out_path.is_file() {
@@ -417,13 +449,25 @@ fn cmd_test() -> i32 {
         let mut cmd = Command::new(&thoxa);
         cmd.args(["run", entry.to_str().unwrap()])
             .current_dir(workspace_root())
-            .env("THOXA_ROOT", workspace_root())
-            .env("THOXA_SANITIZE", "leak");
-        if env::var_os("LSAN_OPTIONS").is_none() {
-            cmd.env("LSAN_OPTIONS", "detect_leaks=1:print_suppressions=0");
+            .env("THOXA_ROOT", workspace_root());
+        match gate {
+            ConformanceGate::Leak => {
+                cmd.env("THOXA_SANITIZE", "leak");
+                if env::var_os("LSAN_OPTIONS").is_none() {
+                    cmd.env("LSAN_OPTIONS", "detect_leaks=1:print_suppressions=0");
+                }
+            }
+            ConformanceGate::Address => {
+                cmd.env("THOXA_SANITIZE", "address");
+                if env::var_os("ASAN_OPTIONS").is_none() {
+                    cmd.env(
+                        "ASAN_OPTIONS",
+                        "detect_leaks=0:halt_on_error=1:abort_on_error=0:print_suppressions=0",
+                    );
+                }
+            }
         }
         let output = cmd.output();
-        let known_skip = skip.contains(&name);
 
         match output {
             Ok(out) => {
@@ -465,7 +509,14 @@ fn cmd_test() -> i32 {
         }
     }
 
-    eprintln!("{passed} passed, {skipped} lsan-skip, {failed} failed");
+    match gate {
+        ConformanceGate::Leak => {
+            eprintln!("{passed} passed, {skipped} lsan-skip, {failed} failed");
+        }
+        ConformanceGate::Address => {
+            eprintln!("{passed} passed, {skipped} asan-skip, {failed} failed");
+        }
+    }
     if failed > 0 {
         1
     } else {
@@ -473,9 +524,8 @@ fn cmd_test() -> i32 {
     }
 }
 
-fn load_lsan_skip(conf: &Path) -> HashSet<String> {
-    let path = conf.join("lsan-skip");
-    let Ok(text) = fs::read_to_string(&path) else {
+fn load_skip_names(path: &Path) -> HashSet<String> {
+    let Ok(text) = fs::read_to_string(path) else {
         return HashSet::new();
     };
     text.lines()
@@ -605,9 +655,9 @@ fn zed_install_dir() -> PathBuf {
     if let Ok(p) = env::var("ZED_EXT") {
         return PathBuf::from(p);
     }
-    let home = env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(".")
-    });
+    let home = env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
     home.join(".local/share/zed/extensions/installed/thoxa")
 }
 
@@ -677,9 +727,7 @@ fn maybe_regenerate_parser(grammar_dir: &Path) -> Result<(), String> {
             s.code().unwrap_or(1)
         )),
         Err(_) => {
-            eprintln!(
-                "    warning: grammar.js newer than parser.c but `tree-sitter` not on PATH;"
-            );
+            eprintln!("    warning: grammar.js newer than parser.c but `tree-sitter` not on PATH;");
             eprintln!("    using existing parser.c. Install tree-sitter or run:");
             eprintln!(
                 "      nix-shell -p tree-sitter clang --run 'export CC=clang; cd extras/tree-sitter-thoxa && tree-sitter generate'"
@@ -695,10 +743,7 @@ fn build_grammar_wasm(grammar_dir: &Path, out: &Path) -> Result<(), String> {
         "emcc not found (install emscripten, or set EMCC=/path/to/emcc)".to_string()
     })?;
     let src = grammar_dir.join("src");
-    let tmp_out = env::temp_dir().join(format!(
-        "thoxa-grammar-{}.wasm",
-        std::process::id()
-    ));
+    let tmp_out = env::temp_dir().join(format!("thoxa-grammar-{}.wasm", std::process::id()));
     let status = Command::new(&emcc)
         .current_dir(&src)
         .args([
@@ -724,10 +769,7 @@ fn build_grammar_wasm(grammar_dir: &Path, out: &Path) -> Result<(), String> {
         .status()
         .map_err(|e| format!("failed to spawn emcc ({}): {e}", emcc.display()))?;
     if !status.success() {
-        return Err(format!(
-            "emcc failed (exit {})",
-            status.code().unwrap_or(1)
-        ));
+        return Err(format!("emcc failed (exit {})", status.code().unwrap_or(1)));
     }
     fs::copy(&tmp_out, out).map_err(|e| format!("copy wasm: {e}"))?;
     let _ = fs::remove_file(&tmp_out);

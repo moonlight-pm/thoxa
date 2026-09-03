@@ -4,13 +4,11 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-09-02. **D153** simple-RC correctness is **Now** (not Perceus).
-Overwrite-drop of live heap places shipped. Nested `Array`/`Map` literals are
-`HEAP_ELEMS`. Heap params owned (**D154**). Early-return drops use the final
-`drop_places` set. If/match result places overwrite-drop (`stdlib` /
-`http_server`; `lsan-skip` 25 → **empty**). Language
-harvest **D147–D150** shipped. **D151** LeakSanitizer is the conformance leak
-gate; **D152** closed match-bind / union-match / unused-global RC.
+**As of:** 2026-09-03. **D153** simple-RC **gate is done** (empty `lsan-skip` +
+documented ASan). **Not Perceus.** Overwrite-drop, nested `Array`/`Map`
+`HEAP_ELEMS`, heap params owned (**D154**), early-return final `drop_places`,
+if/match result overwrite-drop. Language harvest **D147–D150** shipped.
+**D151** LeakSanitizer is the default leak gate; **D152** match/init RC.
 `containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
 Crema Phase **E** through **E5**; **E6** WebSockets parked. Session/shell
 deferred. **`having`/`else` parked indefinitely.**
@@ -19,8 +17,9 @@ deferred. **`having`/`else` parked indefinitely.**
 
 ## Now
 
-**Simple-RC correctness (memory safety).** `tests/conformance/lsan-skip` is
-empty; remaining gate is a bounded ASan pass. **Not Perceus.** Freeze:
+**No active language campaign.** D153 simple-RC gate is done (`lsan-skip`
+empty; bounded ASan 2026-09-03). **Not Perceus** (still deferred megawork).
+Freeze:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
@@ -28,31 +27,28 @@ empty; remaining gate is a bounded ASan pass. **Not Perceus.** Freeze:
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
 HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
 
-**Shipped recently:** if/match result overwrite-drop (`stdlib` split/replaceAll,
-`http_server` match-in-loop; `lsan-skip` empty); early-return drops from the
-final `drop_places` set (`json`, `http_host`, `start_net`, `start_keepalive`);
-extra-retain `jsx` / `multi_clause` / `sqlite`; **D154** callee-owned heap
-params; **D153** nested Array/Map lits; overwrite-drop; **D152** match/init RC.
+**Shipped recently:** bounded ASan pass (88 non-fiber clean; 6 `-->` programs
+excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
+early-return drops from the final `drop_places` set; extra-retain `jsx` /
+`multi_clause` / `sqlite`; **D154** callee-owned heap params; nested Array/Map
+lits; overwrite-drop; **D152** match/init RC.
 
 **On master, not product:** none.
 
 ### Proceed order
 
-1. **Bounded ASan** — `tests/conformance/lsan-skip` is empty. Run
-   `THOXA_SANITIZE=address` on non-fiber programs. ASan is **not** the default
-   `cargo make test` while ucontext fibers remain.
-2. **Editor depth** — only when DX forces it. Freezes:
+1. **Editor depth** — only when DX forces it. Freezes:
    [`docs/specs/2026-07-20-native-editor-lsp-plan.md`](docs/specs/2026-07-20-native-editor-lsp-plan.md)
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
-3. **Deferred: all session / shell residual** — redir polish, line editor,
+2. **Deferred: all session / shell residual** — redir polish, line editor,
    Shell import-first, libtcc cache/license, etc. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-4. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, language
+3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, language
    `Drop` for File/Socket/Db, cycle collector. Multi-logger (`initLog`) is
    trajectory under D125, not a CURRENT line until samples force it.
-   **Do not start Perceus** until D153’s bounded ASan pass is done.
+   Perceus is **not unparked** by the D153 gate.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
@@ -73,7 +69,7 @@ Public sites are **`containers/landing`** (thoxa.dev) and
 - Treating “expand std/” as its own priority line
 - **`"…" as Bytes`** or cast-as-encode for String→Bytes (use `Bytes.fromString`;
   D15 **rejected**)
-- **Perceus** until D153’s bounded ASan pass is done
+- **Perceus** (deferred megawork — D153 gate done, not unparked)
 
 Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 [`docs/capabilities.md`](docs/capabilities.md).
@@ -113,7 +109,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Refinements / `Type.read` | `where` refinements are real types (**D149**). `T.read` / `T.from` → `Trial<T, Issue>` (`Issue` in `std/json`). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No collect-all; no cross-field `where`; write `May<Qty>`. |
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. No JSON/form bind; no fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
-| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Heap params owned (**D154**). If/match result places overwrite-drop. `tests/conformance/lsan-skip` is empty (ratchet — a skip that goes clean must be removed). Simple-RC correctness is **CURRENT** until a bounded ASan pass (**D153**). Not Perceus. Session/libtcc unsanitized. ASan optional, not default (ucontext fibers). |
+| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Heap params owned (**D154**). If/match result places overwrite-drop. `tests/conformance/lsan-skip` is empty (ratchet). Bounded ASan (**D153**, 2026-09-03): 88 non-fiber programs clean; `cargo make test-asan` is optional, not the default (ucontext fibers in `asan-skip`). Not Perceus. Session/libtcc unsanitized. |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
 | Diagnostics | Structured IR → pretty check + `--json` + rich LSP (**D124** shipped); agent-only extras parked |
@@ -162,6 +158,7 @@ More D-ids: [`docs/decisions.md`](docs/decisions.md).
 
 ```bash
 cargo make test
+cargo make test-asan
 cargo test -p thoxa --lib
 cargo make run examples/http
 cargo make run containers/landing

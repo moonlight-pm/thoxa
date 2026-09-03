@@ -65,6 +65,7 @@ diaries. Authority order and rules:
 
 ```bash
 cargo make test              # conformance + LeakSanitizer (preferred day-to-day gate)
+cargo make test-asan         # optional ASan on non-fiber conformance (not default)
 cargo make run path.thx
 cargo make shell             # product session REPL (bare thoxa)
 cargo make shell --login     # clean login-like env

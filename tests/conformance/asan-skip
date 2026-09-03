@@ -1,0 +1,14 @@
+# Conformance programs excepted from `cargo make test-asan`.
+# Reason: stackful ucontext fibers (`-->`) are not reliably poisoned by
+# AddressSanitizer (D151 / D153). This is not a ratchet — a program that
+# happens to pass ASan stays listed until fibers are ASan-compatible.
+#
+# 2026-09-03 bounded pass: these six also ran clean under ASan; they stay
+# excepted so a later ucontext false-positive cannot fail the optional gate.
+
+http_host
+maps
+start_keepalive
+start_nested
+start_net
+start_tasks

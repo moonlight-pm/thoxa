@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-09-02 (**D153** if/match result overwrite-drop, `lsan-skip` empty; simple-RC correctness CURRENT — bounded ASan next; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
+**As of:** 2026-09-03 (**D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
 `containers/landing` thoxa.dev live; `containers/sola` sola.computer live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 **D145** `htmlFragment` / `cached`;
@@ -130,7 +130,8 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 
 - Heap today: `String`, `Bytes`, dynamic `Array`, `Map`, `Buffer` — simple RC.
   Conformance leak gate: GCC/Clang LeakSanitizer (**D151**). Simple-RC
-  correctness campaign (**D153**): empty `lsan-skip` before Perceus; freeze
+  correctness campaign (**D153**): empty `lsan-skip` and documented ASan
+  (`cargo make test-asan`, non-fiber) before Perceus; freeze
   [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md).
 - Cooperative tasks (**D148**): `thoxa_task_start` /
   `thoxa_wait_ms` / `thoxa_wait_fd` / `thoxa_sched_drain` — one OS thread,

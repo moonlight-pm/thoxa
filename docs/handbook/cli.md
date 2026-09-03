@@ -89,6 +89,6 @@ cargo make zed               # sync Zed extras + LSP binary
 | `THOXA_NORC` | Skip session rc when set |
 | `THOXA_STATUS` | Set by REPL host for prompt helpers |
 | `THOXA_FORCE_BUILD` | Set to `1` to ignore the program-binary stamp and rebuild |
-| `THOXA_SANITIZE` | Batch `cc` only: `leak` (LeakSanitizer) or `address` (ASan). Product default is unset. Session/libtcc ignores this. |
+| `THOXA_SANITIZE` | Batch `cc` only: `leak` (LeakSanitizer) or `address` (ASan). Product default is unset. Session/libtcc ignores this. `cargo make test` always uses `leak`. `cargo make test-asan` uses `address` on non-fiber conformance (`asan-skip` lists `-->` programs). |
 
 Details for session: [session.md](session.md).

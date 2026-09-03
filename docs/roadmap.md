@@ -30,11 +30,9 @@ capability rows for feature-level progress.
 - R0–R9 + post-R9 through bounded HTTP server, modules, extern, C-layout.
 - Conformance suite under `tests/conformance/`.
 
-**Remaining:** simple-RC correctness is **CURRENT** (**D153**) — overwrite-drop,
-nested Array/Map literals, and callee-owned heap params (**D154**) shipped;
-if/match result overwrite-drop emptied `lsan-skip`; next is bounded ASan.
-Ladder itself
-stays done; do not re-open R0–R9. Perceus stays horizon.
+**Remaining:** simple-RC **D153** gate is done (empty `lsan-skip`, bounded
+ASan 2026-09-03). Ladder itself stays done; do not re-open R0–R9. Perceus
+stays horizon (not unparked). No active language campaign.
 
 Freeze: [`specs/2026-07-18-thoxa-native-kernel-design.md`](specs/2026-07-18-thoxa-native-kernel-design.md)  
 RC campaign: [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md)  
@@ -148,7 +146,7 @@ shipped and exercised; continue matrix gaps when samples force them.
 
 **Horizon / deferred until CURRENT says so:**
 
-- Perceus / precise RC (after **D153** — `lsan-skip` empty)
+- Perceus / precise RC (**D153** gate done; still deferred megawork, not unparked)
 - Named `ffi` root
 - Algebraic effects (only when forced; may later interact with `?`)
 
