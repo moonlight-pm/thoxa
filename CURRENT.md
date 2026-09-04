@@ -39,9 +39,11 @@ Freezes:
 
 **Shipped recently:** Session step compile cache (D105 §3.5): no per-line
 scratch `.thx`; reuse prelude MIR; libtcc base `.o` + ~500-line step C.
-`cargo make shell` runs **release** `thoxa`. Interactive TTY REPL is an emacs
-line editor with Tab complete and history (**D156**). Interactive REPL starts
-with `§ ` (no banner).
+`cargo make shell` runs **release** `thoxa`. Session rc form split skips
+`#` / `##` comments, so an apostrophe in `## not Thoxa's default` no longer
+glues later `import` / `fn` into one statement (would fail `program requires
+fn main`). Interactive TTY REPL is an emacs line editor with Tab complete
+and history (**D156**). Interactive REPL starts with `§ ` (no banner).
 POSIX login-shell face: `thoxa -c '<chunk>'` and
 `thoxa -l` / `--login` (same REPL as bare `thoxa`); libtcc finds the
 process libc via `/proc/self/maps` so NixOS/Oath session steps work
