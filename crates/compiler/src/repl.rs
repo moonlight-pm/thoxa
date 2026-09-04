@@ -25,7 +25,7 @@
 //! `parent` is the current process `PATH` split on `:`; the returned components
 //! **replace** process `PATH` (joined with `:`).
 
-use crate::command::desugar_session_source;
+use crate::command::{desugar_session_source, for_each_code_byte};
 use crate::driver::{self, SessionBuildCache, SessionStepLib};
 use crate::error::{Error, Result};
 use crate::line_edit::{ReadOutcome, SessionEditor};
@@ -409,6 +409,8 @@ fn apply_rc_source(
 }
 
 /// Split source into top-level forms (brace/string-aware, line-oriented).
+/// `#` / `##` comments are not strings: an apostrophe in `## not Thoxa's`
+/// must not glue the following `import` / `fn` into one form.
 fn split_top_level_forms(src: &str) -> Vec<String> {
     let mut forms = Vec::new();
     let mut cur = String::new();
@@ -425,27 +427,11 @@ fn split_top_level_forms(src: &str) -> Vec<String> {
         }
         cur.push_str(line);
 
-        for &b in line.as_bytes() {
-            if in_str {
-                if esc {
-                    esc = false;
-                } else if b == b'\\' {
-                    esc = true;
-                } else if b == quote {
-                    in_str = false;
-                }
-                continue;
-            }
-            match b {
-                b'"' | b'\'' => {
-                    in_str = true;
-                    quote = b;
-                }
-                b'{' => depth += 1,
-                b'}' => depth -= 1,
-                _ => {}
-            }
-        }
+        for_each_code_byte(line, &mut in_str, &mut quote, &mut esc, |b| match b {
+            b'{' => depth += 1,
+            b'}' => depth -= 1,
+            _ => {}
+        });
 
         if !in_str && depth <= 0 {
             depth = 0;
@@ -816,6 +802,118 @@ echo hi
         assert_eq!(forms.len(), 2, "{forms:?}");
         assert!(is_decl_chunk(forms[0].trim()));
         assert!(!is_decl_chunk(forms[1].trim()));
+    }
+
+    fn nonempty_rc_forms(src: &str) -> (Vec<String>, Vec<String>) {
+        let mut decls = Vec::new();
+        let mut stmts = Vec::new();
+        for form in split_top_level_forms(src.trim()) {
+            if is_effectively_empty_form(&form) {
+                continue;
+            }
+            if is_decl_chunk(form.trim()) {
+                decls.push(form);
+            } else {
+                stmts.push(form);
+            }
+        }
+        (decls, stmts)
+    }
+
+    #[test]
+    fn split_forms_hash_comment_apostrophe_does_not_glue_decls() {
+        // Dogfood: possessive in a ## line must not open a string, or import/fn
+        // braces are ignored and the file becomes one non-decl form.
+        let src = r##"
+## Canto session rc. Signature is metal-canary brass.
+## not Thoxa's default cyan — see path() and `prompt`
+import { defaultPrompt } from "std/prompt"
+
+fn prompt() -> String {
+    defaultPrompt(signature: "#E2B84A")
+}
+"##;
+        let (decls, stmts) = nonempty_rc_forms(src);
+        assert_eq!(decls.len(), 2, "decls={decls:?}");
+        assert!(
+            decls[0].trim().starts_with("import "),
+            "decl0={:?}",
+            decls[0]
+        );
+        assert!(
+            decls[1].trim().starts_with("fn prompt"),
+            "decl1={:?}",
+            decls[1]
+        );
+        assert!(stmts.is_empty(), "stmt forms={stmts:?}");
+    }
+
+    #[test]
+    fn split_forms_apostrophe_in_string_still_tracks_braces() {
+        let src = r#"
+fn prompt() -> String {
+    "not Thoxa's default {still a string}"
+}
+echo hi
+"#;
+        let (decls, stmts) = nonempty_rc_forms(src);
+        assert_eq!(decls.len(), 1, "decls={decls:?}");
+        assert!(decls[0].trim().starts_with("fn prompt"));
+        assert_eq!(stmts.len(), 1, "stmts={stmts:?}");
+        assert!(stmts[0].trim().starts_with("echo "));
+    }
+
+    #[test]
+    fn apply_rc_comment_apostrophe_decl_only_does_not_require_main() {
+        let src = r##"
+## not Thoxa's default cyan
+import { defaultPrompt } from "std/prompt"
+
+fn prompt() -> String {
+    defaultPrompt(signature: "#E2B84A")
+}
+"##;
+        let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        let status = apply_rc_source(src, &mut decls, &mut cache, &mut loaded)
+            .expect("decl-only rc must not compile as a program");
+        assert_eq!(status, 0);
+        assert!(decls_define_prompt(&decls), "decls={decls:?}");
+    }
+
+    #[test]
+    fn apply_rc_stmt_after_comment_apostrophe_still_runs() {
+        let src = r#"
+## not Thoxa's default
+logging.toStdout()
+logging.setFormat(logging.formatPlain)
+logging.info("from-rc-apostrophe")
+"#;
+        let (decls, stmts) = nonempty_rc_forms(src);
+        assert!(decls.is_empty(), "decls={decls:?}");
+        assert!(!stmts.is_empty(), "stmts={stmts:?}");
+        assert!(
+            !stmts[0].trim().starts_with('#'),
+            "stmt form must not start with the comment: {:?}",
+            stmts[0]
+        );
+
+        let mut acc = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        let (status, out) =
+            with_captured_stdout(|| apply_rc_source(src, &mut acc, &mut cache, &mut loaded))
+                .expect("capture");
+        assert_eq!(status, 0);
+        assert!(
+            acc.is_empty(),
+            "stmt must not accumulate as a decl: {acc:?}"
+        );
+        assert!(
+            out.contains("from-rc-apostrophe"),
+            "stmt must run, stdout={out:?}"
+        );
     }
 
     #[test]

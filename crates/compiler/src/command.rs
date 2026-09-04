@@ -42,36 +42,55 @@ pub fn desugar_session_source(src: &str) -> Result<String> {
     Ok(out)
 }
 
-/// Approximate `{}` / `()` / `[]` depth change on a line (ignores strings —
-/// good enough for desugar). Must track parens so multi-line type constructors
-/// and calls are not rewritten as session commands.
+/// Approximate `{}` / `()` / `[]` depth change on a line (ignores strings and
+/// `#` / `##` comments — good enough for desugar). Must track parens so
+/// multi-line type constructors and calls are not rewritten as session
+/// commands. Quote/`(` in a comment must not change depth for later lines.
 fn nesting_delta(line: &str) -> i32 {
-    let mut d = 0i32;
+    let mut delta = 0i32;
     let mut in_str = false;
     let mut quote = b'\0';
     let mut esc = false;
+    for_each_code_byte(line, &mut in_str, &mut quote, &mut esc, |b| match b {
+        b'{' | b'(' | b'[' => delta += 1,
+        b'}' | b')' | b']' => delta -= 1,
+        _ => {}
+    });
+    delta
+}
+
+/// Feed bytes that are outside `"…"` / `'…'` strings and outside a `#` line
+/// comment (lexer: bare `#` comments through EOL, so `##` is a comment).
+/// `in_str` / `quote` / `esc` persist so multi-line `"…"` stays closed.
+pub(crate) fn for_each_code_byte(
+    line: &str,
+    in_str: &mut bool,
+    quote: &mut u8,
+    esc: &mut bool,
+    mut on_code: impl FnMut(u8),
+) {
     for &b in line.as_bytes() {
-        if in_str {
-            if esc {
-                esc = false;
+        if *in_str {
+            if *esc {
+                *esc = false;
             } else if b == b'\\' {
-                esc = true;
-            } else if b == quote {
-                in_str = false;
+                *esc = true;
+            } else if b == *quote {
+                *in_str = false;
             }
             continue;
         }
+        if b == b'#' {
+            break;
+        }
         match b {
             b'"' | b'\'' => {
-                in_str = true;
-                quote = b;
+                *in_str = true;
+                *quote = b;
             }
-            b'{' | b'(' | b'[' => d += 1,
-            b'}' | b')' | b']' => d -= 1,
-            _ => {}
+            _ => on_code(b),
         }
     }
-    d
 }
 
 fn source_has_fn_main(src: &str) -> bool {
@@ -190,7 +209,11 @@ fn line_parses_as_thoxa(line: &str) -> bool {
 fn expr_is_command_atom(e: &crate::ast::Expr) -> bool {
     use crate::ast::{BinaryOp, ExprKind, UnaryOp};
     match &e.kind {
-        ExprKind::Name(_) | ExprKind::String(_) | ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Bool(_) => true,
+        ExprKind::Name(_)
+        | ExprKind::String(_)
+        | ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_) => true,
         // `AGENTS.md`, `foo.bar.baz` — path-like, not intentional field reads at stmt level
         ExprKind::Field { base, .. } => expr_is_command_atom(base),
         // Paths (`a/b`) and flags (`ls -al`, `cmd -a -b`, `ls --all`)
@@ -573,6 +596,24 @@ mod tests {
     fn desugar_session_echo_line() {
         let src = desugar_session_source("echo hello\n").unwrap();
         assert!(src.contains(r#"shell = shell.echo(["hello"])"#));
+    }
+
+    /// `#` / `##` comments must not change nesting: `'` / `(` in a comment
+    /// used to leave later command lines un-desugared (depth stuck > 0).
+    #[test]
+    fn desugar_ignores_quotes_and_parens_in_hash_comments() {
+        let src = "## not Thoxa's default (see path())\necho hello\n";
+        let out = desugar_session_source(src).unwrap();
+        assert!(
+            out.contains(r#"shell = shell.echo(["hello"])"#),
+            "comment must not raise nesting so the next line stays a command, got:\n{out}"
+        );
+        let src = "echo hello ## unmatched (\nls\n";
+        let out = desugar_session_source(src).unwrap();
+        assert!(
+            out.contains(r#"shell = shell.run(["ls"])"#),
+            "paren in a trailing comment must not glue the next line, got:\n{out}"
+        );
     }
 
     /// Multi-line `type T(field: Type)` must not rewrite field lines as shell

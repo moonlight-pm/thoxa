@@ -107,6 +107,10 @@ Interactive TTY REPL loads:
 Missing file = no-op. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC`.  
 Piped / non-interactive REPL and session scripts do **not** load rc.
 
+Line comments (`#` / `##`) are comments, not strings: punctuation in them
+(apostrophes, parentheses, backticks) does not glue later `import` / `fn`
+lines. Declarations accumulate; top-level statements run once.
+
 ### Custom prompt
 
 Optional in rc / accumulated decls:

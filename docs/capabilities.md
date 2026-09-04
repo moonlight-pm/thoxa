@@ -98,7 +98,7 @@ D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 | session-repl | Bare `thoxa` REPL, decl accumulate, multiline | shipped | `repl::` | D88, D93, D95, **D156** | Line editor → `session-line-edit` | yes |
 | session-line-edit | TTY emacs editor, Tab complete, history | shipped | `line_edit::` | **D156** | No typed `foo.` members; no programmable completion; piped REPL stays cooked | yes |
 | session-dlopen | Legacy step `.so` + `cc -shared` | removed | — | D93 v2; D105 | Superseded by libtcc-only steps (escape hatch deleted) | no |
-| session-rc | `~/.config/thoxa/shell.thx` + `prompt()` | shipped | `repl::` | D96 | Piped REPL does not load rc | yes |
+| session-rc | `~/.config/thoxa/shell.thx` + `prompt()`; `#`/`##` comments skipped when splitting decls vs stmts | shipped | `repl::` | D96 | Piped REPL does not load rc | yes |
 | session-path | `fn path(parent) -> Array<String>` | shipped | `repl::` | D100 | — | yes |
 | session-pipeline | Thoxa-side `\|` → `Shell.pipeline` + RT | shipped | `session_pipe`; `command::` | D101 | Nested Array stages N/A (Bytes blob) | yes |
 | session-redir | File `>` / `>>` / `<` → `Shell.runIo` | shipped | `session_redir`; `command::` | D102 | No `2>`; redir+pipe combo; ops need whitespace | yes |
