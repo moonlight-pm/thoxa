@@ -31,7 +31,10 @@ simple-RC gate is done (`lsan-skip` empty; bounded ASan 2026-09-03).
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
 HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
 
-**Shipped recently:** **D155** `fn drop()` last-RC boxes (`file_drop`; File /
+**Shipped recently:** POSIX login-shell face: `thoxa -c '<chunk>'` and
+`thoxa -l` / `--login` (same REPL as bare `thoxa`); libtcc finds the
+process libc via `/proc/self/maps` so NixOS/Oath session steps work
+without `/usr/lib/libc.so`. **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
 (`http_net_err`); bounded ASan pass (88 non-fiber clean; 6 `-->` programs
 excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);

@@ -10,7 +10,8 @@ Product face: **bare `thoxa`** (not `extras/shell`).
 
 | Invocation | Mode |
 |------------|------|
-| `thoxa` / `thoxa repl` | Long-lived REPL |
+| `thoxa` / `thoxa repl` / `thoxa -l` | Long-lived REPL (login shells use `-l` / argv0 `-thoxa`) |
+| `thoxa -c '<chunk>'` | One-shot session (what `ssh host cmd` runs) |
 | `thoxa file.thx` without `fn main` | Session script (one-shot) |
 | `thoxa file.thx` with `fn main` | Ordinary **program** (top-level statements illegal) |
 | `thoxa dir/` | `main.thx` program entry |
@@ -103,6 +104,15 @@ fn path(parent: Array<String>) -> Array<String> {
 
 Return value **replaces** process PATH (joined with `:`). Host keeps toolchain
 resolution for `cc` / `ar` when PATH is emptied.
+
+### Relocated install (Oath `pkg:thoxa`)
+
+A prefix-dir install sets `THOXA_ROOT`, `THOXA_STD`, `THOXA_TCCDIR`, and
+optional `THOXA_C_INCLUDE` / `THOXA_TCC_LIBPATHS` so session steps do not
+need the build machine's Nix paths. REPL / `thoxa -c` use libtcc (no
+guest `cc`). `thoxa build` / `thoxa run` of programs still need `cc`.
+Session chunk files go under `$XDG_CACHE_HOME/thoxa/repl` (or
+`~/.cache/thoxa/repl`), not the store.
 
 ### Pipelines and redirections
 

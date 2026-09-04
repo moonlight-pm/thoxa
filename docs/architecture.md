@@ -38,14 +38,14 @@ step `.so` on the happy path.
 
 | Stage | Location | Notes |
 |-------|----------|--------|
-| CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL. Program `run`/`build` stamp package+std+runtime+compiler and skip `cc` when fresh. `THOXA_SANITIZE=leak` / `address` (**D151**) |
+| CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL / `-c` / `-l`. Program `run`/`build` stamp package+std+runtime+compiler and skip `cc` when fresh. `THOXA_SANITIZE=leak` / `address` (**D151**) |
 | Frontend | `lexer`, `parser`, `ast`, `resolver`, `route_desugar`, `validate_desugar`, `refine` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. Tag literals desugar in the parser to `__jsx_el` / `__jsx_child` / `{...}` spreads (**D147**). **`Type.read` / `where` / `T.from`** generate `__read_T` / `__fromJson_T` / `__from_T` (`validate_desugar.rs` + `refine.rs`, **D149**). Type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`, **D150**) |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
 | MIR | `mir.rs` | RC (**D155** product `drop()` boxes; **D154** callee-owned heap params; **D153** overwrite-drop + if/match result overwrite-drop + early-return drops from the final `drop_places` set; **D152** match-bind one Dup; union/Node match result dropped); generic monomorphs; `std/fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower (**D129**); tag-only bare union patterns (**D130**); route-clause bodies after desugar; builtin **`Ty::Node`** (`Element` / `Text` / `Fragment` / `Attr`; `html_el` / `html_text` / `html_frag` / `html_render`); **`Ty::Fn`** unboxed pair (**D132**) |
 | Cgen | `cgen.rs` | Topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body; D132 thunks + `ThoxaFn`; **D148** start thunks + `thoxa_sched_drain` after `main` / session step; module heap/User globals `__attribute__((used))` (**D152**); pointer locals NULL after Drop (**D153**); **D155** boxed `drop` types + `thoxa_set_dtor` |
 | Session | `session.rs`, `command.rs`, `std/shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/fallible` + `std/logging` (+ deps) |
 | Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast`; inject deps |
-| libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; build stamps `THOXA_GIT_HASH` / dirty |
+| libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; `THOXA_TCCDIR` / `THOXA_C_INCLUDE` / `THOXA_TCC_LIBPATHS`; `-lc` via `/proc/self/maps` libc dir (NixOS/Oath have `libc.so.6`, not `/usr/lib/libc.so`). Build stamps `THOXA_GIT_HASH` / dirty |
 | REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
 | LSP | `lsp/` | stdio server; multi-diag + D124; nav; hover shows D129 inferred return types (cached on publish); call-arg formals; identity log |
 

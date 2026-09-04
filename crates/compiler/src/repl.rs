@@ -44,6 +44,19 @@ extern "C" {
 
 const STDOUT_FILENO: c_int = 1;
 
+/// One-shot session chunk (`thoxa -c`). Same compiler path as a REPL line.
+pub fn run_one_shot(src: &str) -> Result<i32> {
+    driver::pin_workspace_root();
+    driver::capture_toolchain_path();
+    let mut decls: Vec<String> = Vec::new();
+    let mut cache = SessionBuildCache::default();
+    let mut loaded: Option<SessionStepLib> = None;
+    match run_chunk(src, &mut decls, 0, &mut cache, &mut loaded) {
+        Ok(o) => Ok(o.status),
+        Err(e) => Err(e),
+    }
+}
+
 /// Run the interactive (or piped) session REPL. Returns final status.
 pub fn run_repl() -> Result<i32> {
     let interactive = is_tty_stdin();

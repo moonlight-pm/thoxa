@@ -29,6 +29,7 @@ extern "C" {
         error_func: Option<extern "C" fn(*mut c_void, *const c_char)>,
     );
     fn tcc_add_include_path(s: *mut TCCState, pathname: *const c_char) -> c_int;
+    fn tcc_add_library_path(s: *mut TCCState, pathname: *const c_char) -> c_int;
     fn tcc_set_output_type(s: *mut TCCState, output_type: c_int) -> c_int;
     fn tcc_compile_string(s: *mut TCCState, buf: *const c_char) -> c_int;
     fn tcc_add_file(s: *mut TCCState, filename: *const c_char) -> c_int;
@@ -37,8 +38,65 @@ extern "C" {
 }
 
 /// Directory containing `libtcc1.a` (from `build.rs`).
+///
+/// `THOXA_TCCDIR` overrides the compile-time prefix so a relocated install
+/// (Oath store, prefix-dir) does not need the build machine's path.
 pub fn tccdir() -> PathBuf {
+    if let Ok(p) = std::env::var("THOXA_TCCDIR") {
+        if !p.is_empty() {
+            return PathBuf::from(p);
+        }
+    }
     PathBuf::from(env!("THOXA_TCCDIR"))
+}
+
+/// Extra `-I` dirs from `THOXA_C_INCLUDE` (colon-separated).
+pub fn extra_include_dirs() -> Vec<PathBuf> {
+    colon_dirs("THOXA_C_INCLUDE")
+}
+
+/// Extra `-L` dirs from `THOXA_TCC_LIBPATHS` (colon-separated).
+pub fn extra_lib_dirs() -> Vec<PathBuf> {
+    colon_dirs("THOXA_TCC_LIBPATHS")
+}
+
+fn colon_dirs(var: &str) -> Vec<PathBuf> {
+    let Ok(raw) = std::env::var(var) else {
+        return Vec::new();
+    };
+    raw.split(':')
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// Directory of the libc this process is already using (`/proc/self/maps`).
+fn libc_dir_from_maps() -> Option<PathBuf> {
+    let maps = std::fs::read_to_string("/proc/self/maps").ok()?;
+    for line in maps.lines() {
+        let Some(path) = line.split_whitespace().nth(5) else {
+            continue;
+        };
+        if path.ends_with("/libc.so.6") || path.ends_with("/libc.so") {
+            return Path::new(path).parent().map(Path::to_path_buf);
+        }
+    }
+    None
+}
+
+fn host_lib_dirs() -> Vec<PathBuf> {
+    let mut dirs = extra_lib_dirs();
+    let push = |dirs: &mut Vec<PathBuf>, d: PathBuf| {
+        if d.is_dir() && !dirs.iter().any(|x| x == &d) {
+            dirs.push(d);
+        }
+    };
+    if let Some(d) = libc_dir_from_maps() {
+        push(&mut dirs, d);
+    }
+    push(&mut dirs, PathBuf::from("/oath/store/pkg/glibc/lib"));
+    push(&mut dirs, tccdir());
+    dirs
 }
 
 struct ErrorBuf {
@@ -133,6 +191,16 @@ impl State {
         Ok(())
     }
 
+    /// Add a library search path (`-L`).
+    pub fn add_library_path(&self, path: &Path) -> Result<()> {
+        let c = path_c(path)?;
+        let rc = unsafe { tcc_add_library_path(self.ptr, c.as_ptr()) };
+        if rc < 0 {
+            return Err(self.err_ctx(&format!("tcc_add_library_path {}", path.display())));
+        }
+        Ok(())
+    }
+
     /// Compile a C source string. Call before [`add_file`](Self::add_file) of archives.
     pub fn compile_string(&self, src: &str) -> Result<()> {
         let c = CString::new(src).map_err(|_| Error::new("C source contains NUL"))?;
@@ -193,6 +261,17 @@ pub fn compile_memory(opts: CompileOptions<'_>) -> Result<State> {
     for inc in &opts.include_paths {
         state.add_include_path(inc)?;
     }
+    let extra = extra_include_dirs();
+    for inc in &extra {
+        if inc.is_dir() {
+            state.add_include_path(inc)?;
+        }
+    }
+    for dir in host_lib_dirs() {
+        if dir.is_dir() {
+            state.add_library_path(&dir)?;
+        }
+    }
     for src in &opts.sources {
         state.compile_string(src)?;
     }
@@ -219,5 +298,35 @@ mod tests {
         let f: unsafe extern "C" fn() -> i32 = unsafe { std::mem::transmute(p) };
         let v = unsafe { f() };
         assert_eq!(v, 42);
+    }
+
+    #[test]
+    fn memory_compile_links_libc() {
+        let state = compile_memory(CompileOptions {
+            include_paths: vec![],
+            link_files: vec![],
+            sources: vec!["extern int abs(int); int thoxa_tcc_libc_f(void){return abs(-2);}\n"],
+        })
+        .expect("compile+link libc");
+        let p = state.symbol("thoxa_tcc_libc_f").expect("symbol");
+        let f: unsafe extern "C" fn() -> i32 = unsafe { std::mem::transmute(p) };
+        let v = unsafe { f() };
+        assert_eq!(v, 2);
+    }
+
+    #[test]
+    fn memory_compile_stdint() {
+        let state = compile_memory(CompileOptions {
+            include_paths: vec![],
+            link_files: vec![],
+            sources: vec![
+                "#include <stdint.h>\nint thoxa_tcc_stdint_f(void){return (int)sizeof(int32_t);}\n",
+            ],
+        })
+        .expect("compile stdint.h");
+        let p = state.symbol("thoxa_tcc_stdint_f").expect("symbol");
+        let f: unsafe extern "C" fn() -> i32 = unsafe { std::mem::transmute(p) };
+        let v = unsafe { f() };
+        assert_eq!(v, 4);
     }
 }

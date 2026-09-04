@@ -34,12 +34,23 @@ fn main() -> ExitCode {
 
 fn try_main() -> Result<i32, Error> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
-    // Bare `thoxa` → session REPL (plan D88).
-    if args.is_empty() {
+    // Bare `thoxa` → session REPL (plan D88). Login shells pass `-l` / `--login`.
+    if args.is_empty()
+        || matches!(
+            args.first().map(String::as_str),
+            Some("-l" | "--login" | "-")
+        )
+    {
         return thoxa::repl::run_repl();
     }
     let cmd = args.remove(0);
     match cmd.as_str() {
+        "-c" => {
+            let src = args.first().cloned().ok_or_else(|| {
+                Error::new("thoxa -c requires a session chunk (try `thoxa -c 'echo hi'`)")
+            })?;
+            run_dash_c(&src)
+        }
         "build" => {
             let opts = parse_build_args(&args)?;
             let art = driver::build(&opts)?;
@@ -100,6 +111,11 @@ fn try_main() -> Result<i32, Error> {
             "unknown command `{other}` (try `thoxa help`)"
         ))),
     }
+}
+
+/// POSIX `sh -c` equivalent: one session chunk (command sugar or Thoxa).
+fn run_dash_c(src: &str) -> Result<i32, Error> {
+    thoxa::repl::run_one_shot(src)
 }
 
 fn looks_like_source_path(s: &str) -> bool {
@@ -213,6 +229,7 @@ thoxa — native Thoxa compiler + session REPL (compile-to-C)
 
 USAGE:
     thoxa                        Session REPL (commands desugar to Shell)
+    thoxa -c '<chunk>'           One-shot session (POSIX login-shell -c)
     thoxa repl                   Same as bare thoxa
     thoxa <file.thx|dir>         Run program (main) or session script (no main)
     thoxa run    <file.thx|dir>

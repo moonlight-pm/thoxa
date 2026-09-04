@@ -175,18 +175,22 @@ fn runtime_is_stale(lib: &Path, inputs: &[PathBuf]) -> bool {
     let Some(lib_t) = lib_m.modified().ok() else {
         return true;
     };
-    inputs.iter().any(|p| match p.metadata().and_then(|m| m.modified()) {
-        Ok(t) => lib_t < t,
-        Err(_) => true,
-    })
+    inputs
+        .iter()
+        .any(|p| match p.metadata().and_then(|m| m.modified()) {
+            Ok(t) => lib_t < t,
+            Err(_) => true,
+        })
 }
 
 pub fn ensure_runtime() -> Result<()> {
     // Rebuild when the library is missing or older than runtime / sqlite sources.
+    // Packed installs ship `libthoxa_rt.a` without C sources / `cc` — keep the archive.
     let lib = runtime_lib_path();
     let root = workspace_root();
     let inputs = runtime_inputs(&root);
-    if runtime_is_stale(&lib, &inputs) {
+    let can_rebuild = inputs.iter().all(|p| p.is_file());
+    if can_rebuild && runtime_is_stale(&lib, &inputs) {
         build_runtime()?;
     }
     if !lib.is_file() {
@@ -198,12 +202,22 @@ pub fn ensure_runtime() -> Result<()> {
     Ok(())
 }
 
-fn compile_c_object(
-    src: &Path,
-    obj: &Path,
-    includes: &[&Path],
-    extra_defs: &[&str],
-) -> Result<()> {
+/// Writable dir for REPL chunk `.thx` (store `THOXA_ROOT` is root-owned on Oath).
+fn session_scratch_dir() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
+        if !xdg.is_empty() {
+            return PathBuf::from(xdg).join("thoxa/repl");
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            return PathBuf::from(home).join(".cache/thoxa/repl");
+        }
+    }
+    std::env::temp_dir().join(format!("thoxa-repl-{}", std::process::id()))
+}
+
+fn compile_c_object(src: &Path, obj: &Path, includes: &[&Path], extra_defs: &[&str]) -> Result<()> {
     let mut cmd = host_tool("cc");
     cmd.args(["-std=c11", "-O2", "-fPIC", "-c"]);
     for def in extra_defs {
@@ -218,10 +232,7 @@ fn compile_c_object(
         .status()
         .map_err(|e| Error::new(format!("failed to spawn cc: {e}")))?;
     if !status.success() {
-        return Err(Error::new(format!(
-            "cc failed building {}",
-            src.display()
-        )));
+        return Err(Error::new(format!("cc failed building {}", src.display())));
     }
     Ok(())
 }
@@ -727,7 +738,7 @@ pub fn build_session_step(
 ) -> Result<SessionStepLib> {
     ensure_runtime()?;
 
-    let dir = thoxa_target_dir().join("repl");
+    let dir = session_scratch_dir();
     fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
 
     // Full source for MIR (session prepare needs stmts + decls together).
@@ -813,11 +824,7 @@ mod tests {
 
     fn temp_prog(body: &str) -> PathBuf {
         let id = FRESH_ID.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "thoxa_fresh_{}_{}",
-            std::process::id(),
-            id
-        ));
+        let dir = std::env::temp_dir().join(format!("thoxa_fresh_{}_{}", std::process::id(), id));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("main.thx"), body).unwrap();

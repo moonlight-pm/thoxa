@@ -8,6 +8,8 @@ The product binary is **`thoxa`** (`cargo run -p thoxa -- …`, or via
 | Command | Behavior |
 |---------|----------|
 | `thoxa` (no args) | Session **REPL** (interactive; loads rc on TTY) |
+| `thoxa -l` / `thoxa --login` | Same as bare REPL (login-shell argv) |
+| `thoxa -c '<chunk>'` | One-shot session chunk (POSIX `sh -c`) |
 | `thoxa repl` | Same as bare REPL |
 | `thoxa path.thx` | Program if `fn main` exists; else **session script** |
 | `thoxa dir/` | Runs `dir/main.thx` if present |
