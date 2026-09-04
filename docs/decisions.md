@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-09-04 — Session line editor
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D156 | Interactive session is a rustyline **emacs** editor | TTY `thoxa` uses rustyline (emacs mode): Tab complete, history, GNU-readline-style keys. Ctrl-C discards the line; Ctrl-D on empty exits. Piped / non-TTY stays cooked `read_line`. History: `THOXA_HISTFILE` → `$XDG_STATE_HOME/thoxa/history` → `~/.local/state/thoxa/history`. Tab is host-side (no libtcc): Shell methods + PATH + files/`cd` dirs + `std/` + scraped decl names. Not typed member complete; not a bash `complete` dialect. | **Shipped.** Gate: `line_edit::`. Unparks the parked “crude line editor” residual only. |
+
 ## 2026-09-03 — Resource `drop` on last RC
 
 | ID | Decision | Choice | Notes |

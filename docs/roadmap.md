@@ -81,8 +81,8 @@ Freezes:
   Logging (**D125**), **Json** (**D141**), **Cookie** (**D142**),
   **Sqlite** (**D143**), and **`sql"…"`** (**D144**).
 
-**Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first;
-crude line editor. Resume only when CURRENT says so.
+**Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first.
+Line editor shipped (**D156**). Resume remaining residual only when CURRENT says so.
 
 **Later polish (not active):** libtcc base-object cache; TinyCC license packaging
 notice — libtcc freeze §11.

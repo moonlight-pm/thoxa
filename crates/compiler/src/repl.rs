@@ -28,6 +28,7 @@
 use crate::command::desugar_session_source;
 use crate::driver::{self, SessionBuildCache, SessionStepLib};
 use crate::error::{Error, Result};
+use crate::line_edit::{ReadOutcome, SessionEditor};
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::os::raw::{c_int, c_void};
@@ -85,6 +86,63 @@ pub fn run_repl() -> Result<i32> {
         }
     }
 
+    if interactive {
+        match SessionEditor::new() {
+            Ok(mut editor) => {
+                editor.set_decls(&decls);
+                loop {
+                    let prompt = primary_prompt(&decls, &mut prompt_state, status, &mut step_cache);
+                    let line = match editor.read(&prompt)? {
+                        ReadOutcome::Line(l) => l,
+                        ReadOutcome::Interrupt => continue,
+                        ReadOutcome::Eof => break,
+                    };
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if trimmed == "exit" || trimmed == "quit" {
+                        break;
+                    }
+
+                    let mut chunk = line;
+                    let mut aborted = false;
+                    while needs_more(&chunk) {
+                        match editor.read("> ")? {
+                            ReadOutcome::Line(l) => {
+                                chunk.push('\n');
+                                chunk.push_str(&l);
+                            }
+                            ReadOutcome::Interrupt => {
+                                aborted = true;
+                                break;
+                            }
+                            ReadOutcome::Eof => break,
+                        }
+                    }
+                    if aborted {
+                        continue;
+                    }
+                    apply_chunk(
+                        &chunk,
+                        &mut decls,
+                        &mut status,
+                        &mut prompt_state,
+                        &mut step_cache,
+                        &mut loaded,
+                    );
+                    editor.set_decls(&decls);
+                }
+                drop(loaded);
+                return Ok(status);
+            }
+            Err(e) => {
+                eprintln!("warning: line editor unavailable ({e}); using plain stdin");
+            }
+        }
+    }
+
+    // Piped / non-TTY, or rustyline failed to start: cooked lines.
     let mut stdout = io::stdout();
     let stdin = io::stdin();
     let mut lines = stdin.lock().lines();
@@ -108,7 +166,6 @@ pub fn run_repl() -> Result<i32> {
             break;
         }
 
-        // Multiline continuation: incomplete braces / quotes → read more.
         let mut chunk = line;
         while needs_more(&chunk) {
             if interactive {
@@ -125,32 +182,49 @@ pub fn run_repl() -> Result<i32> {
             }
         }
 
-        match run_chunk(&chunk, &mut decls, status, &mut step_cache, &mut loaded) {
-            Ok(ChunkOutcome {
-                status: st,
-                decls_changed,
-            }) => {
-                status = st;
-                if decls_changed {
-                    prompt_state.on_decls_changed(&decls);
-                    if let Err(e) = apply_path_hook(&decls, &mut step_cache) {
-                        eprintln!("error: path: {e}");
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("error: {e}");
-                status = 1;
-            }
-        }
+        apply_chunk(
+            &chunk,
+            &mut decls,
+            &mut status,
+            &mut prompt_state,
+            &mut step_cache,
+            &mut loaded,
+        );
     }
 
     drop(loaded);
-
     if interactive {
         println!();
     }
     Ok(status)
+}
+
+fn apply_chunk(
+    chunk: &str,
+    decls: &mut Vec<String>,
+    status: &mut i32,
+    prompt_state: &mut PromptState,
+    step_cache: &mut SessionBuildCache,
+    loaded: &mut Option<SessionStepLib>,
+) {
+    match run_chunk(chunk, decls, *status, step_cache, loaded) {
+        Ok(ChunkOutcome {
+            status: st,
+            decls_changed,
+        }) => {
+            *status = st;
+            if decls_changed {
+                prompt_state.on_decls_changed(decls);
+                if let Err(e) = apply_path_hook(decls, step_cache) {
+                    eprintln!("error: path: {e}");
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            *status = 1;
+        }
+    }
 }
 
 /// Run `f` with stdout redirected to a pipe; return `(f's result, captured bytes)`.

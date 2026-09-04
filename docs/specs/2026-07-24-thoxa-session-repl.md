@@ -3,7 +3,7 @@
 **Date:** 2026-07-24  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first)  
+**Gaps:** no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first). Line editor shipped (**D156**).  
 
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)  
 **Step backend:** [`2026-08-05-session-libtcc.md`](2026-08-05-session-libtcc.md) (D105, shipped libtcc-only)
@@ -40,7 +40,7 @@
 | Shell-language `if` / `for` / functions | Real Thoxa only |
 | Full `$` expansion forest | Prefer Thoxa names (`status`, later env APIs) |
 | Tree-walk interpreter as product | Phase A stays compile-to-C |
-| Infinite quality line editor | Crude `read` OK for a long time |
+| Infinite quality line editor | Bounded emacs editor shipped **D156**; not an infinite polish campaign |
 | Absorbing all of `std/` | Only `Shell` + process helpers forced by the session |
 
 ---

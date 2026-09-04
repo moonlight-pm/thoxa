@@ -16,7 +16,7 @@ roadmap live under [`../capabilities.md`](../capabilities.md),
 |------|--------|
 | [CLI](cli.md) | Commands, build products, common workflows |
 | [Language](language.md) | Types, control flow, errors, modules (shipped subset) |
-| [Session](session.md) | Bare `thoxa` REPL, scripts, command sugar, rc |
+| [Session](session.md) | Bare `thoxa` REPL (emacs editor + Tab), scripts, command sugar, rc |
 | [Standard library](std.md) | `std/…` modules |
 | [Editor](editor.md) | Zed + `thoxa lsp` (honest limits) |
 

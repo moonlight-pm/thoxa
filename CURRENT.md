@@ -4,8 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-09-04. Interactive REPL: no startup banner; default prompt
-`§ ` (D96). **D155** resource `drop()` on last RC (`File` / `Socket` /
+**As of:** 2026-09-04. Interactive REPL: emacs line editor + Tab complete
+(**D156**); no startup banner; default prompt `§ ` (D96). **D155** resource
+`drop()` on last RC (`File` / `Socket` /
 `Db`). **D153** simple-RC **gate is done** (empty `lsan-skip` +
 documented ASan). Alloc size wrap panics; `Socket.close` clears `fd`.
 **Not Perceus.** Overwrite-drop, nested `Array`/`Map`
@@ -32,7 +33,8 @@ simple-RC gate is done (`lsan-skip` empty; bounded ASan 2026-09-03).
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
 HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
 
-**Shipped recently:** Interactive REPL starts with `§ ` (no banner).
+**Shipped recently:** Interactive TTY REPL is an emacs line editor with Tab
+complete and history (**D156**). Interactive REPL starts with `§ ` (no banner).
 POSIX login-shell face: `thoxa -c '<chunk>'` and
 `thoxa -l` / `--login` (same REPL as bare `thoxa`); libtcc finds the
 process libc via `/proc/self/maps` so NixOS/Oath session steps work
@@ -53,8 +55,9 @@ lits; overwrite-drop; **D152** match/init RC.
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
-2. **Deferred: all session / shell residual** — redir polish, line editor,
-   Shell import-first, libtcc cache/license, etc. Freeze parked:
+2. **Deferred: remaining session / shell residual** — redir polish,
+   Shell import-first, libtcc cache/license, etc. Line editor shipped (**D156**).
+   Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
 3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, cycle
    collector. Multi-logger (`initLog`) is trajectory under D125, not a
@@ -74,7 +77,7 @@ Public sites are **`containers/landing`** (thoxa.dev) and
 
 - **`having` / `else` May sugar** (parked indefinitely — `match` is enough)
 - **Crema domain in `std/`** (pages/models/layout — example-only)
-- **All session / shell residual** (parked by user direction)
+- **Remaining session / shell residual** (redir polish, Shell import-first, libtcc cache/license — parked; line editor shipped **D156**)
 - Inventing shell dialect (`if`/`for`/full `$` forest)
 - Tree-walk product interpreter or QBE path (phase A)
 - Claiming full oracle SPEC coverage

@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-09-03 (**D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
+**As of:** 2026-09-04 (**D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
 `containers/landing` thoxa.dev live; `containers/sola` sola.computer live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 **D145** `htmlFragment` / `cached`;
@@ -46,7 +46,7 @@ step `.so` on the happy path.
 | Session | `session.rs`, `command.rs`, `std/shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/fallible` + `std/logging` (+ deps) |
 | Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast`; inject deps |
 | libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile; `THOXA_TCCDIR` / `THOXA_C_INCLUDE` / `THOXA_TCC_LIBPATHS`; `-lc` via `/proc/self/maps` libc dir (NixOS/Oath have `libc.so.6`, not `/usr/lib/libc.so`). Build stamps `THOXA_GIT_HASH` / dirty |
-| REPL host | `repl.rs` | Decl accumulate; libtcc step image only (D105) |
+| REPL host | `repl.rs`, `line_edit.rs` | Decl accumulate; libtcc step image only (D105); TTY emacs editor + Tab complete (**D156**) |
 | LSP | `lsp/` | stdio server; multi-diag + D124; nav; hover shows D129 inferred return types (cached on publish); call-arg formals; identity log |
 
 ## Crates and trees
@@ -78,6 +78,7 @@ Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are gone.
 ┌─────────────────────────────────────────┐
 │  thoxa (Rust host)                      │
 │  - host-held status / Shell state       │
+│  - TTY emacs editor (D156) / cooked pipe│
 │  - read chunk, desugar, splice module   │
 │  - cgen → libtcc memory → call step     │
 │  - thoxa_session_step(ThoxaShellState*) │

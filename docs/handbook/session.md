@@ -65,8 +65,36 @@ programming is Thoxa.
 - Failed compiles print diagnostics and keep prior session state (status ≠ 0).
 - Continuation prompt `> ` for unfinished blocks; primary prompt defaults to
   `§ ` unless customized. No startup banner.
+- Interactive TTY uses an **emacs** line editor (GNU readline-style keys).
+  Tab completes: first word → Shell methods + PATH commands + keywords +
+  accumulated `fn`/`let`/`type` names; later words → files; `cd` → dirs;
+  `std/…` → product std modules. Ctrl-C cancels the line (session stays).
+  Ctrl-D on an empty line exits. History:
+  `$XDG_STATE_HOME/thoxa/history` (else `~/.local/state/thoxa/history`).
+  Override or disable with `THOXA_HISTFILE` (empty = no history). Piped /
+  non-TTY input is still cooked `read_line` (no editor, no rc).
 - Executable lines (including `cd`, `status`, `|`, redirections) run as compiled
   session steps (in-process libtcc) — no separate host command shortcuts.
+
+### Line editor keys (emacs)
+
+| Key | Action |
+|-----|--------|
+| Tab | Complete (list on a second Tab if ambiguous) |
+| Ctrl-A / Ctrl-E | Start / end of line |
+| Ctrl-B / Ctrl-F | Back / forward char |
+| Alt-B / Alt-F | Back / forward word |
+| Ctrl-K | Kill to end of line |
+| Ctrl-U | Kill to start of line |
+| Ctrl-W | Kill previous word |
+| Ctrl-Y | Yank |
+| Ctrl-P / Ctrl-N | Previous / next history |
+| Ctrl-R | Reverse history search |
+| Ctrl-T | Transpose chars |
+| Ctrl-L | Clear screen |
+| Ctrl-_ | Undo |
+| Ctrl-C | Discard line |
+| Ctrl-D | Delete char, or EOF if empty |
 
 ### rc file
 

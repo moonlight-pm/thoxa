@@ -7,17 +7,18 @@ pub mod diagnostic;
 pub mod driver;
 pub mod error;
 pub mod lexer;
+pub mod line_edit;
 pub mod loader;
 pub mod lsp;
 pub mod mir;
 pub mod parser;
-pub mod repl;
 pub mod refine;
+pub mod repl;
 pub mod resolver;
 pub mod route_desugar;
-pub mod validate_desugar;
 pub mod session;
 pub mod span;
+pub mod validate_desugar;
 pub mod version;
 
 #[cfg(thoxa_libtcc)]

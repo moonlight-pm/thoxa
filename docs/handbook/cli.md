@@ -7,7 +7,7 @@ The product binary is **`thoxa`** (`cargo run -p thoxa -- …`, or via
 
 | Command | Behavior |
 |---------|----------|
-| `thoxa` (no args) | Session **REPL** (interactive; loads rc on TTY) |
+| `thoxa` (no args) | Session **REPL** (TTY: emacs editor + Tab complete + rc) |
 | `thoxa -l` / `thoxa --login` | Same as bare REPL (login-shell argv) |
 | `thoxa -c '<chunk>'` | One-shot session chunk (POSIX `sh -c`) |
 | `thoxa repl` | Same as bare REPL |
@@ -89,6 +89,7 @@ cargo make zed               # sync Zed extras + LSP binary
 | `THOXA_ROOT` | Workspace/product root for std resolution |
 | `THOXA_SHELL_RC` | Override session rc path |
 | `THOXA_NORC` | Skip session rc when set |
+| `THOXA_HISTFILE` | Session history path; empty disables history |
 | `THOXA_STATUS` | Set by REPL host for prompt helpers |
 | `THOXA_FORCE_BUILD` | Set to `1` to ignore the program-binary stamp and rebuild |
 | `THOXA_SANITIZE` | Batch `cc` only: `leak` (LeakSanitizer) or `address` (ASan). Product default is unset. Session/libtcc ignores this. `cargo make test` always uses `leak`. `cargo make test-asan` uses `address` on non-fiber conformance (`asan-skip` lists `-->` programs). |

@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-09-03 (**D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer conformance gate; **D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
+**As of:** 2026-09-04 (**D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer conformance gate; **D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
 **D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
 `containers/landing` thoxa.dev live;
 `containers/sola` sola.computer teaser live; static JPEG/font MIME;
@@ -95,7 +95,8 @@ D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 |----|------------|--------|------|--------------|------|----------|
 | session-script | No-main scripts → `Shell.step` + synthetic main | shipped | `session_script`, `session_step` | D88–D90, D94 | — | yes |
 | command-sugar | Command skin + flag trees (`ls -al`) | shipped | `session_cmd`; `command::` | D92 | Shell control-flow sugar rejected | yes |
-| session-repl | Bare `thoxa` REPL, decl accumulate, multiline | shipped | `repl::` | D88, D93, D95 | Crude line editor only | yes |
+| session-repl | Bare `thoxa` REPL, decl accumulate, multiline | shipped | `repl::` | D88, D93, D95, **D156** | Line editor → `session-line-edit` | yes |
+| session-line-edit | TTY emacs editor, Tab complete, history | shipped | `line_edit::` | **D156** | No typed `foo.` members; no programmable completion; piped REPL stays cooked | yes |
 | session-dlopen | Legacy step `.so` + `cc -shared` | removed | — | D93 v2; D105 | Superseded by libtcc-only steps (escape hatch deleted) | no |
 | session-rc | `~/.config/thoxa/shell.thx` + `prompt()` | shipped | `repl::` | D96 | Piped REPL does not load rc | yes |
 | session-path | `fn path(parent) -> Array<String>` | shipped | `repl::` | D100 | — | yes |
