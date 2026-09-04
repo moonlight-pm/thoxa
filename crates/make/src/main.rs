@@ -53,7 +53,7 @@ Commands:
     cargo make test                 Run conformance suite (LeakSanitizer)
     cargo make test-asan            Conformance under ASan (non-fiber; not default)
     cargo make run <file.thx|dir>   Compile and run a program
-    cargo make shell                Product session REPL (bare `thoxa`)
+    cargo make shell                Product session REPL (release `thoxa`)
     cargo make shell --login        Same, clean login-like env (test default-shell readiness)
     cargo make build <file.thx|dir> Compile to target/thoxa/bin/
     cargo make emit-c <file.thx|dir> Write generated C under target/thoxa/c/
@@ -84,6 +84,25 @@ fn workspace_root() -> PathBuf {
 /// Cargo puts binaries under `target/rust/` (see `.cargo/config.toml`).
 fn thoxa_bin_path() -> PathBuf {
     workspace_root().join("target/rust/debug/thoxa")
+}
+
+fn thoxa_release_bin_path() -> PathBuf {
+    workspace_root().join("target/rust/release/thoxa")
+}
+
+fn ensure_thoxa_release_built() -> i32 {
+    let status = Command::new("cargo")
+        .args(["build", "--release", "-p", "thoxa"])
+        .current_dir(workspace_root())
+        .status();
+    match status {
+        Ok(s) if s.success() => 0,
+        Ok(s) => s.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("failed to build release thoxa: {e}");
+            1
+        }
+    }
 }
 
 fn ensure_thoxa_built() -> i32 {
@@ -169,16 +188,35 @@ Dogfood prototype: cargo make run extras/shell
     if login {
         run_thoxa_login()
     } else {
-        run_thoxa(&[])
+        run_thoxa_release(&[])
+    }
+}
+
+fn run_thoxa_release(args: &[&str]) -> i32 {
+    if ensure_thoxa_release_built() != 0 {
+        return 1;
+    }
+    let bin = thoxa_release_bin_path();
+    let status = Command::new(&bin)
+        .args(args)
+        .current_dir(workspace_root())
+        .env("THOXA_ROOT", workspace_root())
+        .status();
+    match status {
+        Ok(s) => s.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("failed to run thoxa: {e}");
+            1
+        }
     }
 }
 
 /// Spawn `thoxa` as if from a fresh login: `env_clear`, minimal vars, cwd=HOME.
 fn run_thoxa_login() -> i32 {
-    if ensure_thoxa_built() != 0 {
+    if ensure_thoxa_release_built() != 0 {
         return 1;
     }
-    let bin = thoxa_bin_path();
+    let bin = thoxa_release_bin_path();
     let root = workspace_root();
     let home = match env::var("HOME") {
         Ok(h) if !h.is_empty() => PathBuf::from(h),
@@ -195,7 +233,7 @@ fn run_thoxa_login() -> i32 {
     let bin_dir = bin
         .parent()
         .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| root.join("target/rust/debug"));
+        .unwrap_or_else(|| root.join("target/rust/release"));
     let path = login_path(&bin_dir, &home);
     let kept = login_passthrough_vars();
 

@@ -52,7 +52,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`specs/2026-07-19-post-r9-http-completion-plan.md`](specs/2026-07-19-post-r9-http-completion-plan.md) | Bounded HTTP server path | shipped (historical plan) |
 | [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md) | Zed + `thoxa lsp` | partial (phase 1–2 done) |
 | [`specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md) | Session / REPL / Shell | partial (core + line editor **D156** shipped; redir/import polish remains) |
-| [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | REPL step backend (libtcc memory) | shipped (D105, libtcc-only) |
+| [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | REPL step backend (libtcc memory) | shipped (D105, libtcc-only; compile cache + no scratch `.thx`; process-RT in §11) |
 | [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Sum types, `?`/`!`, May/Trial via `std/Fallible` | shipped (D118–D120, D123) |
 | [`specs/2026-08-09-structured-diagnostics.md`](specs/2026-08-09-structured-diagnostics.md) | Diagnostic IR, pretty check, `--json`, rich LSP | shipped (D124) |
 | [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | `std/Logging` + remove ambient `println`/`print` | shipped (D125) |

@@ -11,7 +11,7 @@ change. See [`progress-model.md`](progress-model.md).
 
 **Status vocabulary:** `shipped` · `partial` · `spec’d` · `planned` · `idea`
 
-**As of:** 2026-09-04 (**D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer conformance gate; **D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
+**As of:** 2026-09-04 (session compile cache shipped; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer conformance gate; **D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
 **D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
 `containers/landing` thoxa.dev live;
 `containers/sola` sola.computer teaser live; static JPEG/font MIME;
@@ -105,7 +105,7 @@ D132 fn pointers; Crema-lite **A–D2 complete** (`POST /api/orders` +
 | session-host-pipe | Host OS `\|` fast path in REPL | shipped (removed) | `repl::pure_step_*` | D103 | Replaced by Thoxa-side pipeline (D101) | yes |
 | session-prelude | Shell API in product `std/shell.thx` | shipped | `session::`; session scripts | D104, D123 | Still auto-injected (not `import` by default); compile-time embed fallback; inject loads `std/fallible` for Shell | yes |
 | session-host-builtins | Drop host `cd`/`status`/`\|` for pure step | shipped | `repl::pure_step_*` | D103 | All session commands via step image (libtcc) | yes |
-| session-libtcc | In-process libtcc for REPL steps (no spawn / no step `.so`) | shipped | `tcc::`; `repl::pure_step_*` | D105; [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | Linux x86_64 only; later polish (base cache / license notice) not CURRENT. Relocated installs: `THOXA_TCCDIR` + `THOXA_C_INCLUDE` + library path from `/proc/self/maps` (NixOS/Oath have `libc.so.6`, not `/usr/lib/libc.so`). Do not pass libtcc `-nostdlib` — it breaks gcc `stdint.h`. | no |
+| session-libtcc | In-process libtcc for REPL steps (no spawn / no step `.so`) | shipped | `tcc::`; `repl::pure_step_*`; `session_step_cache_reuses_prelude_across_echoes` | D105; [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | Linux x86_64 only. Happy path: C string → `TCC_OUTPUT_MEMORY`; decl-stable cache re-lowers `Shell.step` and links a cached base `.o` (~6 ms/line after first). No per-chunk `.thx`. libtcc still `add_file`s on-disk `libthoxa_rt.a`. Later polish (not CURRENT): process-linked RT, license — freeze §11. Relocated installs: `THOXA_TCCDIR` + `THOXA_C_INCLUDE` + library path from `/proc/self/maps` (NixOS/Oath have `libc.so.6`, not `/usr/lib/libc.so`). Do not pass libtcc `-nostdlib` — it breaks gcc `stdint.h`. | no |
 | extras-shell | Pure-Thoxa dogfood Shell | shipped | `cargo make run extras/shell` | D95 | **Not** product face | no |
 
 ## Standard library

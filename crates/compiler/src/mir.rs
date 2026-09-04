@@ -32,6 +32,30 @@ pub struct Program {
     pub functions: Vec<Function>,
 }
 
+/// Maps from a session package lower, enough to re-lower only `Shell.step`.
+pub struct SessionMirCache {
+    pub program: Program,
+    env: SessionLowerEnv,
+}
+
+impl std::fmt::Debug for SessionMirCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionMirCache")
+            .field("program", &self.program)
+            .finish_non_exhaustive()
+    }
+}
+
+struct SessionLowerEnv {
+    fns: HashMap<String, FnSig>,
+    types: HashMap<String, TypeInfo>,
+    module_exports: HashMap<String, ModuleExports>,
+    package_maps: HashMap<String, ModuleNameMaps>,
+    synthetics: Rc<RefCell<SyntheticRegistry>>,
+    shell_mangled: String,
+    entry_mod_id: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct GlobalVar {
     pub name: String,
@@ -1304,6 +1328,70 @@ pub fn lower_package(package: &Package) -> Result<Program> {
 
 /// Lower a multi-file package with explicit options.
 pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Program> {
+    Ok(lower_package_full(package, opts)?.program)
+}
+
+/// Lower a session package and keep maps so later chunks can re-lower `Shell.step`.
+pub fn lower_session_repl(package: &Package) -> Result<SessionMirCache> {
+    lower_package_full(package, LowerOptions::default())
+}
+
+/// Re-lower only `Shell.step` using maps from a previous session lower.
+pub fn relower_session_step(cache: &SessionMirCache, package: &Package) -> Result<Program> {
+    let entry = package
+        .modules
+        .iter()
+        .find(|module| module.is_entry)
+        .ok_or_else(|| Error::new("session step: package has no entry"))?;
+    let shell = entry
+        .ast
+        .items
+        .iter()
+        .find_map(|item| match item {
+            ast::Item::Type(typedef) if typedef.name == "Shell" => Some(typedef),
+            _ => None,
+        })
+        .ok_or_else(|| Error::new("session step: no type Shell"))?;
+    let step = shell
+        .methods
+        .iter()
+        .find(|method| method.name == "step")
+        .ok_or_else(|| Error::new("session step: no Shell.step"))?;
+    let maps = cache
+        .env
+        .package_maps
+        .get(&cache.env.entry_mod_id)
+        .ok_or_else(|| Error::new("session step: missing entry name maps"))?;
+    let fun = lower_method(
+        &cache.env.shell_mangled,
+        step,
+        &cache.env.fns,
+        &cache.env.types,
+        &maps.name_to_type,
+        &maps.name_to_fn,
+        &maps.name_to_global,
+        &maps.namespaces,
+        &cache.env.module_exports,
+        &cache.env.package_maps,
+        &cache.env.entry_mod_id,
+        true,
+        &cache.env.synthetics,
+    )?;
+    let mut program = cache.program.clone();
+    if let Some(slot) = program
+        .functions
+        .iter_mut()
+        .find(|function| function.name == "Shell__step")
+    {
+        *slot = fun;
+    } else {
+        program.functions.push(fun);
+    }
+    Ok(program)
+}
+
+fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMirCache> {
+    let lower_started = std::time::Instant::now();
     // D150: type-body `GET "/…"` → handlers + `route` (names Request/Response/ok).
     let mut package = package.clone();
     crate::route_desugar::desugar_package(&mut package)?;
@@ -1903,6 +1991,7 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         }
     }
 
+    let bodies_started = std::time::Instant::now();
     // ---------- Phase 4: lower methods + free functions ----------
     // Build per-module name maps for default-arg defining-module scope (D116).
     let mut package_maps: HashMap<String, ModuleNameMaps> = HashMap::new();
@@ -2065,6 +2154,13 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         }
     }
 
+    if std::env::var_os("THOXA_REPL_PROFILE").is_some() {
+        eprintln!(
+            "thoxa profile: mir-bodies {} fns {:?}",
+            functions.len(),
+            bodies_started.elapsed()
+        );
+    }
     if !body_errors.is_empty() {
         // Build/run still report the first error; LSP expands `more` via check_source.
         return Err(errors_to_multi(body_errors));
@@ -2075,12 +2171,33 @@ pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Progr
         type_layouts.push(layout.clone());
     }
 
-    Ok(Program {
-        types: type_layouts,
-        externs: extern_decls,
-        globals: program_globals,
-        init: init_stmts,
-        functions,
+    if std::env::var_os("THOXA_REPL_PROFILE").is_some() {
+        eprintln!("thoxa profile: mir-total {:?}", lower_started.elapsed());
+    }
+    let entry_mod_id = package
+        .modules
+        .iter()
+        .find(|module| module.is_entry)
+        .map(|module| module.id.clone())
+        .unwrap_or_else(|| "Main".into());
+    let env = SessionLowerEnv {
+        fns,
+        types: types_info,
+        module_exports,
+        package_maps,
+        synthetics,
+        shell_mangled: mangle_type(&entry_mod_id, "Shell", true),
+        entry_mod_id,
+    };
+    Ok(SessionMirCache {
+        program: Program {
+            types: type_layouts,
+            externs: extern_decls,
+            globals: program_globals,
+            init: init_stmts,
+            functions,
+        },
+        env,
     })
 }
 

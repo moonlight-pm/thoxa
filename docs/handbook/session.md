@@ -139,8 +139,8 @@ A prefix-dir install sets `THOXA_ROOT`, `THOXA_STD`, `THOXA_TCCDIR`, and
 optional `THOXA_C_INCLUDE` / `THOXA_TCC_LIBPATHS` so session steps do not
 need the build machine's Nix paths. REPL / `thoxa -c` use libtcc (no
 guest `cc`). `thoxa build` / `thoxa run` of programs still need `cc`.
-Session chunk files go under `$XDG_CACHE_HOME/thoxa/repl` (or
-`~/.cache/thoxa/repl`), not the store.
+A cached session base object may live under `$XDG_CACHE_HOME/thoxa/repl`
+(or `~/.cache/thoxa/repl`) for the life of the process — not the store.
 
 ### Pipelines and redirections
 

@@ -165,6 +165,67 @@ fn prepare_entry(entry: &mut SourceModule) -> Result<bool> {
     Ok(injected_shell)
 }
 
+/// Virtual on-disk path for a REPL chunk (module id + `./` / `~/` root).
+/// Not created; [`loader::load_package_virtual`] does not require the file.
+pub fn virtual_repl_entry() -> std::path::PathBuf {
+    match std::env::current_dir() {
+        Ok(dir) => dir.join("repl.thx"),
+        Err(_) => std::path::PathBuf::from("repl.thx"),
+    }
+}
+
+/// Desugar + parse session source (decls and/or statements).
+pub fn parse_session_source(src: &str) -> Result<Module> {
+    let desugared = crate::command::desugar_session_source(src)?;
+    let tokens = Lexer::new(&desugared).tokenize()?;
+    Parser::new(tokens).with_source(desugared).parse_module()
+}
+
+/// Desugar + parse an executable chunk into session statements only.
+pub fn parse_session_chunk_stmts(chunk: &str) -> Result<Vec<BlockItem>> {
+    let ast = parse_session_source(chunk)?;
+    let mut stmts = Vec::new();
+    for item in ast.items {
+        match item {
+            Item::SessionStmt(stmt) => stmts.push(stmt),
+            Item::Function(_)
+            | Item::Type(_)
+            | Item::Extern(_)
+            | Item::Import(_)
+            | Item::Global(_) => {
+                return Err(Error::new(
+                    "session step: executable chunk contained a declaration (internal)",
+                ));
+            }
+        }
+    }
+    if stmts.is_empty() {
+        return Err(Error::new("session step: chunk has no statements"));
+    }
+    Ok(stmts)
+}
+
+/// Replace `Shell.step` on the entry module (decl-stable REPL rebuild).
+pub fn replace_step_body(package: &mut Package, stmts: Vec<BlockItem>) -> Result<()> {
+    let entry = package
+        .modules
+        .iter_mut()
+        .find(|module| module.is_entry)
+        .ok_or_else(|| Error::new("session step: package has no entry module"))?;
+    let shell_idx = entry
+        .ast
+        .items
+        .iter()
+        .position(|item| matches!(item, Item::Type(typedef) if typedef.name == "Shell"))
+        .ok_or_else(|| Error::new("session step: no type Shell"))?;
+    let Item::Type(typedef) = &mut entry.ast.items[shell_idx] else {
+        return Err(Error::new("session step: Shell item is not a type"));
+    };
+    typedef.methods.retain(|method| method.name != "step");
+    typedef.methods.push(make_step_method(stmts));
+    Ok(())
+}
+
 fn inject_prelude(entry: &mut SourceModule) -> Result<()> {
     let src = session_shell_source()?;
     let tokens = Lexer::new(&src)

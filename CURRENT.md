@@ -14,27 +14,34 @@ documented ASan). Alloc size wrap panics; `Socket.close` clears `fd`.
 if/match result overwrite-drop. Language harvest **D147–D150** shipped.
 **D151** LeakSanitizer is the default leak gate; **D152** match/init RC.
 `containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
-Crema Phase **E** through **E5**; **E6** WebSockets parked. Session/shell
-deferred. **`having`/`else` parked indefinitely.**
+Crema Phase **E** through **E5**; **E6** WebSockets parked. Session compile
+cache shipped. **`having`/`else` parked indefinitely.**
 
 ---
 
 ## Now
 
-**No active language campaign.** **D155** resource `drop` shipped. D153
-simple-RC gate is done (`lsan-skip` empty; bounded ASan 2026-09-03).
-**Not Perceus** (still deferred megawork). Freezes:
+**No active language campaign.** Session step compile cache shipped (D105
+§3.5 / §11.1): decl-stable package reuse, re-lower only `Shell.step`, libtcc
+base object. Release REPL ~**6 ms**/line after the first (~100 ms) prelude
+build — not a second shell mode. **D155** resource `drop` shipped. D153
+simple-RC gate is done. **Not Perceus.** Editor only when DX forces it. Crema
+Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
+HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
+
+Freezes:
+[`docs/specs/2026-08-05-session-libtcc.md`](docs/specs/2026-08-05-session-libtcc.md)
+(compile cache);
 [`docs/specs/2026-09-03-resource-drop.md`](docs/specs/2026-09-03-resource-drop.md)
 (**D155**);
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Session / shell remains deferred.** Editor only when DX forces it. Crema
-Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
-HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
-
-**Shipped recently:** Interactive TTY REPL is an emacs line editor with Tab
-complete and history (**D156**). Interactive REPL starts with `§ ` (no banner).
+**Shipped recently:** Session step compile cache (D105 §3.5): no per-line
+scratch `.thx`; reuse prelude MIR; libtcc base `.o` + ~500-line step C.
+`cargo make shell` runs **release** `thoxa`. Interactive TTY REPL is an emacs
+line editor with Tab complete and history (**D156**). Interactive REPL starts
+with `§ ` (no banner).
 POSIX login-shell face: `thoxa -c '<chunk>'` and
 `thoxa -l` / `--login` (same REPL as bare `thoxa`); libtcc finds the
 process libc via `/proc/self/maps` so NixOS/Oath session steps work
@@ -56,8 +63,8 @@ lits; overwrite-drop; **D152** match/init RC.
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
 2. **Deferred: remaining session / shell residual** — redir polish,
-   Shell import-first, libtcc cache/license, etc. Line editor shipped (**D156**).
-   Freeze parked:
+   Shell import-first, libtcc process-RT / license. Line editor shipped
+   (**D156**). Compile cache + scratch `.thx` drop shipped. Freeze parked:
    [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
 3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, cycle
    collector. Multi-logger (`initLog`) is trajectory under D125, not a
@@ -77,7 +84,7 @@ Public sites are **`containers/landing`** (thoxa.dev) and
 
 - **`having` / `else` May sugar** (parked indefinitely — `match` is enough)
 - **Crema domain in `std/`** (pages/models/layout — example-only)
-- **Remaining session / shell residual** (redir polish, Shell import-first, libtcc cache/license — parked; line editor shipped **D156**)
+- **Remaining session / shell residual** (redir polish, Shell import-first, libtcc process-RT / license — parked; line editor **D156** and compile cache shipped)
 - Inventing shell dialect (`if`/`for`/full `$` forest)
 - Tree-walk product interpreter or QBE path (phase A)
 - Claiming full oracle SPEC coverage
@@ -101,7 +108,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Errors | `May` / `Trial` from `std/fallible` (import) + `?` / `match`; no May↔Trial mix via `?` |
 | Session product face | Bare `thoxa` / `thoxa repl`; no-`main` = session script |
 | Session value | `type Shell(status: Int64)` + methods; real Thoxa; `std/shell.thx` |
-| REPL step backend | **libtcc in-process only** (`TCC_OUTPUT_MEMORY`) → call `thoxa_session_step` (D105); no step `.so` |
+| REPL step backend | **libtcc in-process only** (`TCC_OUTPUT_MEMORY`) → call `thoxa_session_step` (D105); no step `.so`. Decl-stable cache: re-lower `Shell.step` + link cached base object. |
 | Batch / RT C | System **`cc`** (+ `ar` for runtime) unchanged |
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |

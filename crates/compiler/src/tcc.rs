@@ -12,6 +12,7 @@ use std::ptr;
 use std::sync::Mutex;
 
 const TCC_OUTPUT_MEMORY: c_int = 1;
+const TCC_OUTPUT_OBJ: c_int = 3;
 
 #[repr(C)]
 struct TCCState {
@@ -35,6 +36,7 @@ extern "C" {
     fn tcc_add_file(s: *mut TCCState, filename: *const c_char) -> c_int;
     fn tcc_relocate(s: *mut TCCState) -> c_int;
     fn tcc_get_symbol(s: *mut TCCState, name: *const c_char) -> *mut c_void;
+    fn tcc_output_file(s: *mut TCCState, filename: *const c_char) -> c_int;
 }
 
 /// Directory containing `libtcc1.a` (from `build.rs`).
@@ -137,6 +139,14 @@ impl Drop for State {
 
 impl State {
     fn new() -> Result<Self> {
+        Self::new_with_output(TCC_OUTPUT_MEMORY, "tcc_set_output_type(MEMORY) failed")
+    }
+
+    fn new_object() -> Result<Self> {
+        Self::new_with_output(TCC_OUTPUT_OBJ, "tcc_set_output_type(OBJ) failed")
+    }
+
+    fn new_with_output(output_type: c_int, output_err: &str) -> Result<Self> {
         let errors = Box::new(ErrorBuf {
             messages: Mutex::new(Vec::new()),
         });
@@ -149,9 +159,9 @@ impl State {
             tcc_set_error_func(ptr, opaque, Some(collect_error));
             let lib = path_c(&tccdir())?;
             tcc_set_lib_path(ptr, lib.as_ptr());
-            if tcc_set_output_type(ptr, TCC_OUTPUT_MEMORY) < 0 {
+            if tcc_set_output_type(ptr, output_type) < 0 {
                 tcc_delete(ptr);
-                return Err(Error::new("tcc_set_output_type(MEMORY) failed"));
+                return Err(Error::new(output_err));
             }
         }
         Ok(Self {
@@ -230,6 +240,16 @@ impl State {
         Ok(())
     }
 
+    /// Write an object / exe / dll (not used after [`relocate`](Self::relocate)).
+    fn output_file(&self, path: &Path) -> Result<()> {
+        let c = path_c(path)?;
+        let rc = unsafe { tcc_output_file(self.ptr, c.as_ptr()) };
+        if rc < 0 {
+            return Err(self.err_ctx(&format!("tcc_output_file {}", path.display())));
+        }
+        Ok(())
+    }
+
     /// Look up a global symbol. Pointer is valid while `self` lives.
     pub fn symbol(&self, name: &str) -> Result<*mut c_void> {
         let c = CString::new(name).map_err(|_| Error::new("symbol name contains NUL"))?;
@@ -255,9 +275,7 @@ pub struct CompileOptions<'a> {
     pub sources: Vec<&'a str>,
 }
 
-/// Compile C sources to an in-memory image. Keeps [`State`] so symbols stay valid.
-pub fn compile_memory(opts: CompileOptions<'_>) -> Result<State> {
-    let state = State::new()?;
+fn apply_compile_paths(state: &State, opts: &CompileOptions<'_>) -> Result<()> {
     for inc in &opts.include_paths {
         state.add_include_path(inc)?;
     }
@@ -272,6 +290,13 @@ pub fn compile_memory(opts: CompileOptions<'_>) -> Result<State> {
             state.add_library_path(&dir)?;
         }
     }
+    Ok(())
+}
+
+/// Compile C sources to an in-memory image. Keeps [`State`] so symbols stay valid.
+pub fn compile_memory(opts: CompileOptions<'_>) -> Result<State> {
+    let state = State::new()?;
+    apply_compile_paths(&state, &opts)?;
     for src in &opts.sources {
         state.compile_string(src)?;
     }
@@ -280,6 +305,20 @@ pub fn compile_memory(opts: CompileOptions<'_>) -> Result<State> {
     }
     state.relocate()?;
     Ok(state)
+}
+
+/// Compile C sources to a relocatable object file (session base cache).
+pub fn compile_object_file(opts: CompileOptions<'_>, dest: &Path) -> Result<()> {
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| Error::new(e.to_string()))?;
+    }
+    let state = State::new_object()?;
+    apply_compile_paths(&state, &opts)?;
+    for src in &opts.sources {
+        state.compile_string(src)?;
+    }
+    state.output_file(dest)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -298,6 +337,35 @@ mod tests {
         let f: unsafe extern "C" fn() -> i32 = unsafe { std::mem::transmute(p) };
         let v = unsafe { f() };
         assert_eq!(v, 42);
+    }
+
+    #[test]
+    fn object_then_memory_links() {
+        let dir = std::env::temp_dir().join(format!("thoxa_tcc_obj_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let obj = dir.join("base.o");
+        compile_object_file(
+            CompileOptions {
+                include_paths: vec![],
+                link_files: vec![],
+                sources: vec!["int thoxa_tcc_base_add(int a){return a+1;}\n"],
+            },
+            &obj,
+        )
+        .expect("object");
+        assert!(obj.is_file(), "object file written");
+        let state = compile_memory(CompileOptions {
+            include_paths: vec![],
+            link_files: vec![&obj],
+            sources: vec!["int thoxa_tcc_base_add(int); int thoxa_tcc_use(void){return thoxa_tcc_base_add(41);}\n"],
+        })
+        .expect("link object");
+        let p = state.symbol("thoxa_tcc_use").expect("symbol");
+        let f: unsafe extern "C" fn() -> i32 = unsafe { std::mem::transmute(p) };
+        let v = unsafe { f() };
+        assert_eq!(v, 42);
+        let _ = std::fs::remove_file(&obj);
+        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]

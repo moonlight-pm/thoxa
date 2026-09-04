@@ -149,13 +149,29 @@ pub fn load_package_with_entry_ast(entry: &Path, entry_ast: ast::Module) -> Resu
     }
     let project_root = package_root_for(&entry);
     let entry = canonicalize_soft(&entry)?;
+    load_package_from_entry_ast_inner(entry, project_root, entry_ast)
+}
 
+/// Load a package from an entry AST that may not exist on disk (REPL chunk).
+///
+/// `entry` is a virtual path used for module id, `./` / `~/` resolution, and
+/// diagnostics. Dependencies still load from disk.
+pub fn load_package_virtual(entry: &Path, entry_ast: ast::Module) -> Result<Package> {
+    let entry = canonicalize_soft(entry)?;
+    let project_root = package_root_for(&entry);
+    load_package_from_entry_ast_inner(entry, project_root, entry_ast)
+}
+
+fn load_package_from_entry_ast_inner(
+    entry: PathBuf,
+    project_root: PathBuf,
+    entry_ast: ast::Module,
+) -> Result<Package> {
     let mut by_path: HashMap<PathBuf, SourceModule> = HashMap::new();
     let mut order: Vec<PathBuf> = Vec::new();
     let mut visiting: HashSet<PathBuf> = HashSet::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
 
-    // Load deps first (from the buffer AST's imports).
     let dir = entry
         .parent()
         .ok_or_else(|| Error::new("entry file has no parent directory"))?;

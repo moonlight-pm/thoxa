@@ -19,3 +19,4 @@
 # Local SQLite for deployed sites
 /containers/landing/data/
 /containers/sola/data/
+/.worktrees/

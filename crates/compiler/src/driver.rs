@@ -680,13 +680,25 @@ static SESSION_CACHE_ID: AtomicU64 = AtomicU64::new(1);
 pub const REPL_KEEP_C_ENV: &str = "THOXA_REPL_KEEP_C";
 
 /// Cache for session REPL builds. Instance id keeps parallel tests from
-/// clobbering debug C dumps; `gen` names keep-C outputs.
+/// clobbering debug C dumps / base objects; `gen` names keep-C outputs.
+///
+/// When decls are unchanged, the prepared package and libtcc **base object**
+/// are reused; only `Shell.step` is re-lowered and recompiled (D105 §3.5).
 #[derive(Debug)]
 pub struct SessionBuildCache {
     /// Stable per-cache-instance id (file name prefix).
     id: u64,
     /// Monotonic counter for optional keep-C dumps.
     gen: u64,
+    /// Joined decl sources last used to build [`prepared`](Self::prepared).
+    decls_key: Option<String>,
+    /// Package after session prepare (Shell injected). Step body is replaced
+    /// per chunk; do not mutate this in place.
+    prepared: Option<loader::Package>,
+    /// MIR + maps from the last decls lower (re-lower `Shell.step` only).
+    mir: Option<mir::SessionMirCache>,
+    /// Relocatable object of `emit_session_base` for the current decls.
+    base_object: Option<PathBuf>,
 }
 
 impl Default for SessionBuildCache {
@@ -694,7 +706,32 @@ impl Default for SessionBuildCache {
         Self {
             id: SESSION_CACHE_ID.fetch_add(1, Ordering::Relaxed),
             gen: 0,
+            decls_key: None,
+            prepared: None,
+            mir: None,
+            base_object: None,
         }
+    }
+}
+
+impl Drop for SessionBuildCache {
+    fn drop(&mut self) {
+        if let Some(path) = self.base_object.take() {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn decls_cache_key(decls: &[String]) -> String {
+    decls.join("\n\u{1e}\n")
+}
+
+fn invalidate_session_base(cache: &mut SessionBuildCache) {
+    cache.decls_key = None;
+    cache.prepared = None;
+    cache.mir = None;
+    if let Some(path) = cache.base_object.take() {
+        let _ = fs::remove_file(path);
     }
 }
 
@@ -731,6 +768,9 @@ impl SessionStepLib {
 ///
 /// D105: libtcc in-memory — no compiler spawn, no step `.so`. Requires the
 /// vendored TinyCC build (`thoxa_libtcc`, Linux x86_64).
+///
+/// When `decls` match the last successful compile, the prepared package and
+/// base object are reused; only this chunk’s `Shell.step` is re-lowered.
 pub fn build_session_step(
     decls: &[String],
     chunk: &str,
@@ -738,14 +778,64 @@ pub fn build_session_step(
 ) -> Result<SessionStepLib> {
     ensure_runtime()?;
 
-    let dir = session_scratch_dir();
-    fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
+    let profile = std::env::var_os("THOXA_REPL_PROFILE").is_some();
+    let started = std::time::Instant::now();
+    let key = decls_cache_key(decls);
+    let program = if cache.decls_key.as_deref() == Some(key.as_str()) {
+        if let Some(prepared) = cache.prepared.clone() {
+            match crate::session::parse_session_chunk_stmts(chunk) {
+                Ok(stmts) => {
+                    let mut package = prepared;
+                    crate::session::replace_step_body(&mut package, stmts)?;
+                    if let Some(mir_cache) = &cache.mir {
+                        match mir::relower_session_step(mir_cache, &package) {
+                            Ok(program) => program,
+                            Err(_) => {
+                                if let Some(path) = cache.base_object.take() {
+                                    let _ = fs::remove_file(path);
+                                }
+                                lower_session_package_fresh(decls, chunk, cache)?
+                            }
+                        }
+                    } else {
+                        lower_session_package_fresh(decls, chunk, cache)?
+                    }
+                }
+                Err(_) => {
+                    // Chunk is not statement-only (path-hook leftovers, mixed
+                    // lets, …). Rebuild the package; keep going.
+                    invalidate_session_base(cache);
+                    lower_session_package_fresh(decls, chunk, cache)?
+                }
+            }
+        } else {
+            lower_session_package_fresh(decls, chunk, cache)?
+        }
+    } else {
+        invalidate_session_base(cache);
+        lower_session_package_fresh(decls, chunk, cache)?
+    };
 
-    // Full source for MIR (session prepare needs stmts + decls together).
+    if !program.functions.iter().any(|f| f.name == "Shell__step") {
+        return Err(Error::new(
+            "session step: lowered program has no Shell.step (internal)",
+        ));
+    }
+    if profile {
+        eprintln!("thoxa profile: frontend {:?}", started.elapsed());
+    }
+    let lib = build_session_step_libtcc(&program, cache)?;
+    if profile {
+        eprintln!("thoxa profile: total {:?}", started.elapsed());
+    }
+    Ok(lib)
+}
+
+fn concat_session_source(decls: &[String], chunk: &str) -> String {
     let mut src = String::new();
-    for d in decls {
-        src.push_str(d);
-        if !d.ends_with('\n') {
+    for decl in decls {
+        src.push_str(decl);
+        if !decl.ends_with('\n') {
             src.push('\n');
         }
     }
@@ -753,54 +843,98 @@ pub fn build_session_step(
     if !chunk.ends_with('\n') {
         src.push('\n');
     }
+    src
+}
 
-    let thx_path = dir.join(format!("chunk_{}.thx", cache.id));
-    fs::write(&thx_path, &src).map_err(|e| Error::new(e.to_string()))?;
-
-    let mut package = loader::load_package(&thx_path)?;
+fn lower_session_package_fresh(
+    decls: &[String],
+    chunk: &str,
+    cache: &mut SessionBuildCache,
+) -> Result<mir::Program> {
+    let src = concat_session_source(decls, chunk);
+    let ast = crate::session::parse_session_source(&src)?;
+    let entry = crate::session::virtual_repl_entry();
+    let mut package = loader::load_package_virtual(&entry, ast)?;
     crate::session::prepare_package(&mut package)?;
-    let program = mir::lower_package(&package)?;
-
-    if !program.functions.iter().any(|f| f.name == "Shell__step") {
-        return Err(Error::new(
-            "session step: lowered program has no Shell.step (internal)",
-        ));
-    }
-
-    build_session_step_libtcc(&program, cache, &dir)
+    let mir_cache = mir::lower_session_repl(&package)?;
+    let program = mir_cache.program.clone();
+    cache.decls_key = Some(decls_cache_key(decls));
+    cache.prepared = Some(package);
+    cache.mir = Some(mir_cache);
+    Ok(program)
 }
 
 #[cfg(thoxa_libtcc)]
 fn build_session_step_libtcc(
     program: &crate::mir::Program,
     cache: &mut SessionBuildCache,
-    dir: &Path,
 ) -> Result<SessionStepLib> {
-    let c_src = cgen::emit_session_combined(program);
+    let step_c = cgen::emit_session_step(program);
     cache.gen = cache.gen.wrapping_add(1);
 
+    let dir = session_scratch_dir();
     if keep_session_c() {
-        let c_path = dir.join(format!("session_combined_{}_{}.c", cache.id, cache.gen));
-        fs::write(&c_path, &c_src).map_err(|e| Error::new(e.to_string()))?;
+        fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
+        let step_path = dir.join(format!("session_step_{}_{}.c", cache.id, cache.gen));
+        fs::write(&step_path, &step_c).map_err(|e| Error::new(e.to_string()))?;
     }
 
     let include = runtime_include_dir();
     let rt = runtime_lib_path();
+    let base_obj = ensure_session_base_object(program, cache, &include)?;
+    let tcc_started = std::time::Instant::now();
     let tcc = crate::tcc::compile_memory(crate::tcc::CompileOptions {
         include_paths: vec![include.as_path()],
-        link_files: vec![rt.as_path()],
-        sources: vec![&c_src],
+        link_files: vec![base_obj.as_path(), rt.as_path()],
+        sources: vec![&step_c],
     })?;
+    if std::env::var_os("THOXA_REPL_PROFILE").is_some() {
+        eprintln!(
+            "thoxa profile: step-c {}B tcc {:?}",
+            step_c.len(),
+            tcc_started.elapsed()
+        );
+    }
     let sym = tcc.symbol("thoxa_session_step")?;
     let step: SessionStepFn = unsafe { std::mem::transmute(sym) };
     Ok(SessionStepLib { _tcc: tcc, step })
+}
+
+#[cfg(thoxa_libtcc)]
+fn ensure_session_base_object(
+    program: &crate::mir::Program,
+    cache: &mut SessionBuildCache,
+    include: &Path,
+) -> Result<PathBuf> {
+    if let Some(path) = &cache.base_object {
+        if path.is_file() {
+            return Ok(path.clone());
+        }
+    }
+    let base_c = cgen::emit_session_base(program);
+    let dir = session_scratch_dir();
+    fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
+    if keep_session_c() {
+        let base_path = dir.join(format!("session_base_{}_{}.c", cache.id, cache.gen));
+        fs::write(&base_path, &base_c).map_err(|e| Error::new(e.to_string()))?;
+    }
+    let obj = dir.join(format!("session_base_{}.o", cache.id));
+    crate::tcc::compile_object_file(
+        crate::tcc::CompileOptions {
+            include_paths: vec![include],
+            link_files: vec![],
+            sources: vec![&base_c],
+        },
+        &obj,
+    )?;
+    cache.base_object = Some(obj.clone());
+    Ok(obj)
 }
 
 #[cfg(not(thoxa_libtcc))]
 fn build_session_step_libtcc(
     _program: &crate::mir::Program,
     _cache: &mut SessionBuildCache,
-    _dir: &Path,
 ) -> Result<SessionStepLib> {
     Err(Error::new(
         "session steps require vendored libtcc (Linux x86_64 product track; D105)",

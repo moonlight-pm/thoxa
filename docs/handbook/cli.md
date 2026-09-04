@@ -63,7 +63,7 @@ cargo make run examples/http # Crema-lite HTTP example (port 9091; experiment)
 # kilo editor (real TTY; Ctrl-Q quit, 3× if dirty)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
 cargo run -p thoxa -- run examples/kilo   # empty buffer
-cargo make shell             # bare thoxa REPL
+cargo make shell             # bare thoxa REPL (release binary)
 cargo make shell --login     # clean login-like env
 cargo make emit-c path.thx
 cargo make runtime           # libthoxa_rt.a + compile_commands.json

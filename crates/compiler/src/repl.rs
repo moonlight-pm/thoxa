@@ -693,25 +693,19 @@ fn parse_path_hook_stdout(s: &str) -> Vec<String> {
 
 /// Session statements: call `path(…)` and println each component.
 ///
-/// Constraints (session top-level):
-/// - Module `let` has no type annotation — empty parent uses `sessionEmptyStrings()`.
-/// - Multi-line `for { … }` is desugared as a command (the `{` breaks lexing); keep the loop one line.
-/// - Avoid `let result = path(parent)` as a second global: Array-typed globals used as
-///   call args from another global init currently type as Void — call inside the `for`.
+/// Keep this chunk **statements only** (no top-level `let`) so a decl-stable
+/// session cache can splice it as `Shell.step`. Empty parent uses
+/// `sessionEmptyStrings()` (typed empty Array<String>). The `for` stays one
+/// line so `{` is not command-desugared.
 fn path_hook_chunk(parent: &[String]) -> String {
-    let mut src = String::new();
-    if parent.is_empty() {
-        // Prelude helper — typed empty Array<String> without module-level type ann.
-        src.push_str("let parent = sessionEmptyStrings()\n");
+    let call = if parent.is_empty() {
+        "path(sessionEmptyStrings())".to_string()
     } else {
-        src.push_str("let parent = ");
-        src.push_str(&thoxa_string_array_lit(parent));
-        src.push('\n');
-    }
-    src.push_str(
-        "logging.toStdout()\nlogging.setFormat(logging.formatPlain)\nfor p in path(parent) { logging.info(p) }\n",
-    );
-    src
+        format!("path({})", thoxa_string_array_lit(parent))
+    };
+    format!(
+        "logging.toStdout()\nlogging.setFormat(logging.formatPlain)\nfor p in {call} {{ logging.info(p) }}\n"
+    )
 }
 
 fn thoxa_string_array_lit(items: &[String]) -> String {
@@ -848,9 +842,11 @@ echo hi
         let mut loaded = None;
         driver::capture_toolchain_path();
 
-        // `/bin/false` — bare `false` is Thoxa Bool and stays non-command sugar.
-        let out =
-            run_chunk("/bin/false", &mut decls, 0, &mut cache, &mut loaded).expect("/bin/false");
+        // Absolute path — bare `false` is Thoxa Bool and stays non-command sugar.
+        let false_bin = host_bin("false");
+        let cat_bin = host_bin("cat");
+        let out = run_chunk(&false_bin, &mut decls, 0, &mut cache, &mut loaded)
+            .unwrap_or_else(|e| panic!("{false_bin}: {e}"));
         assert_eq!(out.status, 1);
 
         // showStatus keeps host-threaded status (compile path, not host println).
@@ -860,7 +856,7 @@ echo hi
 
         // Absolute paths: path_hook unit tests may clear process PATH in parallel.
         let pipe = run_chunk(
-            "echo pure-step-pipe | /bin/cat",
+            &format!("echo pure-step-pipe | {cat_bin}"),
             &mut decls,
             status_out.status,
             &mut cache,
@@ -868,6 +864,34 @@ echo hi
         )
         .expect("pipe");
         assert_eq!(pipe.status, 0);
+    }
+
+    #[test]
+    fn session_step_cache_reuses_prelude_across_echoes() {
+        let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        driver::capture_toolchain_path();
+        for i in 0..5 {
+            let line = format!("echo cache-{i}");
+            let out = run_chunk(&line, &mut decls, 0, &mut cache, &mut loaded)
+                .unwrap_or_else(|e| panic!("echo {i}: {e}"));
+            assert_eq!(out.status, 0, "echo {i}");
+            assert!(!out.decls_changed);
+        }
+        let decl = run_chunk("let cacheMarker = 1", &mut decls, 0, &mut cache, &mut loaded)
+            .expect("decl");
+        assert!(decl.decls_changed);
+        let after = run_chunk("echo after-decl", &mut decls, 0, &mut cache, &mut loaded)
+            .expect("echo after decl");
+        assert_eq!(after.status, 0);
+    }
+
+    #[test]
+    fn parse_echo_chunk_is_session_stmts() {
+        let stmts = crate::session::parse_session_chunk_stmts("echo hello")
+            .expect("parse echo");
+        assert!(!stmts.is_empty());
     }
 
     #[test]
@@ -1067,5 +1091,22 @@ fn path(parent: Array<String>) -> Array<String> {
     fn env_path_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
         LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// NixOS/Oath may not have `/bin/false`; still need an absolute path so
+    /// bare `false` is not parsed as a Thoxa Bool.
+    fn host_bin(name: &str) -> String {
+        for dir in [
+            "/bin",
+            "/usr/bin",
+            "/run/current-system/sw/bin",
+            "/oath/store/pkg/coreutils/bin",
+        ] {
+            let path = std::path::Path::new(dir).join(name);
+            if path.is_file() {
+                return path.to_string_lossy().into_owned();
+            }
+        }
+        panic!("test helper: {name} not found on host");
     }
 }

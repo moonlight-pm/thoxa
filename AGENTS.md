@@ -67,7 +67,7 @@ diaries. Authority order and rules:
 cargo make test              # conformance + LeakSanitizer (preferred day-to-day gate)
 cargo make test-asan         # optional ASan on non-fiber conformance (not default)
 cargo make run path.thx
-cargo make shell             # product session REPL (bare thoxa)
+cargo make shell             # product session REPL (release thoxa)
 cargo make shell --login     # clean login-like env
 cargo make emit-c path.thx
 cargo make runtime           # libthoxa_rt.a + compile_commands.json

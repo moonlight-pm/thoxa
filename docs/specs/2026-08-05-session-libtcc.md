@@ -4,8 +4,10 @@
 **Status:** shipped  
 **Implementation:** PR0–PR3 landed; **libtcc only** for session steps (no
 `cc`+dlopen escape)  
-**Gaps:** none for this freeze’s product path. Later polish (not CURRENT):
-base-object cache, license packaging — §11  
+**Gaps:** none for this freeze’s product path (no per-step `.c` / `.so`).
+Decl-stable compile cache shipped (§3.5 / §11.1): re-lower `Shell.step`,
+libtcc base object, no scratch `.thx`. Later polish (not CURRENT):
+process-linked `thoxa_rt`, license packaging — §11
 
 **As-built:** [`../capabilities.md`](../capabilities.md) ·
 [`../architecture.md`](../architecture.md) · parent session freeze
@@ -67,6 +69,8 @@ Optional system-`tcc` CLI on PATH is **not** the product design.
 | Session scripts | shipped | Splice + synthetic `main` + system `cc` (D94) |
 | REPL pure step | shipped | All commands via step path (D103) |
 | Step C backend | shipped | libtcc memory only (D105); no `cc`+dlopen |
+| Decl-stable cache | shipped | Reuse prepared package + MIR maps; re-lower only `Shell.step`; cache base `.o` |
+| Scratch `.thx` | shipped (removed) | Virtual `repl.thx` path via `load_package_virtual` |
 | `std/Shell.thx` | shipped | D104 |
 | Pipes / redirs | shipped | D101 / D102 |
 
@@ -108,6 +112,12 @@ chunk
 - Emitting `session_step_*.so` for each chunk  
 - `dlopen` of step libraries  
 
+**As-built leftover (not a second backend):** generated C stays a string.
+libtcc still `add_file`s on-disk `libthoxa_rt.a` (product runtime, not a
+per-line write). One cached `session_base_{id}.o` lives under
+`$XDG_CACHE_HOME/thoxa/repl/` for the REPL process (removed when the cache
+drops). No per-chunk `.thx`. Process-linked RT is §11.4.
+
 **Allowed during debug:**
 
 - Write `.c` under `target/thoxa/repl/` when `THOXA_REPL_KEEP_C=1`
@@ -140,15 +150,16 @@ Also provision **libtcc1** (TinyCC helper objects) per upstream requirements.
 **Must keep** the existing idea: stable decls should not redo full frontend work
 unnecessarily.
 
-| Layer | Target |
-|-------|--------|
-| Decls key | Unchanged (`SessionBuildCache`) |
-| Base C | Re-cgen only when decls change |
-| Base feed to libtcc | Recompile combined base+step each chunk (shipped) |
-| Step C | Always re-cgen for the chunk |
+| Layer | Target | Status |
+|-------|--------|--------|
+| Decls key | `SessionBuildCache` | **shipped** |
+| Frontend | Reuse prepared package; re-lower only `Shell.step` | **shipped** |
+| Base C / object | Re-cgen + libtcc `TCC_OUTPUT_OBJ` only when decls change | **shipped** |
+| Step C | Always re-cgen `emit_session_step`; libtcc memory + `add_file` base `.o` | **shipped** |
 
-Combined recompile is **shipped and sufficient**. Caching a separate base
-object is **later polish** only (§11) — not an open implementation task.
+Combined recompile is no longer the hot path. First chunk still pays a full
+prelude lower + base object (~100 ms release). Later chunks: ~1 ms frontend +
+~5 ms libtcc of ~16 KB step C (~**6 ms**/line, 2026-09-04).
 
 ### 3.6 Multiple live images
 
@@ -271,6 +282,20 @@ vs the removed `cc`+dlopen path (escape hatch deleted after PR3).
 
 **Roughly 7–9× faster** than former `cc`+dlopen. Not a CI gate.
 
+### 8.2 Soft perf (2026-09-04, compile cache)
+
+Release `thoxa`, piped REPL, same host class as §8.1. After the decl-stable
+cache (re-lower `Shell.step` + cached base object):
+
+| Workload | ≈ total | ≈ per step (after first) |
+|----------|--------:|-------------------------:|
+| 1× `echo hi` (cold prelude) | 110 ms | **110 ms** (full lower + base `.o`) |
+| later `echo` | 6 ms | **~6 ms** (1 ms frontend + 5 ms libtcc) |
+| 20× `echo` | 230 ms | **~6–12 ms** incl. first |
+| 50× `echo` | 410 ms | **~6–8 ms** incl. first |
+
+Before the cache, every line was ~100 ms / ~12k C. Not a CI gate.
+
 ---
 
 ## 9. Relationship to other docs
@@ -288,10 +313,12 @@ vs the removed `cc`+dlopen path (escape hatch deleted after PR3).
 ## 10. Agent handoff
 
 - **Shipped:** PR0–PR3 — libtcc-only session steps; no `THOXA_REPL_BACKEND`.  
-- **Do not** put base-object cache or license packaging on the CURRENT proceed
-  queue — see §11.  
+  Decl-stable compile cache + virtual entry (no scratch `.thx`) + base object.  
+- **Do not** put remaining §11 polish (process-linked RT, license packaging)
+  on the CURRENT proceed queue unless CURRENT explicitly unparks it.  
 - Do not re-litigate A1–A3 or reopen QBE / interpreter.  
-- Do not invent shell dialect.
+- Do not invent shell dialect or a second execution mode.  
+- Do not restore host command fast paths (D103).
 
 ---
 
@@ -299,24 +326,51 @@ vs the removed `cc`+dlopen path (escape hatch deleted after PR3).
 
 These are **documented so they are not forgotten**, and so agents do **not**
 treat them as “next slice.” Promote only if CURRENT explicitly says so (e.g.
-after profiling or packaging work).
+after profiling, packaging, or unparking session residual).
 
-### 11.1 Base-object cache (performance)
+### 11.1 Base-object cache (performance) — **shipped 2026-09-04**
 
-**What:** When decls are stable, compile the Shell/prelude “base” once and only
-recompile each chunk’s `Shell.step` body, linking against the cached base
-(memory and/or a libtcc-addable object). The former `cc` path had
-`session_base_*.o`; libtcc currently rebuilds **combined** C every chunk.
+When decls are stable: reuse the prepared package and MIR maps; re-lower only
+`Shell.step`; `emit_session_base` once to a libtcc object; each chunk
+`emit_session_step` (~16 KB) + `tcc_add_file` of that object. First line still
+pays the full prelude (~100 ms release). Later lines ~**6 ms**. See §8.2.
 
-**Why later:** Combined libtcc is already ~7–9× faster than old `cc`+dlopen on
-tight loops (§8.1). Frontend + cgen still dominate many lines. Extra complexity
-(invalidation on decl change, object lifetime, two-part compile) is not justified
-by default.
-
-**When to consider:** Profiling shows large stable decls + many steps still
-bottlenecked on recompiling unchanged base C.
+`THOXA_REPL_PROFILE` prints frontend / libtcc timings on stderr (debug aid,
+not a product flag).
 
 ### 11.2 TinyCC license packaging notice
 
 Third-party / LGPL notice cleanup for vendored TinyCC (D105.d / axiom A2).
 Packaging work only — does not change session behavior.
+
+### 11.3 Drop session scratch `.thx` (small) — **shipped 2026-09-04**
+
+Entry is a virtual `cwd/repl.thx` via `load_package_virtual` (file need not
+exist). No per-chunk `.thx`. Keep-C still writes `session_base_*.c` /
+`session_step_*.c` when `THOXA_REPL_KEEP_C=1`. One process-lifetime base
+`.o` under `$XDG_CACHE_HOME/thoxa/repl/` (deleted when the cache drops).
+
+**Not this slice:** batch `thoxa run` / session **scripts** still emit C and
+link with system `cc` (D105.a, locked). Tree-walk interpreter stays parked.
+
+### 11.4 Resolve `thoxa_rt` from the host process (medium)
+
+**As-built:** libtcc `add_file`s on-disk `libthoxa_rt.a` each step. That archive
+is the product runtime, not a per-line artifact.
+
+**What:** Preferred order in §3.4 item 2 — link `libthoxa_rt` into the `thoxa`
+host and resolve against the process (then selective `tcc_add_symbol` for
+stragglers). Stop requiring the archive file at session-step time.
+
+**Why later:** Execution already works; this is packaging / install simplicity,
+not latency. Scratch `.thx` is already gone (§11.3); this remaining read is
+the product runtime archive, not a per-line write.
+
+### 11.5 Embed product files (large — packaging, not execution)
+
+After §11.3–11.4, session would still **read** installed `std/*.thx`,
+`thoxa_rt.h`, and libtcc helpers. Shell / Fallible already have `include_str`
+fallbacks. Embedding all of `std/` (and headers) is a relocated-install /
+packaging campaign, not the execution backend.
+
+Do **not** start this to “finish” leftover-file work.

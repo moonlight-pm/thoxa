@@ -3,7 +3,7 @@
 **Date:** 2026-07-24  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first). Line editor shipped (**D156**).  
+**Gaps:** no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first). Line editor shipped (**D156**). Compile cache + scratch `.thx` drop shipped (libtcc freeze §3.5 / §11.1).
 
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)  
 **Step backend:** [`2026-08-05-session-libtcc.md`](2026-08-05-session-libtcc.md) (D105, shipped libtcc-only)
@@ -11,8 +11,9 @@
 > **For agentic workers:** Implement **one PR at a time**. Gate: `cargo test -p thoxa` + `cargo make test`. Update `CURRENT.md` + `docs/capabilities.md` + `docs/decisions.md` (+ handbook when user-visible) when a PR finishes. Do **not** invent a second shell language.
 
 **Shipped core:** PR0–PR8 + D93 v2; `prompt()` / `path()`; pipelines (D101); redirs (D102); pure-step (D103); `std/Shell.thx` (D104); libtcc steps (D105). Decisions D88–D105.  
-**Open polish:** residual redir/import polish. Libtcc base-object cache is
-**later polish** only (libtcc freeze §11), not the CURRENT queue.  
+**Open polish:** residual redir/import polish. Process-linked RT and license
+packaging are **later polish** only (libtcc freeze §11), not the CURRENT queue.
+Compile cache shipped.
 
 **Baseline:** Native ladder + session scripts + command sugar + bare `thoxa` REPL.
 
@@ -407,10 +408,11 @@ No `Shell` wrap. No command sugar unless we later opt in (default **off** for pr
 
 ## 9. Agent handoff notes
 
-- **Core shipped** (PR0–PR8 + D93 v2 + D101–D105 libtcc). **Session residual
-  polish is parked** — resume only when root `CURRENT.md` says so. Default
-  product focus is language (see CURRENT). `std/` grows only from sample-driven
-  candidates — not a queue item.
+- **Core shipped** (PR0–PR8 + D93 v2 + D101–D105 libtcc + compile cache).
+  **Session residual polish is parked** — resume only when root `CURRENT.md`
+  says so (redir / import-first here; process-RT / license on libtcc freeze
+  §11). Default product focus is language (see CURRENT). `std/` grows
+  only from sample-driven candidates — not a queue item.
 - Do not add shell `if`/`for`.
 - Prefer small diffs; update CURRENT + capabilities + decisions after each PR.
 - Oracle Python shell (if any) is reference-only — native design above wins.

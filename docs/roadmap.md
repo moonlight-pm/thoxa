@@ -82,10 +82,11 @@ Freezes:
   **Sqlite** (**D143**), and **`sql"…"`** (**D144**).
 
 **Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first.
-Line editor shipped (**D156**). Resume remaining residual only when CURRENT says so.
+Line editor shipped (**D156**). Compile cache + scratch `.thx` drop shipped.
+Resume remaining residual only when CURRENT says so.
 
-**Later polish (not active):** libtcc base-object cache; TinyCC license packaging
-notice — libtcc freeze §11.
+**Later polish (not active):** resolve `thoxa_rt` from the host process;
+TinyCC license packaging notice; embed `std/` / headers — libtcc freeze §11.
 
 Freezes:
 
