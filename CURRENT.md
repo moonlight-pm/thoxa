@@ -4,7 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-09-03. **D155** resource `drop()` on last RC (`File` / `Socket` /
+**As of:** 2026-09-04. Interactive REPL: no startup banner; default prompt
+`§ ` (D96). **D155** resource `drop()` on last RC (`File` / `Socket` /
 `Db`). **D153** simple-RC **gate is done** (empty `lsan-skip` +
 documented ASan). Alloc size wrap panics; `Socket.close` clears `fd`.
 **Not Perceus.** Overwrite-drop, nested `Array`/`Map`
@@ -31,7 +32,8 @@ simple-RC gate is done (`lsan-skip` empty; bounded ASan 2026-09-03).
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
 HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
 
-**Shipped recently:** POSIX login-shell face: `thoxa -c '<chunk>'` and
+**Shipped recently:** Interactive REPL starts with `§ ` (no banner).
+POSIX login-shell face: `thoxa -c '<chunk>'` and
 `thoxa -l` / `--login` (same REPL as bare `thoxa`); libtcc finds the
 process libc via `/proc/self/maps` so NixOS/Oath session steps work
 without `/usr/lib/libc.so`. **D155** `fn drop()` last-RC boxes (`file_drop`; File /

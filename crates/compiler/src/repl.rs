@@ -72,8 +72,6 @@ pub fn run_repl() -> Result<i32> {
     driver::capture_toolchain_path();
 
     if interactive {
-        println!("thoxa session — Thoxa is the language; commands desugar to Shell");
-        println!("type help, or exit / Ctrl-D to quit");
         match load_shell_rc(&mut decls, &mut step_cache, &mut loaded) {
             Ok(st) => status = st,
             Err(e) => {
@@ -399,7 +397,7 @@ fn is_effectively_empty_form(form: &str) -> bool {
 
 // ── prompt() ──────────────────────────────────────────────────────────────
 
-const DEFAULT_PROMPT: &str = "$ ";
+const DEFAULT_PROMPT: &str = "§ ";
 
 #[derive(Default)]
 struct PromptState {
@@ -726,6 +724,11 @@ fn is_decl_chunk(trimmed: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_prompt_is_section_sign() {
+        assert_eq!(DEFAULT_PROMPT, "§ ");
+    }
 
     #[test]
     fn split_forms_function_and_stmt() {

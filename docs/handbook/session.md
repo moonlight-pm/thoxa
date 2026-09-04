@@ -64,7 +64,7 @@ programming is Thoxa.
 - Top-level statements run as this chunk’s `step` body.
 - Failed compiles print diagnostics and keep prior session state (status ≠ 0).
 - Continuation prompt `> ` for unfinished blocks; primary prompt defaults to
-  `$ ` unless customized.
+  `§ ` unless customized. No startup banner.
 - Executable lines (including `cd`, `status`, `|`, redirections) run as compiled
   session steps (in-process libtcc) — no separate host command shortcuts.
 
@@ -85,7 +85,7 @@ Optional in rc / accumulated decls:
 
 ```thx
 fn prompt() -> String {
-    "$ "
+    "§ "
 }
 ```
 
