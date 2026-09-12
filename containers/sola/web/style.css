@@ -316,14 +316,32 @@ h1 {
     text-align: center;
 }
 
-.apps {
+.app-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 8px;
+    max-width: 920px;
     margin: 0;
-    max-width: 760px;
+    padding: 0;
+    list-style: none;
     font-family: var(--mono);
     font-size: 15px;
     letter-spacing: 0.02em;
-    line-height: 26px;
+    line-height: 24px;
     color: var(--body);
+}
+
+.app-list li {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.app-list li:not(:last-child)::after {
+    content: "·";
+    margin: 0 0.55em;
+    color: var(--quiet);
 }
 
 .note {
@@ -454,7 +472,8 @@ footer {
         padding: 56px var(--pad-x);
     }
 
-    .apps {
+    .app-list {
+        justify-content: flex-start;
         max-width: none;
     }
 

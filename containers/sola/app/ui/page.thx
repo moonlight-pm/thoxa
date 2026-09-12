@@ -11,7 +11,7 @@ export type Page(title: String, request: Request) {
                 <title>{title}</title>
                 <meta
                     name="description"
-                    content="Sola is a Wayland desktop for Linux workstations that also have to be gaming machines. Pure Rust. ISO in progress."
+                    content="Sola is a mac-like Wayland desktop for Linux. Pure Rust. Omarchy plugins coming. ISO in progress."
                 />
                 <link rel="icon" href="/flower.svg" type="image/svg+xml" />
                 <link rel="preconnect" href="https://fonts.googleapis.com" />

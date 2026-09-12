@@ -78,7 +78,7 @@ fn hero(request!: Request) -> Node {
         </p>
         <div class="headline">
             <h1>Sola Desktop</h1>
-            <p class="lede">For Linux workstations that also have to be gaming machines.</p>
+            <p class="lede">A mac-like desktop for Linux. First-class Omarchy plugin support is coming.</p>
         </div>
         <p class="pill">ISO in progress · not yet released</p>
         {flash(request)}
@@ -103,8 +103,12 @@ type Spec(label: String, body: String)
 fn specItems() -> Array<Spec> {
     [
         Spec(
-            label: "Steam",
-            body: "First-class support, through XWayland and River"
+            label: "Desktop",
+            body: "Menubar, launcher, switcher — mac-like session chrome"
+        ),
+        Spec(
+            label: "Plugins",
+            body: "Omarchy plugins — first-class support, coming"
         ),
         Spec(
             label: "Theming",
@@ -116,7 +120,7 @@ fn specItems() -> Array<Spec> {
         ),
         Spec(
             label: "Control",
-            body: "Agent-drivable end to end through solactl"
+            body: "The desk is operable end to end through solactl"
         ),
     ]
 }
@@ -136,10 +140,32 @@ fn highlights() -> Node {
     </section>
 }
 
+fn sessionApps() -> Array<String> {
+    [
+        "Shell",
+        "Terminal",
+        "Browser",
+        "Mail",
+        "Calendar",
+        "Workspaces",
+        "Settings",
+        "Spotify",
+        "Paint",
+        "Preview",
+        "Arcade",
+        "Monitor",
+        "Scope",
+        "KVM",
+        "Wrappers",
+    ]
+}
+
 fn roster() -> Node {
     <section class="roster">
         <p class="eyebrow">In the session</p>
-        <p class="apps">Shell · Terminal · Browser · Agent · Mail · Steam</p>
+        <ul class="app-list">
+            {for name in sessionApps() { <li>{name}</li> }}
+        </ul>
         <p class="note">The shell is stable in daily use. First-party apps are early and incomplete.</p>
     </section>
 }
