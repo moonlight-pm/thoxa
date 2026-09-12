@@ -78,7 +78,7 @@ fn hero(request!: Request) -> Node {
         </p>
         <div class="headline">
             <h1>Sola Desktop</h1>
-            <p class="lede">A mac-like desktop for Linux. First-class Omarchy plugin support is coming.</p>
+            <p class="lede">Tiling Wayland with a suite of custom productivity apps</p>
         </div>
         <p class="pill">ISO in progress · not yet released</p>
         {flash(request)}
@@ -140,32 +140,32 @@ fn highlights() -> Node {
     </section>
 }
 
-fn sessionApps() -> Array<String> {
+fn appItems() -> Array<Spec> {
     [
-        "Shell",
-        "Terminal",
-        "Browser",
-        "Mail",
-        "Calendar",
-        "Workspaces",
-        "Settings",
-        "Spotify",
-        "Paint",
-        "Preview",
-        "Arcade",
-        "Monitor",
-        "Scope",
-        "KVM",
-        "Wrappers",
+        Spec(label: "Shell", body: "Menubar, launcher, and window switcher."),
+        Spec(label: "Terminal", body: "Kit terminal with an Alacritty grid."),
+        Spec(label: "Browser", body: "Iced chrome over a CEF engine."),
+        Spec(label: "Mail", body: "Kit-native mail. IMAP, send, attachments."),
+        Spec(label: "Calendar", body: "Month, week, and day. Local, Google, iCloud."),
+        Spec(label: "Workspaces", body: "Project rail and agent terminals."),
+        Spec(label: "Settings", body: "Theme, accounts, and system prefs."),
+        Spec(label: "Spotify", body: "Kit-native Spotify client."),
+        Spec(label: "Paint", body: "Default image viewer and editor."),
+        Spec(label: "Preview", body: "Screenshots and quick image open."),
+        Spec(label: "Arcade", body: "Windowed game library."),
+        Spec(label: "Monitor", body: "Bus and call inspector."),
+        Spec(label: "Scope", body: "Pixel loupe under the pointer."),
+        Spec(label: "KVM", body: "Share keyboard, video, and mouse."),
+        Spec(label: "Wrappers", body: "Websites as first-class apps."),
     ]
 }
 
 fn roster() -> Node {
     <section class="roster">
-        <p class="eyebrow">In the session</p>
-        <ul class="app-list">
-            {for name in sessionApps() { <li>{name}</li> }}
-        </ul>
+        <p class="eyebrow">Custom applications</p>
+        <div class="spec-list app-dict">
+            {for item in appItems() { specRow(item) }}
+        </div>
         <p class="note">The shell is stable in daily use. First-party apps are early and incomplete.</p>
     </section>
 }
