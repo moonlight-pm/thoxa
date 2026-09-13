@@ -1,0 +1,42 @@
+## HTML shell for oath.wicket.cloud.
+
+import http, { Request } from "std/http"
+
+export type Page(title: String, request: Request) {
+    export fn view(children: Array<Node>) -> Node {
+        <html lang="en">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>{title}</title>
+                <meta
+                    name="description"
+                    content="oath is an operating system for one person. One catalog, one command, undoable."
+                />
+                <meta name="theme-color" content="#070707" />
+                <link rel="icon" href="/static/favicon.png" type="image/png" />
+                <link rel="preload" href="/static/LibreFranklin-400.woff2" as="font" type="font/woff2" crossorigin />
+                <link rel="preload" href="/static/LibreFranklin-800.woff2" as="font" type="font/woff2" crossorigin />
+                <link rel="stylesheet" href="/style.css" />
+            </head>
+            <body>
+                <div class="wrap">
+                    <header>
+                        <a class="brand" href="/">
+                            <img src="/static/logo-white.png" width="34" height="34" alt="oath" />
+                        </a>
+                        <nav aria-label="Primary">
+                            <a href="/map">Map</a>
+                            <a href="https://github.com/moonlight-pm/oath">GitHub</a>
+                        </nav>
+                    </header>
+                    {children}
+                    <footer>
+                        <span>Independence. Simplicity. Openness. Courage.</span>
+                        <a href="https://github.com/moonlight-pm/oath">Source</a>
+                    </footer>
+                </div>
+            </body>
+        </html>
+    }
+}

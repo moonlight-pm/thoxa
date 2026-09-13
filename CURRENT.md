@@ -13,7 +13,8 @@ documented ASan). Alloc size wrap panics; `Socket.close` clears `fd`.
 `HEAP_ELEMS`, heap params owned (**D154**), early-return final `drop_places`,
 if/match result overwrite-drop. Language harvest **D147–D150** shipped.
 **D151** LeakSanitizer is the default leak gate; **D152** match/init RC.
-`containers/landing` = thoxa.dev; `containers/sola` = sola.computer.
+`containers/landing` = thoxa.dev; `containers/sola` = sola.computer;
+`containers/oath` = oath.wicket.cloud.
 Crema Phase **E** through **E5**; **E6** WebSockets parked. Session compile
 cache shipped. **`having`/`else` parked indefinitely.**
 
@@ -79,8 +80,9 @@ lits; overwrite-drop; **D152** match/init RC.
 conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
 delete its line). Further **`std/` growth is sample-driven** (D97/D136).
 Crema **domain** (pages, models, cookies policy) stays in `examples/http/`.
-Public sites are **`containers/landing`** (thoxa.dev) and
-**`containers/sola`** (sola.computer) — not `examples/`, not `extras/`.
+Public sites are **`containers/landing`** (thoxa.dev),
+**`containers/sola`** (sola.computer), and **`containers/oath`**
+(oath.wicket.cloud) — not `examples/`, not `extras/`.
 
 **Explicit holds:**
 

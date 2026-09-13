@@ -14,7 +14,8 @@ change. See [`progress-model.md`](progress-model.md).
 **As of:** 2026-09-04 (session compile cache shipped; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer conformance gate; **D150** route clauses **shipped**; **D149** `where` / `Type.read` **shipped**;
 **D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
 `containers/landing` thoxa.dev live;
-`containers/sola` sola.computer teaser live; static JPEG/font MIME;
+`containers/sola` sola.computer teaser live;
+`containers/oath` oath.wicket.cloud landing live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 Crema **E4–E5**; **D145** `htmlFragment` / `cached`;
 Crema **E2** fragment GETs;

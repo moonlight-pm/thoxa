@@ -6,7 +6,8 @@ Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
 **As of:** 2026-09-04 (session compile cache: re-lower `Shell.step` + libtcc base `.o`; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
-`containers/landing` thoxa.dev live; `containers/sola` sola.computer live; static JPEG/font MIME;
+`containers/landing` thoxa.dev live; `containers/sola` sola.computer live;
+`containers/oath` oath.wicket.cloud live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 **D145** `htmlFragment` / `cached`;
 **D144** `sql"…"`;

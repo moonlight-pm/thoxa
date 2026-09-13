@@ -1,0 +1,189 @@
+## GET / and POST /signup.
+
+import { Page } from "~/app/ui/page"
+import store, { Added, Duplicate, BadEmail } from "~/app/store"
+import http, { Request, Response } from "std/http"
+import { Has, Not, Pass, Fail } from "std/fallible"
+import { warn } from "std/logging"
+
+export fn page(request!: Request) -> Response {
+    http.htmlResponse(
+        <Page title="oath" request={request}>
+            {hero(request)}
+            {intent()}
+            {logic()}
+        </Page>
+    )
+}
+
+export fn mapPage(request!: Request) -> Response {
+    http.htmlResponse(
+        <Page title="map · oath" request={request}>
+            <section class="hero">
+                <h1>map</h1>
+                <p class="lede">Interactive as-built overview of the running system.</p>
+                <p class="map-link">
+                    <a href="https://github.com/moonlight-pm/oath/blob/master/docs/architecture.html">Open the as-built map</a>
+                </p>
+            </section>
+        </Page>
+    )
+}
+
+export fn missing(request!: Request) -> Response {
+    http.htmlResponseStatus(
+        404,
+        "Not Found",
+        <Page title="Not found · oath" request={request}>
+            <section class="panel">
+                <h1>No such page</h1>
+                <p class="lede">That path is not on this site.</p>
+                <p><a class="btn" href="/">Back to oath</a></p>
+            </section>
+        </Page>
+    )
+}
+
+export fn signup(request!: Request) -> Response {
+    match http.formField(request.body, "email") {
+        Not {
+            http.seeOther("/?error=missing#news")
+        }
+        Has(raw) {
+            match store.addEmail(raw) {
+                Fail(error) {
+                    warn("signup store: {error}")
+                    http.htmlResponseStatus(
+                        500,
+                        "Internal Server Error",
+                        <Page title="Could not save · oath" request={request}>
+                            <section class="panel">
+                                <h1>Could not save that</h1>
+                                <p class="lede">The store did not take the address. Try again in a moment.</p>
+                                <p><a class="btn" href="/#news">Back to the form</a></p>
+                            </section>
+                        </Page>
+                    )
+                }
+                Pass(outcome) {
+                    match outcome {
+                        Added {
+                            http.seeOther("/?ok=1#news")
+                        }
+                        Duplicate {
+                            http.seeOther("/?ok=dup#news")
+                        }
+                        BadEmail {
+                            http.seeOther("/?error=invalid#news")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn hero(request!: Request) -> Node {
+    <section class="hero" id="news">
+        <h1>oath</h1>
+        <p class="lede">An operating system for one person.</p>
+        {flash(request)}
+        <form class="signup" method="post" action="/signup">
+            <label for="email">Email</label>
+            <div class="signup-row">
+                <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autocomplete="email"
+                    placeholder="you@example.com"
+                    required
+                />
+                <button type="submit" class="btn">Sign up</button>
+            </div>
+        </form>
+        <p class="micro">One email when there is news. Nothing else.</p>
+    </section>
+}
+
+fn intent() -> Node {
+    <section class="section" aria-labelledby="intent-heading">
+        <h2 id="intent-heading">Intent</h2>
+        <div class="facts">
+            <article class="fact">
+                <h3>Clean</h3>
+                <p>
+                    Own PID 1. Own userspace. The live system is typed objects
+                    at <code>/oath</code>, not a remix of Debian, Arch, or NixOS.
+                </p>
+            </article>
+            <article class="fact">
+                <h3>Simple</h3>
+                <p>
+                    One command. Humans and agents change the machine the same
+                    way: <code>oath</code>. Unix is the substrate, not the admin
+                    interface.
+                </p>
+            </article>
+            <article class="fact">
+                <h3>Single user</h3>
+                <p>
+                    The seat is <code>home</code>. One person, one machine.
+                    No multi-user maze.
+                </p>
+            </article>
+        </div>
+    </section>
+}
+
+fn logic() -> Node {
+    <section class="section" aria-labelledby="logic-heading">
+        <h2 id="logic-heading">Logic</h2>
+        <ol class="steps">
+            <li>Read <code>/oath/INDEX.md</code></li>
+            <li><code>oath ls · oath get · oath set</code></li>
+            <li><code>oath apply</code>{" snapshots, then PID 1 converges"}</li>
+            <li><code>oath undo</code>{" restores the previous generation"}</li>
+        </ol>
+        <p class="close">
+            If that loop works, this is the OS. A package archive without it is not.
+        </p>
+        <p class="map-link">
+            <a href="/map">As-built map</a>
+        </p>
+    </section>
+}
+
+fn flash(request!: Request) -> Node {
+    match http.queryParam(request, "ok") {
+        Has(code) {
+            if code == "1" {
+                <p class="flash ok" role="status">You are on the list. We will write when there is news.</p>
+            } else {
+                if code == "dup" {
+                    <p class="flash ok" role="status">That address is already on the list.</p>
+                } else {
+                    <></>
+                }
+            }
+        }
+        Not {
+            match http.queryParam(request, "error") {
+                Has(code) {
+                    if code == "missing" {
+                        <p class="flash bad" role="alert">Enter an email address.</p>
+                    } else {
+                        if code == "invalid" {
+                            <p class="flash bad" role="alert">That does not look like an email address.</p>
+                        } else {
+                            <></>
+                        }
+                    }
+                }
+                Not {
+                    <></>
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,25 @@
+# oath.wicket.cloud landing.
+# Apply: wicketctl workload apply aulos --file containers/oath/workload.toml --confirm
+#
+# Stable ids: keep the existing public workload; news DB is new.
+
+schema = "wicket.workload/v0"
+
+[workload]
+id = "wl-b6703b0fa806"
+name = "oath"
+
+[[containers]]
+name = "web"
+image = "registry.wicket.cloud/oath-landing:latest"
+ports = [{ name = "http" }]
+
+[[routes]]
+host = "oath.wicket.cloud"
+container = "web"
+port = "http"
+
+[[databases]]
+id = "db-6d8fbcbdc05a"
+name = "news"
+container = "web"

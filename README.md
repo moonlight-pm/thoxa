@@ -36,6 +36,9 @@ cargo make run containers/landing
 # sola.computer teaser (ISO notify; Ctrl-C to stop; port 8089)
 cargo make run containers/sola
 
+# oath.wicket.cloud (news sign-up; Ctrl-C to stop; port 8090)
+cargo make run containers/oath
+
 # Example: kilo editor (needs a real TTY; Ctrl-Q to quit)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
 
