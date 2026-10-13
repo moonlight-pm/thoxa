@@ -201,7 +201,7 @@ h1, h2, h3 {
 
 h1 {
     font-size: clamp(2.4rem, 5vw, 4.2rem);
-    max-width: 18ch;
+    max-width: 20ch;
     text-wrap: balance;
 }
 

@@ -78,14 +78,14 @@ fn hero() -> Node {
             <ul class="chips" aria-label="Status">
                 <li>Pre-alpha</li>
                 <li>Linux</li>
-                <li>Compile-to-C</li>
+                <li>Native</li>
             </ul>
-            <h1>A native language that compiles to C</h1>
+            <h1>A systems language with a shell</h1>
             <p class="lede">
-                Thoxa is a small native language: expression-oriented, errors as values,
-                a hybrid layout. The compiler is Rust. The backend is C plus a runtime —
-                not a VM, not a tree-walk. Run <code>thoxa</code> with no file and you
-                get a prompt: that prompt is Thoxa, not a second language.
+                Expression-oriented, errors as values, a hybrid layout. Run
+                <code>thoxa</code> with no file and you get a prompt: that prompt is
+                Thoxa, not a second language. <code>thoxa run</code>,
+                <code>thoxa check</code>, and <code>thoxa lsp</code> are the tools.
             </p>
             <p class="hero-actions">
                 <a class="btn" href="#news">Sign up for news</a>
@@ -103,8 +103,8 @@ fn now() -> Node {
                 <div>
                     <h3>Aimed at</h3>
                     <p>
-                        A native systems language with a serious type system and one
-                        value model from the REPL to the metal. You write <code>.thx</code>
+                        A systems language with a serious type system and one
+                        value model from the shell to the metal. You write <code>.thx</code>
                         files. <code>thoxa run</code>, <code>thoxa check</code>, and
                         <code>thoxa lsp</code> are the surface — when there is a
                         public build, those are the names.
@@ -113,10 +113,11 @@ fn now() -> Node {
                 <div>
                     <h3>Shipped today</h3>
                     <p>
-                        Compile-to-C works. The interactive prompt is Thoxa, not a
-                        separate dialect. <code>std/</code> has files, sockets, HTTP,
-                        JSON, and SQLite, grown from samples. Heap is simple
-                        single-threaded RC. Linux x86_64 only. Windows is out of scope.
+                        The interactive prompt is Thoxa, not a separate dialect.
+                        <code>thoxa run</code> produces a native binary.
+                        <code>std/</code> has files, sockets, HTTP, JSON, and SQLite,
+                        grown from samples. Heap is simple single-threaded RC.
+                        Linux x86_64 only. Windows is out of scope.
                     </p>
                 </div>
             </div>
@@ -143,9 +144,9 @@ type Feature(label: String, title: String, body: String)
 fn surfaceItems() -> Array<Feature> {
     [
         Feature(
-            label: "Compile",
-            title: "Native C, not a VM",
-            body: "The compiler is written in Rust. It emits C and links a small runtime (thoxa_rt). thoxa run produces a real binary."
+            label: "Native",
+            title: "A binary, not a VM",
+            body: "thoxa run produces a real program. Not a bytecode VM, not a tree-walk interpreter."
         ),
         Feature(
             label: "Types",
@@ -165,12 +166,12 @@ fn surfaceItems() -> Array<Feature> {
         Feature(
             label: "Interop",
             title: "Talk to C",
-            body: "extern fn … from \"c\" calls libc and your own symbols. The runtime is C; that is the FFI path, not a parallel one."
+            body: "extern fn … from \"c\" calls libc and your own symbols. Same language, no wrapper dialect."
         ),
         Feature(
             label: "Editor",
             title: "Check and hover",
-            body: "thoxa check and thoxa lsp. Hover shows types. The editor talks to the same compiler that emits C."
+            body: "thoxa check and thoxa lsp. Hover shows types. The editor talks to the same compiler that runs your program."
         ),
     ]
 }

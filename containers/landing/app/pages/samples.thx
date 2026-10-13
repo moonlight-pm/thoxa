@@ -115,7 +115,7 @@ fn errorsPanel() -> Node {
 
 fn ffiPanel() -> Node {
     panel("code panel-ffi", [
-        codeLine([cm("# the runtime is C; this is the same path")]),
+        codeLine([cm("# call libc from Thoxa")]),
         codeLine([kw("extern"), tx(" "), kw("fn"), tx(" sysWrite(")]),
         codeLine([tx("    fd: "), ty("Int32"), tx(", buf: "), ty("Bytes"), tx(", n: "), ty("UInt64")]),
         codeLine([tx(") → "), ty("Int64"), tx(" from "), st("\"c\""), tx(" "), st("\"write\"")]),
