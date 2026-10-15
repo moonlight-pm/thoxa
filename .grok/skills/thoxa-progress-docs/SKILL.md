@@ -77,8 +77,9 @@ Run through every item. Mark N/A only with a reason.
 7. **[`docs/decisions.md`](../../../docs/decisions.md)**  
    - If a D-id locked, superseded, or deferred stance changed.
 
-8. **Commit**  
-   - Only when the user asks. Prefer one commit that includes code + meta.
+8. **Commit and push**  
+   - After every finished slice, without waiting to be asked. One commit
+     that includes code + meta, then `git push`.
 
 ## Session start (quick)
 

@@ -83,8 +83,7 @@ session `let` replay vs “lifted once”; Ctrl-C in a pure-Thoxa loop;
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`); narrowing
 conversions truncate silently (D21: a `Byte` parameter given 300 gets 44);
 redefining a session
-`fn` is an error, not a replacement; no CI; and `AGENTS.md` vs this file
-disagree on committing.
+`fn` is an error, not a replacement; and no CI.
 
 ### Proceed order
 

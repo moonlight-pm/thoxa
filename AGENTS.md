@@ -114,7 +114,8 @@ Compiler pipeline: `.thx` → lexer → parser → AST → MIR (+ simple RC) →
 - **Full-word names.** No single-letter locals (`d`, `e`, `q`, `n`, `o`, `v`).
   Prefer `drink`, `error`, `query`, `count`, `order`, `value`. Abbreviations
   like `req`/`res` → `request`/`response`. Especially in `examples/http`.
-- Do **not** commit unless the user asks.
+- **Commit and push after every finished slice** (code + progress docs in one
+  commit), without waiting to be asked. Never force-push or amend pushed history.
 - Never mix “is” and “will be” in docs without labels (progress model).
 
 ## Do not re-research unless needed

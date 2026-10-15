@@ -172,7 +172,7 @@ stubs may redirect only.)
 7. **decisions.md** if a D-id locked or superseded
 8. Refresh freeze **Implementation / Gaps** header if that freeze’s
    implementation status changed
-9. Prefer committing code + meta together when the user asks for a commit
+9. Commit code + meta together and push, after every finished slice
 
 Skipping capability / CURRENT / handbook updates while shipping behavior is a
 **process failure**, not a minor omission.
