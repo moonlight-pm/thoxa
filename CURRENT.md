@@ -79,11 +79,10 @@ lits; overwrite-drop; **D152** match/init RC.
 
 **On master, not product:** none.
 
-**Review follow-ups (open, from 2026-10-14):** the sites run the runtime and
-`std/` from their last image build, so D165 deadlines and `-fwrapv` reach
-production only after their C is regenerated and the images rebuilt;
-pipelined
-requests are dropped;
+**Review follow-ups (open, from 2026-10-14):** the three sites were
+redeployed on 2026-10-15 from `878d863` (D165–D168, `-fwrapv`); their
+containers still run as root from unpinned bases and ignore SIGTERM;
+pipelined requests are dropped;
 Ctrl-C in a pure-Thoxa loop;
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`);
 redefining a session
