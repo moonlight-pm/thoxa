@@ -31,17 +31,7 @@ cargo make emit-c containers/oath
 podman build -f containers/oath/Containerfile \
   --ignorefile containers/oath/.containerignore \
   -t oath-landing:latest -t registry.wicket.cloud/oath-landing:latest .
-# Host `wicket` podman cannot pull registry.wicket.cloud (401). Load the
-# image into that user's store, then apply:
-podman save -o /tmp/oath-landing.tar oath-landing:latest
-scp -i ~/.config/wicket/deploy/wicket-deploy -o IdentitiesOnly=yes \
-  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-  /tmp/oath-landing.tar root@10.0.0.146:/tmp/oath-landing.tar
-# on aulos, cwd /var/lib/wicket:
-runuser -u wicket -- env HOME=/var/lib/wicket XDG_RUNTIME_DIR=/run/user/$(id -u wicket) \
-  podman load -i /tmp/oath-landing.tar
-runuser -u wicket -- env HOME=/var/lib/wicket XDG_RUNTIME_DIR=/run/user/$(id -u wicket) \
-  podman tag localhost/oath-landing:latest registry.wicket.cloud/oath-landing:latest
+wicketctl registry push aulos --image oath-landing:latest
 wicketctl workload apply aulos --file containers/oath/workload.toml --confirm
 ```
 

@@ -212,6 +212,7 @@ cargo test -p thoxa --lib
 cargo make run examples/http
 cargo make run containers/landing
 cargo make run containers/sola
+cargo make run containers/oath
 cargo run -p thoxa -- tests/conformance/param_defaults.thx
 printf 'echo hi\nexit\n' | cargo run -p thoxa --
 ```

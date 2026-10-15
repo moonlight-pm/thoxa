@@ -28,6 +28,7 @@ cargo make run tests/conformance/hello.thx
 cargo make run examples/http          # Crema-lite HTTP example (port 9091; experiment)
 cargo make run containers/landing     # thoxa.dev (port 8088)
 cargo make run containers/sola        # sola.computer teaser (port 8089)
+cargo make run containers/oath        # oath.wicket.cloud (port 8090)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt  # TTY editor
 cargo run -p thoxa --                 # session REPL
 cargo run -p thoxa -- run path.thx    # program or session script

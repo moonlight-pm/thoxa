@@ -62,7 +62,7 @@ step `.so` on the happy path.
 | `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, `Json`, `Sqlite`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate |
 | `examples/` | Runnable demos (`http` Crema-lite, `kilo` terminal editor); not the gate |
-| `containers/` | Deployed Thoxa programs (`landing` = thoxa.dev, `sola` = sola.computer); not the gate |
+| `containers/` | Deployed Thoxa programs (`landing` = thoxa.dev, `sola` = sola.computer, `oath` = oath.wicket.cloud); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
 | `apocrypha/` | Historical + Python oracle |
 

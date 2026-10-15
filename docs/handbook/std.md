@@ -165,6 +165,7 @@ Runnable demos: `cargo make run examples/http` (Crema-lite **experiment** —
 app/domain is not product std; see `examples/http/README.md`).
 `cargo make run containers/landing` — thoxa.dev (port **8088**).
 `cargo make run containers/sola` — sola.computer teaser (port **8089**).
+`cargo make run containers/oath` — oath.wicket.cloud (port **8090**).
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
 hex → black SGR.

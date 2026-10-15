@@ -34,7 +34,7 @@ cargo make emit-c containers/landing
 podman build -f containers/landing/Containerfile \
   --ignorefile containers/landing/.containerignore \
   -t registry.wicket.cloud/thoxa-landing:latest .
-# push to the install registry, then:
+wicketctl registry push aulos --image thoxa-landing:latest
 wicketctl workload apply aulos --file containers/landing/workload.toml --confirm
 ```
 

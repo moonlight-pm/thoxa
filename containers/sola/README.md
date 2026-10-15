@@ -30,7 +30,7 @@ cargo make emit-c containers/sola
 podman build -f containers/sola/Containerfile \
   --ignorefile containers/sola/.containerignore \
   -t registry.wicket.cloud/sola-landing:latest .
-# push to the install registry, then:
+wicketctl registry push aulos --image sola-landing:latest
 wicketctl workload apply aulos --file containers/sola/workload.toml --confirm
 ```
 
