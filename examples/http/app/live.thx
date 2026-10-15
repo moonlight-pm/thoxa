@@ -1,19 +1,16 @@
 ## App layer — SSE order board (example-only).
-## Host fills `Request.peerFd`; we write the event-stream and return `streamed()`.
+## `server.peerOf` gives the connection's socket; we write the event-stream and
+## return `streamed()`. Subscribers share the host's Socket box, so a closed
+## connection reads as closed here too.
 
 import store, { OrderRow } from "./store"
 import models, { formatPrice } from "./models"
 import server from "std/http/server"
 import net, { Socket } from "std/net"
 import http, { Request, Response, badRequest } from "std/http"
-import { Pass, Fail } from "std/fallible"
+import { Has, Not, Pass, Fail } from "std/fallible"
 
-fn emptyLive() -> Map<Int64, Int64> {
-    mut peers: Map<Int64, Int64> = Map()
-    peers
-}
-
-mut livePeers = emptyLive()
+mut livePeers: Map<Int64, Socket> = Map()
 
 fn boardOf(rows!: Array<OrderRow>) -> Node {
     if rows.count == 0 {
@@ -36,25 +33,24 @@ export fn boardNode() -> Node {
 }
 
 export fn subscribe(request!: Request) -> Response {
-    let fd = request.peerFd
-    if fd == 0 {
-        badRequest("no peer")
-    } else {
-        let peer = Socket(fd: fd)
-        match server.beginEventStream(peer) {
-            Fail(_) => http.streamed()
-            Pass {
-                livePeers.set(fd, 1)
-                match store.listOrders() {
-                    Fail(_) { }
-                    Pass(rows) {
-                        match server.sendEvent(peer, boardOf(rows).html()) {
-                            Pass(_) { }
-                            Fail(_) { }
+    match server.peerOf(request) {
+        Not => badRequest("no peer")
+        Has(peer) {
+            match server.beginEventStream(peer) {
+                Fail(_) => http.streamed()
+                Pass {
+                    livePeers.set(peer.fd, peer)
+                    match store.listOrders() {
+                        Fail(_) { }
+                        Pass(rows) {
+                            match server.sendEvent(peer, boardOf(rows).html()) {
+                                Pass(_) { }
+                                Fail(_) { }
+                            }
                         }
                     }
+                    http.streamed()
                 }
-                http.streamed()
             }
         }
     }
@@ -62,11 +58,11 @@ export fn subscribe(request!: Request) -> Response {
 
 export fn broadcast() {
     let html = boardNode().html()
-    mut keep = emptyLive()
-    for fd, flag in livePeers {
-        match server.sendEvent(Socket(fd: fd), html) {
+    mut keep: Map<Int64, Socket> = Map()
+    for fd, peer in livePeers {
+        match server.sendEvent(peer, html) {
             Pass(_) {
-                keep.set(fd, flag)
+                keep.set(fd, peer)
             }
             Fail(_) { }
         }

@@ -58,6 +58,8 @@ pub struct Global {
     pub mutable: bool,
     pub name: String,
     pub name_span: Span,
+    /// Optional annotation: `mut connection: May<Db> = Not()`.
+    pub ty: Option<TypeExpr>,
     pub init: Expr,
 }
 

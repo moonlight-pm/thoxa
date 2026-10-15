@@ -19,7 +19,7 @@ extern fn sysRecv(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32, deadline
 extern fn sysSend(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32, deadline!: Int64) -> Int64 from "c" "thoxa_send_until"
 extern fn sysNowMs() -> Int64 from "c" "thoxa_now_ms"
 extern fn sysClose(fd!: Int32) -> Int32 from "c" "thoxa_close"
-extern fn sysTaskOwnFd(fd!: Int32) from "c" "thoxa_task_own_fd"
+extern fn sysTaskOwnSocket(socket!: Address<Socket>) from "c" "thoxa_task_own_socket"
 extern fn sysTaskOwnedFds() -> Int64 from "c" "thoxa_task_owned_fds"
 extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
 extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
@@ -49,7 +49,17 @@ export fn nowMs() -> Int64 {
     sysNowMs()
 }
 
-## Open sockets that tasks own (`Socket.ownByTask`), across all tasks.
+## The running task owns `socket`: if the task ends in a panic, the runtime
+## closes it and sets its `fd` to -1, so every copy sees it closed (D166).
+## Ownership ends when the socket closes or the task returns. Outside a task
+## it does nothing.
+export fn ownByTask(socket!: Socket) {
+    if socket.isOpen() {
+        sysTaskOwnSocket(socket)
+    }
+}
+
+## Open sockets that tasks own (`ownByTask`), across all tasks.
 export fn taskOwnedSockets() -> Int64 {
     sysTaskOwnedFds()
 }
@@ -80,7 +90,9 @@ fn portOf(addr!: Bytes) -> Int64 {
 }
 
 ## Open TCP handle. `fd` is Int64 for ctor-param field rules; written back to
-## -1 on successful close (same D107 write-back as File).
+## -1 on successful close (same D107 write-back as File). Only this module
+## builds one (D168). `fd` stays the first field: the runtime's task
+## ownership (`ownByTask`) writes it.
 export type Socket(fd: Int64) {
     export fn isOpen() -> Bool {
         fd >= 0
@@ -234,15 +246,6 @@ export type Socket(fd: Int64) {
         }
         ## Unreachable.
         Fail("sendAll: internal")
-    }
-
-    ## The running task owns this socket: if the task ends in a panic, the
-    ## runtime closes it (R4). Ownership ends when the socket closes or the
-    ## task returns. Outside a task it does nothing.
-    export fn ownByTask() {
-        if fd >= 0 {
-            sysTaskOwnFd(fd)
-        }
     }
 
     ## Close the fd once; subsequent closes are no-ops. Uses field write-back.

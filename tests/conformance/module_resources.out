@@ -1,0 +1,4 @@
+add before open: store is closed
+notes: 1 then 2
+registered open: true
+map copies open: 0; array copy open: false

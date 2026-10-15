@@ -2,6 +2,7 @@ first: start
 second: start
 second: 2
 main: after tasks
+held copy open: false; main copy open: false
 boom: closed with no reply
 owned sockets: 0
 GET / -> 200 OK

@@ -1,0 +1,8 @@
+## D168: a type with `fn drop()` is built only by the module that defines it,
+## so code cannot wrap a raw handle in a second owner that closes it twice.
+import sqlite, { Db } from "std/sqlite"
+
+fn main() -> Int64 {
+    let stolen = Db(handle: 1)
+    0
+}

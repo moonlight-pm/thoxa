@@ -1,0 +1,82 @@
+## Resources in module state (D168): an annotated module-level `mut` holds a
+## `Db` across calls, and `Map` / `Array` values of a `drop` type share one
+## box, so a close through any copy is seen by all. The entry's own
+## module-level constructor no longer shares a C temp with std/sqlite's.
+import sqlite, { Db } from "std/sqlite"
+import net, { Socket, createSocket } from "std/net"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Settings(path: String, label: String)
+
+let settings = Settings(path: ":memory:", label: "notes")
+mut connection: May<Db> = Not()
+mut sockets: Map<Int64, Socket> = Map()
+mut pool: Array<Socket> = []
+
+fn open() -> Trial<Void, String> {
+    let opened = sqlite.open(settings.path)?
+    opened.exec(sql"CREATE TABLE notes (body TEXT)")?
+    connection = Has(opened)
+    Pass(Void)
+}
+
+fn add(body!: String) -> Trial<Int64, String> {
+    match connection {
+        Not => Fail("store is closed")
+        Has(db) {
+            db.exec(sql"INSERT INTO notes VALUES ({body})")?
+            let rows = db.query(sql"SELECT body FROM notes")?
+            Pass(rows.count)
+        }
+    }
+}
+
+fn register() -> Trial<Int64, String> {
+    let socket = createSocket()?
+    sockets.set(1, socket)
+    pool.append(socket)
+    Pass(socket.fd)
+}
+
+fn closeRegistered() {
+    match sockets.get(1) {
+        Not => info("nothing registered")
+        Has(socket) => socket.close()
+    }
+}
+
+fn run() -> Trial<Void, String> {
+    match add("early") {
+        Pass(_) => info("add before open: unexpected")
+        Fail(error) => info("add before open: {error}")
+    }
+    open()?
+    let first = add("one")?
+    let second = add("two")?
+    info("{settings.label}: {first} then {second}")
+
+    let fd = register()?
+    info("registered open: {fd >= 0}")
+    closeRegistered()
+    mut open = 0
+    for key, socket in sockets {
+        if socket.isOpen() {
+            open = open + 1
+        }
+    }
+    info("map copies open: {open}; array copy open: {pool[0].isOpen()}")
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass(_) { 0 }
+        Fail(error) {
+            info("fail {error}")
+            1
+        }
+    }
+}

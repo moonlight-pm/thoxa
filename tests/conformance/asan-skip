@@ -14,3 +14,4 @@ start_net
 start_tasks
 http_hardening
 task_panic
+http_sse_peer

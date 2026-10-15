@@ -25,10 +25,8 @@ export type OrderLookup = OrderMiss | OrderHit
 
 export let path = "/tmp/crema.db"
 
-## One connection per call. A module-level `Db` mis-emits as `Sql` in C, and
-## keeping only its Int64 handle fails: `drop()` closes the connection when
-## `open` returns (D155), so later calls would run on a closed handle.
-mut ready = false
+## One connection for the process, kept in module state (D168).
+mut connection: May<Db> = Not()
 
 export fn open() -> Trial<Void, String> {
     let opened = sqlite.open(path)?
@@ -51,7 +49,7 @@ export fn open() -> Trial<Void, String> {
             total_cents INTEGER NOT NULL
         )
     ")?
-    ready = true
+    connection = Has(opened)
     seedDrinks()?
     info("store {path}")
     Pass(Void)
@@ -182,10 +180,10 @@ export fn listOrders() -> Trial<Array<OrderRow>, String> {
 }
 
 fn requireDb() -> Trial<Db, String> {
-    if not ready {
-        return Fail("store is closed")
+    match connection {
+        Not => Fail("store is closed")
+        Has(db) => Pass(db)
     }
-    sqlite.open(path)
 }
 
 fn drinkFromRow(row!: Row) -> Trial<Drink, String> {

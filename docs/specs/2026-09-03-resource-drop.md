@@ -39,6 +39,8 @@ Timing is **last reference** (RC / deinit), not lexical unique/move. Copies
 - `thoxa_alloc` + `thoxa_set_dtor`; tag `THOXA_TAG_USER`. Generic `thoxa_drop`
   runs the dtor at refcount 0 (so `Array`/`Map` heap elems work).
 - `File` / `Socket` / `Db` ship `drop()` as `close()`.
+- Only the module that defines the type calls its constructor (**D168**, as
+  built 2026-10-15).
 - Bound method values of a Drop type are out of v0 if they would memcpy the
   payload; treat the box like other heap pointers.
 

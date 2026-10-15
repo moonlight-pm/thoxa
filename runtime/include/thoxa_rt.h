@@ -189,9 +189,11 @@ int32_t thoxa_pipe(int32_t fds_out[2]);
 void thoxa_task_start(void (*fn)(void *), void *data);
 void *thoxa_task_alloc(size_t nbytes);
 void thoxa_task_free(void *ptr);
-/* The running task owns `fd`: closed if the task panics. No-op outside a
- * task. Ownership ends at `thoxa_close(fd)` or when the task returns. */
-void thoxa_task_own_fd(int32_t fd);
+/* The running task owns this socket: if the task panics, its fd is closed
+ * and set to -1 in the box. `socket` is a `std/net` Socket box, whose first
+ * field is `fd: Int64`. No-op outside a task. Ownership ends at
+ * `thoxa_close(fd)` or when the task returns. */
+void thoxa_task_own_socket(void *socket);
 /* close(2) that also ends task ownership of `fd`. */
 int32_t thoxa_close(int32_t fd);
 /* Open fds owned by tasks, across all tasks. */

@@ -165,10 +165,12 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
   `wait_fd`; the fiber wakes with `timed_out` set): `thoxa_recv_until` /
   `thoxa_send_until` fail with ETIMEDOUT at a `thoxa_now_ms` deadline
   (**D165**). A panic with a current task does not abort: `thoxa_panic`
-  closes the task's owned fds (`thoxa_task_own_fd`, indexed by fd; released
+  closes the task's owned fds (indexed by fd; released
   by `thoxa_close` or a normal return), frees the packed arguments, marks the
   fiber done, and switches to the scheduler from the panic site, so the dead
-  frames are never unwound (**D166**). Under LSan
+  frames are never unwound (**D166**). Ownership records the Socket box
+  (`thoxa_task_own_socket`; a box passes to `Address<T>` as its pointer), so
+  the panic path also writes `fd = -1` into it (**D168**). Under LSan
   (`__lsan_register_root_region` present) that stack stays mapped as a root.
 - Integer `/` and `%` call `thoxa_int_div` / `thoxa_int_rem` (panic on zero),
   `<<` / `>>` call `thoxa_int_shl` / `thoxa_int_shr` (**D161**);

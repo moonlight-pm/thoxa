@@ -21,6 +21,15 @@ let writeTimeoutMs = 30000
 ## cap a new connection is closed at accept, so the open connections keep
 ## their fds.
 let maxConnections = 1024
+## Open connections by fd, so a handler can reach its own peer (`peerOf`).
+## `serveOne` adds and removes its entry.
+mut connections: Map<Int64, Socket> = Map()
+
+## The socket `request` arrived on, while its connection is open. An SSE
+## handler writes its stream here (D146 / D168).
+export fn peerOf(request!: Request) -> May<Socket> {
+    connections.get(request.peerFd)
+}
 
 export fn bindListen(port!: Int64) -> Trial<Socket, String> {
     let server = net.createSocket()?
@@ -257,7 +266,9 @@ fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
 ## panics, the runtime ends the task and closes `peer`, and the server keeps
 ## serving (R4).
 export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
-    peer.ownByTask()
+    net.ownByTask(peer)
+    let fd = peer.fd
+    connections.set(fd, peer)
     mut budget = headerTimeoutMs
     loop {
         match readRequest(peer, net.nowMs() + budget) {
@@ -298,6 +309,7 @@ export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
             }
         }
     }
+    connections.remove(fd)
     peer.close()
 }
 

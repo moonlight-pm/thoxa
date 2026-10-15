@@ -30,7 +30,7 @@ import sqlite, { lit, ident } from "std/sqlite"
 | `std/io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
 | `std/net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
 | `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**/**D142**/**D145**/**D146**): parse/write, query/form/cookie helpers, `htmlResponse` / `htmlResponseStatus` / `htmlFragment`, `cached` / ETag, `Cookie` / `withCookie`, `streamed()` / `peerFd` |
-| `std/http/server` | HTTP/1.1 host loop (**D136**/**D139**/**D146**): `serve` / `serveOne` / `readBody`; SSE `beginEventStream` / `sendEvent` |
+| `std/http/server` | HTTP/1.1 host loop (**D136**/**D139**/**D146**): `serve` / `serveOne` / `readBody`; SSE `peerOf` / `beginEventStream` / `sendEvent` |
 | `std/http/static` | Static-file `Router` (**D126**/**D139**); depends on io + http |
 | `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
 | `std/str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`splitOnce`/`join`/`lines`, `parseUInt` (above Int64 max → `Not`), pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
@@ -98,12 +98,12 @@ IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 | Surface | Notes |
 |---------|--------|
 | `createSocket()` | `Trial<Socket, String>` |
-| `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close`, `isOpen`. `close` writes `fd = -1` (second close is a no-op, same as `File`). Last RC runs `drop()` which closes (**D155**) |
+| `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close`, `isOpen`. `close` writes `fd = -1` (second close is a no-op, same as `File`). Last RC runs `drop()` which closes (**D155**). Only `std/net` builds one (**D168**): get it from `createSocket`, `accept`, or `server.peerOf` |
 | `receive(deadline: 0)` | One `recv` chunk (empty on close, error, or deadline) |
 | `receiveRequest(deadline: 0)` | Until `\r\n\r\n` or 64 KiB cap / peer close. A deadline with nothing read is an empty `Pass` (quiet close); mid-headers it is `Fail("request timed out")` |
 | `send` / `sendAll(data, deadline: 0)` | One write vs drain partial writes |
 | `nowMs()` | Monotonic milliseconds. A deadline is `nowMs() + budget`; 0 means none (**D165**) |
-| `Socket.ownByTask()` | The running task owns the socket: if the task panics, the runtime closes it (**D166**). Ownership ends at `close` / `drop` or when the task returns. No-op outside a task |
+| `ownByTask(socket)` | The running task owns the socket: if the task panics, the runtime closes it and sets its `fd` to -1, so every copy reads closed (**D166** / **D168**). Ownership ends at `close` / `drop` or when the task returns. No-op outside a task |
 | `taskOwnedSockets()` | Open sockets owned by tasks, across all tasks |
 
 ### Http (`std/http`)
@@ -117,7 +117,7 @@ leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
 | `parseRequest` | `Trial<Request, String>`; requires `\r\n\r\n`; path is query-stripped. Method, request target, and header names must be visible ASCII (no space, control byte, or raw non-ASCII) |
 | `writeResponse` | Status line + headers + body → `Bytes`. CR / LF in header names and values are dropped, so a value cannot start another header |
 | Lookup | `headerGet`, `contentLength`, `queryMap`, `queryParam`, `formField`, `cookie` |
-| Stream | `Request.peerFd` (host fd, else 0); `streamed()` (status 0 — handler owns the socket) |
+| Stream | `Request.peerFd` (host fd, else 0; the key `server.peerOf` looks up); `streamed()` (status 0 — handler owns the socket) |
 | Maps | `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`; `urlDecode` |
 | Cookies | `Cookie` (`.header()`), `SameSite`, `withCookie`, `clearCookie` (**D142**) |
 | Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `htmlResponseStatus`, `htmlFragment`, `notModified`, `cached` / `etagOf` / `withCache`, `response` / `responseHead` |
@@ -151,10 +151,11 @@ connection's task and closes the peer; the server keeps serving (**D166**).
 |---------|--------|
 | `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132** handle, **D148** nowait). Logs `http://127.0.0.1:{port}/`. App `handle` is often `Routes().route` (**D150**) |
 | `serveOne(peer, handle)` | One keep-alive connection. Owns `peer` (`ownByTask`), so a panic in `handle` closes it |
+| `peerOf(request)` | `May<Socket>`: the connection `request` arrived on, while it is open (**D168**). An SSE handler writes its stream there and may keep the Socket; it reads closed once the client leaves |
 | `bindListen(port)` | `createSocket` + reuse + bind + listen |
 | `readBody(peer, raw, req, deadline: 0)` / `readRequest(peer, deadline: 0)` | `Content-Length` entity; empty method/path = quiet close. `Transfer-Encoding`, two `Content-Length`s, or a non-numeric one are refused (400) |
 | `writeResponse(peer, method, res, keepAlive, deadline: 0)` | `finalize` + `sendAll` |
-| `beginEventStream` / `sendEvent` | SSE prelude + `data:` lines (**D146**). `streamed()` skips the normal write |
+| `beginEventStream` / `sendEvent` | SSE prelude + `data:` lines (**D146**) on the Socket from `peerOf`. `streamed()` skips the normal write |
 
 HEAD is answered by GET handlers; `finalize` still sees the real method.
 

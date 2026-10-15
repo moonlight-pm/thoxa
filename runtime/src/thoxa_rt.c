@@ -2967,7 +2967,7 @@ typedef struct ThoxaFiber {
     /* Set when an fd wait ended at its deadline instead of readiness. */
     int timed_out;
     int done;
-    /* Sockets this task owns (`thoxa_task_own_fd`), closed if it panics. */
+    /* Sockets this task owns (`thoxa_task_own_socket`), closed if it panics. */
     int owned_fds;
     /* Under LeakSanitizer a panicked task's stack stays mapped as a root. */
     int keep_stack;
@@ -3127,49 +3127,56 @@ static void thoxa_fiber_free(ThoxaFiber *f) {
     free(f);
 }
 
-/* Task-owned sockets (R4), indexed by fd: the owning task, or NULL. */
-static ThoxaFiber **thoxa_fd_owner;
+/* Task-owned sockets (D166), indexed by fd: the owning task and the
+ * socket's box. A `std/net` Socket box starts with its `fd: Int64` field. */
+typedef struct ThoxaOwnedFd {
+    ThoxaFiber *task;
+    int64_t *fd_field;
+} ThoxaOwnedFd;
+
+static ThoxaOwnedFd *thoxa_fd_owner;
 static int32_t thoxa_fd_owner_cap;
 static int64_t thoxa_owned_fd_count;
 
-void thoxa_task_own_fd(int32_t fd) {
-    if (!thoxa_current || fd < 0) {
+void thoxa_task_own_socket(void *socket) {
+    int64_t *fd_field = (int64_t *)socket;
+    if (!thoxa_current || !fd_field || *fd_field < 0 || *fd_field > INT32_MAX) {
         return;
     }
+    int32_t fd = (int32_t)*fd_field;
     if (fd >= thoxa_fd_owner_cap) {
         int32_t cap = thoxa_fd_owner_cap ? thoxa_fd_owner_cap : 64;
         while (cap <= fd) {
             cap *= 2;
         }
-        ThoxaFiber **grown =
-            (ThoxaFiber **)realloc(thoxa_fd_owner, (size_t)cap * sizeof(ThoxaFiber *));
+        ThoxaOwnedFd *grown =
+            (ThoxaOwnedFd *)realloc(thoxa_fd_owner, (size_t)cap * sizeof(ThoxaOwnedFd));
         if (!grown) {
             thoxa_panic("out of memory");
         }
         memset(grown + thoxa_fd_owner_cap, 0,
-               (size_t)(cap - thoxa_fd_owner_cap) * sizeof(ThoxaFiber *));
+               (size_t)(cap - thoxa_fd_owner_cap) * sizeof(ThoxaOwnedFd));
         thoxa_fd_owner = grown;
         thoxa_fd_owner_cap = cap;
     }
-    ThoxaFiber *previous = thoxa_fd_owner[fd];
-    if (previous == thoxa_current) {
-        return;
-    }
-    if (previous) {
-        previous->owned_fds--;
+    ThoxaOwnedFd *slot = &thoxa_fd_owner[fd];
+    if (slot->task) {
+        slot->task->owned_fds--;
     } else {
         thoxa_owned_fd_count++;
     }
-    thoxa_fd_owner[fd] = thoxa_current;
+    slot->task = thoxa_current;
+    slot->fd_field = fd_field;
     thoxa_current->owned_fds++;
 }
 
 static void thoxa_fd_forget(int32_t fd) {
-    if (fd < 0 || fd >= thoxa_fd_owner_cap || !thoxa_fd_owner[fd]) {
+    if (fd < 0 || fd >= thoxa_fd_owner_cap || !thoxa_fd_owner[fd].task) {
         return;
     }
-    thoxa_fd_owner[fd]->owned_fds--;
-    thoxa_fd_owner[fd] = NULL;
+    thoxa_fd_owner[fd].task->owned_fds--;
+    thoxa_fd_owner[fd].task = NULL;
+    thoxa_fd_owner[fd].fd_field = NULL;
     thoxa_owned_fd_count--;
 }
 
@@ -3182,16 +3189,20 @@ int64_t thoxa_task_owned_fds(void) {
     return thoxa_owned_fd_count;
 }
 
-/* A task that returns gives up its sockets; one that panicked closes them. */
+/* A task that returns gives up its sockets. One that panicked closes them
+ * and sets each box's fd to -1, so every copy of the Socket (a registry, an
+ * SSE subscriber list) sees it closed and none can reach a reused fd. */
 static int thoxa_task_release_fds(ThoxaFiber *f, int close_them) {
     int closed = 0;
     for (int32_t fd = 0; f->owned_fds > 0 && fd < thoxa_fd_owner_cap; fd++) {
-        if (thoxa_fd_owner[fd] != f) {
+        if (thoxa_fd_owner[fd].task != f) {
             continue;
         }
+        int64_t *fd_field = thoxa_fd_owner[fd].fd_field;
         thoxa_fd_forget(fd);
         if (close_them) {
             (void)close(fd);
+            *fd_field = -1;
             closed++;
         }
     }

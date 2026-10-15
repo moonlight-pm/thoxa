@@ -65,7 +65,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Refinements | `type Qty = Int64 where >= 1` — real types; `T.read` / `T.from` (**D149**) |
 | Multi-clause fns | Same name, different formal types → one function (type-driven match sugar, **D131**) |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
-| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind; an index outside `0..N-1` panics). A `mut` struct local passed where `Address<T>` is expected passes its address, to C or to a Thoxa function; an `Address<T>` parameter passes on unchanged |
+| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind; an index outside `0..N-1` panics). A `mut` struct local passed where `Address<T>` is expected passes its address, to C or to a Thoxa function; an `Address<T>` parameter passes on unchanged. A value of a `drop` type passes its box pointer (**D168**) |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/fallible` with `?` / `match` (ok/err may nest) |
 | Equality | String `==` / `!=`; usual scalar compares (including `Float64`). Comparison `<` needs a space after it (`a < b`, not `a<b`) — glued `<name` is a [tag](#tag-literals-and-node-jsx) |
 
@@ -153,7 +153,11 @@ previous occupant, including `if` / `match` results reused in a loop
 created later in a loop. A product may define `fn drop()` with no formals
 and `Void` return (**D155**): values are heap boxes; last RC runs `drop`
 then frees. `File` / `Socket` / `Db` close that way; explicit `close` is
-still a no-op afterward. Optional AddressSanitizer (`cargo make test-asan`)
+still a no-op afterward. Only the module that defines such a type may call
+its constructor (**D168**): `Db(handle: 1)` elsewhere is an error, so no code
+can wrap a raw handle in a second owner. Copies in a `Map`, an `Array`, or
+module state share the one box, so a `close` through any copy is seen by
+all. Optional AddressSanitizer (`cargo make test-asan`)
 covers use-after-free on non-fiber programs; it is not the default suite
 (ucontext fibers). Precise RC / Perceus is **not** shipped.
 
@@ -348,7 +352,8 @@ park without stalling the listener. See [std.md](std.md).
 A panic inside a task ends **that task only** (**D166**). It prints
 `thoxa panic: …` and `thoxa: task ended by panic`; `main` and the other tasks
 keep running. The task's frames are abandoned, so the memory they held leaks.
-Sockets the task owns (`Socket.ownByTask()`, see [std.md](std.md)) are closed.
+Sockets the task owns (`net.ownByTask(socket)`, see [std.md](std.md)) are
+closed, and every copy of each reads closed (`fd` is -1).
 A panic in `main` itself still ends the program.
 
 ## Route clauses
@@ -537,7 +542,15 @@ import; constructing, annotating, or calling builtins that produce May (e.g.
 `Bytes.find`) does.
 
 Module-level `let` / `mut` are supported (including heap types such as
-`Array` / `String`). Reassigning a module `mut` drops the previous value and
+`Array` / `String`), with an optional annotation where the value alone does
+not say the type (**D168**):
+
+```thx
+mut connection: May<Db> = Not()
+mut subscribers: Map<Int64, Socket> = Map()
+```
+
+Reassigning a module `mut` drops the previous value and
 keeps the new one for the rest of the process — the binding is **not** dropped
 when the assigning function returns (D122). General in-function `import`/`type`
 is **not** a language feature (session host may lift decls).

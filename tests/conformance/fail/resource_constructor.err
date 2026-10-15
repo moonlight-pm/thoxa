@@ -1,0 +1,1 @@
+`Db(…)` can only be called in the module that defines `Db`

@@ -1,0 +1,4 @@
+GET /events -> streamed
+prelude true
+event arrived: true
+subscribers 0

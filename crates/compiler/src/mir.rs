@@ -2037,6 +2037,9 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
     // Infer global types by lowering inits in order (module dep order).
     let mut program_globals: Vec<GlobalVar> = Vec::new();
     let mut init_stmts: Vec<Stmt> = Vec::new();
+    // Every global's init lands in one C function: number temps across all of
+    // them, or `_obj0` from two modules would share one (mistyped) local.
+    let mut init_temps = 0;
     let synthetics = Rc::new(RefCell::new(SyntheticRegistry::default()));
 
     for m in &package.modules {
@@ -2066,7 +2069,19 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
                 m.is_entry,
                 Rc::clone(&synthetics),
             );
-            let (place, ty) = lower_expr(&mut ctx, &g.init)?;
+            ctx.temps = init_temps;
+            let lowered = match &g.ty {
+                Some(annotation) => (|| {
+                    let expect = resolve_ty(annotation, &ctx.types, &ctx.name_to_type)?;
+                    let (place, ty) = lower_expr_expect(&mut ctx, &g.init, Some(&expect))?;
+                    let place =
+                        coerce_annotated(&mut ctx, place, &ty, &expect, &g.init, &g.name, g.name_span)?;
+                    Ok((place, expect))
+                })(),
+                None => lower_expr(&mut ctx, &g.init),
+            };
+            let (place, ty) = lowered.map_err(|error| in_module_file(error, &m.path))?;
+            init_temps = ctx.temps;
             // Move init value into global place.
             let global_place = Place {
                 name: place_name.clone(),
@@ -4923,7 +4938,12 @@ fn collect_item_type_apps(item: &Item, out: &mut Vec<(TypeExpr, Span)>) {
                 collect_type_apps(r, out);
             }
         }
-        Item::Global(_) | Item::Import(_) | Item::SessionStmt(_) => {}
+        Item::Global(g) => {
+            if let Some(t) = &g.ty {
+                collect_type_apps(t, out);
+            }
+        }
+        Item::Import(_) | Item::SessionStmt(_) => {}
     }
 }
 
@@ -6924,43 +6944,8 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
             let (place, ty) = if let Some(ann) = ann {
                 let expect = resolve_ty(ann, &ctx.types, &ctx.name_to_type)?;
                 let (place, ty) = lower_expr_expect(ctx, init, Some(&expect))?;
-                if &ty != &expect {
-                    match try_sum_coerce(
-                        ctx,
-                        place.clone(),
-                        &ty,
-                        &expect,
-                        expr_as_type_lit(init).as_ref(),
-                        *name_span,
-                    )? {
-                        Some(p) => (p, expect),
-                        None if can_numeric_cast(&ty, &expect) => {
-                            let p = coerce_place(ctx, place, &ty, &expect, *name_span)?;
-                            (p, expect)
-                        }
-                        None => {
-                            if let Some(p) = try_refine_coerce(
-                                ctx,
-                                place.clone(),
-                                &ty,
-                                &expect,
-                                expr_as_type_lit(init).as_ref(),
-                                *name_span,
-                            )? {
-                                (p, expect)
-                            } else {
-                                return Err(Error::at(
-                                format!(
-                                    "type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"
-                                ),
-                                *name_span,
-                            ));
-                            }
-                        }
-                    }
-                } else {
-                    (place, expect)
-                }
+                let place = coerce_annotated(ctx, place, &ty, &expect, init, name, *name_span)?;
+                (place, expect)
             } else {
                 let (place, ty) = lower_expr(ctx, init)?;
                 if matches!(&ty, Ty::Array { elem } if matches!(elem.as_ref(), Ty::Void)) {
@@ -6980,6 +6965,36 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// A value bound under an annotation (`let x: T = …`, in a block or at module
+/// level) takes `T`: a sum member, a numeric conversion, or a refinement.
+fn coerce_annotated(
+    ctx: &mut LowerCtx,
+    place: Place,
+    ty: &Ty,
+    expect: &Ty,
+    init: &Expr,
+    name: &str,
+    name_span: Span,
+) -> Result<Place> {
+    if ty == expect {
+        return Ok(place);
+    }
+    let literal = expr_as_type_lit(init);
+    if let Some(p) = try_sum_coerce(ctx, place.clone(), ty, expect, literal.as_ref(), name_span)? {
+        return Ok(p);
+    }
+    if can_numeric_cast(ty, expect) {
+        return coerce_place(ctx, place, ty, expect, init.span);
+    }
+    if let Some(p) = try_refine_coerce(ctx, place, ty, expect, literal.as_ref(), name_span)? {
+        return Ok(p);
+    }
+    Err(Error::at(
+        format!("type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"),
+        name_span,
+    ))
 }
 
 fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Result<()> {
@@ -11009,6 +11024,24 @@ fn lower_arg_for_formal(
                 }
             }
         }
+        // A `drop` type is a shared box (D155): any value of it passes its box
+        // pointer, so C sees the one object every copy shares (D168).
+        if type_has_drop(&ctx.types, pointee) {
+            let (place, ty) = lower_expr(ctx, expr)?;
+            if &ty != pointee.as_ref() {
+                return Err(Error::at(
+                    format!(
+                        "argument `{formal_name}`: expected {}, found {}",
+                        display_ty(pointee),
+                        display_ty(&ty)
+                    ),
+                    expr.span,
+                ));
+            }
+            let address = ctx.fresh("addr");
+            ctx.assign(address.clone(), formal_ty.clone(), RValue::AddressOf(place));
+            return Ok(address);
+        }
         let name = match &expr.kind {
             ExprKind::Name(n) => n.as_str(),
             _ => {
@@ -11661,6 +11694,9 @@ fn materialize_item_typespace(
             }
         }
         Item::Global(g) => {
+            if let Some(ann) = &g.ty {
+                materialize_type_expr(ann, types, layouts, name_map, def_mod)?;
+            }
             materialize_expr_typespace(&g.init, types, layouts, name_map, def_mod)?;
         }
         Item::SessionStmt(bi) => {
@@ -13522,6 +13558,18 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
                     return Ok(());
                 }
             }
+            // A `drop` type's placeholder is a NULL box: building a real one
+            // would run its `drop()` (closing fd 0) when the placeholder goes.
+            if info.methods.contains_key("drop") {
+                ctx.assign(
+                    place.clone(),
+                    ty.clone(),
+                    RValue::StructZero {
+                        type_name: name.clone(),
+                    },
+                );
+                return Ok(());
+            }
             if info.zero_init {
                 ctx.assign(
                     place.clone(),
@@ -14439,6 +14487,17 @@ fn lower_call(
                         )
                     })?
                     .clone();
+                // A resource is built only by its own module (D168): a second
+                // box over the same fd or handle would close it twice.
+                if info.methods.contains_key("drop") && info.def_mod != ctx.module_id {
+                    return Err(Error::at(
+                        format!("`{other}(…)` can only be called in the module that defines `{other}`"),
+                        span,
+                    )
+                    .with_help(format!(
+                        "`{other}` has `fn drop()`, so a second one over the same handle would close it twice; get a `{other}` from a function that module exports"
+                    )));
+                }
                 let p = ctx.fresh("obj");
                 let ty = Ty::User(mangled_ty.clone());
                 if info.zero_init {

@@ -296,6 +296,12 @@ impl Parser {
             ));
         }
         let (name, name_span) = self.expect_ident()?;
+        let ty = if self.at(TokenKind::Colon) {
+            self.bump();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         self.expect_kind(&TokenKind::Eq)?;
         let init = self.parse_expr()?;
         Ok(Global {
@@ -303,6 +309,7 @@ impl Parser {
             mutable,
             name,
             name_span,
+            ty,
             init,
         })
     }

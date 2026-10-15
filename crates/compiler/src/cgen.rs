@@ -993,7 +993,10 @@ fn emit_stmts(
                     emit_map_get(out, &pad, place, map, key, dest, val_ty, types);
                 } else if let RValue::MapValAt { map, index, val_ty } = value {
                     match val_ty {
+                        // Like the struct path below, the place owns its read:
+                        // release the old box, retain the new one.
                         Ty::User(type_name) if is_boxed_user_name(type_name, types) => {
+                            let _ = writeln!(out, "{pad}thoxa_drop({});", place.name);
                             let _ = writeln!(
                                 out,
                                 "{pad}{} = ({})thoxa_map_val_ptr_at({}, {});",
@@ -1002,6 +1005,7 @@ fn emit_stmts(
                                 map.name,
                                 index.name
                             );
+                            let _ = writeln!(out, "{pad}thoxa_dup({});", place.name);
                         }
                         Ty::User(type_name) => {
                             emit_rc(out, &pad, place, &Ty::User(type_name.clone()), false, types);
@@ -1082,6 +1086,7 @@ fn emit_stmts(
                 } = value
                 {
                     if is_boxed_user_name(type_name, types) {
+                        let _ = writeln!(out, "{pad}thoxa_drop({});", place.name);
                         let _ = writeln!(
                             out,
                             "{pad}{} = ({})thoxa_array_get_ptr({}, {});",
@@ -1090,6 +1095,7 @@ fn emit_stmts(
                             arr.name,
                             index.name
                         );
+                        let _ = writeln!(out, "{pad}thoxa_dup({});", place.name);
                         continue;
                     }
                     emit_rc(out, &pad, place, &Ty::User(type_name.clone()), false, types);
@@ -1419,7 +1425,12 @@ fn emit_rvalue(
             out.push_str("NULL");
         }
         RValue::AddressOf(place) => {
-            let _ = write!(out, "&{}", place.name);
+            // A boxed `drop` value already is the address of its shared box.
+            if boxed.contains(&place.name) {
+                out.push_str(&place.name);
+            } else {
+                let _ = write!(out, "&{}", place.name);
+            }
         }
         RValue::Unary { op, arg } => match op {
             UnaryOp::Neg => {
@@ -2351,7 +2362,8 @@ fn emit_map_values(out: &mut String, map: &crate::mir::Place, val_ty: &Ty) {
 /// Elements may have String/Bytes/Node/Array/Map and nested User fields.
 /// Recursive Array<T> uses the forward-declared helpers above.
 fn emit_array_user_elem_rc(out: &mut String, layout: &TypeLayout, types: &[TypeLayout]) {
-    let cty = c_type_name(&layout.name);
+    // A `drop` type's slot holds its box pointer (D155).
+    let cty = c_val_ty(&Ty::User(layout.name.clone()), types);
     let dup = array_user_elem_dup_fn(&layout.name);
     let drop = array_user_elem_drop_fn(&layout.name);
     let _ = writeln!(out, "static void {dup}(void *p) {{");

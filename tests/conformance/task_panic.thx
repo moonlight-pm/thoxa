@@ -1,12 +1,22 @@
-## A panic inside a `-->` task ends that task only (R4): the other tasks and
-## `main` keep running. A socket the task owns is closed, so a server whose
-## handler panics on one request drops that connection and serves the next.
+## A panic inside a `-->` task ends that task only (D166): the other tasks
+## and `main` keep running. A socket the task owns is closed and its box reads
+## closed through every copy, so a server whose handler panics on one request
+## drops that connection and serves the next.
 import net, { Socket, createSocket } from "std/net"
 import http, { Request, Response } from "std/http"
 import server from "std/http/server"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
 import { startsWith } from "std/str"
+
+mut held: Map<Int64, Socket> = Map()
+
+fn holdAndPanic(socket!: Socket) {
+    net.ownByTask(socket)
+    held.set(1, socket)
+    let items = [1, 2]
+    info("held: {items[socket.fd - socket.fd + 2]}")
+}
 
 fn divide(label!: String, divisor!: Int64) {
     info("{label}: start")
@@ -63,6 +73,13 @@ fn run() -> Trial<Void, String> {
     --> divide("first", 0)
     --> divide("second", 5)
     info("main: after tasks")
+
+    let spare = createSocket()?
+    --> holdAndPanic(spare)
+    match held.get(1) {
+        Not => info("nothing held")
+        Has(copy) => info("held copy open: {copy.isOpen()}; main copy open: {spare.isOpen()}")
+    }
 
     let listener = server.bindListen(0)?
     let port = listener.localPort()?

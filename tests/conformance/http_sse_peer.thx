@@ -1,0 +1,83 @@
+## SSE through `server.peerOf` (D146 / D168): the handler gets the host's own
+## Socket, keeps it in module state, and later events reach it. Once the
+## client leaves, the host closes that box, every copy reads it as closed,
+## and the next broadcast drops the subscriber.
+import net, { Socket, createSocket } from "std/net"
+import http, { Request, Response } from "std/http"
+import server from "std/http/server"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+extern fn sysWaitMs(ms!: Int64) from "c" "thoxa_wait_ms"
+
+mut livePeers: Map<Int64, Socket> = Map()
+
+fn handle(request!: Request) -> Response {
+    match server.peerOf(request) {
+        Not => http.badRequest("no peer")
+        Has(peer) {
+            match server.beginEventStream(peer) {
+                Fail(_) => http.streamed()
+                Pass {
+                    livePeers.set(peer.fd, peer)
+                    http.streamed()
+                }
+            }
+        }
+    }
+}
+
+## Send to every subscriber; keep those that took it.
+fn broadcast() {
+    mut keep: Map<Int64, Socket> = Map()
+    for fd, peer in livePeers {
+        match server.sendEvent(peer, "tick") {
+            Pass(_) {
+                keep.set(fd, peer)
+            }
+            Fail(_) { }
+        }
+    }
+    livePeers = keep
+}
+
+fn acceptOne(listener!: Socket) {
+    match listener.accept() {
+        Fail(error) => info("accept failed: {error}")
+        Pass(peer) => server.serveOne(peer, handle)
+    }
+}
+
+fn run() -> Trial<Void, String> {
+    let listener = server.bindListen(0)?
+    let port = listener.localPort()?
+    --> acceptOne(listener)
+    let client = createSocket()?
+    client.connect(port)?
+    client.sendAll(Bytes.fromString("GET /events HTTP/1.1\r\n\r\n"))?
+    let first = client.receive()
+    info("prelude {first.count > 0}")
+    broadcast()
+    let event = client.receive()
+    let expected = "data: tick\n\n"
+    info("event arrived: {event.toString() == expected}")
+    client.close()
+    sysWaitMs(50)
+    broadcast()
+    broadcast()
+    info("subscribers {livePeers.count}")
+    listener.close()
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass(_) { 0 }
+        Fail(error) {
+            info("fail {error}")
+            1
+        }
+    }
+}
