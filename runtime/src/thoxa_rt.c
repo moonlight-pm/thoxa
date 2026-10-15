@@ -27,8 +27,12 @@ int32_t thoxa_errno(void) {
 static sigjmp_buf *thoxa_recover_point;
 static volatile sig_atomic_t thoxa_recover_signal;
 
+/* A panic inside a `-->` task ends that task, not the process (R4). */
+static void thoxa_task_end_by_panic(void);
+
 void thoxa_panic(const char *msg) {
     fprintf(stderr, "thoxa panic: %s\n", msg ? msg : "(null)");
+    thoxa_task_end_by_panic();
     if (thoxa_recover_point) {
         siglongjmp(*thoxa_recover_point, 1);
     }
@@ -2948,6 +2952,10 @@ typedef struct ThoxaFiber {
     /* Set when an fd wait ended at its deadline instead of readiness. */
     int timed_out;
     int done;
+    /* Sockets this task owns (`thoxa_task_own_fd`), closed if it panics. */
+    int owned_fds;
+    /* Under LeakSanitizer a panicked task's stack stays mapped as a root. */
+    int keep_stack;
     struct ThoxaFiber *next;
 } ThoxaFiber;
 
@@ -3098,13 +3106,119 @@ static void thoxa_stack_free(void *map) {
 }
 
 static void thoxa_fiber_free(ThoxaFiber *f) {
-    thoxa_stack_free(f->stack);
+    if (!f->keep_stack) {
+        thoxa_stack_free(f->stack);
+    }
     free(f);
+}
+
+/* Task-owned sockets (R4), indexed by fd: the owning task, or NULL. */
+static ThoxaFiber **thoxa_fd_owner;
+static int32_t thoxa_fd_owner_cap;
+static int64_t thoxa_owned_fd_count;
+
+void thoxa_task_own_fd(int32_t fd) {
+    if (!thoxa_current || fd < 0) {
+        return;
+    }
+    if (fd >= thoxa_fd_owner_cap) {
+        int32_t cap = thoxa_fd_owner_cap ? thoxa_fd_owner_cap : 64;
+        while (cap <= fd) {
+            cap *= 2;
+        }
+        ThoxaFiber **grown =
+            (ThoxaFiber **)realloc(thoxa_fd_owner, (size_t)cap * sizeof(ThoxaFiber *));
+        if (!grown) {
+            thoxa_panic("out of memory");
+        }
+        memset(grown + thoxa_fd_owner_cap, 0,
+               (size_t)(cap - thoxa_fd_owner_cap) * sizeof(ThoxaFiber *));
+        thoxa_fd_owner = grown;
+        thoxa_fd_owner_cap = cap;
+    }
+    ThoxaFiber *previous = thoxa_fd_owner[fd];
+    if (previous == thoxa_current) {
+        return;
+    }
+    if (previous) {
+        previous->owned_fds--;
+    } else {
+        thoxa_owned_fd_count++;
+    }
+    thoxa_fd_owner[fd] = thoxa_current;
+    thoxa_current->owned_fds++;
+}
+
+static void thoxa_fd_forget(int32_t fd) {
+    if (fd < 0 || fd >= thoxa_fd_owner_cap || !thoxa_fd_owner[fd]) {
+        return;
+    }
+    thoxa_fd_owner[fd]->owned_fds--;
+    thoxa_fd_owner[fd] = NULL;
+    thoxa_owned_fd_count--;
+}
+
+int32_t thoxa_close(int32_t fd) {
+    thoxa_fd_forget(fd);
+    return (int32_t)close(fd);
+}
+
+int64_t thoxa_task_owned_fds(void) {
+    return thoxa_owned_fd_count;
+}
+
+/* A task that returns gives up its sockets; one that panicked closes them. */
+static int thoxa_task_release_fds(ThoxaFiber *f, int close_them) {
+    int closed = 0;
+    for (int32_t fd = 0; f->owned_fds > 0 && fd < thoxa_fd_owner_cap; fd++) {
+        if (thoxa_fd_owner[fd] != f) {
+            continue;
+        }
+        thoxa_fd_forget(fd);
+        if (close_them) {
+            (void)close(fd);
+            closed++;
+        }
+    }
+    return closed;
+}
+
+/* Present only when the program links LeakSanitizer (THOXA_SANITIZE=leak). */
+extern void __lsan_register_root_region(const void *p, size_t size) __attribute__((weak));
+
+/* Called from `thoxa_panic` on the task's own stack. The task never resumes:
+ * its frames are abandoned where they stand, so what they held leaks, by
+ * design (R4). Its packed arguments, owned sockets, and stack are given back,
+ * and the scheduler runs the other tasks. Outside a task this returns. */
+static void thoxa_task_end_by_panic(void) {
+    ThoxaFiber *f = thoxa_current;
+    if (!f) {
+        return;
+    }
+    int closed = thoxa_task_release_fds(f, 1);
+    thoxa_task_free(f->data);
+    f->data = NULL;
+    if (closed > 0) {
+        fprintf(stderr, "thoxa: task ended by panic; closed %d socket%s\n",
+                closed, closed == 1 ? "" : "s");
+    } else {
+        fputs("thoxa: task ended by panic\n", stderr);
+    }
+    if (__lsan_register_root_region) {
+        /* Count what the dead frames still point at as reachable, so the
+         * leak gate reports real leaks, not this one. */
+        f->keep_stack = 1;
+        __lsan_register_root_region((char *)f->stack + thoxa_guard_size(), THOXA_FIBER_STACK);
+    }
+    f->done = 1;
+    swapcontext(&f->ctx, &thoxa_sched_ctx);
+    abort(); /* the scheduler frees a done task; it never comes back */
 }
 
 static void thoxa_fiber_entry(void) {
     ThoxaFiber *f = thoxa_current;
     f->fn(f->data);
+    thoxa_task_release_fds(f, 0);
     f->done = 1;
     swapcontext(&f->ctx, &thoxa_sched_ctx);
 }

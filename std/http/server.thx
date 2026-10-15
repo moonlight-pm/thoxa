@@ -17,10 +17,10 @@ let headerTimeoutMs = 10000
 let idleTimeoutMs = 30000
 let bodyTimeoutMs = 30000
 let writeTimeoutMs = 30000
-## Connections served at once. Past the cap a new connection is closed at
-## accept, so the open connections keep their fds.
+## Connections served at once (sockets owned by `serveOne` tasks). Past the
+## cap a new connection is closed at accept, so the open connections keep
+## their fds.
 let maxConnections = 1024
-mut activeConnections = 0
 
 export fn bindListen(port!: Int64) -> Trial<Socket, String> {
     let server = net.createSocket()?
@@ -253,8 +253,11 @@ fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
 
 ## One keep-alive connection: read / handle / write until close. Each
 ## request has a deadline (see `headerTimeoutMs`); an idle connection that
-## reaches it is closed quietly.
+## reaches it is closed quietly. Run as a task, it owns `peer`: if `handle`
+## panics, the runtime ends the task and closes `peer`, and the server keeps
+## serving (R4).
 export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
+    peer.ownByTask()
     mut budget = headerTimeoutMs
     loop {
         match readRequest(peer, net.nowMs() + budget) {
@@ -298,12 +301,6 @@ export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
     peer.close()
 }
 
-## `serveOne`, counted against `maxConnections`.
-fn serveCounted(peer!: Socket, handle!: (req: Request) -> Response) {
-    serveOne(peer, handle)
-    activeConnections = activeConnections - 1
-}
-
 ## Run the host forever. `handle` is a free fn or bound method (D132).
 ## `--> serveOne` parks an idle peer in recv without stalling accept.
 export fn serve(
@@ -318,12 +315,11 @@ export fn serve(
                 warn("accept: {e}")
             }
             Pass(peer) {
-                if activeConnections >= maxConnections {
+                if net.taskOwnedSockets() >= maxConnections {
                     warn("accept: {maxConnections} connections open; closing the new one")
                     peer.close()
                 } else {
-                    activeConnections = activeConnections + 1
-                    --> serveCounted(peer, handle)
+                    --> serveOne(peer, handle)
                 }
             }
         }

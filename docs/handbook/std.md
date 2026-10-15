@@ -103,6 +103,8 @@ IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 | `receiveRequest(deadline: 0)` | Until `\r\n\r\n` or 64 KiB cap / peer close. A deadline with nothing read is an empty `Pass` (quiet close); mid-headers it is `Fail("request timed out")` |
 | `send` / `sendAll(data, deadline: 0)` | One write vs drain partial writes |
 | `nowMs()` | Monotonic milliseconds. A deadline is `nowMs() + budget`; 0 means none (**D165**) |
+| `Socket.ownByTask()` | The running task owns the socket: if the task panics, the runtime closes it (**D166**). Ownership ends at `close` / `drop` or when the task returns. No-op outside a task |
+| `taskOwnedSockets()` | Open sockets owned by tasks, across all tasks |
 
 ### Http (`std/http`)
 
@@ -142,11 +144,13 @@ Host loop over `std/net`. Completes `Request.body` (64 KiB cap). A client gets
 10 s from accept to send its first request's headers, 30 s idle between
 kept-alive requests, and 30 s each to send a body and to take a response;
 `serve` closes new connections at accept while 1024 are open (**D165**).
+`serveOne` owns its peer, so if `handle` panics the runtime ends that
+connection's task and closes the peer; the server keeps serving (**D166**).
 
 | Surface | Notes |
 |---------|--------|
 | `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132** handle, **D148** nowait). Logs `http://127.0.0.1:{port}/`. App `handle` is often `Routes().route` (**D150**) |
-| `serveOne(peer, handle)` | One keep-alive connection |
+| `serveOne(peer, handle)` | One keep-alive connection. Owns `peer` (`ownByTask`), so a panic in `handle` closes it |
 | `bindListen(port)` | `createSocket` + reuse + bind + listen |
 | `readBody(peer, raw, req, deadline: 0)` / `readRequest(peer, deadline: 0)` | `Content-Length` entity; empty method/path = quiet close. `Transfer-Encoding`, two `Content-Length`s, or a non-numeric one are refused (400) |
 | `writeResponse(peer, method, res, keepAlive, deadline: 0)` | `finalize` + `sendAll` |

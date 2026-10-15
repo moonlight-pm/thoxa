@@ -162,10 +162,21 @@ int32_t thoxa_pipe(int32_t fds_out[2]);
  * Cooperative tasks (D148). One OS thread; `thoxa_task_start` enqueues
  * a thunk; `thoxa_wait_ms` parks the current task; `thoxa_sched_drain` runs
  * until idle. Generated `main` drains after `thoxa_fn_main`.
+ *
+ * A panic inside a task ends that task only (R4): its frames are abandoned
+ * (what they held leaks), the fds it owns are closed, and the other tasks
+ * and `main` keep running. A panic in `main` still aborts.
  */
 void thoxa_task_start(void (*fn)(void *), void *data);
 void *thoxa_task_alloc(size_t nbytes);
 void thoxa_task_free(void *ptr);
+/* The running task owns `fd`: closed if the task panics. No-op outside a
+ * task. Ownership ends at `thoxa_close(fd)` or when the task returns. */
+void thoxa_task_own_fd(int32_t fd);
+/* close(2) that also ends task ownership of `fd`. */
+int32_t thoxa_close(int32_t fd);
+/* Open fds owned by tasks, across all tasks. */
+int64_t thoxa_task_owned_fds(void);
 void thoxa_wait_ms(int64_t ms);
 #define THOXA_WAIT_READ  1
 #define THOXA_WAIT_WRITE 2

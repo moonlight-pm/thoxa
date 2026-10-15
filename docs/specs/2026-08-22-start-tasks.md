@@ -3,9 +3,9 @@
 **Date:** 2026-08-22
 **Status:** target (freeze)
 **Implementation:** shipped
-**Decision:** D148
+**Decision:** D148 (panic in a task: **D166**)
 **Gates:** `start_tasks`, `start_nested`, `start_net`, `start_keepalive`,
-`http_host`
+`http_host`, `task_panic`
 **Gaps:**
 - No `Future` / `async` / `run` / `Task` type
 - `--> { … }` is a parse error (later)

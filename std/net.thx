@@ -18,7 +18,9 @@ extern fn sysGetsockname(fd!: Int32, addr!: Bytes, addrlen!: Bytes) -> Int32 fro
 extern fn sysRecv(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32, deadline!: Int64) -> Int64 from "c" "thoxa_recv_until"
 extern fn sysSend(fd!: Int32, buf!: Bytes, len!: UInt64, flags!: Int32, deadline!: Int64) -> Int64 from "c" "thoxa_send_until"
 extern fn sysNowMs() -> Int64 from "c" "thoxa_now_ms"
-extern fn sysClose(fd!: Int32) -> Int32 from "c" "close"
+extern fn sysClose(fd!: Int32) -> Int32 from "c" "thoxa_close"
+extern fn sysTaskOwnFd(fd!: Int32) from "c" "thoxa_task_own_fd"
+extern fn sysTaskOwnedFds() -> Int64 from "c" "thoxa_task_owned_fds"
 extern fn sysStrerror(errnum!: Int32) -> String from "c" "strerror"
 extern fn sysErrno() -> Int32 from "c" "thoxa_errno"
 
@@ -45,6 +47,11 @@ let errTimedOut = 110
 ## `sendAll` is `nowMs() + budget`; 0 means no deadline.
 export fn nowMs() -> Int64 {
     sysNowMs()
+}
+
+## Open sockets that tasks own (`Socket.ownByTask`), across all tasks.
+export fn taskOwnedSockets() -> Int64 {
+    sysTaskOwnedFds()
 }
 
 fn sockaddrAny(port!: Int64) -> Bytes {
@@ -227,6 +234,15 @@ export type Socket(fd: Int64) {
         }
         ## Unreachable.
         Fail("sendAll: internal")
+    }
+
+    ## The running task owns this socket: if the task ends in a panic, the
+    ## runtime closes it (R4). Ownership ends when the socket closes or the
+    ## task returns. Outside a task it does nothing.
+    export fn ownByTask() {
+        if fd >= 0 {
+            sysTaskOwnFd(fd)
+        }
     }
 
     ## Close the fd once; subsequent closes are no-ops. Uses field write-back.

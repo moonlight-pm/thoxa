@@ -1,0 +1,90 @@
+## A panic inside a `-->` task ends that task only (R4): the other tasks and
+## `main` keep running. A socket the task owns is closed, so a server whose
+## handler panics on one request drops that connection and serves the next.
+import net, { Socket, createSocket } from "std/net"
+import http, { Request, Response } from "std/http"
+import server from "std/http/server"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+import { startsWith } from "std/str"
+
+fn divide(label!: String, divisor!: Int64) {
+    info("{label}: start")
+    let quotient = 10 / divisor
+    info("{label}: {quotient}")
+}
+
+fn handle(request!: Request) -> Response {
+    if request.path == "/boom" {
+        let items = [1, 2, 3]
+        info("item: {items[request.path.count]}")
+    }
+    http.ok(Bytes.fromString("fine"), "text/plain")
+}
+
+fn acceptOne(listener!: Socket) {
+    match listener.accept() {
+        Fail(error) {
+            info("accept failed: {error}")
+        }
+        Pass(peer) {
+            server.serveOne(peer, handle)
+        }
+    }
+}
+
+## The first line of the reply, or what happened instead.
+fn fetch(port!: Int64, path!: String) -> Trial<String, String> {
+    let client = createSocket()?
+    client.connect(port)?
+    client.sendAll(Bytes.fromString("GET {path} HTTP/1.1\r\nConnection: close\r\n\r\n"))?
+    mut reply = Buffer()
+    loop {
+        let chunk = client.receive()
+        if chunk.count == 0 {
+            break
+        }
+        reply.appendBytes(chunk)
+    }
+    client.close()
+    let text = reply.freeze().toString()
+    if text == "" {
+        Pass("closed with no reply")
+    } else {
+        if startsWith(text, "HTTP/1.1 200 OK") {
+            Pass("200 OK")
+        } else {
+            Pass("unexpected reply")
+        }
+    }
+}
+
+fn run() -> Trial<Void, String> {
+    --> divide("first", 0)
+    --> divide("second", 5)
+    info("main: after tasks")
+
+    let listener = server.bindListen(0)?
+    let port = listener.localPort()?
+    --> acceptOne(listener)
+    let first = fetch(port, "/boom")?
+    info("boom: {first}")
+    info("owned sockets: {net.taskOwnedSockets()}")
+    --> acceptOne(listener)
+    let second = fetch(port, "/")?
+    info("next: {second}")
+    listener.close()
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass(_) { 0 }
+        Fail(error) {
+            info("fail {error}")
+            1
+        }
+    }
+}

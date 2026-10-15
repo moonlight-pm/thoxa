@@ -7,7 +7,8 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 **As of:** 2026-10-15. Review follow-ups: **D161** defined shifts, **D162** a
 line starting `-x` is a new expression, **D163** mutating methods need a
 writable receiver (and user method calls write back), **D164** `return` is
-Never, **D165** HTTP host deadlines + connection cap + strict framing;
+Never, **D165** HTTP host deadlines + connection cap + strict framing, **D166** a
+panic in a `-->` task ends only that task (the server keeps serving);
 struct-field write-back use-after-free fixed; `Address<T>` parameters
 compile; `tests/conformance/fail/`
 expected-rejection tests; type / signature errors name their file;
@@ -77,8 +78,8 @@ lits; overwrite-drop; **D152** match/init RC.
 `std/` from their last image build, so D165 deadlines and `-fwrapv` reach
 production only after their C is regenerated and the images rebuilt;
 `Db(handle:)` lets code double-close a resource, and a module-level `Db`
-mis-emits as `Sql` (why `examples/http` opens per call); a panic in one
-connection's task ends the whole server; pipelined requests are dropped;
+mis-emits as `Sql` (why `examples/http` opens per call); pipelined
+requests are dropped;
 session `let` replay vs “lifted once”; Ctrl-C in a pure-Thoxa loop;
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`); narrowing
 conversions truncate silently (D21: a `Byte` parameter given 300 gets 44);

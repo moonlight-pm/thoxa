@@ -328,6 +328,12 @@ before exiting. One OS thread (not `fork` / not threads).
 `std/http/server.serve` uses `--> serveOne` per accept so keep-alive peers can
 park without stalling the listener. See [std.md](std.md).
 
+A panic inside a task ends **that task only** (**D166**). It prints
+`thoxa panic: …` and `thoxa: task ended by panic`; `main` and the other tasks
+keep running. The task's frames are abandoned, so the memory they held leaks.
+Sockets the task owns (`Socket.ownByTask()`, see [std.md](std.md)) are closed.
+A panic in `main` itself still ends the program.
+
 ## Route clauses
 
 HTTP methods in a **type body** are routes (**D150**). The type must be
