@@ -78,6 +78,23 @@ complement); it is never undefined. `/` and `%` by zero panic with
 count of 64 or more shifts every bit out (`<<` gives 0, `>>` gives 0 or -1).
 A negative count panics with `negative shift count`.
 
+**Narrower integers (**D167**):** arithmetic happens in `Int64`. A value passed,
+returned, or stored where `Int32`, `UInt32`, `UInt64`, or `Byte` is expected
+converts when it fits; when it does not, the program panics
+(`300 does not fit in Byte`). A literal that cannot fit is a compile error.
+To keep the low bits instead (a bit pattern, `-1` for an unsigned C
+parameter), say so:
+
+```thx
+let allOnes = UInt64(truncating: -1)   ## 18446744073709551615
+let low = Byte(truncating: 300)        ## 44
+let back = Int64(truncating: allOnes)  ## -1
+```
+
+`Int64`, `Int32`, `UInt64`, `UInt32`, and `Byte` take `truncating:`. Widening
+(`Byte` → `Int64`) never checks. A `UInt64` above the `Int64` maximum panics
+when it meets `Int64` arithmetic or a comparison.
+
 **`if` without `else` (**D158**):** a statement with no value. Where a value is
 expected, write the `else`:
 

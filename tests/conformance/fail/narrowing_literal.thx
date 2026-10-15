@@ -1,0 +1,9 @@
+## D167: a literal that does not fit the expected integer type is a compile
+## error, with a hint for the truncating conversion.
+fn asByte(value!: Byte) -> Int64 {
+    value
+}
+
+fn main() -> Int64 {
+    asByte(300)
+}

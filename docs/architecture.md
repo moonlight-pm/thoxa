@@ -172,7 +172,10 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
   (`__lsan_register_root_region` present) that stack stays mapped as a root.
 - Integer `/` and `%` call `thoxa_int_div` / `thoxa_int_rem` (panic on zero),
   `<<` / `>>` call `thoxa_int_shl` / `thoxa_int_shr` (**D161**);
-  fixed-array subscripts go through `thoxa_fixed_index`; programs build with
+  fixed-array subscripts go through `thoxa_fixed_index`; an implicit integer
+  narrowing (MIR `NarrowChecked`) goes through `thoxa_narrow_signed` /
+  `thoxa_narrow_unsigned`, and `T(truncating: x)` is a plain C cast
+  (**D167**); programs build with
   `-fwrapv` (**D157**), the site Containerfiles too. `thoxa_panic` is
   `noreturn`.
 - Extern from `"c"` (+ optional C symbol); cgen pulls headers when needed.

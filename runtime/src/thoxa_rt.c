@@ -39,6 +39,21 @@ void thoxa_panic(const char *msg) {
     abort();
 }
 
+/* One panic at a time: the message buffer is never in use twice. */
+static char thoxa_narrow_message[96];
+
+void thoxa_narrow_fail_signed(int64_t value, const char *to) {
+    snprintf(thoxa_narrow_message, sizeof thoxa_narrow_message, "%lld does not fit in %s",
+             (long long)value, to);
+    thoxa_panic(thoxa_narrow_message);
+}
+
+void thoxa_narrow_fail_unsigned(uint64_t value, const char *to) {
+    snprintf(thoxa_narrow_message, sizeof thoxa_narrow_message, "%llu does not fit in %s",
+             (unsigned long long)value, to);
+    thoxa_panic(thoxa_narrow_message);
+}
+
 static void thoxa_step_fault(int sig) {
     thoxa_recover_signal = sig;
     siglongjmp(*thoxa_recover_point, 2);

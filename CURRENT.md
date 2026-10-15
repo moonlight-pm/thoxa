@@ -8,7 +8,9 @@ Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 line starting `-x` is a new expression, **D163** mutating methods need a
 writable receiver (and user method calls write back), **D164** `return` is
 Never, **D165** HTTP host deadlines + connection cap + strict framing, **D166** a
-panic in a `-->` task ends only that task (the server keeps serving);
+panic in a `-->` task ends only that task (the server keeps serving), **D167**
+implicit integer narrowing panics when the value does not fit
+(`T(truncating: x)` keeps the low bits);
 struct-field write-back use-after-free fixed; `Address<T>` parameters
 compile; `tests/conformance/fail/`
 expected-rejection tests; type / signature errors name their file;
@@ -81,8 +83,7 @@ production only after their C is regenerated and the images rebuilt;
 mis-emits as `Sql` (why `examples/http` opens per call); pipelined
 requests are dropped;
 session `let` replay vs “lifted once”; Ctrl-C in a pure-Thoxa loop;
-command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`); narrowing
-conversions truncate silently (D21: a `Byte` parameter given 300 gets 44);
+command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`);
 redefining a session
 `fn` is an error, not a replacement; and no CI.
 

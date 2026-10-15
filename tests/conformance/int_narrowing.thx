@@ -1,0 +1,43 @@
+## An Int64 passed, returned, or stored where a narrower integer type is
+## expected converts when the value fits (D167). `T(truncating: x)` keeps the
+## low bits instead of checking. Failures: `fail/narrowing_*`.
+import logging, { info } from "std/logging"
+
+type Pixel {
+    mut red: Byte
+    mut flags: UInt32
+}
+
+fn asByte(value!: Byte) -> Int64 {
+    value
+}
+
+fn asInt32(value!: Int32) -> Int64 {
+    value
+}
+
+fn toUnsigned(value!: Int64) -> UInt64 {
+    value
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let computed = 254 + 1
+    info("byte edge: {asByte(computed)} {asByte(0)}")
+    info("int32 edges: {asInt32(2147483647)} {asInt32(-2147483648)}")
+    info("unsigned: {toUnsigned(42)}")
+
+    mut pixel = Pixel()
+    pixel.red = computed
+    pixel.flags = 4294967295
+    info("fields: {pixel.red} {pixel.flags}")
+
+    info("truncating byte: {Byte(truncating: 300)} {Byte(truncating: -1)}")
+    info("truncating int32: {Int32(truncating: 4294967295)} {Int32(truncating: 2147483648)}")
+    info("truncating uint32: {UInt32(truncating: -1)}")
+    let allOnes = UInt64(truncating: -1)
+    info("bit pattern: {allOnes} {Int64(truncating: allOnes)}")
+    info("same width: {Int64(truncating: 7)}")
+    0
+}

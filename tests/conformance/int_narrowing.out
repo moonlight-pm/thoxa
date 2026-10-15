@@ -1,0 +1,9 @@
+byte edge: 255 0
+int32 edges: 2147483647 -2147483648
+unsigned: 42
+fields: 255 4294967295
+truncating byte: 44 255
+truncating int32: -1 -2147483648
+truncating uint32: 4294967295
+bit pattern: 18446744073709551615 -1
+same width: 7

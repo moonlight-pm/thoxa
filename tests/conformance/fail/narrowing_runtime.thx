@@ -1,0 +1,16 @@
+## D167: an Int64 passed where a Byte is expected panics when it does not fit.
+import logging, { info } from "std/logging"
+
+fn asByte(value!: Byte) -> Int64 {
+    value
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let large = 299 + 1
+    info("before")
+    info("{asByte(large)}")
+    info("after")
+    0
+}

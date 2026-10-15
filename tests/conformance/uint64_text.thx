@@ -2,7 +2,7 @@
 import logging, { info } from "std/logging"
 
 fn asUnsigned(value!: Int64) -> UInt64 {
-    return value
+    UInt64(truncating: value)
 }
 
 fn main() -> Int64 {

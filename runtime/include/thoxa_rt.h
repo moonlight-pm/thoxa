@@ -47,6 +47,25 @@ static inline int64_t thoxa_int_div(int64_t left, int64_t right) {
     return left / right;
 }
 
+/* Implicit integer narrowing (D167): a value the target type cannot hold
+ * panics ("300 does not fit in Byte"). `T(truncating: x)` is a plain cast. */
+THOXA_NORETURN void thoxa_narrow_fail_signed(int64_t value, const char *to);
+THOXA_NORETURN void thoxa_narrow_fail_unsigned(uint64_t value, const char *to);
+
+static inline int64_t thoxa_narrow_signed(int64_t value, int64_t min, int64_t max, const char *to) {
+    if (value < min || value > max) {
+        thoxa_narrow_fail_signed(value, to);
+    }
+    return value;
+}
+
+static inline uint64_t thoxa_narrow_unsigned(uint64_t value, uint64_t max, const char *to) {
+    if (value > max) {
+        thoxa_narrow_fail_unsigned(value, to);
+    }
+    return value;
+}
+
 /* Fixed-size Array<T, N> subscript: an index outside 0..N-1 panics. */
 static inline int64_t thoxa_fixed_index(int64_t index, int64_t len) {
     if (index < 0 || index >= len) {

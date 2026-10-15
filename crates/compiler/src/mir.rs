@@ -392,6 +392,13 @@ pub enum RValue {
         from: Ty,
         to: Ty,
     },
+    /// Implicit integer narrowing (D167): panics when `to` cannot hold the
+    /// value. `T(truncating: x)` is a plain `Cast`.
+    NarrowChecked {
+        value: Place,
+        from: Ty,
+        to: Ty,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -681,6 +688,7 @@ fn rvalue_uses_place(value: &RValue, place: &Place) -> bool {
         RValue::Unary { arg, .. }
         | RValue::ToString { value: arg, .. }
         | RValue::Cast { value: arg, .. }
+        | RValue::NarrowChecked { value: arg, .. }
         | RValue::AddressOf(arg) => uses(arg),
         RValue::Binary { left, right, .. } | RValue::StringConcat { left, right } => {
             uses(left) || uses(right)
@@ -14404,6 +14412,9 @@ fn lower_call(
             lower_bytes_new(ctx, args, span)
         }
         "Buffer" => lower_buffer_new(ctx, args, span),
+        "Int64" | "Int32" | "UInt64" | "UInt32" | "Byte" => {
+            lower_truncating(ctx, callee, args, span)
+        }
         "Map" => lower_map_new(ctx, args, span, expect),
         "__jsx_el" => lower_html_el(ctx, args, span),
         "__jsx_child" => lower_html_child(ctx, args, span),
@@ -14709,17 +14720,144 @@ fn coerce_place(ctx: &mut LowerCtx, place: Place, from: &Ty, to: &Ty, span: Span
     if !can_numeric_cast(from, to) {
         return Err(Error::at(format!("cannot coerce {from:?} to {to:?}"), span));
     }
+    let checked = match (int_range(from), int_range(to)) {
+        // Narrowing (D167): a literal is checked here, anything else at run time.
+        (Some((from_min, from_max)), Some((to_min, to_max)))
+            if from_min < to_min || from_max > to_max =>
+        {
+            match literal_int_value(ctx, &place) {
+                Some(value) if value >= to_min && value <= to_max => false,
+                Some(value) => {
+                    let name = display_ty(to);
+                    return Err(Error::at(
+                        format!("{value} does not fit in {name} ({to_min} to {to_max})"),
+                        span,
+                    )
+                    .with_help(format!(
+                        "write `{name}(truncating: {value})` to keep the low bits"
+                    )));
+                }
+                None => true,
+            }
+        }
+        _ => false,
+    };
     let p = ctx.fresh("cast");
+    let value = if checked {
+        RValue::NarrowChecked {
+            value: place,
+            from: from.clone(),
+            to: to.clone(),
+        }
+    } else {
+        RValue::Cast {
+            value: place,
+            from: from.clone(),
+            to: to.clone(),
+        }
+    };
+    ctx.assign(p.clone(), to.clone(), value);
+    Ok(p)
+}
+
+/// The values an integer type holds, as `(min, max)`.
+fn int_range(ty: &Ty) -> Option<(i128, i128)> {
+    match ty {
+        Ty::Int64 => Some((i64::MIN as i128, i64::MAX as i128)),
+        Ty::Int32 => Some((i32::MIN as i128, i32::MAX as i128)),
+        Ty::UInt64 => Some((0, u64::MAX as i128)),
+        Ty::UInt32 => Some((0, u32::MAX as i128)),
+        Ty::Byte => Some((0, u8::MAX as i128)),
+        _ => None,
+    }
+}
+
+/// The value of `place` when it is the temporary holding an integer literal,
+/// or a negated one. Named locals may be reassigned, so they never count.
+fn literal_int_value(ctx: &LowerCtx, place: &Place) -> Option<i128> {
+    let temp_of = |prefix: &str, name: &str| {
+        name.strip_prefix(prefix)
+            .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+    };
+    let assigned = |target: &Place| {
+        ctx.stmts.iter().rev().find_map(|stmt| match stmt {
+            Stmt::Assign { place, value, .. } if place == target => Some(value),
+            _ => None,
+        })
+    };
+    if temp_of("_i", &place.name) {
+        return match assigned(place)? {
+            RValue::Int(value) => Some(*value as i128),
+            _ => None,
+        };
+    }
+    if temp_of("_neg", &place.name) {
+        if let RValue::Unary {
+            op: UnaryOp::Neg,
+            arg,
+        } = assigned(place)?
+        {
+            if temp_of("_i", &arg.name) {
+                if let RValue::Int(value) = assigned(arg)? {
+                    return Some(-(*value as i128));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// `Int32(truncating: value)` and the other integer types keep the low bits
+/// of `value` (two's complement), with no range check (D167).
+fn lower_truncating(
+    ctx: &mut LowerCtx,
+    type_name: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let to = match type_name {
+        "Int64" => Ty::Int64,
+        "Int32" => Ty::Int32,
+        "UInt64" => Ty::UInt64,
+        "UInt32" => Ty::UInt32,
+        _ => Ty::Byte,
+    };
+    let value = match args {
+        [Arg::Named { name, value, .. }] if name == "truncating" => value,
+        _ => {
+            return Err(Error::at(
+                format!("`{type_name}(…)` takes one argument, `truncating:`"),
+                span,
+            )
+            .with_help(format!(
+                "a value passed where {type_name} is expected converts on its own, and panics if it does not fit; `{type_name}(truncating: value)` keeps the low bits instead"
+            )));
+        }
+    };
+    let (place, from) = lower_expr(ctx, value)?;
+    if !is_int(&from) {
+        return Err(Error::at(
+            format!(
+                "`truncating:` expects an integer, found {}",
+                display_ty(&from)
+            ),
+            value.span,
+        ));
+    }
+    if from == to {
+        return Ok((place, to));
+    }
+    let p = ctx.fresh("trunc");
     ctx.assign(
         p.clone(),
         to.clone(),
         RValue::Cast {
             value: place,
-            from: from.clone(),
+            from,
             to: to.clone(),
         },
     );
-    Ok(p)
+    Ok((p, to))
 }
 
 fn lower_if(

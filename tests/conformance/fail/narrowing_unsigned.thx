@@ -1,0 +1,16 @@
+## D167: a negative Int64 returned where a UInt64 is expected panics; write
+## `UInt64(truncating: value)` for the bit pattern.
+import logging, { info } from "std/logging"
+
+fn asUnsigned(value!: Int64) -> UInt64 {
+    value
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let negative = 0 - 1
+    info("before")
+    info("{asUnsigned(negative)}")
+    0
+}

@@ -1898,6 +1898,35 @@ fn emit_rvalue(
             let _ = write!(out, "({})({})", c_ty(to), value.name);
             let _ = from; // from is for diagnostics; C cast is enough
         }
+        RValue::NarrowChecked { value, from, to } => {
+            let name = crate::mir::display_ty(to);
+            let target = c_ty(to);
+            if matches!(from, Ty::UInt64 | Ty::UInt32) {
+                let max = match to {
+                    Ty::Int64 => "INT64_MAX",
+                    Ty::Int32 => "INT32_MAX",
+                    Ty::UInt32 => "UINT32_MAX",
+                    _ => "UINT8_MAX",
+                };
+                let _ = write!(
+                    out,
+                    "({target})thoxa_narrow_unsigned((uint64_t)({}), {max}, \"{name}\")",
+                    value.name
+                );
+            } else {
+                let (min, max) = match to {
+                    Ty::Int32 => ("INT32_MIN", "INT32_MAX"),
+                    Ty::UInt32 => ("0", "UINT32_MAX"),
+                    Ty::UInt64 => ("0", "INT64_MAX"),
+                    _ => ("0", "UINT8_MAX"),
+                };
+                let _ = write!(
+                    out,
+                    "({target})thoxa_narrow_signed((int64_t)({}), {min}, {max}, \"{name}\")",
+                    value.name
+                );
+            }
+        }
     }
 }
 
