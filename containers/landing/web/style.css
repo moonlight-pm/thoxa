@@ -10,8 +10,6 @@
     --gold-dim: #a67c2a;
     --blue: #3a4ea8;
     --line: rgba(232, 184, 0, 0.35);
-    --bad: #e07070;
-    --ok: #c6d48a;
     --serif: "Source Serif 4", "Iowan Old Style", Palatino, "Palatino Linotype", serif;
     --sans: "IBM Plex Sans", "Helvetica Neue", Helvetica, sans-serif;
     --display: Cinzel, "Palatino Linotype", Palatino, serif;
@@ -139,22 +137,6 @@ nav {
 .btn:hover {
     color: var(--ground);
     background: #f0cc33;
-}
-
-.btn-nav {
-    padding: 0.45rem 0.9rem;
-    font-size: 0.8rem;
-}
-
-.btn-ghost {
-    background: transparent;
-    color: var(--ink);
-    border-color: var(--line);
-}
-
-.btn-ghost:hover {
-    color: var(--gold);
-    background: transparent;
 }
 
 .hero {
@@ -397,67 +379,6 @@ h3 { font-size: 1.2rem; }
     filter: saturate(0.95) contrast(1.05);
 }
 
-.news {
-    background:
-        radial-gradient(1200px 400px at 20% 0%, rgba(58, 78, 168, 0.18), transparent 60%),
-        var(--ground);
-}
-
-.news-inner { max-width: 38rem; }
-
-.signup {
-    display: flex;
-    gap: 0;
-    margin-top: 1.4rem;
-    max-width: 32rem;
-}
-
-.signup input {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--sans);
-    font-size: 1rem;
-    color: var(--ink);
-    background: var(--raised);
-    border: 1px solid var(--line);
-    border-right: 0;
-    border-radius: 0;
-    padding: 0.75rem 0.9rem;
-    caret-color: var(--gold);
-}
-
-.signup input::placeholder { color: #7d715c; }
-
-.flash {
-    margin: 1rem 0 0;
-    padding: 0.7rem 0.85rem;
-    font-family: var(--sans);
-    font-size: 0.95rem;
-    border: 1px solid var(--line);
-}
-
-.flash.ok {
-    color: var(--ok);
-    border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
-}
-
-.flash.bad {
-    color: var(--bad);
-    border-color: color-mix(in srgb, var(--bad) 45%, var(--line));
-}
-
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-}
-
 .panel {
     max-width: var(--page);
     margin: 0 auto;
@@ -486,8 +407,6 @@ footer p {
     }
     .mosaic { display: none; }
     h1 { max-width: none; }
-    .signup { flex-direction: column; }
-    .signup input { border-right: 1px solid var(--line); border-bottom: 0; }
     .tab {
         font-size: 0.68rem;
         letter-spacing: 0.06em;

@@ -7,7 +7,6 @@
 
 import server from "std/http/server"
 import routes from "./app/routes"
-import store from "./app/store"
 import { hasEnv } from "std/env"
 import { Pass, Fail } from "std/fallible"
 import logging, { warn } from "std/logging"
@@ -43,21 +42,13 @@ fn openBrowser(url!: String) {
 fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
-    match store.open() {
+    let port = routes.listenPort()
+    openBrowser(siteUrl(port))
+    match server.serve(port, routes.handle) {
+        Pass => 0
         Fail(error) {
-            warn("store error: {error}")
+            warn("server error: {error}")
             1
-        }
-        Pass {
-            let port = routes.listenPort()
-            openBrowser(siteUrl(port))
-            match server.serve(port, routes.handle) {
-                Pass => 0
-                Fail(error) {
-                    warn("server error: {error}")
-                    1
-                }
-            }
         }
     }
 }

@@ -8,11 +8,8 @@
 #     --ignorefile containers/sola/.containerignore \
 #     -t registry.wicket.cloud/sola-landing:latest .
 #
-# Wicket injects PORT / WICKET_PORT_HTTP and WICKET_DATABASE_NEWS.
-#   podman run --rm -p 8080:8080 \
-#     -e THOXA_DATABASE=/data/news.sqlite \
-#     -v "$PWD/containers/sola/data:/data" \
-#     sola-landing:latest
+# Wicket injects PORT / WICKET_PORT_HTTP.
+#   podman run --rm -p 8080:8080 sola-landing:latest
 
 FROM docker.io/library/debian:bookworm AS build
 RUN apt-get update \
@@ -21,29 +18,18 @@ RUN apt-get update \
 WORKDIR /build
 COPY runtime/include runtime/include
 COPY runtime/src runtime/src
-COPY vendor/sqlite vendor/sqlite
 COPY target/thoxa/c/sola.c sola.c
 RUN gcc -std=c11 -O2 -fPIC -c runtime/src/thoxa_rt.c -I runtime/include -o thoxa_rt.o \
- && gcc -std=c11 -O2 -fPIC -c runtime/src/thoxa_sql.c -I runtime/include -I vendor/sqlite -o thoxa_sql.o \
- && gcc -std=c11 -O2 -fPIC -c vendor/sqlite/sqlite3.c -I vendor/sqlite \
-      -DSQLITE_THREADSAFE=0 \
-      -DSQLITE_OMIT_LOAD_EXTENSION=1 \
-      -DSQLITE_DQS=0 \
-      -DSQLITE_DEFAULT_MEMSTATUS=0 \
-      -o sqlite3.o \
- && gcc -std=c11 -O2 sola.c thoxa_rt.o thoxa_sql.o sqlite3.o -I runtime/include -lm -o /sola-landing
+ && gcc -std=c11 -O2 sola.c thoxa_rt.o -I runtime/include -lm -o /sola-landing
 
 FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /data \
-    && chmod 0777 /data
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /sola-landing /usr/local/bin/sola-landing
 COPY containers/sola/web /app/web
 RUN chmod 0755 /usr/local /usr/local/bin /usr/local/bin/sola-landing
 ENV THOXA_PORT=8080
 ENV THOXA_STATIC=/app/web
-ENV THOXA_DATABASE=/data/news.sqlite
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/sola-landing"]

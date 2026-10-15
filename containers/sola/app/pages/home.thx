@@ -1,15 +1,12 @@
-## GET / and POST /signup — Paper Teaser · Desktop / Mobile.
+## GET / — Paper Teaser · Desktop / Mobile.
 
 import { Page } from "~/app/ui/page"
-import store, { Added, Duplicate, BadEmail } from "~/app/store"
 import http, { Request, Response } from "std/http"
-import { Has, Not, Pass, Fail } from "std/fallible"
-import { warn } from "std/logging"
 
 export fn page(request!: Request) -> Response {
     http.htmlResponse(
         <Page title="Sola" request={request}>
-            {hero(request)}
+            {hero()}
             {highlights()}
             {roster()}
             {footer()}
@@ -31,47 +28,8 @@ export fn missing(request!: Request) -> Response {
     )
 }
 
-export fn signup(request!: Request) -> Response {
-    match http.formField(request.body, "email") {
-        Not {
-            http.seeOther("/?error=missing#notify")
-        }
-        Has(raw) {
-            match store.addEmail(raw) {
-                Fail(error) {
-                    warn("signup store: {error}")
-                    http.htmlResponseStatus(
-                        500,
-                        "Internal Server Error",
-                        <Page title="Could not save · Sola" request={request}>
-                            <section class="panel">
-                                <h1>Could not save that</h1>
-                                <p class="lede">The store did not take the address. Try again in a moment.</p>
-                                <p><a class="btn" href="/#notify">Back to the form</a></p>
-                            </section>
-                        </Page>
-                    )
-                }
-                Pass(outcome) {
-                    match outcome {
-                        Added {
-                            http.seeOther("/?ok=1#notify")
-                        }
-                        Duplicate {
-                            http.seeOther("/?ok=dup#notify")
-                        }
-                        BadEmail {
-                            http.seeOther("/?error=invalid#notify")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn hero(request!: Request) -> Node {
-    <section class="hero" id="notify">
+fn hero() -> Node {
+    <section class="hero">
         <p class="eyebrow">
             <span class="dot" aria-hidden="true"></span>
             Wayland desktop · pure Rust · NixOS
@@ -81,20 +39,6 @@ fn hero(request!: Request) -> Node {
             <p class="lede">Tiling Wayland with a suite of custom productivity apps</p>
         </div>
         <p class="pill">ISO in progress · not yet released</p>
-        {flash(request)}
-        <form class="signup" method="post" action="/signup">
-            <label class="sr-only" for="email">Email</label>
-            <input
-                id="email"
-                name="email"
-                type="email"
-                autocomplete="email"
-                placeholder="you@example.com"
-                required
-            />
-            <button type="submit" class="btn">Notify me</button>
-        </form>
-        <p class="micro">One email when the ISO is ready. Nothing else.</p>
     </section>
 }
 
@@ -179,38 +123,4 @@ fn footer() -> Node {
         </div>
         <p class="footer-note">Early build · not a finished OS release</p>
     </footer>
-}
-
-fn flash(request!: Request) -> Node {
-    match http.queryParam(request, "ok") {
-        Has(code) {
-            if code == "1" {
-                <p class="flash ok" role="status">You're on the list. We'll write when the ISO is ready.</p>
-            } else {
-                if code == "dup" {
-                    <p class="flash ok" role="status">That address is already on the list.</p>
-                } else {
-                    <></>
-                }
-            }
-        }
-        Not {
-            match http.queryParam(request, "error") {
-                Has(code) {
-                    if code == "missing" {
-                        <p class="flash bad" role="alert">Enter an email address.</p>
-                    } else {
-                        if code == "invalid" {
-                            <p class="flash bad" role="alert">That does not look like an email address.</p>
-                        } else {
-                            <></>
-                        }
-                    }
-                }
-                Not {
-                    <></>
-                }
-            }
-        }
-    }
 }

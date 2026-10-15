@@ -1,11 +1,8 @@
-## GET / and POST /signup.
+## GET / and the not-found page.
 
 import { Page } from "~/app/ui/page"
 import samples from "./samples"
-import store, { Added, Duplicate, BadEmail } from "~/app/store"
 import http, { Request, Response } from "std/http"
-import { Has, Not, Pass, Fail } from "std/fallible"
-import { warn } from "std/logging"
 
 export fn page(request!: Request) -> Response {
     http.htmlResponse(
@@ -14,7 +11,6 @@ export fn page(request!: Request) -> Response {
             {now()}
             {example()}
             {surface()}
-            {news(request)}
         </Page>
     )
 }
@@ -33,45 +29,6 @@ export fn missing(request!: Request) -> Response {
     )
 }
 
-export fn signup(request!: Request) -> Response {
-    match http.formField(request.body, "email") {
-        Not {
-            http.seeOther("/?error=missing#news")
-        }
-        Has(raw) {
-            match store.addEmail(raw) {
-                Fail(error) {
-                    warn("signup store: {error}")
-                    http.htmlResponseStatus(
-                        500,
-                        "Internal Server Error",
-                        <Page title="Could not save · Thoxa" request={request}>
-                            <section class="panel">
-                                <h1>Could not save that</h1>
-                                <p class="lede">The store did not take the address. Try again in a moment.</p>
-                                <p><a class="btn" href="/#news">Back to the form</a></p>
-                            </section>
-                        </Page>
-                    )
-                }
-                Pass(outcome) {
-                    match outcome {
-                        Added {
-                            http.seeOther("/?ok=1#news")
-                        }
-                        Duplicate {
-                            http.seeOther("/?ok=dup#news")
-                        }
-                        BadEmail {
-                            http.seeOther("/?error=invalid#news")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 fn hero() -> Node {
     <section class="hero">
         <div class="hero-copy">
@@ -88,8 +45,7 @@ fn hero() -> Node {
                 <code>thoxa check</code>, and <code>thoxa lsp</code> are the tools.
             </p>
             <p class="hero-actions">
-                <a class="btn" href="#news">Sign up for news</a>
-                <a class="btn btn-ghost" href="#example">See the language</a>
+                <a class="btn" href="#example">See the language</a>
             </p>
         </div>
     </section>
@@ -205,63 +161,4 @@ fn surface() -> Node {
             </figure>
         </div>
     </section>
-}
-
-fn news(request!: Request) -> Node {
-    <section class="section news" id="news">
-        <div class="section-inner news-inner">
-            <h2>Sign up for news</h2>
-            <p class="lede">
-                A short note when there is something to run. No install, no feed,
-                no drip. Just an address.
-            </p>
-            {flash(request)}
-            <form class="signup" method="post" action="/signup">
-                <label class="sr-only" for="email">Email</label>
-                <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autocomplete="email"
-                    placeholder="you@example.com"
-                    required
-                />
-                <button type="submit" class="btn">Sign up</button>
-            </form>
-        </div>
-    </section>
-}
-
-fn flash(request!: Request) -> Node {
-    match http.queryParam(request, "ok") {
-        Has(code) {
-            if code == "1" {
-                <p class="flash ok" role="status">You're on the list. We'll write when there is news.</p>
-            } else {
-                if code == "dup" {
-                    <p class="flash ok" role="status">That address is already on the list.</p>
-                } else {
-                    <></>
-                }
-            }
-        }
-        Not {
-            match http.queryParam(request, "error") {
-                Has(code) {
-                    if code == "missing" {
-                        <p class="flash bad" role="alert">Enter an email address.</p>
-                    } else {
-                        if code == "invalid" {
-                            <p class="flash bad" role="alert">That does not look like an email address.</p>
-                        } else {
-                            <></>
-                        }
-                    }
-                }
-                Not {
-                    <></>
-                }
-            }
-        }
-    }
 }

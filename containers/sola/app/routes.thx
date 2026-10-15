@@ -13,10 +13,6 @@ type Routes {
     GET "/" (request: Request) -> Response {
         home.page(request)
     }
-
-    POST "/signup" (request: Request) -> Response {
-        home.signup(request)
-    }
 }
 
 export fn handle(request!: Request) -> Response {

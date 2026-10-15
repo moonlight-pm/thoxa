@@ -1,7 +1,7 @@
 # containers/sola — sola.computer
 
 Public teaser for **sola.computer**. Written in Thoxa. Serves the Paper
-**Teaser** (desktop + mobile) with an ISO notify sign-up.
+**Teaser** (desktop + mobile).
 
 Not product std. Not an `examples/` demo.
 
@@ -20,11 +20,8 @@ cargo make run containers/sola
 
 | Env | Default |
 |-----|---------|
-| `THOXA_DATABASE` | `/tmp/sola-news.sqlite` (also accepts `sqlite:///path`) |
 | `THOXA_PORT` | `8089` locally (landing is 8088). Image sets `8080`. |
 | `THOXA_STATIC` | `containers/sola/web` |
-
-`POST /signup` stores a unique email in SQLite.
 
 ## Image + Wicket
 
@@ -37,6 +34,4 @@ podman build -f containers/sola/Containerfile \
 wicketctl workload apply aulos --file containers/sola/workload.toml --confirm
 ```
 
-Wicket injects `PORT` / `WICKET_PORT_HTTP` and `WICKET_DATABASE_NEWS`.
-The image default database path is `/data/news.sqlite`. `sqlite:///path`
-URLs are accepted.
+Wicket injects `PORT` / `WICKET_PORT_HTTP`.

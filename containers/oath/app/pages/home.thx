@@ -1,15 +1,12 @@
-## GET / and POST /signup.
+## GET /, GET /map, and the not-found page.
 
 import { Page } from "~/app/ui/page"
-import store, { Added, Duplicate, BadEmail } from "~/app/store"
 import http, { Request, Response } from "std/http"
-import { Has, Not, Pass, Fail } from "std/fallible"
-import { warn } from "std/logging"
 
 export fn page(request!: Request) -> Response {
     http.htmlResponse(
         <Page title="oath" request={request}>
-            {hero(request)}
+            {hero()}
             {intent()}
             {logic()}
         </Page>
@@ -44,65 +41,10 @@ export fn missing(request!: Request) -> Response {
     )
 }
 
-export fn signup(request!: Request) -> Response {
-    match http.formField(request.body, "email") {
-        Not {
-            http.seeOther("/?error=missing#news")
-        }
-        Has(raw) {
-            match store.addEmail(raw) {
-                Fail(error) {
-                    warn("signup store: {error}")
-                    http.htmlResponseStatus(
-                        500,
-                        "Internal Server Error",
-                        <Page title="Could not save · oath" request={request}>
-                            <section class="panel">
-                                <h1>Could not save that</h1>
-                                <p class="lede">The store did not take the address. Try again in a moment.</p>
-                                <p><a class="btn" href="/#news">Back to the form</a></p>
-                            </section>
-                        </Page>
-                    )
-                }
-                Pass(outcome) {
-                    match outcome {
-                        Added {
-                            http.seeOther("/?ok=1#news")
-                        }
-                        Duplicate {
-                            http.seeOther("/?ok=dup#news")
-                        }
-                        BadEmail {
-                            http.seeOther("/?error=invalid#news")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn hero(request!: Request) -> Node {
-    <section class="hero" id="news">
+fn hero() -> Node {
+    <section class="hero">
         <h1>oath</h1>
         <p class="lede">An operating system for one person.</p>
-        {flash(request)}
-        <form class="signup" method="post" action="/signup">
-            <label for="email">Email</label>
-            <div class="signup-row">
-                <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autocomplete="email"
-                    placeholder="you@example.com"
-                    required
-                />
-                <button type="submit" class="btn">Sign up</button>
-            </div>
-        </form>
-        <p class="micro">One email when there is news. Nothing else.</p>
     </section>
 }
 
@@ -152,38 +94,4 @@ fn logic() -> Node {
             <a href="/map">As-built map</a>
         </p>
     </section>
-}
-
-fn flash(request!: Request) -> Node {
-    match http.queryParam(request, "ok") {
-        Has(code) {
-            if code == "1" {
-                <p class="flash ok" role="status">You are on the list. We will write when there is news.</p>
-            } else {
-                if code == "dup" {
-                    <p class="flash ok" role="status">That address is already on the list.</p>
-                } else {
-                    <></>
-                }
-            }
-        }
-        Not {
-            match http.queryParam(request, "error") {
-                Has(code) {
-                    if code == "missing" {
-                        <p class="flash bad" role="alert">Enter an email address.</p>
-                    } else {
-                        if code == "invalid" {
-                            <p class="flash bad" role="alert">That does not look like an email address.</p>
-                        } else {
-                            <></>
-                        }
-                    }
-                }
-                Not {
-                    <></>
-                }
-            }
-        }
-    }
 }

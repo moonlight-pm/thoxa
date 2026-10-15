@@ -1,13 +1,12 @@
 # containers/landing — thoxa.dev
 
 Public site for **thoxa.dev**. Written in Thoxa. Serves the Paper landing
-(Byzantine pass) with a news sign-up instead of a download.
+(Byzantine pass). No download yet, and no sign-up.
 
 Not product std. Not an `examples/` demo.
 
 **Live (aulos):** https://thoxa.dev/ — workload `thoxa`
-(`wl-cada9b4cd855`), image `registry.wicket.cloud/thoxa-landing:latest`,
-database `news` (`db-0369127b0c76`).
+(`wl-cada9b4cd855`), image `registry.wicket.cloud/thoxa-landing:latest`.
 
 ## Local
 
@@ -21,11 +20,8 @@ cargo make run containers/landing
 
 | Env | Default |
 |-----|---------|
-| `THOXA_DATABASE` | `/tmp/thoxa-news.sqlite` (also accepts `sqlite:///path`) |
 | `THOXA_PORT` | `8088` locally (Crema is 9091). Image sets `8080`. |
 | `THOXA_STATIC` | `containers/landing/web` |
-
-`POST /signup` stores a unique email in SQLite.
 
 ## Image + Wicket
 
@@ -42,6 +38,4 @@ podman build -f containers/landing/Containerfile \
 wicketctl workload apply aulos --file containers/landing/workload.toml --confirm
 ```
 
-Wicket injects `PORT` / `WICKET_PORT_HTTP` and `WICKET_DATABASE_NEWS`.
-The image default database path is `/data/news.sqlite`. `sqlite:///path`
-URLs are accepted.
+Wicket injects `PORT` / `WICKET_PORT_HTTP`.

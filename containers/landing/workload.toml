@@ -19,7 +19,3 @@ host = "thoxa.dev"
 container = "web"
 port = "http"
 
-[[databases]]
-id = "db-0369127b0c76"
-name = "news"
-container = "web"

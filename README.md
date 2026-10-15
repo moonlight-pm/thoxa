@@ -30,13 +30,13 @@ cargo make run tests/conformance/hello.thx
 # Example: Little Crema (multi-route; Ctrl-C to stop; port 9091)
 cargo make run examples/http
 
-# thoxa.dev landing (news sign-up; Ctrl-C to stop; port 8088)
+# thoxa.dev landing (Ctrl-C to stop; port 8088)
 cargo make run containers/landing
 
-# sola.computer teaser (ISO notify; Ctrl-C to stop; port 8089)
+# sola.computer teaser (Ctrl-C to stop; port 8089)
 cargo make run containers/sola
 
-# oath.wicket.cloud (news sign-up; Ctrl-C to stop; port 8090)
+# oath.wicket.cloud (Ctrl-C to stop; port 8090)
 cargo make run containers/oath
 
 # Example: kilo editor (needs a real TTY; Ctrl-Q to quit)

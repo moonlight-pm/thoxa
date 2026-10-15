@@ -7,15 +7,11 @@
     --raised: #151922;
     --line: #1a2030;
     --line-2: #1e2533;
-    --line-3: #2a3344;
     --ink: #e9ecf2;
     --body: #c3cad8;
     --muted: #8b94a8;
     --quiet: #5c6578;
-    --placeholder: #6e7789;
     --cyan: #3dd6f5;
-    --bad: #e07070;
-    --ok: #7dcea0;
     --sans: "SF Pro Text", Inter, system-ui, -apple-system, sans-serif;
     --mono: "JetBrains Mono", ui-monospace, monospace;
     --pad-x: clamp(20px, 5.5vw, 64px);
@@ -183,34 +179,6 @@ h1 {
     color: var(--muted);
 }
 
-.signup {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    max-width: 415px;
-}
-
-.signup input {
-    flex: 1;
-    min-width: 0;
-    width: 300px;
-    font-family: var(--sans);
-    font-size: 14px;
-    line-height: 18px;
-    color: var(--ink);
-    background: var(--raised);
-    border: 1px solid var(--line-3);
-    border-radius: 7px;
-    padding: 11px 16px;
-    caret-color: var(--cyan);
-}
-
-.signup input::placeholder {
-    color: var(--placeholder);
-}
-
 .btn {
     display: inline-flex;
     align-items: center;
@@ -232,34 +200,6 @@ h1 {
 .btn:hover {
     color: var(--ground);
     background: #63e0f8;
-}
-
-.micro {
-    margin: 0;
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 18px;
-    text-align: center;
-}
-
-.flash {
-    margin: 0;
-    max-width: 28rem;
-    padding: 0.65rem 0.85rem;
-    font-size: 14px;
-    line-height: 20px;
-    border: 1px solid var(--line);
-    border-radius: 7px;
-}
-
-.flash.ok {
-    color: var(--ok);
-    border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
-}
-
-.flash.bad {
-    color: var(--bad);
-    border-color: color-mix(in srgb, var(--bad) 45%, var(--line));
 }
 
 .highlights {
@@ -378,18 +318,6 @@ footer {
     line-height: 1.2;
 }
 
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-}
-
 @media (max-width: 720px) {
     .hero {
         align-items: stretch;
@@ -420,20 +348,6 @@ footer {
 
     .pill {
         align-self: flex-start;
-    }
-
-    .signup {
-        flex-direction: column;
-        align-items: stretch;
-        max-width: none;
-    }
-
-    .signup input {
-        width: 100%;
-    }
-
-    .micro {
-        text-align: left;
     }
 
     .spec {

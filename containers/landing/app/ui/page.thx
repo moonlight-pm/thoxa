@@ -26,9 +26,7 @@ export type Page(title: String, request: Request) {
                             <a href="#now">Now</a>
                             <a href="#example">Example</a>
                             <a href="#surface">Surface</a>
-                            <a href="#news">News</a>
                         </div>
-                        <a class="btn btn-nav" href="#news">Sign up</a>
                     </nav>
                 </header>
                 {children}

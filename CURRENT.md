@@ -65,9 +65,9 @@ lits; overwrite-drop; **D152** match/init RC.
 
 **On master, not product:** none.
 
-**Review follow-ups (open, from 2026-10-14):** containers/landing + sola +
-`examples/http` store keeps a raw `Db` handle that D155 closes (sign-ups fail
-— sites deferred by Joshua); `std/http/server` has no header / idle deadlines
+**Review follow-ups (open, from 2026-10-14):** `examples/http` store keeps a
+raw `Db` handle that D155 closes (the public sites dropped their sign-ups and
+SQLite on 2026-10-15 instead); `std/http/server` has no header / idle deadlines
 or connection cap; `Db(handle:)` lets code double-close a resource; session
 `let` replay vs “lifted once”; Ctrl-C in a pure-Thoxa loop; command-or-Thoxa
 guess (`x + 1`, `sleep 1`); a line starting with `-` continues the previous

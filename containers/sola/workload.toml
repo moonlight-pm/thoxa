@@ -19,7 +19,3 @@ host = "sola.computer"
 container = "web"
 port = "http"
 
-[[databases]]
-id = "db-2aedc3c87a1b"
-name = "news"
-container = "web"

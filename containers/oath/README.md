@@ -1,14 +1,13 @@
 # containers/oath — oath.wicket.cloud
 
 Public site for **https://oath.wicket.cloud/**. Written in Thoxa. Front page
-is the OS pitch plus a news sign-up. `GET /map` is a short page (not the
+is the OS pitch. `GET /map` is a short page (not the
 Archify HTML — serving that file through Thoxa OOMs on aulos).
 
 Not product std. Not an `examples/` demo.
 
 **Live (aulos):** https://oath.wicket.cloud/ — workload `oath`
-(`wl-b6703b0fa806`), image `registry.wicket.cloud/oath-landing:latest`,
-database `news` (`db-6d8fbcbdc05a`).
+(`wl-b6703b0fa806`), image `registry.wicket.cloud/oath-landing:latest`.
 
 ## Local
 
@@ -22,11 +21,8 @@ cargo make run containers/oath
 
 | Env | Default |
 |-----|---------|
-| `THOXA_DATABASE` | `/tmp/oath-news.sqlite` (also accepts `sqlite:///path`) |
 | `THOXA_PORT` | `8090` locally (landing is 8088, sola 8089). Image sets `8080`. |
 | `THOXA_STATIC` | `containers/oath/web` |
-
-`POST /signup` stores a unique email in SQLite.
 
 ## Image + Wicket
 
@@ -49,6 +45,4 @@ runuser -u wicket -- env HOME=/var/lib/wicket XDG_RUNTIME_DIR=/run/user/$(id -u 
 wicketctl workload apply aulos --file containers/oath/workload.toml --confirm
 ```
 
-Wicket injects `PORT` / `WICKET_PORT_HTTP` and `WICKET_DATABASE_NEWS`.
-The image default database path is `/data/news.sqlite`. `sqlite:///path`
-URLs are accepted.
+Wicket injects `PORT` / `WICKET_PORT_HTTP`.

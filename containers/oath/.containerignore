@@ -4,9 +4,6 @@
 !runtime/include/**
 !runtime/src/
 !runtime/src/**
-!vendor/
-!vendor/sqlite/
-!vendor/sqlite/**
 !target/
 !target/thoxa/
 !target/thoxa/c/

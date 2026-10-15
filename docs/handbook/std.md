@@ -163,8 +163,8 @@ HEAD is answered by GET handlers; `finalize` still sees the real method.
 Runnable demos: `cargo make run examples/http` (Crema-lite **experiment** —
 `server.serve(routes.port, routes.handle)` on product `http` / `http/server` / `http/static`;
 app/domain is not product std; see `examples/http/README.md`).
-`cargo make run containers/landing` — thoxa.dev (port **8088**; news sign-up).
-`cargo make run containers/sola` — sola.computer teaser (port **8089**; ISO notify).
+`cargo make run containers/landing` — thoxa.dev (port **8088**).
+`cargo make run containers/sola` — sola.computer teaser (port **8089**).
 
 Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
 hex → black SGR.
