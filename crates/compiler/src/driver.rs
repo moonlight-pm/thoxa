@@ -9,6 +9,7 @@ use crate::cgen;
 use crate::error::{Error, Result};
 use crate::loader;
 use crate::mir;
+use std::collections::HashMap;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -694,12 +695,113 @@ static SESSION_CACHE_ID: AtomicU64 = AtomicU64::new(1);
 /// Env: write generated session C under `target/thoxa/repl/` for inspection.
 pub const REPL_KEEP_C_ENV: &str = "THOXA_REPL_KEEP_C";
 
+/// One session's module state (D169): a slot per module global, owned by the
+/// host so a value outlives the image that computed it. Each initializer
+/// runs once; a slot is ready when it finished.
+#[derive(Default)]
+pub struct SessionSlots {
+    slots: std::cell::RefCell<HashMap<String, SessionSlot>>,
+}
+
+struct SessionSlot {
+    address: *mut u8,
+    layout: std::alloc::Layout,
+    ready: bool,
+}
+
+impl SessionSlots {
+    fn address(&self, name: &str) -> Option<usize> {
+        self.slots.borrow().get(name).map(|slot| slot.address as usize)
+    }
+}
+
+impl Drop for SessionSlots {
+    fn drop(&mut self) {
+        // The values are module state and are never dropped (D122); only the
+        // slots themselves go, once no image can reach them.
+        for slot in self.slots.borrow().values() {
+            unsafe { std::alloc::dealloc(slot.address, slot.layout) };
+        }
+    }
+}
+
+/// `host` is the `SessionSlots` a base image was bound to; `name` a global.
+unsafe fn session_slot_name<'a>(name: *const std::os::raw::c_char) -> &'a str {
+    unsafe { std::ffi::CStr::from_ptr(name) }.to_str().unwrap_or("")
+}
+
+extern "C" fn thoxa_session_slot(
+    host: *mut std::ffi::c_void,
+    name: *const std::os::raw::c_char,
+    size: usize,
+) -> *mut std::ffi::c_void {
+    let slots = unsafe { &*(host as *const SessionSlots) };
+    let name = unsafe { session_slot_name(name) };
+    let mut slots = slots.slots.borrow_mut();
+    if let Some(slot) = slots.get(name) {
+        if slot.layout.size() == size.max(1) {
+            return slot.address.cast();
+        }
+    }
+    // New, or the global's type changed: a fresh zeroed slot to initialize.
+    let layout = std::alloc::Layout::from_size_align(size.max(1), 16)
+        .unwrap_or(std::alloc::Layout::new::<u128>());
+    let address = unsafe { std::alloc::alloc_zeroed(layout) };
+    if address.is_null() {
+        std::alloc::handle_alloc_error(layout);
+    }
+    slots.insert(
+        name.to_string(),
+        SessionSlot {
+            address,
+            layout,
+            ready: false,
+        },
+    );
+    address.cast()
+}
+
+extern "C" fn thoxa_session_slot_ready(
+    host: *mut std::ffi::c_void,
+    name: *const std::os::raw::c_char,
+) -> std::os::raw::c_int {
+    let slots = unsafe { &*(host as *const SessionSlots) };
+    let name = unsafe { session_slot_name(name) };
+    slots.slots.borrow().get(name).is_some_and(|slot| slot.ready) as std::os::raw::c_int
+}
+
+extern "C" fn thoxa_session_slot_mark_ready(
+    host: *mut std::ffi::c_void,
+    name: *const std::os::raw::c_char,
+) {
+    let slots = unsafe { &*(host as *const SessionSlots) };
+    let name = unsafe { session_slot_name(name) };
+    if let Some(slot) = slots.slots.borrow_mut().get_mut(name) {
+        slot.ready = true;
+    }
+}
+
+/// The session's declarations compiled into one in-memory image, with the
+/// runtime (D169). Steps link against its symbols instead of carrying their
+/// own copy, so a value's drop function or code pointer stays valid.
+#[cfg(thoxa_libtcc)]
+struct SessionBase {
+    image: crate::tcc::State,
+    symbols: Vec<crate::tcc::Symbol>,
+    /// Slot address of each module global, baked into the step's C.
+    slot_addresses: HashMap<String, usize>,
+    /// The slots `image` is bound to; they must outlive it.
+    _slots: std::rc::Rc<SessionSlots>,
+    /// A step ran on this image, so session values may point into it: it
+    /// stays loaded for the rest of the session once declarations change.
+    ran: std::cell::Cell<bool>,
+}
+
 /// Cache for session REPL builds. Instance id keeps parallel tests from
-/// clobbering debug C dumps / base objects; `gen` names keep-C outputs.
+/// clobbering debug C dumps; `gen` names keep-C outputs.
 ///
-/// When decls are unchanged, the prepared package and libtcc **base object**
+/// When decls are unchanged, the prepared package and libtcc **base image**
 /// are reused; only `Shell.step` is re-lowered and recompiled (D105 §3.5).
-#[derive(Debug)]
 pub struct SessionBuildCache {
     /// Stable per-cache-instance id (file name prefix).
     id: u64,
@@ -712,11 +814,27 @@ pub struct SessionBuildCache {
     prepared: Option<loader::Package>,
     /// MIR + maps from the last decls lower (re-lower `Shell.step` only).
     mir: Option<mir::SessionMirCache>,
-    /// Relocatable object of `emit_session_base` for the current decls.
-    base_object: Option<PathBuf>,
+    /// Base image of `emit_session_base` for the current decls.
+    #[cfg(thoxa_libtcc)]
+    base: Option<std::rc::Rc<SessionBase>>,
+    /// Earlier base images that ran a step; session values may point into
+    /// them (D169).
+    #[cfg(thoxa_libtcc)]
+    retired: Vec<std::rc::Rc<SessionBase>>,
+    /// Module state shared by every base image of this session (D169).
+    slots: std::rc::Rc<SessionSlots>,
     /// Modification time of every module file in [`prepared`](Self::prepared)
     /// (imports and `std/`), so an edit on disk invalidates the cache.
     source_stamps: Vec<(PathBuf, Option<std::time::SystemTime>)>,
+}
+
+impl std::fmt::Debug for SessionBuildCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionBuildCache")
+            .field("id", &self.id)
+            .field("gen", &self.gen)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for SessionBuildCache {
@@ -727,7 +845,11 @@ impl Default for SessionBuildCache {
             decls_key: None,
             prepared: None,
             mir: None,
-            base_object: None,
+            #[cfg(thoxa_libtcc)]
+            base: None,
+            #[cfg(thoxa_libtcc)]
+            retired: Vec::new(),
+            slots: std::rc::Rc::new(SessionSlots::default()),
             source_stamps: Vec::new(),
         }
     }
@@ -754,14 +876,6 @@ fn session_sources_unchanged(cache: &SessionBuildCache) -> bool {
         .all(|(path, stamp)| fs::metadata(path).and_then(|m| m.modified()).ok() == *stamp)
 }
 
-impl Drop for SessionBuildCache {
-    fn drop(&mut self) {
-        if let Some(path) = self.base_object.take() {
-            let _ = fs::remove_file(path);
-        }
-    }
-}
-
 fn decls_cache_key(decls: &[String]) -> String {
     decls.join("\n\u{1e}\n")
 }
@@ -770,9 +884,19 @@ fn invalidate_session_base(cache: &mut SessionBuildCache) {
     cache.decls_key = None;
     cache.prepared = None;
     cache.mir = None;
-    if let Some(path) = cache.base_object.take() {
-        let _ = fs::remove_file(path);
+    retire_session_base(cache);
+}
+
+/// Drop the current base image, or keep it loaded if a step ran on it.
+fn retire_session_base(cache: &mut SessionBuildCache) {
+    #[cfg(thoxa_libtcc)]
+    if let Some(base) = cache.base.take() {
+        if base.ran.get() {
+            cache.retired.push(base);
+        }
     }
+    #[cfg(not(thoxa_libtcc))]
+    let _ = cache;
 }
 
 /// C ABI mirror of `ThoxaShellState` (also in `repl`).
@@ -796,6 +920,9 @@ pub struct SessionStepLib {
     /// Must outlive `step`.
     #[cfg(thoxa_libtcc)]
     _tcc: crate::tcc::State,
+    /// The base image the step links against (D169).
+    #[cfg(thoxa_libtcc)]
+    base: std::rc::Rc<SessionBase>,
     step: SessionStepFn,
     guard: SessionCallFn,
 }
@@ -806,13 +933,20 @@ unsafe impl Send for SessionStepLib {}
 impl SessionStepLib {
     /// Invoke `thoxa_session_step` with host-held status; returns new status.
     pub fn call(&self, prev_status: i32) -> i32 {
+        self.call_checked(prev_status).0
+    }
+
+    /// [`call`](Self::call), and whether the step panicked or faulted.
+    pub fn call_checked(&self, prev_status: i32) -> (i32, bool) {
+        #[cfg(thoxa_libtcc)]
+        self.base.ran.set(true);
         let mut state = ThoxaShellState {
             status: prev_status as i64,
         };
         let mut crashed: i32 = 0;
         // The guard's sigsetjmp/siglongjmp stay inside C frames (guard → step →
         // runtime); no Rust frame is skipped.
-        unsafe {
+        let status = unsafe {
             let step: unsafe extern "C" fn(*mut std::ffi::c_void) -> i64 =
                 std::mem::transmute(self.step);
             (self.guard)(
@@ -820,7 +954,8 @@ impl SessionStepLib {
                 (&mut state as *mut ThoxaShellState).cast(),
                 &mut crashed,
             ) as i32
-        }
+        };
+        (status, crashed != 0)
     }
 }
 
@@ -853,9 +988,7 @@ pub fn build_session_step(
                         match mir::relower_session_step(mir_cache, &package) {
                             Ok(program) => program,
                             Err(_) => {
-                                if let Some(path) = cache.base_object.take() {
-                                    let _ = fs::remove_file(path);
-                                }
+                                retire_session_base(cache);
                                 lower_session_package_fresh(decls, chunk, cache)?
                             }
                         }
@@ -932,11 +1065,14 @@ fn build_session_step_libtcc(
     program: &crate::mir::Program,
     cache: &mut SessionBuildCache,
 ) -> Result<SessionStepLib> {
-    let step_c = cgen::emit_session_step(program);
+    let include = runtime_include_dir();
+    let rt = runtime_lib_path();
+    let base = ensure_session_base_image(program, cache, &include, &rt)?;
+    let step_c = cgen::emit_session_step(program, &base.slot_addresses);
     cache.gen = cache.gen.wrapping_add(1);
 
-    let dir = session_scratch_dir();
     if keep_session_c() {
+        let dir = session_scratch_dir();
         fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
         let step_path = dir.join(format!(
             "session_step_{}_{}_{}.c",
@@ -947,15 +1083,17 @@ fn build_session_step_libtcc(
         fs::write(&step_path, &step_c).map_err(|e| Error::new(e.to_string()))?;
     }
 
-    let include = runtime_include_dir();
-    let rt = runtime_lib_path();
-    let base_obj = ensure_session_base_object(program, cache, &include)?;
     let tcc_started = std::time::Instant::now();
-    let tcc = crate::tcc::compile_memory(crate::tcc::CompileOptions {
-        include_paths: vec![include.as_path()],
-        link_files: vec![base_obj.as_path(), rt.as_path()],
-        sources: vec![&step_c],
-    })?;
+    // The runtime archive only fills what the base does not export (it links
+    // all of `thoxa_rt.o`, so in practice nothing).
+    let tcc = crate::tcc::compile_memory_with_symbols(
+        crate::tcc::CompileOptions {
+            include_paths: vec![include.as_path()],
+            link_files: vec![rt.as_path()],
+            sources: vec![&step_c],
+        },
+        &base.symbols,
+    )?;
     if std::env::var_os("THOXA_REPL_PROFILE").is_some() {
         eprintln!(
             "thoxa profile: step-c {}B tcc {:?}",
@@ -965,30 +1103,32 @@ fn build_session_step_libtcc(
     }
     let sym = tcc.symbol("thoxa_session_step")?;
     let step: SessionStepFn = unsafe { std::mem::transmute(sym) };
-    let guard_sym = tcc.symbol("thoxa_session_call")?;
+    let guard_sym = base.image.symbol("thoxa_session_call")?;
     let guard: SessionCallFn = unsafe { std::mem::transmute(guard_sym) };
     Ok(SessionStepLib {
         _tcc: tcc,
+        base,
         step,
         guard,
     })
 }
 
+/// The base image for the current decls: build, relocate, and bind it to the
+/// session's slots on first use (D169).
 #[cfg(thoxa_libtcc)]
-fn ensure_session_base_object(
+fn ensure_session_base_image(
     program: &crate::mir::Program,
     cache: &mut SessionBuildCache,
     include: &Path,
-) -> Result<PathBuf> {
-    if let Some(path) = &cache.base_object {
-        if path.is_file() {
-            return Ok(path.clone());
-        }
+    runtime: &Path,
+) -> Result<std::rc::Rc<SessionBase>> {
+    if let Some(base) = &cache.base {
+        return Ok(base.clone());
     }
     let base_c = cgen::emit_session_base(program);
-    let dir = session_scratch_dir();
-    fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
     if keep_session_c() {
+        let dir = session_scratch_dir();
+        fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
         let base_path = dir.join(format!(
             "session_base_{}_{}_{}.c",
             std::process::id(),
@@ -997,23 +1137,48 @@ fn ensure_session_base_object(
         ));
         fs::write(&base_path, &base_c).map_err(|e| Error::new(e.to_string()))?;
     }
-    // The directory is shared by every shell: name files by process too, or
-    // two shells (both cache id 1) would link each other's compiled decls.
-    let obj = dir.join(format!(
-        "session_base_{}_{}.o",
-        std::process::id(),
-        cache.id
-    ));
-    crate::tcc::compile_object_file(
+    let host = |name: &str, address: *const std::ffi::c_void| crate::tcc::Symbol {
+        name: std::ffi::CString::new(name).expect("symbol name"),
+        address,
+    };
+    let host_symbols = [
+        host("thoxa_session_slot", thoxa_session_slot as *const std::ffi::c_void),
+        host(
+            "thoxa_session_slot_ready",
+            thoxa_session_slot_ready as *const std::ffi::c_void,
+        ),
+        host(
+            "thoxa_session_slot_mark_ready",
+            thoxa_session_slot_mark_ready as *const std::ffi::c_void,
+        ),
+    ];
+    let image = crate::tcc::compile_memory_with_symbols(
         crate::tcc::CompileOptions {
             include_paths: vec![include],
-            link_files: vec![],
+            link_files: vec![runtime],
             sources: vec![&base_c],
         },
-        &obj,
+        &host_symbols,
     )?;
-    cache.base_object = Some(obj.clone());
-    Ok(obj)
+    let bind = image.symbol("thoxa_session_bind")?;
+    let bind: unsafe extern "C" fn(*mut std::ffi::c_void) = unsafe { std::mem::transmute(bind) };
+    let slots = cache.slots.clone();
+    unsafe { bind(std::rc::Rc::as_ptr(&slots) as *mut std::ffi::c_void) };
+    let slot_addresses = program
+        .globals
+        .iter()
+        .filter_map(|global| Some((global.name.clone(), slots.address(&global.name)?)))
+        .collect();
+    let symbols = image.symbols();
+    let base = std::rc::Rc::new(SessionBase {
+        image,
+        symbols,
+        slot_addresses,
+        _slots: slots,
+        ran: std::cell::Cell::new(false),
+    });
+    cache.base = Some(base.clone());
+    Ok(base)
 }
 
 #[cfg(not(thoxa_libtcc))]

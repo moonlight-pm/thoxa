@@ -96,16 +96,22 @@ Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are gone.
   package (D123). Fallible has its own embed fallback for the same case.
 - **REPL steps:** vendored **libtcc only** (`TCC_OUTPUT_MEMORY`). Decl-stable
   cache: virtual `repl.thx` load; reuse prepared package + MIR maps; re-lower
-  only `Shell.step`; `emit_session_base` → one `.o`; each chunk
-  `emit_session_step` + `add_file` that object + `libthoxa_rt.a`. Keep
-  `TCCState` until superseded. No step `.so` / no session `cc` spawn. Optional
-  debug C: `THOXA_REPL_KEEP_C=1`. Freeze:
+  only `Shell.step`. `emit_session_base` + `libthoxa_rt.a` → one in-memory
+  **base image** per decl set (**D169**); the host binds it to its slot table
+  (`thoxa_session_bind`). Each chunk's `emit_session_step` compiles alone and
+  links against the base image's symbols (`tcc_add_symbol`); module globals
+  are host slots (`thoxa_session_slot` / `_ready` / `_mark_ready`, held by
+  `SessionSlots`), reached in the base through `thoxa_slot_*` pointers and in
+  the step through slot addresses baked into its C (tcc truncates a constant
+  address used as an lvalue, so through a static pointer). Each initializer
+  runs once per session. A base image that ran a step is kept for the session
+  (values may point into it); one only compiled is dropped. No step `.so` /
+  no session `cc` spawn. Optional debug C: `THOXA_REPL_KEEP_C=1`. Freeze:
   [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
   (D105). Soft perf (release, after first line): ~**6 ms/step** (freeze §8.2).
-  The cache key is decls plus module file mtimes; the base `.o` is named
-  `session_base_<pid>_<id>.o`. Each step runs through the image's runtime
-  `thoxa_session_call` (sigsetjmp; panic → 134, fault → 128 + signal; handlers
-  and alt stack restored after the step, **D160**). The REPL and `-c` stay on
+  The cache key is decls plus module file mtimes. Each step runs through the
+  base image's runtime `thoxa_session_call` (sigsetjmp; panic → 134, fault →
+  128 + signal; handlers and alt stack restored after the step, **D160**). The REPL and `-c` stay on
   the process main thread: libtcc-compiled code resolves thread-local storage
   as the main thread's, so the runtime keeps no `_Thread_local` data.
 - **Batch CLI** (`run` / `build` / `check` / `emit-c` / `lsp`) runs on a worker

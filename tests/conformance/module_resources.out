@@ -1,4 +1,5 @@
 add before open: store is closed
 notes: 1 then 2
+module-level open: true
 registered open: true
 map copies open: 0; array copy open: false

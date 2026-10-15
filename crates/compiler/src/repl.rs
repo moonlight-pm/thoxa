@@ -389,7 +389,11 @@ fn apply_rc_source(
         }
     }
     if stmts.is_empty() {
-        return Ok(0);
+        // Bindings still initialize at load, once (D169).
+        if !decls.iter().any(|decl| is_binding_chunk(decl.trim())) {
+            return Ok(0);
+        }
+        stmts.push(NOOP_STEP.to_string());
     }
     let chunk = stmts.join("\n");
     let out = run_chunk(&chunk, decls, 0, cache, loaded)?;
@@ -718,6 +722,7 @@ fn thoxa_string_lit(s: &str) -> String {
 
 // ── chunks ────────────────────────────────────────────────────────────────
 
+#[derive(Debug)]
 struct ChunkOutcome {
     status: i32,
     decls_changed: bool,
@@ -732,14 +737,29 @@ fn run_chunk(
 ) -> Result<ChunkOutcome> {
     let trimmed = chunk.trim();
 
-    // Declaration-only chunk: accumulate, do not exec. Compile it first: a bad
-    // declaration kept in `decls` would fail every later line until restart.
+    // Declaration chunk: accumulate. Compile it first: a bad declaration kept
+    // in `decls` would fail every later line until restart.
     if is_decl_chunk(trimmed) {
         decls.push(chunk.to_string());
-        // Compile only (never run): a trivial step over the new decls.
-        if let Err(error) = driver::build_session_step(decls, "logging.toStdout()\n", cache) {
-            decls.pop();
-            return Err(error);
+        let lib = match driver::build_session_step(decls, NOOP_STEP, cache) {
+            Ok(lib) => lib,
+            Err(error) => {
+                decls.pop();
+                return Err(error);
+            }
+        };
+        // A `let` / `mut` runs its initializer now, once (D169); later lines
+        // read the value instead of running it again. One that panics is not
+        // defined.
+        if is_binding_chunk(trimmed) {
+            let (_, crashed) = lib.call_checked(prev_status);
+            *loaded = Some(lib);
+            if crashed {
+                decls.pop();
+                return Err(Error::new(
+                    "the binding was not defined: its initializer panicked",
+                ));
+            }
         }
         return Ok(ChunkOutcome {
             status: 0,
@@ -757,6 +777,16 @@ fn run_chunk(
         status,
         decls_changed: false,
     })
+}
+
+/// A step body that does nothing: compiles the decls, runs pending
+/// initializers.
+const NOOP_STEP: &str = "0\n";
+
+/// `let` / `mut` at the top of a chunk: a module-level binding.
+fn is_binding_chunk(trimmed: &str) -> bool {
+    let first = trimmed.lines().next().unwrap_or("").trim();
+    first.starts_with("let ") || first.starts_with("mut ")
 }
 
 fn is_decl_chunk(trimmed: &str) -> bool {
@@ -1020,6 +1050,93 @@ logging.info("from-rc-apostrophe")
         let after = run_chunk("echo after-panic", &mut decls, 0, &mut cache, &mut loaded)
             .expect("next line runs");
         assert_eq!(after.status, 0);
+    }
+
+    fn session_run(
+        chunk: &str,
+        decls: &mut Vec<String>,
+        cache: &mut SessionBuildCache,
+        loaded: &mut Option<SessionStepLib>,
+    ) -> ChunkOutcome {
+        run_chunk(chunk, decls, 0, cache, loaded).unwrap_or_else(|e| panic!("{chunk}: {e}"))
+    }
+
+    #[test]
+    fn session_let_runs_its_initializer_once() {
+        // D169: a later line, or a new declaration, does not run it again.
+        let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        driver::capture_toolchain_path();
+        session_run("mut runs = 0", &mut decls, &mut cache, &mut loaded);
+        session_run(
+            "fn bump() -> Int64 {\n    runs = runs + 1\n    runs\n}",
+            &mut decls,
+            &mut cache,
+            &mut loaded,
+        );
+        session_run("let first = bump()", &mut decls, &mut cache, &mut loaded);
+        session_run("echo between", &mut decls, &mut cache, &mut loaded);
+        session_run(
+            "fn other() -> Int64 {\n    3\n}",
+            &mut decls,
+            &mut cache,
+            &mut loaded,
+        );
+        let out = session_run(
+            "shell = Shell(status: runs * 10 + first)",
+            &mut decls,
+            &mut cache,
+            &mut loaded,
+        );
+        assert_eq!(out.status, 11);
+    }
+
+    #[test]
+    fn session_mut_keeps_its_value_across_lines_and_declarations() {
+        let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        driver::capture_toolchain_path();
+        session_run("mut total = 1", &mut decls, &mut cache, &mut loaded);
+        session_run("total = total + 1", &mut decls, &mut cache, &mut loaded);
+        session_run(
+            "fn unused() -> Int64 {\n    0\n}",
+            &mut decls,
+            &mut cache,
+            &mut loaded,
+        );
+        session_run("total = total * 10", &mut decls, &mut cache, &mut loaded);
+        let out = session_run(
+            "shell = Shell(status: total)",
+            &mut decls,
+            &mut cache,
+            &mut loaded,
+        );
+        assert_eq!(out.status, 20);
+    }
+
+    #[test]
+    fn session_let_that_panics_is_not_defined() {
+        let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        driver::capture_toolchain_path();
+        let error = run_chunk("let broken = [1][3]", &mut decls, 0, &mut cache, &mut loaded)
+            .expect_err("a panicking initializer is an error");
+        assert!(error.to_string().contains("initializer panicked"), "{error}");
+        session_run("let fine = 4", &mut decls, &mut cache, &mut loaded);
+        let out = session_run(
+            "shell = Shell(status: fine)",
+            &mut decls,
+            &mut cache,
+            &mut loaded,
+        );
+        assert_eq!(out.status, 4);
+        assert!(
+            run_chunk("shell = Shell(status: broken)", &mut decls, 0, &mut cache, &mut loaded)
+                .is_err()
+        );
     }
 
     #[test]

@@ -1,9 +1,12 @@
 ## Resources in module state (D168): an annotated module-level `mut` holds a
 ## `Db` across calls, and `Map` / `Array` values of a `drop` type share one
 ## box, so a close through any copy is seen by all. The entry's own
-## module-level constructor no longer shares a C temp with std/sqlite's.
+## module-level constructor no longer shares a C temp with std/sqlite's, and a
+## module initializer can call a function whose default argument names
+## something in its own module (`openFile`'s `mode`).
 import sqlite, { Db } from "std/sqlite"
 import net, { Socket, createSocket } from "std/net"
+import io, { File } from "std/io"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
 
@@ -13,6 +16,7 @@ let settings = Settings(path: ":memory:", label: "notes")
 mut connection: May<Db> = Not()
 mut sockets: Map<Int64, Socket> = Map()
 mut pool: Array<Socket> = []
+let sink = io.openFile("/dev/null", io.oWronly + io.oCreat)
 
 fn open() -> Trial<Void, String> {
     let opened = sqlite.open(settings.path)?
@@ -55,6 +59,10 @@ fn run() -> Trial<Void, String> {
     let first = add("one")?
     let second = add("two")?
     info("{settings.label}: {first} then {second}")
+    match sink {
+        Pass(file) => info("module-level open: {file.isOpen()}")
+        Fail(error) => info("module-level open failed: {error}")
+    }
 
     let fd = register()?
     info("registered open: {fd >= 0}")

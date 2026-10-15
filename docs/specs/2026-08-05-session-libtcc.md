@@ -6,7 +6,9 @@
 `cc`+dlopen escape)  
 **Gaps:** none for this freeze’s product path (no per-step `.c` / `.so`).
 Decl-stable compile cache shipped (§3.5 / §11.1): re-lower `Shell.step`,
-libtcc base object, no scratch `.thx`. Later polish (not CURRENT):
+no scratch `.thx`. Since **D169** (2026-10-15) the base is an in-memory
+image (decls + runtime) that steps link against with `tcc_add_symbol`, and
+module state lives in host slots; no base `.o` on disk. Later polish (not CURRENT):
 process-linked `thoxa_rt`, license packaging — §11
 
 **As-built:** [`../capabilities.md`](../capabilities.md) ·

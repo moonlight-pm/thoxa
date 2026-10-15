@@ -3,7 +3,7 @@
 **Date:** 2026-07-24  
 **Status:** target (freeze)  
 **Implementation:** partial  
-**Gaps:** no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first). Line editor shipped (**D156**). Compile cache + scratch `.thx` drop shipped (libtcc freeze §3.5 / §11.1).
+**Gaps:** no `2>` / redir-on-pipe-stages; Shell still auto-injected (not import-first). Line editor shipped (**D156**). Session `let` / `mut` are lifted once and keep their values (**D169**, 2026-10-15). Compile cache + scratch `.thx` drop shipped (libtcc freeze §3.5 / §11.1).
 
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md) · handbook [`../handbook/session.md`](../handbook/session.md)  
 **Step backend:** [`2026-08-05-session-libtcc.md`](2026-08-05-session-libtcc.md) (D105, shipped libtcc-only)

@@ -37,6 +37,35 @@ extern "C" {
     fn tcc_relocate(s: *mut TCCState) -> c_int;
     fn tcc_get_symbol(s: *mut TCCState, name: *const c_char) -> *mut c_void;
     fn tcc_output_file(s: *mut TCCState, filename: *const c_char) -> c_int;
+    fn tcc_add_symbol(s: *mut TCCState, name: *const c_char, val: *const c_void) -> c_int;
+    fn tcc_list_symbols(
+        s: *mut TCCState,
+        ctx: *mut c_void,
+        symbol_cb: Option<extern "C" fn(*mut c_void, *const c_char, *const c_void)>,
+    );
+}
+
+/// A global symbol of a relocated image: its name and address.
+pub struct Symbol {
+    pub name: CString,
+    pub address: *const c_void,
+}
+
+extern "C" fn collect_symbol(ctx: *mut c_void, name: *const c_char, address: *const c_void) {
+    if ctx.is_null() || name.is_null() {
+        return;
+    }
+    let name = unsafe { CStr::from_ptr(name) };
+    // Linker symbols (`_etext`, `__init_array_start`, `_GLOBAL_OFFSET_TABLE_`)
+    // and compiler helpers belong to each image; another image defines its own.
+    if name.to_bytes().first() == Some(&b'_') {
+        return;
+    }
+    let symbols = unsafe { &mut *(ctx as *mut Vec<Symbol>) };
+    symbols.push(Symbol {
+        name: name.to_owned(),
+        address,
+    });
 }
 
 /// Directory containing `libtcc1.a` (from `build.rs`).
@@ -250,6 +279,31 @@ impl State {
         Ok(())
     }
 
+    /// Define `name` at `address` before [`relocate`](Self::relocate), so code
+    /// in this image can call or read something that lives elsewhere (another
+    /// image, the host). Goes through the GOT, so distance does not matter.
+    pub fn add_symbol(&self, name: &CStr, address: *const c_void) -> Result<()> {
+        let rc = unsafe { tcc_add_symbol(self.ptr, name.as_ptr(), address) };
+        if rc < 0 {
+            return Err(self.err_ctx(&format!("tcc_add_symbol {}", name.to_string_lossy())));
+        }
+        Ok(())
+    }
+
+    /// Every global symbol of a relocated image, except linker symbols and
+    /// compiler helpers (a leading `_`).
+    pub fn symbols(&self) -> Vec<Symbol> {
+        let mut symbols: Vec<Symbol> = Vec::new();
+        unsafe {
+            tcc_list_symbols(
+                self.ptr,
+                (&mut symbols as *mut Vec<Symbol>).cast(),
+                Some(collect_symbol),
+            );
+        }
+        symbols
+    }
+
     /// Look up a global symbol. Pointer is valid while `self` lives.
     pub fn symbol(&self, name: &str) -> Result<*mut c_void> {
         let c = CString::new(name).map_err(|_| Error::new("symbol name contains NUL"))?;
@@ -295,10 +349,19 @@ fn apply_compile_paths(state: &State, opts: &CompileOptions<'_>) -> Result<()> {
 
 /// Compile C sources to an in-memory image. Keeps [`State`] so symbols stay valid.
 pub fn compile_memory(opts: CompileOptions<'_>) -> Result<State> {
+    compile_memory_with_symbols(opts, &[])
+}
+
+/// [`compile_memory`], with `symbols` defined before relocation: a step image
+/// links against a base image this way instead of carrying its own copy.
+pub fn compile_memory_with_symbols(opts: CompileOptions<'_>, symbols: &[Symbol]) -> Result<State> {
     let state = State::new()?;
     apply_compile_paths(&state, &opts)?;
     for src in &opts.sources {
         state.compile_string(src)?;
+    }
+    for symbol in symbols {
+        state.add_symbol(&symbol.name, symbol.address)?;
     }
     for f in &opts.link_files {
         state.add_file(f)?;
@@ -366,6 +429,39 @@ mod tests {
         assert_eq!(v, 42);
         let _ = std::fs::remove_file(&obj);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn step_image_links_against_a_base_image() {
+        let base = compile_memory(CompileOptions {
+            include_paths: vec![],
+            link_files: vec![],
+            sources: vec![
+                "long thoxa_tcc_counter = 40; long thoxa_tcc_bump(void){ return ++thoxa_tcc_counter; }\n",
+            ],
+        })
+        .expect("base");
+        let symbols = base.symbols();
+        assert!(symbols.iter().any(|s| s.name.to_bytes() == b"thoxa_tcc_counter"));
+        let step = compile_memory_with_symbols(
+            CompileOptions {
+                include_paths: vec![],
+                link_files: vec![],
+                sources: vec![
+                    "long thoxa_tcc_bump(void);\nlong thoxa_tcc_step(void){ return thoxa_tcc_bump(); }\n",
+                ],
+            },
+            &symbols,
+        )
+        .expect("step");
+        let p = step.symbol("thoxa_tcc_step").expect("symbol");
+        let f: unsafe extern "C" fn() -> i64 = unsafe { std::mem::transmute(p) };
+        assert_eq!(unsafe { f() }, 41);
+        drop(step);
+        // The base keeps its state after the step image is gone.
+        let again = base.symbol("thoxa_tcc_bump").expect("bump");
+        let bump: unsafe extern "C" fn() -> i64 = unsafe { std::mem::transmute(again) };
+        assert_eq!(unsafe { bump() }, 42);
     }
 
     #[test]

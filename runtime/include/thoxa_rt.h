@@ -174,6 +174,15 @@ typedef struct ThoxaShellState {
     int64_t status;
 } ThoxaShellState;
 
+/*
+ * Session hosts only (D169): module state lives in slots the host owns, so a
+ * value outlives the compiled image that made it and each initializer runs
+ * once per session. `host` is the context `thoxa_session_bind` received.
+ */
+void *thoxa_session_slot(void *host, const char *name, size_t size);
+int thoxa_session_slot_ready(void *host, const char *name);
+void thoxa_session_slot_mark_ready(void *host, const char *name);
+
 /* pipe(2) wrapper — low-level; prefer thoxa_pipeline for session pipelines. */
 int32_t thoxa_pipe(int32_t fds_out[2]);
 

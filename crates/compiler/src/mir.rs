@@ -76,6 +76,9 @@ struct SessionLowerEnv {
 pub struct GlobalVar {
     pub name: String,
     pub ty: Ty,
+    /// This global's statements in [`Program::init`], so a session can run
+    /// each initializer once (D169).
+    pub init: std::ops::Range<usize>,
 }
 
 /// A bound C function (library `"c"` only in R6).
@@ -2041,6 +2044,9 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
     // them, or `_obj0` from two modules would share one (mistyped) local.
     let mut init_temps = 0;
     let synthetics = Rc::new(RefCell::new(SyntheticRegistry::default()));
+    // Name maps of the modules whose globals are done, so a default argument
+    // resolves in its defining module (D116) inside a module initializer.
+    let mut init_package_maps: HashMap<String, ModuleNameMaps> = HashMap::new();
 
     for m in &package.modules {
         let (name_to_type, name_to_fn, name_to_global, namespaces) = build_module_name_maps(
@@ -2063,7 +2069,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
                 name_to_global.clone(),
                 namespaces.clone(),
                 module_exports.clone(),
-                HashMap::new(),
+                init_package_maps.clone(),
                 Ty::Void,
                 m.id.clone(),
                 m.is_entry,
@@ -2089,7 +2095,9 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
             ctx.assign(global_place.clone(), ty.clone(), RValue::Use(place));
             // Drop init temps (`_s0` from `"stderr"`) but not the global (D122).
             insert_function_drops(&mut ctx.stmts, &Some(global_place), &ty, &ctx.drop_places);
+            let init_start = init_stmts.len();
             init_stmts.extend(ctx.stmts);
+            let init_range = init_start..init_stmts.len();
 
             let ginfo = GlobalInfo {
                 ty: ty.clone(),
@@ -2109,8 +2117,26 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
             program_globals.push(GlobalVar {
                 name: place_name,
                 ty,
+                init: init_range,
             });
         }
+        let (name_to_type, name_to_fn, name_to_global, namespaces) = build_module_name_maps(
+            m,
+            &import_maps,
+            &module_exports,
+            &all_globals,
+            &per_mod_types,
+            &fns,
+        )?;
+        init_package_maps.insert(
+            m.id.clone(),
+            ModuleNameMaps {
+                name_to_type,
+                name_to_fn,
+                name_to_global,
+                namespaces,
+            },
+        );
     }
 
     let bodies_started = std::time::Instant::now();

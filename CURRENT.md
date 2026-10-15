@@ -12,7 +12,8 @@ panic in a `-->` task ends only that task (the server keeps serving), **D167**
 implicit integer narrowing panics when the value does not fit
 (`T(truncating: x)` keeps the low bits), **D168** resource constructors
 are private to their module and resources live in module state
-(`server.peerOf` for SSE);
+(`server.peerOf` for SSE), **D169** session `let` / `mut` initialize once and
+keep their values (steps link against one base image per declaration set);
 struct-field write-back use-after-free fixed; `Address<T>` parameters
 compile; `tests/conformance/fail/`
 expected-rejection tests; type / signature errors name their file;
@@ -44,7 +45,7 @@ cache shipped. **`having`/`else` parked indefinitely.**
 
 **No active language campaign.** Session step compile cache shipped (D105
 §3.5 / §11.1): decl-stable package reuse, re-lower only `Shell.step`, libtcc
-base object. Release REPL ~**6 ms**/line after the first (~100 ms) prelude
+base image that steps link against (**D169**). Release REPL ~**6 ms**/line after the first (~100 ms) prelude
 build — not a second shell mode. **D155** resource `drop` shipped. D153
 simple-RC gate is done. **Not Perceus.** Editor only when DX forces it. Crema
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
@@ -83,7 +84,7 @@ lits; overwrite-drop; **D152** match/init RC.
 production only after their C is regenerated and the images rebuilt;
 pipelined
 requests are dropped;
-session `let` replay vs “lifted once”; Ctrl-C in a pure-Thoxa loop;
+Ctrl-C in a pure-Thoxa loop;
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`);
 redefining a session
 `fn` is an error, not a replacement; and no CI.
@@ -141,7 +142,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Errors | `May` / `Trial` from `std/fallible` (import) + `?` / `match`; no May↔Trial mix via `?` |
 | Session product face | Bare `thoxa` / `thoxa repl`; no-`main` = session script |
 | Session value | `type Shell(status: Int64)` + methods; real Thoxa; `std/shell.thx` |
-| REPL step backend | **libtcc in-process only** (`TCC_OUTPUT_MEMORY`) → call `thoxa_session_step` (D105); no step `.so`. Decl-stable cache: re-lower `Shell.step` + link cached base object. |
+| REPL step backend | **libtcc in-process only** (`TCC_OUTPUT_MEMORY`) → call `thoxa_session_step` (D105); no step `.so`. Decl-stable cache: re-lower `Shell.step` + link against the cached base image; module state in host slots, initialized once (**D169**). |
 | Batch / RT C | System **`cc`** (+ `ar` for runtime) unchanged |
 | Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
 | Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |

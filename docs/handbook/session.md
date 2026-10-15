@@ -62,6 +62,19 @@ shell `if`/`for`/`fn` dialect — programming is Thoxa.
 ## REPL behavior
 
 - Declarations (`import`, `type`, `fn`, …) **accumulate** across chunks.
+- A top-level `let` / `mut` runs its initializer **once**, at that line, and
+  keeps its value for the rest of the session (**D169**). Later lines and new
+  declarations do not run it again, and assignments to a `mut` persist. If the
+  initializer panics, the binding is not defined. Module state in `std/` is
+  kept the same way.
+
+```thx
+§ mut seen = 0
+§ seen = seen + 1
+§ seen = seen + 1
+§ logging.info("{seen}")      ## 2
+§ let log = io.openFile("/tmp/log", io.oWronly + io.oCreat)   ## opened once
+```
 - Top-level statements run as this chunk’s `step` body.
 - Failed compiles print diagnostics and keep prior session state (status ≠ 0).
   A declaration that does not compile is reported and **not** kept.
