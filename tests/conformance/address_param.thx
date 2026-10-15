@@ -1,0 +1,31 @@
+## `Address<T>` as a Thoxa function parameter: a `mut` C-layout local passes
+## as `&local`, and an `Address<T>` passes on unchanged (to Thoxa or to C).
+import logging from "std/logging"
+
+type Regs {
+    mut a: UInt32
+    mut b: UInt32
+}
+
+extern fn memset(p!: Address<Regs>, c!: Int32, n!: UInt64) from "c"
+
+fn fill(target: Address<Regs>, byte: Int64) {
+    memset(target, byte, 8)
+}
+
+fn clear(target: Address<Regs>) {
+    fill(target, 0)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut regs = Regs()
+    regs.a = 7
+    regs.b = 9
+    clear(regs)
+    logging.info("cleared {regs.a} {regs.b}")
+    fill(regs, 1)
+    logging.info("filled {regs.a} {regs.b}")
+    0
+}

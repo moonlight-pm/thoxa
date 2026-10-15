@@ -579,6 +579,101 @@ fn run_conformance(gate: ConformanceGate) -> i32 {
             eprintln!("{passed} passed, {skipped} asan-skip, {failed} failed");
         }
     }
+    // Rejections and panics have no sanitizer story; run them once, in the
+    // default gate.
+    let rejected = match gate {
+        ConformanceGate::Leak => run_expected_failures(&conf.join("fail")),
+        ConformanceGate::Address => 0,
+    };
+    if failed > 0 || rejected != 0 {
+        1
+    } else {
+        0
+    }
+}
+
+/// `tests/conformance/fail/<name>.thx` must not succeed: `thoxa run` exits
+/// non-zero (a compile error or a runtime panic) and stderr contains every
+/// line of `<name>.err`. A sibling `<name>.out` must match stdout, so a panic
+/// test can show how far the program got.
+fn run_expected_failures(dir: &Path) -> i32 {
+    let Ok(read) = fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut entries: Vec<PathBuf> = read
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|x| x.to_str()) == Some("thx"))
+        .collect();
+    entries.sort();
+    eprintln!("expected failures (tests/conformance/fail)");
+
+    let thoxa = thoxa_bin_path();
+    let mut passed = 0;
+    let mut failed = 0;
+    for entry in &entries {
+        let name = entry.file_stem().unwrap().to_string_lossy().into_owned();
+        let Ok(expected_err) = fs::read_to_string(dir.join(format!("{name}.err"))) else {
+            eprintln!("FAIL fail/{name}: missing {name}.err");
+            failed += 1;
+            continue;
+        };
+        let needles: Vec<&str> = expected_err
+            .lines()
+            .map(str::trim_end)
+            .filter(|line| !line.is_empty())
+            .collect();
+        if needles.is_empty() {
+            eprintln!("FAIL fail/{name}: {name}.err is empty");
+            failed += 1;
+            continue;
+        }
+        let expected_out = fs::read_to_string(dir.join(format!("{name}.out"))).ok();
+
+        let output = Command::new(&thoxa)
+            .args(["run", entry.to_str().unwrap()])
+            .current_dir(workspace_root())
+            .env("THOXA_ROOT", workspace_root())
+            .env_remove("THOXA_SANITIZE")
+            .output();
+        let output = match output {
+            Ok(output) => output,
+            Err(error) => {
+                eprintln!("FAIL fail/{name}: {error}");
+                failed += 1;
+                continue;
+            }
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if output.status.success() {
+            eprintln!("FAIL fail/{name}: exited 0, expected a failure");
+            failed += 1;
+            continue;
+        }
+        let missing: Vec<&&str> = needles
+            .iter()
+            .filter(|needle| !stderr.contains(**needle))
+            .collect();
+        if !missing.is_empty() {
+            eprintln!("FAIL fail/{name}: stderr is missing {missing:?}");
+            eprintln!("{stderr}");
+            failed += 1;
+            continue;
+        }
+        if let Some(expected_out) = expected_out {
+            if stdout != expected_out {
+                eprintln!("FAIL fail/{name}: stdout mismatch");
+                eprintln!("  expected: {expected_out:?}");
+                eprintln!("  got:      {stdout:?}");
+                failed += 1;
+                continue;
+            }
+        }
+        eprintln!("ok   fail/{name}");
+        passed += 1;
+    }
+    eprintln!("{passed} rejected as expected, {failed} failed");
     if failed > 0 {
         1
     } else {

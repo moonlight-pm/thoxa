@@ -1,0 +1,37 @@
+## D163: a user method writes its receiver back: a field local inside a method, and `items[i]` on a mut Array. Copies keep their value.
+import logging, { info } from "std/logging"
+
+type Counter(count: Int64, tags: Array<String>) {
+    export fn bump() {
+        count = count + 1
+        tags.append("t{count}")
+    }
+    export fn get() -> Int64 {
+        count
+    }
+}
+
+type Pair(left: Counter, right: Counter) {
+    export fn bumpLeft() {
+        left.bump()
+        left.bump()
+    }
+    export fn total() -> Int64 {
+        left.get() + right.get()
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut pair = Pair(left: Counter(count: 0, tags: []), right: Counter(count: 10, tags: []))
+    let before = pair
+    pair.bumpLeft()
+    info("after bumpLeft left={pair.left.count} tags={pair.left.tags.count} before={before.left.count} total={pair.total()}")
+    mut list = [Counter(count: 5, tags: ["a"]), Counter(count: 7, tags: [])]
+    let snapshot = list
+    list[1].bump()
+    list[1].bump()
+    info("after list[1].bump={list[1].count} tags={list[1].tags.count} first={list[0].count} snapshot={snapshot[1].count}")
+    0
+}

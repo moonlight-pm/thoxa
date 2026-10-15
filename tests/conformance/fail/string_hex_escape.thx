@@ -1,0 +1,5 @@
+## D159: `\xHH` in a String stops at `\x7F`; raw bytes belong in Bytes.
+fn main() -> Int64 {
+    let text = "caf\xe9"
+    0
+}

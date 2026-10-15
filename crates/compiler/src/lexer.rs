@@ -95,6 +95,9 @@ pub enum TokenKind {
 pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
+    /// First token on its line (a newline, or the start of input, comes
+    /// before it). The parser reads `-` here as a prefix (D162).
+    pub line_start: bool,
 }
 
 pub struct Lexer<'a> {
@@ -116,8 +119,14 @@ impl<'a> Lexer<'a> {
         let mut tokens = Vec::new();
         let mut errors: Vec<Error> = Vec::new();
         loop {
+            let previous_end = self.pos;
+            self.skip_trivia();
+            let line_start =
+                previous_end == 0 || self.bytes[previous_end..self.pos].contains(&b'\n');
+            let before = self.pos;
             match self.next_token() {
-                Ok(tok) => {
+                Ok(mut tok) => {
+                    tok.line_start = line_start;
                     let is_eof = tok.kind == TokenKind::Eof;
                     tokens.push(tok);
                     if is_eof {
@@ -126,7 +135,12 @@ impl<'a> Lexer<'a> {
                 }
                 Err(e) => {
                     // Skip one unexpected character and keep scanning (LSP multi-diag).
+                    // A string with a bad escape has already been read to its
+                    // closing quote, so there is nothing to skip.
                     errors.push(e);
+                    if self.pos > before {
+                        continue;
+                    }
                     if self.pos < self.bytes.len() {
                         // Advance one UTF-8 char when possible.
                         let rest = &self.src[self.pos..];
@@ -158,6 +172,7 @@ impl<'a> Lexer<'a> {
             return Ok(Token {
                 kind: TokenKind::Eof,
                 span: Span::new(start, start),
+                line_start: false,
             });
         }
 
@@ -211,6 +226,7 @@ impl<'a> Lexer<'a> {
                 Ok(Token {
                     kind: TokenKind::Junk("#".into()),
                     span: Span::new(start, self.pos),
+                    line_start: false,
                 })
             }
             b if b.is_ascii_digit() => self.number(start),
@@ -229,6 +245,7 @@ impl<'a> Lexer<'a> {
                 Ok(Token {
                     kind: TokenKind::Junk(ch.to_string()),
                     span: Span::new(start, self.pos),
+                    line_start: false,
                 })
             }
         }
@@ -239,6 +256,7 @@ impl<'a> Lexer<'a> {
         Ok(Token {
             kind,
             span: Span::new(start, self.pos),
+            line_start: false,
         })
     }
 
@@ -267,13 +285,20 @@ impl<'a> Lexer<'a> {
     fn string(&mut self, start: usize) -> Result<Token> {
         self.pos += 1;
         let mut out = String::new();
+        // A bad escape is reported once the literal closes, so lexing resumes
+        // after the closing quote instead of reading it as a new string.
+        let mut bad_escape: Option<Error> = None;
         while self.pos < self.bytes.len() {
             let b = self.bytes[self.pos];
             if b == b'"' {
                 self.pos += 1;
+                if let Some(error) = bad_escape {
+                    return Err(error);
+                }
                 return Ok(Token {
                     kind: TokenKind::String(out),
                     span: Span::new(start, self.pos),
+                    line_start: false,
                 });
             }
             if b == b'\\' {
@@ -295,7 +320,7 @@ impl<'a> Lexer<'a> {
                             let byte = (hex_nibble(h) << 4) | hex_nibble(l);
                             if byte > 0x7f {
                                 // Strings are UTF-8; one high byte alone is not a character.
-                                return Err(Error::at(
+                                bad_escape.get_or_insert(Error::at(
                                     "\\xHH above \\x7F is not valid in a String (strings are UTF-8); write the character itself, or build Bytes",
                                     Span::new(self.pos.saturating_sub(2), self.pos + 2),
                                 ));
@@ -304,7 +329,7 @@ impl<'a> Lexer<'a> {
                             self.pos += 2;
                         }
                         _ => {
-                            return Err(Error::at(
+                            bad_escape.get_or_insert(Error::at(
                                 "invalid \\xHH escape (need two hex digits)",
                                 Span::new(self.pos.saturating_sub(1), self.pos + 1),
                             ));
@@ -312,6 +337,8 @@ impl<'a> Lexer<'a> {
                     }
                     continue;
                 }
+                // Step over the whole escaped character, even a multibyte one.
+                let width = self.src[self.pos..].chars().next().map_or(1, char::len_utf8);
                 out.push(match esc {
                     b'n' => '\n',
                     b't' => '\t',
@@ -319,14 +346,16 @@ impl<'a> Lexer<'a> {
                     b'\\' => '\\',
                     b'"' => '"',
                     b'0' => '\0',
-                    other => {
-                        return Err(Error::at(
-                            format!("unknown escape \\{}", other as char),
-                            Span::new(self.pos, self.pos + 1),
+                    _ => {
+                        let escaped = self.src[self.pos..].chars().next().unwrap_or('?');
+                        bad_escape.get_or_insert(Error::at(
+                            format!("unknown escape \\{escaped}"),
+                            Span::new(self.pos, self.pos + width),
                         ));
+                        '\u{FFFD}'
                     }
                 });
-                self.pos += 1;
+                self.pos += width;
                 continue;
             }
             let ch = self.src[self.pos..].chars().next().unwrap();
@@ -365,6 +394,7 @@ impl<'a> Lexer<'a> {
             return Ok(Token {
                 kind: TokenKind::Int(value),
                 span: Span::new(start, self.pos),
+                line_start: false,
             });
         }
 
@@ -426,6 +456,7 @@ impl<'a> Lexer<'a> {
             Ok(Token {
                 kind: TokenKind::Float(value),
                 span: Span::new(start, self.pos),
+                line_start: false,
             })
         } else {
             let value: i64 = text.parse().map_err(|_| {
@@ -437,6 +468,7 @@ impl<'a> Lexer<'a> {
             Ok(Token {
                 kind: TokenKind::Int(value),
                 span: Span::new(start, self.pos),
+                line_start: false,
             })
         }
     }
@@ -487,6 +519,7 @@ impl<'a> Lexer<'a> {
         Ok(Token {
             kind,
             span: Span::new(start, self.pos),
+            line_start: false,
         })
     }
 

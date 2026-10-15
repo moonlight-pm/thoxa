@@ -1,0 +1,6 @@
+## D158: an `if` without `else` is a Void statement, not a value.
+fn main() -> Int64 {
+    let flag = true
+    let count: Int64 = if flag { 1 }
+    count
+}

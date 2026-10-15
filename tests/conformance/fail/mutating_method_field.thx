@@ -1,0 +1,19 @@
+## D163: outside its type, a field is read-only, so a mutating method on it
+## is an error rather than a write to a copy.
+type Counter(count: Int64) {
+    export fn bump() {
+        count = count + 1
+    }
+}
+
+type Pair(left: Counter) {
+    export fn get() -> Int64 {
+        0
+    }
+}
+
+fn main() -> Int64 {
+    mut pair = Pair(left: Counter(count: 0))
+    pair.left.bump()
+    0
+}

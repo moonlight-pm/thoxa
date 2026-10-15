@@ -1,0 +1,12 @@
+## D161: a negative shift count panics.
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let count = 0 - 1
+    info("before")
+    info("{1 << count}")
+    info("after")
+    0
+}

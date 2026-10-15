@@ -1,0 +1,21 @@
+## D161: shifts by 64 or more shift every bit out; `<<` wraps like `*`.
+import logging, { info } from "std/logging"
+
+fn shl(value: Int64, count: Int64) -> Int64 {
+    value << count
+}
+
+fn shr(value: Int64, count: Int64) -> Int64 {
+    value >> count
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let minusEight = 0 - 8
+    info("shl 1 by 3={shl(1, 3)} by 63={shl(1, 63)} by 64={shl(1, 64)} by 65={shl(1, 65)}")
+    info("shl -1 by 1={shl(0 - 1, 1)} max by 1={shl(9223372036854775807, 1)}")
+    info("shr -8 by 1={shr(minusEight, 1)} by 63={shr(minusEight, 63)} by 64={shr(minusEight, 64)}")
+    info("shr 8 by 2={shr(8, 2)} by 64={shr(8, 64)} by 1000={shr(8, 1000)}")
+    0
+}

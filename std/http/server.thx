@@ -5,9 +5,22 @@
 import net, { Socket } from "std/net"
 import http, { Request, Response, Header } from "std/http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import logging, { info, warn } from "std/logging"
+import { info, warn } from "std/logging"
+import { toLowerAscii } from "std/str"
 
 let maxBodyBytes = 65536
+## A slow or idle client cannot hold a task, and its fd, forever. The first
+## request's headers must arrive within `headerTimeoutMs` of accept; a
+## kept-alive connection waits up to `idleTimeoutMs` for its next request.
+## A body must arrive, and a response be taken, within 30 s.
+let headerTimeoutMs = 10000
+let idleTimeoutMs = 30000
+let bodyTimeoutMs = 30000
+let writeTimeoutMs = 30000
+## Connections served at once. Past the cap a new connection is closed at
+## accept, so the open connections keep their fds.
+let maxConnections = 1024
+mut activeConnections = 0
 
 export fn bindListen(port!: Int64) -> Trial<Socket, String> {
     let server = net.createSocket()?
@@ -27,7 +40,7 @@ fn bodyPrefix(raw!: Bytes) -> Bytes {
     }
 }
 
-fn readUntil(peer!: Socket, start!: Bytes, need!: Int64) -> Trial<Bytes, String> {
+fn readUntil(peer!: Socket, start!: Bytes, need!: Int64, deadline!: Int64) -> Trial<Bytes, String> {
     if need > maxBodyBytes {
         return Fail("request body too large")
     }
@@ -36,7 +49,7 @@ fn readUntil(peer!: Socket, start!: Bytes, need!: Int64) -> Trial<Bytes, String>
         if acc.count >= need {
             return Pass(acc.slice(0, need))
         }
-        let chunk = peer.receive()
+        let chunk = peer.receive(deadline)
         if chunk.count == 0 {
             return Fail("incomplete request body")
         }
@@ -51,8 +64,43 @@ fn readUntil(peer!: Socket, start!: Bytes, need!: Int64) -> Trial<Bytes, String>
     Fail("readUntil: internal")
 }
 
+## Framing the host does not support, or that two readers could take
+## differently (a proxy in front, say): no chunked bodies, one numeric
+## Content-Length. Accepting it would let a request hide inside another.
+fn framingError(req!: Request) -> May<String> {
+    mut lengths = 0
+    for header in req.headers {
+        let name = toLowerAscii(header.name)
+        if name == "transfer-encoding" {
+            return Has("Transfer-Encoding is not supported")
+        }
+        if name == "content-length" {
+            lengths = lengths + 1
+        }
+    }
+    if lengths > 1 {
+        return Has("more than one Content-Length")
+    }
+    if lengths == 1 {
+        match http.contentLength(req) {
+            Not {
+                return Has("invalid Content-Length")
+            }
+            Has(_) { Void }
+        }
+    }
+    Not()
+}
+
 ## Finish a request entity from the raw header buffer + Content-Length.
-export fn readBody(peer!: Socket, raw!: Bytes, req!: Request) -> Trial<Bytes, String> {
+## The body must arrive by `deadline` (`net.nowMs()` time; 0 = no deadline).
+export fn readBody(peer!: Socket, raw!: Bytes, req!: Request, deadline: Int64 = 0) -> Trial<Bytes, String> {
+    match framingError(req) {
+        Has(problem) {
+            return Fail(problem)
+        }
+        Not { Void }
+    }
     let have = bodyPrefix(raw)
     match http.contentLength(req) {
         Not {
@@ -65,7 +113,7 @@ export fn readBody(peer!: Socket, raw!: Bytes, req!: Request) -> Trial<Bytes, St
                 if n > maxBodyBytes {
                     Fail("request body too large")
                 } else {
-                    readUntil(peer, have, n)
+                    readUntil(peer, have, n, deadline)
                 }
             }
         }
@@ -80,9 +128,11 @@ fn isQuietClose(req!: Request) -> Bool {
     }
 }
 
-## Receive + parse + complete body. Empty method/path means the peer closed quietly.
-export fn readRequest(peer!: Socket) -> Trial<Request, String> {
-    match peer.receiveRequest() {
+## Receive + parse + complete body. Empty method/path means the peer closed
+## quietly, or sent nothing by `deadline` (0 = no deadline). With a deadline,
+## the body gets `bodyTimeoutMs` more.
+export fn readRequest(peer!: Socket, deadline: Int64 = 0) -> Trial<Request, String> {
+    match peer.receiveRequest(deadline) {
         Fail(e) {
             Fail(e)
         }
@@ -104,7 +154,12 @@ export fn readRequest(peer!: Socket) -> Trial<Request, String> {
                         Fail(msg)
                     }
                     Pass(req) {
-                        match readBody(peer, raw, req) {
+                        let bodyDeadline = if deadline == 0 {
+                            0
+                        } else {
+                            net.nowMs() + bodyTimeoutMs
+                        }
+                        match readBody(peer, raw, req, bodyDeadline) {
                             Fail(e) {
                                 Fail(e)
                             }
@@ -145,15 +200,17 @@ fn requestForHandle(req!: Request) -> Request {
     )
 }
 
+## The peer must take the whole response by `deadline` (0 = no deadline).
 export fn writeResponse(
     peer!: Socket,
     method!: String,
     res!: Response,
-    keepAlive!: Bool
+    keepAlive!: Bool,
+    deadline: Int64 = 0
 ) -> Trial<Void, String> {
     let final = http.finalize(method, res, keepAlive)
     let wireBytes = http.writeResponse(final)
-    match peer.sendAll(wireBytes) {
+    match peer.sendAll(wireBytes, deadline) {
         Pass(_) {
             Pass(Void)
         }
@@ -191,13 +248,16 @@ export fn sendEvent(peer!: Socket, data!: String) -> Trial<Void, String> {
 }
 
 fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
-    writeResponse(peer, "GET", http.badRequest(msg), false)
+    writeResponse(peer, "GET", http.badRequest(msg), false, net.nowMs() + writeTimeoutMs)
 }
 
-## One keep-alive connection: read / handle / write until close.
+## One keep-alive connection: read / handle / write until close. Each
+## request has a deadline (see `headerTimeoutMs`); an idle connection that
+## reaches it is closed quietly.
 export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
+    mut budget = headerTimeoutMs
     loop {
-        match readRequest(peer) {
+        match readRequest(peer, net.nowMs() + budget) {
             Fail(e) {
                 warn("recv: {e}")
                 match writeBadRequest(peer, e) {
@@ -220,7 +280,7 @@ export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
                     break
                 }
                 info("{req.method} {req.path} -> {res.status} {res.reason}")
-                match writeResponse(peer, req.method, res, keep) {
+                match writeResponse(peer, req.method, res, keep, net.nowMs() + writeTimeoutMs) {
                     Fail(se) {
                         warn("send: {se}")
                         break
@@ -231,10 +291,17 @@ export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
                         }
                     }
                 }
+                budget = idleTimeoutMs
             }
         }
     }
     peer.close()
+}
+
+## `serveOne`, counted against `maxConnections`.
+fn serveCounted(peer!: Socket, handle!: (req: Request) -> Response) {
+    serveOne(peer, handle)
+    activeConnections = activeConnections - 1
 }
 
 ## Run the host forever. `handle` is a free fn or bound method (D132).
@@ -251,7 +318,13 @@ export fn serve(
                 warn("accept: {e}")
             }
             Pass(peer) {
-                --> serveOne(peer, handle)
+                if activeConnections >= maxConnections {
+                    warn("accept: {maxConnections} connections open; closing the new one")
+                    peer.close()
+                } else {
+                    activeConnections = activeConnections + 1
+                    --> serveCounted(peer, handle)
+                }
             }
         }
     }

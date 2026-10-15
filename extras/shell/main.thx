@@ -8,6 +8,9 @@
 ## Run:  cargo make shell
 ## Plan: docs/specs/2026-07-24-thoxa-session-repl.md
 
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
 extern fn sysRead(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "read"
 extern fn sysWrite(fd!: Int32, buf!: Bytes, count!: UInt64) -> Int64 from "c" "write"
 extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
@@ -41,7 +44,7 @@ let qsSingle = 2
 type Shell(status: Int64) {
     ## Print args joined by spaces (no args → blank line). Always status 0.
     export fn echo(args: Array<String>) -> Shell {
-        println(joinSpace(args))
+        info(joinSpace(args))
         Shell(status: 0)
     }
 
@@ -50,10 +53,10 @@ type Shell(status: Int64) {
         let buf = Bytes(cwdBufSize)
         let path = sysGetcwd(buf, cwdBufSize)
         if path == "" {
-            println("pwd: {sysStrerror(sysErrno())}")
+            info("pwd: {sysStrerror(sysErrno())}")
             Shell(status: 1)
         } else {
-            println(path)
+            info(path)
             Shell(status: 0)
         }
     }
@@ -61,7 +64,7 @@ type Shell(status: Int64) {
     ## Change directory. No arg → $HOME. Fail → status 1.
     export fn cd(args: Array<String>) -> Shell {
         if args.count > 1 {
-            println("cd: too many arguments")
+            info("cd: too many arguments")
             Shell(status: 1)
         } else {
             mut path = ""
@@ -69,7 +72,7 @@ type Shell(status: Int64) {
             if args.count == 0 {
                 path = sysGetenv("HOME")
                 if path == "" {
-                    println("cd: HOME not set")
+                    info("cd: HOME not set")
                     bad = true
                 }
             } else {
@@ -80,7 +83,7 @@ type Shell(status: Int64) {
             } else {
                 let rc = sysChdir(path)
                 if rc != 0 {
-                    println("cd: {path}: {sysStrerror(sysErrno())}")
+                    info("cd: {path}: {sysStrerror(sysErrno())}")
                     Shell(status: 1)
                 } else {
                     Shell(status: 0)
@@ -98,14 +101,14 @@ type Shell(status: Int64) {
             let cmd = argv[0]
             match resolveCommand(cmd) {
                 Not {
-                    println("thoxash: {cmd}: command not found")
+                    info("thoxash: {cmd}: command not found")
                     Shell(status: 127)
                 }
                 Has(path) {
                     let blob = encodeArgv(argv)
                     let st = sysSpawnWait(path, blob, blob.count)
                     if st < 0 {
-                        println("thoxash: {cmd}: {sysStrerror(sysErrno())}")
+                        info("thoxash: {cmd}: {sysStrerror(sysErrno())}")
                         Shell(status: 1)
                     } else {
                         Shell(status: st)
@@ -117,12 +120,12 @@ type Shell(status: Int64) {
 
     ## Print last status without changing it (smoke / inspection).
     export fn showStatus() -> Shell {
-        println("{status}")
+        info("{status}")
         Shell(status: status)
     }
 
     export fn help() -> Shell {
-        println("thoxash 4 — Shell(status). Builtins: echo, pwd, cd, help, status, exit, quit. Quotes + PATH.")
+        info("thoxash 4 — Shell(status). Builtins: echo, pwd, cd, help, status, exit, quit. Quotes + PATH.")
         Shell(status: 0)
     }
 }
@@ -302,7 +305,7 @@ fn splitWords(line!: String) -> Words {
         inWord = true
     }
     if state != qsNormal {
-        println("thoxash: unclosed quote")
+        info("thoxash: unclosed quote")
         mut empty: Array<String> = []
         Words(ok: false, items: empty)
     } else {
@@ -454,7 +457,10 @@ fn evalLine(shell!: Shell, line!: String) -> Shell {
 }
 
 fn main() -> Int64 {
-    println("thoxash 4 — type help, or exit / Ctrl-D to quit")
+    ## Plain lines on stdout: the shell's own output, not log records.
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info("thoxash 4 — type help, or exit / Ctrl-D to quit")
     ## Prompts only on a TTY. Pipes/scripts get command output alone (no `$ `
     ## gluing when silent builtins like `cd` print nothing — a TTY echoes the
     ## user's Enter after the prompt; a pipe does not).
@@ -470,7 +476,7 @@ fn main() -> Int64 {
             Not {
                 ## EOF: put the next shell's prompt on a fresh line when interactive
                 if interactive {
-                    println("")
+                    info("")
                 }
                 running = false
             }

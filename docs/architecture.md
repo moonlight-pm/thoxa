@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-10-14 (batch CLI on a large-stack thread; session steps run through `thoxa_session_call`; guarded task stacks; no `_Thread_local` in the runtime; 2026-09-04: session compile cache: re-lower `Shell.step` + libtcc base `.o`; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
+**As of:** 2026-10-15 (deadline-aware fd waits; checked shifts; `tests/conformance/fail/`. 2026-10-14: batch CLI on a large-stack thread; session steps run through `thoxa_session_call`; guarded task stacks; no `_Thread_local` in the runtime; 2026-09-04: session compile cache: re-lower `Shell.step` + libtcc base `.o`; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
 `containers/landing` thoxa.dev live; `containers/sola` sola.computer live;
 `containers/oath` oath.wicket.cloud live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
@@ -60,7 +60,7 @@ step `.so` on the happy path.
 | `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
 | `vendor/sqlite` | Vendored SQLite amalgamation (D143; compiled into `libthoxa_rt`) |
 | `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, `Json`, `Sqlite`, Str/Path/Env/…) |
-| `tests/conformance/` | `.thx` + `.out` gate |
+| `tests/conformance/` | `.thx` + `.out` gate; `fail/` holds programs that must be rejected or panic (`.err` lines must appear in stderr) |
 | `examples/` | Runnable demos (`http` Crema-lite, `kilo` terminal editor); not the gate |
 | `containers/` | Deployed Thoxa programs (`landing` = thoxa.dev, `sola` = sola.computer, `oath` = oath.wicket.cloud); not the gate |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
@@ -161,10 +161,15 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
   `thoxa_fn_main`. RC stays non-atomic. Task stacks: 512 KiB mmap'd with a
   PROT_NONE guard page, pooled for reuse; a SIGSEGV in the guard prints
   `stack overflow in task`. `accept` waits 50 ms on EMFILE / ENFILE; `send`
-  passes `MSG_NOSIGNAL`.
-- Integer `/` and `%` call `thoxa_int_div` / `thoxa_int_rem` (panic on zero);
+  passes `MSG_NOSIGNAL`. An fd wait may carry a deadline (`wake_at_ns` with
+  `wait_fd`; the fiber wakes with `timed_out` set): `thoxa_recv_until` /
+  `thoxa_send_until` fail with ETIMEDOUT at a `thoxa_now_ms` deadline
+  (**D165**).
+- Integer `/` and `%` call `thoxa_int_div` / `thoxa_int_rem` (panic on zero),
+  `<<` / `>>` call `thoxa_int_shl` / `thoxa_int_shr` (**D161**);
   fixed-array subscripts go through `thoxa_fixed_index`; programs build with
-  `-fwrapv` (**D157**). `thoxa_panic` is `noreturn`.
+  `-fwrapv` (**D157**), the site Containerfiles too. `thoxa_panic` is
+  `noreturn`.
 - Extern from `"c"` (+ optional C symbol); cgen pulls headers when needed.
 - Spawn helper `thoxa_spawn_wait` used by session Shell / dogfood shell.
   Children reset SIGPIPE / SIGINT / SIGQUIT to default; the parent ignores

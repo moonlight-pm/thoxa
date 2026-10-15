@@ -1,0 +1,123 @@
+## std/http/server deadlines and framing: an idle or slow client meets its
+## deadline; chunked, doubled, or unparseable lengths are refused; a request
+## target must be visible ASCII; response headers drop CR / LF.
+import net, { Socket, createSocket } from "std/net"
+import http, { Request, Response, Header, ok } from "std/http"
+import server from "std/http/server"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+## Send `raw` from a fresh client and report what the server reads by `waitMs`.
+fn readFrom(listener!: Socket, port!: Int64, raw!: String, waitMs!: Int64) -> Trial<String, String> {
+    let client = createSocket()?
+    client.connect(port)?
+    let peer = listener.accept()?
+    if raw != "" {
+        client.sendAll(Bytes.fromString(raw))?
+    }
+    let outcome = match server.readRequest(peer, net.nowMs() + waitMs) {
+        Fail(error) => "refused: {error}"
+        Pass(request) {
+            if request.method == "" {
+                "closed quietly"
+            } else {
+                "read {request.method} {request.path} body={request.body.count}"
+            }
+        }
+    }
+    peer.close()
+    client.close()
+    Pass(outcome)
+}
+
+fn bodyDeadline(listener!: Socket, port!: Int64) -> Trial<String, String> {
+    let client = createSocket()?
+    client.connect(port)?
+    let peer = listener.accept()?
+    client.sendAll(Bytes.fromString("POST /form HTTP/1.1\r\nContent-Length: 10\r\n\r\nabc"))?
+    let raw = peer.receiveRequest()?
+    let request = http.parseRequest(raw)?
+    let outcome = match server.readBody(peer, raw, request, net.nowMs() + 50) {
+        Fail(error) => "refused: {error}"
+        Pass(body) => "read {body.count} bytes"
+    }
+    peer.close()
+    client.close()
+    Pass(outcome)
+}
+
+## The same deadline inside a task: it parks, then wakes timed out while
+## `main` waits for the peer to close.
+fn readInTask(listener!: Socket) {
+    match listener.accept() {
+        Fail(error) {
+            info("task: accept failed: {error}")
+        }
+        Pass(peer) {
+            match server.readRequest(peer, net.nowMs() + 50) {
+                Fail(error) {
+                    info("task: refused: {error}")
+                }
+                Pass(request) {
+                    info("task: read {request.method}")
+                }
+            }
+            peer.close()
+        }
+    }
+}
+
+fn taskDeadline(listener!: Socket, port!: Int64) -> Trial<Void, String> {
+    --> readInTask(listener)
+    let client = createSocket()?
+    client.connect(port)?
+    client.sendAll(Bytes.fromString("GET / HTTP/1.1\r\n"))?
+    let reply = client.receive()
+    info("client: peer closed={reply.count == 0}")
+    client.close()
+    Pass(Void)
+}
+
+fn run() -> Trial<Void, String> {
+    let listener = server.bindListen(0)?
+    let port = listener.localPort()?
+    taskDeadline(listener, port)?
+    let idle = readFrom(listener, port, "", 50)?
+    info("idle: {idle}")
+    let slowHeaders = readFrom(listener, port, "GET / HTTP/1.1\r\nHost: x\r\n", 50)?
+    info("slow headers: {slowHeaders}")
+    let slowBody = bodyDeadline(listener, port)?
+    info("slow body: {slowBody}")
+    let whole = readFrom(listener, port, "POST /form HTTP/1.1\r\nContent-Length: 3\r\n\r\nabc", 1000)?
+    info("whole: {whole}")
+    let chunked = readFrom(listener, port, "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n", 1000)?
+    info("chunked: {chunked}")
+    let twoLengths = readFrom(listener, port, "POST / HTTP/1.1\r\nContent-Length: 3\r\nContent-Length: 4\r\n\r\nabcd", 1000)?
+    info("two lengths: {twoLengths}")
+    let badLength = readFrom(listener, port, "POST / HTTP/1.1\r\nContent-Length: 3x\r\n\r\nabc", 1000)?
+    info("bad length: {badLength}")
+    let paddedName = readFrom(listener, port, "POST / HTTP/1.1\r\nContent-Length : 3\r\n\r\nabc", 1000)?
+    info("padded name: {paddedName}")
+    let controlByte = readFrom(listener, port, "GET /a\x01b.png HTTP/1.1\r\n\r\n", 1000)?
+    info("control byte: {controlByte}")
+    listener.close()
+
+    mut headers: Array<Header> = []
+    headers.append(Header(name: "Location", value: "/next\r\nSet-Cookie: stolen=1"))
+    let wire = http.writeResponse(Response(status: 302, reason: "Found", headers: headers, body: Bytes(0)))
+    let expected = "HTTP/1.1 302 Found\r\nLocation: /nextSet-Cookie: stolen=1\r\n\r\n"
+    info("split: {wire.toString() == expected}")
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass(_) { 0 }
+        Fail(e) {
+            info("fail {e}")
+            1
+        }
+    }
+}

@@ -57,7 +57,7 @@ and `diagnostics[]` with `code`, `severity`, `message`, `path`, 1-based
 Prefer **`cargo make`** helpers from a workspace checkout:
 
 ```bash
-cargo make test              # conformance suite (LeakSanitizer; D151)
+cargo make test              # conformance suite (LeakSanitizer; D151), then fail/ rejections + unit tests
 cargo make run path.thx
 cargo make run examples/http # Crema-lite HTTP example (port 9091; experiment)
 # kilo editor (real TTY; Ctrl-Q quit, 3× if dirty)

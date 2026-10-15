@@ -25,8 +25,10 @@ export type OrderLookup = OrderMiss | OrderHit
 
 export let path = "/tmp/crema.db"
 
-## Int64 only: a module-level `Db` literal currently mis-emits as `Sql` in C.
-mut handle = 0
+## One connection per call. A module-level `Db` mis-emits as `Sql` in C, and
+## keeping only its Int64 handle fails: `drop()` closes the connection when
+## `open` returns (D155), so later calls would run on a closed handle.
+mut ready = false
 
 export fn open() -> Trial<Void, String> {
     let opened = sqlite.open(path)?
@@ -49,7 +51,7 @@ export fn open() -> Trial<Void, String> {
             total_cents INTEGER NOT NULL
         )
     ")?
-    handle = opened.handle
+    ready = true
     seedDrinks()?
     info("store {path}")
     Pass(Void)
@@ -180,11 +182,10 @@ export fn listOrders() -> Trial<Array<OrderRow>, String> {
 }
 
 fn requireDb() -> Trial<Db, String> {
-    if handle == 0 {
-        Fail("store is closed")
-    } else {
-        Pass(Db(handle: handle))
+    if not ready {
+        return Fail("store is closed")
     }
+    sqlite.open(path)
 }
 
 fn drinkFromRow(row!: Row) -> Trial<Drink, String> {

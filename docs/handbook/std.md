@@ -99,9 +99,10 @@ IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 |---------|--------|
 | `createSocket()` | `Trial<Socket, String>` |
 | `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close`, `isOpen`. `close` writes `fd = -1` (second close is a no-op, same as `File`). Last RC runs `drop()` which closes (**D155**) |
-| `receive()` | One `recv` chunk (empty on close/error) |
-| `receiveRequest()` | Until `\r\n\r\n` or 64 KiB cap / peer close |
-| `send` / `sendAll` | One write vs drain partial writes |
+| `receive(deadline: 0)` | One `recv` chunk (empty on close, error, or deadline) |
+| `receiveRequest(deadline: 0)` | Until `\r\n\r\n` or 64 KiB cap / peer close. A deadline with nothing read is an empty `Pass` (quiet close); mid-headers it is `Fail("request timed out")` |
+| `send` / `sendAll(data, deadline: 0)` | One write vs drain partial writes |
+| `nowMs()` | Monotonic milliseconds. A deadline is `nowMs() + budget`; 0 means none (**D165**) |
 
 ### Http (`std/http`)
 
@@ -111,8 +112,8 @@ leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
 | Surface | Notes |
 |---------|--------|
 | `Header` / `Request` / `Response` | Constructor-param products. `Request.query` is the `?…` tail |
-| `parseRequest` | `Trial<Request, String>`; requires `\r\n\r\n`; path is query-stripped |
-| `writeResponse` | Status line + headers + body → `Bytes` |
+| `parseRequest` | `Trial<Request, String>`; requires `\r\n\r\n`; path is query-stripped. Method, request target, and header names must be visible ASCII (no space, control byte, or raw non-ASCII) |
+| `writeResponse` | Status line + headers + body → `Bytes`. CR / LF in header names and values are dropped, so a value cannot start another header |
 | Lookup | `headerGet`, `contentLength`, `queryMap`, `queryParam`, `formField`, `cookie` |
 | Stream | `Request.peerFd` (host fd, else 0); `streamed()` (status 0 — handler owns the socket) |
 | Maps | `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`; `urlDecode` |
@@ -137,15 +138,18 @@ policy (which name, how long, HttpOnly) stays in the caller.
 
 ### HttpServer (`std/http/server`)
 
-Host loop over `std/net`. Completes `Request.body` (64 KiB cap).
+Host loop over `std/net`. Completes `Request.body` (64 KiB cap). A client gets
+10 s from accept to send its first request's headers, 30 s idle between
+kept-alive requests, and 30 s each to send a body and to take a response;
+`serve` closes new connections at accept while 1024 are open (**D165**).
 
 | Surface | Notes |
 |---------|--------|
 | `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132** handle, **D148** nowait). Logs `http://127.0.0.1:{port}/`. App `handle` is often `Routes().route` (**D150**) |
 | `serveOne(peer, handle)` | One keep-alive connection |
 | `bindListen(port)` | `createSocket` + reuse + bind + listen |
-| `readBody` / `readRequest` | `Content-Length` entity; empty method/path = quiet close |
-| `writeResponse(peer, method, res, keepAlive)` | `finalize` + `sendAll` |
+| `readBody(peer, raw, req, deadline: 0)` / `readRequest(peer, deadline: 0)` | `Content-Length` entity; empty method/path = quiet close. `Transfer-Encoding`, two `Content-Length`s, or a non-numeric one are refused (400) |
+| `writeResponse(peer, method, res, keepAlive, deadline: 0)` | `finalize` + `sendAll` |
 | `beginEventStream` / `sendEvent` | SSE prelude + `data:` lines (**D146**). `streamed()` skips the normal write |
 
 HEAD is answered by GET handlers; `finalize` still sees the real method.

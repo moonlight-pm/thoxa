@@ -1,0 +1,58 @@
+## D164: `return` is Never, so an `if` / `match` arm that returns fits beside a Void or value arm.
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+fn check(value: Int64) -> May<String> {
+    match value {
+        0 {
+            return Has("zero")
+        }
+        _ { }
+    }
+    Not()
+}
+
+fn pick(input: May<Int64>) -> Int64 {
+    let got = match input {
+        Not {
+            return 0 - 1
+        }
+        Has(found) { found * 2 }
+    }
+    got + 1
+}
+
+fn label(value: Int64) -> String {
+    let text = if value > 10 {
+        return "big"
+    } else {
+        "small"
+    }
+    "{text}!"
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let first = match check(0) {
+        Has(text) => text
+        Not => "none"
+    }
+    let second = match check(1) {
+        Has(text) => text
+        Not => "none"
+    }
+    info("{first} {second} {pick(Has(4))} {pick(Not())} {label(3)} {label(30)} {both(Has(9))} {both(Not())}")
+    0
+}
+
+fn both(input: May<Int64>) -> Int64 {
+    match input {
+        Not {
+            return 0
+        }
+        Has(found) {
+            return found
+        }
+    }
+}

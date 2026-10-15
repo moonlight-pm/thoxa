@@ -29,9 +29,9 @@ import sqlite, { lit } from "std/sqlite"
 | `Fallible` | Exported `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` — **import required** for programs (D123; not ambient) |
 | `Logging` | Default logger: levels, sinks, formats; prefer `import logging, { info, … }` (**D125**/**D127**); no ambient `println` |
 | `Io` | Files: `readFile`/`writeFile`/`appendFile`, `File`, OpenMode (**D126**) |
-| `Net` | TCP sockets: `Socket`, `receiveRequest`, `sendAll` (**D126**) |
+| `Net` | TCP sockets: `Socket`, `receiveRequest`, `sendAll`; `nowMs()` deadlines on receive / send (**D126**/**D165**) |
 | `Http` | HTTP/1.1 parse/write + query/form/cookie helpers + `htmlResponse` + `Cookie` / `withCookie` (**D126**/**D136**/**D137**/**D142**) |
-| `http/server` | Host loop: `serve` / `serveOne` / `readBody` (**D136**/**D139**) |
+| `http/server` | Host loop: `serve` / `serveOne` / `readBody`; header / idle / body / response deadlines, 1024-connection cap, strict framing (**D136**/**D139**/**D165**) |
 | `http/static` | Static-file `Router` over `std/io` + `std/http` (**D126**/**D139**) |
 | `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
 | `Str` | search/slice/replace/`split`/`splitOnce`/`parseUInt`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |

@@ -12,3 +12,4 @@ start_keepalive
 start_nested
 start_net
 start_tasks
+http_hardening

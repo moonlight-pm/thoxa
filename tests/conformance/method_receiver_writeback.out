@@ -1,0 +1,2 @@
+after bumpLeft left=2 tags=2 before=0 total=12
+after list[1].bump=9 tags=2 first=5 snapshot=7

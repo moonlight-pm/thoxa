@@ -1,0 +1,12 @@
+## D157: `/` by zero panics instead of trapping or returning garbage.
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let zero = 0
+    info("before")
+    info("{7 / zero}")
+    info("after")
+    0
+}

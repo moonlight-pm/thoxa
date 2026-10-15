@@ -1,0 +1,25 @@
+## D163: a parameter is immutable, so a mutating method on it is an error
+## (the write would be lost when the function returns). `bumpLeft` writes
+## only through `left.bump()`, so this also checks that a field's write-back
+## makes its method mutating.
+type Counter(count: Int64) {
+    export fn bump() {
+        count = count + 1
+    }
+}
+
+type Pair(left: Counter) {
+    export fn bumpLeft() {
+        left.bump()
+    }
+}
+
+fn poke(pair: Pair) {
+    pair.bumpLeft()
+}
+
+fn main() -> Int64 {
+    mut pair = Pair(left: Counter(count: 0))
+    poke(pair)
+    0
+}

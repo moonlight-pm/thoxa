@@ -1,0 +1,32 @@
+## D162: a line that starts with `-1` / `-x` starts a new expression; `- x` continues.
+import logging, { info } from "std/logging"
+
+fn sign(value: Int64) -> Int64 {
+    if value > 0 {
+        return 1
+    }
+    if value == 0 {
+        return 0
+    }
+    -1
+}
+
+fn name(value: Int64) -> String {
+    match value {
+        0 => "zero"
+        -1 => "minus one"
+        _ => "other"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let total = 10
+        - 3
+    let spaced = 10 -
+        3
+    info("sign={sign(5)} {sign(0)} {sign(0 - 5)} total={total} spaced={spaced}")
+    info("{name(0)} {name(0 - 1)} {name(7)}")
+    0
+}

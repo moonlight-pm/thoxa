@@ -184,9 +184,11 @@ pub fn from_error(err: Error, path_fallback: Option<&Path>) -> Vec<Diagnostic> {
         err.actual,
         primary_path,
     ));
+    // A follow-on diagnostic without its own path is in the primary's file.
+    let primary_path = primary_path.map(Path::to_path_buf);
     for m in err.more {
         let owned = m.path.clone();
-        let p = owned.as_deref().or(path_fallback);
+        let p = owned.as_deref().or(primary_path.as_deref());
         out.push(from_additional(m, p));
     }
     out

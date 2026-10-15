@@ -1105,6 +1105,19 @@ impl Parser {
         }
     }
 
+    /// A `-` that begins a line and touches its operand (`-1`, `-x`) starts a
+    /// new expression instead of subtracting from the line above, so a
+    /// block's `-1` tail after an `if` is a value (D162). `- x` with a space
+    /// still continues the expression.
+    fn minus_starts_new_expression(&self) -> bool {
+        let minus = self.current();
+        minus.line_start
+            && self
+                .tokens
+                .get(self.pos + 1)
+                .is_some_and(|next| next.span.start == minus.span.end)
+    }
+
     /// `>` or the first half of `>>` (lexer emits Shr for nested generics like `May<Array<T>>`).
     fn at_rangle(&self) -> bool {
         self.extra_rangles > 0 || self.at(TokenKind::RAngle) || self.at(TokenKind::Shr)
@@ -1575,6 +1588,7 @@ impl Parser {
         loop {
             let op = match self.current().kind {
                 TokenKind::Plus => BinaryOp::Add,
+                TokenKind::Minus if self.minus_starts_new_expression() => break,
                 TokenKind::Minus => BinaryOp::Sub,
                 _ => break,
             };
@@ -1781,7 +1795,7 @@ impl Parser {
                 let s = s.clone();
                 let span = Span::new(start.start, self.current().span.end);
                 self.bump();
-                parse_string_literal(s, span)
+                parse_string_literal(s, span, self.raw_string_body(span))
             }
             TokenKind::Nowait => {
                 self.bump(); // `-->`
@@ -2134,7 +2148,7 @@ impl Parser {
             let s = s.clone();
             let span = self.current().span;
             self.bump();
-            parse_string_literal(s, span)?
+            parse_string_literal(s, span, self.raw_string_body(span))?
         } else {
             return Err(Error::at(
                 "expected attribute value (`\"…\"` or `{expr}`)",
@@ -2507,6 +2521,23 @@ impl Parser {
                     span: self.prev_span(),
                 })
             }
+            // `-1 =>`: a negative literal pattern.
+            TokenKind::Minus
+                if matches!(
+                    self.tokens.get(self.pos + 1).map(|next| &next.kind),
+                    Some(TokenKind::Int(_))
+                ) =>
+            {
+                self.bump();
+                let TokenKind::Int(n) = self.current().kind else {
+                    unreachable!("checked above");
+                };
+                self.bump();
+                Ok(Pattern::IntLit {
+                    value: n.wrapping_neg(),
+                    span: Span::new(span.start, self.prev_span().end),
+                })
+            }
             TokenKind::True => {
                 self.bump();
                 Ok(Pattern::BoolLit {
@@ -2683,6 +2714,14 @@ impl Parser {
         self.current().span
     }
 
+    /// The source text between a string token's quotes, when the parser has
+    /// the source. Interpolation holes use it to find their file offsets.
+    fn raw_string_body(&self, span: Span) -> Option<String> {
+        let text = self.source.get(span.start..span.end)?;
+        let body = text.strip_prefix('"')?.strip_suffix('"')?;
+        Some(body.to_string())
+    }
+
     fn prev_span(&self) -> Span {
         if self.pos == 0 {
             Span::dummy()
@@ -2704,7 +2743,7 @@ impl Parser {
         };
         let str_span = self.current().span;
         self.bump();
-        let inner = parse_string_literal(content, str_span)?;
+        let inner = parse_string_literal(content, str_span, self.raw_string_body(str_span))?;
         let parts = match inner.kind {
             ExprKind::String(s) => vec![InterpPart::Lit(s)],
             ExprKind::Interpolate(parts) => parts,
@@ -3166,8 +3205,41 @@ fn block_elem_to_item(el: BlockElem) -> BlockItem {
     }
 }
 
+/// Byte offsets, within a string body, of each interpolation hole's first
+/// character (just after its `{`). `{{` is a literal brace.
+fn interpolation_hole_starts(body: &str) -> Vec<usize> {
+    let bytes = body.as_bytes();
+    let mut starts = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'{' if bytes.get(index + 1) == Some(&b'{') => index += 2,
+            b'}' if bytes.get(index + 1) == Some(&b'}') => index += 2,
+            b'{' => {
+                starts.push(index + 1);
+                let mut depth = 1usize;
+                index += 1;
+                while index < bytes.len() && depth > 0 {
+                    match bytes[index] {
+                        b'{' => depth += 1,
+                        b'}' => depth -= 1,
+                        _ => {}
+                    }
+                    index += 1;
+                }
+            }
+            _ => index += 1,
+        }
+    }
+    starts
+}
+
 /// Expand a string token into plain `String` or `Interpolate` (handles `{{` / `}}`).
-fn parse_string_literal(content: String, span: Span) -> Result<Expr> {
+/// `raw` is the source between the quotes, when known: a hole's file offset
+/// is taken from it, since escapes make the decoded `content` shorter.
+fn parse_string_literal(content: String, span: Span, raw: Option<String>) -> Result<Expr> {
+    let raw_hole_starts = raw.as_deref().map(interpolation_hole_starts);
+    let mut hole_count = 0usize;
     let mut parts: Vec<InterpPart> = Vec::new();
     let mut lit = String::new();
     let chars: Vec<char> = content.chars().collect();
@@ -3200,11 +3272,20 @@ fn parse_string_literal(content: String, span: Span) -> Result<Expr> {
                     i += 1;
                 }
                 if depth != 0 {
-                    return Err(Error::at("unclosed interpolation `{`", span));
+                    return Err(Error::at("unclosed interpolation `{`", span).with_help(
+                        "a `\"` inside `{…}` ends the whole string: bind the inner string with `let` first",
+                    ));
                 }
                 let expr_src: String = chars[expr_start..i].iter().collect();
                 i += 1; // consume closing `}`
-                let expr = parse_embedded_expr(&expr_src, span)?;
+                let decoded_offset: usize = chars[..expr_start].iter().map(|ch| ch.len_utf8()).sum();
+                let body_offset = raw_hole_starts
+                    .as_ref()
+                    .and_then(|starts| starts.get(hole_count).copied())
+                    .unwrap_or(decoded_offset);
+                hole_count += 1;
+                // `+ 1` steps over the opening quote.
+                let expr = parse_embedded_expr(&expr_src, span, span.start + 1 + body_offset)?;
                 parts.push(InterpPart::Expr(expr));
             }
             '}' => {
@@ -3239,23 +3320,30 @@ fn parse_string_literal(content: String, span: Span) -> Result<Expr> {
     })
 }
 
-fn parse_embedded_expr(src: &str, parent_span: Span) -> Result<Expr> {
+/// Parse one interpolation hole. `offset` is the file offset of `src`'s first
+/// byte; token spans are shifted by it so diagnostics point into the hole.
+fn parse_embedded_expr(src: &str, parent_span: Span, offset: usize) -> Result<Expr> {
     let trimmed = src.trim();
     if trimmed.is_empty() {
         return Err(Error::at("empty interpolation expression", parent_span));
     }
-    let tokens = Lexer::new(trimmed).tokenize().map_err(|e| {
+    let offset = offset + (src.len() - src.trim_start().len());
+    let shift = |span: Span| Span::new(span.start + offset, span.end + offset);
+    let mut tokens = Lexer::new(trimmed).tokenize().map_err(|e| {
         Error::at(
             format!("invalid interpolation expression: {}", e.message),
-            parent_span,
+            e.span.map_or(parent_span, shift),
         )
     })?;
+    for token in &mut tokens {
+        token.span = shift(token.span);
+    }
     let mut p = Parser::new(tokens);
     let expr = p.parse_expr()?;
     if !p.at(TokenKind::Eof) {
         return Err(Error::at(
             "trailing tokens in interpolation expression",
-            parent_span,
+            p.peek_span(),
         ));
     }
     Ok(expr)

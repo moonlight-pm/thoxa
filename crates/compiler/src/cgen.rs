@@ -1190,6 +1190,17 @@ fn emit_stmts(
                         value.name
                     );
                     let _ = writeln!(out, "{pad}thoxa_dup({});", value.name);
+                } else if matches!(ty, Ty::User(_)) {
+                    // Unboxed struct field (D107 write-back of a User-typed
+                    // field): same ownership rule, field by field. A plain
+                    // copy would leak the old fields and free the new ones
+                    // twice (once with the method's local).
+                    let field_place = crate::mir::Place {
+                        name: format!("{}{}{}", base.name, acc, field),
+                    };
+                    emit_rc(out, &pad, &field_place, ty, false, types);
+                    let _ = writeln!(out, "{pad}{} = {};", field_place.name, value.name);
+                    emit_rc(out, &pad, value, ty, true, types);
                 } else {
                     let _ = writeln!(
                         out,
@@ -1407,6 +1418,9 @@ fn emit_rvalue(
         RValue::Null => {
             out.push_str("NULL");
         }
+        RValue::AddressOf(place) => {
+            let _ = write!(out, "&{}", place.name);
+        }
         RValue::Unary { op, arg } => match op {
             UnaryOp::Neg => {
                 let _ = write!(out, "-({})", arg.name);
@@ -1447,6 +1461,8 @@ fn emit_rvalue(
                     "string_eq" => "thoxa_string_eq",
                     "int_div" => "thoxa_int_div",
                     "int_rem" => "thoxa_int_rem",
+                    "int_shl" => "thoxa_int_shl",
+                    "int_shr" => "thoxa_int_shr",
                     "string_len" => "(int64_t)thoxa_string_len",
                     "bytes_from_string" => "thoxa_bytes_from_string",
                     "bytes_new" => "thoxa_bytes_new",
@@ -1581,10 +1597,6 @@ fn emit_rvalue(
                         }
                         Some(Ty::Bytes) => {
                             let _ = write!(out, "(void *)thoxa_bytes_data({})", a.name);
-                        }
-                        Some(Ty::Address(_)) => {
-                            // Implicit address-of for mut struct bindings.
-                            let _ = write!(out, "&{}", a.name);
                         }
                         _ => out.push_str(&a.name),
                     }

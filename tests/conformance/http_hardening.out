@@ -1,0 +1,12 @@
+task: refused: request timed out
+client: peer closed=true
+idle: closed quietly
+slow headers: refused: request timed out
+slow body: refused: incomplete request body
+whole: read POST /form body=3
+chunked: refused: Transfer-Encoding is not supported
+two lengths: refused: more than one Content-Length
+bad length: refused: invalid Content-Length
+padded name: refused: malformed header name
+control byte: refused: request target must be visible ASCII
+split: true

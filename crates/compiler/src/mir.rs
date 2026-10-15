@@ -18,6 +18,22 @@ use std::rc::Rc;
 struct SyntheticRegistry {
     /// mangled name → (type info, layout)
     entries: HashMap<String, (TypeInfo, TypeLayout)>,
+    /// User method calls whose receiver cannot be written (D163). Each is an
+    /// error only if the method writes its receiver, which is known once
+    /// every body in the package is lowered.
+    receiver_checks: Vec<ReceiverCheck>,
+}
+
+/// A user method called on an immutable binding, a field, or a temporary.
+#[derive(Debug, Clone)]
+struct ReceiverCheck {
+    /// The method's MIR function name (`{type}__{method}`).
+    function: String,
+    method: String,
+    /// What the receiver is, for the message: "immutable binding `x`", …
+    receiver: String,
+    span: Span,
+    module_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -220,6 +236,8 @@ pub enum RValue {
         callee: Callee,
         args: Vec<Place>,
     },
+    /// `&place`: an `Address<T>` to a `mut` C-layout struct local.
+    AddressOf(Place),
     /// Construct a user type from field places (declaration order).
     StructLit {
         type_name: String,
@@ -662,7 +680,8 @@ fn rvalue_uses_place(value: &RValue, place: &Place) -> bool {
         | RValue::MapNew { .. } => false,
         RValue::Unary { arg, .. }
         | RValue::ToString { value: arg, .. }
-        | RValue::Cast { value: arg, .. } => uses(arg),
+        | RValue::Cast { value: arg, .. }
+        | RValue::AddressOf(arg) => uses(arg),
         RValue::Binary { left, right, .. } | RValue::StringConcat { left, right } => {
             uses(left) || uses(right)
         }
@@ -1308,6 +1327,14 @@ impl LowerCtx {
     }
 }
 
+/// [`in_module_file`] for the module with this id.
+fn in_module_id(error: Error, package: &Package, module_id: &str) -> Error {
+    match package.modules.iter().find(|module| module.id == module_id) {
+        Some(module) => in_module_file(error, &module.path),
+        None => error,
+    }
+}
+
 /// A body-lowering error's span is an offset into the module being lowered:
 /// record that file so the CLI and LSP show the right file and line.
 fn in_module_file(mut error: Error, path: &std::path::Path) -> Error {
@@ -1411,6 +1438,7 @@ pub fn relower_session_step(cache: &SessionMirCache, package: &Package) -> Resul
         .package_maps
         .get(&cache.env.entry_mod_id)
         .ok_or_else(|| Error::new("session step: missing entry name maps"))?;
+    let checks_before = cache.env.synthetics.borrow().receiver_checks.len();
     let fun = lower_method(
         &cache.env.shell_mangled,
         step,
@@ -1435,6 +1463,21 @@ pub fn relower_session_step(cache: &SessionMirCache, package: &Package) -> Resul
         *slot = fun;
     } else {
         program.functions.push(fun);
+    }
+    // D163 for this step only; the cached registry must not grow per line.
+    let step_checks: Vec<ReceiverCheck> = cache
+        .env
+        .synthetics
+        .borrow_mut()
+        .receiver_checks
+        .drain(checks_before..)
+        .collect();
+    let errors: Vec<Error> = receiver_errors(&program.functions, &step_checks)
+        .into_iter()
+        .map(|(error, _)| error)
+        .collect();
+    if !errors.is_empty() {
+        return Err(errors_to_multi(errors));
     }
     Ok(program)
 }
@@ -1654,7 +1697,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
                 Ok(None) => {}
                 Err(e) => {
                     refined_failed.insert((*mangled).clone());
-                    type_reg_errors.push(e);
+                    type_reg_errors.push(in_module_id(e, package, mod_id));
                 }
             }
         }
@@ -1710,7 +1753,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
                     has_drop: false,
                 });
             }
-            Err(e) => type_reg_errors.push(e),
+            Err(e) => type_reg_errors.push(in_module_id(e, package, mod_id)),
         }
     }
     type_reg_errors.extend(user_field_cycle_errors(&types_info, &type_defs));
@@ -1755,7 +1798,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
                         multi_methods.insert((mangled.clone(), method_name), mc);
                     }
                 }
-                Err(e) => method_reg_errors.push(e),
+                Err(e) => method_reg_errors.push(in_module_id(e, package, mod_id)),
             }
         }
     }
@@ -1801,145 +1844,152 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
     let mut multi_free: HashMap<String, Vec<MultiClause>> = HashMap::new();
 
     for m in &package.modules {
-        let name_map = per_mod_types.get(&m.id).cloned().unwrap_or_default();
-        // Collect free functions by name for multi-clause merge (D131).
-        let mut free_groups: HashMap<String, Vec<&ast::Function>> = HashMap::new();
-        let mut free_order: Vec<String> = Vec::new();
-        for item in &m.ast.items {
-            if let Item::Function(f) = item {
-                if !free_groups.contains_key(&f.name) {
-                    free_order.push(f.name.clone());
+        // Signature errors are spans in this module: attach its path.
+        let registered = (|| -> Result<()> {
+            let name_map = per_mod_types.get(&m.id).cloned().unwrap_or_default();
+            // Collect free functions by name for multi-clause merge (D131).
+            let mut free_groups: HashMap<String, Vec<&ast::Function>> = HashMap::new();
+            let mut free_order: Vec<String> = Vec::new();
+            for item in &m.ast.items {
+                if let Item::Function(f) = item {
+                    if !free_groups.contains_key(&f.name) {
+                        free_order.push(f.name.clone());
+                    }
+                    free_groups.entry(f.name.clone()).or_default().push(f);
                 }
-                free_groups.entry(f.name.clone()).or_default().push(f);
             }
-        }
-        for fname in free_order {
-            let clauses = free_groups.get(&fname).unwrap();
-            let mangled = if m.is_entry && fname == "main" {
-                "main".to_string()
-            } else {
-                mangle_fn(&m.id, &fname, m.is_entry)
-            };
-            match merge_free_clauses(
-                clauses,
-                m.is_entry,
-                &m.id,
-                &mut types_info,
-                &mut type_layouts,
-                &name_map,
-            ) {
-                Ok((mut sig, multi)) => {
-                    let exported = multi
-                        .as_ref()
-                        .map(|c| c.iter().any(|x| x.exported))
-                        .unwrap_or(clauses[0].exported);
-                    sig.mangled = mangled.clone();
-                    if fns.insert(mangled.clone(), sig).is_some() {
+            for fname in free_order {
+                let clauses = free_groups.get(&fname).unwrap();
+                let mangled = if m.is_entry && fname == "main" {
+                    "main".to_string()
+                } else {
+                    mangle_fn(&m.id, &fname, m.is_entry)
+                };
+                match merge_free_clauses(
+                    clauses,
+                    m.is_entry,
+                    &m.id,
+                    &mut types_info,
+                    &mut type_layouts,
+                    &name_map,
+                ) {
+                    Ok((mut sig, multi)) => {
+                        let exported = multi
+                            .as_ref()
+                            .map(|c| c.iter().any(|x| x.exported))
+                            .unwrap_or(clauses[0].exported);
+                        sig.mangled = mangled.clone();
+                        if fns.insert(mangled.clone(), sig).is_some() {
+                            return Err(Error::at(
+                                format!("duplicate function `{fname}`"),
+                                clauses[0].name_span,
+                            ));
+                        }
+                        if exported {
+                            module_exports
+                                .get_mut(&m.id)
+                                .unwrap()
+                                .fns
+                                .insert(fname.clone(), mangled.clone());
+                        }
+                        if let Some(mc) = multi {
+                            multi_free.insert(mangled.clone(), mc);
+                        }
+                        free_fns.push((m.id.clone(), mangled, clauses[0], m.is_entry));
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            for item in &m.ast.items {
+                if let Item::Extern(e) = item {
+                    if e.library != "c" {
                         return Err(Error::at(
-                            format!("duplicate function `{fname}`"),
-                            clauses[0].name_span,
+                            format!("only library \"c\" is supported (got \"{}\")", e.library),
+                            e.library_span,
                         ));
                     }
-                    if exported {
+                    let ret = match e.return_type.as_ref() {
+                        Some(t) => resolve_ty(t, &types_info, &name_map)?,
+                        None => Ty::Void,
+                    };
+                    if !is_ffi_ty(&ret) {
+                        return Err(Error::at(
+                            format!("type {ret:?} is not FFI-marshalable"),
+                            e.return_type
+                                .as_ref()
+                                .map(|t| t.span)
+                                .unwrap_or(e.name_span),
+                        ));
+                    }
+                    let mut params = Vec::new();
+                    let mut defaults = Vec::new();
+                    for p in &e.params {
+                        let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
+                        if matches!(ty, Ty::Void) || !is_ffi_ty(&ty) {
+                            return Err(Error::at(
+                                format!("type {ty:?} is not FFI-marshalable as a parameter"),
+                                p.ty.span,
+                            ));
+                        }
+                        params.push((p.name.clone(), ty));
+                        defaults.push(p.default.clone());
+                    }
+                    // Same ordering rule as free functions (call-site defaults).
+                    let mut seen_default = false;
+                    for (i, d) in defaults.iter().enumerate() {
+                        if d.is_some() {
+                            seen_default = true;
+                        } else if seen_default {
+                            return Err(Error::at(
+                                format!(
+                                    "parameter `{}` without a default follows a defaulted parameter",
+                                    params[i].0
+                                ),
+                                e.params[i].name_span,
+                            ));
+                        }
+                    }
+                    let c_symbol = e.c_symbol.clone().unwrap_or_else(|| e.name.clone());
+                    let mangled = mangle_fn(&m.id, &e.name, m.is_entry);
+                    if fns
+                        .insert(
+                            mangled.clone(),
+                            FnSig {
+                                params: params.clone(),
+                                defaults,
+                                ret: ret.clone(),
+                                extern_symbol: Some(c_symbol.clone()),
+                                mangled: mangled.clone(),
+                                def_mod: m.id.clone(),
+                                multi_clause: false,
+                            },
+                        )
+                        .is_some()
+                    {
+                        return Err(Error::at(
+                            format!("duplicate function `{}`", e.name),
+                            e.name_span,
+                        ));
+                    }
+                    if e.exported {
                         module_exports
                             .get_mut(&m.id)
                             .unwrap()
                             .fns
-                            .insert(fname.clone(), mangled.clone());
+                            .insert(e.name.clone(), mangled);
                     }
-                    if let Some(mc) = multi {
-                        multi_free.insert(mangled.clone(), mc);
-                    }
-                    free_fns.push((m.id.clone(), mangled, clauses[0], m.is_entry));
+                    extern_decls.push(ExternDecl {
+                        thoxa_name: e.name.clone(),
+                        c_symbol,
+                        params,
+                        ret,
+                    });
                 }
-                Err(e) => return Err(e),
             }
-        }
-        for item in &m.ast.items {
-            if let Item::Extern(e) = item {
-                if e.library != "c" {
-                    return Err(Error::at(
-                        format!("only library \"c\" is supported (got \"{}\")", e.library),
-                        e.library_span,
-                    ));
-                }
-                let ret = match e.return_type.as_ref() {
-                    Some(t) => resolve_ty(t, &types_info, &name_map)?,
-                    None => Ty::Void,
-                };
-                if !is_ffi_ty(&ret) {
-                    return Err(Error::at(
-                        format!("type {ret:?} is not FFI-marshalable"),
-                        e.return_type
-                            .as_ref()
-                            .map(|t| t.span)
-                            .unwrap_or(e.name_span),
-                    ));
-                }
-                let mut params = Vec::new();
-                let mut defaults = Vec::new();
-                for p in &e.params {
-                    let ty = resolve_ty(&p.ty, &types_info, &name_map)?;
-                    if matches!(ty, Ty::Void) || !is_ffi_ty(&ty) {
-                        return Err(Error::at(
-                            format!("type {ty:?} is not FFI-marshalable as a parameter"),
-                            p.ty.span,
-                        ));
-                    }
-                    params.push((p.name.clone(), ty));
-                    defaults.push(p.default.clone());
-                }
-                // Same ordering rule as free functions (call-site defaults).
-                let mut seen_default = false;
-                for (i, d) in defaults.iter().enumerate() {
-                    if d.is_some() {
-                        seen_default = true;
-                    } else if seen_default {
-                        return Err(Error::at(
-                            format!(
-                                "parameter `{}` without a default follows a defaulted parameter",
-                                params[i].0
-                            ),
-                            e.params[i].name_span,
-                        ));
-                    }
-                }
-                let c_symbol = e.c_symbol.clone().unwrap_or_else(|| e.name.clone());
-                let mangled = mangle_fn(&m.id, &e.name, m.is_entry);
-                if fns
-                    .insert(
-                        mangled.clone(),
-                        FnSig {
-                            params: params.clone(),
-                            defaults,
-                            ret: ret.clone(),
-                            extern_symbol: Some(c_symbol.clone()),
-                            mangled: mangled.clone(),
-                            def_mod: m.id.clone(),
-                            multi_clause: false,
-                        },
-                    )
-                    .is_some()
-                {
-                    return Err(Error::at(
-                        format!("duplicate function `{}`", e.name),
-                        e.name_span,
-                    ));
-                }
-                if e.exported {
-                    module_exports
-                        .get_mut(&m.id)
-                        .unwrap()
-                        .fns
-                        .insert(e.name.clone(), mangled);
-                }
-                extern_decls.push(ExternDecl {
-                    thoxa_name: e.name.clone(),
-                    c_symbol,
-                    params,
-                    ret,
-                });
-            }
+            Ok(())
+        })();
+        if let Err(error) = registered {
+            return Err(in_module_file(error, &m.path));
         }
     }
 
@@ -2075,6 +2125,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
         &package_maps,
         &module_exports,
         &synthetics,
+        package,
     )?;
 
     let mut functions = Vec::new();
@@ -2217,6 +2268,17 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
             functions.len(),
             bodies_started.elapsed()
         );
+    }
+    for error in receiver_errors(&functions, &synthetics.borrow().receiver_checks) {
+        let path = package
+            .modules
+            .iter()
+            .find(|module| module.id == error.1)
+            .map(|module| module.path.clone());
+        body_errors.push(match &path {
+            Some(path) => in_module_file(error.0, path),
+            None => error.0,
+        });
     }
     if !body_errors.is_empty() {
         // Build/run still report the first error; LSP expands `more` via check_source.
@@ -3912,6 +3974,7 @@ fn infer_unannotated_free_returns(
     package_maps: &HashMap<String, ModuleNameMaps>,
     module_exports: &HashMap<String, ModuleExports>,
     synthetics: &Rc<RefCell<SyntheticRegistry>>,
+    package: &Package,
 ) -> Result<()> {
     // D131 multi-clause: join clause body exits when overall ret still Void placeholder.
     for (mod_id, mangled, f, is_entry) in free_fns {
@@ -3945,7 +4008,7 @@ fn infer_unannotated_free_returns(
                     sig.ret = ret;
                 }
             }
-            Err(e) => return Err(e),
+            Err(e) => return Err(in_module_id(e, package, mod_id)),
         }
     }
 
@@ -4021,15 +4084,15 @@ fn infer_unannotated_free_returns(
 
     for mangled in &self_or_cycle {
         let (mod_id, f, _) = by_mangled.get(mangled).unwrap();
-        infer_errors.push(Error::at(
+        let error = Error::at(
             format!(
                 "cannot infer return type of `{}` (recursive or mutually recursive); \
                  add an explicit `->` annotation",
                 f.name
             ),
             f.name_span,
-        ));
-        let _ = mod_id;
+        );
+        infer_errors.push(in_module_id(error, package, mod_id));
     }
 
     while !remaining.is_empty() {
@@ -4046,15 +4109,16 @@ fn infer_unannotated_free_returns(
         if ready.is_empty() {
             // Residual cycle not caught above.
             for m in &remaining {
-                let (_, f, _) = by_mangled.get(m).unwrap();
-                infer_errors.push(Error::at(
+                let (mod_id, f, _) = by_mangled.get(m).unwrap();
+                let error = Error::at(
                     format!(
                         "cannot infer return type of `{}` (dependency cycle); \
                          add an explicit `->` annotation",
                         f.name
                     ),
                     f.name_span,
-                ));
+                );
+                infer_errors.push(in_module_id(error, package, mod_id));
             }
             break;
         }
@@ -4083,7 +4147,7 @@ fn infer_unannotated_free_returns(
                         sig.ret = ret;
                     }
                 }
-                Err(e) => infer_errors.push(e),
+                Err(e) => infer_errors.push(in_module_id(e, package, mod_id)),
             }
         }
     }
@@ -4414,7 +4478,7 @@ fn resolve_ty(
             } else if types.contains_key(name) {
                 Ok(Ty::User(name.to_string()))
             } else {
-                Err(Error::at(format!("unknown type `{name}`"), t.span))
+                Err(unknown_type_error(name, t.span))
             }
         }
         // Type application: monomorph (`Box<Int64>`) or identity mark app (`Hold<Int64!>`).
@@ -4441,6 +4505,13 @@ fn resolve_ty(
                 let mono = mono_type_name(&mangled, &arg_tys);
                 if types.contains_key(&mono) {
                     return Ok(Ty::User(mono));
+                }
+                // Not visible in this module at all: a plain unknown type.
+                if !name_map.contains_key(name)
+                    && !types.contains_key(&mangled)
+                    && !types.contains_key(name)
+                {
+                    return Err(unknown_type_error(name, t.span));
                 }
                 // Generic base with no mono yet — should have been eager-monomorphized.
                 if !types.contains_key(&mangled) && !types.contains_key(name) {
@@ -6582,7 +6653,8 @@ fn collect_drop_places(stmts: &[Stmt], out: &mut Vec<(String, Ty)>) {
 fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Option<Place>> {
     ctx.push_scope();
     let mut errors: Vec<Error> = Vec::new();
-    if let Err(e) = lower_block_items(ctx, &block.items) {
+    let mut failed_lets = Vec::new();
+    if let Err(e) = lower_block_items_tracked(ctx, &block.items, &mut failed_lets) {
         errors.extend(e.into_diagnostics());
     }
 
@@ -6636,7 +6708,7 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
         match tail_res {
             Ok(r) => r,
             Err(e) => {
-                errors.extend(e.into_diagnostics());
+                errors.extend(without_failed_let_uses(e, &failed_lets));
                 None
             }
         }
@@ -6689,11 +6761,43 @@ fn lower_empty_array_typed(ctx: &mut LowerCtx, elem: &Ty, span: Span) -> Result<
 }
 
 fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
-    // Collect independent statement errors so one bad name does not hide the next.
+    lower_block_items_tracked(ctx, items, &mut Vec::new())
+}
+
+/// Lower a block's statements, collecting independent errors so one bad
+/// name does not hide the next. `failed_lets` gathers each unannotated
+/// `let` that failed: later "undefined name" errors for it are dropped, here
+/// and in the caller's block tail, since they only repeat the first error.
+fn lower_block_items_tracked(
+    ctx: &mut LowerCtx,
+    items: &[BlockItem],
+    failed_lets: &mut Vec<String>,
+) -> Result<()> {
     let mut errors: Vec<Error> = Vec::new();
     for item in items {
         if let Err(e) = lower_block_item(ctx, item) {
-            errors.extend(e.into_diagnostics());
+            errors.extend(without_failed_let_uses(e, failed_lets));
+            if let BlockItem::Let {
+                name,
+                mutable,
+                ty: ann,
+                ..
+            } = item
+            {
+                // An annotated `let` stays in scope at its declared type, so
+                // later lines are still checked against it. Nothing is
+                // emitted: the function already has an error.
+                let declared = ann
+                    .as_ref()
+                    .and_then(|ann| resolve_ty(ann, &ctx.types, &ctx.name_to_type).ok());
+                match declared {
+                    Some(ty) => {
+                        let place = ctx.local_place(name);
+                        ctx.define(name, ty, *mutable, place);
+                    }
+                    None => failed_lets.push(name.clone()),
+                }
+            }
         }
     }
     if errors.is_empty() {
@@ -6701,6 +6805,19 @@ fn lower_block_items(ctx: &mut LowerCtx, items: &[BlockItem]) -> Result<()> {
     } else {
         Err(Error::multi(errors))
     }
+}
+
+/// `error`'s diagnostics minus "undefined name" for a `let` that already failed.
+fn without_failed_let_uses(error: Error, failed_lets: &[String]) -> Vec<Error> {
+    error
+        .into_diagnostics()
+        .into_iter()
+        .filter(|diagnostic| {
+            !failed_lets
+                .iter()
+                .any(|name| diagnostic.message == format!("undefined name `{name}`"))
+        })
+        .collect()
 }
 
 fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
@@ -7455,15 +7572,10 @@ fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<
 
     push_early_return(ctx, ret_place.clone(), &fn_ret);
 
-    // Type as fn_ret so `if c { return x } else { y }` unifies; place is a dummy for non-Void.
-    if fn_ret == Ty::Void {
-        Ok(void_place(ctx))
-    } else if let Some(p) = ret_place {
-        // Unreachable after Return, but keep a typed place for if/match result slots.
-        Ok((p, fn_ret))
-    } else {
-        Ok(void_place(ctx))
-    }
+    // `return` diverges: Never fits any `if` / `match` arm, so
+    // `if c { return x } else { y }` takes `y`'s type, whatever it is.
+    let (p, _) = void_place(ctx);
+    Ok((p, Ty::Never))
 }
 
 /// Emit `Return` only. Drops are filled after the whole function is lowered
@@ -9424,18 +9536,72 @@ fn lower_method_call(
 
     // User method receivers: use the binding place when the receiver is a name so
     // D107 field write-back mutates the caller's object (not a needs_drop temp copy).
-    let (recv_p, recv_ty) = if let ExprKind::Name(n) = &receiver.kind {
-        if let Some(b) = ctx.lookup(n) {
-            if matches!(&b.ty, Ty::User(_)) {
+    // `items[i].method()` on a `mut` Array stores the element back (D163).
+    let mut receiver_write = ReceiverWrite::ReadOnly("a temporary value".into());
+    let (recv_p, recv_ty) = match &receiver.kind {
+        ExprKind::Name(n) => match ctx.lookup(n) {
+            Some(b) if matches!(&b.ty, Ty::User(_)) => {
+                receiver_write = if b.mutable {
+                    ReceiverWrite::Binding(b.clone())
+                } else {
+                    ReceiverWrite::ReadOnly(format!("immutable binding `{n}`"))
+                };
                 (b.place.clone(), b.ty.clone())
-            } else {
-                lower_expr(ctx, receiver)?
             }
-        } else {
+            _ => lower_expr(ctx, receiver)?,
+        },
+        ExprKind::Index { base, index } => {
+            let array = match &base.kind {
+                ExprKind::Name(n) => ctx.lookup(n).and_then(|b| match &b.ty {
+                    Ty::Array { elem } if matches!(elem.as_ref(), Ty::User(_)) => {
+                        Some((n.clone(), b.clone(), elem.as_ref().clone()))
+                    }
+                    _ => None,
+                }),
+                _ => None,
+            };
+            match array {
+                Some((name, binding, elem_ty)) => {
+                    let (index_p, index_ty) = lower_expr(ctx, index)?;
+                    if !is_int(&index_ty) {
+                        return Err(Error::at("array index must be an integer", index.span));
+                    }
+                    let index_p = if index_ty == Ty::Int64 {
+                        index_p
+                    } else {
+                        coerce_place(ctx, index_p, &index_ty, &Ty::Int64, index.span)?
+                    };
+                    let element = ctx.fresh("aget");
+                    ctx.assign(
+                        element.clone(),
+                        elem_ty.clone(),
+                        RValue::ArrayGet {
+                            arr: binding.place.clone(),
+                            index: index_p.clone(),
+                            elem_ty: elem_ty.clone(),
+                        },
+                    );
+                    receiver_write = if binding.mutable {
+                        ReceiverWrite::Element {
+                            binding,
+                            index: index_p,
+                            elem_ty: elem_ty.clone(),
+                        }
+                    } else {
+                        ReceiverWrite::ReadOnly(format!("an element of immutable binding `{name}`"))
+                    };
+                    (element, elem_ty)
+                }
+                None => lower_expr(ctx, receiver)?,
+            }
+        }
+        ExprKind::Field { name, .. } => {
+            receiver_write = ReceiverWrite::ReadOnly(format!(
+                "field `{name}` (a field changes only inside its own type's methods)"
+            ));
             lower_expr(ctx, receiver)?
         }
-    } else {
-        lower_expr(ctx, receiver)?
+        _ => lower_expr(ctx, receiver)?,
     };
     match &recv_ty {
         Ty::Bytes => lower_bytes_method(ctx, recv_p, method, args, method_span),
@@ -9510,9 +9676,9 @@ fn lower_method_call(
                 method_span,
                 &sig.def_mod,
             )?;
-            let mut all_args = vec![recv_p];
+            let mut all_args = vec![recv_p.clone()];
             all_args.extend(arg_places);
-            emit_call_result(
+            let result = emit_call_result(
                 ctx,
                 Callee::Method {
                     type_name: type_name.clone(),
@@ -9520,13 +9686,111 @@ fn lower_method_call(
                 },
                 all_args,
                 sig.ret.clone(),
-            )
+            )?;
+            // A `drop` type is a shared box (D155): every copy sees the write.
+            if !type_has_drop(&ctx.types, &recv_ty) {
+                match receiver_write {
+                    ReceiverWrite::Binding(binding) => write_back_field(ctx, &binding),
+                    ReceiverWrite::Element {
+                        binding,
+                        index,
+                        elem_ty,
+                    } => {
+                        ctx.stmts.push(Stmt::DynIndexAssign {
+                            base: binding.place.clone(),
+                            index,
+                            elem_ty,
+                            value: recv_p,
+                        });
+                        write_back_field(ctx, &binding);
+                    }
+                    ReceiverWrite::ReadOnly(receiver) => {
+                        ctx.synthetics.borrow_mut().receiver_checks.push(ReceiverCheck {
+                            function: format!("{type_name}__{method}"),
+                            method: method.to_string(),
+                            receiver,
+                            span: method_span,
+                            module_id: ctx.module_id.clone(),
+                        });
+                    }
+                }
+            }
+            Ok(result)
         }
         other => Err(Error::at(
             format!("method call on non-struct type {other:?}"),
             method_span,
         )),
     }
+}
+
+/// Methods that write their receiver: a store through `_self`. (A method
+/// cannot call a sibling on `_self`, so there is no transitive case; a
+/// field's method call writes the field back through `_self` directly.)
+fn mutating_methods(functions: &[Function]) -> HashSet<String> {
+    functions
+        .iter()
+        .filter(|function| function.receiver.is_some() && stmts_write_self(&function.body))
+        .map(|function| function.name.clone())
+        .collect()
+}
+
+fn stmts_write_self(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(|stmt| match stmt {
+        Stmt::FieldAssign { base, .. } | Stmt::IndexAssign { base, .. } => base.name == "_self",
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => stmts_write_self(then_body) || stmts_write_self(else_body),
+        Stmt::Loop { body } | Stmt::ForRange { body, .. } => stmts_write_self(body),
+        _ => false,
+    })
+}
+
+/// D163: a method that writes its receiver needs a writable one. Returns
+/// each error with the id of the module it is in.
+fn receiver_errors(functions: &[Function], checks: &[ReceiverCheck]) -> Vec<(Error, String)> {
+    if checks.is_empty() {
+        return Vec::new();
+    }
+    let mutating = mutating_methods(functions);
+    // Return inference (D129) lowers a body twice: report each call once.
+    let mut seen = HashSet::new();
+    checks
+        .iter()
+        .filter(|check| mutating.contains(&check.function))
+        .filter(|check| seen.insert((check.module_id.clone(), check.span.start, check.span.end)))
+        .map(|check| {
+            let error = Error::at(
+                format!(
+                    "cannot call mutating method `{}` on {}",
+                    check.method, check.receiver
+                ),
+                check.span,
+            )
+            .with_help(format!(
+                "`{}` writes its receiver: call it on a `mut` binding",
+                check.method
+            ));
+            (error, check.module_id.clone())
+        })
+        .collect()
+}
+
+/// How a user method call writes its receiver back (D163).
+enum ReceiverWrite {
+    /// A `mut` binding, passed in place; a method's field local also stores
+    /// through `_self` (D107).
+    Binding(Binding),
+    /// `items[i].method()` on a `mut` Array: the element is stored back.
+    Element {
+        binding: Binding,
+        index: Place,
+        elem_ty: Ty,
+    },
+    /// Not writable; the description names the receiver in the error.
+    ReadOnly(String),
 }
 
 fn type_source_name(info: &TypeInfo, mangled_ty: &str) -> String {
@@ -10102,6 +10366,10 @@ fn lower_array_method(
             );
             Ok(void_place(ctx))
         }
+        "count" => Err(Error::at(
+            "`count` on an Array is a property, not a method: write `.count`",
+            span,
+        )),
         other => Err(Error::at(
             format!("no method `{other}` on Array (use .append, .dropLast, .insertAt, .removeAt)"),
             span,
@@ -10725,6 +10993,14 @@ fn lower_arg_for_formal(
 ) -> Result<Place> {
     // Implicit address: mut struct binding → Address<T>
     if let Ty::Address(pointee) = formal_ty {
+        // Already an address (an `Address<T>` parameter): pass it on.
+        if let ExprKind::Name(name) = &expr.kind {
+            if let Some(binding) = ctx.lookup(name) {
+                if &binding.ty == formal_ty {
+                    return Ok(binding.place);
+                }
+            }
+        }
         let name = match &expr.kind {
             ExprKind::Name(n) => n.as_str(),
             _ => {
@@ -10748,8 +11024,10 @@ fn lower_arg_for_formal(
         }
         match (&binding.ty, pointee.as_ref()) {
             (Ty::User(got), Ty::User(want)) if got == want => {
-                // Place is the binding itself; cgen emits `&place` for Address args.
-                return Ok(binding.place);
+                // An explicit pointer, so extern and Thoxa callees both get one.
+                let address = ctx.fresh("addr");
+                ctx.assign(address.clone(), formal_ty.clone(), RValue::AddressOf(binding.place));
+                return Ok(address);
             }
             (got, want) => {
                 return Err(Error::at(
@@ -12058,6 +12336,8 @@ fn finish_match_arm_ty(
 ) -> Result<Ty> {
     let _ = ctx;
     match arm_val {
+        // A diverging arm (`return`, `loop`) has no value and fits any type.
+        Some((_, ty)) if is_never(&ty) => Ok(ty),
         Some((p, ty)) => {
             if let Some(rt) = result_ty {
                 if *rt != ty {
@@ -12364,7 +12644,8 @@ fn lower_match_node(
         }
     }
     ctx.stmts.extend(acc);
-    let ty = result_ty.unwrap_or(Ty::Void);
+    // No arm gave a type: every arm diverges, so the match does too.
+    let ty = result_ty.unwrap_or(Ty::Never);
     if needs_drop(&ty) {
         ctx.note_drop_place(&result_place, &ty);
     }
@@ -12732,7 +13013,8 @@ fn lower_match_sum(
     ctx.stmts.extend(acc);
 
     // Result place is declared zeroed with other locals; arms assign into it.
-    let ty = result_ty.unwrap_or(Ty::Void);
+    // No arm gave a type: every arm diverges, so the match does too.
+    let ty = result_ty.unwrap_or(Ty::Never);
     if needs_drop(&ty) {
         ctx.note_drop_place(&result_place, &ty);
     }
@@ -13390,7 +13672,22 @@ fn lower_binary(
                 coerce_place(ctx, r, &rt, &Ty::Int64, span)?
             };
             let p = ctx.fresh("bit");
-            ctx.assign(p.clone(), Ty::Int64, RValue::Binary { op, left, right });
+            let value = match op {
+                // Checked in the runtime: counts ≥ 64 or < 0 are defined (D161).
+                BinaryOp::Shl | BinaryOp::Shr => RValue::Call {
+                    callee: Callee::Builtin(
+                        if matches!(op, BinaryOp::Shl) {
+                            "int_shl"
+                        } else {
+                            "int_shr"
+                        }
+                        .into(),
+                    ),
+                    args: vec![left, right],
+                },
+                _ => RValue::Binary { op, left, right },
+            };
+            ctx.assign(p.clone(), Ty::Int64, value);
             Ok((p, Ty::Int64))
         }
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
@@ -14390,6 +14687,19 @@ fn refine_implies(from: &crate::ast::WhereExpr, to: &crate::ast::WhereExpr, base
     }
     // Conservative: only when `from` is `to & extra` (syntactic) or equal.
     format!("{from:?}") == format!("{to:?}")
+}
+
+/// `unknown type `X``, naming the import for the `std/fallible` types, which
+/// are not ambient.
+fn unknown_type_error(name: &str, span: Span) -> Error {
+    let error = Error::at(format!("unknown type `{name}`"), span);
+    match name {
+        "May" | "Trial" => error.with_help(format!(
+            "`{name}` comes from std/fallible: import {{ {} }} from \"std/fallible\"",
+            if name == "May" { "May, Has, Not" } else { "Trial, Pass, Fail" }
+        )),
+        _ => error,
+    }
 }
 
 fn coerce_place(ctx: &mut LowerCtx, place: Place, from: &Ty, to: &Ty, span: Span) -> Result<Place> {

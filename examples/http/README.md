@@ -114,8 +114,9 @@ curl -s http://127.0.0.1:9091/api/orders
 ```
 
 The catalog is seeded from `app/models.thx` on boot. Schema lives in
-`app/store.thx` (`CREATE TABLE IF NOT EXISTS` + upsert). Delete
-`/tmp/crema.db` to start clean. There is no product `thoxa migrate`.
+`app/store.thx` (`CREATE TABLE IF NOT EXISTS` + upsert). Each store call opens
+its own connection, which `drop()` closes when the call returns (**D155**).
+Delete `/tmp/crema.db` to start clean. There is no product `thoxa migrate`.
 
 ## Layout
 

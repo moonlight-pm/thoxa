@@ -1,0 +1,24 @@
+## Reassigning a heap-holding User-typed field inside a method drops the old value and keeps the new one (was a use-after-free).
+import logging, { info } from "std/logging"
+
+type Tagged(name: String, tags: Array<String>) {
+    export fn count() -> Int64 {
+        tags.count
+    }
+}
+
+type Holder(inner: Tagged) {
+    export fn replace(name: String) {
+        inner = Tagged(name: name, tags: ["{name}-1", "{name}-2"])
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut holder = Holder(inner: Tagged(name: "a", tags: ["x"]))
+    holder.replace("b")
+    holder.replace("c")
+    info("{holder.inner.name} {holder.inner.count()}")
+    0
+}

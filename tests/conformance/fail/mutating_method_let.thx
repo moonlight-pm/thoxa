@@ -1,0 +1,12 @@
+## D163: a method that writes its receiver needs a `mut` binding.
+type Counter(count: Int64) {
+    export fn bump() {
+        count = count + 1
+    }
+}
+
+fn main() -> Int64 {
+    let counter = Counter(count: 0)
+    counter.bump()
+    0
+}

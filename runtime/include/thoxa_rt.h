@@ -65,6 +65,29 @@ static inline int64_t thoxa_int_rem(int64_t left, int64_t right) {
     return left % right;
 }
 
+/* Int64 `<<` and `>>` (D161): a count of 64 or more shifts every bit out
+ * (`<<` gives 0, `>>` gives 0 or -1 by sign); a negative count panics.
+ * `<<` shifts the unsigned bits so it wraps like `*` under -fwrapv. */
+static inline int64_t thoxa_int_shl(int64_t left, int64_t count) {
+    if (count < 0) {
+        thoxa_panic("negative shift count");
+    }
+    if (count >= 64) {
+        return 0;
+    }
+    return (int64_t)((uint64_t)left << count);
+}
+
+static inline int64_t thoxa_int_shr(int64_t left, int64_t count) {
+    if (count < 0) {
+        thoxa_panic("negative shift count");
+    }
+    if (count >= 64) {
+        return left < 0 ? -1 : 0;
+    }
+    return left >> count;
+}
+
 /* Thread-local errno after a failed libc call (no named `ffi` root — D80). */
 int32_t thoxa_errno(void);
 
@@ -150,6 +173,11 @@ void thoxa_wait_fd(int32_t fd, int32_t events);
 int32_t thoxa_accept(int32_t fd, void *addr, void *addrlen);
 int64_t thoxa_recv(int32_t fd, void *buf, uint64_t len, int32_t flags);
 int64_t thoxa_send(int32_t fd, const void *buf, uint64_t len, int32_t flags);
+/* Monotonic milliseconds, and recv / send that fail with ETIMEDOUT once that
+ * clock reaches `deadline_ms` (<= 0 = no deadline). */
+int64_t thoxa_now_ms(void);
+int64_t thoxa_recv_until(int32_t fd, void *buf, uint64_t len, int32_t flags, int64_t deadline_ms);
+int64_t thoxa_send_until(int32_t fd, const void *buf, uint64_t len, int32_t flags, int64_t deadline_ms);
 int32_t thoxa_connect(int32_t fd, const void *addr, uint32_t addrlen);
 void thoxa_sched_drain(void);
 

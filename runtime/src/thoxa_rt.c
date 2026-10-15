@@ -2941,9 +2941,12 @@ typedef struct ThoxaFiber {
     void *stack;
     void (*fn)(void *);
     void *data;
+    /* Sleep deadline; with `wait_fd` >= 0, the fd wait's deadline (0 = none). */
     int64_t wake_at_ns;
     int32_t wait_fd;
     short wait_events;
+    /* Set when an fd wait ended at its deadline instead of readiness. */
+    int timed_out;
     int done;
     struct ThoxaFiber *next;
 } ThoxaFiber;
@@ -2959,6 +2962,7 @@ static void thoxa_pump(void);
 static void thoxa_wake_due(int64_t now);
 static int64_t thoxa_next_wake_ns(void);
 static int thoxa_idle(int extra_fd, short extra_events, int timeout_ms);
+static int thoxa_wait_fd_until(int32_t fd, int32_t events, int64_t deadline_ns);
 
 static int64_t thoxa_now_ns(void) {
     struct timespec ts;
@@ -3263,8 +3267,11 @@ static int thoxa_idle(int extra_fd, short extra_events, int timeout_ms) {
     return extra_ready;
 }
 
-static void thoxa_host_idle_until(int64_t until_ns, int extra_fd, short extra_events) {
+/* Run tasks until `until_ns` (-1 = until idle) or until `extra_fd` is ready.
+ * Returns 1 when `extra_fd` became ready. */
+static int thoxa_host_idle_until(int64_t until_ns, int extra_fd, short extra_events) {
     int saved = thoxa_pumping;
+    int extra_ready = 0;
     thoxa_pumping = 1;
     for (;;) {
         int64_t now = thoxa_now_ns();
@@ -3294,10 +3301,12 @@ static void thoxa_host_idle_until(int64_t until_ns, int extra_fd, short extra_ev
             continue;
         }
         if (thoxa_idle(extra_fd, extra_events, thoxa_ns_to_poll_ms(slice))) {
+            extra_ready = 1;
             break;
         }
     }
     thoxa_pumping = saved;
+    return extra_ready;
 }
 
 void thoxa_wait_ms(int64_t ms) {
@@ -3325,17 +3334,24 @@ void thoxa_wait_ms(int64_t ms) {
 }
 
 void thoxa_wait_fd(int32_t fd, int32_t events) {
+    (void)thoxa_wait_fd_until(fd, events, 0);
+}
+
+/* Park until `fd` is ready or `deadline_ns` (monotonic; 0 = none) passes.
+ * Returns 1 when ready, 0 at the deadline. */
+static int thoxa_wait_fd_until(int32_t fd, int32_t events, int64_t deadline_ns) {
     short pe = thoxa_poll_events(events);
     if (!thoxa_current) {
-        thoxa_host_idle_until(-1, fd, pe);
-        return;
+        return thoxa_host_idle_until(deadline_ns > 0 ? deadline_ns : -1, fd, pe);
     }
     thoxa_current->wait_fd = fd;
     thoxa_current->wait_events = pe;
-    thoxa_current->wake_at_ns = 0;
+    thoxa_current->wake_at_ns = deadline_ns > 0 ? deadline_ns : 0;
+    thoxa_current->timed_out = 0;
     thoxa_current->next = thoxa_sleeping;
     thoxa_sleeping = thoxa_current;
     swapcontext(&thoxa_current->ctx, &thoxa_sched_ctx);
+    return !thoxa_current->timed_out;
 }
 
 static void thoxa_wake_due(int64_t now) {
@@ -3343,7 +3359,9 @@ static void thoxa_wake_due(int64_t now) {
     ThoxaFiber *f = thoxa_sleeping;
     while (f) {
         ThoxaFiber *next = f->next;
-        if (f->wait_fd < 0 && f->wake_at_ns > 0 && f->wake_at_ns <= now) {
+        if (f->wake_at_ns > 0 && f->wake_at_ns <= now) {
+            /* A sleep is due, or an fd wait reached its deadline. */
+            f->timed_out = f->wait_fd >= 0;
             thoxa_enqueue_ready(f);
         } else {
             f->next = keep;
@@ -3357,7 +3375,7 @@ static void thoxa_wake_due(int64_t now) {
 static int64_t thoxa_next_wake_ns(void) {
     int64_t best = -1;
     for (ThoxaFiber *f = thoxa_sleeping; f; f = f->next) {
-        if (f->wait_fd >= 0 || f->wake_at_ns <= 0) {
+        if (f->wake_at_ns <= 0) {
             continue;
         }
         if (best < 0 || f->wake_at_ns < best) {
@@ -3444,6 +3462,68 @@ int64_t thoxa_send(int32_t fd, const void *buf, uint64_t len, int32_t flags) {
         }
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             thoxa_wait_fd(fd, THOXA_WAIT_WRITE);
+            continue;
+        }
+        return -1;
+    }
+}
+
+int64_t thoxa_now_ms(void) {
+    return thoxa_now_ns() / 1000000LL;
+}
+
+/* recv / send that give up at `deadline_ms` (thoxa_now_ms clock; <= 0 = none):
+ * -1 with errno ETIMEDOUT. A server's read and write deadlines. */
+int64_t thoxa_recv_until(int32_t fd, void *buf, uint64_t len, int32_t flags, int64_t deadline_ms) {
+    if (deadline_ms <= 0) {
+        return thoxa_recv(fd, buf, len, flags);
+    }
+    if (thoxa_set_nonblock(fd) < 0) {
+        return -1;
+    }
+    int64_t deadline_ns = deadline_ms * 1000000LL;
+    for (;;) {
+        ssize_t n = recv(fd, buf, (size_t)len, flags);
+        if (n >= 0) {
+            return (int64_t)n;
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            if (thoxa_now_ns() >= deadline_ns
+                || !thoxa_wait_fd_until(fd, THOXA_WAIT_READ, deadline_ns)) {
+                errno = ETIMEDOUT;
+                return -1;
+            }
+            continue;
+        }
+        return -1;
+    }
+}
+
+int64_t thoxa_send_until(int32_t fd, const void *buf, uint64_t len, int32_t flags, int64_t deadline_ms) {
+    if (deadline_ms <= 0) {
+        return thoxa_send(fd, buf, len, flags);
+    }
+    if (thoxa_set_nonblock(fd) < 0) {
+        return -1;
+    }
+    int64_t deadline_ns = deadline_ms * 1000000LL;
+    for (;;) {
+        ssize_t n = send(fd, buf, (size_t)len, flags | MSG_NOSIGNAL);
+        if (n >= 0) {
+            return (int64_t)n;
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            if (thoxa_now_ns() >= deadline_ns
+                || !thoxa_wait_fd_until(fd, THOXA_WAIT_WRITE, deadline_ns)) {
+                errno = ETIMEDOUT;
+                return -1;
+            }
             continue;
         }
         return -1;

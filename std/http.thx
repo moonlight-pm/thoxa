@@ -3,7 +3,7 @@
 ## Hosts complete the body via `std/http/server.readBody`. Fail payloads are String.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { toLowerAscii, trim, split, splitOnce, parseUInt, isEmpty, contains, substring } from "std/str"
+import { toLowerAscii, trim, split, splitOnce, parseUInt, isEmpty, contains, substring, replaceAll } from "std/str"
 
 ## One header field: name and value as Strings (ASCII for this demo).
 export type Header(name: String, value: String)
@@ -160,6 +160,14 @@ fn parseRequestBody(
     headerBlock!: Bytes,
     crlf!: Bytes
 ) -> Trial<Request, String> {
+    ## Method and target are visible ASCII (RFC 9112): no control byte, so
+    ## no NUL to cut a file path short and nothing raw for the log to print.
+    if not isVisibleAscii(reqLine.slice(0, sp1)) {
+        return Fail("malformed method")
+    }
+    if not isVisibleAscii(reqLine.slice(sp1 + 1, sp2)) {
+        return Fail("request target must be visible ASCII")
+    }
     let method = reqLine.slice(0, sp1).toString()
     mut target = reqLine.slice(sp1 + 1, sp2)
     let version = reqLine.slice(sp2 + 1, reqLine.count).toString()
@@ -222,6 +230,17 @@ fn parseRequestBody(
     ))
 }
 
+## Visible ASCII (0x21–0x7E) only: no space, control byte, or raw non-ASCII.
+fn isVisibleAscii(bytes!: Bytes) -> Bool {
+    for index in 0..bytes.count {
+        let byte = bytes.get(index)
+        if byte < 33 or byte > 126 {
+            return false
+        }
+    }
+    true
+}
+
 ## Skip leading OWS (SP / HTAB) after the colon.
 fn skipOws(line!: Bytes, start!: Int64) -> Int64 {
     mut i = start
@@ -274,6 +293,9 @@ fn parseHeaderLine(line!: Bytes, colon!: Bytes) -> Trial<Header, String> {
             let name = line.slice(0, colonAt).toString()
             if name == "" {
                 Fail("empty header name")
+            } else if not isVisibleAscii(line.slice(0, colonAt)) {
+                ## `Content-Length : 5` — a proxy may read that header, or not.
+                Fail("malformed header name")
             } else {
                 let valStart = skipOws(line, colonAt + 1)
                 let valEnd = trimOwsEnd(line, valStart, line.count)
@@ -337,12 +359,22 @@ export fn methodNotAllowed(allow!: String) -> Response {
     Response(status: 405, reason: "Method Not Allowed", headers: headers, body: body)
 }
 
+## A header name or value with CR / LF dropped, so a value built from
+## request input cannot end the header and start another (response splitting).
+fn headerText(text!: String) -> String {
+    if contains(text, "\r") or contains(text, "\n") {
+        replaceAll(replaceAll(text, "\r", ""), "\n", "")
+    } else {
+        text
+    }
+}
+
 ## Serialize a Response to wire bytes (status line + headers + body).
 export fn writeResponse(res!: Response) -> Bytes {
     mut buf = Buffer()
-    buf.appendBytes(Bytes.fromString("HTTP/1.1 {res.status} {res.reason}\r\n"))
+    buf.appendBytes(Bytes.fromString("HTTP/1.1 {res.status} {headerText(res.reason)}\r\n"))
     for h in res.headers {
-        buf.appendBytes(Bytes.fromString("{h.name}: {h.value}\r\n"))
+        buf.appendBytes(Bytes.fromString("{headerText(h.name)}: {headerText(h.value)}\r\n"))
     }
     buf.appendBytes(Bytes.fromString("\r\n"))
     buf.appendBytes(res.body)

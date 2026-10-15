@@ -19,8 +19,9 @@ WORKDIR /build
 COPY runtime/include runtime/include
 COPY runtime/src runtime/src
 COPY target/thoxa/c/landing.c landing.c
-RUN gcc -std=c11 -O2 -fPIC -c runtime/src/thoxa_rt.c -I runtime/include -o thoxa_rt.o \
- && gcc -std=c11 -O2 landing.c thoxa_rt.o -I runtime/include -lm -o /landing
+# Same flags as the thoxa driver: -fwrapv makes Int64 overflow wrap (D157).
+RUN gcc -std=c11 -O2 -fwrapv -fPIC -c runtime/src/thoxa_rt.c -I runtime/include -o thoxa_rt.o \
+ && gcc -std=c11 -O2 -fwrapv landing.c thoxa_rt.o -I runtime/include -lm -o /landing
 
 FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update \

@@ -65,7 +65,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Refinements | `type Qty = Int64 where >= 1` — real types; `T.read` / `T.from` (**D149**) |
 | Multi-clause fns | Same name, different formal types → one function (type-driven match sugar, **D131**) |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
-| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind; an index outside `0..N-1` panics) |
+| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind; an index outside `0..N-1` panics). A `mut` struct local passed where `Address<T>` is expected passes its address, to C or to a Thoxa function; an `Address<T>` parameter passes on unchanged |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/fallible` with `?` / `match` (ok/err may nest) |
 | Equality | String `==` / `!=`; usual scalar compares (including `Float64`). Comparison `<` needs a space after it (`a < b`, not `a<b`) — glued `<name` is a [tag](#tag-literals-and-node-jsx) |
 
@@ -73,6 +73,10 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 complement); it is never undefined. `/` and `%` by zero panic with
 `division by zero`. `a..=b` includes `b` and stops there, even at the largest
 `Int64`.
+
+**Shifts (**D161**):** `a << n` wraps like `*`; `a >> n` keeps the sign. A
+count of 64 or more shifts every bit out (`<<` gives 0, `>>` gives 0 or -1).
+A negative count panics with `negative shift count`.
 
 **`if` without `else` (**D158**):** a statement with no value. Where a value is
 expected, write the `else`:
@@ -87,9 +91,10 @@ fn sign(n!: Int64) -> Int64 {
 }
 ```
 
-A line that **starts** with `-` continues the expression above it (`if … {}`
-then `-1` on the next line reads as a subtraction). Write `return -1` or put the
-value inside a block.
+**A line that starts with `-x` (**D162**)** begins a new expression, so the
+`-1` tail after an `if` above is a value, not a subtraction. To continue an
+expression onto the next line, put a space after the `-` (`- x`) or end the
+line with the operator. Match patterns take negative literals (`-1 => …`).
 
 **Shadowing:** a `let`, match binding, or `for` variable can reuse an outer
 name. Inside its block it is a new variable (it may have another type); after
@@ -185,6 +190,18 @@ loop is bottom-typed (Never). It unifies with any expected return type, so an
 infinite server loop can be the last expression of `-> Trial<…>` / `-> Int64`
 without a dummy `Pass(Void)` or `0` after it. Nested loops' breaks do not count
 for the outer. `while` / `for` still yield `Void` (they can finish).
+
+**`return` is Never (**D164**):** an `if` / `match` arm that returns fits beside
+any other arm, Void or a value:
+
+```thx
+match found {
+    Not {
+        return Fail("missing")
+    }
+    Has(_) { Void }
+}
+```
 
 ## Match
 
@@ -454,6 +471,14 @@ mut c = Counter(n: 10)
 info("{c.add(by: 5)}")   ## 15 (after import { info } + toStdout + formatPlain)
 info("{c.n}")            ## 15
 ```
+
+**Mutating methods (**D163**):** a method that writes a field (as `add` does)
+needs a writable receiver: a `mut` binding, or `items[i]` on a `mut` Array
+(the element is stored back). On a `let`, a parameter, a `for` or match
+binding, or a temporary it is a type error, as `append` is. From outside its
+type a field is read-only, so `pair.left.add(by: 1)` is an error; inside
+`Pair`'s own methods `left.add(by: 1)` writes back. Types with `fn drop()` are
+shared boxes (**D155**) and are exempt.
 
 ## Modules
 
