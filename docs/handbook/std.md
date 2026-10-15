@@ -33,7 +33,7 @@ import sqlite, { lit, ident } from "std/sqlite"
 | `std/http/server` | HTTP/1.1 host loop (**D136**/**D139**/**D146**): `serve` / `serveOne` / `readBody`; SSE `beginEventStream` / `sendEvent` |
 | `std/http/static` | Static-file `Router` (**D126**/**D139**); depends on io + http |
 | `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
-| `std/str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`splitOnce`/`join`/`lines`, `parseUInt`, pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
+| `std/str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`splitOnce`/`join`/`lines`, `parseUInt` (above Int64 max → `Not`), pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
 | `std/path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |
 | `std/ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
 | `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
@@ -192,7 +192,7 @@ Object literals in Thoxa strings need `{{` / `}}` (`"{{\"qty\":2}}"` is
 | Surface | Notes |
 |---------|--------|
 | `Json` | `JNull \| JBool \| JInt \| JFloat \| JStr \| JArr \| JObj` |
-| `decode(s)` | `Trial<Json, String>`. One value; trailing junk fails |
+| `decode(s)` | `Trial<Json, String>`. One value; trailing junk fails. Arrays/objects nest at most 128 deep (`nested too deep`) |
 | `encode(v)` | Compact JSON. Object keys in insertion order |
 | Numbers | No `.` / exponent → `JInt` (Int64 range or fail). Else `JFloat`. Non-finite fails |
 | Strings | Escapes `\" \\ \/ \b \f \n \r \t \uXXXX` including surrogate pairs |

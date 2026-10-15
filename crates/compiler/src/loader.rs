@@ -295,16 +295,28 @@ fn load_one(
         return Ok(());
     }
 
-    let src = fs::read_to_string(&path)
+    let original = fs::read_to_string(&path)
         .map_err(|e| Error::new(format!("cannot read {}: {e}", path.display())))?;
     // Entry session scripts: command-skin desugar before parse (PR2).
     let src = if is_entry {
-        crate::command::desugar_session_source(&src)?
+        crate::command::desugar_session_source(&original)?
     } else {
-        src
+        original.clone()
     };
-    let tokens = Lexer::new(&src).tokenize()?;
-    let ast = Parser::new(tokens).with_source(src).parse_module()?;
+    // Lex/parse spans are offsets into `src`; name the file only when that is
+    // the file's own text (a desugared session script is not).
+    let in_file = |error: Error| {
+        if error.path.is_none() && src == original {
+            error.with_path(&path)
+        } else {
+            error
+        }
+    };
+    let tokens = Lexer::new(&src).tokenize().map_err(in_file)?;
+    let ast = Parser::new(tokens)
+        .with_source(src.clone())
+        .parse_module()
+        .map_err(in_file)?;
     let id = module_id_for(&path, is_entry, project_root);
 
     // Collect imports and load dependencies first (post-order).

@@ -16,7 +16,14 @@ pub struct Parser {
     /// Original source (byte offsets match token spans). Needed so JSX text
     /// children can be sliced out; empty means raw text is not available.
     source: String,
+    /// Expression nesting depth (sub-expressions, binary-operator chains,
+    /// prefix operators). Capped so hostile input gets a diagnostic instead
+    /// of overflowing the stack here or in the recursive passes after parsing.
+    depth: usize,
 }
+
+/// Deepest expression nesting the parser accepts (see `Parser::depth`).
+const MAX_EXPR_NESTING: usize = 1000;
 
 /// User-facing message when a program with `fn main` has top-level statements.
 /// (Internally those are session-script statements; the user does not need that term.)
@@ -41,6 +48,7 @@ impl Parser {
             extra_rangles: 0,
             soft_errors: Vec::new(),
             source: String::new(),
+            depth: 0,
         }
     }
 
@@ -1370,7 +1378,27 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
-        self.parse_or()
+        // Restore on every path (including errors and soft recovery).
+        let saved = self.depth;
+        let result = match self.enter_nesting() {
+            Ok(()) => self.parse_or(),
+            Err(error) => Err(error),
+        };
+        self.depth = saved;
+        result
+    }
+
+    /// One more level of expression nesting; error past `MAX_EXPR_NESTING`.
+    /// `parse_expr` resets the count when its expression ends.
+    fn enter_nesting(&mut self) -> Result<()> {
+        self.depth += 1;
+        if self.depth > MAX_EXPR_NESTING {
+            return Err(Error::at(
+                format!("expression is nested too deeply (more than {MAX_EXPR_NESTING} levels)"),
+                self.peek_span(),
+            ));
+        }
+        Ok(())
     }
 
     fn parse_or(&mut self) -> Result<Expr> {
@@ -1378,6 +1406,7 @@ impl Parser {
         while self.at(TokenKind::Or) {
             let start = left.span.start;
             self.bump();
+            self.enter_nesting()?;
             let right = self.parse_and()?;
             let end = right.span.end;
             left = Expr {
@@ -1397,6 +1426,7 @@ impl Parser {
         while self.at(TokenKind::And) {
             let start = left.span.start;
             self.bump();
+            self.enter_nesting()?;
             let right = self.parse_cmp()?;
             let end = right.span.end;
             left = Expr {
@@ -1440,6 +1470,7 @@ impl Parser {
             };
             let start = left.span.start;
             self.bump();
+            self.enter_nesting()?;
             let right = self.parse_bitor()?;
             let end = right.span.end;
             left = Expr {
@@ -1459,6 +1490,7 @@ impl Parser {
         while self.at(TokenKind::Pipe) {
             let start = left.span.start;
             self.bump();
+            self.enter_nesting()?;
             let right = self.parse_bitxor()?;
             let end = right.span.end;
             left = Expr {
@@ -1478,6 +1510,7 @@ impl Parser {
         while self.at(TokenKind::Caret) {
             let start = left.span.start;
             self.bump();
+            self.enter_nesting()?;
             let right = self.parse_bitand()?;
             let end = right.span.end;
             left = Expr {
@@ -1497,6 +1530,7 @@ impl Parser {
         while self.at(TokenKind::Amp) {
             let start = left.span.start;
             self.bump();
+            self.enter_nesting()?;
             let right = self.parse_shift()?;
             let end = right.span.end;
             left = Expr {
@@ -1521,6 +1555,7 @@ impl Parser {
             };
             let start = left.span.start;
             self.bump();
+            self.enter_nesting()?;
             let right = self.parse_add()?;
             let end = right.span.end;
             left = Expr {
@@ -1545,6 +1580,7 @@ impl Parser {
             };
             let start = left.span.start;
             self.bump();
+            self.enter_nesting()?;
             let right = self.parse_mul()?;
             let end = right.span.end;
             left = Expr {
@@ -1570,6 +1606,7 @@ impl Parser {
             };
             let start = left.span.start;
             self.bump();
+            self.enter_nesting()?;
             let right = self.parse_unary()?;
             let end = right.span.end;
             left = Expr {
@@ -1588,6 +1625,7 @@ impl Parser {
         let start = self.peek_span();
         if self.at(TokenKind::Minus) {
             self.bump();
+            self.enter_nesting()?;
             let expr = self.parse_unary()?;
             let end = expr.span.end;
             return Ok(Expr {
@@ -1600,6 +1638,7 @@ impl Parser {
         }
         if self.at(TokenKind::Not) {
             self.bump();
+            self.enter_nesting()?;
             let expr = self.parse_unary()?;
             let end = expr.span.end;
             return Ok(Expr {
@@ -1612,6 +1651,7 @@ impl Parser {
         }
         if self.at(TokenKind::Tilde) {
             self.bump();
+            self.enter_nesting()?;
             let expr = self.parse_unary()?;
             let end = expr.span.end;
             return Ok(Expr {

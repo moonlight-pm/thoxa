@@ -293,6 +293,13 @@ impl<'a> Lexer<'a> {
                     match (hi, lo) {
                         (Some(h), Some(l)) if h.is_ascii_hexdigit() && l.is_ascii_hexdigit() => {
                             let byte = (hex_nibble(h) << 4) | hex_nibble(l);
+                            if byte > 0x7f {
+                                // Strings are UTF-8; one high byte alone is not a character.
+                                return Err(Error::at(
+                                    "\\xHH above \\x7F is not valid in a String (strings are UTF-8); write the character itself, or build Bytes",
+                                    Span::new(self.pos.saturating_sub(2), self.pos + 2),
+                                ));
+                            }
                             out.push(byte as char);
                             self.pos += 2;
                         }

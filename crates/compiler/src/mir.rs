@@ -128,13 +128,15 @@ pub enum Stmt {
         ty: Ty,
         value: Place,
     },
-    /// `base.field[index] = value` (fixed-array element store).
+    /// `base.field[index] = value` (fixed-array element store). `len` is the
+    /// array length; cgen checks the index against it at runtime.
     IndexAssign {
         base: Place,
         field: String,
         index: Place,
         ty: Ty,
         value: Place,
+        len: u64,
     },
     /// `name[index] = value` (dynamic Array element store).
     DynIndexAssign {
@@ -149,6 +151,7 @@ pub enum Stmt {
         index: Place,
         ty: Ty,
         value: Place,
+        len: u64,
     },
     Eval(RValue),
     If {
@@ -231,11 +234,12 @@ pub enum RValue {
         base: Place,
         field: String,
     },
-    /// `base.field[index]` — fixed-array element load.
+    /// `base.field[index]` — fixed-array element load (index checked against `len`).
     Index {
         base: Place,
         field: String,
         index: Place,
+        len: u64,
     },
     /// Inject a member value into a union (D118).
     SumInject {
@@ -259,6 +263,7 @@ pub enum RValue {
     FixedIndex {
         base: Place,
         index: Place,
+        len: u64,
     },
     /// Fixed Array<T,N> local initializer from element places (D117).
     FixedArrayLit {
@@ -671,7 +676,7 @@ fn rvalue_uses_place(value: &RValue, place: &Place) -> bool {
         | RValue::SumTag { place: base, .. }
         | RValue::SumPayload { base, .. } => uses(base),
         RValue::Index { base, index, .. }
-        | RValue::FixedIndex { base, index }
+        | RValue::FixedIndex { base, index, .. }
         | RValue::ArrayGet {
             arr: base, index, ..
         } => uses(base) || uses(index),
@@ -975,6 +980,10 @@ struct LowerCtx {
     stmts: Vec<Stmt>,
     temps: u32,
     env: Vec<HashMap<String, Binding>>,
+    /// C local names already bound in this function. A second binding of the
+    /// same source name (shadowing, or a sibling scope) gets a suffixed C name
+    /// so it cannot overwrite or retype the first (see `local_place`).
+    bound_locals: HashSet<String>,
     fns: HashMap<String, FnSig>,
     types: HashMap<String, TypeInfo>,
     /// Mangled type name → info (same as types; key is always mangled).
@@ -1049,6 +1058,7 @@ impl LowerCtx {
             stmts: Vec::new(),
             temps: 0,
             env: vec![HashMap::new()],
+            bound_locals: HashSet::new(),
             fns,
             types,
             name_to_type,
@@ -1133,6 +1143,7 @@ impl LowerCtx {
         place: Place,
         writeback: Option<(Place, String)>,
     ) {
+        self.bound_locals.insert(place.name.clone());
         self.env.last_mut().unwrap().insert(
             name.to_string(),
             Binding {
@@ -1221,15 +1232,12 @@ impl LowerCtx {
         self.drop_places.push((place.name.clone(), ty.clone()));
     }
 
-    /// Caller moved this place into a Thoxa callee (D154). Do not drop it here.
-    fn forget_drop_place(&mut self, place: &Place) -> Option<Ty> {
-        let ty = self
-            .drop_places
+    /// Type of `place` when it owns a value dropped at function exit.
+    fn drop_place_ty(&self, place: &Place) -> Option<Ty> {
+        self.drop_places
             .iter()
             .find(|(name, _)| name == &place.name)
-            .map(|(_, ty)| ty.clone());
-        self.drop_places.retain(|(name, _)| name != &place.name);
-        ty
+            .map(|(_, ty)| ty.clone())
     }
 
     fn is_global_place(&self, place: &Place) -> bool {
@@ -1241,11 +1249,24 @@ impl LowerCtx {
                 .any(|g| g.place.name == place.name)
     }
 
+    /// C place for a new binding of `name`: `v_<name>` the first time in this
+    /// function, then `v_<name>_2`, `v_<name>_3`, … Source names cannot contain
+    /// `_`, so the suffixed names never collide with another binding.
+    fn local_place(&mut self, name: &str) -> Place {
+        let base = sanitize_name(name);
+        let mut candidate = base.clone();
+        let mut suffix = 2;
+        while self.bound_locals.contains(&candidate) {
+            candidate = format!("{base}_{suffix}");
+            suffix += 1;
+        }
+        self.bound_locals.insert(candidate.clone());
+        Place { name: candidate }
+    }
+
     /// Bind a name to an already-lowered value (fresh ownership from `place`).
     fn bind_name(&mut self, name: &str, ty: Ty, mutable: bool, place: Place) {
-        let bound = Place {
-            name: sanitize_name(name),
-        };
+        let bound = self.local_place(name);
         self.assign(bound.clone(), ty.clone(), RValue::Use(place));
         self.define(name, ty, mutable, bound);
     }
@@ -1284,6 +1305,34 @@ impl LowerCtx {
             });
         }
         Ok(())
+    }
+}
+
+/// A body-lowering error's span is an offset into the module being lowered:
+/// record that file so the CLI and LSP show the right file and line.
+fn in_module_file(mut error: Error, path: &std::path::Path) -> Error {
+    if error.path.is_none() {
+        error.path = Some(path.to_path_buf());
+    }
+    for more in &mut error.more {
+        if more.path.is_none() {
+            more.path = Some(path.to_path_buf());
+        }
+    }
+    error
+}
+
+/// D107 write-back for in-place collection writes (`items.append(x)`,
+/// `items[i] = x`, `tags[k] = v`) on a method's field local: store the
+/// updated local through the receiver, as `reassign_name` does for `=`.
+fn write_back_field(ctx: &mut LowerCtx, binding: &Binding) {
+    if let Some((base, field)) = &binding.writeback {
+        ctx.stmts.push(Stmt::FieldAssign {
+            base: base.clone(),
+            field: field.clone(),
+            ty: binding.ty.clone(),
+            value: binding.place.clone(),
+        });
     }
 }
 
@@ -2078,7 +2127,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
             };
             match result {
                 Ok(f) => functions.push(f),
-                Err(e) => body_errors.push(e),
+                Err(e) => body_errors.push(in_module_file(e, &m.path)),
             }
         }
     }
@@ -2108,12 +2157,17 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
             &synthetics,
         ) {
             Ok(f) => functions.push(f),
-            Err(e) => body_errors.push(e),
+            Err(e) => body_errors.push(in_module_file(e, &m.path)),
         }
     }
 
     for (mod_id, mangled, f, is_entry) in &free_fns {
         let maps = package_maps.get(mod_id).unwrap();
+        let module_path = package
+            .modules
+            .iter()
+            .find(|x| x.id == *mod_id)
+            .map(|x| x.path.clone());
         let result = if let Some(clauses) = multi_free.get(mangled) {
             lower_multi_free(
                 f,
@@ -2150,7 +2204,10 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
         };
         match result {
             Ok(fun) => functions.push(fun),
-            Err(e) => body_errors.push(e),
+            Err(e) => body_errors.push(match &module_path {
+                Some(path) => in_module_file(e, path),
+                None => e,
+            }),
         }
     }
 
@@ -6723,9 +6780,7 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
                             places.push(p);
                         }
                         // Bind directly (C arrays are not assignable via `Use` copy).
-                        let bound = Place {
-                            name: sanitize_name(name),
-                        };
+                        let bound = ctx.local_place(name);
                         ctx.assign(
                             bound.clone(),
                             expect.clone(),
@@ -6937,6 +6992,7 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
                 index: idx_p,
                 ty: elem_ty,
                 value: v,
+                len,
             });
             Ok(())
         }
@@ -6976,11 +7032,12 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
                         ));
                     }
                     ctx.stmts.push(Stmt::DynIndexAssign {
-                        base: binding.place,
+                        base: binding.place.clone(),
                         index: idx_p,
                         elem_ty,
                         value: v,
                     });
+                    write_back_field(ctx, &binding);
                     Ok(())
                 }
                 Ty::Map { key, val } => {
@@ -7013,6 +7070,7 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
                             val_ty,
                         },
                     );
+                    write_back_field(ctx, &binding);
                     Ok(())
                 }
                 Ty::FixedArray { elem, len } => {
@@ -7042,6 +7100,7 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
                         index: idx_p,
                         ty: elem_ty,
                         value: v,
+                        len,
                     });
                     Ok(())
                 }
@@ -7712,9 +7771,7 @@ fn lower_for(
         coerce_place(ctx, end_p, &end_ty, &Ty::Int64, end.span)?
     };
 
-    let idx = Place {
-        name: sanitize_name(name),
-    };
+    let idx = ctx.local_place(name);
     // Init index before the C for-loop (step/continue-safe).
     ctx.assign(idx.clone(), Ty::Int64, RValue::Use(start_p));
 
@@ -8404,6 +8461,19 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                         );
                         p
                     }
+                    Ty::UInt64 => {
+                        // Not through Int64: values above Int64 max would print negative.
+                        let p = ctx.fresh("ts");
+                        ctx.assign(
+                            p.clone(),
+                            Ty::String,
+                            RValue::ToString {
+                                value: v,
+                                from: Ty::UInt64,
+                            },
+                        );
+                        p
+                    }
                     ref t if is_int(t) => {
                         let widened = coerce_place(ctx, v, t, &Ty::Int64, span)?;
                         let p = ctx.fresh("ts");
@@ -8598,6 +8668,18 @@ fn sql_embed_piece(ctx: &mut LowerCtx, v: Place, ty: Ty, span: Span) -> Result<P
                 p.clone(),
                 Ty::String,
                 RValue::ToString { value: v, from: ty },
+            );
+            Ok(p)
+        }
+        Ty::UInt64 => {
+            let p = ctx.fresh("sqln");
+            ctx.assign(
+                p.clone(),
+                Ty::String,
+                RValue::ToString {
+                    value: v,
+                    from: Ty::UInt64,
+                },
             );
             Ok(p)
         }
@@ -8891,6 +8973,7 @@ fn lower_field(
                             base: base_p.clone(),
                             field: field_c.clone(),
                             index: ip,
+                            len: *len,
                         },
                     );
                     places.push(ep);
@@ -8989,6 +9072,7 @@ fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Res
                         base: struct_p,
                         field: sanitize_field(name),
                         index: idx_p,
+                        len,
                     },
                 );
                 return Ok((p, elem_ty));
@@ -9051,6 +9135,7 @@ fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Res
             RValue::FixedIndex {
                 base: base_p,
                 index: idx_p,
+                len,
             },
         );
         return Ok((p, elem_ty));
@@ -9303,14 +9388,18 @@ fn lower_method_call(
         if let ExprKind::Name(recv_name) = &receiver.kind {
             if let Some(binding) = ctx.lookup(recv_name) {
                 if binding.ty == Ty::Buffer {
-                    return lower_buffer_method(
+                    let result = lower_buffer_method(
                         ctx,
                         binding.place.clone(),
                         method,
                         args,
                         method_span,
                         /*write_back*/ method != "freeze",
-                    );
+                    )?;
+                    if method != "freeze" {
+                        write_back_field(ctx, &binding);
+                    }
+                    return Ok(result);
                 }
                 if matches!(&binding.ty, Ty::Array { .. } | Ty::Map { .. }) {
                     let mutating = !matches!(method, "freeze");
@@ -9322,14 +9411,12 @@ fn lower_method_call(
                     }
                     let recv_p = binding.place.clone();
                     let recv_ty = binding.ty.clone();
-                    return lower_collection_method(
-                        ctx,
-                        recv_p,
-                        &recv_ty,
-                        method,
-                        args,
-                        method_span,
-                    );
+                    let result =
+                        lower_collection_method(ctx, recv_p, &recv_ty, method, args, method_span)?;
+                    if mutating {
+                        write_back_field(ctx, &binding);
+                    }
+                    return Ok(result);
                 }
             }
         }
@@ -9674,6 +9761,18 @@ fn stringify_place(ctx: &mut LowerCtx, value: Place, ty: Ty, span: Span) -> Resu
         Ty::Int64 | Ty::Float64 | Ty::Bool => {
             let p = ctx.fresh("ts");
             ctx.assign(p.clone(), Ty::String, RValue::ToString { value, from: ty });
+            Ok(p)
+        }
+        Ty::UInt64 => {
+            let p = ctx.fresh("ts");
+            ctx.assign(
+                p.clone(),
+                Ty::String,
+                RValue::ToString {
+                    value,
+                    from: Ty::UInt64,
+                },
+            );
             Ok(p)
         }
         t if is_int(t) => {
@@ -10342,10 +10441,14 @@ fn emit_call_result(
     args: Vec<Place>,
     ret: Ty,
 ) -> Result<(Place, Ty)> {
+    // D154: the callee owns moved heap args. After the call each is reset to
+    // NULL / zero (`clear_moved_place`), so it stays in the drop set: dropping
+    // an emptied place is a no-op, and an early `return` / `?` taken *before*
+    // the call (in a later argument) still drops the copy it owns.
     let moved = heap_args_to_move(&callee, &args);
     let mut cleared: Vec<(Place, Ty)> = Vec::new();
     for arg in &moved {
-        if let Some(ty) = ctx.forget_drop_place(arg) {
+        if let Some(ty) = ctx.drop_place_ty(arg) {
             cleared.push((arg.clone(), ty));
         }
     }
@@ -12097,12 +12200,15 @@ fn lower_match_node(
                     let bound = ctx.fresh("sbind");
                     // `assign` of a heap `Use` already Dups (same as union catch-all / D152).
                     ctx.assign(bound.clone(), Ty::Node, RValue::Use(scrut_p.clone()));
+                    // The bind is visible in this arm only, not after the match.
+                    ctx.push_scope();
                     ctx.define(name, Ty::Node, false, bound);
                     lower_block_items(ctx, &arm.body.items)?;
                     let arm_val = match &arm.body.tail {
                         Some(t) => Some(lower_expr(ctx, t)?),
                         None => None,
                     };
+                    ctx.pop_scope();
                     let mut body = std::mem::take(&mut ctx.stmts);
                     ctx.stmts = outer;
                     finish_match_arm_ty(
@@ -12146,6 +12252,8 @@ fn lower_match_node(
                     .map(|i| i.fields.clone())
                     .unwrap_or_default();
                 let outer = std::mem::take(&mut ctx.stmts);
+                // Payload binds are visible in this arm only, not after the match.
+                ctx.push_scope();
                 if !binds.is_empty() {
                     if binds.len() != member_fields.len() {
                         return Err(Error::at(
@@ -12182,8 +12290,10 @@ fn lower_match_node(
                 }
                 let prefix = std::mem::take(&mut ctx.stmts);
                 ctx.stmts = outer;
-                let (prefix, guard, body) =
-                    lower_union_arm_body(ctx, arm, &result_place, &mut result_ty, span, prefix)?;
+                let lowered =
+                    lower_union_arm_body(ctx, arm, &result_place, &mut result_ty, span, prefix);
+                ctx.pop_scope();
+                let (prefix, guard, body) = lowered?;
                 codes.push(ArmCode {
                     tag: Some(variant.tag),
                     prefix,
@@ -12386,6 +12496,8 @@ fn lower_match_sum(
                         scrut_ty.clone(),
                         RValue::Use(scrut_p.clone()),
                     );
+                    // The bind is visible in this arm only, not after the match.
+                    ctx.push_scope();
                     ctx.define(name, scrut_ty.clone(), false, bound);
                     lower_block_items(ctx, &arm.body.items)?;
                     let arm_val = match &arm.body.tail {
@@ -12395,6 +12507,7 @@ fn lower_match_sum(
                         }
                         None => None,
                     };
+                    ctx.pop_scope();
                     let mut body = std::mem::take(&mut ctx.stmts);
                     ctx.stmts = outer;
                     finish_match_arm_ty(
@@ -12443,6 +12556,8 @@ fn lower_match_sum(
                     _ => Vec::new(),
                 };
                 let outer = std::mem::take(&mut ctx.stmts);
+                // Payload binds are visible in this arm only, not after the match.
+                ctx.push_scope();
                 if binds.is_empty() {
                     // Tag-only: nullary member, or payload member with no destructure (D130).
                     // Heap payloads remain owned by the scrutinee sum (dropped with it).
@@ -12504,17 +12619,10 @@ fn lower_match_sum(
                     }
                 }
                 let prefix = std::mem::take(&mut ctx.stmts);
-                let (prefix, guard, body) = {
-                    let (p2, g, b) = lower_union_arm_body(
-                        ctx,
-                        arm,
-                        &result_place,
-                        &mut result_ty,
-                        span,
-                        prefix,
-                    )?;
-                    (p2, g, b)
-                };
+                let lowered =
+                    lower_union_arm_body(ctx, arm, &result_place, &mut result_ty, span, prefix);
+                ctx.pop_scope();
+                let (prefix, guard, body) = lowered?;
                 ctx.stmts = outer;
                 codes.push(ArmCode {
                     tag: Some(variant.tag),
@@ -12775,9 +12883,7 @@ fn lower_match_value(
         ctx.push_scope();
         if let Pattern::Bind { name, .. } = &arm.pattern {
             // Scrutinee binding for type inference of the arm body.
-            let p = Place {
-                name: sanitize_name(name),
-            };
+            let p = ctx.local_place(name);
             ctx.define(name, scrut_ty.clone(), false, p);
         }
         let ty = infer_block_ty(ctx, &arm.body)?;
@@ -12800,9 +12906,7 @@ fn lower_match_value(
 
     ctx.push_scope();
     if let Pattern::Bind { name, .. } = &catch_arm.pattern {
-        let p = Place {
-            name: sanitize_name(name),
-        };
+        let p = ctx.local_place(name);
         // Bind to scrutinee. `assign` of a heap `Use` already Dups so the arm can
         // drop `s` without freeing the caller / match scrutinee.
         ctx.assign(p.clone(), scrut_ty.clone(), RValue::Use(scrut_p.clone()));
@@ -13249,7 +13353,22 @@ fn lower_binary(
                 coerce_place(ctx, r, &rt, &Ty::Int64, span)?
             };
             let p = ctx.fresh("bin");
-            ctx.assign(p.clone(), Ty::Int64, RValue::Binary { op, left, right });
+            let value = match op {
+                // Checked in the runtime: division by zero panics instead of trapping.
+                BinaryOp::Div | BinaryOp::Rem => RValue::Call {
+                    callee: Callee::Builtin(
+                        if matches!(op, BinaryOp::Div) {
+                            "int_div"
+                        } else {
+                            "int_rem"
+                        }
+                        .into(),
+                    ),
+                    args: vec![left, right],
+                },
+                _ => RValue::Binary { op, left, right },
+            };
+            ctx.assign(p.clone(), Ty::Int64, value);
             Ok((p, Ty::Int64))
         }
         BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
@@ -14315,11 +14434,12 @@ fn lower_if(
 
     // Expect-type inject (D119 §2.7): `-> Outcome` / `let x: Outcome = if …`.
     let result_ty = if let Some(exp) = expect {
+        // Without `else` there is no value on the false path, so the expected
+        // type cannot be met; fall through to unify (Void) and its error.
         if *exp != Ty::Void
+            && else_branch.is_some()
             && can_coerce_ty(&ctx.types, &then_ty, exp)
-            && (else_branch.is_none()
-                || can_coerce_ty(&ctx.types, &else_ty, exp)
-                || else_ty == Ty::Void)
+            && (can_coerce_ty(&ctx.types, &else_ty, exp) || else_ty == Ty::Void)
         {
             exp.clone()
         } else {
@@ -14391,7 +14511,9 @@ fn unify_if_branch_tys(
     match (then_ty, else_ty) {
         (Ty::Never, x) | (x, Ty::Never) => Ok(x.clone()),
         (Ty::Void, Ty::Void) => Ok(Ty::Void),
-        (a, Ty::Void) if else_absent => Ok(a.clone()),
+        // No `else`: the `if` has no value when the condition is false, so it is
+        // Void (a statement). Using it as a value is a type error, not a zero/NULL.
+        (_, Ty::Void) if else_absent => Ok(Ty::Void),
         (a, b) if a == b => Ok(a.clone()),
         (a, b) if ty_eq(&ctx.types, a, b) => {
             // Transparent aliases: prefer the then-branch name as the result type.
@@ -14661,6 +14783,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         stmts: Vec::new(),
         temps: ctx.temps,
         env: ctx.env.clone(),
+        bound_locals: ctx.bound_locals.clone(),
         fns: ctx.fns.clone(),
         types: ctx.types.clone(),
         name_to_type: ctx.name_to_type.clone(),

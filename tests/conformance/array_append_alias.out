@@ -1,0 +1,8 @@
+count=50000 sum=1249975000
+snapshot=1
+snapshot=10001
+snapshot=20001
+snapshot=30001
+snapshot=40001
+before=50000 after=50001
+words=3 alias=1 last=c

@@ -142,8 +142,8 @@ Array/Map, same as String/Bytes/Node. Gate: `arrays_nested` (return a
 ### 5. Fibers and sanitizers
 
 `-->` packs args with an extra retain, starts a fiber, thunk drops args and
-the dropped return. Fiber stacks are `malloc` + `ucontext` (`THOXA_FIBER_STACK`
-128 KiB). ASan + ucontext is why ASan is not the default gate (**D151**).
+the dropped return. Fiber stacks are `ucontext` on mmap'd 512 KiB stacks with a
+PROT_NONE guard page (2026-10-14; were `malloc` 128 KiB). ASan + ucontext is why ASan is not the default gate (**D151**).
 `start_net` / `start_keepalive` / other `-->` programs are LSan-clean. They
 passed the 2026-09-03 ASan run as well, but stay in `asan-skip` because
 ucontext fiber stacks are not reliably poisoned.
@@ -214,7 +214,8 @@ No class-D use-after-free / double-free fired. ASan is **not** the default
    `File` / `Db`: `fd = -1`; second close is a no-op. Gate: `http_net_err`.
    Not language `Drop`.
 8. **Resource `drop` — shipped as D155** (not this freeze). File/Socket/Db.
-9. **Named later (not this wave):** cycle collector; fiber stack guard pages;
+9. **Named later (not this wave):** cycle collector; fiber stack guard pages
+   (shipped 2026-10-14: mmap'd task stacks with a guard page);
    session/libtcc sanitizer (parked with session); Perceus; `drop` on unions /
    C-layout.
 

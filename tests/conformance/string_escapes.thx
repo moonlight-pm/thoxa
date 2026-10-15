@@ -1,0 +1,35 @@
+## String literals reach C byte-for-byte: no trigraphs (`??!`), `\xHH` is one
+## byte even before a hex digit, and `\0` inside a literal keeps the bytes
+## after it.
+import logging, { info } from "std/logging"
+
+fn byteList(text!: String) -> String {
+    let bytes = Bytes.fromString(text)
+    mut out = ""
+    mut index = 0
+    while index < bytes.count {
+        if index > 0 {
+            out = "{out} "
+        }
+        out = "{out}{bytes.get(index)}"
+        index = index + 1
+    }
+    out
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info("what??! and ??=")
+    let reset = "\x1bc"
+    info("reset: {byteList(reset)}")
+    let bellDigit = "\x077"
+    info("bell then digit: {byteList(bellDigit)}")
+    let nul = "x\0y"
+    info("nul: count={nul.count} bytes={byteList(nul)}")
+    let delete = "\x7f"
+    info("delete: {byteList(delete)}")
+    let accent = "é"
+    info("unicode: {accent.count}")
+    0
+}

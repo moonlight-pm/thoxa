@@ -57,7 +57,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Area | Shipped |
 |------|---------|
 | Scalars | `Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Float64`, `Bool`, `Void` |
-| Heap | `String` (interpolation, `.count`, `\xHH` escapes, **newlines kept**), `sql"…"` tagged interpolator (**D144**, may span lines), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`), builtin **`Node`** (tag literals, **D147**) |
+| Heap | `String` (interpolation, `.count`, `\xHH` escapes for ASCII `\x00`–`\x7F` (**D159**), `\0` kept inside the string, **newlines kept**), `sql"…"` tagged interpolator (**D144**, may span lines), `Bytes` (`.insertAt`/`.removeAt`/`.equals`), growable `Buffer`, dynamic `Array<T>` (write-back `.append` / `.dropLast` / `.insertAt` / `.removeAt` on `mut`), `Map<K, V>` (`.has` / `.get`→`May` / write-back `.set`), builtin **`Node`** (tag literals, **D147**) |
 | User types | `type Name(fields) { methods }` — including heap fields, **Node**, and nested user types / sums (**D135**); method field write-back. Recursive fields are an error (use `Array` / `Map`) |
 | Generics | `type Box<T>(value: T) { methods }`; generic unions `type Opt<T> = Box<T!> \| Empty?` (monomorphized) |
 | Unions | `type U = A \| B` (products, pure literals, nested flatten); marks `T!` / residual `?`; singleton alias `type Home = "home"`. Member product fields may be scalars (incl. `Float64`), String/Bytes, User, `Array`, or `Map` (**D141**). String-literal unions subtype `String` (**D149**) |
@@ -65,9 +65,35 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Refinements | `type Qty = Int64 where >= 1` — real types; `T.read` / `T.from` (**D149**) |
 | Multi-clause fns | Same name, different formal types → one function (type-driven match sugar, **D131**) |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
-| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind) |
+| C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind; an index outside `0..N-1` panics) |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/fallible` with `?` / `match` (ok/err may nest) |
 | Equality | String `==` / `!=`; usual scalar compares (including `Float64`). Comparison `<` needs a space after it (`a < b`, not `a<b`) — glued `<name` is a [tag](#tag-literals-and-node-jsx) |
+
+**Integers (**D157**):** `Int64` arithmetic wraps on overflow (two's
+complement); it is never undefined. `/` and `%` by zero panic with
+`division by zero`. `a..=b` includes `b` and stops there, even at the largest
+`Int64`.
+
+**`if` without `else` (**D158**):** a statement with no value. Where a value is
+expected, write the `else`:
+
+```thx
+fn sign(n!: Int64) -> Int64 {
+    if n < 0 {
+        -1
+    } else {
+        1
+    }
+}
+```
+
+A line that **starts** with `-` continues the expression above it (`if … {}`
+then `-1` on the next line reads as a subtraction). Write `return -1` or put the
+value inside a block.
+
+**Shadowing:** a `let`, match binding, or `for` variable can reuse an outer
+name. Inside its block it is a new variable (it may have another type); after
+the block the outer one is unchanged.
 
 **`Float64` (**D140**):** IEEE-754 binary64. Literals `1.5`, `1e2`, `1.5e-1`,
 `3.14f64`. `1..5` is still a range (a `.` is a fraction only when a digit

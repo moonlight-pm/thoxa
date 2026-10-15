@@ -1,0 +1,72 @@
+## A binding that shadows an outer name is a separate variable: the outer one
+## keeps its value and type after the inner scope ends. Covers `let` in a
+## block, a different type, same-scope rebinding, match binds, `for` indexes,
+## and sibling scopes that reuse a name with different types.
+import { Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn fetch(ok!: Bool) -> Trial<String, String> {
+    if ok {
+        Pass("payload")
+    } else {
+        Fail("bad")
+    }
+}
+
+fn pick(flag!: Bool) -> String {
+    if flag {
+        let note = 42
+        "int {note}"
+    } else {
+        let note = "text"
+        "str {note}"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let label = "outer"
+    if true {
+        let label = "inner"
+        info("block: {label}")
+    }
+    info("after block: {label}")
+
+    let count = 5
+    if true {
+        let count = "five"
+        info("retyped: {count}")
+    }
+    info("after retype: {count + 1}")
+
+    let step = 1
+    let step = step + 10
+    info("rebound: {step}")
+
+    let value = "outer value"
+    match fetch(true) {
+        Pass(value) => info("arm: {value}")
+        Fail(error) => info("err: {error}")
+    }
+    info("after match: {value}")
+
+    let index = 100
+    for index in 0..3 {
+        info("loop: {index}")
+    }
+    info("after for: {index}")
+
+    mut total = 0
+    for round in 0..3 {
+        let total = round * 100
+        info("inner total: {total}")
+    }
+    total = total + 1
+    info("outer total: {total}")
+
+    info(pick(true))
+    info(pick(false))
+    0
+}

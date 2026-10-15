@@ -70,7 +70,8 @@ fn hexNibble(c!: Int64) -> Int64 {
             return c - 87
         }
     }
-    -1
+    ## Not `-1` alone: a line starting with `-` continues the `if` above as `if … - 1`.
+    return -1
 }
 
 ## Two hex digits → 0..255, or -1 if either nibble is invalid.

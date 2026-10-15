@@ -1,0 +1,61 @@
+## Sending to a peer that has closed returns a Fail instead of killing the
+## process with SIGPIPE (send uses MSG_NOSIGNAL).
+import net, { Socket, createSocket } from "std/net"
+import { Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn closeAtOnce(listener!: Socket) -> Trial<Void, String> {
+    let peer = listener.accept()?
+    peer.close()
+    Pass(Void)
+}
+
+fn sendFails(client!: Socket, payload!: Bytes) -> Bool {
+    match client.sendAll(payload) {
+        Fail(_) => true
+        Pass(_) => false
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass(outcome) {
+            info(outcome)
+            0
+        }
+        Fail(error) {
+            info("setup failed: {error}")
+            1
+        }
+    }
+}
+
+fn run() -> Trial<String, String> {
+    let listener = createSocket()?
+    listener.reuseAddr()?
+    listener.bind(0)?
+    listener.listen(4)?
+    let port = listener.localPort()?
+    --> closeAtOnce(listener)
+    let client = createSocket()?
+    client.connect(port)?
+    let eof = client.receive()
+    info("peer closed: {eof.count == 0}")
+    let payload = Bytes.fromString("still talking")
+    mut attempts = 0
+    mut failed = false
+    while attempts < 50 {
+        if failed {
+            break
+        }
+        failed = sendFails(client, payload)
+        attempts = attempts + 1
+    }
+    if failed {
+        Pass("send failed cleanly")
+    } else {
+        Pass("send never failed")
+    }
+}

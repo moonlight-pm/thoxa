@@ -35,7 +35,8 @@ ThoxaString *thoxa_sql_quote(const ThoxaString *s) {
     return out;
 }
 
-static __thread char last_err[512];
+/* Not thread-local: see thoxa_local_hms in thoxa_rt.c (libtcc TLS). */
+static char last_err[512];
 
 static void set_err(const char *msg) {
     snprintf(last_err, sizeof(last_err), "%s", msg && msg[0] ? msg : "sqlite error");

@@ -55,14 +55,21 @@ Familiar command lines desugar to Thoxa on `Shell`:
 | `1 - 2` / `1 \| 2` / `1 > 0` | Stays pure Thoxa arithmetic / BitOr / comparison |
 
 Quotes follow the same word-split rules as the dogfood shell (double/single
-quotes, backslash escapes). There is **no** shell `if`/`for`/`fn` dialect —
-programming is Thoxa.
+quotes, backslash escapes). Command words are literal text: `awk '{print $2}'`
+passes the braces through (they are not Thoxa interpolation). There is **no**
+shell `if`/`for`/`fn` dialect — programming is Thoxa.
 
 ## REPL behavior
 
 - Declarations (`import`, `type`, `fn`, …) **accumulate** across chunks.
 - Top-level statements run as this chunk’s `step` body.
 - Failed compiles print diagnostics and keep prior session state (status ≠ 0).
+  A declaration that does not compile is reported and **not** kept.
+- A panic or crash inside a line prints its message and returns status 134
+  (panic) or 128 + signal (crash); the session keeps running (**D160**).
+- While a command runs, Ctrl-C stops the command, not the session.
+  Commands start with default signal handling (`yes | head -n1` ends quietly).
+- Editing an imported `.thx` file (or `std/`) is picked up on the next line.
 - Continuation prompt `> ` for unfinished blocks; primary prompt defaults to
   `§ ` unless customized. No startup banner.
 - Interactive TTY uses an **emacs** line editor (GNU readline-style keys).

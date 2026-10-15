@@ -1,0 +1,22 @@
+## parseUInt: Int64 max parses; anything larger is Not, never a wrapped negative.
+import { parseUInt } from "std/str"
+import { Has, Not } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn show(text!: String) {
+    match parseUInt(text) {
+        Not => info("{text} -> Not")
+        Has(value) => info("{text} -> {value}")
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    show("9223372036854775807")
+    show("9223372036854775808")
+    show("18446744073709551616")
+    show("99999999999999999999999")
+    show("0")
+    0
+}

@@ -26,7 +26,44 @@ typedef void (*ThoxaArrayElemFn)(void *elem);
 
 /* --- I/O ---------------------------------------------------------------- */
 
-void thoxa_panic(const char *msg);
+/* noreturn lets the C compiler drop the "store after panic" path, so a bounds
+ * check is never optimized away as if the out-of-range store were reachable. */
+#if defined(__GNUC__) || defined(__clang__) || defined(__TINYC__)
+#define THOXA_NORETURN __attribute__((noreturn))
+#else
+#define THOXA_NORETURN
+#endif
+
+THOXA_NORETURN void thoxa_panic(const char *msg);
+
+/* Int64 `/` and `%`: division by zero panics; INT64_MIN / -1 wraps like -fwrapv. */
+static inline int64_t thoxa_int_div(int64_t left, int64_t right) {
+    if (right == 0) {
+        thoxa_panic("division by zero");
+    }
+    if (right == -1) {
+        return (int64_t)(UINT64_C(0) - (uint64_t)left);
+    }
+    return left / right;
+}
+
+/* Fixed-size Array<T, N> subscript: an index outside 0..N-1 panics. */
+static inline int64_t thoxa_fixed_index(int64_t index, int64_t len) {
+    if (index < 0 || index >= len) {
+        thoxa_panic("fixed array index out of bounds");
+    }
+    return index;
+}
+
+static inline int64_t thoxa_int_rem(int64_t left, int64_t right) {
+    if (right == 0) {
+        thoxa_panic("division by zero");
+    }
+    if (right == -1) {
+        return 0;
+    }
+    return left % right;
+}
 
 /* Thread-local errno after a failed libc call (no named `ffi` root — D80). */
 int32_t thoxa_errno(void);
@@ -42,6 +79,14 @@ int32_t thoxa_errno(void);
  * Exec failure in the child exits 127 (shell convention).
  */
 int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len);
+
+/*
+ * Session (REPL) only: run one compiled step. A panic or a fault (bad memory
+ * access, stack overflow, arithmetic trap) inside `step` returns here instead
+ * of ending the shell: `*crashed` is set and the result is 134 for a panic or
+ * 128 + signal for a fault. Memory held by the abandoned step is leaked.
+ */
+int64_t thoxa_session_call(int64_t (*step)(void *), void *state, int32_t *crashed);
 
 /*
  * Like thoxa_spawn_wait with optional file redirections (session `>` / `>>` / `<`).
@@ -163,6 +208,7 @@ typedef struct ThoxaString {
 ThoxaString *thoxa_string_new(const char *bytes, size_t len);
 ThoxaString *thoxa_string_from_cstr(const char *s);
 ThoxaString *thoxa_string_from_i64(int64_t v);
+ThoxaString *thoxa_string_from_u64(uint64_t v);
 ThoxaString *thoxa_string_from_f64(double v);
 ThoxaString *thoxa_string_from_bool(bool v);
 /* IEEE-754 bitcast helpers (array/map slots store Float64 as i64 bits). */
@@ -184,7 +230,7 @@ size_t thoxa_string_len(const ThoxaString *s);
 int32_t thoxa_write_line_fd(int32_t fd, const char *s);
 
 /* Session prompt helpers (D96): return cstr; Thoxa extern -> String
- * copies via thoxa_string_from_cstr. Buffers are thread-local. */
+ * copies via thoxa_string_from_cstr. Buffers are static (single-threaded runtime). */
 const char *thoxa_local_hms(void); /* local "HH:MM:SS" */
 const char *thoxa_hostname(void);  /* gethostname(2), or "localhost" */
 
@@ -483,7 +529,7 @@ ThoxaString *thoxa_sql_quote(const ThoxaString *s);
 /* 0 = fail; errmsg via thoxa_sql_errmsg. Path ":memory:" is allowed. */
 int64_t thoxa_sql_open(const char *path);
 int32_t thoxa_sql_close(int64_t handle);
-/* Last error from any sqlite helper (thread-local; copied by String returns). */
+/* Last error from any sqlite helper (static buffer; copied by String returns). */
 const char *thoxa_sql_errmsg(void);
 int32_t thoxa_sql_exec(int64_t handle, const char *sql);
 int64_t thoxa_sql_last_insert_rowid(int64_t handle);

@@ -4,10 +4,13 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <setjmp.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -19,9 +22,75 @@ int32_t thoxa_errno(void) {
     return (int32_t)errno;
 }
 
+/* Armed only while `thoxa_session_call` runs a session step: a panic returns
+ * to the shell prompt instead of ending the shell process. */
+static sigjmp_buf *thoxa_recover_point;
+static volatile sig_atomic_t thoxa_recover_signal;
+
 void thoxa_panic(const char *msg) {
     fprintf(stderr, "thoxa panic: %s\n", msg ? msg : "(null)");
+    if (thoxa_recover_point) {
+        siglongjmp(*thoxa_recover_point, 1);
+    }
     abort();
+}
+
+static void thoxa_step_fault(int sig) {
+    thoxa_recover_signal = sig;
+    siglongjmp(*thoxa_recover_point, 2);
+}
+
+static const int thoxa_step_fault_signals[] = {SIGSEGV, SIGBUS, SIGFPE, SIGILL};
+#define THOXA_STEP_FAULT_COUNT \
+    (sizeof thoxa_step_fault_signals / sizeof thoxa_step_fault_signals[0])
+static char thoxa_step_altstack[64 * 1024];
+
+int64_t thoxa_session_call(int64_t (*step)(void *), void *state, int32_t *crashed) {
+    /* This runtime copy lives in the step's in-memory image, which is freed
+     * after the step: every handler and the alternate stack installed here
+     * are put back before returning. */
+    struct sigaction previous[THOXA_STEP_FAULT_COUNT];
+    stack_t previous_altstack;
+    stack_t altstack;
+    altstack.ss_sp = thoxa_step_altstack;
+    altstack.ss_size = sizeof thoxa_step_altstack;
+    altstack.ss_flags = 0;
+    int have_altstack = sigaltstack(&altstack, &previous_altstack) == 0;
+    struct sigaction action;
+    memset(&action, 0, sizeof action);
+    action.sa_handler = thoxa_step_fault;
+    action.sa_flags = SA_ONSTACK | SA_NODEFER;
+    sigemptyset(&action.sa_mask);
+    for (size_t i = 0; i < THOXA_STEP_FAULT_COUNT; i++) {
+        (void)sigaction(thoxa_step_fault_signals[i], &action, &previous[i]);
+    }
+
+    sigjmp_buf point;
+    volatile int64_t result = 0;
+    *crashed = 0;
+    int jumped = sigsetjmp(point, 1);
+    if (jumped == 0) {
+        thoxa_recover_point = &point;
+        result = step(state);
+    } else if (jumped == 1) {
+        /* thoxa_panic already printed its message. */
+        *crashed = 1;
+        result = 134;
+    } else {
+        const char *name = strsignal((int)thoxa_recover_signal);
+        fprintf(stderr, "thoxa: line crashed: %s\n", name ? name : "signal");
+        *crashed = 1;
+        result = 128 + (int64_t)thoxa_recover_signal;
+    }
+    thoxa_recover_point = NULL;
+
+    for (size_t i = 0; i < THOXA_STEP_FAULT_COUNT; i++) {
+        (void)sigaction(thoxa_step_fault_signals[i], &previous[i], NULL);
+    }
+    if (have_altstack) {
+        (void)sigaltstack(&previous_altstack, NULL);
+    }
+    return result;
 }
 
 static size_t size_add(size_t a, size_t b) {
@@ -237,6 +306,15 @@ ThoxaString *thoxa_string_from_cstr(const char *s) {
 ThoxaString *thoxa_string_from_i64(int64_t v) {
     char buf[32];
     int n = snprintf(buf, sizeof(buf), "%lld", (long long)v);
+    if (n < 0) {
+        thoxa_panic("snprintf failed");
+    }
+    return thoxa_string_new(buf, (size_t)n);
+}
+
+ThoxaString *thoxa_string_from_u64(uint64_t v) {
+    char buf[32];
+    int n = snprintf(buf, sizeof(buf), "%llu", (unsigned long long)v);
     if (n < 0) {
         thoxa_panic("snprintf failed");
     }
@@ -941,12 +1019,31 @@ ThoxaArray *thoxa_array_set_elem(
     return a;
 }
 
+/* An unshared array with spare capacity takes an append in place. Otherwise
+ * append copies into a new array with doubled capacity, so building an array
+ * one element at a time is amortized O(1) per append, not O(n). */
+static int array_append_in_place(const ThoxaArray *a) {
+    return a && header_of((void *)a)->refcount == 1 && a->len < a->cap;
+}
+
+static size_t array_grown_cap(size_t len) {
+    return len < 4 ? 4 : size_dbl(len);
+}
+
 ThoxaArray *thoxa_array_append_i64(ThoxaArray *a, int64_t v) {
+    if (array_append_in_place(a) && a->elem_size == (uint32_t)sizeof(int64_t)) {
+        if (array_heap_elems(a)) {
+            thoxa_dup((void *)(intptr_t)v);
+        }
+        *array_i64(a, a->len) = v;
+        a->len += 1;
+        return a;
+    }
     size_t old_len = a ? a->len : 0;
     uint32_t flags = a ? a->flags : 0;
     size_t new_len = size_add(old_len, 1);
     ThoxaArray *n =
-        array_alloc(new_len, new_len, flags, (uint32_t)sizeof(int64_t));
+        array_alloc(new_len, array_grown_cap(old_len), flags, (uint32_t)sizeof(int64_t));
     array_copy_items(n, a, old_len);
     if (array_heap_elems(n)) {
         void *p = (void *)(intptr_t)v;
@@ -960,11 +1057,17 @@ ThoxaArray *thoxa_array_append_i64(ThoxaArray *a, int64_t v) {
 }
 
 ThoxaArray *thoxa_array_append_ptr(ThoxaArray *a, void *p) {
+    if (array_append_in_place(a) && array_heap_elems(a)) {
+        thoxa_dup(p);
+        *array_i64(a, a->len) = (int64_t)(intptr_t)p;
+        a->len += 1;
+        return a;
+    }
     size_t old_len = a ? a->len : 0;
     size_t new_len = size_add(old_len, 1);
     ThoxaArray *n = array_alloc(
         new_len,
-        new_len,
+        array_grown_cap(old_len),
         THOXA_ARRAY_FLAG_HEAP_ELEMS,
         (uint32_t)sizeof(int64_t)
     );
@@ -997,8 +1100,16 @@ ThoxaArray *thoxa_array_append_elem(
     if (!elem) {
         thoxa_panic("array append_elem null elem");
     }
+    if (array_append_in_place(a)) {
+        memcpy(array_slot(a, old_len), elem, (size_t)elem_size);
+        if (elem_dup) {
+            elem_dup(array_slot(a, old_len));
+        }
+        a->len += 1;
+        return a;
+    }
     size_t new_len = size_add(old_len, 1);
-    ThoxaArray *n = array_alloc(new_len, new_len, flags, elem_size);
+    ThoxaArray *n = array_alloc(new_len, array_grown_cap(old_len), flags, elem_size);
     array_copy_items_ex(n, a, old_len, elem_dup);
     memcpy(array_slot(n, old_len), elem, (size_t)elem_size);
     if (elem_dup) {
@@ -1548,8 +1659,12 @@ static ThoxaMap *map_prepare_insert(
     ThoxaArrayElemFn elem_drop
 ) {
     m = map_ensure_unique(m, elem_dup, elem_drop);
-    if (m->len >= m->slot_cap || m->len * 4 >= m->idx_cap * 3 || m->tombs > m->idx_cap / 2) {
+    if (m->len >= m->slot_cap || m->len * 4 >= m->idx_cap * 3) {
         m = map_grow_slots(m, elem_dup, elem_drop);
+    } else if (m->tombs > m->idx_cap / 2) {
+        /* Too many tombstones but room for live entries: rebuild the index
+         * at the same size. Growing here doubled an empty map without bound. */
+        map_reindex(m);
     }
     return m;
 }
@@ -2077,6 +2192,44 @@ ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a) {
 
 /* --- Process spawn (thoxash / dogfood) ---------------------------------- */
 
+/* A shell ignores SIGPIPE (Rust does at startup) and ignored dispositions
+ * survive exec, so children start from the defaults: `yes | head` must end
+ * `yes` quietly, and Ctrl-C must reach the child. */
+static void thoxa_child_default_signals(void) {
+    signal(SIGPIPE, SIG_DFL);
+    signal(SIGINT, SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
+}
+
+typedef struct {
+    struct sigaction interrupt;
+    struct sigaction quit;
+} ThoxaWaitSignals;
+
+/* While a foreground child runs, Ctrl-C and Ctrl-\ stop the child, not this
+ * process (the same rule as system(3)). */
+static void thoxa_wait_signals_begin(ThoxaWaitSignals *saved) {
+    struct sigaction ignore;
+    memset(&ignore, 0, sizeof ignore);
+    ignore.sa_handler = SIG_IGN;
+    sigemptyset(&ignore.sa_mask);
+    (void)sigaction(SIGINT, &ignore, &saved->interrupt);
+    (void)sigaction(SIGQUIT, &ignore, &saved->quit);
+}
+
+static void thoxa_wait_signals_end(const ThoxaWaitSignals *saved) {
+    (void)sigaction(SIGINT, &saved->interrupt, NULL);
+    (void)sigaction(SIGQUIT, &saved->quit, NULL);
+}
+
+static pid_t thoxa_waitpid(pid_t pid, int *status) {
+    pid_t got;
+    do {
+        got = waitpid(pid, status, 0);
+    } while (got < 0 && errno == EINTR);
+    return got;
+}
+
 static int64_t thoxa_spawn_wait_impl(
     const char *path,
     const void *argv_blob,
@@ -2119,11 +2272,15 @@ static int64_t thoxa_spawn_wait_impl(
         return -1;
     }
 
+    ThoxaWaitSignals wait_signals;
+    thoxa_wait_signals_begin(&wait_signals);
     pid_t pid = fork();
     if (pid < 0) {
+        thoxa_wait_signals_end(&wait_signals);
         return -1;
     }
     if (pid == 0) {
+        thoxa_child_default_signals();
         /* Optional file redirections before exec. */
         if (stdin_path && stdin_path[0] != '\0') {
             int fd = open(stdin_path, O_RDONLY);
@@ -2176,7 +2333,9 @@ static int64_t thoxa_spawn_wait_impl(
     }
 
     int status = 0;
-    if (waitpid(pid, &status, 0) < 0) {
+    pid_t waited = thoxa_waitpid(pid, &status);
+    thoxa_wait_signals_end(&wait_signals);
+    if (waited < 0) {
         return -1;
     }
     if (WIFEXITED(status)) {
@@ -2368,6 +2527,8 @@ int64_t thoxa_pipeline(const void *stages_blob, int64_t stages_len) {
     int prev_read = -1;
     int fail = 0;
     size_t spawned = 0;
+    ThoxaWaitSignals wait_signals;
+    thoxa_wait_signals_begin(&wait_signals);
     for (size_t s = 0; s < nstages; s++) {
         int pipefd[2] = {-1, -1};
         int is_last = (s + 1 == nstages);
@@ -2387,6 +2548,7 @@ int64_t thoxa_pipeline(const void *stages_blob, int64_t stages_len) {
             break;
         }
         if (pid == 0) {
+            thoxa_child_default_signals();
             if (prev_read >= 0) {
                 if (dup2(prev_read, STDIN_FILENO) < 0) {
                     _exit(127);
@@ -2428,9 +2590,10 @@ int64_t thoxa_pipeline(const void *stages_blob, int64_t stages_len) {
         for (size_t s = 0; s < spawned; s++) {
             if (pids[s] > 0) {
                 int st = 0;
-                (void)waitpid(pids[s], &st, 0);
+                (void)thoxa_waitpid(pids[s], &st);
             }
         }
+        thoxa_wait_signals_end(&wait_signals);
         for (size_t s = 0; s < nstages; s++) {
             free(all_argv[s]);
         }
@@ -2442,7 +2605,7 @@ int64_t thoxa_pipeline(const void *stages_blob, int64_t stages_len) {
 
     for (size_t s = 0; s < nstages; s++) {
         int st = 0;
-        if (waitpid(pids[s], &st, 0) < 0) {
+        if (thoxa_waitpid(pids[s], &st) < 0) {
             last_status = -1;
             continue;
         }
@@ -2454,6 +2617,7 @@ int64_t thoxa_pipeline(const void *stages_blob, int64_t stages_len) {
             last_status = -1;
         }
     }
+    thoxa_wait_signals_end(&wait_signals);
 
     for (size_t s = 0; s < nstages; s++) {
         free(all_argv[s]);
@@ -2466,8 +2630,11 @@ int64_t thoxa_pipeline(const void *stages_blob, int64_t stages_len) {
 
 /* --- Session prompt helpers (D96) --------------------------------------- */
 
+/* Plain statics, not thread-local: the runtime is single-threaded, and code
+ * that libtcc compiles for session steps resolves thread-local storage to the
+ * wrong address (it overwrote the host's own thread-local data). */
 const char *thoxa_local_hms(void) {
-    static _Thread_local char buf[16];
+    static char buf[16];
     time_t t = time(NULL);
     struct tm tm;
     if (localtime_r(&t, &tm) == NULL) {
@@ -2482,7 +2649,7 @@ const char *thoxa_local_hms(void) {
 }
 
 const char *thoxa_hostname(void) {
-    static _Thread_local char buf[256];
+    static char buf[256];
     if (gethostname(buf, sizeof buf) != 0) {
         memcpy(buf, "localhost", 10);
         return buf;
@@ -2759,10 +2926,18 @@ ThoxaString *thoxa_html_render(const ThoxaHtml *n) {
 
 /* --- Cooperative tasks (M:1 fibers) ------------------------------------ */
 
-#define THOXA_FIBER_STACK (128u * 1024u)
+/* Usable stack per task. Pages are committed on first touch, so this is
+ * address space, not resident memory. A PROT_NONE guard page sits below it. */
+#define THOXA_FIBER_STACK (512u * 1024u)
+/* Freed stacks kept for reuse, so a busy server does not mmap per connection. */
+#define THOXA_STACK_POOL 32
+#define THOXA_ACCEPT_BACKOFF_MS 50
+/* 2^62 ns in ms (about 146 years): now_ns + ms * 1e6 stays below INT64_MAX. */
+#define THOXA_WAIT_MS_MAX (INT64_C(4611686018427))
 
 typedef struct ThoxaFiber {
     ucontext_t ctx;
+    /* Start of the mapping: guard page(s), then THOXA_FIBER_STACK bytes. */
     void *stack;
     void (*fn)(void *);
     void *data;
@@ -2833,8 +3008,93 @@ static ThoxaFiber *thoxa_dequeue_ready(void) {
     return f;
 }
 
+static void *thoxa_stack_pool[THOXA_STACK_POOL];
+static int thoxa_stack_pool_count;
+
+static size_t thoxa_guard_size(void) {
+    static size_t page;
+    if (!page) {
+        long size = sysconf(_SC_PAGESIZE);
+        page = size > 0 ? (size_t)size : 4096u;
+    }
+    return page;
+}
+
+static char thoxa_overflow_altstack[64 * 1024];
+
+/* A fault inside the current task's guard page is a stack overflow: say so,
+ * then let the default action end the process. Other faults pass through. */
+static void thoxa_segv_handler(int sig, siginfo_t *info, void *context) {
+    (void)context;
+    if (thoxa_current) {
+        char *guard = (char *)thoxa_current->stack;
+        char *addr = (char *)info->si_addr;
+        if (addr >= guard && addr < guard + thoxa_guard_size()) {
+            static const char msg[] = "thoxa panic: stack overflow in task\n";
+            ssize_t written = write(STDERR_FILENO, msg, sizeof msg - 1);
+            (void)written;
+        }
+    }
+    signal(sig, SIG_DFL);
+}
+
+static void thoxa_install_overflow_handler(void) {
+    static int installed;
+    if (installed) {
+        return;
+    }
+    installed = 1;
+    struct sigaction current;
+    if (sigaction(SIGSEGV, NULL, &current) != 0 || current.sa_handler != SIG_DFL) {
+        return; /* someone else (a sanitizer, a host) owns SIGSEGV */
+    }
+    stack_t alt;
+    alt.ss_sp = thoxa_overflow_altstack;
+    alt.ss_size = sizeof thoxa_overflow_altstack;
+    alt.ss_flags = 0;
+    if (sigaltstack(&alt, NULL) != 0) {
+        return;
+    }
+    struct sigaction action;
+    memset(&action, 0, sizeof action);
+    action.sa_sigaction = thoxa_segv_handler;
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
+    sigemptyset(&action.sa_mask);
+    (void)sigaction(SIGSEGV, &action, NULL);
+}
+
+static void *thoxa_stack_alloc(void) {
+    if (thoxa_stack_pool_count > 0) {
+        return thoxa_stack_pool[--thoxa_stack_pool_count];
+    }
+    size_t guard = thoxa_guard_size();
+    void *map = mmap(
+        NULL,
+        guard + THOXA_FIBER_STACK,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_STACK,
+        -1,
+        0
+    );
+    if (map == MAP_FAILED) {
+        thoxa_panic("out of memory");
+    }
+    if (mprotect(map, guard, PROT_NONE) != 0) {
+        thoxa_panic("mprotect failed for task stack guard");
+    }
+    return map;
+}
+
+static void thoxa_stack_free(void *map) {
+    if (thoxa_stack_pool_count < THOXA_STACK_POOL) {
+        thoxa_stack_pool[thoxa_stack_pool_count++] = map;
+        return;
+    }
+    (void)munmap(map, thoxa_guard_size() + THOXA_FIBER_STACK);
+}
+
 static void thoxa_fiber_free(ThoxaFiber *f) {
-    free(f->stack);
+    thoxa_stack_free(f->stack);
     free(f);
 }
 
@@ -2877,17 +3137,15 @@ void thoxa_task_start(void (*fn)(void *), void *data) {
     if (!f) {
         thoxa_panic("out of memory");
     }
-    f->stack = malloc(THOXA_FIBER_STACK);
-    if (!f->stack) {
-        thoxa_panic("out of memory");
-    }
+    thoxa_install_overflow_handler();
+    f->stack = thoxa_stack_alloc();
     f->fn = fn;
     f->data = data;
     f->wait_fd = -1;
     if (getcontext(&f->ctx) != 0) {
         thoxa_panic("getcontext failed");
     }
-    f->ctx.uc_stack.ss_sp = f->stack;
+    f->ctx.uc_stack.ss_sp = (char *)f->stack + thoxa_guard_size();
     f->ctx.uc_stack.ss_size = THOXA_FIBER_STACK;
     f->ctx.uc_link = &thoxa_sched_ctx;
     makecontext(&f->ctx, thoxa_fiber_entry, 0);
@@ -3046,6 +3304,10 @@ void thoxa_wait_ms(int64_t ms) {
     if (ms < 0) {
         ms = 0;
     }
+    /* Keep now + ms in range; a wrapped deadline would never wake. */
+    if (ms > THOXA_WAIT_MS_MAX) {
+        ms = THOXA_WAIT_MS_MAX;
+    }
     if (!thoxa_current) {
         thoxa_host_idle_until(thoxa_now_ns() + ms * 1000000LL, -1, 0);
         return;
@@ -3137,6 +3399,12 @@ int32_t thoxa_accept(int32_t fd, void *addr, void *addrlen) {
             thoxa_wait_fd(fd, THOXA_WAIT_READ);
             continue;
         }
+        if (errno == EMFILE || errno == ENFILE || errno == ENOBUFS || errno == ENOMEM) {
+            /* Out of descriptors: let other tasks run (and close theirs)
+             * before retrying, instead of spinning on accept. */
+            thoxa_wait_ms(THOXA_ACCEPT_BACKOFF_MS);
+            continue;
+        }
         return -1;
     }
 }
@@ -3166,7 +3434,8 @@ int64_t thoxa_send(int32_t fd, const void *buf, uint64_t len, int32_t flags) {
         return -1;
     }
     for (;;) {
-        ssize_t n = send(fd, buf, (size_t)len, flags);
+        /* MSG_NOSIGNAL: a peer reset is an error return, not SIGPIPE. */
+        ssize_t n = send(fd, buf, (size_t)len, flags | MSG_NOSIGNAL);
         if (n >= 0) {
             return (int64_t)n;
         }

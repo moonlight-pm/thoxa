@@ -404,7 +404,31 @@ enum ConformanceGate {
 }
 
 fn cmd_test() -> i32 {
-    run_conformance(ConformanceGate::Leak)
+    let conformance = run_conformance(ConformanceGate::Leak);
+    // The compiler's own unit tests are the only coverage for the REPL,
+    // libtcc steps, the LSP and diagnostics: run them in the same gate.
+    let unit = run_unit_tests();
+    if conformance != 0 {
+        conformance
+    } else {
+        unit
+    }
+}
+
+fn run_unit_tests() -> i32 {
+    eprintln!("unit tests (cargo test -p thoxa --lib)");
+    let status = Command::new("cargo")
+        .args(["test", "-q", "-p", "thoxa", "--lib"])
+        .current_dir(workspace_root())
+        .status();
+    match status {
+        Ok(s) if s.success() => 0,
+        Ok(s) => s.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("failed to run unit tests: {e}");
+            1
+        }
+    }
 }
 
 fn cmd_test_asan() -> i32 {

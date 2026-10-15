@@ -4,7 +4,14 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-09-04. Interactive REPL: emacs line editor + Tab complete
+**As of:** 2026-10-15. Correctness pass from the 2026-10-14 project review
+(committed): shadowing, method field collection write-back,
+fixed-array bounds, string literal emission, **D157** wrapping Int64 + checked
+`/` `%`, **D158** else-less `if` is Void, **D159** ASCII `\xHH`, **D160**
+session panic/fault recovery + child signals; guarded task stacks, JSON depth
+cap, Map tombstones, amortized append, `send` without SIGPIPE, EMFILE backoff,
+LSP malformed messages; `cargo make test` also runs the Rust unit tests.
+2026-09-04: Interactive REPL: emacs line editor + Tab complete
 (**D156**); no startup banner; default prompt `§ ` (D96). **D155** resource
 `drop()` on last RC (`File` / `Socket` /
 `Db`). **D153** simple-RC **gate is done** (empty `lsan-skip` +
@@ -50,13 +57,26 @@ POSIX login-shell face: `thoxa -c '<chunk>'` and
 process libc via `/proc/self/maps` so NixOS/Oath session steps work
 without `/usr/lib/libc.so`. **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
-(`http_net_err`); bounded ASan pass (88 non-fiber clean; 6 `-->` programs
-excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
+(`http_net_err`); bounded ASan pass (88 non-fiber clean on 2026-09-03, 101 on
+2026-10-14; 6 `-->` programs excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
 early-return drops from the final `drop_places` set; extra-retain `jsx` /
 `multi_clause` / `sqlite`; **D154** callee-owned heap params; nested Array/Map
 lits; overwrite-drop; **D152** match/init RC.
 
 **On master, not product:** none.
+
+**Review follow-ups (open, from 2026-10-14):** containers/landing + sola +
+`examples/http` store keeps a raw `Db` handle that D155 closes (sign-ups fail
+— sites deferred by Joshua); `std/http/server` has no header / idle deadlines
+or connection cap; `Db(handle:)` lets code double-close a resource; session
+`let` replay vs “lifted once”; Ctrl-C in a pure-Thoxa loop; command-or-Thoxa
+guess (`x + 1`, `sleep 1`); a line starting with `-` continues the previous
+expression; mutating method on an immutable `let`; narrowing conversions
+truncate silently (`Byte(300)` is 44); shifts ≥ 64; `Address<T>` parameters
+emit C that does not compile; redefining a session `fn` is an error, not a
+replacement; `extras/shell` fails `check` (`May__String` monomorph missing,
+already broken at e4a0677); no CI; and `AGENTS.md` vs this file disagree on
+committing.
 
 ### Proceed order
 
@@ -72,9 +92,8 @@ lits; overwrite-drop; **D152** match/init RC.
 3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, cycle
    collector. Multi-logger (`initLog`) is trajectory under D125, not a
    CURRENT line until samples force it. Perceus is **not unparked**.
-   Remaining named-later runtime: fiber stack guard pages (session/libtcc
-   sanitizer stays parked with session). `drop` on unions / C-layout is
-   out of D155 v0.
+   Session/libtcc sanitizer stays parked with session (task stack guard
+   pages shipped 2026-10-14). `drop` on unions / C-layout is out of D155 v0.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
@@ -137,7 +156,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. No JSON/form bind; no fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Resource `drop` | Product `fn drop()` on last RC (**D155**). Heap box; copies share. `File` / `Socket` / `Db` close in `drop`. Explicit `close` stays inert. No unions / C-layout / multi-clause `drop`. Not Perceus. |
-| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Heap params owned (**D154**). If/match result places overwrite-drop. `tests/conformance/lsan-skip` is empty (ratchet). Bounded ASan (**D153**, 2026-09-03): 88 non-fiber programs clean; `cargo make test-asan` is optional, not the default (ucontext fibers in `asan-skip`). `thoxa_alloc` panics on size wrap; `Socket.close` clears `fd`. Resource `drop` **D155**. Not Perceus. Session/libtcc unsanitized. |
+| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Heap params owned (**D154**). If/match result places overwrite-drop. `tests/conformance/lsan-skip` is empty (ratchet). Bounded ASan (**D153**, 2026-09-03): 88 non-fiber programs clean (101 on 2026-10-14); `cargo make test-asan` is optional, not the default (ucontext fibers in `asan-skip`). `thoxa_alloc` panics on size wrap; `Socket.close` clears `fd`. Resource `drop` **D155**. Not Perceus. Session/libtcc unsanitized. |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
 | Diagnostics | Structured IR → pretty check + `--json` + rich LSP (**D124** shipped); agent-only extras parked |

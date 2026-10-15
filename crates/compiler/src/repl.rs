@@ -300,30 +300,18 @@ fn is_tty_stdin() -> bool {
 }
 
 fn needs_more(chunk: &str) -> bool {
+    // Same scan as the rc splitter: `#` starts a comment, so an apostrophe in
+    // `# don't` does not open a quote and swallow the following lines.
     let mut depth = 0i32;
     let mut in_str = false;
     let mut quote = b'\0';
     let mut esc = false;
-    for &b in chunk.as_bytes() {
-        if in_str {
-            if esc {
-                esc = false;
-            } else if b == b'\\' {
-                esc = true;
-            } else if b == quote {
-                in_str = false;
-            }
-            continue;
-        }
-        match b {
-            b'"' | b'\'' => {
-                in_str = true;
-                quote = b;
-            }
+    for line in chunk.lines() {
+        crate::command::for_each_code_byte(line, &mut in_str, &mut quote, &mut esc, |b| match b {
             b'{' => depth += 1,
             b'}' => depth -= 1,
             _ => {}
-        }
+        });
     }
     in_str || depth > 0
 }
@@ -715,6 +703,9 @@ fn thoxa_string_lit(s: &str) -> String {
         match c {
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
+            // Literal text: braces must not start an interpolation.
+            '{' => out.push_str("{{"),
+            '}' => out.push_str("}}"),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
@@ -741,9 +732,15 @@ fn run_chunk(
 ) -> Result<ChunkOutcome> {
     let trimmed = chunk.trim();
 
-    // Declaration-only chunk: accumulate, do not exec.
+    // Declaration-only chunk: accumulate, do not exec. Compile it first: a bad
+    // declaration kept in `decls` would fail every later line until restart.
     if is_decl_chunk(trimmed) {
         decls.push(chunk.to_string());
+        // Compile only (never run): a trivial step over the new decls.
+        if let Err(error) = driver::build_session_step(decls, "logging.toStdout()\n", cache) {
+            decls.pop();
+            return Err(error);
+        }
         return Ok(ChunkOutcome {
             status: 0,
             decls_changed: true,
@@ -983,6 +980,60 @@ logging.info("from-rc-apostrophe")
         let after = run_chunk("echo after-decl", &mut decls, 0, &mut cache, &mut loaded)
             .expect("echo after decl");
         assert_eq!(after.status, 0);
+    }
+
+    #[test]
+    fn bad_declaration_is_rejected_and_not_kept() {
+        let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        driver::capture_toolchain_path();
+        let bad = run_chunk(
+            "let broken = undefinedThing",
+            &mut decls,
+            0,
+            &mut cache,
+            &mut loaded,
+        );
+        assert!(bad.is_err(), "undefined name in a let must be reported");
+        assert!(decls.is_empty(), "a rejected declaration must not be kept");
+        let after = run_chunk("echo still-fine", &mut decls, 0, &mut cache, &mut loaded)
+            .expect("lines after a rejected declaration still run");
+        assert_eq!(after.status, 0);
+    }
+
+    #[test]
+    fn panic_in_a_line_returns_status_instead_of_ending_the_shell() {
+        let mut decls = Vec::new();
+        let mut cache = SessionBuildCache::default();
+        let mut loaded = None;
+        driver::capture_toolchain_path();
+        let crashed = run_chunk(
+            "logging.info(\"{[1, 2][5]}\")",
+            &mut decls,
+            0,
+            &mut cache,
+            &mut loaded,
+        )
+        .expect("compiles; panics at run time");
+        assert_eq!(crashed.status, 134);
+        let after = run_chunk("echo after-panic", &mut decls, 0, &mut cache, &mut loaded)
+            .expect("next line runs");
+        assert_eq!(after.status, 0);
+    }
+
+    #[test]
+    fn apostrophe_in_comment_does_not_continue_the_line() {
+        assert!(!needs_more("echo hi # don't wait for more"));
+        assert!(needs_more("fn f() {"));
+        assert!(needs_more("echo 'open"));
+    }
+
+    #[test]
+    fn command_words_keep_braces_literal() {
+        let words = vec!["{print $2}".to_string(), "a}b{c".to_string()];
+        let lit = super::thoxa_string_array_lit(&words);
+        assert_eq!(lit, "[\"{{print $2}}\", \"a}}b{{c\"]");
     }
 
     #[test]

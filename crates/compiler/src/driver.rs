@@ -104,15 +104,24 @@ fn discover_workspace_root() -> PathBuf {
     if let Ok(root) = std::env::var("THOXA_ROOT") {
         return PathBuf::from(root);
     }
-    // Walk up looking for workspace Cargo.toml that lists crates/compiler
-    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    loop {
-        let marker = dir.join("crates/compiler/Cargo.toml");
-        if marker.is_file() {
-            return dir;
-        }
-        if !dir.pop() {
-            break;
+    // Walk up looking for workspace Cargo.toml that lists crates/compiler: first
+    // from the working directory, then from the binary itself, so an installed
+    // `thoxa` (symlink into target/rust/…) works outside the repo.
+    let starts = [
+        std::env::current_dir().ok(),
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(Path::to_path_buf)),
+    ];
+    for start in starts.into_iter().flatten() {
+        let mut dir = start;
+        loop {
+            if dir.join("crates/compiler/Cargo.toml").is_file() {
+                return dir;
+            }
+            if !dir.pop() {
+                break;
+            }
         }
     }
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
@@ -219,7 +228,7 @@ fn session_scratch_dir() -> PathBuf {
 
 fn compile_c_object(src: &Path, obj: &Path, includes: &[&Path], extra_defs: &[&str]) -> Result<()> {
     let mut cmd = host_tool("cc");
-    cmd.args(["-std=c11", "-O2", "-fPIC", "-c"]);
+    cmd.args(["-std=c11", "-O2", "-fwrapv", "-fPIC", "-c"]);
     for def in extra_defs {
         cmd.arg(def);
     }
@@ -431,10 +440,11 @@ fn sanitize_bin_dir_name(mode: SanitizeMode) -> &'static str {
 
 fn sanitize_cc_args(mode: SanitizeMode) -> &'static [&'static str] {
     match mode {
-        SanitizeMode::None => &["-std=c11", "-O2"],
+        SanitizeMode::None => &["-std=c11", "-O2", "-fwrapv"],
         SanitizeMode::Leak => &[
             "-std=c11",
             "-O1",
+            "-fwrapv",
             "-g",
             "-fno-omit-frame-pointer",
             "-fsanitize=leak",
@@ -442,6 +452,7 @@ fn sanitize_cc_args(mode: SanitizeMode) -> &'static [&'static str] {
         SanitizeMode::Address => &[
             "-std=c11",
             "-O1",
+            "-fwrapv",
             "-g",
             "-fno-omit-frame-pointer",
             "-fsanitize=address",
@@ -646,7 +657,11 @@ pub fn run(opts: &BuildOptions) -> Result<i32> {
         .stderr(Stdio::inherit())
         .status()
         .map_err(|e| Error::new(format!("failed to execute {}: {e}", bin.display())))?;
-    Ok(status.code().unwrap_or(1))
+    // A program killed by a signal reports 128 + signal, as a shell does.
+    use std::os::unix::process::ExitStatusExt;
+    Ok(status
+        .code()
+        .unwrap_or_else(|| status.signal().map_or(1, |signal| 128 + signal)))
 }
 
 fn output_stem(opts: &BuildOptions) -> String {
@@ -699,6 +714,9 @@ pub struct SessionBuildCache {
     mir: Option<mir::SessionMirCache>,
     /// Relocatable object of `emit_session_base` for the current decls.
     base_object: Option<PathBuf>,
+    /// Modification time of every module file in [`prepared`](Self::prepared)
+    /// (imports and `std/`), so an edit on disk invalidates the cache.
+    source_stamps: Vec<(PathBuf, Option<std::time::SystemTime>)>,
 }
 
 impl Default for SessionBuildCache {
@@ -710,8 +728,30 @@ impl Default for SessionBuildCache {
             prepared: None,
             mir: None,
             base_object: None,
+            source_stamps: Vec::new(),
         }
     }
+}
+
+fn module_source_stamps(
+    package: &loader::Package,
+) -> Vec<(PathBuf, Option<std::time::SystemTime>)> {
+    package
+        .modules
+        .iter()
+        .map(|module| {
+            let modified = fs::metadata(&module.path).and_then(|m| m.modified()).ok();
+            (module.path.clone(), modified)
+        })
+        .collect()
+}
+
+/// True when no module file behind the cached package changed on disk.
+fn session_sources_unchanged(cache: &SessionBuildCache) -> bool {
+    cache
+        .source_stamps
+        .iter()
+        .all(|(path, stamp)| fs::metadata(path).and_then(|m| m.modified()).ok() == *stamp)
 }
 
 impl Drop for SessionBuildCache {
@@ -743,12 +783,21 @@ struct ThoxaShellState {
 
 type SessionStepFn = unsafe extern "C" fn(*mut ThoxaShellState) -> i64;
 
+/// `thoxa_session_call` in the step image's runtime: runs the step and turns a
+/// panic or fault inside it into a status instead of ending the shell.
+type SessionCallFn = unsafe extern "C" fn(
+    step: unsafe extern "C" fn(*mut std::ffi::c_void) -> i64,
+    state: *mut std::ffi::c_void,
+    crashed: *mut i32,
+) -> i64;
+
 /// Built session step ready to call. Owns the libtcc image (D105).
 pub struct SessionStepLib {
     /// Must outlive `step`.
     #[cfg(thoxa_libtcc)]
     _tcc: crate::tcc::State,
     step: SessionStepFn,
+    guard: SessionCallFn,
 }
 
 // REPL is single-threaded; state is process-local.
@@ -760,7 +809,18 @@ impl SessionStepLib {
         let mut state = ThoxaShellState {
             status: prev_status as i64,
         };
-        unsafe { (self.step)(&mut state) as i32 }
+        let mut crashed: i32 = 0;
+        // The guard's sigsetjmp/siglongjmp stay inside C frames (guard → step →
+        // runtime); no Rust frame is skipped.
+        unsafe {
+            let step: unsafe extern "C" fn(*mut std::ffi::c_void) -> i64 =
+                std::mem::transmute(self.step);
+            (self.guard)(
+                step,
+                (&mut state as *mut ThoxaShellState).cast(),
+                &mut crashed,
+            ) as i32
+        }
     }
 }
 
@@ -781,7 +841,9 @@ pub fn build_session_step(
     let profile = std::env::var_os("THOXA_REPL_PROFILE").is_some();
     let started = std::time::Instant::now();
     let key = decls_cache_key(decls);
-    let program = if cache.decls_key.as_deref() == Some(key.as_str()) {
+    let reusable =
+        cache.decls_key.as_deref() == Some(key.as_str()) && session_sources_unchanged(cache);
+    let program = if reusable {
         if let Some(prepared) = cache.prepared.clone() {
             match crate::session::parse_session_chunk_stmts(chunk) {
                 Ok(stmts) => {
@@ -858,6 +920,7 @@ fn lower_session_package_fresh(
     crate::session::prepare_package(&mut package)?;
     let mir_cache = mir::lower_session_repl(&package)?;
     let program = mir_cache.program.clone();
+    cache.source_stamps = module_source_stamps(&package);
     cache.decls_key = Some(decls_cache_key(decls));
     cache.prepared = Some(package);
     cache.mir = Some(mir_cache);
@@ -875,7 +938,12 @@ fn build_session_step_libtcc(
     let dir = session_scratch_dir();
     if keep_session_c() {
         fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
-        let step_path = dir.join(format!("session_step_{}_{}.c", cache.id, cache.gen));
+        let step_path = dir.join(format!(
+            "session_step_{}_{}_{}.c",
+            std::process::id(),
+            cache.id,
+            cache.gen
+        ));
         fs::write(&step_path, &step_c).map_err(|e| Error::new(e.to_string()))?;
     }
 
@@ -897,7 +965,13 @@ fn build_session_step_libtcc(
     }
     let sym = tcc.symbol("thoxa_session_step")?;
     let step: SessionStepFn = unsafe { std::mem::transmute(sym) };
-    Ok(SessionStepLib { _tcc: tcc, step })
+    let guard_sym = tcc.symbol("thoxa_session_call")?;
+    let guard: SessionCallFn = unsafe { std::mem::transmute(guard_sym) };
+    Ok(SessionStepLib {
+        _tcc: tcc,
+        step,
+        guard,
+    })
 }
 
 #[cfg(thoxa_libtcc)]
@@ -915,10 +989,21 @@ fn ensure_session_base_object(
     let dir = session_scratch_dir();
     fs::create_dir_all(&dir).map_err(|e| Error::new(e.to_string()))?;
     if keep_session_c() {
-        let base_path = dir.join(format!("session_base_{}_{}.c", cache.id, cache.gen));
+        let base_path = dir.join(format!(
+            "session_base_{}_{}_{}.c",
+            std::process::id(),
+            cache.id,
+            cache.gen
+        ));
         fs::write(&base_path, &base_c).map_err(|e| Error::new(e.to_string()))?;
     }
-    let obj = dir.join(format!("session_base_{}.o", cache.id));
+    // The directory is shared by every shell: name files by process too, or
+    // two shells (both cache id 1) would link each other's compiled decls.
+    let obj = dir.join(format!(
+        "session_base_{}_{}.o",
+        std::process::id(),
+        cache.id
+    ));
     crate::tcc::compile_object_file(
         crate::tcc::CompileOptions {
             include_paths: vec![include],

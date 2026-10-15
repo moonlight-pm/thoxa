@@ -9,7 +9,37 @@ use thoxa::driver::{self, BuildOptions};
 use thoxa::error::Error;
 use thoxa::lsp;
 
+/// Parsing and lowering recurse over the AST. Batch commands run on a thread
+/// with a large stack (address space; pages are committed only as used) so a
+/// deep but legal program does not overflow the 8 MiB main-thread stack.
+const CLI_STACK_BYTES: usize = 256 * 1024 * 1024;
+
 fn main() -> ExitCode {
+    // Session steps (REPL, `-c`) run libtcc-compiled code in this process, and
+    // that code addresses thread-local storage as the main thread's: run them
+    // on the main thread or they corrupt the worker's TLS.
+    let session = matches!(
+        env::args().nth(1).as_deref(),
+        None | Some("-l" | "--login" | "-" | "-c" | "repl")
+    );
+    if session {
+        return run_cli();
+    }
+    let worker = std::thread::Builder::new()
+        .name("thoxa".into())
+        .stack_size(CLI_STACK_BYTES)
+        .spawn(run_cli);
+    match worker {
+        Ok(handle) => match handle.join() {
+            Ok(code) => code,
+            Err(panic) => std::panic::resume_unwind(panic),
+        },
+        // Could not reserve the large stack: run on the main thread instead.
+        Err(_) => run_cli(),
+    }
+}
+
+fn run_cli() -> ExitCode {
     match try_main() {
         Ok(code) => ExitCode::from(code as u8),
         Err(e) => {
@@ -24,7 +54,9 @@ fn main() -> ExitCode {
                     if i > 0 {
                         eprintln!();
                     }
-                    eprint!("{}", diagnostic::format_pretty(d, None));
+                    // Spans are offsets into the diagnostic's file: read it for line:col + snippet.
+                    let source = d.path.as_ref().and_then(|p| fs::read_to_string(p).ok());
+                    eprint!("{}", diagnostic::format_pretty(d, source.as_deref()));
                 }
             }
             ExitCode::from(1)

@@ -483,12 +483,16 @@ fn array_lit(parts: &[String]) -> String {
     s
 }
 
+/// Thoxa string literal body for a command word. Words are literal text, so
+/// `{` / `}` are doubled: `awk '{print $2}'` must not become an interpolation.
 fn escape_thoxa_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
+            '{' => out.push_str("{{"),
+            '}' => out.push_str("}}"),
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
             '\r' => out.push_str("\\r"),

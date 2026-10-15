@@ -1,0 +1,39 @@
+## std/json decode caps nesting at 128 levels, so hostile input cannot
+## exhaust a task's fixed stack. Decoding inside a `-->` task included.
+import { decode } from "std/json"
+import { repeat } from "std/str"
+import { Pass, Fail } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn nested(depth!: Int64) -> String {
+    let opens = repeat("[", depth)
+    let closes = repeat("]", depth)
+    "{opens}{closes}"
+}
+
+fn attempt(label!: String, depth!: Int64) {
+    match decode(nested(depth)) {
+        Pass(_) => info("{label} {depth}: ok")
+        Fail(error) => info("{label} {depth}: {error}")
+    }
+}
+
+fn inTask(depth!: Int64) {
+    attempt("task", depth)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    attempt("main", 128)
+    attempt("main", 129)
+    attempt("main", 100000)
+    attempt("main", 1)
+    --> inTask(128)
+    --> inTask(5000)
+    match decode("[{{\"a\": [{{\"b\": 1}}]}}]") {
+        Pass(_) => info("mixed: ok")
+        Fail(error) => info("mixed: {error}")
+    }
+    0
+}

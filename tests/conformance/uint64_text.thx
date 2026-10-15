@@ -1,0 +1,15 @@
+## UInt64 values interpolate as unsigned decimal, not through Int64.
+import logging, { info } from "std/logging"
+
+fn asUnsigned(value!: Int64) -> UInt64 {
+    return value
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let allOnes = 0 - 1
+    info("max={asUnsigned(allOnes)}")
+    info("seven={asUnsigned(7)}")
+    0
+}

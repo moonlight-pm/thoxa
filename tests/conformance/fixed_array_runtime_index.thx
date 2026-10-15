@@ -1,0 +1,34 @@
+## Fixed Array<T, N> reads and writes with a runtime index go through a bounds
+## check (an index outside 0..N-1 panics instead of writing past the array).
+import logging, { info } from "std/logging"
+
+type Grid {
+    mut cells: Array<Int64, 4>
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut squares: Array<Int64, 5> = [0, 0, 0, 0, 0]
+    mut index = 0
+    while index < 5 {
+        squares[index] = index * index
+        index = index + 1
+    }
+    mut sum = 0
+    index = 0
+    while index < 5 {
+        sum = sum + squares[index]
+        index = index + 1
+    }
+    info("sum of squares={sum}")
+    mut grid = Grid()
+    index = 0
+    while index < 4 {
+        grid.cells[index] = 10 + index
+        index = index + 1
+    }
+    let last = 3
+    info("cells={grid.cells[0]},{grid.cells[last]}")
+    0
+}

@@ -19,6 +19,15 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-14 — Correctness pass (project review)
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D157 | Int64 overflow and division | Arithmetic wraps (two's complement): every `cc` build passes `-fwrapv`, so overflow is defined instead of C undefined behaviour. `/` and `%` by zero panic (`division by zero`); `INT64_MIN / -1` wraps, `% -1` is 0. `a..=b` stops after `b`, so `..= INT64_MAX` ends. | **Shipped.** Gate: `int_semantics`. Trap-on-overflow (checked arithmetic) is not adopted; reopen as its own D-id if wanted. Shifts by ≥ 64 or < 0 remain undefined (not yet decided). |
+| D158 | `if` without `else` has no value | An `if` with no `else` is a Void statement. Using it where a value is expected (a typed function tail, `let x: T = if …`) is a type error, not a zero / NULL on the false path. | **Shipped.** Replaces the old rule that gave it the then-branch type. Surfaced `std/ansi` `hexNibble`, whose trailing `-1` parsed as `if … - 1` (a line starting with `-` continues the previous expression — not changed here). |
+| D159 | `\xHH` in String literals is ASCII | `\x00`–`\x7F` only; higher bytes are a lex error (Strings are UTF-8; one high byte is not a character — write the character or build `Bytes`). | **Shipped.** Gate: `string_escapes`. Before, `\xff` silently became two UTF-8 bytes. |
+| D160 | A crash inside a session line does not end the shell | Session steps run through runtime `thoxa_session_call`: a panic returns status 134, a fault (SIGSEGV / SIGBUS / SIGFPE / SIGILL) returns 128 + signal, and the shell keeps running; memory held by the abandoned step leaks. Spawned children start with default SIGPIPE / SIGINT / SIGQUIT, and the parent ignores SIGINT / SIGQUIT while it waits (the system(3) rule). Batch programs still abort on panic. | **Shipped.** Gate: `repl::panic_in_a_line_returns_status_instead_of_ending_the_shell`. Ctrl-C during a pure-Thoxa loop (no child) still ends the shell: interrupting at an arbitrary point could leave malloc locked. |
+
 ## 2026-09-04 — Session line editor
 
 | ID | Decision | Choice | Notes |

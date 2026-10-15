@@ -450,7 +450,13 @@ export fn parseUInt(s!: String) -> May<Int64> {
                 ok = false
                 break
             }
-            val = val * 10 + (c - 48)
+            let digit = c - 48
+            ## Above Int64 max is Not, never a wrapped negative.
+            if val > (9223372036854775807 - digit) / 10 {
+                ok = false
+                break
+            }
+            val = val * 10 + digit
             i = i + 1
         }
         if ok {

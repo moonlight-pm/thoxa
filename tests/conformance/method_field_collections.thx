@@ -1,0 +1,51 @@
+## D107 write-back for collection fields: `items.append(x)`, `items[i] = x`,
+## `tags[k] = v` and `tags.remove(k)` inside a method change the receiver's
+## field, not only a local copy. A copy taken before the call does
+## not see the change (D133).
+import logging, { info } from "std/logging"
+
+type Bag(items: Array<String>, tags: Map<String, Int64>) {
+    export fn add(item: String) {
+        items.append(item)
+    }
+    export fn setFirst(item: String) {
+        items[0] = item
+    }
+    export fn tag(key: String) {
+        tags[key] = tags.count + 1
+    }
+    export fn untag(key: String) {
+        tags.remove(key)
+    }
+    export fn addTwice(item: String) {
+        items.append(item)
+        items.append(item)
+    }
+    export fn summary() -> String {
+        "{items.count} items, first {items[0]}, {tags.count} tags"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let empty: Map<String, Int64> = Map()
+    mut bag = Bag(items: ["first"], tags: empty)
+    let before = bag
+    bag.add("second")
+    bag.setFirst("zero")
+    bag.tag("red")
+    bag.tag("blue")
+    bag.untag("red")
+    info(bag.summary())
+    info(before.summary())
+    bag.addTwice("x")
+    info(bag.summary())
+    mut index = 0
+    while index < 1000 {
+        bag.add("n{index}")
+        index = index + 1
+    }
+    info(bag.summary())
+    0
+}

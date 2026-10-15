@@ -1,0 +1,54 @@
+## `?` in a later argument returns before the call: the copies already made
+## for earlier arguments are still dropped (LeakSanitizer gate). After a call,
+## moved arguments are empty and dropping them again is a no-op.
+import { Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn parse(text!: String) -> Trial<String, String> {
+    if text == "bad" {
+        Fail("bad input")
+    } else {
+        Pass(text)
+    }
+}
+
+fn join(left!: String, right!: String) -> String {
+    "{left}+{right}"
+}
+
+fn build(label!: String, text!: String) -> Trial<String, String> {
+    let joined = join(label, parse(text)?)
+    Pass(joined)
+}
+
+fn buildMany(labels!: Array<String>, text!: String) -> Trial<Int64, String> {
+    mut total = 0
+    for label in labels {
+        let joined = join(label, parse(text)?)
+        total = total + joined.count
+    }
+    Pass(total)
+}
+
+fn show(result!: Trial<String, String>) {
+    match result {
+        Pass(value) => info("ok {value}")
+        Fail(error) => info("err {error}")
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    show(build("label", "bad"))
+    show(build("label", "good"))
+    match buildMany(["a", "bb", "ccc"], "x") {
+        Pass(total) => info("total {total}")
+        Fail(error) => info("err {error}")
+    }
+    match buildMany(["a", "bb"], "bad") {
+        Pass(total) => info("total {total}")
+        Fail(error) => info("err {error}")
+    }
+    0
+}

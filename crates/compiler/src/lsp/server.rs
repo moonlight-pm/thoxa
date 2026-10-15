@@ -7,7 +7,7 @@ use crate::lsp::analysis::{self, check_and_returns_with_overlays};
 use crate::lsp::convert::{self, TOKEN_MODIFIERS, TOKEN_TYPES};
 use crate::lsp::crossmodule::{self, resolve_remote};
 use crate::lsp::index::{self, build_index, DocumentIndex};
-use crate::lsp::protocol::{read_message, write_message};
+use crate::lsp::protocol::{read_incoming, write_message, Incoming};
 use crate::resolver::{Binding, BindingKind};
 use crate::span::{self, Span};
 use serde_json::{json, Value};
@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 const METHOD_NOT_FOUND: i64 = -32601;
 const INTERNAL_ERROR: i64 = -32603;
+const PARSE_ERROR: i64 = -32700;
 
 /// Run the language server on stdin/stdout. Returns process exit code.
 pub fn run() -> i32 {
@@ -69,9 +70,15 @@ impl Server {
         writer: &mut W,
     ) -> io::Result<i32> {
         loop {
-            let msg = match read_message(reader)? {
-                Some(m) => m,
-                None => return Ok(0),
+            let msg = match read_incoming(reader)? {
+                Incoming::Message(m) => m,
+                Incoming::Eof => return Ok(0),
+                Incoming::Malformed(reason) => {
+                    // One bad message must not end the session (JSON-RPC -32700).
+                    eprintln!("thoxa-lsp: dropped malformed message: {reason}");
+                    let _ = self.send_error(writer, Value::Null, PARSE_ERROR, &reason);
+                    continue;
+                }
             };
             let method = msg
                 .get("method")

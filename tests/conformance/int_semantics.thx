@@ -1,0 +1,36 @@
+## Int64 overflow wraps (cc -fwrapv); `/` and `%` are checked; `..=` stops at its end.
+import logging, { info } from "std/logging"
+
+fn bump(value!: Int64) -> Int64 {
+    value + 1
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let max = 9223372036854775807
+    let min = 0 - max - 1
+    info("wrap={bump(max) == min}")
+    info("grows={bump(max) > max}")
+    info("div={0 - 7 / 2} rem={(0 - 7) % 2}")
+    info("min/-1={min / (0 - 1) == min} min%-1={min % (0 - 1)}")
+    mut count = 0
+    for index in max - 2..=max {
+        count = count + 1
+    }
+    info("inclusive-to-max={count}")
+    mut evens = 0
+    for index in 0..=5 {
+        if index % 2 == 1 {
+            continue
+        }
+        evens = evens + index
+    }
+    info("evens={evens}")
+    mut none = 0
+    for index in 3..=2 {
+        none = none + 1
+    }
+    info("empty={none}")
+    0
+}

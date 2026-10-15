@@ -54,7 +54,7 @@ export fn decode(s!: String) -> Trial<Json, String> {
     if p >= b.count {
         Fail("empty input")
     } else {
-        let got = parseValue(b, p)?
+        let got = parseValue(b, p, 0)?
         let end = skipWs(b, got.pos)
         if end != b.count {
             Fail("trailing junk")
@@ -341,7 +341,11 @@ fn encodeObj(m!: Map<String, Json>) -> String {
 
 ## --- parse ----------------------------------------------------------------
 
-fn parseValue(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
+## Arrays and objects nest at most this deep. Each level is a native call,
+## and a task's stack is fixed, so hostile input must not recurse without bound.
+let maxDepth = 128
+
+fn parseValue(b!: Bytes, pos!: Int64, depth!: Int64) -> Trial<Parsed, String> {
     let p = skipWs(b, pos)
     if p >= b.count {
         Fail("unexpected end")
@@ -352,8 +356,8 @@ fn parseValue(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
             116 => parseLit(b, p, "true", JBool(true))
             102 => parseLit(b, p, "false", JBool(false))
             34 => parseString(b, p)
-            91 => parseArray(b, p)
-            123 => parseObject(b, p)
+            91 => parseArray(b, p, depth + 1)
+            123 => parseObject(b, p, depth + 1)
             else {
                 if isNumberStart(c) {
                     parseNumber(b, p)
@@ -378,7 +382,10 @@ fn parseLit(b!: Bytes, pos!: Int64, lit!: String, value!: Json) -> Trial<Parsed,
     }
 }
 
-fn parseArray(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
+fn parseArray(b!: Bytes, pos!: Int64, depth!: Int64) -> Trial<Parsed, String> {
+    if depth > maxDepth {
+        return Fail("nested too deep")
+    }
     mut p = skipWs(b, pos + 1)
     if p >= b.count {
         Fail("unexpected end")
@@ -389,7 +396,7 @@ fn parseArray(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
         } else {
             mut items: Array<Json> = []
             loop {
-                let got = parseValue(b, p)?
+                let got = parseValue(b, p, depth)?
                 items.append(got.value)
                 p = skipWs(b, got.pos)
                 if p >= b.count {
@@ -415,7 +422,10 @@ fn parseArray(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
     }
 }
 
-fn parseObject(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
+fn parseObject(b!: Bytes, pos!: Int64, depth!: Int64) -> Trial<Parsed, String> {
+    if depth > maxDepth {
+        return Fail("nested too deep")
+    }
     mut p = skipWs(b, pos + 1)
     if p >= b.count {
         Fail("unexpected end")
@@ -441,7 +451,7 @@ fn parseObject(b!: Bytes, pos!: Int64) -> Trial<Parsed, String> {
                 if b.get(p) != 58 {
                     return Fail("expected ':'")
                 }
-                let got = parseValue(b, p + 1)?
+                let got = parseValue(b, p + 1, depth)?
                 fields.set(key.text, got.value)
                 p = skipWs(b, got.pos)
                 if p >= b.count {

@@ -1,0 +1,7 @@
+wrap=true
+grows=false
+div=-3 rem=-1
+min/-1=true min%-1=0
+inclusive-to-max=3
+evens=6
+empty=0

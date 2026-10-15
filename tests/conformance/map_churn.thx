@@ -1,0 +1,33 @@
+## Filling and emptying a Map many times reuses its storage. Tombstones are
+## cleared in place; before, each cleanup doubled capacity until out of memory.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut cache: Map<String, Int64> = Map()
+    mut round = 0
+    while round < 20000 {
+        cache["key{round}"] = round
+        cache.remove("key{round}")
+        round = round + 1
+    }
+    info("after churn: {cache.count}")
+    cache["kept"] = 7
+    mut index = 0
+    while index < 1000 {
+        cache["k{index}"] = index
+        index = index + 1
+    }
+    index = 0
+    while index < 1000 {
+        cache.remove("k{index}")
+        index = index + 1
+    }
+    match cache.get("kept") {
+        Has(value) => info("kept={value} count={cache.count}")
+        Not => info("kept missing")
+    }
+    0
+}

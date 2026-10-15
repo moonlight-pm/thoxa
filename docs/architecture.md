@@ -5,7 +5,7 @@ and build layout. Target design lives in freezes under [`specs/`](specs/).
 Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-09-04 (session compile cache: re-lower `Shell.step` + libtcc base `.o`; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
+**As of:** 2026-10-14 (batch CLI on a large-stack thread; session steps run through `thoxa_session_call`; guarded task stacks; no `_Thread_local` in the runtime; 2026-09-04: session compile cache: re-lower `Shell.step` + libtcc base `.o`; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
 `containers/landing` thoxa.dev live; `containers/sola` sola.computer live;
 `containers/oath` oath.wicket.cloud live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
@@ -102,6 +102,15 @@ Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are gone.
   debug C: `THOXA_REPL_KEEP_C=1`. Freeze:
   [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
   (D105). Soft perf (release, after first line): ~**6 ms/step** (freeze §8.2).
+  The cache key is decls plus module file mtimes; the base `.o` is named
+  `session_base_<pid>_<id>.o`. Each step runs through the image's runtime
+  `thoxa_session_call` (sigsetjmp; panic → 134, fault → 128 + signal; handlers
+  and alt stack restored after the step, **D160**). The REPL and `-c` stay on
+  the process main thread: libtcc-compiled code resolves thread-local storage
+  as the main thread's, so the runtime keeps no `_Thread_local` data.
+- **Batch CLI** (`run` / `build` / `check` / `emit-c` / `lsp`) runs on a worker
+  thread with a 256 MiB stack, so deep but legal ASTs do not overflow; the
+  parser caps expression nesting at 1000 levels.
 
 ## Build products
 
@@ -149,9 +158,17 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
   `thoxa_wait_ms` / `thoxa_wait_fd` / `thoxa_sched_drain` — one OS thread,
   stackful fibers; poll + timers. `std/net` accept/connect/recv/send go
   through `thoxa_*` and park on EAGAIN. Generated `main` drains after
-  `thoxa_fn_main`. RC stays non-atomic.
+  `thoxa_fn_main`. RC stays non-atomic. Task stacks: 512 KiB mmap'd with a
+  PROT_NONE guard page, pooled for reuse; a SIGSEGV in the guard prints
+  `stack overflow in task`. `accept` waits 50 ms on EMFILE / ENFILE; `send`
+  passes `MSG_NOSIGNAL`.
+- Integer `/` and `%` call `thoxa_int_div` / `thoxa_int_rem` (panic on zero);
+  fixed-array subscripts go through `thoxa_fixed_index`; programs build with
+  `-fwrapv` (**D157**). `thoxa_panic` is `noreturn`.
 - Extern from `"c"` (+ optional C symbol); cgen pulls headers when needed.
 - Spawn helper `thoxa_spawn_wait` used by session Shell / dogfood shell.
+  Children reset SIGPIPE / SIGINT / SIGQUIT to default; the parent ignores
+  SIGINT / SIGQUIT while it waits (**D160**).
 - Spawn+IO `thoxa_spawn_wait_io` for session `>` / `>>` / `<` (`Shell.runIo`).
 - Pipeline helper `thoxa_pipeline` (multi-stage pipe/fork/execvp; last-stage
   status) used by `Shell.pipeline` / command sugar `a | b`.

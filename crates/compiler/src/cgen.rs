@@ -1208,6 +1208,7 @@ fn emit_stmts(
                 index,
                 ty,
                 value,
+                len,
             } => {
                 let acc = recv_access(base, boxed);
                 let _ = writeln!(
@@ -1216,7 +1217,7 @@ fn emit_stmts(
                     base.name,
                     acc,
                     field,
-                    index.name,
+                    checked_fixed_index(&index.name, *len),
                     c_ty(ty),
                     value.name
                 );
@@ -1226,12 +1227,13 @@ fn emit_stmts(
                 index,
                 ty,
                 value,
+                len,
             } => {
                 let _ = writeln!(
                     out,
                     "{pad}{}[{}] = ({}){};",
                     base.name,
-                    index.name,
+                    checked_fixed_index(&index.name, *len),
                     c_ty(ty),
                     value.name
                 );
@@ -1326,13 +1328,22 @@ fn emit_stmts(
                 inclusive,
                 body,
             } => {
-                let cmp = if *inclusive { "<=" } else { "<" };
                 // Index already initialized to the range start before this stmt.
-                let _ = writeln!(
-                    out,
-                    "{pad}for (; {} {} {}; {} = {} + INT64_C(1)) {{",
-                    index.name, cmp, end.name, index.name, index.name
-                );
+                if *inclusive {
+                    // Stop after `end` itself so `..= INT64_MAX` does not wrap and loop forever.
+                    let _ = writeln!(
+                        out,
+                        "{pad}for (bool thoxa_range_done = !({i} <= {e}); !thoxa_range_done; thoxa_range_done = ({i} == {e}), {i} = thoxa_range_done ? {i} : {i} + INT64_C(1)) {{",
+                        i = index.name,
+                        e = end.name
+                    );
+                } else {
+                    let _ = writeln!(
+                        out,
+                        "{pad}for (; {} < {}; {} = {} + INT64_C(1)) {{",
+                        index.name, end.name, index.name, index.name
+                    );
+                }
                 emit_stmts(out, body, indent + 1, types, start_id, fn_label, boxed);
                 let _ = writeln!(out, "{pad}}}");
             }
@@ -1360,6 +1371,12 @@ fn emit_stmts(
     }
 }
 
+/// Fixed-array subscript with a runtime bounds check (panics, never a raw
+/// out-of-range C store).
+fn checked_fixed_index(index: &str, len: u64) -> String {
+    format!("thoxa_fixed_index({index}, INT64_C({len}))")
+}
+
 fn emit_rvalue(
     out: &mut String,
     rv: &RValue,
@@ -1382,9 +1399,10 @@ fn emit_rvalue(
             out.push_str(if *b { "true" } else { "false" });
         }
         RValue::StringLit(s) => {
-            out.push_str("thoxa_string_from_cstr(");
+            // Explicit byte length: a literal may contain `\0`.
+            out.push_str("thoxa_string_new(");
             emit_c_string(out, s);
-            out.push(')');
+            let _ = write!(out, ", {})", s.len());
         }
         RValue::Null => {
             out.push_str("NULL");
@@ -1427,6 +1445,8 @@ fn emit_rvalue(
             Callee::Builtin(name) => {
                 let c = match name.as_str() {
                     "string_eq" => "thoxa_string_eq",
+                    "int_div" => "thoxa_int_div",
+                    "int_rem" => "thoxa_int_rem",
                     "string_len" => "(int64_t)thoxa_string_len",
                     "bytes_from_string" => "thoxa_bytes_from_string",
                     "bytes_new" => "thoxa_bytes_new",
@@ -1598,14 +1618,19 @@ fn emit_rvalue(
         RValue::Field { base, field } => {
             let _ = write!(out, "{}{}{}", base.name, recv_access(base, boxed), field);
         }
-        RValue::Index { base, field, index } => {
+        RValue::Index {
+            base,
+            field,
+            index,
+            len,
+        } => {
             let _ = write!(
                 out,
                 "{}{}{}[{}]",
                 base.name,
                 recv_access(base, boxed),
                 field,
-                index.name
+                checked_fixed_index(&index.name, *len)
             );
         }
         RValue::SumInject {
@@ -1642,8 +1667,13 @@ fn emit_rvalue(
         } => {
             let _ = write!(out, "{}.u.v{tag}", base.name);
         }
-        RValue::FixedIndex { base, index } => {
-            let _ = write!(out, "{}[{}]", base.name, index.name);
+        RValue::FixedIndex { base, index, len } => {
+            let _ = write!(
+                out,
+                "{}[{}]",
+                base.name,
+                checked_fixed_index(&index.name, *len)
+            );
         }
         RValue::FixedArrayLit {
             elems,
@@ -1785,6 +1815,9 @@ fn emit_rvalue(
             Ty::Int64 => {
                 let _ = write!(out, "thoxa_string_from_i64({})", value.name);
             }
+            Ty::UInt64 => {
+                let _ = write!(out, "thoxa_string_from_u64({})", value.name);
+            }
             Ty::Float64 => {
                 let _ = write!(out, "thoxa_string_from_f64({})", value.name);
             }
@@ -1856,8 +1889,12 @@ fn emit_rvalue(
     }
 }
 
+/// C string literal for `s`. Control bytes use three-digit octal escapes:
+/// C `\x` escapes are greedy, so `\x1b` before `c` would read as one byte.
+/// A `?` after `?` is escaped so no `??!`-style trigraph can form.
 fn emit_c_string(out: &mut String, s: &str) {
-    out.push('\"');
+    out.push('"');
+    let mut previous = '\0';
     for ch in s.chars() {
         match ch {
             '\\' => out.push_str("\\\\"),
@@ -1865,14 +1902,15 @@ fn emit_c_string(out: &mut String, s: &str) {
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
             '\r' => out.push_str("\\r"),
-            '\0' => out.push_str("\\0"),
-            c if c.is_control() => {
-                let _ = write!(out, "\\x{:02x}", c as u32);
+            '?' if previous == '?' => out.push_str("\\?"),
+            c if c.is_ascii_control() => {
+                let _ = write!(out, "\\{:03o}", c as u32);
             }
             c => out.push(c),
         }
+        previous = ch;
     }
-    out.push('\"');
+    out.push('"');
 }
 
 fn c_ty(ty: &Ty) -> String {

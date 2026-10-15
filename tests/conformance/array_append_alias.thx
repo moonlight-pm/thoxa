@@ -1,0 +1,39 @@
+## Append writes in place only when the array is unshared; a copy taken
+## before an append never sees it (D133 value semantics).
+import logging, { info } from "std/logging"
+
+fn total(values!: Array<Int64>) -> Int64 {
+    mut sum = 0
+    for value in values {
+        sum = sum + value
+    }
+    sum
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut numbers: Array<Int64> = []
+    mut snapshots: Array<Array<Int64>> = []
+    mut index = 0
+    while index < 50000 {
+        numbers.append(index)
+        if index % 10000 == 0 {
+            snapshots.append(numbers)
+        }
+        index = index + 1
+    }
+    info("count={numbers.count} sum={total(numbers)}")
+    for snapshot in snapshots {
+        info("snapshot={snapshot.count}")
+    }
+    let before = numbers
+    numbers.append(1)
+    info("before={before.count} after={numbers.count}")
+    mut words: Array<String> = ["a"]
+    let alias = words
+    words.append("b")
+    words.append("c")
+    info("words={words.count} alias={alias.count} last={words[2]}")
+    0
+}

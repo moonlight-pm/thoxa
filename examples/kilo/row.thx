@@ -89,7 +89,7 @@ export type Row(chars: Bytes, render: Bytes) {
         make(chars.slice(0, count))
     }
 
-    export fn drop(count: Int64) -> Row {
+    export fn skip(count: Int64) -> Row {
         make(chars.slice(count, chars.count))
     }
 

@@ -1,0 +1,17 @@
+block: inner
+after block: outer
+retyped: five
+after retype: 6
+rebound: 11
+arm: payload
+after match: outer value
+loop: 0
+loop: 1
+loop: 2
+after for: 100
+inner total: 0
+inner total: 100
+inner total: 200
+outer total: 1
+int 42
+str text
