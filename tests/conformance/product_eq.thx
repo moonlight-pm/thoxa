@@ -1,0 +1,78 @@
+## D175: `==` / `!=` on two values of one product compares their fields.
+import logging, { info } from "std/logging"
+
+type Point(x: Int64, y: Int64)
+
+type Line(start: Point, end: Point)
+
+type Header(name: String, value: String)
+
+type Packet(tag: String, payload: Bytes, weight: Float64, urgent: Bool, flags: Int64)
+
+type Qty = Int64 where >= 1
+
+type DrinkSlug = "espresso" | "mocha"
+
+type Order(slug: DrinkSlug, qty: Qty)
+
+type Pair<T>(left: T, right: T)
+
+type Empty()
+
+fn same(left!: Point, right!: Point) -> Bool {
+    left == right
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let origin = Point(x: 0, y: 0)
+    let alsoOrigin = Point(x: 0, y: 0)
+    let corner = Point(x: 3, y: 0)
+    info("points {origin == alsoOrigin} {origin == corner} {origin != corner} {origin != alsoOrigin}")
+    info("params {same(origin, alsoOrigin)} {same(origin, corner)}")
+
+    let line = Line(start: origin, end: corner)
+    let sameLine = Line(start: Point(x: 0, y: 0), end: Point(x: 3, y: 0))
+    let flipped = Line(start: corner, end: origin)
+    info("lines {line == sameLine} {line == flipped}")
+
+    let header = Header(name: "Accept", value: "text/html")
+    let subtype = "html"
+    let rebuilt = Header(name: "Accept", value: "text/{subtype}")
+    let plain = Header(name: "Accept", value: "text/plain")
+    info("headers {header == rebuilt} {header == plain}")
+
+    let packet = Packet(tag: "ping", payload: Bytes.fromString("abc"), weight: 1.5, urgent: true, flags: 7)
+    let copy = Packet(tag: "ping", payload: Bytes.fromString("abc"), weight: 1.5, urgent: true, flags: 7)
+    let heavier = Packet(tag: "ping", payload: Bytes.fromString("abc"), weight: 2.5, urgent: true, flags: 7)
+    let other = Packet(tag: "ping", payload: Bytes.fromString("abd"), weight: 1.5, urgent: true, flags: 7)
+    info("packets {packet == copy} {packet == heavier} {packet == other}")
+    let abc = Bytes.fromString("abc")
+    let ab = Bytes.fromString("ab")
+    info("bytes {abc == packet.payload} {ab != packet.payload} {ab == abc.slice(0, 2)}")
+
+    let mocha = Order(slug: "mocha", qty: 2)
+    let twoMochas = Order(slug: "mocha", qty: 2)
+    let espresso = Order(slug: "espresso", qty: 2)
+    let threeMochas = Order(slug: "mocha", qty: 3)
+    info("orders {mocha == twoMochas} {mocha == espresso} {mocha == threeMochas}")
+
+    let names: Pair<String> = Pair(left: "ada", right: "grace")
+    let sameNames: Pair<String> = Pair(left: "ada", right: "grace")
+    let swapped: Pair<String> = Pair(left: "grace", right: "ada")
+    info("pairs {names == sameNames} {names == swapped}")
+    info("empty {Empty() == Empty()} {Empty() != Empty()}")
+
+    mut points = [origin, corner, Point(x: 3, y: 0)]
+    info("elements {points[1] == points[2]} {points[0] == points[1]}")
+    mut found = 0
+    for point in points {
+        if point == corner {
+            found = found + 1
+        }
+    }
+    info("found {found}")
+    0
+}

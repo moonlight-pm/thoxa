@@ -14065,10 +14065,44 @@ fn lower_binary(
                 ctx.assign(p.clone(), Ty::Bool, RValue::Binary { op, left, right });
                 return Ok((p, Ty::Bool));
             }
-            Err(Error::at(
-                "comparison operands must have the same type",
-                span,
-            ))
+            let shown = display_ty(&lt);
+            if lt != rt {
+                return Err(Error::at(
+                    format!("cannot compare {shown} and {}", display_ty(&rt)),
+                    span,
+                ));
+            }
+            let comparable = matches!(&lt, Ty::Bytes | Ty::User(_));
+            if comparable && !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+                return Err(Error::at(
+                    format!("{shown} only supports `==` and `!=`"),
+                    span,
+                ));
+            }
+            let equal = match &lt {
+                Ty::Bytes => lower_bytes_eq(ctx, l, r),
+                Ty::User(type_name) => lower_product_eq(ctx, l, r, type_name, span)?,
+                _ => {
+                    return Err(Error::at(format!("cannot compare {shown} values"), span)
+                        .with_help(
+                            "`==` is defined for numbers, Bool, String, Bytes, and products \
+                             of those (D175)",
+                        ));
+                }
+            };
+            if matches!(op, BinaryOp::Ne) {
+                let p = ctx.fresh("ne");
+                ctx.assign(
+                    p.clone(),
+                    Ty::Bool,
+                    RValue::Unary {
+                        op: UnaryOp::Not,
+                        arg: equal,
+                    },
+                );
+                return Ok((p, Ty::Bool));
+            }
+            Ok((equal, Ty::Bool))
         }
         BinaryOp::And | BinaryOp::Or => {
             if lt != Ty::Bool || rt != Ty::Bool {
@@ -14089,6 +14123,202 @@ fn lower_binary(
             );
             Ok((p, Ty::Bool))
         }
+    }
+}
+
+/// `Bytes == Bytes`: same length and bytes (`bytes_equals`).
+fn lower_bytes_eq(ctx: &mut LowerCtx, left: Place, right: Place) -> Place {
+    let raw = ctx.fresh("beq");
+    ctx.assign(
+        raw.clone(),
+        Ty::Int64,
+        RValue::Call {
+            callee: Callee::Builtin("bytes_equals".into()),
+            args: vec![left, right],
+        },
+    );
+    let p = ctx.fresh("beqb");
+    ctx.assign(
+        p.clone(),
+        Ty::Bool,
+        RValue::Cast {
+            value: raw,
+            from: Ty::Int64,
+            to: Ty::Bool,
+        },
+    );
+    p
+}
+
+/// D175: two values of one constructor-param product are equal when every
+/// field is. Fields are read as borrows (no RC); a nested product recurses,
+/// which ends because a type cannot contain itself.
+fn lower_product_eq(
+    ctx: &mut LowerCtx,
+    left: Place,
+    right: Place,
+    type_name: &str,
+    span: Span,
+) -> Result<Place> {
+    let info = ctx
+        .types
+        .get(type_name)
+        .cloned()
+        .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?;
+    let shown = display_ty(&Ty::User(type_name.to_string()));
+    let refusal = if info.sum.is_some() {
+        Some("`==` is not defined for unions yet; `match` on the arms")
+    } else if info.methods.contains_key("drop") {
+        Some("a type with `drop` is a resource, not a value")
+    } else if info.zero_init {
+        Some("C-layout types have no `==`")
+    } else {
+        None
+    };
+    if let Some(reason) = refusal {
+        return Err(Error::at(
+            format!("cannot compare {shown} values: {reason}"),
+            span,
+        ));
+    }
+    let mut all: Option<Place> = None;
+    for field in &info.fields {
+        let left_field = borrow_field(ctx, &left, &field.name, &field.ty);
+        let right_field = borrow_field(ctx, &right, &field.name, &field.ty);
+        let same = lower_field_eq(ctx, left_field, right_field, &field.ty, span)?;
+        let same = same.ok_or_else(|| {
+            Error::at(
+                format!(
+                    "cannot compare {shown} values: field `{}` is {}, which has no `==`",
+                    field.name,
+                    display_ty(&field.ty)
+                ),
+                span,
+            )
+        })?;
+        all = Some(match all {
+            None => same,
+            Some(before) => {
+                let p = ctx.fresh("eqand");
+                ctx.assign(
+                    p.clone(),
+                    Ty::Bool,
+                    RValue::Binary {
+                        op: BinaryOp::And,
+                        left: before,
+                        right: same,
+                    },
+                );
+                p
+            }
+        });
+    }
+    Ok(match all {
+        Some(p) => p,
+        None => {
+            let p = ctx.fresh("eqnil");
+            ctx.assign(p.clone(), Ty::Bool, RValue::Bool(true));
+            p
+        }
+    })
+}
+
+/// A field of `base`, read without a reference of its own: it is only
+/// compared, and `base` outlives the comparison.
+fn borrow_field(ctx: &mut LowerCtx, base: &Place, name: &str, ty: &Ty) -> Place {
+    let p = ctx.fresh("eqf");
+    ctx.assign_no_drop(
+        p.clone(),
+        ty.clone(),
+        RValue::Field {
+            base: base.clone(),
+            field: sanitize_field(name),
+        },
+    );
+    p
+}
+
+/// One field's `==` (D175), or `None` when its type has none (Array, Map,
+/// Node, a union with payloads).
+fn lower_field_eq(
+    ctx: &mut LowerCtx,
+    left: Place,
+    right: Place,
+    ty: &Ty,
+    span: Span,
+) -> Result<Option<Place>> {
+    if *ty == Ty::Bool || *ty == Ty::Float64 || is_int(ty) {
+        let p = ctx.fresh("eqv");
+        ctx.assign(
+            p.clone(),
+            Ty::Bool,
+            RValue::Binary {
+                op: BinaryOp::Eq,
+                left,
+                right,
+            },
+        );
+        return Ok(Some(p));
+    }
+    match ty {
+        Ty::String => {
+            let p = ctx.fresh("eqs");
+            ctx.assign(
+                p.clone(),
+                Ty::Bool,
+                RValue::Call {
+                    callee: Callee::Builtin("string_eq".into()),
+                    args: vec![left, right],
+                },
+            );
+            Ok(Some(p))
+        }
+        Ty::Bytes => Ok(Some(lower_bytes_eq(ctx, left, right))),
+        Ty::User(name) => {
+            // `type Qty = Int64 where …` compares its base value.
+            if let Some(base) = refined_info(&ctx.types, ty).map(|info| info.base.clone()) {
+                let left_value = borrow_field(ctx, &left, "value", &base);
+                let right_value = borrow_field(ctx, &right, "value", &base);
+                return lower_field_eq(ctx, left_value, right_value, &base, span);
+            }
+            // A literal union (`"espresso" | "mocha"`) is its tag.
+            let literal = [LitKind::String, LitKind::Int, LitKind::Bool]
+                .into_iter()
+                .any(|kind| is_pure_lit_sum_of_kind(&ctx.types, ty, kind));
+            if literal {
+                let mut tags = Vec::new();
+                for place in [left, right] {
+                    let tag = ctx.fresh("eqtag");
+                    ctx.assign(
+                        tag.clone(),
+                        Ty::Int64,
+                        RValue::SumTag {
+                            place,
+                            sum_type: name.clone(),
+                        },
+                    );
+                    tags.push(tag);
+                }
+                let p = ctx.fresh("eqt");
+                let right_tag = tags.pop().unwrap();
+                let left_tag = tags.pop().unwrap();
+                ctx.assign(
+                    p.clone(),
+                    Ty::Bool,
+                    RValue::Binary {
+                        op: BinaryOp::Eq,
+                        left: left_tag,
+                        right: right_tag,
+                    },
+                );
+                return Ok(Some(p));
+            }
+            if sum_info_of(&ctx.types, ty).is_some() {
+                return Ok(None);
+            }
+            lower_product_eq(ctx, left, right, name, span).map(Some)
+        }
+        _ => Ok(None),
     }
 }
 

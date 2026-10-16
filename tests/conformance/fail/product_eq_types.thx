@@ -1,0 +1,10 @@
+## D175: both sides of `==` must be the same product.
+type Point(x: Int64, y: Int64)
+type Size(x: Int64, y: Int64)
+
+fn main() -> Int64 {
+    if Point(x: 1, y: 2) == Size(x: 1, y: 2) {
+        return 1
+    }
+    0
+}

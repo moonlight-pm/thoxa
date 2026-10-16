@@ -72,7 +72,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind; an index outside `0..N-1` panics). A `mut` struct local passed where `Address<T>` is expected passes its address, to C or to a Thoxa function; an `Address<T>` parameter passes on unchanged. A value of a `drop` type passes its box pointer (**D168**) |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/fallible` with `?` / `match` (ok/err may nest) |
-| Equality | String `==` / `!=`; usual scalar compares (including `Float64`). Comparison `<` needs a space after it (`a < b`, not `a<b`) — glued `<name` is a [tag](#tag-literals-and-node-jsx) |
+| Equality | String and `Bytes` `==` / `!=`; usual scalar compares (including `Float64`). Two values of one product compare field by field (**D175**, [below](#equality)). Comparison `<` needs a space after it (`a < b`, not `a<b`) — glued `<name` is a [tag](#tag-literals-and-node-jsx) |
 
 **Integers (**D157**):** `Int64` arithmetic wraps on overflow (two's
 complement); it is never undefined. `/` and `%` by zero panic with
@@ -282,6 +282,28 @@ params**, and **`!` formals** (including `extern` — defaults expand at the
 call site before the C call). Free names inside default expressions resolve
 in the **defining** module (so importers need not re-export constants used
 only as defaults). A non-default formal may not follow a defaulted one.
+
+## Equality
+
+`==` and `!=` on two values of the same product compare their fields
+(**D175**). Each field compares by its own type: numbers, `Bool`, `String`,
+`Bytes`, a refined type by its base value, a literal union by which literal it
+is, and a nested product field by field again.
+
+```thx
+type Point(x: Int64, y: Int64)
+type Line(start: Point, end: Point)
+
+let line = Line(start: Point(x: 0, y: 0), end: Point(x: 3, y: 0))
+let same = Line(start: Point(x: 0, y: 0), end: Point(x: 3, y: 0))
+info("{line == same}")      ## true
+```
+
+It is a compile error when a field has no `==` (an `Array`, `Map`, or `Node`
+field), when the two sides are different types, or for `<` / `>` on a product.
+Unions have no `==` yet (`match` on the arms), and neither do types with
+`fn drop()` (resources) or C-layout types. A `Float64` field follows IEEE, so a
+NaN is never equal to itself.
 
 **Return types (**D129**, **D174**):** an explicit `-> T` is the contract (body
 must match). Unannotated non-`main` **free functions** and **methods** **infer**

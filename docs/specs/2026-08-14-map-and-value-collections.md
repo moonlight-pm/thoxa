@@ -104,6 +104,8 @@ slice is:
 
 1. Structural `==` / `!=` on constructor-param products whose fields are
    already eq-able (`Int64`, `Bool`, `String`, `Bytes`, nested such products).
+   **Shipped as D175** (2026-10-16), also covering `Float64`, refined, and
+   literal-union fields.
 2. A private runtime hash of those same fields (not a user `.hash()`).
 3. Then those types are legal Map keys.
 

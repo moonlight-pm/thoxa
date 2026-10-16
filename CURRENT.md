@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-16. **D174** unannotated methods infer their return type like free functions (it was Void, and the value was dropped); `x?` then `Pass(value)` infers `Trial<T, E>`. **D173** what `main` returns is the exit status: outside 0 to 255 it panics (256 used to exit 0; review finding 23). **D172** the sites send security headers and
+**As of:** 2026-10-16. **D175** `==` / `!=` on two values of one product compare their fields (step 1 of the user Map-key trajectory); `Bytes == Bytes`. **D174** unannotated methods infer their return type like free functions (it was Void, and the value was dropped); `x?` then `Pass(value)` infers `Trial<T, E>`. **D173** what `main` returns is the exit status: outside 0 to 255 it panics (256 used to exit 0; review finding 23). **D172** the sites send security headers and
 ETags (images and fonts cached a day; review finding 10). **D171** `std/http/server` answers pipelined
 requests in order (a request without `Content-Length` has no body; review
 finding 9). **D170** a program that is PID 1 ends on SIGTERM /
@@ -160,7 +160,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |
 | Nowait | Token **`--> name(args)`** starts a named free Thoxa function (**D148**). `Void`; return dropped. Colorless: Net parks; `main` drains. No Future / `async` / `--> { }` / pointer `-->`. |
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
-| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (not traits). No `std/http` header flip. |
+| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User types are values, not keys. User keys later via structural product `==` (shipped, **D175**) + a private field hash (not traits). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); `htmlFragment` / `etagOf` / `cached` (**D145**). **`peerFd` + `streamed()`** (**D146**) for SSE takeover; the handler gets
 its Socket from `server.peerOf(request)` (**D168**). Cookie and `Cache-Control` *policy* stay in the app. |
