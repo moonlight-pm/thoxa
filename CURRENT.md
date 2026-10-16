@@ -85,9 +85,9 @@ lits; overwrite-drop; **D152** match/init RC.
 **On master, not product:** none.
 
 **Review follow-ups (open, from 2026-10-14):** the three sites were
-redeployed on 2026-10-15 from `878d863` (D165–D168, `-fwrapv`); the
-hardened images (C built in the image, pinned bases, `USER 65534`, D170),
-pipelining (D171), and the headers (D172) are not deployed yet;
+redeployed on 2026-10-16 from `e0c0bcf`: hardened images (C built in the
+image, pinned bases, `USER 65534`, D170), pipelining (D171), and the
+headers (D172);
 Ctrl-C in a pure-Thoxa loop;
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`);
 redefining a session
