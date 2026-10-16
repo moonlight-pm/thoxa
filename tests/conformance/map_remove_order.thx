@@ -1,0 +1,90 @@
+## D181: removing a key keeps the others in insertion order; a key set again
+## after its removal goes to the end. Checked against an Array model.
+import logging, { info } from "std/logging"
+
+type Point(x: Int64, y: Int64)
+
+fn without(items!: Array<String>, item!: String) -> Array<String> {
+    mut kept: Array<String> = []
+    for each in items {
+        if each != item {
+            kept.append(each)
+        }
+    }
+    kept
+}
+
+fn contains(items!: Array<String>, item!: String) -> Bool {
+    for each in items {
+        if each == item {
+            return true
+        }
+    }
+    false
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    mut small: Map<String, Int64> = Map()
+    small.set("a", 1)
+    small.set("b", 2)
+    small.set("c", 3)
+    small.remove("a")
+    small.set("a", 4)
+    info("small {small.keys()} {small.values()}")
+
+    ## A long mix of sets and removes, against the model.
+    mut table: Map<String, Int64> = Map()
+    mut model: Array<String> = []
+    mut mismatches = 0
+    mut snapshot: Map<String, Int64> = Map()
+    for step in 0..600 {
+        let key = "k{(step * 7) % 41}"
+        if step % 3 == 0 {
+            table.remove(key)
+            model = without(model, key)
+        } else {
+            if not contains(model, key) {
+                model.append(key)
+            }
+            table.set(key, step)
+        }
+        if step == 300 {
+            snapshot = table
+        }
+        if step % 50 == 0 {
+            if table.keys() != model or table.count != model.count {
+                mismatches = mismatches + 1
+            }
+        }
+    }
+    mut walked: Array<String> = []
+    for key, value in table {
+        walked.append(key)
+    }
+    info("long {table.count} {mismatches} {walked == model} {table.keys() == model}")
+    info("snapshot {snapshot.count > 0} {snapshot.keys() != table.keys()}")
+
+    ## User keys: the removed key's box is released, the rest keep order.
+    mut grid: Map<Point, String> = Map()
+    for index in 0..6 {
+        grid.set(Point(x: index, y: 0), "p{index}")
+    }
+    grid.remove(Point(x: 1, y: 0))
+    grid.remove(Point(x: 4, y: 0))
+    mut order: Array<Int64> = []
+    for at, name in grid {
+        order.append(at.x)
+    }
+    info("points {order} {grid.has(Point(x: 4, y: 0))}")
+
+    ## Empty it and fill it again.
+    for index in 0..6 {
+        grid.remove(Point(x: index, y: 0))
+    }
+    grid.set(Point(x: 9, y: 9), "again")
+    info("refill {grid.count} {grid.has(Point(x: 9, y: 9))}")
+    0
+}

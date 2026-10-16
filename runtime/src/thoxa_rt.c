@@ -1382,11 +1382,17 @@ void thoxa_array_drop_ex(ThoxaArray *a, ThoxaArrayElemFn elem_drop) {
 #define MAP_IDX_EMPTY ((int32_t)-1)
 #define MAP_IDX_TOMB ((int32_t)-2)
 
+/* Slots keep insertion order. `remove` marks its slot removed (and its
+ * index entry a tombstone) instead of moving another slot into the hole;
+ * `map_compact` packs the live slots, in order, when removed ones pass half
+ * of `len`, when the slots run out, and before a read by position. */
 struct ThoxaMap {
     size_t len;
     size_t slot_cap;
     size_t idx_cap;
     size_t tombs;
+    /* Removed slots among the first `len`. */
+    size_t dead;
     uint32_t key_kind;
     uint32_t val_kind;
     uint32_t val_size;
@@ -1399,6 +1405,7 @@ struct ThoxaMap {
 typedef struct {
     uint64_t hash;
     int64_t key;
+    uint64_t removed;
 } MapSlotHead;
 
 static size_t map_align8(size_t n) {
@@ -1565,6 +1572,7 @@ static ThoxaMap *map_alloc(
     m->slot_cap = slot_cap;
     m->idx_cap = idx_cap;
     m->tombs = 0;
+    m->dead = 0;
     m->key_kind = key_kind;
     m->key_ops = key_ops;
     m->val_kind = val_kind;
@@ -1586,6 +1594,9 @@ static void map_reindex(ThoxaMap *m) {
     size_t mask = m->idx_cap - 1;
     for (size_t s = 0; s < m->len; s++) {
         MapSlotHead *sl = map_slot(m, s);
+        if (sl->removed) {
+            continue;
+        }
         size_t pos = (size_t)sl->hash & mask;
         while (idx[pos] != MAP_IDX_EMPTY) {
             pos = (pos + 1) & mask;
@@ -1644,21 +1655,27 @@ static void map_copy_slots(
     const ThoxaMap *src,
     ThoxaArrayElemFn elem_dup
 ) {
-    dst->len = src->len;
+    size_t out = 0;
     for (size_t i = 0; i < src->len; i++) {
         const MapSlotHead *s = map_slot_c(src, i);
-        MapSlotHead *d = map_slot(dst, i);
+        if (s->removed) {
+            continue;
+        }
+        MapSlotHead *d = map_slot(dst, out);
         *d = *s;
         map_dup_key(src, s->key);
-        memcpy(map_slot_val(dst, i), map_slot_val_c(src, i), (size_t)src->val_size);
+        memcpy(map_slot_val(dst, out), map_slot_val_c(src, i), (size_t)src->val_size);
         if (src->val_kind == THOXA_MAP_VAL_PTR) {
             int64_t bits;
             memcpy(&bits, map_slot_val_c(src, i), sizeof(int64_t));
             map_dup_val_ptr((void *)(intptr_t)bits);
         } else if (src->val_kind == THOXA_MAP_VAL_USER && elem_dup) {
-            elem_dup(map_slot_val(dst, i));
+            elem_dup(map_slot_val(dst, out));
         }
+        out += 1;
     }
+    dst->len = out;
+    dst->dead = 0;
     map_reindex(dst);
 }
 
@@ -1674,6 +1691,9 @@ static ThoxaMap *map_clone(const ThoxaMap *m, ThoxaArrayElemFn elem_dup) {
 static void map_drop_contents(ThoxaMap *m, ThoxaArrayElemFn elem_drop) {
     for (size_t i = 0; i < m->len; i++) {
         MapSlotHead *sl = map_slot(m, i);
+        if (sl->removed) {
+            continue;
+        }
         map_drop_key(m, sl->key);
         if (m->val_kind == THOXA_MAP_VAL_PTR) {
             int64_t bits;
@@ -1722,12 +1742,46 @@ static ThoxaMap *map_grow_slots(ThoxaMap *m, ThoxaArrayElemFn elem_dup, ThoxaArr
     return n;
 }
 
+/* Pack the live slots to the front, in order, and rebuild the index. The
+ * entries do not change, so this is safe on a shared map. */
+static void map_compact(ThoxaMap *m) {
+    if (!m || m->dead == 0) {
+        return;
+    }
+    size_t slot_size = map_slot_size(m);
+    size_t out = 0;
+    for (size_t i = 0; i < m->len; i++) {
+        if (map_slot(m, i)->removed) {
+            continue;
+        }
+        if (out != i) {
+            memmove(map_slot(m, out), map_slot(m, i), slot_size);
+        }
+        out += 1;
+    }
+    m->len = out;
+    m->dead = 0;
+    map_reindex(m);
+}
+
+/* Reads by position (`for k, v`, `key_at`) see the live slots only. */
+static const ThoxaMap *map_settled(const ThoxaMap *m) {
+    if (m && m->dead > 0) {
+        map_compact((ThoxaMap *)m);
+    }
+    return m;
+}
+
 static ThoxaMap *map_prepare_insert(
     ThoxaMap *m,
     ThoxaArrayElemFn elem_dup,
     ThoxaArrayElemFn elem_drop
 ) {
     m = map_ensure_unique(m, elem_dup, elem_drop);
+    if (m->len >= m->slot_cap && m->dead > 0) {
+        /* Removed slots hold the room: pack the live ones first. */
+        map_compact(m);
+    }
     if (m->len >= m->slot_cap || m->len * 4 >= m->idx_cap * 3) {
         m = map_grow_slots(m, elem_dup, elem_drop);
     } else if (m->tombs > m->idx_cap / 2) {
@@ -1759,7 +1813,7 @@ ThoxaMap *thoxa_map_new_keyed(const ThoxaMapKeyOps *key_ops, uint32_t val_kind, 
 }
 
 int64_t thoxa_map_count(const ThoxaMap *m) {
-    return m ? (int64_t)m->len : 0;
+    return m ? (int64_t)(m->len - m->dead) : 0;
 }
 
 int thoxa_map_has(const ThoxaMap *m, int64_t key_bits) {
@@ -1877,6 +1931,7 @@ static ThoxaMap *map_set_raw(
     MapSlotHead *sl = map_slot(m, slot);
     sl->hash = h;
     sl->key = map_own_key(m, key_bits);
+    sl->removed = 0;
     memcpy(map_slot_val(m, slot), val, val_n);
     if (m->val_kind == THOXA_MAP_VAL_PTR && val_is_ptr) {
         int64_t bits;
@@ -1955,25 +2010,12 @@ static ThoxaMap *map_remove_raw(
         idx[ipos] = MAP_IDX_TOMB;
         m->tombs += 1;
     }
-    size_t last = m->len - 1;
-    if ((size_t)found != last) {
-        memcpy(map_slot(m, (size_t)found), map_slot(m, last), map_slot_size(m));
-        /* Fix index that pointed at last so it points at `found`. */
-        MapSlotHead *moved = map_slot(m, (size_t)found);
-        int32_t dummy = -1;
-        int32_t moved_slot = map_find_slot(m, moved->key, moved->hash, &dummy);
-        (void)moved_slot;
-        size_t mask = m->idx_cap - 1;
-        size_t pos = (size_t)moved->hash & mask;
-        for (size_t n = 0; n < m->idx_cap; n++) {
-            if (idx[pos] == (int32_t)last) {
-                idx[pos] = found;
-                break;
-            }
-            pos = (pos + 1) & mask;
-        }
+    /* Keep the order: mark the slot, and pack once half are removed. */
+    sl->removed = 1;
+    m->dead += 1;
+    if (m->dead * 2 > m->len) {
+        map_compact(m);
     }
-    m->len -= 1;
     return m;
 }
 
@@ -1991,6 +2033,7 @@ ThoxaMap *thoxa_map_remove_ex(
 }
 
 int64_t thoxa_map_key_at(const ThoxaMap *m, int64_t i) {
+    m = map_settled(m);
     if (!m || i < 0 || (size_t)i >= m->len) {
         thoxa_panic("Map index out of range");
     }
@@ -1998,6 +2041,7 @@ int64_t thoxa_map_key_at(const ThoxaMap *m, int64_t i) {
 }
 
 int64_t thoxa_map_val_i64_at(const ThoxaMap *m, int64_t i) {
+    m = map_settled(m);
     if (!m || i < 0 || (size_t)i >= m->len) {
         thoxa_panic("Map index out of range");
     }
@@ -2016,6 +2060,7 @@ void thoxa_map_val_elem_at(
     void *out,
     ThoxaArrayElemFn elem_dup
 ) {
+    m = map_settled(m);
     if (!m || i < 0 || (size_t)i >= m->len) {
         thoxa_panic("Map index out of range");
     }
@@ -2029,6 +2074,7 @@ void thoxa_map_val_elem_at(
 }
 
 ThoxaArray *thoxa_map_keys(const ThoxaMap *m) {
+    m = map_settled(m);
     size_t n = m ? m->len : 0;
     if (m && m->key_kind == THOXA_MAP_KEY_USER) {
         /* Array<K> of inline structs: each element is a retained copy. */
@@ -2054,6 +2100,7 @@ ThoxaArray *thoxa_map_keys(const ThoxaMap *m) {
 }
 
 ThoxaArray *thoxa_map_values_i64(const ThoxaMap *m) {
+    m = map_settled(m);
     size_t n = m ? m->len : 0;
     ThoxaArray *a = thoxa_array_new(0);
     for (size_t i = 0; i < n; i++) {
@@ -2065,6 +2112,7 @@ ThoxaArray *thoxa_map_values_i64(const ThoxaMap *m) {
 }
 
 ThoxaArray *thoxa_map_values_ptr(const ThoxaMap *m) {
+    m = map_settled(m);
     size_t n = m ? m->len : 0;
     ThoxaArray *a = thoxa_array_new(1);
     for (size_t i = 0; i < n; i++) {
@@ -2080,6 +2128,7 @@ ThoxaArray *thoxa_map_values_elem(
     ThoxaArrayElemFn elem_dup,
     ThoxaArrayElemFn elem_drop
 ) {
+    m = map_settled(m);
     size_t n = m ? m->len : 0;
     uint32_t es = m ? m->val_size : (uint32_t)sizeof(int64_t);
     ThoxaArray *a = thoxa_array_new_ex(es, 0);
@@ -2148,6 +2197,7 @@ static void map_buf_app(char **buf, size_t *cap, size_t *used, const char *s, si
 }
 
 ThoxaString *thoxa_map_to_string(const ThoxaMap *m, int val_is_string) {
+    m = map_settled(m);
     size_t n = m ? m->len : 0;
     size_t cap = size_add(16, size_mul(n, 24));
     char *buf = (char *)malloc(cap);

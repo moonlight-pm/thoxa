@@ -507,7 +507,8 @@ for k, v in lit {
 - **Map reads:** `m[k]` and `.get(k)` are `May<V>` (import Fallible). `.has(k)`
   is `Bool`. Duplicate keys in one literal are an error.
 - **Map writes:** `.set` / `.remove` / `m[k] =` write back. Missing `.remove`
-  is a no-op.
+  is a no-op. Removing a key leaves the others in insertion order, and a key
+  set again after its removal goes to the end (**D181**).
 - **Iteration:** `for x in arr`; `for k, v in map` (insertion order).
   `.keys()` / `.values()` snapshot to `Array`. The loop variable is a nested
   binding — an outer `let x` is unchanged after the loop.
