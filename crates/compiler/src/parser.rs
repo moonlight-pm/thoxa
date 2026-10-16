@@ -3220,25 +3220,60 @@ fn interpolation_hole_starts(body: &str) -> Vec<usize> {
     let mut index = 0;
     while index < bytes.len() {
         match bytes[index] {
+            b'\\' => index += 2,
             b'{' if bytes.get(index + 1) == Some(&b'{') => index += 2,
             b'}' if bytes.get(index + 1) == Some(&b'}') => index += 2,
             b'{' => {
                 starts.push(index + 1);
-                let mut depth = 1usize;
-                index += 1;
-                while index < bytes.len() && depth > 0 {
-                    match bytes[index] {
-                        b'{' => depth += 1,
-                        b'}' => depth -= 1,
-                        _ => {}
-                    }
-                    index += 1;
-                }
+                index = hole_end(bytes, index + 1).map_or(bytes.len(), |end| end + 1);
             }
             _ => index += 1,
         }
     }
     starts
+}
+
+/// The index of the `}` that closes a hole whose text starts at `from`.
+/// Strings in the hole are skipped whole, holes and all (D176); an escape
+/// (`\"`, the older way to quote inside a hole) is one character.
+fn hole_end(bytes: &[u8], from: usize) -> Option<usize> {
+    let mut depth = 1usize;
+    let mut index = from;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 1,
+            b'"' => {
+                index = string_end(bytes, index)?;
+                continue;
+            }
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+/// The index just past the string literal whose `"` is at `open`.
+fn string_end(bytes: &[u8], open: usize) -> Option<usize> {
+    let mut index = open + 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 1,
+            b'"' => return Some(index + 1),
+            b'{' if bytes.get(index + 1) == Some(&b'{') => index += 1,
+            b'{' => index = hole_end(bytes, index + 1)?,
+            _ => {}
+        }
+        index += 1;
+    }
+    None
 }
 
 /// Expand a string token into plain `String` or `Interpolate` (handles `{{` / `}}`).
@@ -3250,6 +3285,8 @@ fn parse_string_literal(content: String, span: Span, raw: Option<String>) -> Res
     let mut parts: Vec<InterpPart> = Vec::new();
     let mut lit = String::new();
     let chars: Vec<char> = content.chars().collect();
+    // Byte offset of each char, to find a hole's end in `content`'s bytes.
+    let byte_of: Vec<usize> = content.char_indices().map(|(at, _)| at).collect();
     let mut i = 0;
     while i < chars.len() {
         match chars[i] {
@@ -3264,25 +3301,15 @@ fn parse_string_literal(content: String, span: Span, raw: Option<String>) -> Res
                 }
                 i += 1;
                 let expr_start = i;
-                let mut depth = 1usize;
-                while i < chars.len() {
-                    match chars[i] {
-                        '{' => depth += 1,
-                        '}' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                    i += 1;
-                }
-                if depth != 0 {
+                let close = byte_of
+                    .get(expr_start)
+                    .and_then(|&from| hole_end(content.as_bytes(), from));
+                let Some(close) = close else {
                     return Err(Error::at("unclosed interpolation `{`", span).with_help(
-                        "a `\"` inside `{…}` ends the whole string: bind the inner string with `let` first",
+                        "a hole runs to its matching `}`, and a `\"` inside it starts a string of its own",
                     ));
-                }
+                };
+                i = byte_of.partition_point(|&at| at < close);
                 let expr_src: String = chars[expr_start..i].iter().collect();
                 i += 1; // consume closing `}`
                 let decoded_offset: usize = chars[..expr_start].iter().map(|ch| ch.len_utf8()).sum();

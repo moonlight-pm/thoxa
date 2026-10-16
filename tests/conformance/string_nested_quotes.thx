@@ -1,0 +1,29 @@
+## D176: a hole `{…}` may hold strings of its own.
+import logging, { info } from "std/logging"
+import { indexOf, toUpperAscii } from "std/str"
+
+fn greet(name!: String) -> String {
+    "hi {name}"
+}
+
+type Badge(label: String, color: String)
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    info("{greet("ada")}")
+    ## A hole in a string in a hole.
+    info("{greet("{greet("grace")}!")}")
+    ## Quotes, `#`, braces and escapes inside the nested string.
+    info("{greet("#fff")} {greet("{{x}}")} {greet("say \"hi\"")} {greet("tab\tend")}")
+    ## The older way, escaped quotes, still works.
+    info("idx={indexOf(\"hello\", \"ll\")} new={indexOf("hello", "lo")}")
+    let badge = Badge(label: "new", color: "#0a0")
+    info("{toUpperAscii(badge.label)} {badge.color == "#0a0"} {"plain"}")
+    ## Across lines.
+    info("{greet(
+        "multi"
+    )}")
+    0
+}

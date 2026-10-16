@@ -25,7 +25,7 @@
 //! `parent` is the current process `PATH` split on `:`; the returned components
 //! **replace** process `PATH` (joined with `:`).
 
-use crate::command::{desugar_session_source, for_each_code_byte};
+use crate::command::{desugar_session_source, for_each_code_byte, CodeScan};
 use crate::driver::{self, SessionBuildCache, SessionStepLib};
 use crate::error::{Error, Result};
 use crate::line_edit::{ReadOutcome, SessionEditor};
@@ -303,17 +303,15 @@ fn needs_more(chunk: &str) -> bool {
     // Same scan as the rc splitter: `#` starts a comment, so an apostrophe in
     // `# don't` does not open a quote and swallow the following lines.
     let mut depth = 0i32;
-    let mut in_str = false;
-    let mut quote = b'\0';
-    let mut esc = false;
+    let mut scan = CodeScan::default();
     for line in chunk.lines() {
-        crate::command::for_each_code_byte(line, &mut in_str, &mut quote, &mut esc, |b| match b {
+        for_each_code_byte(line, &mut scan, |b| match b {
             b'{' => depth += 1,
             b'}' => depth -= 1,
             _ => {}
         });
     }
-    in_str || depth > 0
+    scan.in_string() || depth > 0
 }
 
 // ── shell.thx rc ──────────────────────────────────────────────────────────
@@ -407,9 +405,7 @@ fn split_top_level_forms(src: &str) -> Vec<String> {
     let mut forms = Vec::new();
     let mut cur = String::new();
     let mut depth = 0i32;
-    let mut in_str = false;
-    let mut quote = b'\0';
-    let mut esc = false;
+    let mut scan = CodeScan::default();
 
     for (i, line) in src.lines().enumerate() {
         if i > 0 || !cur.is_empty() {
@@ -419,13 +415,13 @@ fn split_top_level_forms(src: &str) -> Vec<String> {
         }
         cur.push_str(line);
 
-        for_each_code_byte(line, &mut in_str, &mut quote, &mut esc, |b| match b {
+        for_each_code_byte(line, &mut scan, |b| match b {
             b'{' => depth += 1,
             b'}' => depth -= 1,
             _ => {}
         });
 
-        if !in_str && depth <= 0 {
+        if !scan.in_string() && depth <= 0 {
             depth = 0;
             if !cur.trim().is_empty() {
                 forms.push(std::mem::take(&mut cur));
@@ -880,6 +876,32 @@ echo hi
         let (decls, stmts) = nonempty_rc_forms(src);
         assert_eq!(decls.len(), 1, "decls={decls:?}");
         assert!(decls[0].trim().starts_with("fn prompt"));
+        assert_eq!(stmts.len(), 1, "stmts={stmts:?}");
+        assert!(stmts[0].trim().starts_with("echo "));
+    }
+
+    /// D176: a string inside a hole is one string, so a `#` or a bracket in
+    /// it neither starts a comment nor opens a form.
+    #[test]
+    fn needs_more_reads_strings_inside_holes() {
+        assert!(!needs_more(r##"info("{color("#fff")}")"##));
+        assert!(!needs_more(r#"info("{label("(")}")"#));
+        assert!(!needs_more(r#"info("{{literal}} {"inline"}")"#));
+        assert!(!needs_more(r#"info("{indexOf(\"hello\", \"ll\")}")"#));
+        assert!(needs_more(r#"info("{greet("ada")"#));
+        assert!(needs_more("fn shout() {\n    \"{upper(\"a\")}\""));
+    }
+
+    #[test]
+    fn split_forms_nested_string_with_hash_stays_one_form() {
+        let src = r##"
+fn badge() -> String {
+    "{paint("#E2B84A")} {paint("{{")}"
+}
+echo hi
+"##;
+        let (decls, stmts) = nonempty_rc_forms(src);
+        assert_eq!(decls.len(), 1, "decls={decls:?}");
         assert_eq!(stmts.len(), 1, "stmts={stmts:?}");
         assert!(stmts[0].trim().starts_with("echo "));
     }

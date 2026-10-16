@@ -282,15 +282,43 @@ impl<'a> Lexer<'a> {
     }
 
     /// `"…"` may span lines. Newlines are kept (no dedent). Same for `sql"…"`.
+    ///
+    /// An interpolation hole `{…}` may hold strings of its own (D176):
+    /// `"{greet("ada")}"`. Inside a hole a `"` starts a nested literal, which
+    /// is kept as source, since the parser lexes the hole again; the outer
+    /// string ends at a `"` in its own text only.
     fn string(&mut self, start: usize) -> Result<Token> {
         self.pos += 1;
         let mut out = String::new();
         // A bad escape is reported once the literal closes, so lexing resumes
         // after the closing quote instead of reading it as a new string.
         let mut bad_escape: Option<Error> = None;
+        // `{` open in the current hole (0 = the string's own text), and where
+        // the hole began.
+        let mut hole_depth = 0usize;
+        let mut hole_start = start;
         while self.pos < self.bytes.len() {
             let b = self.bytes[self.pos];
-            if b == b'"' {
+            if hole_depth > 0 {
+                match b {
+                    b'"' => {
+                        let nested = self.pos;
+                        match self.string(nested) {
+                            Ok(_) => {}
+                            // It ran to the end: the hole is what never closed.
+                            Err(error) if error.message == "unterminated string" => {
+                                return Err(unclosed_hole(hole_start));
+                            }
+                            Err(error) => return Err(error),
+                        }
+                        out.push_str(&self.src[nested..self.pos]);
+                        continue;
+                    }
+                    b'{' => hole_depth += 1,
+                    b'}' => hole_depth -= 1,
+                    _ => {}
+                }
+            } else if b == b'"' {
                 self.pos += 1;
                 if let Some(error) = bad_escape {
                     return Err(error);
@@ -300,6 +328,14 @@ impl<'a> Lexer<'a> {
                     span: Span::new(start, self.pos),
                     line_start: false,
                 });
+            } else if b == b'{' {
+                if self.bytes.get(self.pos + 1) == Some(&b'{') {
+                    out.push_str("{{");
+                    self.pos += 2;
+                    continue;
+                }
+                hole_depth = 1;
+                hole_start = self.pos;
             }
             if b == b'\\' {
                 self.pos += 1;
@@ -361,6 +397,9 @@ impl<'a> Lexer<'a> {
             let ch = self.src[self.pos..].chars().next().unwrap();
             out.push(ch);
             self.pos += ch.len_utf8();
+        }
+        if hole_depth > 0 {
+            return Err(unclosed_hole(hole_start));
         }
         Err(Error::at("unterminated string", Span::new(start, self.pos)))
     }
@@ -534,6 +573,14 @@ fn is_ident_start(b: u8) -> bool {
 
 fn is_ident_continue(b: u8) -> bool {
     b.is_ascii_alphanumeric()
+}
+
+/// A hole whose `}` never came: it ran to the end of the file, taking the
+/// quotes after it as strings of its own (D176).
+fn unclosed_hole(at: usize) -> Error {
+    Error::at("unclosed interpolation `{`", Span::new(at, at + 1)).with_help(
+        "a hole runs to its matching `}`, and a `\"` inside it starts a string of its own",
+    )
 }
 
 fn hex_nibble(b: u8) -> u8 {

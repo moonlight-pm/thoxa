@@ -1,0 +1,10 @@
+## D176: a `"` inside a hole starts a string of its own, so a hole missing
+## its `}` would take the quotes after it. It is reported at the `{`.
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    let name = "ada"
+    info("{name")
+    info("next")
+    0
+}

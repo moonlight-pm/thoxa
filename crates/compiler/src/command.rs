@@ -48,10 +48,8 @@ pub fn desugar_session_source(src: &str) -> Result<String> {
 /// commands. Quote/`(` in a comment must not change depth for later lines.
 fn nesting_delta(line: &str) -> i32 {
     let mut delta = 0i32;
-    let mut in_str = false;
-    let mut quote = b'\0';
-    let mut esc = false;
-    for_each_code_byte(line, &mut in_str, &mut quote, &mut esc, |b| match b {
+    let mut scan = CodeScan::default();
+    for_each_code_byte(line, &mut scan, |b| match b {
         b'{' | b'(' | b'[' => delta += 1,
         b'}' | b')' | b']' => delta -= 1,
         _ => {}
@@ -59,36 +57,61 @@ fn nesting_delta(line: &str) -> i32 {
     delta
 }
 
+/// Where a line-by-line scan of session source is: in code, or inside
+/// string literals. A hole in a `"…"` string may hold a string of its own
+/// (D176), so open strings nest: one entry per open string, innermost last,
+/// with the `{` open in its current hole (0 = in its text). Kept across
+/// lines so a multi-line `"…"` stays open.
+#[derive(Default)]
+pub(crate) struct CodeScan {
+    strings: Vec<(u8, usize)>,
+    escape: bool,
+}
+
+impl CodeScan {
+    pub(crate) fn in_string(&self) -> bool {
+        !self.strings.is_empty()
+    }
+}
+
 /// Feed bytes that are outside `"…"` / `'…'` strings and outside a `#` line
 /// comment (lexer: bare `#` comments through EOL, so `##` is a comment).
-/// `in_str` / `quote` / `esc` persist so multi-line `"…"` stays closed.
-pub(crate) fn for_each_code_byte(
-    line: &str,
-    in_str: &mut bool,
-    quote: &mut u8,
-    esc: &mut bool,
-    mut on_code: impl FnMut(u8),
-) {
-    for &b in line.as_bytes() {
-        if *in_str {
-            if *esc {
-                *esc = false;
-            } else if b == b'\\' {
-                *esc = true;
-            } else if b == *quote {
-                *in_str = false;
+pub(crate) fn for_each_code_byte(line: &str, scan: &mut CodeScan, mut on_code: impl FnMut(u8)) {
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let b = bytes[index];
+        index += 1;
+        let Some(&(quote, holes)) = scan.strings.last() else {
+            if b == b'#' {
+                break;
+            }
+            match b {
+                b'"' | b'\'' => scan.strings.push((b, 0)),
+                _ => on_code(b),
             }
             continue;
-        }
-        if b == b'#' {
-            break;
-        }
-        match b {
-            b'"' | b'\'' => {
-                *in_str = true;
-                *quote = b;
+        };
+        let top = scan.strings.len() - 1;
+        if scan.escape {
+            scan.escape = false;
+        } else if b == b'\\' {
+            scan.escape = true;
+        } else if holes > 0 {
+            match b {
+                b'"' => scan.strings.push((b, 0)),
+                b'{' => scan.strings[top].1 += 1,
+                b'}' => scan.strings[top].1 -= 1,
+                _ => {}
             }
-            _ => on_code(b),
+        } else if b == quote {
+            scan.strings.pop();
+        } else if b == b'{' && quote == b'"' {
+            if bytes.get(index) == Some(&b'{') {
+                index += 1;
+            } else {
+                scan.strings[top].1 = 1;
+            }
         }
     }
 }
