@@ -212,7 +212,8 @@ pub fn ensure_runtime() -> Result<()> {
     Ok(())
 }
 
-/// Writable dir for REPL chunk `.thx` (store `THOXA_ROOT` is root-owned on Oath).
+/// Writable dir for kept session C (`THOXA_REPL_KEEP_C`; store `THOXA_ROOT` is
+/// root-owned on Oath).
 fn session_scratch_dir() -> PathBuf {
     if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
         if !xdg.is_empty() {
@@ -692,7 +693,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static SESSION_CACHE_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Env: write generated session C under `target/thoxa/repl/` for inspection.
+/// Env: write generated session C under the session scratch dir for inspection.
 pub const REPL_KEEP_C_ENV: &str = "THOXA_REPL_KEEP_C";
 
 /// One session's module state (D169): a slot per module global, owned by the

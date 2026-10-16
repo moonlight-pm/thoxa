@@ -71,7 +71,7 @@ Optional system-`tcc` CLI on PATH is **not** the product design.
 | Session scripts | shipped | Splice + synthetic `main` + system `cc` (D94) |
 | REPL pure step | shipped | All commands via step path (D103) |
 | Step C backend | shipped | libtcc memory only (D105); no `cc`+dlopen |
-| Decl-stable cache | shipped | Reuse prepared package + MIR maps; re-lower only `Shell.step`; cache base `.o` |
+| Decl-stable cache | shipped | Reuse prepared package + MIR maps; re-lower only `Shell.step`; cache the base image (in memory since **D169**) |
 | Scratch `.thx` | shipped (removed) | Virtual `repl.thx` path via `load_package_virtual` |
 | `std/Shell.thx` | shipped | D104 |
 | Pipes / redirs | shipped | D101 / D102 |
@@ -116,9 +116,9 @@ chunk
 
 **As-built leftover (not a second backend):** generated C stays a string.
 libtcc still `add_file`s on-disk `libthoxa_rt.a` (product runtime, not a
-per-line write). One cached `session_base_{id}.o` lives under
-`$XDG_CACHE_HOME/thoxa/repl/` for the REPL process (removed when the cache
-drops). No per-chunk `.thx`. Process-linked RT is §11.4.
+per-line write). The base for the current decls is an in-memory libtcc
+image that steps link against with `tcc_add_symbol` (**D169**); nothing is
+written per session. No per-chunk `.thx`. Process-linked RT is §11.4.
 
 **Allowed during debug:**
 
@@ -156,12 +156,13 @@ unnecessarily.
 |-------|--------|--------|
 | Decls key | `SessionBuildCache` | **shipped** |
 | Frontend | Reuse prepared package; re-lower only `Shell.step` | **shipped** |
-| Base C / object | Re-cgen + libtcc `TCC_OUTPUT_OBJ` only when decls change | **shipped** |
-| Step C | Always re-cgen `emit_session_step`; libtcc memory + `add_file` base `.o` | **shipped** |
+| Base C / image | Re-cgen + libtcc memory image only when decls change; an image that ran a step is kept (**D169**) | **shipped** |
+| Step C | Always re-cgen `emit_session_step`; libtcc memory + `tcc_add_symbol` of the base image's symbols (**D169**) | **shipped** |
 
 Combined recompile is no longer the hot path. First chunk still pays a full
-prelude lower + base object (~100 ms release). Later chunks: ~1 ms frontend +
-~5 ms libtcc of ~16 KB step C (~**6 ms**/line, 2026-09-04).
+prelude lower + base image (~100 ms release). Later chunks: ~1 ms frontend +
+~5 ms libtcc of ~16 KB step C (~**6 ms**/line, 2026-09-04; ~**8 ms** since
+**D169**, §8.2).
 
 ### 3.6 Multiple live images
 
@@ -298,6 +299,10 @@ cache (re-lower `Shell.step` + cached base object):
 
 Before the cache, every line was ~100 ms / ~12k C. Not a CI gate.
 
+2026-10-16, after **D169** (in-memory base image; steps link against its
+symbols): 1× `echo hi` ≈ 110 ms, 50× ≈ 500 ms, 100× ≈ 0.85–0.95 s — about
+**8 ms** per later line.
+
 ---
 
 ## 9. Relationship to other docs
@@ -315,7 +320,8 @@ Before the cache, every line was ~100 ms / ~12k C. Not a CI gate.
 ## 10. Agent handoff
 
 - **Shipped:** PR0–PR3 — libtcc-only session steps; no `THOXA_REPL_BACKEND`.  
-  Decl-stable compile cache + virtual entry (no scratch `.thx`) + base object.  
+  Decl-stable compile cache + virtual entry (no scratch `.thx`) + base image
+  (in memory since **D169**).  
 - **Do not** put remaining §11 polish (process-linked RT, license packaging)
   on the CURRENT proceed queue unless CURRENT explicitly unparks it.  
 - Do not re-litigate A1–A3 or reopen QBE / interpreter.  
@@ -334,8 +340,9 @@ after profiling, packaging, or unparking session residual).
 
 When decls are stable: reuse the prepared package and MIR maps; re-lower only
 `Shell.step`; `emit_session_base` once to a libtcc object; each chunk
-`emit_session_step` (~16 KB) + `tcc_add_file` of that object. First line still
-pays the full prelude (~100 ms release). Later lines ~**6 ms**. See §8.2.
+`emit_session_step` (~16 KB) + `tcc_add_file` of that object. Since **D169**
+the base is an in-memory image and steps link against its symbols. First line
+still pays the full prelude (~100 ms release). Later lines ~**8 ms** (§8.2).
 
 `THOXA_REPL_PROFILE` prints frontend / libtcc timings on stderr (debug aid,
 not a product flag).
@@ -349,8 +356,8 @@ Packaging work only — does not change session behavior.
 
 Entry is a virtual `cwd/repl.thx` via `load_package_virtual` (file need not
 exist). No per-chunk `.thx`. Keep-C still writes `session_base_*.c` /
-`session_step_*.c` when `THOXA_REPL_KEEP_C=1`. One process-lifetime base
-`.o` under `$XDG_CACHE_HOME/thoxa/repl/` (deleted when the cache drops).
+`session_step_*.c` under `$XDG_CACHE_HOME/thoxa/repl/` when
+`THOXA_REPL_KEEP_C=1`. No base `.o` on disk since **D169**.
 
 **Not this slice:** batch `thoxa run` / session **scripts** still emit C and
 link with system `cc` (D105.a, locked). Tree-walk interpreter stays parked.

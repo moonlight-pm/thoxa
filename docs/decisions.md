@@ -106,7 +106,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D146 | Handler can own the peer for SSE | **`Request.peerFd`** (Int64, default 0) is host-filled by `std/http/server`. **`streamed()`** is status `0`; `serveOne` skips `writeResponse`, drains until close, then closes. **`beginEventStream` / `sendEvent`** write `text/event-stream`. Not chunked encoding, not WebSockets, not `fn` fields on Response (D48). | **Shipped.** Sample-driven (Crema Phase **E5**). Gate: `http_helpers` (`streamed=0`); live path is example-only (`examples/http` `/events`). |
+| D146 | Handler can own the peer for SSE | **`Request.peerFd`** (Int64, default 0) is host-filled by `std/http/server`. **`streamed()`** is status `0`; `serveOne` skips `writeResponse`, drains until close, then closes. **`beginEventStream` / `sendEvent`** write `text/event-stream`. Not chunked encoding, not WebSockets, not `fn` fields on Response (D48). | **Shipped.** Sample-driven (Crema Phase **E5**). Gate: `http_helpers` (`streamed=0`); live path is example-only (`examples/http` `/events`). Since **D168** the handler gets the Socket from `server.peerOf(request)`; `peerFd` is the key. |
 
 ## 2026-08-19 — HTML fragments + cache validators
 
@@ -317,7 +317,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
-| D105 | REPL / session-step C backend | **In-process libtcc only** (`TCC_OUTPUT_MEMORY`); no compiler spawn, no step `.so` | Vendored TinyCC under `vendor/tinycc` (Linux x86_64). Batch + `libthoxa_rt` stay system `cc`. Legacy `cc`+dlopen escape **removed**. Decl-stable cache: re-lower `Shell.step`, cached base object (freeze §3.5). Freeze: `docs/specs/2026-08-05-session-libtcc.md`. |
+| D105 | REPL / session-step C backend | **In-process libtcc only** (`TCC_OUTPUT_MEMORY`); no compiler spawn, no step `.so` | Vendored TinyCC under `vendor/tinycc` (Linux x86_64). Batch + `libthoxa_rt` stay system `cc`. Legacy `cc`+dlopen escape **removed**. Decl-stable cache: re-lower `Shell.step`, cached base image (freeze §3.5; in memory, linked by symbol since **D169**). Freeze: `docs/specs/2026-08-05-session-libtcc.md`. |
 
 ## 2026-08-05 — Session pipes, redirs, pure-step, std Shell
 

@@ -108,7 +108,7 @@ Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are gone.
   (values may point into it); one only compiled is dropped. No step `.so` /
   no session `cc` spawn. Optional debug C: `THOXA_REPL_KEEP_C=1`. Freeze:
   [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
-  (D105). Soft perf (release, after first line): ~**6 ms/step** (freeze §8.2).
+  (D105). Soft perf (release, after first line): ~**8 ms/step** (freeze §8.2, 2026-10-16).
   The cache key is decls plus module file mtimes. Each step runs through the
   base image's runtime `thoxa_session_call` (sigsetjmp; panic → 134, fault →
   128 + signal; handlers and alt stack restored after the step, **D160**). The REPL and `-c` stay on

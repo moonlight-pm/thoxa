@@ -45,7 +45,7 @@ cache shipped. **`having`/`else` parked indefinitely.**
 
 **No active language campaign.** Session step compile cache shipped (D105
 §3.5 / §11.1): decl-stable package reuse, re-lower only `Shell.step`, libtcc
-base image that steps link against (**D169**). Release REPL ~**6 ms**/line after the first (~100 ms) prelude
+base image that steps link against (**D169**). Release REPL ~**8 ms**/line after the first (~100 ms) prelude
 build — not a second shell mode. **D155** resource `drop` shipped. D153
 simple-RC gate is done. **Not Perceus.** Editor only when DX forces it. Crema
 Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
@@ -60,7 +60,7 @@ Freezes:
 (**D153**).
 
 **Shipped recently:** Session step compile cache (D105 §3.5): no per-line
-scratch `.thx`; reuse prelude MIR; libtcc base `.o` + ~500-line step C.
+scratch `.thx`; reuse prelude MIR; libtcc base image (in memory since **D169**) + ~500-line step C.
 `cargo make shell` runs **release** `thoxa`. Session rc form split skips
 `#` / `##` comments, so an apostrophe in `## not Thoxa's default` no longer
 glues later `import` / `fn` into one statement (would fail `program requires
