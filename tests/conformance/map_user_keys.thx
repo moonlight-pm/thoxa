@@ -1,0 +1,82 @@
+## D179: a user type as a Map key. Keys hash and compare by value (D175).
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Point(x: Int64, y: Int64)
+
+type Cell(sheet: String, at: Point)
+
+type Qty = Int64 where >= 1
+
+type Order(drink: String, qty: Qty)
+
+type Circle(radius: Int64)
+type Square(side: Int64)
+type Shape = Circle | Square
+
+fn label(found!: May<String>) -> String {
+    match found {
+        Has(text) => text
+        Not => "-"
+    }
+}
+
+fn number(found!: May<Int64>) -> Int64 {
+    match found {
+        Has(value) => value
+        Not => -1
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    mut grid: Map<Point, String> = Map()
+    grid.set(Point(x: 0, y: 0), "origin")
+    grid.set(Point(x: 2, y: 3), "treasure")
+    grid[Point(x: 5, y: 5)] = "camp"
+    info("count {grid.count}")
+    info("get {label(grid.get(Point(x: 2, y: 3)))} {label(grid[Point(x: 9, y: 9)])}")
+    info("has {grid.has(Point(x: 0, y: 0))} {grid.has(Point(x: 0, y: 1))}")
+    ## A key built another way is the same key.
+    let x = 1 + 1
+    grid.set(Point(x: x, y: 3), "gold")
+    info("overwrite {grid.count} {label(grid.get(Point(x: 2, y: 3)))}")
+    grid.remove(Point(x: 0, y: 0))
+    info("removed {grid.count} {grid.has(Point(x: 0, y: 0))}")
+    for at, name in grid {
+        info("entry ({at.x}, {at.y}) {name}")
+    }
+    for at in grid.keys() {
+        info("key {at.x},{at.y}")
+    }
+
+    ## String fields, nested products.
+    mut cells: Map<Cell, Int64> = Map()
+    let sheet = "sheet"
+    cells.set(Cell(sheet: "{sheet}1", at: Point(x: 1, y: 1)), 10)
+    cells.set(Cell(sheet: "sheet1", at: Point(x: 1, y: 2)), 20)
+    cells.set(Cell(sheet: "sheet2", at: Point(x: 1, y: 1)), 30)
+    info("cells {cells.count} {number(cells[Cell(sheet: "sheet1", at: Point(x: 1, y: 1))])}")
+
+    ## A refined field.
+    mut orders: Map<Order, String> = Map()
+    orders.set(Order(drink: "mocha", qty: 2), "table 4")
+    info("orders {label(orders.get(Order(drink: "mocha", qty: 2)))} {label(orders.get(Order(drink: "mocha", qty: 3)))}")
+
+    ## A union key.
+    mut areas: Map<Shape, Int64> = Map()
+    let small: Shape = Circle(radius: 1)
+    let side: Shape = Square(side: 1)
+    areas.set(small, 3)
+    areas.set(side, 1)
+    let again: Shape = Circle(radius: 1)
+    info("shapes {areas.count} {number(areas[again])} {areas.has(Square(side: 2))}")
+
+    ## Copies of a map do not share writes.
+    let before = grid
+    grid.set(Point(x: 7, y: 7), "later")
+    info("copy {before.count} {grid.count}")
+    0
+}

@@ -506,6 +506,7 @@ void thoxa_array_dup(ThoxaArray *a);
 
 #define THOXA_MAP_KEY_I64 0u
 #define THOXA_MAP_KEY_STR 1u
+#define THOXA_MAP_KEY_USER 2u
 #define THOXA_MAP_VAL_I64 0u
 #define THOXA_MAP_VAL_PTR 1u
 #define THOXA_MAP_VAL_USER 2u
@@ -517,7 +518,29 @@ void thoxa_array_dup(ThoxaArray *a);
  */
 typedef struct ThoxaMap ThoxaMap;
 
+/*
+ * A user type as a Map key (D179). The compiler emits one table per key
+ * type. Key bits are a pointer to the key's C struct: the caller's own value
+ * for a lookup, and for a stored key a refcounted box holding a copy (shared
+ * by map copies, as String keys are), whose last release calls `drop`.
+ */
+typedef struct {
+    uint32_t size;
+    uint64_t (*hash)(const void *key);
+    int (*equal)(const void *left, const void *right);
+    ThoxaArrayElemFn dup;
+    ThoxaArrayElemFn drop;
+} ThoxaMapKeyOps;
+
 ThoxaMap *thoxa_map_new(uint32_t key_kind, uint32_t val_kind, uint32_t val_size);
+ThoxaMap *thoxa_map_new_keyed(const ThoxaMapKeyOps *key_ops, uint32_t val_kind, uint32_t val_size);
+/* Building blocks for generated key hashes (D179). */
+static inline uint64_t thoxa_hash_mix(uint64_t hash, uint64_t value) {
+    hash ^= value + UINT64_C(0x9e3779b97f4a7c15) + (hash << 6) + (hash >> 2);
+    return hash;
+}
+uint64_t thoxa_hash_string(const ThoxaString *s);
+uint64_t thoxa_hash_bytes(const ThoxaBytes *b);
 int64_t thoxa_map_count(const ThoxaMap *m);
 int thoxa_map_has(const ThoxaMap *m, int64_t key_bits);
 int thoxa_map_get_i64(const ThoxaMap *m, int64_t key_bits, int64_t *out);

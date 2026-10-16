@@ -136,6 +136,19 @@ pub fn emit_program_with(
             }
         }
     }
+    // D179: the key types this TU makes maps of; their ops use the elem RC.
+    let mut map_keys: Vec<String> = Vec::new();
+    for f in &program.functions {
+        if include_body(f, bodies) {
+            collect_map_keys_stmts(&f.body, &mut map_keys);
+        }
+    }
+    if bodies != BodySet::SessionStepOnly {
+        collect_map_keys_stmts(&program.init, &mut map_keys);
+    }
+    for name in &map_keys {
+        push_user_array_elem_ty(&Ty::User(name.clone()), &mut user_arr_elems);
+    }
     for name in &user_arr_elems {
         if program.types.iter().any(|t| t.name == *name) {
             let _ = writeln!(
@@ -158,6 +171,7 @@ pub fn emit_program_with(
     if !user_arr_elems.is_empty() {
         out.push('\n');
     }
+    emit_map_key_ops(&mut out, &map_keys, &program.types);
 
     // Module-level values (R8).
     // Full programs and session base own the definitions. Session step TUs only
@@ -1129,7 +1143,16 @@ fn emit_stmts(
                         }
                     }
                 } else if let RValue::MapKeyAt { map, index } = value {
-                    if is_heap_ty(ty, types) {
+                    if let Ty::User(key_name) = ty {
+                        let _ = writeln!(
+                            out,
+                            "{pad}{} = *(const {} *)(intptr_t)thoxa_map_key_at({}, {});",
+                            place.name,
+                            c_type_name(key_name),
+                            map.name,
+                            index.name
+                        );
+                    } else if is_heap_ty(ty, types) {
                         let _ = writeln!(
                             out,
                             "{pad}{} = ({})(intptr_t)thoxa_map_key_at({}, {});",
@@ -1878,6 +1901,18 @@ fn emit_rvalue(
                 let _ = write!(out, "thoxa_array_remove_at({}, {})", arr.name, at.name);
             }
         },
+        RValue::MapNew {
+            key_ty: Ty::User(key_name),
+            val_ty,
+        } => {
+            let _ = write!(
+                out,
+                "thoxa_map_new_keyed(&{}, {}, {})",
+                map_key_ops_name(key_name),
+                map_val_kind_c(val_ty, types),
+                map_val_size_c(val_ty, types)
+            );
+        }
         RValue::MapNew { key_ty, val_ty } => {
             let _ = write!(
                 out,
@@ -2154,6 +2189,209 @@ fn array_user_elem_dup_fn(type_name: &str) -> String {
 
 fn array_user_elem_drop_fn(type_name: &str) -> String {
     format!("thoxa_arr_elem_drop_{type_name}")
+}
+
+fn map_key_ops_name(type_name: &str) -> String {
+    format!("thoxa_key_ops_{type_name}")
+}
+
+fn map_key_hash_fn(type_name: &str) -> String {
+    format!("thoxa_key_hash_{type_name}")
+}
+
+fn map_key_eq_fn(type_name: &str) -> String {
+    format!("thoxa_key_eq_{type_name}")
+}
+
+/// D179: user key types of the maps `stmts` make.
+fn collect_map_keys_stmts(stmts: &[Stmt], out: &mut Vec<String>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::Assign {
+                value:
+                    RValue::MapNew {
+                        key_ty: Ty::User(name),
+                        ..
+                    },
+                ..
+            } => {
+                if !out.iter().any(|known| known == name) {
+                    out.push(name.clone());
+                }
+            }
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_map_keys_stmts(then_body, out);
+                collect_map_keys_stmts(else_body, out);
+            }
+            Stmt::Loop { body } | Stmt::ForRange { body, .. } => collect_map_keys_stmts(body, out),
+            _ => {}
+        }
+    }
+}
+
+/// Hash and equality for each user key type (D179), and for every product
+/// or union inside one, plus each key type's `ThoxaMapKeyOps`. MIR has
+/// checked that keys hold only integers, Bool, String, Bytes, and such
+/// products and unions.
+fn emit_map_key_ops(out: &mut String, keys: &[String], types: &[TypeLayout]) {
+    if keys.is_empty() {
+        return;
+    }
+    let mut all: Vec<String> = Vec::new();
+    let mut pending: Vec<String> = keys.to_vec();
+    while let Some(name) = pending.pop() {
+        if all.contains(&name) {
+            continue;
+        }
+        let Some(layout) = types.iter().find(|t| t.name == name) else {
+            continue;
+        };
+        let inner: Vec<&Ty> = match &layout.sum {
+            Some(variants) => variants.iter().map(|v| &v.payload_ty).collect(),
+            None => layout.fields.iter().map(|f| &f.ty).collect(),
+        };
+        for ty in inner {
+            if let Ty::User(nested) = ty {
+                pending.push(nested.clone());
+            }
+        }
+        all.push(name);
+    }
+    for name in &all {
+        let _ = writeln!(
+            out,
+            "static uint64_t {}(const void *p);",
+            map_key_hash_fn(name)
+        );
+        let _ = writeln!(
+            out,
+            "static int {}(const void *a, const void *b);",
+            map_key_eq_fn(name)
+        );
+    }
+    for name in &all {
+        let layout = types.iter().find(|t| t.name == *name).unwrap();
+        emit_map_key_hash_eq(out, layout, types);
+    }
+    for name in keys {
+        let _ = writeln!(
+            out,
+            "static const ThoxaMapKeyOps {} = {{ (uint32_t)sizeof({}), {}, {}, {}, {} }};",
+            map_key_ops_name(name),
+            c_type_name(name),
+            map_key_hash_fn(name),
+            map_key_eq_fn(name),
+            array_user_elem_dup_fn(name),
+            array_user_elem_drop_fn(name)
+        );
+    }
+    out.push('\n');
+}
+
+fn emit_map_key_hash_eq(out: &mut String, layout: &TypeLayout, types: &[TypeLayout]) {
+    let name = &layout.name;
+    let cty = c_type_name(name);
+    let _ = writeln!(
+        out,
+        "static uint64_t {}(const void *p) {{",
+        map_key_hash_fn(name)
+    );
+    let _ = writeln!(out, "    const {cty} *value = (const {cty} *)p;");
+    out.push_str("    uint64_t hash = UINT64_C(0xcbf29ce484222325);\n");
+    if layout.sum_scalar.is_some() {
+        out.push_str("    hash = thoxa_hash_mix(hash, (uint64_t)*value);\n");
+    } else if let Some(variants) = &layout.sum {
+        out.push_str("    hash = thoxa_hash_mix(hash, (uint64_t)value->tag);\n");
+        out.push_str("    switch (value->tag) {\n");
+        for variant in variants {
+            let payload = format!("value->u.v{}", variant.tag);
+            if let Some(part) = c_key_hash(&payload, &variant.payload_ty, types) {
+                let _ = writeln!(
+                    out,
+                    "    case {}: hash = thoxa_hash_mix(hash, {part}); break;",
+                    variant.tag
+                );
+            }
+        }
+        out.push_str("    default: break;\n    }\n");
+    } else {
+        for field in &layout.fields {
+            let place = format!("value->{}", field.c_name);
+            if let Some(part) = c_key_hash(&place, &field.ty, types) {
+                let _ = writeln!(out, "    hash = thoxa_hash_mix(hash, {part});");
+            }
+        }
+    }
+    out.push_str("    return hash;\n}\n");
+
+    let _ = writeln!(
+        out,
+        "static int {}(const void *a, const void *b) {{",
+        map_key_eq_fn(name)
+    );
+    let _ = writeln!(out, "    const {cty} *left = (const {cty} *)a;");
+    let _ = writeln!(out, "    const {cty} *right = (const {cty} *)b;");
+    if layout.sum_scalar.is_some() {
+        out.push_str("    return *left == *right;\n}\n");
+        return;
+    }
+    if let Some(variants) = &layout.sum {
+        out.push_str("    if (left->tag != right->tag) {\n        return 0;\n    }\n");
+        out.push_str("    switch (left->tag) {\n");
+        for variant in variants {
+            let left_payload = format!("left->u.v{}", variant.tag);
+            let right_payload = format!("right->u.v{}", variant.tag);
+            let same = c_key_eq(&left_payload, &right_payload, &variant.payload_ty, types);
+            if let Some(same) = same {
+                let _ = writeln!(out, "    case {}: return {same};", variant.tag);
+            }
+        }
+        out.push_str("    default: return 1;\n    }\n}\n");
+        return;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for field in &layout.fields {
+        let left_field = format!("left->{}", field.c_name);
+        let right_field = format!("right->{}", field.c_name);
+        if let Some(same) = c_key_eq(&left_field, &right_field, &field.ty, types) {
+            parts.push(same);
+        }
+    }
+    if parts.is_empty() {
+        out.push_str("    (void)left;\n    (void)right;\n    return 1;\n}\n");
+    } else {
+        let _ = writeln!(out, "    return {};\n}}", parts.join("\n        && "));
+    }
+}
+
+/// One part of a key's hash: `place` (a C lvalue) of type `ty`. `None` for
+/// Void, which has no storage.
+fn c_key_hash(place: &str, ty: &Ty, types: &[TypeLayout]) -> Option<String> {
+    Some(match ty {
+        Ty::Void => return None,
+        Ty::String => format!("thoxa_hash_string({place})"),
+        Ty::Bytes => format!("thoxa_hash_bytes({place})"),
+        Ty::Bool => format!("(uint64_t)({place} ? 1 : 0)"),
+        Ty::User(name) if is_sum_scalar(types, name) => format!("(uint64_t)({place})"),
+        Ty::User(name) => format!("{}(&({place}))", map_key_hash_fn(name)),
+        _ => format!("(uint64_t)(int64_t)({place})"),
+    })
+}
+
+/// `left == right` for one part of a key; `None` for Void.
+fn c_key_eq(left: &str, right: &str, ty: &Ty, types: &[TypeLayout]) -> Option<String> {
+    Some(match ty {
+        Ty::Void => return None,
+        Ty::String => format!("thoxa_string_eq({left}, {right})"),
+        Ty::Bytes => format!("thoxa_bytes_equals({left}, {right})"),
+        Ty::User(name) if is_sum_scalar(types, name) => format!("({left} == {right})"),
+        Ty::User(name) => format!("{}(&({left}), &({right}))", map_key_eq_fn(name)),
+        _ => format!("({left} == {right})"),
+    })
 }
 
 fn c_map_key_bits(name: &str) -> String {
@@ -2506,14 +2744,18 @@ fn push_user_array_elem_from_rvalue(rv: &RValue, out: &mut Vec<String>) {
         | RValue::ArrayRemoveAt { elem_ty, .. } => {
             push_user_array_elem_ty(elem_ty, out);
         }
-        RValue::MapNew { val_ty, .. }
-        | RValue::MapSet { val_ty, .. }
-        | RValue::MapRemove { val_ty, .. }
-        | RValue::MapGet { val_ty, .. }
+        RValue::MapNew { key_ty, val_ty }
+        | RValue::MapSet { key_ty, val_ty, .. }
+        | RValue::MapRemove { key_ty, val_ty, .. } => {
+            push_user_array_elem_ty(key_ty, out);
+            push_user_array_elem_ty(val_ty, out);
+        }
+        RValue::MapGet { val_ty, .. }
         | RValue::MapValAt { val_ty, .. }
         | RValue::MapValues { val_ty, .. } => {
             push_user_array_elem_ty(val_ty, out);
         }
+        RValue::MapKeys { key_ty, .. } => push_user_array_elem_ty(key_ty, out),
         _ => {}
     }
 }
@@ -2551,7 +2793,8 @@ fn push_user_array_elem(ty: &Ty, out: &mut Vec<String>) {
     if let Ty::Array { elem } = ty {
         push_user_array_elem_ty(elem, out);
     }
-    if let Ty::Map { val, .. } = ty {
+    if let Ty::Map { key, val } = ty {
+        push_user_array_elem_ty(key, out);
         push_user_array_elem_ty(val, out);
     }
 }

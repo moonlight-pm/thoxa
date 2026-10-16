@@ -1946,10 +1946,40 @@ impl Parser {
     }
 
     /// `{ key: value` in expression position — map literal, not a block.
+    /// A key may also be a call, `{ Point(x: 1, y: 2): value` (D179).
     fn at_map_lit(&self) -> bool {
-        self.at(TokenKind::LBrace)
-            && self.at_map_key_token(1)
-            && self.peek_kind_is(2, TokenKind::Colon)
+        if !self.at(TokenKind::LBrace) {
+            return false;
+        }
+        if self.at_map_key_token(1) && self.peek_kind_is(2, TokenKind::Colon) {
+            return true;
+        }
+        self.call_key_end(1)
+            .is_some_and(|after| self.peek_kind_is(after, TokenKind::Colon))
+    }
+
+    /// When `Name(…)` starts at `offset`: the offset just past its `)`.
+    fn call_key_end(&self, offset: usize) -> Option<usize> {
+        let at = |delta: usize| self.tokens.get(self.pos + offset + delta).map(|t| &t.kind);
+        if !matches!(at(0), Some(TokenKind::Ident(_))) || at(1) != Some(&TokenKind::LParen) {
+            return None;
+        }
+        let mut depth = 0usize;
+        let mut delta = 1;
+        loop {
+            match at(delta)? {
+                TokenKind::LParen => depth += 1,
+                TokenKind::RParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(offset + delta + 1);
+                    }
+                }
+                TokenKind::Eof => return None,
+                _ => {}
+            }
+            delta += 1;
+        }
     }
 
     fn at_map_key_token(&self, offset: usize) -> bool {
@@ -1996,6 +2026,9 @@ impl Parser {
 
     fn parse_map_key(&mut self) -> Result<Expr> {
         let span = self.peek_span();
+        if self.call_key_end(0).is_some() {
+            return self.parse_expr();
+        }
         match &self.current().kind {
             TokenKind::Ident(s) => {
                 let s = s.clone();
@@ -2036,7 +2069,7 @@ impl Parser {
                 })
             }
             _ => Err(Error::at(
-                "map key must be an identifier, string, integer, or bool literal",
+                "map key must be an identifier, string, integer, or bool literal, or a call like `Point(x: 1, y: 2)`",
                 span,
             )),
         }

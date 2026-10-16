@@ -755,8 +755,57 @@ fn array_elem_is_heap(ty: &Ty) -> bool {
     )
 }
 
+/// String, Int64, Bool, or a user type (D179; what it holds is checked
+/// where a map is made, see `map_key_problem`).
 fn is_map_key_ty(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Int64 | Ty::Bool)
+    matches!(ty, Ty::String | Ty::Int64 | Ty::Bool | Ty::User(_))
+}
+
+/// D179: why values of `ty` cannot be (part of) a Map key, or `None`. A key
+/// hashes and compares by value, so it may hold integers, Bool, String,
+/// Bytes, and products and unions of those.
+fn map_key_problem(types: &HashMap<String, TypeInfo>, ty: &Ty) -> Option<String> {
+    if is_int(ty) || matches!(ty, Ty::Bool | Ty::String | Ty::Bytes | Ty::Void) {
+        return None;
+    }
+    let Ty::User(name) = ty else {
+        return Some(format!("it holds {}", display_ty(ty)));
+    };
+    let shown = display_ty(ty);
+    let Some(info) = types.get(name) else {
+        return Some(format!("`{shown}` is not a known type"));
+    };
+    if info.methods.contains_key("drop") {
+        return Some(format!("`{shown}` is a resource (it has `drop`)"));
+    }
+    if info.zero_init {
+        return Some(format!("`{shown}` is a C-layout type"));
+    }
+    if let Some(sum) = &info.sum {
+        return sum
+            .variants
+            .iter()
+            .filter(|variant| variant.lit.is_none())
+            .find_map(|variant| map_key_problem(types, &variant.ty));
+    }
+    info.fields
+        .iter()
+        .find_map(|field| map_key_problem(types, &field.ty))
+}
+
+/// Refuse a map whose key type cannot be hashed (D179).
+fn check_map_key(ctx: &LowerCtx, key_ty: &Ty, span: Span) -> Result<()> {
+    match map_key_problem(&ctx.types, key_ty) {
+        None => Ok(()),
+        Some(problem) => Err(Error::at(
+            format!("cannot use {} as a Map key: {problem}", display_ty(key_ty)),
+            span,
+        )
+        .with_help(
+            "a key hashes and compares by value: integers, Bool, String, Bytes, \
+             and products and unions of those (no Float64, Array, or Map)",
+        )),
+    }
 }
 
 fn is_map_val_ty(ty: &Ty) -> bool {
@@ -4660,7 +4709,10 @@ fn resolve_ty(
             let vt = resolve_ty(v, types, name_map)?;
             if !is_map_key_ty(&kt) {
                 return Err(Error::at(
-                    format!("Map key type not yet supported: {kt:?} (String, Int64, Bool)"),
+                    format!(
+                        "Map key type not supported: {} (String, Int64, Bool, or a user type)",
+                        display_ty(&kt)
+                    ),
                     k.span,
                 ));
             }
@@ -8435,6 +8487,16 @@ fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Pl
 }
 
 fn coerce_map_key(ctx: &mut LowerCtx, key: Place, key_ty: &Ty) -> Place {
+    // A user key travels as its address; the map copies it only to store it.
+    if let Ty::User(_) = key_ty {
+        let p = ctx.fresh("mkey");
+        ctx.assign(
+            p.clone(),
+            Ty::Address(Box::new(key_ty.clone())),
+            RValue::AddressOf(key),
+        );
+        return p;
+    }
     if *key_ty == Ty::Bool {
         let p = ctx.fresh("mkey");
         ctx.assign(
@@ -8467,6 +8529,7 @@ fn lower_map_new(
             span,
         ));
     };
+    check_map_key(ctx, key, span)?;
     let ty = Ty::Map {
         key: key.clone(),
         val: val.clone(),
@@ -8545,6 +8608,7 @@ fn lower_map_lit(ctx: &mut LowerCtx, entries: &[(Expr, Expr)], span: Span) -> Re
     }
     let key_ty = key_ty.unwrap();
     let val_ty = val_ty.unwrap();
+    check_map_key(ctx, &key_ty, span)?;
     let map_ty = Ty::Map {
         key: Box::new(key_ty.clone()),
         val: Box::new(val_ty.clone()),

@@ -1,0 +1,13 @@
+count 3
+get treasure -
+has true false
+overwrite 3 gold
+removed 2 false
+entry (5, 5) camp
+entry (2, 3) gold
+key 5,5
+key 2,3
+cells 3 10
+orders table 4 -
+shapes 2 3 false
+copy 2 3

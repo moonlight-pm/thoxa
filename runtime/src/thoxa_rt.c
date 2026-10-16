@@ -1391,6 +1391,8 @@ struct ThoxaMap {
     uint32_t val_kind;
     uint32_t val_size;
     uint32_t flags;
+    /* THOXA_MAP_KEY_USER only (D179). */
+    const ThoxaMapKeyOps *key_ops;
     uint8_t data[];
 };
 
@@ -1466,9 +1468,27 @@ static uint64_t map_hash_str(const ThoxaString *s) {
     return h;
 }
 
+uint64_t thoxa_hash_string(const ThoxaString *s) {
+    return map_hash_str(s);
+}
+
+uint64_t thoxa_hash_bytes(const ThoxaBytes *b) {
+    uint64_t h = 14695981039346656037ULL;
+    size_t n = b ? b->len : 0;
+    for (size_t i = 0; i < n; i++) {
+        h ^= (uint64_t)b->data[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
 static uint64_t map_hash(const ThoxaMap *m, int64_t key) {
     if (m->key_kind == THOXA_MAP_KEY_STR) {
         return map_hash_str((const ThoxaString *)(intptr_t)key);
+    }
+    if (m->key_kind == THOXA_MAP_KEY_USER) {
+        /* Spread the generated hash the way an Int64 key is spread. */
+        return map_hash_i64((int64_t)m->key_ops->hash((const void *)(intptr_t)key));
     }
     return map_hash_i64(key);
 }
@@ -1480,19 +1500,38 @@ static int map_key_eq(const ThoxaMap *m, int64_t a, int64_t b) {
             (const ThoxaString *)(intptr_t)b
         );
     }
+    if (m->key_kind == THOXA_MAP_KEY_USER) {
+        return m->key_ops->equal((const void *)(intptr_t)a, (const void *)(intptr_t)b);
+    }
     return a == b;
 }
 
+/* Stored keys are retained values: a String, or a user key's box. */
 static void map_dup_key(const ThoxaMap *m, int64_t key) {
-    if (m->key_kind == THOXA_MAP_KEY_STR) {
+    if (m->key_kind == THOXA_MAP_KEY_STR || m->key_kind == THOXA_MAP_KEY_USER) {
         thoxa_dup((void *)(intptr_t)key);
     }
 }
 
 static void map_drop_key(const ThoxaMap *m, int64_t key) {
-    if (m->key_kind == THOXA_MAP_KEY_STR) {
+    if (m->key_kind == THOXA_MAP_KEY_STR || m->key_kind == THOXA_MAP_KEY_USER) {
         thoxa_drop((void *)(intptr_t)key);
     }
+}
+
+/* The key bits a new slot stores: a String is retained; a user key (the
+ * caller's struct) is copied into a box that owns its fields (D179). */
+static int64_t map_own_key(const ThoxaMap *m, int64_t key) {
+    if (m->key_kind != THOXA_MAP_KEY_USER) {
+        map_dup_key(m, key);
+        return key;
+    }
+    const ThoxaMapKeyOps *ops = m->key_ops;
+    void *box = thoxa_alloc(ops->size, THOXA_TAG_USER);
+    memcpy(box, (const void *)(intptr_t)key, ops->size);
+    ops->dup(box);
+    thoxa_set_dtor(box, ops->drop);
+    return (int64_t)(intptr_t)box;
 }
 
 static void map_dup_val_ptr(void *p) {
@@ -1507,6 +1546,7 @@ static ThoxaMap *map_alloc(
     size_t slot_cap,
     size_t idx_cap,
     uint32_t key_kind,
+    const ThoxaMapKeyOps *key_ops,
     uint32_t val_kind,
     uint32_t val_size
 ) {
@@ -1526,6 +1566,7 @@ static ThoxaMap *map_alloc(
     m->idx_cap = idx_cap;
     m->tombs = 0;
     m->key_kind = key_kind;
+    m->key_ops = key_ops;
     m->val_kind = val_kind;
     m->val_size = val_size;
     m->flags = 0;
@@ -1625,7 +1666,7 @@ static ThoxaMap *map_clone(const ThoxaMap *m, ThoxaArrayElemFn elem_dup) {
     size_t slot_cap = m->slot_cap;
     size_t idx_cap = m->idx_cap;
     ThoxaMap *n =
-        map_alloc(slot_cap, idx_cap, m->key_kind, m->val_kind, m->val_size);
+        map_alloc(slot_cap, idx_cap, m->key_kind, m->key_ops, m->val_kind, m->val_size);
     map_copy_slots(n, m, elem_dup);
     return n;
 }
@@ -1671,7 +1712,7 @@ static ThoxaMap *map_grow_slots(ThoxaMap *m, ThoxaArrayElemFn elem_dup, ThoxaArr
         new_idx = size_dbl(new_idx);
     }
     ThoxaMap *n =
-        map_alloc(new_slots, new_idx, m->key_kind, m->val_kind, m->val_size);
+        map_alloc(new_slots, new_idx, m->key_kind, m->key_ops, m->val_kind, m->val_size);
     map_copy_slots(n, m, elem_dup);
     if (elem_drop) {
         thoxa_map_drop_ex(m, elem_drop);
@@ -1704,7 +1745,17 @@ ThoxaMap *thoxa_map_new(uint32_t key_kind, uint32_t val_kind, uint32_t val_size)
     if (val_kind > THOXA_MAP_VAL_USER) {
         thoxa_panic("Map value kind not supported");
     }
-    return map_alloc(8, 16, key_kind, val_kind, val_size);
+    return map_alloc(8, 16, key_kind, NULL, val_kind, val_size);
+}
+
+ThoxaMap *thoxa_map_new_keyed(const ThoxaMapKeyOps *key_ops, uint32_t val_kind, uint32_t val_size) {
+    if (!key_ops || key_ops->size == 0) {
+        thoxa_panic("Map key ops missing");
+    }
+    if (val_kind > THOXA_MAP_VAL_USER) {
+        thoxa_panic("Map value kind not supported");
+    }
+    return map_alloc(8, 16, THOXA_MAP_KEY_USER, key_ops, val_kind, val_size);
 }
 
 int64_t thoxa_map_count(const ThoxaMap *m) {
@@ -1825,8 +1876,7 @@ static ThoxaMap *map_set_raw(
     size_t slot = m->len;
     MapSlotHead *sl = map_slot(m, slot);
     sl->hash = h;
-    sl->key = key_bits;
-    map_dup_key(m, key_bits);
+    sl->key = map_own_key(m, key_bits);
     memcpy(map_slot_val(m, slot), val, val_n);
     if (m->val_kind == THOXA_MAP_VAL_PTR && val_is_ptr) {
         int64_t bits;
@@ -1980,6 +2030,16 @@ void thoxa_map_val_elem_at(
 
 ThoxaArray *thoxa_map_keys(const ThoxaMap *m) {
     size_t n = m ? m->len : 0;
+    if (m && m->key_kind == THOXA_MAP_KEY_USER) {
+        /* Array<K> of inline structs: each element is a retained copy. */
+        const ThoxaMapKeyOps *ops = m->key_ops;
+        ThoxaArray *a = thoxa_array_new_ex(ops->size, 0u);
+        for (size_t i = 0; i < n; i++) {
+            const void *box = (const void *)(intptr_t)map_slot_c(m, i)->key;
+            a = thoxa_array_append_elem(a, box, ops->size, 0u, ops->dup, ops->drop);
+        }
+        return a;
+    }
     int heap = m && m->key_kind == THOXA_MAP_KEY_STR;
     ThoxaArray *a = thoxa_array_new(heap);
     for (size_t i = 0; i < n; i++) {

@@ -1,0 +1,71 @@
+## D179: more user Map keys: Bytes / Bool / literal-union fields, a literal
+## union and a May as the key type, literal keys, module state, and churn.
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Point(x: Int64, y: Int64)
+type DrinkSlug = "espresso" | "mocha"
+type Tagged(blob: Bytes, flag: Bool, slug: DrinkSlug)
+
+mut visits: Map<Point, Int64> = Map()
+
+fn visit(at!: Point) {
+    let seen = match visits.get(at) {
+        Has(count) => count
+        Not => 0
+    }
+    visits.set(at, seen + 1)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    mut tagged: Map<Tagged, Int64> = Map()
+    tagged.set(Tagged(blob: Bytes.fromString("ab"), flag: true, slug: "mocha"), 1)
+    tagged.set(Tagged(blob: Bytes.fromString("ab"), flag: false, slug: "mocha"), 2)
+    tagged.set(Tagged(blob: Bytes.fromString("ab"), flag: true, slug: "espresso"), 3)
+    tagged.set(Tagged(blob: Bytes.fromString("ab"), flag: true, slug: "mocha"), 4)
+    info("tagged {tagged.count}")
+
+    mut slugs: Map<DrinkSlug, Int64> = Map()
+    slugs.set("mocha", 1)
+    slugs.set("espresso", 2)
+    slugs.set("mocha", 3)
+    info("slugs {slugs.count}")
+
+    mut maybe: Map<May<String>, Int64> = Map()
+    let named: May<String> = Has("ada")
+    let unnamed: May<String> = Not()
+    maybe.set(named, 1)
+    maybe.set(unnamed, 2)
+    let again: May<String> = Has("ada")
+    info("mays {maybe.count} {maybe.has(again)}")
+
+    let literal = {Point(x: 1, y: 1): "one", Point(x: 2, y: 2): "two"}
+    info("literal {literal.count} {literal.has(Point(x: 2, y: 2))}")
+
+    visit(Point(x: 1, y: 1))
+    visit(Point(x: 1, y: 1))
+    visit(Point(x: 2, y: 1))
+    info("visits {visits.count}")
+
+    mut many: Map<Point, Int64> = Map()
+    for index in 0..500 {
+        many.set(Point(x: index, y: index * 2), index)
+    }
+    mut hits = 0
+    for index in 0..500 {
+        if many.has(Point(x: index, y: index * 2)) {
+            hits = hits + 1
+        }
+    }
+    for index in 0..400 {
+        many.remove(Point(x: index, y: index * 2))
+    }
+    for index in 0..400 {
+        many.set(Point(x: index, y: 0), index)
+    }
+    info("many {hits} {many.count} {many.has(Point(x: 450, y: 900))} {many.has(Point(x: 10, y: 20))}")
+    0
+}

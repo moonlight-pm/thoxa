@@ -1,0 +1,11 @@
+## D179: a type with `drop` is a resource, not a value, so it is not a key.
+type Handle(fd: Int64) {
+    export fn drop() {
+        fd = -1
+    }
+}
+
+fn main() -> Int64 {
+    mut open: Map<Handle, String> = Map()
+    open.count
+}

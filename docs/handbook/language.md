@@ -482,10 +482,24 @@ for k, v in lit {
   `a[i] =`) require a `mut` place and return `Void`. Index get `a[i]` still
   panics out of range. Nested `Array` / `Map` elements are heap-RC (a
   returned `[["x"]]` keeps the inner arrays).
-- **Map keys:** `String`, `Int64`, `Bool`. Ident keys in `{ Cookie: … }`
-  are the string `"Cookie"`. Empty `{}` is still a block; empty map is `Map()`.
-  A `type Header(…)` may be a **value** (`Map<String, Header>`), not a key.
-  A Map may itself be a constructor-param field.
+- **Map keys:** `String`, `Int64`, `Bool`, or a user type (**D179**). Ident
+  keys in `{ Cookie: … }` are the string `"Cookie"`. Empty `{}` is still a
+  block; empty map is `Map()`. A Map may itself be a constructor-param field.
+- **User keys:** a product or union is a key when what it holds hashes by
+  value: integers, `Bool`, `String`, `Bytes`, refined and literal-union fields,
+  and nested such types. Two keys are the same key when they are `==`
+  (**D175**), however each was built. A key holding `Float64`, `Array`, or
+  `Map`, a type with `fn drop()`, or a C-layout type is a compile error.
+
+  ```thx
+  type Point(x: Int64, y: Int64)
+
+  mut grid: Map<Point, String> = Map()
+  grid.set(Point(x: 2, y: 3), "treasure")
+  grid.has(Point(x: 2, y: 3))                  ## true
+  let named = {Point(x: 0, y: 0): "origin"}    ## a call is a literal key
+  for at, name in grid { info("{at.x},{at.y} {name}") }
+  ```
 - **Map reads:** `m[k]` and `.get(k)` are `May<V>` (import Fallible). `.has(k)`
   is `Bool`. Duplicate keys in one literal are an error.
 - **Map writes:** `.set` / `.remove` / `m[k] =` write back. Missing `.remove`
