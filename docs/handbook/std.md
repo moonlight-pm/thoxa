@@ -100,7 +100,7 @@ IPv4 TCP (`AF_INET` stream). Fail payloads are String.
 | `createSocket()` | `Trial<Socket, String>` |
 | `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close`, `isOpen`. `close` writes `fd = -1` (second close is a no-op, same as `File`). Last RC runs `drop()` which closes (**D155**). Only `std/net` builds one (**D168**): get it from `createSocket`, `accept`, or `server.peerOf` |
 | `receive(deadline: 0)` | One `recv` chunk (empty on close, error, or deadline) |
-| `receiveRequest(deadline: 0)` | Until `\r\n\r\n` or 64 KiB cap / peer close. A deadline with nothing read is an empty `Pass` (quiet close); mid-headers it is `Fail("request timed out")` |
+| `receiveRequest(deadline: 0, buffered: Bytes(0))` | Until `\r\n\r\n` or 64 KiB cap / peer close, starting from `buffered` (bytes already read; no recv if they hold a whole header block). The result can run past the headers. A deadline with nothing read is an empty `Pass` (quiet close); mid-headers it is `Fail("request timed out")` |
 | `send` / `sendAll(data, deadline: 0)` | One write vs drain partial writes |
 | `nowMs()` | Monotonic milliseconds. A deadline is `nowMs() + budget`; 0 means none (**D165**) |
 | `ownByTask(socket)` | The running task owns the socket: if the task panics, the runtime closes it and sets its `fd` to -1, so every copy reads closed (**D166** / **D168**). Ownership ends at `close` / `drop` or when the task returns. No-op outside a task |
@@ -146,14 +146,16 @@ kept-alive requests, and 30 s each to send a body and to take a response;
 `serve` closes new connections at accept while 1024 are open (**D165**).
 `serveOne` owns its peer, so if `handle` panics the runtime ends that
 connection's task and closes the peer; the server keeps serving (**D166**).
+Requests a client sends without waiting for replies (pipelining) are answered
+in order (**D171**).
 
 | Surface | Notes |
 |---------|--------|
 | `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132** handle, **D148** nowait). Logs `http://127.0.0.1:{port}/`. App `handle` is often `Routes().route` (**D150**) |
-| `serveOne(peer, handle)` | One keep-alive connection. Owns `peer` (`ownByTask`), so a panic in `handle` closes it |
+| `serveOne(peer, handle)` | One keep-alive connection. Owns `peer` (`ownByTask`), so a panic in `handle` closes it. Bytes read past one request start the next |
 | `peerOf(request)` | `May<Socket>`: the connection `request` arrived on, while it is open (**D168**). An SSE handler writes its stream there and may keep the Socket; it reads closed once the client leaves |
 | `bindListen(port)` | `createSocket` + reuse + bind + listen |
-| `readBody(peer, raw, req, deadline: 0)` / `readRequest(peer, deadline: 0)` | `Content-Length` entity; empty method/path = quiet close. `Transfer-Encoding`, two `Content-Length`s, or a non-numeric one are refused (400) |
+| `readBody(peer, raw, req, deadline: 0)` / `readRequest(peer, deadline: 0)` | `Content-Length` entity; no `Content-Length` is an empty body (**D171**); empty method/path = quiet close. `Transfer-Encoding`, two `Content-Length`s, or a non-numeric one are refused (400). `readRequest` drops bytes past its request; `serveOne` keeps them |
 | `writeResponse(peer, method, res, keepAlive, deadline: 0)` | `finalize` + `sendAll` |
 | `beginEventStream` / `sendEvent` | SSE prelude + `data:` lines (**D146**) on the Socket from `peerOf`. `streamed()` skips the normal write |
 

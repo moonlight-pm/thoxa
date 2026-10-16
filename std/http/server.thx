@@ -39,6 +39,10 @@ export fn bindListen(port!: Int64) -> Trial<Socket, String> {
     Pass(server)
 }
 
+## One request read off a connection, and the bytes that came after it:
+## the start of the next request when the client pipelines (RFC 9112 §9.3).
+type Incoming(request: Request, rest: Bytes)
+
 fn bodyPrefix(raw!: Bytes) -> Bytes {
     let sep = Bytes.fromString("\r\n\r\n")
     match raw.find(sep) {
@@ -49,6 +53,9 @@ fn bodyPrefix(raw!: Bytes) -> Bytes {
     }
 }
 
+## Read until at least `need` bytes, `start` included. What comes back can
+## run past `need`, into a pipelined request; it is at most one receive
+## (4 KiB) longer, so a body over the cap is refused before any read.
 fn readUntil(peer!: Socket, start!: Bytes, need!: Int64, deadline!: Int64) -> Trial<Bytes, String> {
     if need > maxBodyBytes {
         return Fail("request body too large")
@@ -56,14 +63,11 @@ fn readUntil(peer!: Socket, start!: Bytes, need!: Int64, deadline!: Int64) -> Tr
     mut acc = start
     loop {
         if acc.count >= need {
-            return Pass(acc.slice(0, need))
+            return Pass(acc)
         }
         let chunk = peer.receive(deadline)
         if chunk.count == 0 {
             return Fail("incomplete request body")
-        }
-        if acc.count + chunk.count > maxBodyBytes {
-            return Fail("request body too large")
         }
         mut buf = Buffer()
         buf.appendBytes(acc)
@@ -101,32 +105,42 @@ fn framingError(req!: Request) -> May<String> {
     Not()
 }
 
-## Finish a request entity from the raw header buffer + Content-Length.
-## The body must arrive by `deadline` (`net.nowMs()` time; 0 = no deadline).
-export fn readBody(peer!: Socket, raw!: Bytes, req!: Request, deadline: Int64 = 0) -> Trial<Bytes, String> {
+## The body `req` declares, and the bytes after it. `raw` is what
+## `receiveRequest` returned: the header block, then whatever came with it.
+## A request without Content-Length has no body (RFC 9112 §6.3), so what
+## follows its headers is the next request.
+fn readEntity(peer!: Socket, raw!: Bytes, req!: Request, deadline!: Int64) -> Trial<Incoming, String> {
     match framingError(req) {
         Has(problem) {
             return Fail(problem)
         }
         Not { Void }
     }
-    let have = bodyPrefix(raw)
-    match http.contentLength(req) {
-        Not {
-            Pass(have)
-        }
-        Has(n) {
-            if n == 0 {
-                Pass(Bytes(0))
-            } else {
-                if n > maxBodyBytes {
-                    Fail("request body too large")
-                } else {
-                    readUntil(peer, have, n, deadline)
-                }
-            }
-        }
+    let need = match http.contentLength(req) {
+        Not => 0
+        Has(count) => count
     }
+    let read = readUntil(peer, bodyPrefix(raw), need, deadline)?
+    Pass(Incoming(
+        request: Request(
+            method: req.method,
+            path: req.path,
+            query: req.query,
+            version: req.version,
+            headers: req.headers,
+            body: read.slice(0, need),
+            peerFd: peer.fd
+        ),
+        rest: read.slice(need, read.count)
+    ))
+}
+
+## Finish a request entity from the raw header buffer + Content-Length.
+## The body must arrive by `deadline` (`net.nowMs()` time; 0 = no deadline).
+## No Content-Length is an empty body.
+export fn readBody(peer!: Socket, raw!: Bytes, req!: Request, deadline: Int64 = 0) -> Trial<Bytes, String> {
+    let incoming = readEntity(peer, raw, req, deadline)?
+    Pass(incoming.request.body)
 }
 
 fn isQuietClose(req!: Request) -> Bool {
@@ -137,58 +151,58 @@ fn isQuietClose(req!: Request) -> Bool {
     }
 }
 
+## RFC 9112 §2.2: a server should ignore empty lines before a request line
+## (some clients send CRLF after a POST body).
+fn skipBlankLines(buffered!: Bytes) -> Bytes {
+    mut at = 0
+    loop {
+        if at >= buffered.count {
+            break
+        }
+        let byte = buffered.get(at)
+        if byte != 13 and byte != 10 {
+            break
+        }
+        at = at + 1
+    }
+    buffered.slice(at, buffered.count)
+}
+
+## `readRequest` on a connection where `buffered` was already read (the
+## bytes after the previous request).
+fn readNext(peer!: Socket, buffered!: Bytes, deadline!: Int64) -> Trial<Incoming, String> {
+    let raw = peer.receiveRequest(deadline, skipBlankLines(buffered))?
+    if raw.count == 0 {
+        mut headers: Array<Header> = []
+        return Pass(Incoming(
+            request: Request(
+                method: "",
+                path: "",
+                query: "",
+                version: "",
+                headers: headers,
+                body: Bytes(0),
+                peerFd: peer.fd
+            ),
+            rest: Bytes(0)
+        ))
+    }
+    let req = http.parseRequest(raw)?
+    let bodyDeadline = if deadline == 0 {
+        0
+    } else {
+        net.nowMs() + bodyTimeoutMs
+    }
+    readEntity(peer, raw, req, bodyDeadline)
+}
+
 ## Receive + parse + complete body. Empty method/path means the peer closed
 ## quietly, or sent nothing by `deadline` (0 = no deadline). With a deadline,
-## the body gets `bodyTimeoutMs` more.
+## the body gets `bodyTimeoutMs` more. Bytes after the request are dropped;
+## `serveOne` keeps them for the next one.
 export fn readRequest(peer!: Socket, deadline: Int64 = 0) -> Trial<Request, String> {
-    match peer.receiveRequest(deadline) {
-        Fail(e) {
-            Fail(e)
-        }
-        Pass(raw) {
-            if raw.count == 0 {
-                mut headers: Array<Header> = []
-                Pass(Request(
-                    method: "",
-                    path: "",
-                    query: "",
-                    version: "",
-                    headers: headers,
-                    body: Bytes(0),
-                    peerFd: peer.fd
-                ))
-            } else {
-                match http.parseRequest(raw) {
-                    Fail(msg) {
-                        Fail(msg)
-                    }
-                    Pass(req) {
-                        let bodyDeadline = if deadline == 0 {
-                            0
-                        } else {
-                            net.nowMs() + bodyTimeoutMs
-                        }
-                        match readBody(peer, raw, req, bodyDeadline) {
-                            Fail(e) {
-                                Fail(e)
-                            }
-                            Pass(body) {
-                                Pass(Request(
-                                    method: req.method,
-                                    path: req.path,
-                                    query: req.query,
-                                    version: req.version,
-                                    headers: req.headers,
-                                    body: body,
-                                    peerFd: peer.fd
-                                ))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let incoming = readNext(peer, Bytes(0), deadline)?
+    Pass(incoming.request)
 }
 
 ## Route clauses match method exactly; GET registrations also answer HEAD.
@@ -262,16 +276,18 @@ fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
 
 ## One keep-alive connection: read / handle / write until close. Each
 ## request has a deadline (see `headerTimeoutMs`); an idle connection that
-## reaches it is closed quietly. Run as a task, it owns `peer`: if `handle`
-## panics, the runtime ends the task and closes `peer`, and the server keeps
-## serving (R4).
+## reaches it is closed quietly. Requests a client sends without waiting
+## (pipelined) are answered in order. Run as a task, it owns `peer`: if
+## `handle` panics, the runtime ends the task and closes `peer`, and the
+## server keeps serving (R4).
 export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
     net.ownByTask(peer)
     let fd = peer.fd
     connections.set(fd, peer)
     mut budget = headerTimeoutMs
+    mut pending = Bytes(0)
     loop {
-        match readRequest(peer, net.nowMs() + budget) {
+        match readNext(peer, pending, net.nowMs() + budget) {
             Fail(e) {
                 warn("recv: {e}")
                 match writeBadRequest(peer, e) {
@@ -282,7 +298,9 @@ export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
                 }
                 break
             }
-            Pass(req) {
+            Pass(incoming) {
+                let req = incoming.request
+                pending = incoming.rest
                 if isQuietClose(req) {
                     break
                 }

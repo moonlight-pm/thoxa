@@ -4,7 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-16. **D170** a program that is PID 1 ends on SIGTERM /
+**As of:** 2026-10-16. **D171** `std/http/server` answers pipelined
+requests in order (a request without `Content-Length` has no body; review
+finding 9). **D170** a program that is PID 1 ends on SIGTERM /
 SIGINT; the site images build their own C from digest-pinned bases and run
 as nobody (review findings 8 and 57). Review follow-ups: **D161** defined shifts, **D162** a
 line starting `-x` is a new expression, **D163** mutating methods need a
@@ -83,9 +85,8 @@ lits; overwrite-drop; **D152** match/init RC.
 
 **Review follow-ups (open, from 2026-10-14):** the three sites were
 redeployed on 2026-10-15 from `878d863` (D165–D168, `-fwrapv`); the
-hardened images (C built in the image, pinned bases, `USER 65534`, D170) are
-not deployed yet; no security or cache headers;
-pipelined requests are dropped;
+hardened images (C built in the image, pinned bases, `USER 65534`, D170)
+and pipelining (D171) are not deployed yet; no security or cache headers;
 Ctrl-C in a pure-Thoxa loop;
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`);
 redefining a session

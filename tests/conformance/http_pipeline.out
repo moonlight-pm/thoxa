@@ -1,0 +1,45 @@
+GET /one -> 200 OK
+GET /two -> 200 OK
+two gets:
+  200 OK, keep-alive: GET /one
+  200 OK, close: GET /two
+
+POST /form -> 200 OK
+GET /menu -> 200 OK
+post then get:
+  200 OK, keep-alive: POST /form name=Ada
+  200 OK, close: GET /menu
+
+POST /a -> 200 OK
+GET /b -> 200 OK
+blank line after a body:
+  200 OK, keep-alive: POST /a abc
+  200 OK, close: GET /b
+
+HEAD /h -> 200 OK
+GET /x -> 200 OK
+GET /y -> 200 OK
+head, then two gets:
+  200 OK, keep-alive: 
+  200 OK, keep-alive: GET /x
+  200 OK, close: GET /y
+
+GET /one -> 200 OK
+GET /two -> 200 OK
+headers split across sends:
+  200 OK, keep-alive: GET /one
+  200 OK, close: GET /two
+
+POST /form -> 200 OK
+GET /next -> 200 OK
+body split across sends:
+  200 OK, keep-alive: POST /form abcdefghij
+  200 OK, close: GET /next
+
+GET /fine -> 200 OK
+recv: malformed request line
+a bad second request:
+  200 OK, keep-alive: GET /fine
+  400 Bad Request, close: Bad Request: malformed request line
+
+

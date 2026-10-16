@@ -1,0 +1,122 @@
+## std/http/server answers pipelined requests in order: bytes after one
+## request (no Content-Length, or past its body) start the next, also when
+## the next request's headers or the body arrive in a later send.
+import net, { Socket, createSocket } from "std/net"
+import http, { Request, Response, ok } from "std/http"
+import server from "std/http/server"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn handle(request: Request) -> Response {
+    let text = if request.body.count == 0 {
+        "{request.method} {request.path}"
+    } else {
+        "{request.method} {request.path} {request.body.toString()}"
+    }
+    ok(Bytes.fromString(text), "text/plain")
+}
+
+fn acceptOne(listener!: Socket) {
+    match listener.accept() {
+        Fail(error) {
+            info("accept failed: {error}")
+        }
+        Pass(peer) {
+            server.serveOne(peer, handle)
+        }
+    }
+}
+
+## Each response on the wire as "status, connection: body".
+fn summarize(wire!: Bytes) -> String {
+    let marker = Bytes.fromString("HTTP/1.1 ")
+    let sep = Bytes.fromString("\r\n\r\n")
+    mut lines = ""
+    mut at = 0
+    loop {
+        let start = match wire.find(marker, at) {
+            Has(found) => found
+            Not => wire.count
+        }
+        if start >= wire.count {
+            break
+        }
+        let next = match wire.find(marker, start + 1) {
+            Has(found) => found
+            Not => wire.count
+        }
+        let one = wire.slice(start, next)
+        let status = match one.find(Bytes.fromString("\r")) {
+            Has(cr) => one.slice(marker.count, cr).toString()
+            Not => one.toString()
+        }
+        let connection = match one.find(Bytes.fromString("Connection: close")) {
+            Has(_) => "close"
+            Not => "keep-alive"
+        }
+        let body = match one.find(sep) {
+            Has(end) => one.slice(end + 4, one.count).toString()
+            Not => ""
+        }
+        lines = "{lines}  {status}, {connection}: {body}\n"
+        at = next
+    }
+    lines
+}
+
+## Send `first` on a new connection; with `second`, wait 100 ms for the
+## server to read `first`, then send it. Collect the replies until the
+## server closes.
+fn exchange(listener!: Socket, port!: Int64, first!: String, second: String = "") -> Trial<String, String> {
+    --> acceptOne(listener)
+    let client = createSocket()?
+    client.connect(port)?
+    mut wire = Buffer()
+    client.sendAll(Bytes.fromString(first))?
+    if second != "" {
+        wire.appendBytes(client.receive(net.nowMs() + 100))
+        client.sendAll(Bytes.fromString(second))?
+    }
+    loop {
+        let chunk = client.receive(net.nowMs() + 2000)
+        if chunk.count == 0 {
+            break
+        }
+        wire.appendBytes(chunk)
+    }
+    client.close()
+    Pass(summarize(wire.freeze()))
+}
+
+fn run() -> Trial<Void, String> {
+    let listener = server.bindListen(0)?
+    let port = listener.localPort()?
+    let twoGets = exchange(listener, port, "GET /one HTTP/1.1\r\n\r\nGET /two HTTP/1.1\r\nConnection: close\r\n\r\n")?
+    info("two gets:\n{twoGets}")
+    let postThenGet = exchange(listener, port, "POST /form HTTP/1.1\r\nContent-Length: 8\r\n\r\nname=AdaGET /menu HTTP/1.1\r\nConnection: close\r\n\r\n")?
+    info("post then get:\n{postThenGet}")
+    let blankLine = exchange(listener, port, "POST /a HTTP/1.1\r\nContent-Length: 3\r\n\r\nabc\r\nGET /b HTTP/1.1\r\nConnection: close\r\n\r\n")?
+    info("blank line after a body:\n{blankLine}")
+    let headRequest = exchange(listener, port, "HEAD /h HTTP/1.1\r\n\r\nGET /x HTTP/1.1\r\n\r\nGET /y HTTP/1.1\r\nConnection: close\r\n\r\n")?
+    info("head, then two gets:\n{headRequest}")
+    let splitHeaders = exchange(listener, port, "GET /one HTTP/1.1\r\n\r\nGET /tw", "o HTTP/1.1\r\nConnection: close\r\n\r\n")?
+    info("headers split across sends:\n{splitHeaders}")
+    let splitBody = exchange(listener, port, "POST /form HTTP/1.1\r\nContent-Length: 10\r\n\r\nabc", "defghijGET /next HTTP/1.1\r\nConnection: close\r\n\r\n")?
+    info("body split across sends:\n{splitBody}")
+    let badSecond = exchange(listener, port, "GET /fine HTTP/1.1\r\n\r\nBAD\r\n\r\n")?
+    info("a bad second request:\n{badSecond}")
+    listener.close()
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass(_) { 0 }
+        Fail(error) {
+            info("fail {error}")
+            1
+        }
+    }
+}

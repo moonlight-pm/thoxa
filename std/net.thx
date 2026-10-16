@@ -170,11 +170,16 @@ export type Socket(fd: Int64) {
     }
 
     ## Read until `\r\n\r\n` (complete header block) or peer close / size cap.
+    ## `buffered` is what was already read from this socket (on a kept-alive
+    ## connection, the bytes after the last request); it comes first, and a
+    ## header block complete in it returns without a recv.
     ## Empty Pass means the peer closed, or `deadline` passed, before sending
     ## anything; a deadline mid-headers is `Fail("request timed out")`.
-    ## Does not read a request body (static server ignores bodies).
-    export fn receiveRequest(deadline: Int64 = 0) -> Trial<Bytes, String> {
+    ## The result can run past the header block, into a body or the next
+    ## request; it does not wait for either.
+    export fn receiveRequest(deadline: Int64 = 0, buffered: Bytes = Bytes(0)) -> Trial<Bytes, String> {
         mut acc = Buffer()
+        acc.appendBytes(buffered)
         let sep = Bytes.fromString("\r\n\r\n")
         loop {
             let soFar = acc.freeze()
