@@ -1,9 +1,9 @@
 # Freeze: Function return-type inference (D129)
 
-**Status:** shipped (v0 — free functions; methods still default `Void`)  
-**Decision:** D129  
-**Gate:** `return_infer`  
-**As of:** 2026-08-11
+**Status:** shipped (free functions; methods since **D174**)  
+**Decision:** D129, D174  
+**Gate:** `return_infer`, `return_infer_methods`, `fail/method_return_recursive`  
+**As of:** 2026-10-16
 
 ## Intent
 
@@ -11,7 +11,9 @@ Unannotated **free functions** get a return type from their body exits when
 inference succeeds. An explicit `-> T` remains the authoritative contract and
 is checked against the body (lint / type error when the body does not match).
 This replaces the old default “missing `->` ⇒ `Void`” for free fns (except
-`main` ⇒ `Int64`). **Unannotated methods** still default to `Void` in v0.
+`main` ⇒ `Int64`). Since **D174** unannotated methods infer the same way
+(`drop` stays `Void`; multi-clause methods and methods of generic types are
+still `Void` when unannotated).
 
 ## Rules (v0)
 
@@ -81,11 +83,23 @@ expected residual union → **error: annotate `-> …`**.
 Annotated `-> Trial<…>` (or other residual union) still selects monomorphs as
 today.
 
+**Since D174:** when a `?` residual has been seen, a bare *success* constructor
+(`Pass(x)`, `Has(x)`) takes that residual's union, and its payload type refines
+the success side like a value exit (§4): `let size = checked(n)?` then
+`Pass(size * 10)` infers `Trial<Int64, String>`. Before, the payload was
+checked against the `Void` placeholder and failed.
+
 ### 6. Recursion (minimal)
 
 If the body depends on this function’s own return type (self-call) or on a
 cycle of unannotated functions (mutual recursion) → **error: annotate `-> …`**.
 No fixed-point solver in v0.
+
+Order (D174): free functions and methods are probed callees first. A probe that
+reaches a function or method not inferred yet stops and waits for the next
+round. When a round makes no progress, each body left waits on another body
+left; the error names the ones on a cycle (`ping`, `Pong.pong`), not the callers
+that only wait on them.
 
 ### 7. Hover / UX
 
@@ -126,9 +140,8 @@ fn half(x: Int64) {           ## error: annotate
 
 - Infer **free-function** return types after signature tables exist and before
   body MIR lower, so callees with known/`->` types are available.
-- Update `FnSig.ret` with the inferred type; body lower uses that `fn_ret`
-  (existing `?` rewrap / D128). Methods: unannotated still `Void` until a
-  follow-up.
+- Update `FnSig.ret` (methods: `MethodSig.ret`, D174) with the inferred type;
+  body lower uses that `fn_ret` (existing `?` rewrap / D128).
 - Ensure collapsed monomorphs exist (seed / monomorphize on demand).
 - LSP: `check_and_returns_with_overlays` caches free-fn / `Type.method` displays
   on publish; hover uses them (local + remote).

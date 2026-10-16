@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-16. **D173** what `main` returns is the exit status: outside 0 to 255 it panics (256 used to exit 0; review finding 23). **D172** the sites send security headers and
+**As of:** 2026-10-16. **D174** unannotated methods infer their return type like free functions (it was Void, and the value was dropped); `x?` then `Pass(value)` infers `Trial<T, E>`. **D173** what `main` returns is the exit status: outside 0 to 255 it panics (256 used to exit 0; review finding 23). **D172** the sites send security headers and
 ETags (images and fonts cached a day; review finding 10). **D171** `std/http/server` answers pipelined
 requests in order (a request without `Content-Length` has no body; review
 finding 9). **D170** a program that is PID 1 ends on SIGTERM /

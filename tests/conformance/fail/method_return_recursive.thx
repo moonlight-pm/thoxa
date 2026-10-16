@@ -1,0 +1,15 @@
+## D174: a method's return type is inferred, but not through recursion.
+## `steps` calls itself, so it needs an explicit `->`.
+type Countdown(count: Int64) {
+    export fn steps() {
+        if count == 0 {
+            0
+        } else {
+            Countdown(count: count - 1).steps() + 1
+        }
+    }
+}
+
+fn main() -> Int64 {
+    Countdown(count: 3).steps()
+}

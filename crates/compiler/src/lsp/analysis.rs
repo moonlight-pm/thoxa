@@ -1469,6 +1469,31 @@ fn main() -> Int64 {
         assert_eq!(rets.get("main").map(String::as_str), Some("Int64"));
     }
 
+    /// D174: hover shows an unannotated method's inferred type, not Void.
+    #[test]
+    fn return_types_include_inferred_method() {
+        let src = "\
+type Box(width: Int64, height: Int64) {
+    export fn area() {
+        width * height
+    }
+    export fn grow() {
+        width = width + 1
+    }
+}
+fn main() -> Int64 {
+    Box(width: 2, height: 3).area()
+}
+";
+        let rets = return_types_with_overlays("<input>", src, &HashMap::new());
+        assert_eq!(
+            rets.get("Box.area").map(String::as_str),
+            Some("Int64"),
+            "got {rets:?}"
+        );
+        assert_eq!(rets.get("Box.grow").map(String::as_str), Some("Void"));
+    }
+
     #[test]
     fn return_types_include_inferred_trial_from_try() {
         use std::fs;

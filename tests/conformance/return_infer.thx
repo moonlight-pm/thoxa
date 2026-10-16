@@ -1,6 +1,6 @@
 ## D129: body-inferred return types (unannotated non-main).
 import logging from "std/logging"
-import { Pass, Fail, Trial } from "std/fallible"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 
 fn setup() -> Trial<Void, String> {
     Pass(Void)
@@ -23,6 +23,26 @@ fn fortyTwo() {
     42
 }
 
+fn checked(count!: Int64) -> Trial<Int64, String> {
+    if count < 0 {
+        Fail("negative count")
+    } else {
+        Pass(count)
+    }
+}
+
+## `?` then `Pass(value)`: the payload is the success type → Trial<Int64, String>.
+fn timesTen(count!: Int64) {
+    let size = checked(count)?
+    Pass(size * 10)
+}
+
+## The same with May: `?` on a May<String>, then `Has(text)` → May<String>.
+fn shouted(names!: Map<String, String>, key!: String) {
+    let name = names.get(key)?
+    Has("{name}!")
+}
+
 ## Explicit annotation still checked.
 fn annotated() -> Int64 {
     7
@@ -35,6 +55,23 @@ fn main() -> Int64 {
     match runServer() {
         Pass(_) { logging.info("run-ok") }
         Fail(e) { logging.info("run-fail {e}") }
+    }
+    match timesTen(3) {
+        Pass(size) => logging.info("times-ten={size}")
+        Fail(error) => logging.info("times-ten-fail {error}")
+    }
+    match timesTen(-3) {
+        Pass(size) => logging.info("times-ten={size}")
+        Fail(error) => logging.info("times-ten-fail {error}")
+    }
+    let names = {first: "ada"}
+    match shouted(names, "first") {
+        Has(text) => logging.info("shouted={text}")
+        Not => logging.info("shouted-none")
+    }
+    match shouted(names, "second") {
+        Has(text) => logging.info("shouted={text}")
+        Not => logging.info("shouted-none")
     }
     logging.info("n={fortyTwo()}")
     logging.info("a={annotated()}")

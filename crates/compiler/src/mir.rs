@@ -1045,11 +1045,18 @@ struct LowerCtx {
     /// Mangled name of the function being inferred (self-recursion detect).
     infer_self: Option<String>,
     /// Other unannotated functions still awaiting inference (cycle detect).
+    /// Methods are keyed by their C name, `Type__method` (D174).
     infer_blocked: HashSet<String>,
+    /// The first function awaiting inference that this probe reached, shared
+    /// with nested probes. Set means the probe waits for a later round.
+    infer_waited: Rc<RefCell<Option<String>>>,
     /// Residual `?` exits collapsed to success-Void form.
     infer_residuals: Vec<Ty>,
     /// Normal `return` / block-tail value exits (not Never).
     infer_values: Vec<Ty>,
+    /// Payload types of bare `Pass(x)` / `Has(x)` typed from a `?` residual:
+    /// they refine its success side (D129 §4).
+    infer_successes: Vec<Ty>,
     /// Generic templates for residual collapse (D129).
     generics: HashMap<String, GenericDef>,
     /// Experiment: body of a desugared route clause (`__Type_route_N`).
@@ -1106,11 +1113,35 @@ impl LowerCtx {
             inferring: false,
             infer_self: None,
             infer_blocked: HashSet::new(),
+            infer_waited: Rc::new(RefCell::new(None)),
             infer_residuals: Vec::new(),
             infer_values: Vec::new(),
+            infer_successes: Vec::new(),
             generics: HashMap::new(),
             route_clause: false,
         }
+    }
+
+    /// D129 / D174: while probing for a return type, a call to `key` (a free
+    /// function's mangled name, or `Type__method`) whose own return type is
+    /// not known yet cannot be typed. The probe stops and waits.
+    fn infer_check_callee(&self, key: &str, shown: &str, span: Span) -> Result<()> {
+        if !self.inferring {
+            return Ok(());
+        }
+        if self.infer_self.as_deref() != Some(key) && !self.infer_blocked.contains(key) {
+            return Ok(());
+        }
+        self.infer_waited
+            .borrow_mut()
+            .get_or_insert_with(|| key.to_string());
+        Err(Error::at(
+            format!(
+                "cannot infer return type of recursive call to `{shown}`; \
+                 add an explicit `->` annotation"
+            ),
+            span,
+        ))
     }
 
     fn type_mismatch_msg(&self, expect: &Ty, found: &Ty) -> String {
@@ -2163,14 +2194,16 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
         );
     }
 
-    // D129: infer unannotated free-function returns before body lower.
-    infer_unannotated_free_returns(
+    // D129 / D174: infer unannotated function and method returns before body lower.
+    infer_unannotated_returns(
         &mut fns,
         &mut types_info,
         &mut type_layouts,
         &generics,
         &free_fns,
         &multi_free,
+        &type_defs,
+        &multi_methods,
         &package_maps,
         &module_exports,
         &synthetics,
@@ -3869,27 +3902,45 @@ fn combine_inferred_return(
     generics: &HashMap<String, GenericDef>,
     residuals: &[Ty],
     values: &[Ty],
+    successes: &[Ty],
     span: Span,
 ) -> Result<Ty> {
     let values: Vec<Ty> = values.iter().filter(|t| !is_never(t)).cloned().collect();
     if residuals.is_empty() {
         return unify_infer_tys(&values, span);
     }
-    let r = unify_infer_tys(residuals, span)?;
-    if values.is_empty() {
+    let mut r = unify_infer_tys(residuals, span)?;
+    if !values.is_empty() {
+        let s = unify_infer_tys(&values, span)?;
+        // Full residual-union value exits (e.g. `return Pass(…)`) unify with residual
+        // collapses — do not treat the whole Trial as a success *payload*.
+        if !is_residual_union(types, &s) {
+            let mut plain = values;
+            plain.extend(successes.iter().cloned());
+            let s = unify_infer_tys(&plain, span)?;
+            return refine_residual_with_success(types, layouts, generics, &r, &s, span);
+        }
+        r = unify_infer_tys(&[r, s], span)?;
+    }
+    if successes.is_empty() {
         return Ok(r);
     }
-    let s = unify_infer_tys(&values, span)?;
-    // Full residual-union value exits (e.g. `return Pass(…)`) unify with residual
-    // collapses — do not treat the whole Trial as a success *payload*.
-    if is_residual_union(types, &s) {
-        return unify_infer_tys(&[r, s], span);
-    }
+    // `x?` then `Pass(value)`: the payload is the success type.
+    let s = unify_infer_tys(successes, span)?;
     refine_residual_with_success(types, layouts, generics, &r, &s, span)
 }
 
-/// Local free-function names called from `block` (for recursion graph).
-fn collect_local_fn_calls(block: &Block, out: &mut HashSet<String>) {
+/// What a body calls, to order return inference (D129 / D174).
+#[derive(Default)]
+struct CallNames {
+    /// Free functions, by the name the body uses.
+    functions: HashSet<String>,
+    /// Methods, by name alone: the receiver's type is not known before lowering.
+    methods: HashSet<String>,
+}
+
+/// Functions and methods `block` calls, by name.
+fn collect_local_fn_calls(block: &Block, out: &mut CallNames) {
     for it in &block.items {
         match it {
             BlockItem::Let { init, .. } => collect_local_fn_calls_expr(init, out),
@@ -3902,10 +3953,10 @@ fn collect_local_fn_calls(block: &Block, out: &mut HashSet<String>) {
     }
 }
 
-fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
+fn collect_local_fn_calls_expr(expr: &Expr, out: &mut CallNames) {
     match &expr.kind {
         ExprKind::Call { callee, args } | ExprKind::Start { callee, args, .. } => {
-            out.insert(callee.clone());
+            out.functions.insert(callee.clone());
             for a in args {
                 match a {
                     Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => {
@@ -3924,7 +3975,13 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
                 }
             }
         }
-        ExprKind::MethodCall { receiver, args, .. } => {
+        ExprKind::MethodCall {
+            receiver,
+            method,
+            args,
+            ..
+        } => {
+            out.methods.insert(method.clone());
             collect_local_fn_calls_expr(receiver, out);
             for a in args {
                 match a {
@@ -4013,13 +4070,15 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut HashSet<String>) {
     }
 }
 
-fn infer_unannotated_free_returns(
+fn infer_unannotated_returns(
     fns: &mut HashMap<String, FnSig>,
     types: &mut HashMap<String, TypeInfo>,
     layouts: &mut Vec<TypeLayout>,
     generics: &HashMap<String, GenericDef>,
     free_fns: &[(String, String, &ast::Function, bool)],
     multi_free: &HashMap<String, Vec<MultiClause>>,
+    type_defs: &[(String, String, &TypeDef)],
+    multi_methods: &HashMap<(String, String), Vec<MultiClause>>,
     package_maps: &HashMap<String, ModuleNameMaps>,
     module_exports: &HashMap<String, ModuleExports>,
     synthetics: &Rc<RefCell<SyntheticRegistry>>,
@@ -4061,150 +4120,264 @@ fn infer_unannotated_free_returns(
         }
     }
 
-    // Candidates: unannotated non-main free functions (single-clause).
-    let mut candidates: Vec<(String, String, &ast::Function, bool)> = Vec::new();
+    // Candidates: unannotated non-main free functions and, since D174,
+    // unannotated methods (single-clause; `drop` is always Void).
+    let mut candidates: Vec<InferCandidate> = Vec::new();
     for (mod_id, mangled, f, is_entry) in free_fns {
-        if multi_free.contains_key(mangled) {
-            continue;
-        }
-        if f.return_type.is_some() {
+        if multi_free.contains_key(mangled) || f.return_type.is_some() {
             continue;
         }
         if *is_entry && f.name == "main" {
             continue;
         }
-        candidates.push((mod_id.clone(), mangled.clone(), *f, *is_entry));
+        candidates.push(InferCandidate {
+            module_id: mod_id.clone(),
+            is_entry: *is_entry,
+            key: mangled.clone(),
+            shown: f.name.clone(),
+            name_span: f.name_span,
+            body: &f.body,
+            target: InferTarget::Free(f),
+        });
+    }
+    for (mod_id, type_mangled, td) in type_defs {
+        let is_entry = package
+            .modules
+            .iter()
+            .any(|module| module.id == *mod_id && module.is_entry);
+        for method in &td.methods {
+            if method.return_type.is_some() || method.name == "drop" {
+                continue;
+            }
+            if multi_methods.contains_key(&(type_mangled.clone(), method.name.clone())) {
+                continue;
+            }
+            candidates.push(InferCandidate {
+                module_id: mod_id.clone(),
+                is_entry,
+                key: format!("{type_mangled}__{}", method.name),
+                shown: format!("{}.{}", td.name, method.name),
+                name_span: method.name_span,
+                body: &method.body,
+                target: InferTarget::Method {
+                    type_mangled: type_mangled.clone(),
+                    method,
+                },
+            });
+        }
     }
     if candidates.is_empty() {
         return Ok(());
     }
 
-    let cand_set: HashSet<String> = candidates.iter().map(|c| c.1.clone()).collect();
-
-    // Call graph among candidates (local free-fn names → mangled).
-    let mut edges: HashMap<String, HashSet<String>> = HashMap::new();
-    let mut self_or_cycle: HashSet<String> = HashSet::new();
-    for (mod_id, mangled, f, _) in &candidates {
-        let maps = package_maps.get(mod_id).unwrap();
-        let mut locals = HashSet::new();
-        collect_local_fn_calls(&f.body, &mut locals);
-        let entry = edges.entry(mangled.clone()).or_default();
-        for name in locals {
-            if let Some(callee) = maps.name_to_fn.get(&name) {
-                if callee == mangled {
-                    self_or_cycle.insert(mangled.clone());
-                } else if cand_set.contains(callee) {
-                    entry.insert(callee.clone());
-                }
-            }
+    // Probe callees first, so most bodies are probed once. A method call
+    // matches every candidate method of that name (the receiver's type is
+    // not known yet), so this order is a guess; the rounds below decide.
+    let index_of: HashMap<String, usize> = candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| (candidate.key.clone(), index))
+        .collect();
+    let mut methods_named: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, candidate) in candidates.iter().enumerate() {
+        if let InferTarget::Method { method, .. } = &candidate.target {
+            methods_named
+                .entry(method.name.clone())
+                .or_default()
+                .push(index);
         }
     }
-    // Mutual cycles (simple DFS).
-    for start in cand_set.iter() {
-        let mut stack = vec![start.clone()];
-        let mut seen = HashSet::new();
-        while let Some(n) = stack.pop() {
-            if !seen.insert(n.clone()) {
-                continue;
+    let callees: Vec<Vec<usize>> = candidates
+        .iter()
+        .map(|candidate| {
+            let maps = package_maps.get(&candidate.module_id).unwrap();
+            let mut names = CallNames::default();
+            collect_local_fn_calls(candidate.body, &mut names);
+            let mut found: Vec<usize> = names
+                .functions
+                .iter()
+                .filter_map(|name| maps.name_to_fn.get(name))
+                .filter_map(|mangled| index_of.get(mangled).copied())
+                .collect();
+            for name in &names.methods {
+                found.extend(methods_named.get(name).into_iter().flatten().copied());
             }
-            if let Some(succ) = edges.get(&n) {
-                for s in succ {
-                    if s == start {
-                        self_or_cycle.insert(start.clone());
+            found.sort_unstable();
+            found.dedup();
+            found
+        })
+        .collect();
+    let mut order = Vec::with_capacity(candidates.len());
+    let mut visited = vec![false; candidates.len()];
+    for root in 0..candidates.len() {
+        if visited[root] {
+            continue;
+        }
+        visited[root] = true;
+        let mut stack = vec![(root, 0usize)];
+        while let Some((node, next)) = stack.pop() {
+            match callees[node].get(next) {
+                Some(&callee) => {
+                    stack.push((node, next + 1));
+                    if !visited[callee] {
+                        visited[callee] = true;
+                        stack.push((callee, 0));
                     }
-                    stack.push(s.clone());
                 }
+                None => order.push(node),
             }
         }
     }
 
-    // Topo: process functions with no pending candidate callees first.
-    let mut remaining: HashSet<String> = cand_set
-        .iter()
-        .filter(|m| !self_or_cycle.contains(*m))
-        .cloned()
-        .collect();
-    let by_mangled: HashMap<String, (String, &ast::Function, bool)> = candidates
-        .iter()
-        .map(|(m, mang, f, e)| (mang.clone(), (m.clone(), *f, *e)))
-        .collect();
-
+    // Rounds: a probe that reaches a candidate still unresolved waits for the
+    // next round. A round where every probe waits leaves only cycles and the
+    // bodies that wait on them.
     let mut infer_errors: Vec<Error> = Vec::new();
-
-    for mangled in &self_or_cycle {
-        let (mod_id, f, _) = by_mangled.get(mangled).unwrap();
-        let error = Error::at(
-            format!(
-                "cannot infer return type of `{}` (recursive or mutually recursive); \
-                 add an explicit `->` annotation",
-                f.name
-            ),
-            f.name_span,
-        );
-        infer_errors.push(in_module_id(error, package, mod_id));
-    }
-
-    while !remaining.is_empty() {
-        let ready: Vec<String> = remaining
-            .iter()
-            .filter(|m| {
-                edges
-                    .get(*m)
-                    .map(|s| s.iter().all(|c| !remaining.contains(c)))
-                    .unwrap_or(true)
-            })
-            .cloned()
-            .collect();
-        if ready.is_empty() {
-            // Residual cycle not caught above.
-            for m in &remaining {
-                let (mod_id, f, _) = by_mangled.get(m).unwrap();
-                let error = Error::at(
-                    format!(
-                        "cannot infer return type of `{}` (dependency cycle); \
-                         add an explicit `->` annotation",
-                        f.name
-                    ),
-                    f.name_span,
-                );
-                infer_errors.push(in_module_id(error, package, mod_id));
-            }
-            break;
-        }
-        for mangled in ready {
-            remaining.remove(&mangled);
-            let (mod_id, f, is_entry) = by_mangled.get(&mangled).unwrap();
-            let maps = package_maps.get(mod_id).unwrap();
-            let blocked: HashSet<String> = remaining.iter().cloned().collect();
-            match probe_function_return(
-                f,
-                &mangled,
-                *is_entry,
-                fns,
-                types,
-                layouts,
+    let mut unresolved: HashSet<String> = candidates.iter().map(|c| c.key.clone()).collect();
+    let mut pending = order;
+    loop {
+        let mut waiting = Vec::new();
+        let mut waits_on: HashMap<usize, usize> = HashMap::new();
+        let mut progressed = false;
+        for index in pending {
+            let candidate = &candidates[index];
+            let maps = package_maps.get(&candidate.module_id).unwrap();
+            let mut blocked = unresolved.clone();
+            blocked.remove(&candidate.key);
+            let waited: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+            let probe = ProbeEnv {
+                fns: &*fns,
                 generics,
                 maps,
                 module_exports,
                 package_maps,
-                mod_id,
+                module_id: &candidate.module_id,
+                is_entry: candidate.is_entry,
                 synthetics,
-                &blocked,
-            ) {
-                Ok(ret) => {
-                    if let Some(sig) = fns.get_mut(&mangled) {
-                        sig.ret = ret;
+                key: &candidate.key,
+                blocked: &blocked,
+                waited: &waited,
+            };
+            let outcome = match &candidate.target {
+                InferTarget::Free(f) => probe_function_return(f, &probe, types, layouts),
+                InferTarget::Method {
+                    type_mangled,
+                    method,
+                } => probe_method_return(type_mangled, method, &probe, types, layouts),
+            };
+            let waited_on = waited.borrow().clone();
+            if let Some(callee) = waited_on {
+                waiting.push(index);
+                waits_on.insert(index, index_of[&callee]);
+                continue;
+            }
+            progressed = true;
+            unresolved.remove(&candidate.key);
+            match outcome {
+                Ok(ret) => match &candidate.target {
+                    InferTarget::Free(_) => {
+                        if let Some(sig) = fns.get_mut(&candidate.key) {
+                            sig.ret = ret;
+                        }
                     }
-                }
-                Err(e) => infer_errors.push(in_module_id(e, package, mod_id)),
+                    InferTarget::Method {
+                        type_mangled,
+                        method,
+                    } => {
+                        if let Some(sig) = types
+                            .get_mut(type_mangled)
+                            .and_then(|info| info.methods.get_mut(&method.name))
+                        {
+                            sig.ret = ret;
+                        }
+                    }
+                },
+                Err(e) => infer_errors.push(in_module_id(e, package, &candidate.module_id)),
             }
         }
+        if waiting.is_empty() {
+            break;
+        }
+        if !progressed {
+            // Each body left waits on another body left: following the waits
+            // from any of them ends in a cycle. Name the bodies on cycles.
+            let mut on_cycle: HashSet<usize> = HashSet::new();
+            for &start in &waiting {
+                let mut path = Vec::new();
+                let mut node = start;
+                while !path.contains(&node) {
+                    path.push(node);
+                    node = waits_on[&node];
+                }
+                let entry = node;
+                loop {
+                    on_cycle.insert(node);
+                    node = waits_on[&node];
+                    if node == entry {
+                        break;
+                    }
+                }
+            }
+            for index in waiting.iter().filter(|index| on_cycle.contains(index)) {
+                let candidate = &candidates[*index];
+                let error = Error::at(
+                    format!(
+                        "cannot infer return type of `{}` (recursive or mutually recursive); \
+                         add an explicit `->` annotation",
+                        candidate.shown
+                    ),
+                    candidate.name_span,
+                );
+                infer_errors.push(in_module_id(error, package, &candidate.module_id));
+            }
+            break;
+        }
+        pending = waiting;
     }
 
     if !infer_errors.is_empty() {
         return Err(errors_to_multi(infer_errors));
     }
     Ok(())
+}
+
+/// A function or method whose return type is inferred (D129 / D174).
+struct InferCandidate<'a> {
+    module_id: String,
+    is_entry: bool,
+    /// Mangled name of a free function, or `Type__method`.
+    key: String,
+    /// The name diagnostics show: `area`, or `Box.area`.
+    shown: String,
+    name_span: Span,
+    body: &'a Block,
+    target: InferTarget<'a>,
+}
+
+enum InferTarget<'a> {
+    Free(&'a ast::Function),
+    Method {
+        type_mangled: String,
+        method: &'a Method,
+    },
+}
+
+/// What a return-type probe lowers against.
+struct ProbeEnv<'a> {
+    fns: &'a HashMap<String, FnSig>,
+    generics: &'a HashMap<String, GenericDef>,
+    maps: &'a ModuleNameMaps,
+    module_exports: &'a HashMap<String, ModuleExports>,
+    package_maps: &'a HashMap<String, ModuleNameMaps>,
+    module_id: &'a str,
+    is_entry: bool,
+    synthetics: &'a Rc<RefCell<SyntheticRegistry>>,
+    /// The candidate being probed.
+    key: &'a str,
+    /// The other candidates not inferred yet.
+    blocked: &'a HashSet<String>,
+    /// Set when the probe reaches a blocked candidate (or its own key).
+    waited: &'a Rc<RefCell<Option<String>>>,
 }
 
 /// Probe each multi-clause body and join exit types (D131 + D129).
@@ -4278,6 +4451,7 @@ fn probe_multi_clause_return(
                 generics,
                 &ctx.infer_residuals,
                 &ctx.infer_values,
+                &ctx.infer_successes,
                 clause.name_span,
             )?
         };
@@ -4297,50 +4471,41 @@ fn probe_multi_clause_return(
     Ok(joined.unwrap_or(Ty::Void))
 }
 
-fn probe_function_return(
-    f: &ast::Function,
-    mangled: &str,
-    is_entry: bool,
-    fns: &HashMap<String, FnSig>,
-    types: &mut HashMap<String, TypeInfo>,
-    layouts: &mut Vec<TypeLayout>,
-    generics: &HashMap<String, GenericDef>,
-    maps: &ModuleNameMaps,
-    module_exports: &HashMap<String, ModuleExports>,
-    package_maps: &HashMap<String, ModuleNameMaps>,
-    module_id: &str,
-    synthetics: &Rc<RefCell<SyntheticRegistry>>,
-    blocked: &HashSet<String>,
-) -> Result<Ty> {
+/// A lowering context that collects exit types instead of building MIR.
+fn probe_ctx(env: &ProbeEnv, types: &HashMap<String, TypeInfo>) -> LowerCtx {
     let mut ctx = LowerCtx::new(
-        fns.clone(),
+        env.fns.clone(),
         types.clone(),
-        maps.name_to_type.clone(),
-        maps.name_to_fn.clone(),
-        maps.name_to_global.clone(),
-        maps.namespaces.clone(),
-        module_exports.clone(),
-        package_maps.clone(),
+        env.maps.name_to_type.clone(),
+        env.maps.name_to_fn.clone(),
+        env.maps.name_to_global.clone(),
+        env.maps.namespaces.clone(),
+        env.module_exports.clone(),
+        env.package_maps.clone(),
         Ty::Void,
-        module_id.to_string(),
-        is_entry,
-        Rc::clone(synthetics),
+        env.module_id.to_string(),
+        env.is_entry,
+        Rc::clone(env.synthetics),
     );
     ctx.inferring = true;
-    ctx.infer_self = Some(mangled.to_string());
-    ctx.infer_blocked = blocked.clone();
-    ctx.generics = generics.clone();
+    ctx.infer_self = Some(env.key.to_string());
+    ctx.infer_blocked = env.blocked.clone();
+    ctx.infer_waited = Rc::clone(env.waited);
+    ctx.generics = env.generics.clone();
+    ctx
+}
 
-    for p in &f.params {
-        let ty = resolve_ty(&p.ty, &ctx.types, &ctx.name_to_type)?;
-        let place = Place {
-            name: sanitize_name(&p.name),
-        };
-        ctx.define(&p.name, ty, false, place);
-    }
-
+/// Lower `body` in a probe context and combine its exits into one type.
+fn probe_body_return(
+    mut ctx: LowerCtx,
+    body: &Block,
+    name_span: Span,
+    generics: &HashMap<String, GenericDef>,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+) -> Result<Ty> {
     // Probe body; capture exits. Errors (bare Pass/Fail, etc.) surface here.
-    let _ = lower_block_value(&mut ctx, &f.body, &Ty::Void)?;
+    let _ = lower_block_value(&mut ctx, body, &Ty::Void)?;
 
     // Merge any monomorphs / synthetics created during probe back.
     for (name, info) in ctx.types.iter() {
@@ -4361,7 +4526,46 @@ fn probe_function_return(
         generics,
         &ctx.infer_residuals,
         &ctx.infer_values,
-        f.name_span,
+        &ctx.infer_successes,
+        name_span,
+    )
+}
+
+fn probe_function_return(
+    f: &ast::Function,
+    env: &ProbeEnv,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+) -> Result<Ty> {
+    let mut ctx = probe_ctx(env, types);
+    for p in &f.params {
+        let ty = resolve_ty(&p.ty, &ctx.types, &ctx.name_to_type)?;
+        let place = Place {
+            name: sanitize_name(&p.name),
+        };
+        ctx.define(&p.name, ty, false, place);
+    }
+    probe_body_return(ctx, &f.body, f.name_span, env.generics, types, layouts)
+}
+
+/// D174: a method's body sees its fields and parameters as `lower_method`
+/// binds them.
+fn probe_method_return(
+    type_mangled: &str,
+    method: &Method,
+    env: &ProbeEnv,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+) -> Result<Ty> {
+    let mut ctx = probe_ctx(env, types);
+    define_method_scope(&mut ctx, type_mangled, method)?;
+    probe_body_return(
+        ctx,
+        &method.body,
+        method.name_span,
+        env.generics,
+        types,
+        layouts,
     )
 }
 
@@ -6544,58 +6748,18 @@ fn subst_arg(a: &Arg, subst: &HashMap<String, Ty>) -> Arg {
     }
 }
 
-fn lower_method(
-    mangled_type: &str,
-    m: &Method,
-    fns: &HashMap<String, FnSig>,
-    types: &HashMap<String, TypeInfo>,
-    name_to_type: &HashMap<String, String>,
-    name_to_fn: &HashMap<String, String>,
-    name_to_global: &HashMap<String, GlobalInfo>,
-    namespaces: &HashMap<String, String>,
-    module_exports: &HashMap<String, ModuleExports>,
-    package_maps: &HashMap<String, ModuleNameMaps>,
-    module_id: &str,
-    is_entry: bool,
-    synthetics: &Rc<RefCell<SyntheticRegistry>>,
-) -> Result<Function> {
-    let ret_ty = match m.return_type.as_ref() {
-        Some(t) => resolve_ty(t, types, name_to_type)?,
-        None => Ty::Void,
-    };
-    let recv_ty = Ty::User(mangled_type.to_string());
-    let recv_place = "_self".to_string();
-
-    let mut params = Vec::new();
-    for p in &m.params {
-        let ty = resolve_ty(&p.ty, types, name_to_type)?;
-        params.push((sanitize_name(&p.name), ty));
-    }
-
-    let mut ctx = LowerCtx::new(
-        fns.clone(),
-        types.clone(),
-        name_to_type.clone(),
-        name_to_fn.clone(),
-        name_to_global.clone(),
-        namespaces.clone(),
-        module_exports.clone(),
-        package_maps.clone(),
-        ret_ty.clone(),
-        module_id.to_string(),
-        is_entry,
-        Rc::clone(synthetics),
-    );
-
-    // Bind fields as bare names from receiver (no `self` in Thoxa).
-    // Heap fields must Dup: the local is dropped at method end while `_self` is a
-    // param (not dropped here). Without Dup, drop(field) would free the caller's ref.
-    //
-    // D107 write-back: ctor-param fields and C-layout `mut` fields are mutable
-    // locals; reassignment also stores through `_self`.
-    let info = types.get(mangled_type).unwrap();
+/// Bind a method's fields and parameters in `ctx`, for its body.
+///
+/// Fields are bare names read from the receiver (no `self` in Thoxa). Heap
+/// fields must Dup: the local is dropped at method end while `_self` is a
+/// param (not dropped here). Without Dup, drop(field) would free the caller's ref.
+///
+/// D107 write-back: ctor-param fields and C-layout `mut` fields are mutable
+/// locals; reassignment also stores through `_self`.
+fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Result<()> {
+    let info = ctx.types.get(mangled_type).unwrap().clone();
     let recv = Place {
-        name: recv_place.clone(),
+        name: "_self".to_string(),
     };
     for f in &info.fields {
         if matches!(f.ty, Ty::FixedArray { .. }) {
@@ -6629,7 +6793,7 @@ fn lower_method(
         ctx.define_full(&f.name, f.ty.clone(), writable, p, writeback);
     }
     for p in &m.params {
-        let ty = resolve_ty(&p.ty, types, name_to_type)?;
+        let ty = resolve_ty(&p.ty, &ctx.types, &ctx.name_to_type)?;
         let place = Place {
             name: sanitize_name(&p.name),
         };
@@ -6637,6 +6801,57 @@ fn lower_method(
         ctx.note_drop_place(&place, &ty);
         ctx.define(&p.name, ty, false, place);
     }
+    Ok(())
+}
+
+fn lower_method(
+    mangled_type: &str,
+    m: &Method,
+    fns: &HashMap<String, FnSig>,
+    types: &HashMap<String, TypeInfo>,
+    name_to_type: &HashMap<String, String>,
+    name_to_fn: &HashMap<String, String>,
+    name_to_global: &HashMap<String, GlobalInfo>,
+    namespaces: &HashMap<String, String>,
+    module_exports: &HashMap<String, ModuleExports>,
+    package_maps: &HashMap<String, ModuleNameMaps>,
+    module_id: &str,
+    is_entry: bool,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
+) -> Result<Function> {
+    // Unannotated: the type inference gave the signature (D174), else Void.
+    let ret_ty = match m.return_type.as_ref() {
+        Some(t) => resolve_ty(t, types, name_to_type)?,
+        None => types
+            .get(mangled_type)
+            .and_then(|info| info.methods.get(&m.name))
+            .map_or(Ty::Void, |sig| sig.ret.clone()),
+    };
+    let recv_ty = Ty::User(mangled_type.to_string());
+    let recv_place = "_self".to_string();
+
+    let mut params = Vec::new();
+    for p in &m.params {
+        let ty = resolve_ty(&p.ty, types, name_to_type)?;
+        params.push((sanitize_name(&p.name), ty));
+    }
+
+    let mut ctx = LowerCtx::new(
+        fns.clone(),
+        types.clone(),
+        name_to_type.clone(),
+        name_to_fn.clone(),
+        name_to_global.clone(),
+        namespaces.clone(),
+        module_exports.clone(),
+        package_maps.clone(),
+        ret_ty.clone(),
+        module_id.to_string(),
+        is_entry,
+        Rc::clone(synthetics),
+    );
+
+    define_method_scope(&mut ctx, mangled_type, m)?;
 
     let ret = lower_block_value(&mut ctx, &m.body, &ret_ty)?;
     ctx.stmts = fill_early_return_drops(ctx.stmts, &ctx.drop_places, &ret_ty);
@@ -9711,6 +9926,7 @@ fn lower_method_call(
                     method_span,
                 )
             })?;
+            ctx.infer_check_callee(&format!("{type_name}__{method}"), method, method_span)?;
             if !sig.exported {
                 return Err(Error::at(
                     format!("method `{method}` is private"),
@@ -14147,6 +14363,52 @@ fn rewrap_residual_into(
     Ok(inj)
 }
 
+/// While probing for a return type: a `?` residual seen so far whose union
+/// has an arm named `arm` (`May<Void>` for `Has` / `Not`).
+fn probe_residual_with_arm(ctx: &LowerCtx, arm: &str) -> Option<Ty> {
+    if !ctx.inferring {
+        return None;
+    }
+    ctx.infer_residuals
+        .iter()
+        .find(|t| {
+            is_residual_union(&ctx.types, t) && union_arm_payload(&ctx.types, t, arm).is_some()
+        })
+        .cloned()
+}
+
+/// D129 §4: in a probe, `Pass(x)` / `Has(x)` typed only from a `?` residual
+/// (`Trial<Void, E>`) cannot build its value, since `Trial<T, E>` may not
+/// exist yet. Record `x`'s type, which refines the success side when the
+/// exits combine, and stand in a place of the residual type (probe MIR is
+/// discarded).
+fn probe_success_arm(
+    ctx: &mut LowerCtx,
+    union: &Ty,
+    arm: &str,
+    args: &[Arg],
+) -> Result<Option<(Place, Ty)>> {
+    let Ty::User(name) = union else {
+        return Ok(None);
+    };
+    let Some(sum) = ctx.types.get(name).and_then(|info| info.sum.clone()) else {
+        return Ok(None);
+    };
+    let success = sum
+        .variants
+        .iter()
+        .any(|variant| variant.name == arm && Some(variant.tag) == sum.extract_tag);
+    let [Arg::Pos(value)] = args else {
+        return Ok(None);
+    };
+    if !success {
+        return Ok(None);
+    }
+    let (_, payload) = lower_expr(ctx, value)?;
+    ctx.infer_successes.push(payload);
+    Ok(Some((ctx.fresh("probe"), union.clone())))
+}
+
 fn lower_pass_fail(
     ctx: &mut LowerCtx,
     callee: &str,
@@ -14175,8 +14437,12 @@ fn lower_pass_fail(
             .infer_residuals
             .iter()
             .find(|t| is_residual_union(&ctx.types, t))
+            .cloned()
         {
-            r.clone()
+            if let Some(stand_in) = probe_success_arm(ctx, &r, callee, args)? {
+                return Ok(stand_in);
+            }
+            r
         } else {
             return Err(Error::at(
                 format!(
@@ -14223,6 +14489,11 @@ fn lower_has(
         }
     } else if is_residual_union(&ctx.types, &ctx.fn_ret) {
         ctx.fn_ret.clone()
+    } else if let Some(hint) = probe_residual_with_arm(ctx, "Has") {
+        if let Some(stand_in) = probe_success_arm(ctx, &hint, "Has", args)? {
+            return Ok(stand_in);
+        }
+        hint
     } else {
         // Infer May<Int64> when no annotation (historical Has(int) default).
         fallible_mono(ctx, "May", &[Ty::Int64], span)?
@@ -14256,6 +14527,8 @@ fn lower_not(
         }
     } else if is_residual_union(&ctx.types, &ctx.fn_ret) {
         ctx.fn_ret.clone()
+    } else if let Some(hint) = probe_residual_with_arm(ctx, "Not") {
+        hint
     } else {
         fallible_mono(ctx, "May", &[Ty::Int64], span)?
     };
@@ -14367,6 +14640,7 @@ fn form_unbound_method(
         .methods
         .get(method)
         .ok_or_else(|| Error::at(format!("no method `{method}` on `{type_name}`"), span))?;
+    ctx.infer_check_callee(&format!("{type_name}__{method}"), method, span)?;
     if !sig.exported && ctx.module_id != info.def_mod {
         return Err(Error::at(format!("method `{method}` is private"), span));
     }
@@ -14415,6 +14689,7 @@ fn form_bound_method(
         .methods
         .get(method)
         .ok_or_else(|| Error::at(format!("no method `{method}` on `{type_name}`"), span))?;
+    ctx.infer_check_callee(&format!("{type_name}__{method}"), method, span)?;
     if !sig.exported && ctx.module_id != info.def_mod {
         return Err(Error::at(format!("method `{method}` is private"), span));
     }
@@ -14582,19 +14857,7 @@ fn lower_call(
                 .get(other)
                 .cloned()
                 .unwrap_or_else(|| other.to_string());
-            if ctx.inferring {
-                if ctx.infer_self.as_deref() == Some(mangled.as_str())
-                    || ctx.infer_blocked.contains(&mangled)
-                {
-                    return Err(Error::at(
-                        format!(
-                            "cannot infer return type of recursive call to `{other}`; \
-                             add an explicit `->` annotation"
-                        ),
-                        span,
-                    ));
-                }
-            }
+            ctx.infer_check_callee(&mangled, other, span)?;
             let sig = ctx
                 .fns
                 .get(&mangled)
@@ -15334,9 +15597,11 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         inferring: ctx.inferring,
         infer_self: ctx.infer_self.clone(),
         infer_blocked: ctx.infer_blocked.clone(),
+        infer_waited: Rc::clone(&ctx.infer_waited),
         // Share residual collapses so bare Pass/Fail inside `if` can resolve (D129).
         infer_residuals: ctx.infer_residuals.clone(),
         infer_values: Vec::new(),
+        infer_successes: Vec::new(),
         generics: ctx.generics.clone(),
         route_clause: ctx.route_clause,
     };

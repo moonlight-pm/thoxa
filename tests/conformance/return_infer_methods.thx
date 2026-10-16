@@ -1,0 +1,91 @@
+## D174: an unannotated method's return type comes from its body, as a free
+## function's does (D129). It used to be Void, and the value was dropped.
+import logging, { info } from "std/logging"
+import { Pass, Fail, Trial } from "std/fallible"
+
+fn checked(count!: Int64) -> Trial<Int64, String> {
+    if count < 0 {
+        Fail("negative count")
+    } else {
+        Pass(count)
+    }
+}
+
+type Box(width: Int64, height: Int64) {
+    ## A value tail.
+    export fn area() {
+        width * height
+    }
+
+    ## Calls a method of a type defined further down, and a free function
+    ## defined further down, both unannotated.
+    export fn label() {
+        let tag = Tag(text: "box")
+        "{tag.shout()} {twice(width * height)}"
+    }
+
+    ## An early `return` and a tail of the same type.
+    export fn shape() {
+        if width == height {
+            return "square"
+        }
+        "oblong"
+    }
+
+    ## Another value of the type itself.
+    export fn widened() {
+        Box(width: width + 1, height: height)
+    }
+
+    ## `?` and a value exit: Trial<Int64, String>.
+    export fn checkedArea() {
+        let size = checked(width * height)?
+        Pass(size * 10)
+    }
+
+    ## Writes a field: still Void, and still writes back on a `mut` binding.
+    export fn grow() {
+        width = width + 1
+    }
+}
+
+type Tag(text: String) {
+    export fn shout() {
+        "{text}!"
+    }
+}
+
+fn twice(value!: Int64) {
+    value * 2
+}
+
+## A free function that calls an unannotated method.
+fn describe(box!: Box) {
+    "{box.shape()} {box.area()}"
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let box = Box(width: 2, height: 3)
+    info("area={box.area()}")
+    info("label={box.label()}")
+    info("describe={describe(box)}")
+    info("widened={box.widened().area()}")
+    match box.checkedArea() {
+        Pass(size) => info("checked={size}")
+        Fail(error) => info("failed={error}")
+    }
+    match Box(width: -1, height: 1).checkedArea() {
+        Pass(size) => info("checked={size}")
+        Fail(error) => info("failed={error}")
+    }
+    let measure = box.area
+    info("pointer={measure()}")
+    mut square = Box(width: 2, height: 2)
+    info("shape={square.shape()}")
+    square.grow()
+    info("grown={square.shape()} {square.width}")
+    0
+}

@@ -283,18 +283,30 @@ call site before the C call). Free names inside default expressions resolve
 in the **defining** module (so importers need not re-export constants used
 only as defaults). A non-default formal may not follow a defaulted one.
 
-**Return types (**D129**):** an explicit `-> T` is the contract (body must match).
-Unannotated non-`main` **free functions** **infer** the return type from exits
-when possible:
+**Return types (**D129**, **D174**):** an explicit `-> T` is the contract (body
+must match). Unannotated non-`main` **free functions** and **methods** **infer**
+the return type from exits when possible:
 
 - value `return` / block tail → that type (`42` ⇒ `Int64`; empty ⇒ `Void`)
 - residual `?` → structural collapse of residual-marked monomorphs (success
   type-args to `Void`, keep residual extract), then sum with value exits
+- `x?` then `Pass(value)` (or `Has(value)` after a `May`) → the payload is the
+  success type: `Trial<Int64, String>`
 - bare `Pass`/`Fail` alone cannot pick a union name → write `-> …`
-- self/mutual recursion unannotated → write `-> …`
+- self/mutual recursion unannotated → write `-> …` (the error names each
+  function or `Type.method` on the cycle)
 
-Unannotated `main` still defaults to **`Int64`**. Unannotated **methods** still
-default to **`Void`** (annotate if they return a value).
+```thx
+type Box(width: Int64, height: Int64) {
+    export fn area() {          ## Int64
+        width * height
+    }
+}
+```
+
+Unannotated `main` still defaults to **`Int64`**, and `drop` is always
+**`Void`**. Still **`Void`** when unannotated: multi-clause methods and methods
+of generic types (annotate if they return a value).
 
 **Multi-clause functions (**D131**):** several `fn` definitions with the **same
 name** in one scope (module free function **or** methods on one type) are **one

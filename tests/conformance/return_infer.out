@@ -1,3 +1,7 @@
 run-ok
+times-ten=30
+times-ten-fail negative count
+shouted=ada!
+shouted-none
 n=42
 a=7

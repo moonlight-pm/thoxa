@@ -1,0 +1,9 @@
+area=6
+label=box! 12
+describe=oblong 6
+widened=9
+checked=60
+failed=negative count
+pointer=6
+shape=square
+grown=oblong 3
