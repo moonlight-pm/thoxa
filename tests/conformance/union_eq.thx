@@ -1,0 +1,62 @@
+## D177: `==` / `!=` on two values of one union: the same arm, with equal
+## payloads.
+import logging, { info } from "std/logging"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+
+type Red()
+type Green()
+type Color = Red | Green
+
+type Circle(radius: Int64)
+type Rect(width: Int64, height: Int64)
+type Shape = Circle | Rect
+
+type Pixel(x: Int64, color: Color)
+
+fn parsed(text!: String) -> Trial<Int64, String> {
+    if text == "one" {
+        Pass(1)
+    } else {
+        Fail("not a number: {text}")
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let red: Color = Red()
+    let alsoRed: Color = Red()
+    let green: Color = Green()
+    info("colors {red == alsoRed} {red == green} {red != green}")
+
+    let small: Shape = Circle(radius: 1)
+    let alsoSmall: Shape = Circle(radius: 1)
+    let large: Shape = Circle(radius: 9)
+    let box: Shape = Rect(width: 1, height: 1)
+    info("shapes {small == alsoSmall} {small == large} {small == box} {box == Rect(width: 1, height: 1)}")
+
+    let one: May<Int64> = Has(1)
+    let alsoOne: May<Int64> = Has(1)
+    let two: May<Int64> = Has(2)
+    let none: May<Int64> = Not()
+    let alsoNone: May<Int64> = Not()
+    info("mays {one == alsoOne} {one == two} {none == alsoNone} {one == none}")
+
+    let name: May<String> = Has("ada")
+    let sameName: May<String> = Has("ada")
+    info("names {name == sameName}")
+
+    let passed = parsed("one")
+    let failed = parsed("two")
+    let failedAgain = parsed("two")
+    info("trials {passed == parsed("one")} {failed == failedAgain} {passed == failed}")
+    let done: Trial<Void, String> = Pass(Void)
+    let alsoDone: Trial<Void, String> = Pass(Void)
+    info("voids {done == alsoDone}")
+
+    let dot = Pixel(x: 3, color: Red())
+    info("pixels {dot == Pixel(x: 3, color: Red())} {dot == Pixel(x: 3, color: Green())}")
+    info("members {small == Circle(radius: 1)} {Rect(width: 1, height: 2) == box} {red == Green()}")
+    0
+}

@@ -299,11 +299,25 @@ let same = Line(start: Point(x: 0, y: 0), end: Point(x: 3, y: 0))
 info("{line == same}")      ## true
 ```
 
-It is a compile error when a field has no `==` (an `Array`, `Map`, or `Node`
-field), when the two sides are different types, or for `<` / `>` on a product.
-Unions have no `==` yet (`match` on the arms), and neither do types with
-`fn drop()` (resources) or C-layout types. A `Float64` field follows IEEE, so a
-NaN is never equal to itself.
+Two values of one union are equal when they are the same arm with equal
+payloads (**D177**), so `May` and `Trial` values compare too. A union and one
+of its members compare as if the member were in the union:
+
+```thx
+type Circle(radius: Int64)
+type Rect(width: Int64, height: Int64)
+type Shape = Circle | Rect
+
+let shape: Shape = Circle(radius: 1)
+info("{shape == Circle(radius: 1)}")   ## true
+let found: May<Int64> = Has(2)
+info("{found == Has(2)}")              ## true
+```
+
+It is a compile error when a field or an arm has no `==` (an `Array`, `Map`,
+or `Node` field), when the two sides are different types, or for `<` / `>` on
+a product or union. Types with `fn drop()` (resources) and C-layout types have
+no `==`. A `Float64` field follows IEEE, so a NaN is never equal to itself.
 
 **Return types (**D129**, **D174**):** an explicit `-> T` is the contract (body
 must match). Unannotated non-`main` **free functions** and **methods** **infer**

@@ -14065,6 +14065,21 @@ fn lower_binary(
                 ctx.assign(p.clone(), Ty::Bool, RValue::Binary { op, left, right });
                 return Ok((p, Ty::Bool));
             }
+            // A union and one of its members: the member joins the union (D177).
+            let (mut l, mut lt, mut r, mut rt) = (l, lt, r, rt);
+            if lt != rt && matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+                if sum_info_of(&ctx.types, &lt).is_some() {
+                    if let Some(joined) = try_sum_coerce(ctx, r.clone(), &rt, &lt, None, span)? {
+                        r = joined;
+                        rt = lt.clone();
+                    }
+                } else if sum_info_of(&ctx.types, &rt).is_some() {
+                    if let Some(joined) = try_sum_coerce(ctx, l.clone(), &lt, &rt, None, span)? {
+                        l = joined;
+                        lt = rt.clone();
+                    }
+                }
+            }
             let shown = display_ty(&lt);
             if lt != rt {
                 return Err(Error::at(
@@ -14081,7 +14096,7 @@ fn lower_binary(
             }
             let equal = match &lt {
                 Ty::Bytes => lower_bytes_eq(ctx, l, r),
-                Ty::User(type_name) => lower_product_eq(ctx, l, r, type_name, span)?,
+                Ty::User(type_name) => lower_user_eq(ctx, l, r, type_name, span)?,
                 _ => {
                     return Err(Error::at(format!("cannot compare {shown} values"), span)
                         .with_help(
@@ -14152,8 +14167,9 @@ fn lower_bytes_eq(ctx: &mut LowerCtx, left: Place, right: Place) -> Place {
 
 /// D175: two values of one constructor-param product are equal when every
 /// field is. Fields are read as borrows (no RC); a nested product recurses,
-/// which ends because a type cannot contain itself.
-fn lower_product_eq(
+/// which ends because a type cannot contain itself. A union compares its
+/// arms (D177).
+fn lower_user_eq(
     ctx: &mut LowerCtx,
     left: Place,
     right: Place,
@@ -14166,9 +14182,10 @@ fn lower_product_eq(
         .cloned()
         .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?;
     let shown = display_ty(&Ty::User(type_name.to_string()));
-    let refusal = if info.sum.is_some() {
-        Some("`==` is not defined for unions yet; `match` on the arms")
-    } else if info.methods.contains_key("drop") {
+    if let Some(sum) = &info.sum {
+        return lower_union_eq(ctx, left, right, type_name, sum, span);
+    }
+    let refusal = if info.methods.contains_key("drop") {
         Some("a type with `drop` is a resource, not a value")
     } else if info.zero_init {
         Some("C-layout types have no `==`")
@@ -14182,7 +14199,8 @@ fn lower_product_eq(
         ));
     }
     let mut all: Option<Place> = None;
-    for field in &info.fields {
+    // A Void field (`Pass(Void)`) has no storage, and is always equal.
+    for field in info.fields.iter().filter(|field| field.ty != Ty::Void) {
         let left_field = borrow_field(ctx, &left, &field.name, &field.ty);
         let right_field = borrow_field(ctx, &right, &field.name, &field.ty);
         let same = lower_field_eq(ctx, left_field, right_field, &field.ty, span)?;
@@ -14221,6 +14239,129 @@ fn lower_product_eq(
             p
         }
     })
+}
+
+/// D177: two union values are equal when they are the same arm and that
+/// arm's payloads are equal. A literal arm, or one whose payload has no
+/// fields (`Not`), is equal when the tags are.
+fn lower_union_eq(
+    ctx: &mut LowerCtx,
+    left: Place,
+    right: Place,
+    type_name: &str,
+    sum: &SumInfo,
+    span: Span,
+) -> Result<Place> {
+    let mut tags = Vec::new();
+    for place in [&left, &right] {
+        let tag = ctx.fresh("ueqtag");
+        ctx.assign(
+            tag.clone(),
+            Ty::Int64,
+            RValue::SumTag {
+                place: place.clone(),
+                sum_type: type_name.to_string(),
+            },
+        );
+        tags.push(tag);
+    }
+    let (left_tag, right_tag) = (tags[0].clone(), tags[1].clone());
+    let result = ctx.fresh("ueq");
+    ctx.assign(result.clone(), Ty::Bool, RValue::Bool(false));
+    let same_arm = ctx.fresh("ueqsame");
+    ctx.assign(
+        same_arm.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Eq,
+            left: left_tag.clone(),
+            right: right_tag,
+        },
+    );
+
+    // Inside `same_arm`: find the arm, and compare its payloads.
+    let outside = std::mem::take(&mut ctx.stmts);
+    let mut chain: Vec<Stmt> = Vec::new();
+    for variant in sum.variants.iter().rev() {
+        let want = ctx.fresh("ueqarm");
+        ctx.assign(want.clone(), Ty::Int64, RValue::Int(variant.tag as i64));
+        let cond = ctx.fresh("ueqis");
+        ctx.assign(
+            cond.clone(),
+            Ty::Bool,
+            RValue::Binary {
+                op: BinaryOp::Eq,
+                left: left_tag.clone(),
+                right: want,
+            },
+        );
+        let before_arm = std::mem::take(&mut ctx.stmts);
+        let equal = if variant.lit.is_some() || !has_storage(&ctx.types, &variant.ty) {
+            let p = ctx.fresh("ueqlit");
+            ctx.assign(p.clone(), Ty::Bool, RValue::Bool(true));
+            p
+        } else {
+            let mut payloads = Vec::new();
+            for place in [&left, &right] {
+                let payload = ctx.fresh("ueqpay");
+                ctx.assign_no_drop(
+                    payload.clone(),
+                    variant.ty.clone(),
+                    RValue::SumPayload {
+                        base: place.clone(),
+                        tag: variant.tag,
+                        payload_ty: variant.ty.clone(),
+                    },
+                );
+                payloads.push(payload);
+            }
+            let (left_payload, right_payload) = (payloads[0].clone(), payloads[1].clone());
+            let equal = lower_field_eq(ctx, left_payload, right_payload, &variant.ty, span)?;
+            equal.ok_or_else(|| {
+                Error::at(
+                    format!(
+                        "cannot compare {} values: arm `{}` is {}, which has no `==`",
+                        display_ty(&Ty::User(type_name.to_string())),
+                        variant.name,
+                        display_ty(&variant.ty)
+                    ),
+                    span,
+                )
+            })?
+        };
+        ctx.assign(result.clone(), Ty::Bool, RValue::Use(equal));
+        let then_body = std::mem::replace(&mut ctx.stmts, before_arm);
+        ctx.stmts.push(Stmt::If {
+            cond,
+            then_body,
+            else_body: chain,
+        });
+        chain = std::mem::take(&mut ctx.stmts);
+    }
+    let then_body = std::mem::replace(&mut ctx.stmts, outside);
+    let mut then_body = then_body;
+    then_body.extend(chain);
+    ctx.stmts.push(Stmt::If {
+        cond: same_arm,
+        then_body,
+        else_body: Vec::new(),
+    });
+    Ok(result)
+}
+
+/// Whether values of `ty` hold anything to compare: a product with a field
+/// other than Void, or any other type.
+fn has_storage(types: &HashMap<String, TypeInfo>, ty: &Ty) -> bool {
+    match ty {
+        Ty::Void => false,
+        Ty::User(name) => match types.get(name) {
+            Some(info) if info.sum.is_none() && info.refined.is_none() => {
+                info.fields.iter().any(|field| field.ty != Ty::Void)
+            }
+            _ => true,
+        },
+        _ => true,
+    }
 }
 
 /// A field of `base`, read without a reference of its own: it is only
@@ -14313,10 +14454,7 @@ fn lower_field_eq(
                 );
                 return Ok(Some(p));
             }
-            if sum_info_of(&ctx.types, ty).is_some() {
-                return Ok(None);
-            }
-            lower_product_eq(ctx, left, right, name, span).map(Some)
+            lower_user_eq(ctx, left, right, name, span).map(Some)
         }
         _ => Ok(None),
     }
