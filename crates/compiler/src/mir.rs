@@ -8220,84 +8220,7 @@ fn lower_for_array(
     ctx.push_scope();
     ctx.define(name, elem_ty.clone(), false, elem_p.clone());
 
-    if array_elem_is_user(&elem_ty) {
-        // ArrayGet (cgen) field-drops prior ownership of `elem_p`, then memcpy + field-dup.
-        // No separate Drop here — would double-free with the get pre-drop.
-        ctx.stmts.push(Stmt::Assign {
-            place: elem_p.clone(),
-            ty: elem_ty.clone(),
-            value: RValue::ArrayGet {
-                arr: arr_p.clone(),
-                index: idx.clone(),
-                elem_ty: elem_ty.clone(),
-            },
-        });
-    } else if array_elem_is_heap(&elem_ty) {
-        // Drop previous iteration's ownership (no-op when NULL on first entry).
-        ctx.stmts.push(Stmt::Drop {
-            place: elem_p.clone(),
-            ty: elem_ty.clone(),
-        });
-        ctx.stmts.push(Stmt::Assign {
-            place: elem_p.clone(),
-            ty: elem_ty.clone(),
-            value: RValue::Call {
-                callee: Callee::Builtin("array_get_ptr".into()),
-                args: vec![arr_p.clone(), idx.clone()],
-            },
-        });
-        // get_ptr does not dup; own a ref for the loop variable lifetime.
-        ctx.stmts.push(Stmt::Dup {
-            place: elem_p.clone(),
-            ty: elem_ty.clone(),
-        });
-    } else if elem_ty == Ty::Bool {
-        let raw = ctx.fresh("araw");
-        ctx.stmts.push(Stmt::Assign {
-            place: raw.clone(),
-            ty: Ty::Int64,
-            value: RValue::Call {
-                callee: Callee::Builtin("array_get_i64".into()),
-                args: vec![arr_p.clone(), idx.clone()],
-            },
-        });
-        ctx.stmts.push(Stmt::Assign {
-            place: elem_p.clone(),
-            ty: Ty::Bool,
-            value: RValue::Cast {
-                value: raw,
-                from: Ty::Int64,
-                to: Ty::Bool,
-            },
-        });
-    } else if elem_ty == Ty::Float64 {
-        let raw = ctx.fresh("araw");
-        ctx.stmts.push(Stmt::Assign {
-            place: raw.clone(),
-            ty: Ty::Int64,
-            value: RValue::Call {
-                callee: Callee::Builtin("array_get_i64".into()),
-                args: vec![arr_p.clone(), idx.clone()],
-            },
-        });
-        ctx.stmts.push(Stmt::Assign {
-            place: elem_p.clone(),
-            ty: Ty::Float64,
-            value: RValue::Call {
-                callee: Callee::Builtin("f64_from_bits".into()),
-                args: vec![raw],
-            },
-        });
-    } else {
-        ctx.stmts.push(Stmt::Assign {
-            place: elem_p.clone(),
-            ty: elem_ty.clone(),
-            value: RValue::Call {
-                callee: Callee::Builtin("array_get_i64".into()),
-                args: vec![arr_p.clone(), idx.clone()],
-            },
-        });
-    }
+    read_array_elem(ctx, &arr_p, &idx, &elem_p, &elem_ty);
     lower_block_into(ctx, body, &Ty::Void)?;
     ctx.pop_scope();
     ctx.loop_depth -= 1;
@@ -8310,6 +8233,90 @@ fn lower_for_array(
         body: body_stmts,
     });
     Ok(void_place(ctx))
+}
+
+/// Load `arr[index]` into `elem`, which owns it (`for x in xs`, D178 `==`).
+/// `elem` must have been set up with `init_place`: the load drops what it
+/// held before.
+fn read_array_elem(ctx: &mut LowerCtx, arr: &Place, index: &Place, elem: &Place, elem_ty: &Ty) {
+    if array_elem_is_user(elem_ty) {
+        // ArrayGet (cgen) field-drops prior ownership of `elem`, then memcpy + field-dup.
+        // No separate Drop here — would double-free with the get pre-drop.
+        ctx.stmts.push(Stmt::Assign {
+            place: elem.clone(),
+            ty: elem_ty.clone(),
+            value: RValue::ArrayGet {
+                arr: arr.clone(),
+                index: index.clone(),
+                elem_ty: elem_ty.clone(),
+            },
+        });
+    } else if array_elem_is_heap(elem_ty) {
+        // Drop previous iteration's ownership (no-op when NULL on first entry).
+        ctx.stmts.push(Stmt::Drop {
+            place: elem.clone(),
+            ty: elem_ty.clone(),
+        });
+        ctx.stmts.push(Stmt::Assign {
+            place: elem.clone(),
+            ty: elem_ty.clone(),
+            value: RValue::Call {
+                callee: Callee::Builtin("array_get_ptr".into()),
+                args: vec![arr.clone(), index.clone()],
+            },
+        });
+        // get_ptr does not dup; own a ref for the loop variable lifetime.
+        ctx.stmts.push(Stmt::Dup {
+            place: elem.clone(),
+            ty: elem_ty.clone(),
+        });
+    } else if *elem_ty == Ty::Bool {
+        let raw = ctx.fresh("araw");
+        ctx.stmts.push(Stmt::Assign {
+            place: raw.clone(),
+            ty: Ty::Int64,
+            value: RValue::Call {
+                callee: Callee::Builtin("array_get_i64".into()),
+                args: vec![arr.clone(), index.clone()],
+            },
+        });
+        ctx.stmts.push(Stmt::Assign {
+            place: elem.clone(),
+            ty: Ty::Bool,
+            value: RValue::Cast {
+                value: raw,
+                from: Ty::Int64,
+                to: Ty::Bool,
+            },
+        });
+    } else if *elem_ty == Ty::Float64 {
+        let raw = ctx.fresh("araw");
+        ctx.stmts.push(Stmt::Assign {
+            place: raw.clone(),
+            ty: Ty::Int64,
+            value: RValue::Call {
+                callee: Callee::Builtin("array_get_i64".into()),
+                args: vec![arr.clone(), index.clone()],
+            },
+        });
+        ctx.stmts.push(Stmt::Assign {
+            place: elem.clone(),
+            ty: Ty::Float64,
+            value: RValue::Call {
+                callee: Callee::Builtin("f64_from_bits".into()),
+                args: vec![raw],
+            },
+        });
+    } else {
+        ctx.stmts.push(Stmt::Assign {
+            place: elem.clone(),
+            ty: elem_ty.clone(),
+            value: RValue::Call {
+                callee: Callee::Builtin("array_get_i64".into()),
+                args: vec![arr.clone(), index.clone()],
+            },
+        });
+    }
 }
 
 fn lower_fixed_array_lit(
@@ -14087,7 +14094,7 @@ fn lower_binary(
                     span,
                 ));
             }
-            let comparable = matches!(&lt, Ty::Bytes | Ty::User(_));
+            let comparable = matches!(&lt, Ty::Bytes | Ty::User(_) | Ty::Array { .. });
             if comparable && !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
                 return Err(Error::at(
                     format!("{shown} only supports `==` and `!=`"),
@@ -14097,11 +14104,20 @@ fn lower_binary(
             let equal = match &lt {
                 Ty::Bytes => lower_bytes_eq(ctx, l, r),
                 Ty::User(type_name) => lower_user_eq(ctx, l, r, type_name, span)?,
+                Ty::Array { elem } => lower_array_eq(ctx, l, r, elem, span)?.ok_or_else(|| {
+                    Error::at(
+                        format!(
+                            "cannot compare {shown} values: {} has no `==`",
+                            display_ty(elem)
+                        ),
+                        span,
+                    )
+                })?,
                 _ => {
                     return Err(Error::at(format!("cannot compare {shown} values"), span)
                         .with_help(
-                            "`==` is defined for numbers, Bool, String, Bytes, and products \
-                             of those (D175)",
+                            "`==` is defined for numbers, Bool, String, Bytes, and products, \
+                             unions, and arrays of those (D175, D177, D178)",
                         ));
                 }
             };
@@ -14349,6 +14365,89 @@ fn lower_union_eq(
     Ok(result)
 }
 
+/// D178: two arrays are equal when they have the same count and their
+/// elements are equal in order; the loop stops at the first difference.
+/// `None` when the element type has no `==`.
+fn lower_array_eq(
+    ctx: &mut LowerCtx,
+    left: Place,
+    right: Place,
+    elem_ty: &Ty,
+    span: Span,
+) -> Result<Option<Place>> {
+    let mut counts = Vec::new();
+    for place in [&left, &right] {
+        let count = ctx.fresh("aeqcnt");
+        ctx.assign(
+            count.clone(),
+            Ty::Int64,
+            RValue::Call {
+                callee: Callee::Builtin("array_count".into()),
+                args: vec![place.clone()],
+            },
+        );
+        counts.push(count);
+    }
+    let result = ctx.fresh("aeq");
+    ctx.assign(
+        result.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Eq,
+            left: counts[0].clone(),
+            right: counts[1].clone(),
+        },
+    );
+    let index = ctx.fresh("aeqi");
+    ctx.assign(index.clone(), Ty::Int64, RValue::Int(0));
+    let mut elems = Vec::new();
+    for _ in 0..2 {
+        let elem = ctx.fresh("aeqel");
+        init_place(ctx, &elem, elem_ty)?;
+        elems.push(elem);
+    }
+
+    let outside = std::mem::take(&mut ctx.stmts);
+    read_array_elem(ctx, &left, &index, &elems[0], elem_ty);
+    read_array_elem(ctx, &right, &index, &elems[1], elem_ty);
+    let Some(equal) = lower_field_eq(ctx, elems[0].clone(), elems[1].clone(), elem_ty, span)?
+    else {
+        ctx.stmts = outside;
+        return Ok(None);
+    };
+    let differs = ctx.fresh("aeqne");
+    ctx.assign(
+        differs.clone(),
+        Ty::Bool,
+        RValue::Unary {
+            op: UnaryOp::Not,
+            arg: equal,
+        },
+    );
+    let before_stop = std::mem::take(&mut ctx.stmts);
+    ctx.assign(result.clone(), Ty::Bool, RValue::Bool(false));
+    ctx.stmts.push(Stmt::Break);
+    let stop = std::mem::replace(&mut ctx.stmts, before_stop);
+    ctx.stmts.push(Stmt::If {
+        cond: differs,
+        then_body: stop,
+        else_body: Vec::new(),
+    });
+    let body = std::mem::replace(&mut ctx.stmts, outside);
+    // Only walk the elements when the counts agree.
+    ctx.stmts.push(Stmt::If {
+        cond: result.clone(),
+        then_body: vec![Stmt::ForRange {
+            index,
+            end: counts[0].clone(),
+            inclusive: false,
+            body,
+        }],
+        else_body: Vec::new(),
+    });
+    Ok(Some(result))
+}
+
 /// Whether values of `ty` hold anything to compare: a product with a field
 /// other than Void, or any other type.
 fn has_storage(types: &HashMap<String, TypeInfo>, ty: &Ty) -> bool {
@@ -14415,6 +14514,7 @@ fn lower_field_eq(
             Ok(Some(p))
         }
         Ty::Bytes => Ok(Some(lower_bytes_eq(ctx, left, right))),
+        Ty::Array { elem } => lower_array_eq(ctx, left, right, elem, span),
         Ty::User(name) => {
             // `type Qty = Int64 where …` compares its base value.
             if let Some(base) = refined_info(&ctx.types, ty).map(|info| info.base.clone()) {

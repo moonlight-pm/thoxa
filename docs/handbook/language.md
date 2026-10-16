@@ -72,7 +72,7 @@ body (and fails later if the name is undefined). See [session.md](session.md).
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132**); no closures |
 | C-layout | Body fields, `T()` zero-init, `Address<T>`, fixed `Array<T,N>` fields/locals (element get/set **and** whole-array assign/bind; an index outside `0..N-1` panics). A `mut` struct local passed where `Address<T>` is expected passes its address, to C or to a Thoxa function; an `Address<T>` parameter passes on unchanged. A value of a `drop` type passes its box pointer (**D168**) |
 | Errors | `May<T>` / `Trial<Ok,Err>` from `std/fallible` with `?` / `match` (ok/err may nest) |
-| Equality | String and `Bytes` `==` / `!=`; usual scalar compares (including `Float64`). Two values of one product compare field by field (**D175**, [below](#equality)). Comparison `<` needs a space after it (`a < b`, not `a<b`) — glued `<name` is a [tag](#tag-literals-and-node-jsx) |
+| Equality | String and `Bytes` `==` / `!=`; usual scalar compares (including `Float64`). Products, unions, and arrays compare structurally (**D175**, **D177**, **D178**, [below](#equality)). Comparison `<` needs a space after it (`a < b`, not `a<b`) — glued `<name` is a [tag](#tag-literals-and-node-jsx) |
 
 **Integers (**D157**):** `Int64` arithmetic wraps on overflow (two's
 complement); it is never undefined. `/` and `%` by zero panic with
@@ -314,9 +314,13 @@ let found: May<Int64> = Has(2)
 info("{found == Has(2)}")              ## true
 ```
 
-It is a compile error when a field or an arm has no `==` (an `Array`, `Map`,
-or `Node` field), when the two sides are different types, or for `<` / `>` on
-a product or union. Types with `fn drop()` (resources) and C-layout types have
+Two arrays are equal when they have the same count and equal elements, in
+order (**D178**): `[1, 2] == [1, 2]`, and arrays of products, unions, or
+arrays compare the same way.
+
+It is a compile error when a field or an arm has no `==` (a `Map` or `Node`
+field), when the two sides are different types, or for `<` / `>` on a
+product, union, or array. Types with `fn drop()` (resources) and C-layout types have
 no `==`. A `Float64` field follows IEEE, so a NaN is never equal to itself.
 
 **Return types (**D129**, **D174**):** an explicit `-> T` is the contract (body

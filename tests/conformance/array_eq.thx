@@ -1,0 +1,44 @@
+## D178: `==` / `!=` on two arrays: the same count, and equal elements in order.
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Point(x: Int64, y: Int64)
+
+type Path(name: String, points: Array<Point>)
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let numbers = [1, 2, 3]
+    let same = [1, 2, 3]
+    let longer = [1, 2, 3, 4]
+    let changed = [1, 9, 3]
+    let none: Array<Int64> = []
+    let alsoNone: Array<Int64> = []
+    info("ints {numbers == same} {numbers == longer} {numbers == changed} {numbers != changed} {none == alsoNone} {none == numbers}")
+
+    let words = ["a", "b"]
+    let built = "b"
+    info("strings {words == ["a", built]} {words == ["b", "a"]}")
+    info("floats {[1.5, 2.5] == [1.5, 2.5]} {[1.5] == [1.25]}")
+    info("bools {[true, false] == [true, false]} {[true] == [false]}")
+    info("nested {[[1], [2, 3]] == [[1], [2, 3]]} {[[1], [2, 3]] == [[1], [2]]}")
+
+    let route = [Point(x: 0, y: 0), Point(x: 1, y: 1)]
+    let sameRoute = [Point(x: 0, y: 0), Point(x: 1, y: 1)]
+    let detour = [Point(x: 0, y: 0), Point(x: 2, y: 1)]
+    info("points {route == sameRoute} {route == detour}")
+
+    let found: Array<May<Int64>> = [Has(1), Not()]
+    let alsoFound: Array<May<Int64>> = [Has(1), Not()]
+    info("mays {found == alsoFound}")
+
+    let path = Path(name: "home", points: route)
+    info("fields {path == Path(name: "home", points: sameRoute)} {path == Path(name: "home", points: detour)}")
+
+    mut growing = [1, 2]
+    growing.append(3)
+    info("after-append {growing == numbers}")
+    0
+}

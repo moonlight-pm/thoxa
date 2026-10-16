@@ -1,0 +1,9 @@
+ints true false false true true false
+strings true false
+floats true false
+bools true false
+nested true false
+points true false
+mays true
+fields true false
+after-append true
