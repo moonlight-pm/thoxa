@@ -4,7 +4,13 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-16. **D181** removing a Map key keeps the others in insertion order. **D180** collection writes no longer vanish: `grid[0].append(5)` writes back; `board.names.append(…)` from outside the type and writes on temporaries are errors. **D179** a user type can be a Map key (`Map<Point, String>`; hashed and compared by value). **D178** `==` on arrays compares count and elements. **D177** `==` on unions compares the arm and its payload (`Has(1) == Has(1)`). **D176** a hole may hold strings of its own (`"{greet("ada")}"`). **D175** `==` / `!=` on two values of one product compare their fields (step 1 of the user Map-key trajectory); `Bytes == Bytes`. **D174** unannotated methods infer their return type like free functions (it was Void, and the value was dropped); `x?` then `Pass(value)` infers `Trial<T, E>`. **D173** what `main` returns is the exit status: outside 0 to 255 it panics (256 used to exit 0; review finding 23). **D172** the sites send security headers and
+**As of:** 2026-10-16. **Language pass (D173–D181):** `main`'s return is
+the exit status, 0–255 (D173); unannotated methods infer their return type,
+and `x?` then `Pass(value)` infers `Trial<T, E>` (D174); structural `==` on
+products, unions, and arrays (D175, D177, D178); strings inside interpolation
+holes (D176); user types as Map keys (D179); collection writes never vanish
+(D180); `remove` keeps a Map's insertion order (D181). Earlier the same day:
+**D172** the sites send security headers and
 ETags (images and fonts cached a day; review finding 10). **D171** `std/http/server` answers pipelined
 requests in order (a request without `Content-Length` has no body; review
 finding 9). **D170** a program that is PID 1 ends on SIGTERM /
@@ -48,13 +54,22 @@ cache shipped. **`having`/`else` parked indefinitely.**
 
 ## Now
 
-**No active language campaign.** Session step compile cache shipped (D105
-§3.5 / §11.1): decl-stable package reuse, re-lower only `Shell.step`, libtcc
-base image that steps link against (**D169**). Release REPL ~**8 ms**/line after the first (~100 ms) prelude
-build — not a second shell mode. **D155** resource `drop` shipped. D153
-simple-RC gate is done. **Not Perceus.** Editor only when DX forces it. Crema
-Phase **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor
-HTMX. Crema leftovers (product migrate, file-based routing) stay parked.
+**Focus: the core language** (Joshua, 2026-10-16): compiler, type system,
+codegen, runtime semantics. Site and hosting work is paused (see holds). One
+language slice at a time, each with conformance.
+
+**Language gaps to pick from** (as built; see `docs/capabilities.md`):
+unannotated multi-clause methods and methods of generic types are still Void
+(D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
+D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); Tree-sitter
+colours a nested string as two strings (D176); `Int64` → `Float64` rounds
+unchecked.
+
+Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);
+release REPL ~**8 ms**/line. **D155** resource `drop` shipped. D153 simple-RC
+gate is done. **Not Perceus.** Editor only when DX forces it. Crema Phase
+**E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor HTMX.
+Crema leftovers (product migrate, file-based routing) stay parked.
 
 Freezes:
 [`docs/specs/2026-08-05-session-libtcc.md`](docs/specs/2026-08-05-session-libtcc.md)
@@ -64,7 +79,10 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** Session step compile cache (D105 §3.5): no per-line
+**Shipped recently:** the 2026-10-16 language pass (D173–D181, above), each
+with conformance and rejection gates; `cargo make test` 128 programs, 22
+rejections, 274 unit tests; `cargo make test-asan` 118 clean. Before it:
+session step compile cache (D105 §3.5): no per-line
 scratch `.thx`; reuse prelude MIR; libtcc base image (in memory since **D169**) + ~500-line step C.
 `cargo make shell` runs **release** `thoxa`. Session rc form split skips
 `#` / `##` comments, so an apostrophe in `## not Thoxa's default` no longer
@@ -84,14 +102,12 @@ lits; overwrite-drop; **D152** match/init RC.
 
 **On master, not product:** none.
 
-**Review follow-ups (open, from 2026-10-14):** the three sites were
-redeployed on 2026-10-16 from `e0c0bcf`: hardened images (C built in the
-image, pinned bases, `USER 65534`, D170), pipelining (D171), and the
-headers (D172);
-Ctrl-C in a pure-Thoxa loop;
-command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`);
-redefining a session
-`fn` is an error, not a replacement; and no CI.
+**Review follow-ups (open, from 2026-10-14):** Ctrl-C in a pure-Thoxa loop;
+command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`); redefining a
+session `fn` is an error, not a replacement; no CI (R8, deferred). Paused with
+the site work: the event loop's wake scan and blocking log writes (finding
+14) and the copied site templates (finding 38). The sites run `e0c0bcf`
+(D170–D172, redeployed 2026-10-16).
 
 ### Proceed order
 
@@ -120,6 +136,8 @@ Public sites are **`containers/landing`** (thoxa.dev),
 
 **Explicit holds:**
 
+- **Site and hosting work** (paused 2026-10-16 at Joshua's request; the focus
+  is the core language): `containers/`, `std/http/server` tuning, deploys
 - **`having` / `else` May sugar** (parked indefinitely — `match` is enough)
 - **Crema domain in `std/`** (pages/models/layout — example-only)
 - **Remaining session / shell residual** (redir polish, Shell import-first, libtcc process-RT / license — parked; line editor **D156** and compile cache shipped)
@@ -154,13 +172,14 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); **`std/json`** (**D141**); **`std/sqlite`** (**D143**); fragments + ETag (**D145**); SSE takeover (**D146**); `ffi` deferred |
 | Logging / print | **`std/logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
-| Return inference | Unannotated free fns: returns inferred from exits (**D129**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; methods still annotate or default Void; hover uses inferred types |
+| Return inference | Unannotated free fns and methods: returns inferred from exits (**D129**, **D174**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; `x?` then `Pass(value)` refines the success type; `drop` is Void; multi-clause and generic-type methods still annotate or default Void; hover uses inferred types |
 | Match arms | Bare ctor = tag-only; `=>` single-expr body or `{ }` multi-stmt (**D130**); `->` types only |
 | Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **shipped**). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |
 | Nowait | Token **`--> name(args)`** starts a named free Thoxa function (**D148**). `Void`; return dropped. Colorless: Net parks; `main` drains. No Future / `async` / `--> { }` / pointer `-->`. |
-| Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. |
-| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User products / unions are keys too (**D175** `==` + a generated hash, **D179**; not traits). No `std/http` header flip. |
+| Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. An element of a `mut` Array is a place (`grid[0].append(x)`); a field from outside its type and a temporary are not, and a write on them is an error (**D180**). |
+| Equality | Structural, no traits: `==` / `!=` compare products field by field, unions by arm and payload, arrays by count and elements (**D175**, **D177**, **D178**); never by RC pointer. No ordering on them; no `==` on Map. |
+| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User products / unions are keys too (**D175** `==` + a generated hash, **D179**; not traits). `remove` keeps insertion order (**D181**). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); `htmlFragment` / `etagOf` / `cached` (**D145**). **`peerFd` + `streamed()`** (**D146**) for SSE takeover; the handler gets
 its Socket from `server.peerOf(request)` (**D168**). Cookie and `Cache-Control` *policy* stay in the app. |

@@ -32,8 +32,9 @@ capability rows for feature-level progress.
 
 **Remaining:** simple-RC **D153** gate is done (empty `lsan-skip`, bounded
 ASan 2026-09-03). Resource `drop` **D155** shipped. Ladder itself stays
-done; do not re-open R0–R9. Perceus stays horizon (not unparked). No
-active language campaign.
+done; do not re-open R0–R9. Perceus stays horizon (not unparked). Since
+2026-10-16 the focus is the core language (`CURRENT.md`): slices taken from
+capability gaps (D173–D181 so far), not a new ladder.
 
 Freeze: [`specs/2026-07-18-thoxa-native-kernel-design.md`](specs/2026-07-18-thoxa-native-kernel-design.md)  
 RC campaign: [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md)  

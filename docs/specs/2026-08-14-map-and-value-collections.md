@@ -1,10 +1,13 @@
 # Freeze: Map and value collections (D133, D134)
 
-**Status:** shipped (v0)  
-**Decisions:** D133 (collection mutation), D134 (`Map<K, V>`)  
+**Status:** shipped (v0); user keys and structural `==` shipped later  
+**Decisions:** D133 (collection mutation), D134 (`Map<K, V>`); follow-ups
+D175 / D177 / D178 (`==`), D179 (user keys), D180 (collection writes reach a
+place), D181 (`remove` keeps insertion order)  
 **Gates:** `maps` (Map); `arrays` / `array_user` / `array_heap_elems` / `splice`
-(Array surface after D133)  
-**As of:** 2026-08-14  
+(Array surface after D133); `map_user_keys`, `map_user_keys_more`,
+`map_remove_order`, `array_eq`, `collection_element_writes`  
+**As of:** 2026-10-16  
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D133/D134 in
 [`decisions.md`](../decisions.md)
 
@@ -96,7 +99,7 @@ mut m: Map<String, String> = Map()
 `Buffer`, `Address`. Nested `Map` / `Array` **values** are in. User types as
 **values** (`Map<String, Header>`) are in.
 
-**User keys (deferred — not traits):** a *User key* is a constructor-param
+**User keys (shipped as D179, 2026-10-16 — not traits):** a *User key* is a constructor-param
 product (`type Header(name: String, …)`) used as `K` in `Map<K, V>`. v0
 omits them because products have no `==` and no hash, not because Map is
 String-only forever. **Do not invent Eq/Hash traits for this.** The intended
@@ -108,6 +111,12 @@ slice is:
    literal-union fields.
 2. A private runtime hash of those same fields (not a user `.hash()`).
 3. Then those types are legal Map keys.
+
+   **Shipped (D179):** products and unions whose contents hash by value
+   (integers, Bool, String, Bytes, refined and literal-union fields, nested
+   such types); cgen generates the hash and equality per key type. Keys
+   holding Float64, Array, or Map are refused. A literal key may be a call,
+   `{Point(x: 1, y: 2): v}`.
 
 Keys compare **fields**, never RC pointer identity (COW copies would miss).
 Out of that slice: Array/Map fields as keys (needs collection `==`);
@@ -185,7 +194,7 @@ for k, v in m {
 
 A Map interpolates / displays as `{k: v, k: v}` in insertion order, values
 using the same element rendering as Array. String keys that are ident-safe
-print bare; others quote. No `==` / `!=` on Map in v0 (same as Array).
+print bare; others quote. No `==` / `!=` on Map (Array has `==` since D178).
 
 ### 9. Where a Map may live
 
@@ -228,9 +237,9 @@ pattern; bool as 0/1). Not a user-visible hash API.
 
 ## Explicit non-goals (v0)
 
-- User keys in this ship (trajectory above — structural product `==`, **not** traits)  
+- User keys in this ship (trajectory above; shipped later as D179)  
 - Eq/Hash traits / protocols  
-- `==` on Array or Map  
+- `==` on Array or Map (`==` on Array shipped later as D178; Map still has none)  
 - Persistent HAMT / structural sharing beyond whole-table COW  
 - Rust moves / borrow checker  
 - Functional `appended` / `set` that returns a new collection  
