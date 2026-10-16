@@ -9867,6 +9867,31 @@ fn lower_method_call(
                 }
             }
         }
+        // `grid[i].append(x)` on a `mut` Array: change a copy of the element,
+        // then store it back, as `items[i].method()` does (D163).
+        if let ExprKind::Index { base, index } = &receiver.kind {
+            if let ExprKind::Name(array_name) = &base.kind {
+                if let Some(binding) = ctx.lookup(array_name) {
+                    let elem_ty = match &binding.ty {
+                        Ty::Array { elem } => elem.as_ref().clone(),
+                        _ => Ty::Void,
+                    };
+                    let collection = matches!(elem_ty, Ty::Array { .. } | Ty::Map { .. });
+                    if collection {
+                        return lower_element_collection_write(
+                            ctx,
+                            array_name,
+                            binding,
+                            &elem_ty,
+                            index,
+                            method,
+                            args,
+                            method_span,
+                        );
+                    }
+                }
+            }
+        }
     }
 
     // User method receivers: use the binding place when the receiver is a name so
@@ -9938,6 +9963,19 @@ fn lower_method_call(
         }
         _ => lower_expr(ctx, receiver)?,
     };
+    let collection_write = matches!(
+        method,
+        "append" | "appendBytes" | "dropLast" | "insertAt" | "removeAt" | "set" | "remove"
+    ) && matches!(&recv_ty, Ty::Array { .. } | Ty::Map { .. } | Ty::Buffer);
+    if collection_write {
+        if let Some(target) = unwritable_receiver(ctx, receiver) {
+            let error = Error::at(format!("cannot mutate {target}"), method_span);
+            return Err(error.with_help(
+                "a collection write needs a `mut` binding: a field changes only inside its \
+                 own type's methods, and a temporary would drop the change",
+            ));
+        }
+    }
     match &recv_ty {
         Ty::Bytes => lower_bytes_method(ctx, recv_p, method, args, method_span),
         Ty::Buffer => lower_buffer_method(ctx, recv_p, method, args, method_span, false),
@@ -10419,6 +10457,74 @@ fn lower_html_method(
             span,
         )),
     }
+}
+
+/// What a collection write on `receiver` could not reach (it would change a
+/// copy and be lost), or `None` for a module value, whose place is written.
+/// A plain local binding never gets here.
+fn unwritable_receiver(ctx: &LowerCtx, receiver: &Expr) -> Option<String> {
+    match &receiver.kind {
+        ExprKind::Name(_) => None,
+        // `module.items` is that module's own value.
+        ExprKind::Field { base, .. }
+            if matches!(&base.kind, ExprKind::Name(n)
+                if ctx.lookup(n).is_none() && ctx.namespaces.contains_key(n)) =>
+        {
+            None
+        }
+        // From outside its type a field is read-only, as `board.label = …`
+        // is (D163).
+        ExprKind::Field { name, .. } => Some(format!("immutable field `{name}`")),
+        ExprKind::Index { base, .. } => match unwritable_receiver(ctx, base) {
+            Some(target) => Some(format!("an element of {target}")),
+            None => match &base.kind {
+                ExprKind::Name(name) => Some(format!("an element of `{name}`")),
+                _ => Some("an element of a temporary value".into()),
+            },
+        },
+        _ => Some("a temporary value".into()),
+    }
+}
+
+/// D163 for collections: `grid[i].append(x)` loads the element, changes it,
+/// and stores it back into the `mut` Array.
+fn lower_element_collection_write(
+    ctx: &mut LowerCtx,
+    array_name: &str,
+    binding: Binding,
+    elem_ty: &Ty,
+    index: &Expr,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    if !binding.mutable {
+        return Err(Error::at(
+            format!("cannot mutate an element of immutable binding `{array_name}`"),
+            span,
+        ));
+    }
+    let (index_p, index_ty) = lower_expr(ctx, index)?;
+    if !is_int(&index_ty) {
+        return Err(Error::at("array index must be an integer", index.span));
+    }
+    let index_p = if index_ty == Ty::Int64 {
+        index_p
+    } else {
+        coerce_place(ctx, index_p, &index_ty, &Ty::Int64, index.span)?
+    };
+    let elem = ctx.fresh("elemw");
+    init_place(ctx, &elem, elem_ty)?;
+    read_array_elem(ctx, &binding.place, &index_p, &elem, elem_ty);
+    let result = lower_collection_method(ctx, elem.clone(), elem_ty, method, args, span)?;
+    ctx.stmts.push(Stmt::DynIndexAssign {
+        base: binding.place.clone(),
+        index: index_p,
+        elem_ty: elem_ty.clone(),
+        value: elem,
+    });
+    write_back_field(ctx, &binding);
+    Ok(result)
 }
 
 fn lower_collection_method(

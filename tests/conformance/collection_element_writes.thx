@@ -1,0 +1,19 @@
+## D180: a collection write on an element of a `mut` Array stores the
+## element back (`grid[0].append(5)`), as `items[i].method()` does (D163).
+import logging, { info } from "std/logging"
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut grid = [[1], [2, 3]]
+    let before = grid
+    grid[0].append(5)
+    grid[1].dropLast()
+    grid[1].insertAt(0, 9)
+    info("grid {grid[0].count} {grid[0][1]} {grid[1][0]} {grid[1].count} before {before[0].count}")
+    mut tables = [{x: 0}, {y: 0}]
+    tables[1].set("a", 1)
+    tables[1].set("b", 2)
+    tables[1].remove("a")
+    info("tables {tables[0].count} {tables[1].count}")
+    0
+}

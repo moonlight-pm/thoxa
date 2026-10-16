@@ -1,0 +1,9 @@
+## D180: from outside its type a field is read-only, as `board.label = …`
+## is (D163). A collection write on it used to change a copy and be lost.
+type Board(label: String, names: Array<String>)
+
+fn main() -> Int64 {
+    mut board = Board(label: "a", names: [])
+    board.names.append("ada")
+    board.names.count
+}

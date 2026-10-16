@@ -1,0 +1,9 @@
+## D180: a collection write on a temporary would drop the change.
+fn counts() -> Map<String, Int64> {
+    {apples: 1}
+}
+
+fn main() -> Int64 {
+    counts().set("pears", 2)
+    0
+}

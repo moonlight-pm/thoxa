@@ -479,7 +479,11 @@ for k, v in lit {
 ```
 
 - **Array writes** (`.append` / `.dropLast` / `.insertAt` / `.removeAt` /
-  `a[i] =`) require a `mut` place and return `Void`. Index get `a[i]` still
+  `a[i] =`) require a `mut` place and return `Void`. An element of a `mut`
+  Array is a place too: `grid[0].append(5)` changes the inner array (**D180**).
+  A field is not one from outside its type (`board.names.append(…)` is an
+  error, as `board.names = …` is), and neither is a temporary; inside the
+  type's methods its fields write back. Index get `a[i]` still
   panics out of range. Nested `Array` / `Map` elements are heap-RC (a
   returned `[["x"]]` keeps the inner arrays).
 - **Map keys:** `String`, `Int64`, `Bool`, or a user type (**D179**). Ident
