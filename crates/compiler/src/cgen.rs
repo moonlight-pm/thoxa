@@ -326,7 +326,7 @@ pub fn emit_program_with(
                 out.push_str("    int64_t thoxa_rc = thoxa_fn_main(thoxa_args);\n");
                 out.push_str("    thoxa_array_drop(thoxa_args);\n");
                 out.push_str("    thoxa_sched_drain();\n");
-                out.push_str("    return (int)thoxa_rc;\n");
+                out.push_str("    return thoxa_exit_status(thoxa_rc);\n");
                 out.push_str("}\n");
             } else {
                 out.push_str("int main(void) {\n");
@@ -336,7 +336,7 @@ pub fn emit_program_with(
                 }
                 out.push_str("    int64_t thoxa_rc = thoxa_fn_main();\n");
                 out.push_str("    thoxa_sched_drain();\n");
-                out.push_str("    return (int)thoxa_rc;\n");
+                out.push_str("    return thoxa_exit_status(thoxa_rc);\n");
                 out.push_str("}\n");
             }
         }

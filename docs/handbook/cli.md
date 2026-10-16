@@ -70,6 +70,12 @@ cargo make runtime           # libthoxa_rt.a + compile_commands.json
 cargo make zed               # sync Zed extras + LSP binary
 ```
 
+## Exit status
+
+`thoxa run` exits with the program's status: what `main` returns, `0` to
+`255` (outside that range it panics, **D173**), or 128 + signal for a program
+a signal ended (134 after a panic).
+
 ## Signals
 
 A compiled program keeps the default signal actions. One exception: as PID 1

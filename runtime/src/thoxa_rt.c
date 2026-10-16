@@ -54,6 +54,15 @@ void thoxa_narrow_fail_unsigned(uint64_t value, const char *to) {
     thoxa_panic(thoxa_narrow_message);
 }
 
+int thoxa_exit_status(int64_t status) {
+    if (status < 0 || status > 255) {
+        snprintf(thoxa_narrow_message, sizeof thoxa_narrow_message,
+                 "main returned %lld; an exit status is 0 to 255", (long long)status);
+        thoxa_panic(thoxa_narrow_message);
+    }
+    return (int)status;
+}
+
 static void thoxa_step_fault(int sig) {
     thoxa_recover_signal = sig;
     siglongjmp(*thoxa_recover_point, 2);

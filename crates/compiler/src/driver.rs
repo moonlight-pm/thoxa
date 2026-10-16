@@ -1320,4 +1320,34 @@ mod tests {
         let status = outer.wait().expect("wait for unshare");
         assert_eq!(status.code(), Some(128 + 15), "exit status after SIGTERM");
     }
+
+    /// D173: what `main` returns is the exit status. 0 to 255 pass through;
+    /// a value the kernel would cut to its low 8 bits (256 reads as 0)
+    /// panics instead.
+    #[test]
+    fn main_return_is_the_exit_status() {
+        use std::os::unix::process::ExitStatusExt;
+        let cases = [(0, Some(0)), (255, Some(255)), (256, None), (-1, None)];
+        for (index, (returned, expected)) in cases.into_iter().enumerate() {
+            let dir = temp_prog(&format!("fn main() -> Int64 {{\n    {returned}\n}}\n"));
+            let name = format!("exit_status_{}_{index}", std::process::id());
+            let built = build(&opts_for(&dir, &name)).expect("build");
+            let output = Command::new(built.bin_path.expect("binary"))
+                .output()
+                .expect("run the program");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            match expected {
+                Some(code) => {
+                    assert_eq!(output.status.code(), Some(code), "main returned {returned}");
+                    assert!(stderr.is_empty(), "main returned {returned}: {stderr}");
+                }
+                None => {
+                    assert_eq!(output.status.signal(), Some(6), "main returned {returned}");
+                    let message =
+                        format!("thoxa panic: main returned {returned}; an exit status is 0 to 255");
+                    assert!(stderr.contains(&message), "main returned {returned}: {stderr}");
+                }
+            }
+        }
+    }
 }

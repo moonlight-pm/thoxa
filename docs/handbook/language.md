@@ -39,6 +39,11 @@ fn main(arguments: Array<String>) -> Int64 {
 }
 ```
 
+What `main` returns is the process exit status, `0` to `255`. Any other value
+panics once the program's tasks finish (`thoxa panic: main returned 256; an exit
+status is 0 to 255`), since the kernel would keep only the low 8 bits and
+`256` would read as success (**D173**).
+
 Directory packages may use `main.thx` as the entry file.
 
 ### Program vs session script

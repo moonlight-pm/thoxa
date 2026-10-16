@@ -189,6 +189,8 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 - Generated batch `main` calls `thoxa_program_start()` first: as PID 1 it
   gives SIGTERM / SIGINT a handler that `_exit`s with 128 + signal, since the
   kernel drops default-action signals sent to a namespace's init (**D170**).
+  It returns `thoxa_exit_status(main())` after the tasks drain: a status
+  outside 0 to 255 panics instead of being cut to its low 8 bits (**D173**).
 - Extern from `"c"` (+ optional C symbol); cgen pulls headers when needed.
 - Spawn helper `thoxa_spawn_wait` used by session Shell / dogfood shell.
   Children reset SIGPIPE / SIGINT / SIGQUIT to default; the parent ignores

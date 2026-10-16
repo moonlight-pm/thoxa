@@ -66,6 +66,11 @@ static inline uint64_t thoxa_narrow_unsigned(uint64_t value, uint64_t max, const
     return value;
 }
 
+/* What `main` returns is the process exit status, 0 to 255 (D173). The kernel
+ * keeps only the low 8 bits, so 256 would read as success: anything outside
+ * the range panics instead. */
+int thoxa_exit_status(int64_t status);
+
 /* Fixed-size Array<T, N> subscript: an index outside 0..N-1 panics. */
 static inline int64_t thoxa_fixed_index(int64_t index, int64_t len) {
     if (index < 0 || index >= len) {
