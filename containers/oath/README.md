@@ -24,6 +24,15 @@ cargo make run containers/oath
 | `THOXA_PORT` | `8090` locally (landing is 8088, sola 8089). Image sets `8080`. |
 | `THOXA_STATIC` | `containers/oath/web` |
 
+## Headers
+
+`finish` in `app/routes.thx` adds them to every response (D172): a
+Content-Security-Policy (styles and images from here, fonts from here too; no
+script, frames, or forms), `nosniff`, `Referrer-Policy`, and HSTS. A 200
+carries an ETag, so a repeat request gets a 304. Pages and CSS are `no-cache`
+(checked on every load); images and fonts are reused for a day. A page that
+loads something new needs the CSP widened there.
+
 ## Image + Wicket
 
 The image builds `thoxa` from the build context, emits the site's C, and

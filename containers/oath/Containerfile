@@ -7,10 +7,10 @@
 #
 #   podman build -f containers/oath/Containerfile \
 #     --ignorefile containers/oath/.containerignore \
-#     -t registry.wicket.cloud/oath-landingatest .
+#     -t registry.wicket.cloud/oath-landing:latest .
 #
 # Wicket injects PORT / WICKET_PORT_HTTP.
-#   podman run --rm -p 8080:8080 oath-landingatest
+#   podman run --rm -p 8080:8080 oath-landing:latest
 
 # Identical in all three site images up to the site's own COPY, so podman
 # builds the compiler and the runtime once for them.

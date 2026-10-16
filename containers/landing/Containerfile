@@ -7,10 +7,10 @@
 #
 #   podman build -f containers/landing/Containerfile \
 #     --ignorefile containers/landing/.containerignore \
-#     -t registry.wicket.cloud/thoxa-landingatest .
+#     -t registry.wicket.cloud/thoxa-landing:latest .
 #
 # Wicket injects PORT / WICKET_PORT_HTTP.
-#   podman run --rm -p 8080:8080 thoxa-landingatest
+#   podman run --rm -p 8080:8080 thoxa-landing:latest
 
 # Identical in all three site images up to the site's own COPY, so podman
 # builds the compiler and the runtime once for them.

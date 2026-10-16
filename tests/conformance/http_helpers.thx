@@ -181,6 +181,7 @@ fn main() -> Int64 {
     let reval = emptyReq("GET", "HTTP/1.1", inm)
     let cold = http.cached(reval, http.htmlFragment(<p>hi</p>), "private, no-cache")
     info("fresh={cold.status} {cold.body.count} {headerNamed(cold, \"ETag\")}")
+    info("fresh-length={headerNamed(cold, \"Content-Length\")}")
     mut other: Array<Header> = []
     other.append(Header(name: "If-None-Match", value: "\"deadbeef\""))
     let staleReq = emptyReq("GET", "HTTP/1.1", other)

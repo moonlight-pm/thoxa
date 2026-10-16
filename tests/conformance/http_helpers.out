@@ -33,5 +33,6 @@ frag-body=<p>hi</p>
 etag="7d606879"
 warm=200 "7d606879" private, no-cache
 fresh=304 0 "7d606879"
+fresh-length=-
 stale=200 9
 streamed=0

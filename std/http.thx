@@ -496,12 +496,13 @@ export fn htmlFragment(root!: Node) -> Response {
 }
 
 ## 304 Not Modified — empty body. Send ETag / Cache-Control via `cached`.
+## No Content-Length: a 304 has no body, and its Content-Length would have
+## to be the 200's (RFC 9110 §8.6).
 export fn notModified() -> Response {
     Response(
         status: 304,
         reason: "Not Modified",
         headers: [
-            Header(name: "Content-Length", value: "0"),
             Header(name: "Connection", value: "close"),
         ],
         body: Bytes(0)

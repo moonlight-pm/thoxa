@@ -128,7 +128,7 @@ leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
 is the same at a chosen status (HTML 404 / 400). `htmlFragment` is the snippet
 without the doctype. `cached(req, res, cacheControl)` attaches a
 strong content-hash `ETag` and `Cache-Control`; a matching `If-None-Match`
-returns **304**. Cache *policy* (`private, no-cache` vs `max-age`) stays in
+returns **304** (no `Content-Length`). Cache *policy* (`private, no-cache` vs `max-age`) stays in
 the caller. `cookie` looks up one name on the `Cookie` header (empty value
 is `Not`).
 
