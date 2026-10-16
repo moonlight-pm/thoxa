@@ -318,6 +318,7 @@ pub fn emit_program_with(
             if main_takes_args {
                 // `fn main(arguments: Array<String>)` — pass process argv.
                 out.push_str("int main(int argc, char **argv) {\n");
+                out.push_str("    thoxa_program_start();\n");
                 if has_init {
                     out.push_str("    thoxa_module_init();\n");
                 }
@@ -329,6 +330,7 @@ pub fn emit_program_with(
                 out.push_str("}\n");
             } else {
                 out.push_str("int main(void) {\n");
+                out.push_str("    thoxa_program_start();\n");
                 if has_init {
                     out.push_str("    thoxa_module_init();\n");
                 }

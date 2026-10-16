@@ -25,12 +25,15 @@ cargo make run containers/landing
 
 ## Image + Wicket
 
-`cargo make build` on this machine produces a host-linked binary (on NixOS,
-Nix glibc). The Containerfile **recompiles** the emitted C plus `thoxa_rt` with
-Debian gcc so the image is portable.
+The image builds `thoxa` from the build context, emits the site's C, and
+compiles it with `thoxa_rt` (Debian gcc). It is not tied to the host linker,
+and an image built from a commit runs that commit's Thoxa, not C the host
+emitted earlier. Bases
+are pinned by digest (bump them by hand); the server runs as UID 65534 and, as
+PID 1, ends on SIGTERM (D170). The first build pulls the Rust base image; the
+compiler then builds in about 15 s, and the three site images share that stage.
 
 ```bash
-cargo make emit-c containers/landing
 podman build -f containers/landing/Containerfile \
   --ignorefile containers/landing/.containerignore \
   -t registry.wicket.cloud/thoxa-landing:latest .

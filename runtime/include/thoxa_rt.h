@@ -186,6 +186,10 @@ void thoxa_session_slot_mark_ready(void *host, const char *name);
 /* pipe(2) wrapper — low-level; prefer thoxa_pipeline for session pipelines. */
 int32_t thoxa_pipe(int32_t fds_out[2]);
 
+/* Generated batch `main` calls this first. As PID 1 (a container's init),
+ * SIGTERM and SIGINT end the program instead of being dropped (D170). */
+void thoxa_program_start(void);
+
 /*
  * Cooperative tasks (D148). One OS thread; `thoxa_task_start` enqueues
  * a thunk; `thoxa_wait_ms` parks the current task; `thoxa_sched_drain` runs

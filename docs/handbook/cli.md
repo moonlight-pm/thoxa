@@ -70,6 +70,14 @@ cargo make runtime           # libthoxa_rt.a + compile_commands.json
 cargo make zed               # sync Zed extras + LSP binary
 ```
 
+## Signals
+
+A compiled program keeps the default signal actions. One exception: as PID 1
+(a container's entrypoint, where the kernel would drop them) SIGTERM and
+SIGINT end the program at once with status 128 + signal, so `podman stop`
+does not wait for SIGKILL (**D170**). A request in flight is cut; there is no
+drain.
+
 ## Build products
 
 | Path | Role |

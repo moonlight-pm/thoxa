@@ -2209,6 +2209,35 @@ ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a) {
     return s;
 }
 
+/* --- Process start ------------------------------------------------------ */
+
+/* The kernel drops a signal whose action is the default when it is sent to
+ * PID 1, so a program that is a container's init never ends on `podman
+ * stop`'s SIGTERM and is killed after the timeout. As PID 1, end on SIGTERM
+ * and SIGINT the way any other process does: at once, with the status a
+ * shell reports for that signal (D170). */
+static void thoxa_init_signal_exit(int sig) {
+    _exit(128 + sig);
+}
+
+void thoxa_program_start(void) {
+    if (getpid() != 1) {
+        return;
+    }
+    static const int signals[] = {SIGTERM, SIGINT};
+    for (size_t i = 0; i < sizeof signals / sizeof signals[0]; i++) {
+        struct sigaction current;
+        if (sigaction(signals[i], NULL, &current) != 0 || current.sa_handler != SIG_DFL) {
+            continue; /* ignored on purpose, or someone else's handler */
+        }
+        struct sigaction action;
+        memset(&action, 0, sizeof action);
+        action.sa_handler = thoxa_init_signal_exit;
+        sigemptyset(&action.sa_mask);
+        (void)sigaction(signals[i], &action, NULL);
+    }
+}
+
 /* --- Process spawn (thoxash / dogfood) ---------------------------------- */
 
 /* A shell ignores SIGPIPE (Rust does at startup) and ignored dispositions

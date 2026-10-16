@@ -4,7 +4,9 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-15. Review follow-ups: **D161** defined shifts, **D162** a
+**As of:** 2026-10-16. **D170** a program that is PID 1 ends on SIGTERM /
+SIGINT; the site images build their own C from digest-pinned bases and run
+as nobody (review findings 8 and 57). Review follow-ups: **D161** defined shifts, **D162** a
 line starting `-x` is a new expression, **D163** mutating methods need a
 writable receiver (and user method calls write back), **D164** `return` is
 Never, **D165** HTTP host deadlines + connection cap + strict framing, **D166** a
@@ -80,8 +82,9 @@ lits; overwrite-drop; **D152** match/init RC.
 **On master, not product:** none.
 
 **Review follow-ups (open, from 2026-10-14):** the three sites were
-redeployed on 2026-10-15 from `878d863` (D165–D168, `-fwrapv`); their
-containers still run as root from unpinned bases and ignore SIGTERM;
+redeployed on 2026-10-15 from `878d863` (D165–D168, `-fwrapv`); the
+hardened images (C built in the image, pinned bases, `USER 65534`, D170) are
+not deployed yet; no security or cache headers;
 pipelined requests are dropped;
 Ctrl-C in a pure-Thoxa loop;
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`);

@@ -25,8 +25,15 @@ cargo make run containers/sola
 
 ## Image + Wicket
 
+The image builds `thoxa` from the build context, emits the site's C, and
+compiles it with `thoxa_rt` (Debian gcc). It is not tied to the host linker,
+and an image built from a commit runs that commit's Thoxa, not C the host
+emitted earlier. Bases
+are pinned by digest (bump them by hand); the server runs as UID 65534 and, as
+PID 1, ends on SIGTERM (D170). The first build pulls the Rust base image; the
+compiler then builds in about 15 s, and the three site images share that stage.
+
 ```bash
-cargo make emit-c containers/sola
 podman build -f containers/sola/Containerfile \
   --ignorefile containers/sola/.containerignore \
   -t registry.wicket.cloud/sola-landing:latest .

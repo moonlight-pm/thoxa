@@ -1258,4 +1258,66 @@ mod tests {
         let second = build(&opts).expect("rebuild after edit");
         assert!(!second.cached, "edited source must invalidate the stamp");
     }
+
+    /// Whether `/proc/<pid>/status` lists SIGTERM (15) among caught signals.
+    fn catches_sigterm(pid: &str) -> bool {
+        let Ok(status) = fs::read_to_string(format!("/proc/{pid}/status")) else {
+            return false;
+        };
+        status
+            .lines()
+            .find_map(|line| line.strip_prefix("SigCgt:"))
+            .and_then(|mask| u64::from_str_radix(mask.trim(), 16).ok())
+            .is_some_and(|mask| mask & (1 << (15 - 1)) != 0)
+    }
+
+    /// D170: the kernel drops a default-action SIGTERM sent to a PID
+    /// namespace's init, so without the runtime's handler this `pause()`
+    /// would never return and `podman stop` would wait for SIGKILL.
+    #[test]
+    fn program_as_pid_one_ends_on_sigterm() {
+        let namespace = ["--user", "--map-root-user", "--pid", "--fork"];
+        let probe = Command::new("unshare").args(namespace).arg("true").status();
+        if !matches!(probe, Ok(status) if status.success()) {
+            eprintln!("skipped: unshare cannot make a PID namespace here");
+            return;
+        }
+        let dir = temp_prog(
+            "extern fn sysPause() -> Int32 from \"c\" \"pause\"\n\n\
+             fn main() -> Int64 {\n    sysPause()\n    0\n}\n",
+        );
+        let name = format!("pid_one_{}", std::process::id());
+        let built = build(&opts_for(&dir, &name)).expect("build");
+        let bin = built.bin_path.expect("binary");
+        let mut outer = Command::new("unshare")
+            .args(namespace)
+            .arg(&bin)
+            .spawn()
+            .expect("spawn unshare");
+
+        // The program is unshare's only child, and it is PID 1 inside.
+        let children = format!("/proc/{0}/task/{0}/children", outer.id());
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut program = None;
+        while std::time::Instant::now() < deadline {
+            program = fs::read_to_string(&children)
+                .ok()
+                .and_then(|text| text.split_whitespace().next().map(str::to_string));
+            if program.as_deref().is_some_and(catches_sigterm) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let program = program.expect("unshare never started the program");
+        if !catches_sigterm(&program) {
+            let _ = Command::new("kill").args(["-KILL", &program]).status();
+            let _ = outer.wait();
+            panic!("as PID 1 the program did not catch SIGTERM");
+        }
+
+        let sent = Command::new("kill").args(["-TERM", &program]).status();
+        assert!(sent.is_ok_and(|status| status.success()), "kill -TERM failed");
+        let status = outer.wait().expect("wait for unshare");
+        assert_eq!(status.code(), Some(128 + 15), "exit status after SIGTERM");
+    }
 }

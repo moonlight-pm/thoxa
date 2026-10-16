@@ -62,7 +62,7 @@ step `.so` on the happy path.
 | `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, `Json`, `Sqlite`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate; `fail/` holds programs that must be rejected or panic (`.err` lines must appear in stderr) |
 | `examples/` | Runnable demos (`http` Crema-lite, `kilo` terminal editor); not the gate |
-| `containers/` | Deployed Thoxa programs (`landing` = thoxa.dev, `sola` = sola.computer, `oath` = oath.wicket.cloud); not the gate |
+| `containers/` | Deployed Thoxa programs (`landing` = thoxa.dev, `sola` = sola.computer, `oath` = oath.wicket.cloud); not the gate. Each image builds `thoxa` and emits the site's C in a digest-pinned `rust` stage, then runs it as UID 65534 from a digest-pinned `debian:bookworm-slim` |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
 | `apocrypha/` | Historical + Python oracle |
 
@@ -186,6 +186,9 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
   (**D167**); programs build with
   `-fwrapv` (**D157**), the site Containerfiles too. `thoxa_panic` is
   `noreturn`.
+- Generated batch `main` calls `thoxa_program_start()` first: as PID 1 it
+  gives SIGTERM / SIGINT a handler that `_exit`s with 128 + signal, since the
+  kernel drops default-action signals sent to a namespace's init (**D170**).
 - Extern from `"c"` (+ optional C symbol); cgen pulls headers when needed.
 - Spawn helper `thoxa_spawn_wait` used by session Shell / dogfood shell.
   Children reset SIGPIPE / SIGINT / SIGQUIT to default; the parent ignores

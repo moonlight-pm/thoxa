@@ -1,35 +1,39 @@
 # thoxa.dev landing.
 #
-# Host compiles Thoxa → C. The image rebuilds that C plus thoxa_rt with Debian
-# gcc so the binary is not tied to the host linker (Nix glibc, etc.).
+# The image builds the compiler, emits the site's C, and compiles that C with
+# thoxa_rt, so an image built from a commit runs that commit's Thoxa (no host
+# emit-c step). Both bases are pinned by digest; the final stage installs
+# nothing. The server runs as nobody and, as PID 1, ends on SIGTERM (D170).
 #
-#   cargo make emit-c containers/landing
 #   podman build -f containers/landing/Containerfile \
 #     --ignorefile containers/landing/.containerignore \
-#     -t registry.wicket.cloud/thoxa-landing:latest .
+#     -t registry.wicket.cloud/thoxa-landingatest .
 #
 # Wicket injects PORT / WICKET_PORT_HTTP.
-#   podman run --rm -p 8080:8080 thoxa-landing:latest
+#   podman run --rm -p 8080:8080 thoxa-landingatest
 
-FROM docker.io/library/debian:bookworm AS build
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libc6-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Identical in all three site images up to the site's own COPY, so podman
+# builds the compiler and the runtime once for them.
+FROM docker.io/library/rust:1.95-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1 AS build
 WORKDIR /build
-COPY runtime/include runtime/include
-COPY runtime/src runtime/src
-COPY target/thoxa/c/landing.c landing.c
+COPY Cargo.toml Cargo.lock ./
+COPY .cargo .cargo
+COPY crates crates
+COPY vendor/tinycc vendor/tinycc
+COPY runtime runtime
+COPY std std
+RUN cargo build --release --locked -p thoxa
 # Same flags as the thoxa driver: -fwrapv makes Int64 overflow wrap (D157).
-RUN gcc -std=c11 -O2 -fwrapv -fPIC -c runtime/src/thoxa_rt.c -I runtime/include -o thoxa_rt.o \
- && gcc -std=c11 -O2 -fwrapv landing.c thoxa_rt.o -I runtime/include -lm -o /landing
+RUN gcc -std=c11 -O2 -fwrapv -fPIC -c runtime/src/thoxa_rt.c -I runtime/include -o thoxa_rt.o
+COPY containers/landing containers/landing
+RUN target/rust/release/thoxa emit-c containers/landing \
+ && gcc -std=c11 -O2 -fwrapv target/thoxa/c/landing.c thoxa_rt.o -I runtime/include -lm -o /landing
 
-FROM docker.io/library/debian:bookworm-slim
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+FROM docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
 COPY --from=build /landing /usr/local/bin/landing
 COPY containers/landing/web /app/web
 RUN chmod 0755 /usr/local /usr/local/bin /usr/local/bin/landing
+USER 65534:65534
 ENV THOXA_PORT=8080
 ENV THOXA_STATIC=/app/web
 EXPOSE 8080
