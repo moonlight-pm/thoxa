@@ -6,7 +6,7 @@
 use crate::ast::{Item, Module};
 use crate::diagnostic::{self, Diagnostic, Severity};
 use crate::error::{Error, Result};
-use crate::lexer::{Lexer, TokenKind};
+use crate::lexer::{Lexer, Token, TokenKind};
 use crate::loader::{self, Package, SourceModule};
 use crate::mir;
 use crate::parser::Parser;
@@ -537,6 +537,11 @@ fn structured_to_check(
 /// - PascalCase → `type`
 /// - camelCase before `(` → `function`
 /// - other camelCase → `variable`
+/// - tag names → `type` (component) / `macro` (HTML); attribute names → `property`
+///
+/// Tags start where the parser starts them (D147): `<name` / `<>` with no space
+/// after `<`. Text between tags is prose and gets no token; `{…}` holes are
+/// code again.
 ///
 /// Keywords, strings, numbers, comments stay with tree-sitter (`combined` mode).
 /// Lex failures yield an empty list (leave base coloring only).
@@ -546,79 +551,131 @@ pub fn semantic_tokens(text: &str) -> Vec<SemanticToken> {
         Err(_) => return Vec::new(),
     };
 
+    /// Where a token sits relative to JSX.
+    enum Scope {
+        /// Thoxa code; `braces` counts `{` still open inside it.
+        Code { braces: usize },
+        /// Between `<name` and its `>` / `/>`.
+        TagHead,
+        /// Between an opening tag's `>` and its closing tag.
+        Children,
+        /// `</name>`.
+        ClosingTag,
+    }
+
     let mut out = Vec::new();
-    // Track `<…>` so tag names / attrs are not painted as ordinary variables
-    // when Zed `semantic_tokens = "combined"` overlays the grammar.
-    let mut in_tag = false;
-    let mut tag_name_pending = false;
-    for i in 0..tokens.len() {
-        match &tokens[i].kind {
-            TokenKind::LAngle => {
-                in_tag = true;
-                tag_name_pending = true;
-                continue;
+    let mut scopes = vec![Scope::Code { braces: 0 }];
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        let next = tokens.get(index + 1).map(|t| &t.kind);
+        let top = scopes.last_mut().expect("code scope at the bottom");
+        match (top, &token.kind) {
+            (Scope::Code { .. } | Scope::Children, TokenKind::LAngle)
+                if starts_tag(&tokens, index) =>
+            {
+                // Step over the name too, or the `>` of `<>`.
+                index += 1;
+                if let TokenKind::Ident(name) = &tokens[index].kind {
+                    out.push(semantic_token(text, &tokens[index], tag_kind(name)));
+                    scopes.push(Scope::TagHead);
+                } else {
+                    scopes.push(Scope::Children);
+                }
             }
-            TokenKind::Slash if in_tag => {
-                tag_name_pending = true;
-                continue;
+            (Scope::Code { braces }, TokenKind::LBrace) => *braces += 1,
+            (Scope::Code { braces }, TokenKind::RBrace) => {
+                if *braces > 0 {
+                    *braces -= 1;
+                } else if scopes.len() > 1 {
+                    // The `}` of a hole: back to the tag around it.
+                    scopes.pop();
+                }
             }
-            TokenKind::RAngle => {
-                in_tag = false;
-                tag_name_pending = false;
-                continue;
+            (Scope::Code { .. }, TokenKind::Nowait) => {
+                out.push(semantic_token(text, token, "keyword"));
             }
-            TokenKind::Nowait => {
-                let range = span::span_to_range(text, tokens[i].span);
-                out.push(SemanticToken {
-                    line: range.start.line,
-                    character: range.start.character,
-                    length: 3,
-                    token_type: "keyword".into(),
-                    modifiers: 0,
-                });
-                continue;
+            (Scope::Code { .. }, TokenKind::Ident(name)) => {
+                let kind = if name.starts_with(|c: char| c.is_uppercase()) {
+                    "type"
+                } else if matches!(next, Some(TokenKind::LParen)) {
+                    "function"
+                } else {
+                    "variable"
+                };
+                out.push(semantic_token(text, token, kind));
             }
-            TokenKind::Ident(_) => {}
-            _ => continue,
+            (Scope::Code { .. }, _) => {}
+            (Scope::TagHead, TokenKind::Ident(_)) => {
+                out.push(semantic_token(text, token, "property"));
+            }
+            (Scope::TagHead | Scope::Children, TokenKind::LBrace) => {
+                scopes.push(Scope::Code { braces: 0 });
+            }
+            (Scope::TagHead, TokenKind::Slash) if matches!(next, Some(TokenKind::RAngle)) => {
+                index += 1;
+                scopes.pop();
+            }
+            (Scope::TagHead, TokenKind::RAngle) => {
+                scopes.pop();
+                scopes.push(Scope::Children);
+            }
+            (Scope::TagHead, _) => {}
+            (Scope::Children, TokenKind::LAngle) if matches!(next, Some(TokenKind::Slash)) => {
+                index += 1;
+                scopes.push(Scope::ClosingTag);
+            }
+            // Prose between tags.
+            (Scope::Children, _) => {}
+            (Scope::ClosingTag, TokenKind::Ident(name)) => {
+                out.push(semantic_token(text, token, tag_kind(name)));
+            }
+            (Scope::ClosingTag, TokenKind::RAngle) => {
+                scopes.pop();
+                scopes.pop();
+            }
+            (Scope::ClosingTag, _) => {}
         }
-        let TokenKind::Ident(name) = &tokens[i].kind else {
-            continue;
-        };
-        let Some(first) = name.chars().next() else {
-            continue;
-        };
-        let next = tokens.get(i + 1).map(|t| &t.kind);
-        let kind = if in_tag && tag_name_pending {
-            tag_name_pending = false;
-            if first.is_uppercase() {
-                "type"
-            } else {
-                // Distinct from `variable` so combined mode keeps the HTML hue.
-                "macro"
-            }
-        } else if in_tag && matches!(next, Some(TokenKind::Eq) | Some(TokenKind::Minus)) {
-            "property"
-        } else if first.is_uppercase() {
-            "type"
-        } else if matches!(next, Some(TokenKind::LParen)) {
-            "function"
-        } else {
-            "variable"
-        };
-        let range = span::span_to_range(text, tokens[i].span);
-        let slice = text
-            .get(tokens[i].span.start..tokens[i].span.end)
-            .unwrap_or(name.as_str());
-        let length: u32 = slice.chars().map(|c| c.len_utf16() as u32).sum();
-        out.push(SemanticToken {
-            line: range.start.line,
-            character: range.start.character,
-            length,
-            token_type: kind.into(),
-            modifiers: 0,
-        });
+        index += 1;
     }
     out
+}
+
+/// `<name` / `<>` with no space after `<` starts a tag, as in the parser,
+/// unless a name is glued before it: `Array<Int64>` opens type arguments.
+fn starts_tag(tokens: &[Token], index: usize) -> bool {
+    let angle = &tokens[index];
+    let Some(next) = tokens.get(index + 1) else {
+        return false;
+    };
+    let after_name = index > 0
+        && tokens[index - 1].span.end == angle.span.start
+        && matches!(tokens[index - 1].kind, TokenKind::Ident(_));
+    angle.span.end == next.span.start
+        && matches!(next.kind, TokenKind::Ident(_) | TokenKind::RAngle)
+        && !after_name
+}
+
+/// A component tag is a type; an HTML tag is `macro`, distinct from
+/// `variable` so combined mode keeps the HTML hue.
+fn tag_kind(name: &str) -> &'static str {
+    if name.starts_with(|c: char| c.is_uppercase()) {
+        "type"
+    } else {
+        "macro"
+    }
+}
+
+fn semantic_token(text: &str, token: &Token, kind: &str) -> SemanticToken {
+    let range = span::span_to_range(text, token.span);
+    let slice = text.get(token.span.start..token.span.end).unwrap_or("");
+    SemanticToken {
+        line: range.start.line,
+        character: range.start.character,
+        length: slice.chars().map(|c| c.len_utf16() as u32).sum(),
+        token_type: kind.into(),
+        modifiers: 0,
+    }
 }
 
 #[cfg(test)]
@@ -1441,6 +1498,73 @@ fn main() -> Int64 { 0 }
             toks.iter().any(|t| t.token_type == "property"),
             "class attr: {toks:?}"
         );
+    }
+
+    /// The text each token covers, with its kind.
+    fn token_texts(src: &str) -> Vec<(String, String)> {
+        let lines: Vec<&str> = src.split('\n').collect();
+        semantic_tokens(src)
+            .iter()
+            .map(|t| {
+                let line: Vec<char> = lines[t.line as usize].chars().collect();
+                let start = t.character as usize;
+                let word: String = line[start..start + t.length as usize].iter().collect();
+                (word, t.token_type.clone())
+            })
+            .collect()
+    }
+
+    fn kind_of<'a>(toks: &'a [(String, String)], word: &str) -> Vec<&'a str> {
+        toks.iter()
+            .filter(|(text, _)| text == word)
+            .map(|(_, kind)| kind.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn semantic_tokens_comparison_is_not_a_tag() {
+        let src = "fn f(limit: Int64) {\n    while index < limit {\n        index = index + 1\n    }\n}\n";
+        let toks = token_texts(src);
+        assert_eq!(kind_of(&toks, "limit"), ["variable", "variable"], "{toks:?}");
+        assert!(
+            kind_of(&toks, "index").iter().all(|kind| *kind == "variable"),
+            "{toks:?}"
+        );
+    }
+
+    #[test]
+    fn semantic_tokens_type_arguments_are_not_a_tag() {
+        let src = "fn view(children: Array<Node>) -> May<String> {\n    total = 1\n}\n";
+        let toks = token_texts(src);
+        assert_eq!(kind_of(&toks, "Node"), ["type"], "{toks:?}");
+        assert_eq!(kind_of(&toks, "String"), ["type"], "{toks:?}");
+        assert_eq!(kind_of(&toks, "total"), ["variable"], "{toks:?}");
+    }
+
+    #[test]
+    fn semantic_tokens_jsx_text_and_holes() {
+        let src = "let page = <p class=\"x\">Hello world, {name} said {greet(who)}</p>\nlet after = 1\n";
+        let toks = token_texts(src);
+        for prose in ["Hello", "world", "said"] {
+            assert!(kind_of(&toks, prose).is_empty(), "{prose}: {toks:?}");
+        }
+        assert_eq!(kind_of(&toks, "p"), ["macro", "macro"], "{toks:?}");
+        assert_eq!(kind_of(&toks, "class"), ["property"], "{toks:?}");
+        assert_eq!(kind_of(&toks, "name"), ["variable"], "{toks:?}");
+        assert_eq!(kind_of(&toks, "greet"), ["function"], "{toks:?}");
+        assert_eq!(kind_of(&toks, "after"), ["variable"], "{toks:?}");
+    }
+
+    #[test]
+    fn semantic_tokens_fragment_and_self_closing() {
+        let src = "let page = <><Card title={heading} /><br/>Text</>\nlet after = 1\n";
+        let toks = token_texts(src);
+        assert_eq!(kind_of(&toks, "Card"), ["type"], "{toks:?}");
+        assert_eq!(kind_of(&toks, "title"), ["property"], "{toks:?}");
+        assert_eq!(kind_of(&toks, "heading"), ["variable"], "{toks:?}");
+        assert_eq!(kind_of(&toks, "br"), ["macro"], "{toks:?}");
+        assert!(kind_of(&toks, "Text").is_empty(), "{toks:?}");
+        assert_eq!(kind_of(&toks, "after"), ["variable"], "{toks:?}");
     }
 }
 

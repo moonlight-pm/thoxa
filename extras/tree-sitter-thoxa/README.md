@@ -3,9 +3,12 @@
 A **deliberately thin, lexer-level** Tree-sitter grammar for native Thoxa. It
 tokenizes rather than fully parses: keywords, casing-based type-vs-value
 identifiers, `#`/`##` comments, string/char/number literals, and operators.
-A small **JSX island** recognises `<tag>…</tag>` so highlights can paint
-markup captures (`@tag`, `@attribute`, `@markup.italic`) without becoming
-a full CST. `Array<Int64>` stays punctuation. A **SQL island** recognises
+Strings parse their `{…}` holes as Thoxa tokens, so a string inside a hole
+stays inside the literal. A small **JSX island** recognises `<tag>…</tag>`
+so highlights can paint markup captures (`@tag`, `@attribute`,
+`@markup.italic`) without becoming a full CST. `<` follows the compiler: a
+`<` glued to the name before it (`Array<Int64>`) opens type arguments, a
+tag is `<name` / `<>` with no space after `<`, and `a < b` compares. A **SQL island** recognises
 glued `sql"…"` (no space); `{holes}` stay Thoxa and the rest is injected
 as SQL (`queries/injections.scm`).
 

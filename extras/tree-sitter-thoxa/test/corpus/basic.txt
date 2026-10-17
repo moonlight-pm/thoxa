@@ -70,7 +70,11 @@ let c = 'a'
   (keyword)
   (identifier)
   (operator)
-  (string)
+  (string
+    (string_content)
+    (interpolation
+      (identifier))
+    (string_content))
   (keyword)
   (identifier)
   (operator)
@@ -135,8 +139,9 @@ let q = <Page title="Home"><br /></Page>
   (keyword)
   (identifier)
   (operator)
-  (type_identifier)
-  (operator)
+  (type_arguments_open
+    (type_identifier)
+    (operator))
   (type_identifier)
   (operator)
   (keyword)
@@ -147,7 +152,8 @@ let q = <Page title="Home"><br /></Page>
       (identifier)
       (jsx_attribute
         (identifier)
-        (string)))
+        (string
+          (string_content))))
     (jsx_text)
     (jsx_embed
       (identifier))
@@ -161,7 +167,8 @@ let q = <Page title="Home"><br /></Page>
       (type_identifier)
       (jsx_attribute
         (identifier)
-        (string)))
+        (string
+          (string_content))))
     (jsx_element
       (jsx_self_closing
         (identifier)))
@@ -192,7 +199,8 @@ let r = sql "not-a-tag"
   (identifier)
   (operator)
   (identifier)
-  (string))
+  (string
+    (string_content)))
 
 ==================
 sql multiline
@@ -233,7 +241,8 @@ export fn main() -> Int64 {
   (keyword)
   (identifier)
   (keyword)
-  (string)
+  (string
+    (string_content))
   (keyword)
   (keyword)
   (keyword)
@@ -247,8 +256,10 @@ export fn main() -> Int64 {
   (operator)
   (type_identifier)
   (keyword)
-  (string)
-  (string)
+  (string
+    (string_content))
+  (string
+    (string_content))
   (keyword)
   (keyword)
   (identifier)

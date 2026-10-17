@@ -1,0 +1,218 @@
+==================
+type arguments before a block are not a tag
+==================
+
+fn first(rows: Array<Row>) -> May<String> {
+    if count > 1 { }
+}
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (bracket)
+  (identifier)
+  (delimiter)
+  (type_arguments_open
+    (type_identifier)
+    (operator))
+  (type_identifier)
+  (operator)
+  (bracket)
+  (operator)
+  (type_arguments_open
+    (type_identifier)
+    (operator))
+  (type_identifier)
+  (operator)
+  (bracket)
+  (keyword)
+  (identifier)
+  (operator)
+  (number)
+  (bracket)
+  (bracket)
+  (bracket))
+
+==================
+spaced comparison is not a tag
+==================
+
+while index < limit {
+    index = index + 1
+}
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (identifier)
+  (bracket)
+  (identifier)
+  (operator)
+  (identifier)
+  (operator)
+  (number)
+  (bracket))
+
+==================
+glued less-equal and shift
+==================
+
+let a = x<=y
+let b = x<<1
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (identifier)
+  (operator)
+  (identifier)
+  (keyword)
+  (identifier)
+  (operator)
+  (identifier)
+  (operator)
+  (number))
+
+==================
+string inside a hole
+==================
+
+print("{greet("ada")} done")
+
+---
+
+(source_file
+  (identifier)
+  (bracket)
+  (string
+    (interpolation
+      (identifier)
+      (bracket)
+      (string
+        (string_content))
+      (bracket))
+    (string_content))
+  (bracket))
+
+==================
+escapes and hash in a string
+==================
+
+let s = "# not a comment\t\x41"
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (string
+    (string_content)
+    (escape_sequence)
+    (escape_sequence)))
+
+==================
+discard and where
+==================
+
+type Qty = Int64 where >= 1
+match value {
+    _ => 0
+}
+
+---
+
+(source_file
+  (keyword)
+  (type_identifier)
+  (operator)
+  (type_identifier)
+  (keyword)
+  (operator)
+  (number)
+  (keyword)
+  (identifier)
+  (bracket)
+  (identifier)
+  (operator)
+  (number)
+  (bracket))
+
+==================
+fragment
+==================
+
+let page = <><p>Hi</p>{name}</>
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (jsx_element
+    (jsx_fragment_open)
+    (jsx_element
+      (jsx_opening
+        (identifier))
+      (jsx_text)
+      (jsx_closing
+        (identifier)))
+    (jsx_embed
+      (identifier))
+    (jsx_fragment_close)))
+
+==================
+boolean and spread attributes
+==================
+
+let field = <input type="radio" checked {...extra} />
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (jsx_element
+    (jsx_self_closing
+      (identifier)
+      (jsx_attribute
+        (keyword)
+        (string
+          (string_content)))
+      (jsx_attribute
+        (identifier))
+      (jsx_embed
+        (operator)
+        (identifier)))))
+
+==================
+escaped quotes in a hole
+==================
+
+info("host={get(req, \"host\")}")
+
+---
+
+(source_file
+  (identifier)
+  (bracket)
+  (string
+    (string_content)
+    (interpolation
+      (identifier)
+      (bracket)
+      (identifier)
+      (delimiter)
+      (escaped_string)
+      (bracket)))
+  (bracket))

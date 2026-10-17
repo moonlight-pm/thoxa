@@ -9,7 +9,9 @@ the exit status, 0–255 (D173); unannotated methods infer their return type,
 and `x?` then `Pass(value)` infers `Trial<T, E>` (D174); structural `==` on
 products, unions, and arrays (D175, D177, D178); strings inside interpolation
 holes (D176); user types as Map keys (D179); collection writes never vanish
-(D180); `remove` keeps a Map's insertion order (D181). Earlier the same day:
+(D180); `remove` keeps a Map's insertion order (D181). Editor: Tree-sitter and
+LSP colours read `<` as the compiler does (`May<String> {` is not a tag) and
+parse string holes as code. Earlier the same day:
 **D172** the sites send security headers and
 ETags (images and fonts cached a day; review finding 10). **D171** `std/http/server` answers pipelined
 requests in order (a request without `Content-Length` has no body; review
@@ -61,9 +63,8 @@ language slice at a time, each with conformance.
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
-D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); Tree-sitter
-colours a nested string as two strings (D176); `Int64` → `Float64` rounds
-unchecked.
+D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
+`Float64` rounds unchecked.
 
 Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);
 release REPL ~**8 ms**/line. **D155** resource `drop` shipped. D153 simple-RC

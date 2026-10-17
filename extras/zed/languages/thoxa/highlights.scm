@@ -13,12 +13,19 @@
 (type_identifier) @type
 (identifier) @variable
 (number) @number
-(string) @string
 (char) @string
 (comment) @comment
 (operator) @operator
 (bracket) @punctuation.bracket
 (delimiter) @punctuation.delimiter
+
+; ── Strings: `{…}` holes are Thoxa code ─────────────────────────────────
+
+(string "\"" @string)
+(string_content) @string
+(escape_sequence) @string.escape
+(escaped_string) @string
+(interpolation ["{" "}"] @punctuation.special)
 
 ; ── JSX island: markup captures, not code captures ────────────────────────
 ;   tag names      → @tag            (HTML hue)
@@ -31,6 +38,8 @@
 (jsx_opening ["<" ">"] @tag.delimiter)
 (jsx_closing ["<" "/" ">"] @tag.delimiter)
 (jsx_self_closing ["<" "/" ">"] @tag.delimiter)
+(jsx_fragment_open) @tag.delimiter
+(jsx_fragment_close ["<" "/" ">"] @tag.delimiter)
 
 (jsx_opening (identifier) @tag)
 (jsx_closing (identifier) @tag)

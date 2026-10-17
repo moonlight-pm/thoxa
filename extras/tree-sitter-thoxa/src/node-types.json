@@ -15,6 +15,73 @@
     "fields": {}
   },
   {
+    "type": "interpolation",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "boolean",
+          "named": true
+        },
+        {
+          "type": "bracket",
+          "named": true
+        },
+        {
+          "type": "char",
+          "named": true
+        },
+        {
+          "type": "delimiter",
+          "named": true
+        },
+        {
+          "type": "escaped_string",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "jsx_element",
+          "named": true
+        },
+        {
+          "type": "jsx_embed",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "operator",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        },
+        {
+          "type": "type_arguments_open",
+          "named": true
+        },
+        {
+          "type": "type_identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "jsx_attribute",
     "named": true,
     "fields": {},
@@ -81,6 +148,14 @@
           "named": true
         },
         {
+          "type": "jsx_fragment_close",
+          "named": true
+        },
+        {
+          "type": "jsx_fragment_open",
+          "named": true
+        },
+        {
           "type": "jsx_opening",
           "named": true
         },
@@ -120,6 +195,10 @@
           "named": true
         },
         {
+          "type": "escaped_string",
+          "named": true
+        },
+        {
           "type": "identifier",
           "named": true
         },
@@ -148,11 +227,20 @@
           "named": true
         },
         {
+          "type": "type_arguments_open",
+          "named": true
+        },
+        {
           "type": "type_identifier",
           "named": true
         }
       ]
     }
+  },
+  {
+    "type": "jsx_fragment_close",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "jsx_opening",
@@ -168,6 +256,10 @@
         },
         {
           "type": "jsx_attribute",
+          "named": true
+        },
+        {
+          "type": "jsx_embed",
           "named": true
         },
         {
@@ -191,6 +283,10 @@
         },
         {
           "type": "jsx_attribute",
+          "named": true
+        },
+        {
+          "type": "jsx_embed",
           "named": true
         },
         {
@@ -264,6 +360,10 @@
           "named": true
         },
         {
+          "type": "type_arguments_open",
+          "named": true
+        },
+        {
           "type": "type_identifier",
           "named": true
         }
@@ -295,6 +395,10 @@
           "named": true
         },
         {
+          "type": "escaped_string",
+          "named": true
+        },
+        {
           "type": "identifier",
           "named": true
         },
@@ -320,6 +424,10 @@
         },
         {
           "type": "string",
+          "named": true
+        },
+        {
+          "type": "type_arguments_open",
           "named": true
         },
         {
@@ -357,11 +465,61 @@
     }
   },
   {
+    "type": "string",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "escape_sequence",
+          "named": true
+        },
+        {
+          "type": "interpolation",
+          "named": true
+        },
+        {
+          "type": "string_content",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "type_arguments_open",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "operator",
+          "named": true
+        },
+        {
+          "type": "type_identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "!",
     "named": false
   },
   {
     "type": "!=",
+    "named": false
+  },
+  {
+    "type": "\"",
     "named": false
   },
   {
@@ -537,10 +695,6 @@
     "named": false
   },
   {
-    "type": "can",
-    "named": false
-  },
-  {
     "type": "char",
     "named": true
   },
@@ -556,6 +710,14 @@
   {
     "type": "else",
     "named": false
+  },
+  {
+    "type": "escape_sequence",
+    "named": true
+  },
+  {
+    "type": "escaped_string",
+    "named": true
   },
   {
     "type": "export",
@@ -598,8 +760,8 @@
     "named": false
   },
   {
-    "type": "is",
-    "named": false
+    "type": "jsx_fragment_open",
+    "named": true
   },
   {
     "type": "jsx_text",
@@ -650,7 +812,7 @@
     "named": true
   },
   {
-    "type": "string",
+    "type": "string_content",
     "named": true
   },
   {
@@ -664,6 +826,10 @@
   {
     "type": "type_identifier",
     "named": true
+  },
+  {
+    "type": "where",
+    "named": false
   },
   {
     "type": "while",
