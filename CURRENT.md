@@ -16,7 +16,9 @@ binds a Void value (D186), `Float64` text in full between 1e-7 and 1e21
 (D187), a session line that starts a statement is never a command (D188).
 Then **D190**: every `extern fn` gets its own C prototype (asm-labelled
 private name), so any linked C function can be called and `Address<T>`
-fits a C struct pointer parameter.
+fits a C struct pointer parameter. Then **D191** frozen (not started):
+conversions — `as` / `as?`, `from` clauses, implicit encoding to `Json`,
+typed route body parameters; next language slice is its §1.
 2026-10-16: **Language pass (D173–D181):** `main`'s return is
 the exit status, 0–255 (D173); unannotated methods infer their return type,
 and `x?` then `Pass(value)` infers `Trial<T, E>` (D174); structural `==` on
@@ -83,6 +85,12 @@ expected, with `...` spreads; reads of unions, `Map` / `Json` fields, and
 constructor defaults; a type's own `toJson` wins. Its non-goals (renaming,
 generic types, top-level `Array` reads, custom decoding) stay parked.
 
+**Next: conversions (D191)**, freeze
+[`docs/specs/2026-10-17-conversions.md`](docs/specs/2026-10-17-conversions.md),
+one slice per section: §1 `x as T` with the built-in conversion table, §2
+`x as? T`, §3 `from` clauses, §4 implicit encoding where a `Json` is expected,
+§5 typed body parameters in route clauses, §6 remove `T.from` / `T.fromJson`.
+
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
@@ -135,7 +143,7 @@ lits; overwrite-drop; **D152** match/init RC.
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`); redefining a
 session `fn` is an error, not a replacement; no CI (R8, deferred). Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14) and the copied site templates (finding 38). thoxa.dev runs `9a435b4` (D189, redeployed 2026-10-17); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
+14) and the copied site templates (finding 38). thoxa.dev runs `32ea2c2` (D189, D190; redeployed 2026-10-17); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
 
 ### Proceed order
 
