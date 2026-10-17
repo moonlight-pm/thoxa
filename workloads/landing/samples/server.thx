@@ -1,0 +1,49 @@
+## A web server
+## A type whose body lists methods and paths is a router: the compiler writes
+## its `route` function. `serve` runs it on one OS thread, a task per
+## connection. The form is read into a type, the list is written as JSON.
+import server from "std/http/server"
+import { Request, Response, ok, notFound, badRequest } from "std/http"
+import { seeOther, htmlResponse } from "std/http"
+import { Pass, Fail } from "std/fallible"
+import { messages } from "std/json"
+
+type NoteText = String where >= 1 & <= 280
+type NewNote(text: NoteText)
+
+mut notes: Array<String> = []
+
+type Routes {
+    GET "/" -> Response {
+        htmlResponse(
+            <main>
+                <form method="post" action="/notes">
+                    <input name="text" required />
+                    <button>Add</button>
+                </form>
+                <ol>{for note in notes { <li>{note}</li> }}</ol>
+            </main>
+        )
+    }
+
+    POST "/notes" (request: Request) -> Response {
+        match NewNote.readForm(request.body.toString()) {
+            Fail(issues) => badRequest(messages(issues))
+            Pass(note) {
+                notes.append(note.text)
+                seeOther("/")
+            }
+        }
+    }
+
+    GET "/notes.json" -> Response {
+        ok(Bytes.fromString(notes.encode()), "application/json")
+    }
+}
+
+fn main() -> Int64 {
+    match server.serve(8080, Routes().route) {
+        Pass => 0
+        Fail(_) => 1
+    }
+}

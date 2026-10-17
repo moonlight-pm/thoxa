@@ -1,0 +1,37 @@
+## Calling C
+## `extern fn` declares a C function, here from the headers the generated C
+## includes. A type with body fields has C layout, and `Address<T>` passes it
+## by pointer. This program asks the terminal for its size with `ioctl(2)`
+## and writes the answer with `write(2)`.
+
+## struct winsize: four unsigned shorts (rows, columns, then pixels), read
+## here as two 32-bit words.
+type WindowSize {
+    mut cells: UInt32
+    mut pixels: UInt32
+}
+
+extern fn isatty(fd!: Int32) -> Int32 from "c"
+extern fn ioctl(
+    fd!: Int32,
+    request!: UInt64,
+    size!: Address<WindowSize>
+) -> Int32 from "c"
+extern fn write(fd!: Int32, data!: Bytes, count!: UInt64) -> Int64 from "c"
+
+let windowSizeRequest = 0x5413
+
+fn print(text!: String) {
+    let data = Bytes.fromString("{text}\n")
+    write(1, data, data.count)
+}
+
+fn main() -> Int64 {
+    mut size = WindowSize()
+    if isatty(1) == 0 or ioctl(1, windowSizeRequest, size) != 0 {
+        print("standard output is not a terminal")
+        return 1
+    }
+    print("{size.cells >> 16} columns, {size.cells & 0xFFFF} rows")
+    0
+}

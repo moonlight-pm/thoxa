@@ -6,6 +6,8 @@
 ##   THOXA_PORT          local / image default (8088 locally; image 8080)
 ##
 ##   THOXA_STATIC        asset root (default workloads/landing/web)
+##   THOXA_MANUAL        manual chapters (default docs/handbook)
+##   THOXA_SAMPLES       home page samples (default workloads/landing/samples)
 
 import env, { getenvOr } from "std/env"
 import { Has, Not, May } from "std/fallible"
@@ -46,9 +48,23 @@ fn portFromEnv(name!: String) -> May<Int64> {
 }
 
 export fn staticRoot() -> String {
-    let root = getenvOr("THOXA_STATIC", "workloads/landing/web")
+    directory("THOXA_STATIC", "workloads/landing/web")
+}
+
+export fn manualRoot() -> String {
+    directory("THOXA_MANUAL", "docs/handbook")
+}
+
+export fn samplesRoot() -> String {
+    directory("THOXA_SAMPLES", "workloads/landing/samples")
+}
+
+## A directory from the environment; unset or empty means `fallback`, which
+## is relative to the workspace root (where `cargo make run` starts).
+fn directory(name!: String, fallback!: String) -> String {
+    let root = getenvOr(name, fallback)
     if isEmpty(root) {
-        "workloads/landing/web"
+        fallback
     } else {
         root
     }

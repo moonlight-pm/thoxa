@@ -1,0 +1,58 @@
+## Tasks
+## `-->` starts a call and does not wait for it. A socket operation that
+## would block parks the task and another one runs. One OS thread, no
+## `async`, no `await`: the same function works in a task or out of one.
+import net, { Socket, createSocket } from "std/net"
+import { Pass, Fail, Trial } from "std/fallible"
+import { toUpperAscii } from "std/str"
+import logging, { info } from "std/logging"
+
+fn listen(listener!: Socket, clients!: Int64) -> Trial<Void, String> {
+    for served in 0..clients {
+        let peer = listener.accept()?
+        --> answer(peer)
+    }
+    Pass(Void)
+}
+
+fn answer(peer!: Socket) -> Trial<Void, String> {
+    let request = peer.receive().toString()
+    peer.sendAll(Bytes.fromString(toUpperAscii(request)))?
+    peer.close()
+    Pass(Void)
+}
+
+fn ask(port!: Int64, word!: String) -> Trial<String, String> {
+    let client = createSocket()?
+    client.connect(port)?
+    client.sendAll(Bytes.fromString(word))?
+    let reply = client.receive().toString()
+    client.close()
+    Pass(reply)
+}
+
+fn run() -> Trial<Void, String> {
+    let listener = createSocket()?
+    listener.reuseAddr()?
+    listener.bind(0)?
+    listener.listen(16)?
+    let port = listener.localPort()?
+    let words = ["tasks", "park", "on", "sockets"]
+    --> listen(listener, words.count)
+    for word in words {
+        info(ask(port, word)?)
+    }
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass => 0
+        Fail(error) {
+            info(error)
+            1
+        }
+    }
+}

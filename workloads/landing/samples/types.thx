@@ -1,0 +1,42 @@
+## Types and match
+## A product type lists its fields; a union lists its members. `match` takes a
+## union apart, with guards, and says so at compile time when a member is
+## missing. `==` compares values field by field.
+import logging, { info } from "std/logging"
+
+type Circle(radius: Float64)
+type Rect(width: Float64, height: Float64)
+type Triangle(base: Float64, height: Float64)
+type Shape = Circle | Rect | Triangle
+
+fn area(shape: Shape) -> Float64 {
+    match shape {
+        Circle(radius) => 3.14159 * radius * radius
+        Rect(width, height) => width * height
+        Triangle(base, height) => base * height / 2.0
+    }
+}
+
+fn describe(shape: Shape) -> String {
+    match shape {
+        Rect(width, height) if width == height => "a square"
+        Rect => "a rectangle"
+        Circle => "a circle"
+        Triangle => "a triangle"
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let shapes: Array<Shape> = [
+        Circle(radius: 1.0),
+        Rect(width: 2.0, height: 2.0),
+        Triangle(base: 3.0, height: 4.0),
+    ]
+    for shape in shapes {
+        info("{describe(shape)}: {area(shape)}")
+    }
+    info("{Rect(width: 2.0, height: 2.0) == Rect(width: 2.0, height: 2.0)}")
+    0
+}

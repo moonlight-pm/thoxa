@@ -1,6 +1,7 @@
 ## Landing routes + static fallback.
 
 import home from "./pages/home"
+import manual from "./pages/manual"
 import config from "./config"
 import httpStatic from "std/http/static"
 import http, { Request, Response, notFound, cached, withHeader } from "std/http"
@@ -16,6 +17,10 @@ export fn listenPort() -> Int64 {
 type Routes {
     GET "/" (request: Request) -> Response {
         home.page(request)
+    }
+
+    GET "/manual" (request: Request) -> Response {
+        manual.page(request)
     }
 }
 

@@ -1,0 +1,2 @@
+ok: {"table":4,"lines":[{"drink":"mocha","size":"large","quantity":1}]}
+rejected: table: expected integer, got string; lines.0.size: expected "small" | "large", got huge; lines.0.quantity: expected integer <= 12, got 40

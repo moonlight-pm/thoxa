@@ -1,16 +1,24 @@
 ## GET / and the not-found page.
 
-import { Page } from "~/app/ui/page"
-import samples from "./samples"
+import { Page, repository } from "~/app/ui/page"
+import samples, { Sample } from "~/app/samples"
+import highlight from "~/app/highlight"
+import markdown, { Chapter } from "~/app/markdown"
+import manual from "~/app/pages/manual"
 import http, { Request, Response } from "std/http"
+import { isEmpty } from "std/str"
 
 export fn page(request!: Request) -> Response {
     http.htmlResponse(
-        <Page title="Thoxa" request={request}>
-            {hero()}
-            {now()}
-            {example()}
-            {surface()}
+        <Page title="Thoxa" request={request} current="home">
+            <main class="home">
+                {intro()}
+                {design()}
+                {features()}
+                {sampleSection(samples.load())}
+                {status()}
+                {building()}
+            </main>
         </Page>
     )
 }
@@ -20,145 +28,200 @@ export fn missing(request!: Request) -> Response {
         404,
         "Not Found",
         <Page title="Not found · Thoxa" request={request}>
-            <section class="panel">
-                <h1>No such page</h1>
-                <p class="lede">That path is not on this site.</p>
-                <p><a class="btn" href="/">Back to Thoxa</a></p>
-            </section>
+            <main class="home">
+                <h1>Not found</h1>
+                <p>There is no page at this address. Try the <a href="/">home page</a> or the <a href="/manual">manual</a>.</p>
+            </main>
         </Page>
     )
 }
 
-fn hero() -> Node {
-    <section class="hero">
-        <div class="hero-copy">
-            <ul class="chips" aria-label="Status">
-                <li>Pre-alpha</li>
-                <li>Linux</li>
-                <li>Native</li>
-            </ul>
-            <h1>A systems language with a shell</h1>
-            <p class="lede">
-                Expression-oriented, errors as values, a hybrid layout. Run
-                <code>thoxa</code> with no file and you get a prompt: that prompt is
-                Thoxa, not a second language. <code>thoxa run</code>,
-                <code>thoxa check</code>, and <code>thoxa lsp</code> are the tools.
-            </p>
-            <p class="hero-actions">
-                <a class="btn" href="#example">See the language</a>
-            </p>
-        </div>
+fn intro() -> Node {
+    <header class="intro">
+        <h1>Thoxa</h1>
+        <p class="lede">
+            A statically typed, expression-oriented programming language. The
+            compiler translates Thoxa to C, and a C compiler builds that into a
+            native executable. The same language is the input of an interactive
+            shell.
+        </p>
+        <p class="facts">
+            <span>Pre-alpha</span>
+            <span>Linux x86-64</span>
+            <span>No releases yet</span>
+            <a href="/manual">Manual</a>
+            <a href={repository}>Source</a>
+        </p>
+    </header>
+}
+
+fn design() -> Node {
+    <section class="design" id="design">
+        <h2>Design</h2>
+        <p>
+            <strong>One language from the prompt to the binary.</strong>
+            <code>thoxa</code> with no arguments is an interactive shell whose input is
+            Thoxa. A line that reads as a command (<code>{"ls -l | head"}</code>) runs as one;
+            everything else is typed and compiled like any other Thoxa code. A file of
+            the same lines is a script, and a file with a <code>main</code> builds into a
+            native program. There is no second language for glue.
+        </p>
+        <p>
+            <strong>Automatic memory, without a collector or a borrow checker.</strong>
+            Values are reference counted. Integers, floats, and small records are stored
+            inline; strings, arrays, and maps are counted and copied on write, so a value
+            never changes under another binding. There are no lifetimes and no collection
+            pauses. Files, sockets, and databases close when their last reference goes.
+        </p>
+        <p>
+            <strong>Errors are values.</strong>
+            <code>{"Trial<T, E>"}</code> and <code>{"May<T>"}</code> are ordinary unions from the
+            standard library, and <code>?</code> hands a failure back to the caller. There
+            are no exceptions. A panic (an index out of range, a division by zero) is for
+            bugs, and it ends only the task it happens in.
+        </p>
+        <p>
+            <strong>The type is the schema.</strong>
+            <code>{"Int64 where >= 1"}</code> is a type, and <code>{"\"small\" | \"large\""}</code> is a
+            closed set of strings. From a type definition the compiler writes a JSON reader
+            that reports every bad field, a form reader, and an encoder. There are no derive
+            macros, schema objects, or runtime reflection.
+        </p>
+        <p>
+            <strong>Close to C.</strong>
+            The output is C. <code>extern fn</code> calls a C function directly, a type with
+            body fields has C layout, and integer behaviour is defined: arithmetic wraps,
+            narrowing is checked, and division by zero panics instead of being undefined.
+        </p>
+        <p>
+            <strong>What a small web service needs is in the language.</strong>
+            Tag literals build HTML as values, a type body of <code>{"GET \"/path\""}</code> clauses
+            is a router, <code>{"sql\"…\""}</code> quotes every value it interpolates, and
+            <code>{"-->"}</code> starts a task whose socket operations park instead of blocking:
+            one OS thread, no <code>async</code>, no <code>await</code>. The standard library has
+            an HTTP/1.1 server and SQLite. This site is a Thoxa program, and its manual page is
+            rendered from Markdown by Thoxa code.
+        </p>
     </section>
 }
 
-fn now() -> Node {
-    <section class="section" id="now">
-        <div class="section-inner">
-            <h2>Where it is aimed, and where it is</h2>
-            <div class="now-grid">
-                <div>
-                    <h3>Aimed at</h3>
-                    <p>
-                        A systems language with a serious type system and one
-                        value model from the shell to the metal. You write <code>.thx</code>
-                        files. <code>thoxa run</code>, <code>thoxa check</code>, and
-                        <code>thoxa lsp</code> are the surface — when there is a
-                        public build, those are the names.
-                    </p>
-                </div>
-                <div>
-                    <h3>Shipped today</h3>
-                    <p>
-                        The interactive prompt is Thoxa, not a separate dialect.
-                        <code>thoxa run</code> produces a native binary.
-                        <code>std/</code> has files, sockets, HTTP, JSON, and SQLite,
-                        grown from samples. Heap is simple single-threaded RC.
-                        Linux x86_64 only. Windows is out of scope.
-                    </p>
-                </div>
-            </div>
-        </div>
-    </section>
-}
+type Feature(name: String, detail: String)
 
-fn example() -> Node {
-    <section class="section alt" id="example">
-        <div class="section-inner">
-            <h2>What a program looks like</h2>
-            <p class="lede">
-                A few slices. Layout is hybrid — a <code>Point</code> is two integers,
-                not two heap boxes. Errors are values. Match takes sums apart.
-                Logging is <code>info</code>; there is no ambient <code>println</code>.
-            </p>
-            {samples.window()}
-        </div>
-    </section>
-}
-
-type Feature(label: String, title: String, body: String)
-
-fn surfaceItems() -> Array<Feature> {
+fn featureList() -> Array<Feature> {
     [
-        Feature(
-            label: "Native",
-            title: "A binary, not a VM",
-            body: "thoxa run produces a real program. Not a bytecode VM, not a tree-walk interpreter."
-        ),
-        Feature(
-            label: "Types",
-            title: "Sums, clauses, match",
-            body: "User types, tagged unions, literal types, and multi-clause functions. Match is how you take them apart — including guards and or-patterns."
-        ),
-        Feature(
-            label: "Errors",
-            title: "Values, not exceptions",
-            body: "Trial and May live in std/fallible. ? unwraps a success. Fail and Not stay in the type. You import them; they are not ambient."
-        ),
-        Feature(
-            label: "Prompt",
-            title: "Interactive Thoxa",
-            body: "Run thoxa with no file and you get a prompt. That prompt is Thoxa — the same syntax as a .thx file — not a separate scripting dialect."
-        ),
-        Feature(
-            label: "Interop",
-            title: "Talk to C",
-            body: "extern fn … from \"c\" calls libc and your own symbols. Same language, no wrapper dialect."
-        ),
-        Feature(
-            label: "Editor",
-            title: "Check and hover",
-            body: "thoxa check and thoxa lsp. Hover shows types. The editor talks to the same compiler that runs your program."
-        ),
+        Feature(name: "Types", detail: "`Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Float64`, `Bool`, `String`, `Bytes`; products and unions; literal types; refinements (`where`); generic types; function types."),
+        Feature(name: "Inference", detail: "Local inference for `let`. Return types are inferred for functions and methods without an annotation."),
+        Feature(name: "Matching", detail: "Constructor, literal, and or-patterns, with guards. A match on a union must cover every member."),
+        Feature(name: "Functions", detail: "Positional or named arguments, defaults, and multi-clause functions that dispatch on parameter types, literal types included."),
+        Feature(name: "Values", detail: "Structural `==` on products, unions, and arrays. User types as map keys. `Array` and `Map` copy on write; a `Map` keeps insertion order."),
+        Feature(name: "Errors", detail: "`May`, `Trial`, and `?`. A panic ends the task it happens in, not the process."),
+        Feature(name: "Memory", detail: "Reference counting. A type with `fn drop()` owns a resource and releases it with its last reference."),
+        Feature(name: "Concurrency", detail: "`-->` starts a task. Socket operations park it until they can proceed. One OS thread."),
+        Feature(name: "Data", detail: "`T.read` and `T.fromJson` for JSON, `T.readForm` for forms, `encode` and `toJson` for output, and `Json` literals."),
+        Feature(name: "Web", detail: "Tag literals (`Node`), route clauses, an HTTP/1.1 server with static files and server-sent events, and `sql\"…\"` with SQLite."),
+        Feature(name: "C", detail: "`extern fn`, C-layout types, `Address<T>`, and fixed-size arrays."),
+        Feature(name: "Tools", detail: "`thoxa run`, `build`, `check` (with `--json`), and `lsp`; a Zed extension; the interactive shell."),
     ]
 }
 
-fn featureRow(item!: Feature) -> Node {
-    <article class="feature">
-        <p class="feature-label">{item.label}</p>
-        <div>
-            <h3>{item.title}</h3>
-            <p>{item.body}</p>
-        </div>
+fn features() -> Node {
+    let chapter = homeChapter()
+    <section class="features" id="features">
+        <h2>Features</h2>
+        <dl>
+            {for feature in featureList() {
+                <div>
+                    <dt>{feature.name}</dt>
+                    <dd>{markdown.text(feature.detail, chapter)}</dd>
+                </div>
+            }}
+        </dl>
+        <p class="more">The <a href="/manual">manual</a> has the rules for each.</p>
+    </section>
+}
+
+fn sampleSection(found!: Array<Sample>) -> Node {
+    let chapter = homeChapter()
+    <section class="samples" id="samples">
+        <h2>Samples</h2>
+        <p>
+            Each sample is a complete program from
+            <a href={"{repository}/tree/master/workloads/landing/samples"}>workloads/landing/samples</a>.
+            <code>cargo make test</code> runs each one and compares its output with what is
+            shown here; the server and the terminal program are compiled but not run.
+        </p>
+        <nav class="sample-index" aria-label="Samples">
+            {for sample in found {
+                <a href={"#sample-{sample.name}"}>{sample.title}</a>
+            }}
+        </nav>
+        {for sample in found { sampleView(sample, chapter) }}
+    </section>
+}
+
+fn sampleView(sample!: Sample, chapter!: Chapter) -> Node {
+    <article class="sample" id={"sample-{sample.name}"}>
+        <h3>
+            {sample.title}
+            <a class="anchor" href={"#sample-{sample.name}"} aria-label="Link to this sample">§</a>
+        </h3>
+        <p>{markdown.text(sample.description, chapter)}</p>
+        <pre class="code lang-thx"><code>{highlight.code("thx", sample.code)}</code></pre>
+        {output(sample)}
     </article>
 }
 
-fn surface() -> Node {
-    <section class="section" id="surface">
-        <div class="section-inner surface-wrap">
-            <div>
-                <h2>What systems programmers look for</h2>
-                <p class="lede">
-                    The type system is the point, not a garnish. Layout is hybrid —
-                    scalars stay scalars. RC is simple and single-threaded today;
-                    a smarter heap is later work, not a claim.
-                </p>
-                <div class="features">
-                    {for item in surfaceItems() { featureRow(item) }}
-                </div>
-            </div>
-            <figure class="mosaic" aria-hidden="true">
-                <img src="/mosaic-types.jpg" width="480" height="480" alt="" />
-            </figure>
+fn output(sample!: Sample) -> Node {
+    if isEmpty(sample.output) {
+        <></>
+    } else {
+        <div class="output">
+            <p class="output-label">Output</p>
+            <pre><code>{sample.output}</code></pre>
         </div>
+    }
+}
+
+fn status() -> Node {
+    <section class="status" id="status">
+        <h2>Status</h2>
+        <p>
+            Thoxa is pre-alpha. What works is what the test suite covers: each feature above
+            has programs in <code>tests/conformance</code> that compile, run, and print what
+            they should on every change, under LeakSanitizer. Not there yet:
+        </p>
+        <ul>
+            <li>Releases. Build from source; Linux x86-64 is the only platform.</li>
+            <li>Closures, generic functions, and interfaces or traits.</li>
+            <li>Threads. Tasks share one OS thread and switch when one parks on a socket.</li>
+            <li>Precise memory management. Reference counting is the simple, single-threaded kind: every copy counts.</li>
+            <li>A broad standard library. There are files, TCP, HTTP/1.1, JSON, SQLite, strings, paths, and logging.</li>
+            <li>Editor support beyond Zed. The language server's navigation is incomplete.</li>
+            <li>Stable syntax. Code written today will need changes.</li>
+        </ul>
     </section>
+}
+
+fn building() -> Node {
+    let commands = "git clone https://github.com/moonlight-pm/thoxa
+cd thoxa
+cargo build -p thoxa                  # the compiler: target/rust/debug/thoxa
+cargo make test                       # conformance suite, samples, unit tests
+target/rust/debug/thoxa run workloads/landing/samples/types.thx
+target/rust/debug/thoxa               # the shell"
+    <section class="building" id="building">
+        <h2>Building</h2>
+        <p>You need a Rust toolchain, a C compiler (GCC or Clang), and <code>make</code>.</p>
+        <pre class="code lang-bash"><code>{highlight.code("bash", commands)}</code></pre>
+        <p>
+            The <a href="/manual">manual</a> covers the language, the standard library, the
+            shell, and the tools. Problems and questions go to the
+            <a href={"{repository}/issues"}>issue tracker</a>.
+        </p>
+    </section>
+}
+
+## Links in home page text that name a chapter go to the manual page.
+fn homeChapter() -> Chapter {
+    Chapter(name: "home", chapters: manual.names, directory: "workloads/landing", page: "/manual")
 }

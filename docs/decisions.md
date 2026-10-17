@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-17 — thoxa.dev and the manual
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D189 | thoxa.dev renders the handbook as its manual; its samples are gated programs | `/manual` renders `docs/handbook/` (`introduction`, `language`, `std`, `session`, `cli`, `editor`, in that order) as one page, per request, with a Markdown renderer and a code highlighter written in Thoxa (`workloads/landing/app/markdown.thx`, `highlight.thx`). Sections are numbered; a link to another chapter becomes an anchor, any other relative link a GitHub URL. The handbook is written for that page: a reference-manual structure, no decision ids in the prose (they stay in `capabilities.md` and here), and a Markdown subset (`docs/handbook/README.md`). The home page states the design rationale, the features, the status, and how to build, and shows the programs in `workloads/landing/samples`; `cargo make test` runs each one that has a `.out` (under LeakSanitizer) and typechecks the rest. | **Shipped.** The site hold in CURRENT was lifted for this at Joshua's request (2026-10-17): "no marketing speak … speak like a programmer, to programmers". The image copies `docs/handbook` and `samples/` next to `web/`, so the deployed manual is the handbook of the image's commit. Same day: `containers/` became `workloads/`, and the repository moved to `github.com/moonlight-pm/thoxa` with thoxa.dev as its homepage. Writing the samples and checking the manual found D183–D188. |
+
 ## 2026-10-17 — Fixes found writing the manual and the site
 
 Each was found by code written for thoxa.dev or the manual, and each has a

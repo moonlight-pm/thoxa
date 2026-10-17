@@ -50,7 +50,7 @@ Build tree (everything under target/):
 
 Commands:
     cargo make runtime              Build libthoxa_rt.a + compile_commands.json
-    cargo make test                 Run conformance suite (LeakSanitizer)
+    cargo make test                 Run conformance suite (LeakSanitizer), site samples, unit tests
     cargo make test-asan            Conformance under ASan (non-fiber; not default)
     cargo make run <file.thx|dir>   Compile and run a program
     cargo make shell                Product session REPL (release `thoxa`)
@@ -405,13 +405,88 @@ enum ConformanceGate {
 
 fn cmd_test() -> i32 {
     let conformance = run_conformance(ConformanceGate::Leak);
+    let samples = run_site_samples();
     // The compiler's own unit tests are the only coverage for the REPL,
     // libtcc steps, the LSP and diagnostics: run them in the same gate.
     let unit = run_unit_tests();
     if conformance != 0 {
         conformance
+    } else if samples != 0 {
+        samples
     } else {
         unit
+    }
+}
+
+/// The programs on thoxa.dev's home page (`workloads/landing/samples`, D189).
+/// One with a sibling `.out` must exit 0 and print exactly that, under
+/// LeakSanitizer like the conformance suite; one without (a server, a
+/// terminal program) must typecheck.
+fn run_site_samples() -> i32 {
+    let dir = workspace_root().join("workloads/landing/samples");
+    let Ok(read) = fs::read_dir(&dir) else {
+        return 0;
+    };
+    let mut entries: Vec<PathBuf> = read
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|x| x.to_str()) == Some("thx"))
+        .collect();
+    entries.sort();
+    eprintln!("site samples (workloads/landing/samples)");
+
+    let thoxa = thoxa_bin_path();
+    let mut passed = 0;
+    let mut failed = 0;
+    for entry in &entries {
+        let name = entry.file_stem().unwrap().to_string_lossy().into_owned();
+        let expected = fs::read_to_string(dir.join(format!("{name}.out"))).ok();
+        let mut command = Command::new(&thoxa);
+        command
+            .current_dir(workspace_root())
+            .env("THOXA_ROOT", workspace_root());
+        if expected.is_some() {
+            command
+                .args(["run", entry.to_str().unwrap()])
+                .env("THOXA_SANITIZE", "leak");
+            if env::var_os("LSAN_OPTIONS").is_none() {
+                command.env("LSAN_OPTIONS", "detect_leaks=1:print_suppressions=0");
+            }
+        } else {
+            command.args(["check", entry.to_str().unwrap()]);
+        }
+        let output = match command.output() {
+            Ok(output) => output,
+            Err(error) => {
+                eprintln!("FAIL samples/{name}: {error}");
+                failed += 1;
+                continue;
+            }
+        };
+        if !output.status.success() {
+            eprintln!("FAIL samples/{name}: exit {}", output.status.code().unwrap_or(1));
+            eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+            failed += 1;
+            continue;
+        }
+        if let Some(expected) = expected {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout != expected {
+                eprintln!("FAIL samples/{name}: stdout mismatch");
+                eprintln!("  expected: {expected:?}");
+                eprintln!("  got:      {stdout:?}");
+                failed += 1;
+                continue;
+            }
+        }
+        eprintln!("ok   samples/{name}");
+        passed += 1;
+    }
+    eprintln!("{passed} samples passed, {failed} failed");
+    if failed > 0 {
+        1
+    } else {
+        0
     }
 }
 

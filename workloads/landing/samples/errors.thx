@@ -1,0 +1,46 @@
+## Errors are values
+## `Trial<T, E>` (`Pass` / `Fail`) and `May<T>` (`Has` / `Not`) are ordinary
+## unions from `std/fallible`. `?` unwraps a `Pass` or returns the `Fail` to
+## the caller. There are no exceptions.
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import { parseUInt, splitOnce, trim } from "std/str"
+import logging, { info } from "std/logging"
+
+type Setting(name: String, value: Int64)
+
+fn parseLine(line: String) -> Trial<Setting, String> {
+    let parts = match splitOnce(line, "=") {
+        Has(found) => found
+        Not => return Fail("no `=` in `{line}`")
+    }
+    let value = match parseUInt(trim(parts.after)) {
+        Has(number) => number
+        Not => return Fail("`{trim(parts.after)}` is not a number")
+    }
+    Pass(Setting(name: trim(parts.before), value: value))
+}
+
+fn parseAll(lines: Array<String>) -> Trial<Array<Setting>, String> {
+    mut settings: Array<Setting> = []
+    for line in lines {
+        settings.append(parseLine(line)?)
+    }
+    Pass(settings)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let files = [
+        ["port = 8080", "workers = 4"],
+        ["port = 8080", "workers four"],
+        ["port = eighty"],
+    ]
+    for lines in files {
+        match parseAll(lines) {
+            Pass(found) => info("{found.count} settings, port {found[0].value}")
+            Fail(reason) => info("error: {reason}")
+        }
+    }
+    0
+}

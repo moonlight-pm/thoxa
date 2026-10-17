@@ -1,0 +1,54 @@
+## SQL
+## `sql"…"` is a tagged string: each hole becomes a quoted SQL literal, so a
+## value cannot change the statement. SQLite is compiled into the runtime.
+import sqlite, { SqlInt, SqlText, SqlValue } from "std/sqlite"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Visitor(name: String, visits: Int64)
+
+fn show(cell: May<SqlValue>) -> String {
+    match cell {
+        Not => "null"
+        Has(value) {
+            match value {
+                SqlText(text) => text
+                SqlInt(number) => "{number}"
+                else => "?"
+            }
+        }
+    }
+}
+
+fn run() -> Trial<Void, String> {
+    let db = sqlite.open(":memory:")?
+    db.exec(sql"CREATE TABLE visitors (name TEXT, visits INTEGER)")?
+    let visitors = [
+        Visitor(name: "Ada", visits: 3),
+        Visitor(name: "Grace", visits: 5),
+        Visitor(name: "Robert'); DROP TABLE visitors; --", visits: 1),
+    ]
+    for visitor in visitors {
+        db.exec(sql"
+            INSERT INTO visitors (name, visits)
+            VALUES ({visitor.name}, {visitor.visits})
+        ")?
+    }
+    let rows = db.query(sql"SELECT name, visits FROM visitors ORDER BY visits DESC")?
+    for row in rows {
+        info("{show(row.cells.get("visits"))}  {show(row.cells.get("name"))}")
+    }
+    Pass(Void)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass => 0
+        Fail(error) {
+            info(error)
+            1
+        }
+    }
+}

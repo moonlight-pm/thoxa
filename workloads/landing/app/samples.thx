@@ -1,0 +1,60 @@
+## The home page's samples: complete programs in workloads/landing/samples.
+## A file's leading `##` lines are the sample's title (the first) and its
+## description (the rest); the code follows. A sibling `.out` holds the
+## output `cargo make test` checks; a sample without one is only compiled.
+
+import config from "./config"
+import { readFile } from "std/io"
+import { Pass, Fail } from "std/fallible"
+import { join, lines, removePrefix, startsWith, trim, trimEnd } from "std/str"
+import { warn } from "std/logging"
+
+## In page order.
+let names = ["types", "errors", "data", "html", "server", "sql", "tasks", "c", "shell"]
+
+export type Sample(name: String, title: String, description: String, code: String, output: String)
+
+## Every sample that can be read; one that cannot is left out and logged.
+export fn load() -> Array<Sample> {
+    let directory = config.samplesRoot()
+    mut samples: Array<Sample> = []
+    for name in names {
+        match readFile("{directory}/{name}.thx") {
+            Fail(error) => warn("sample {name}: {error}")
+            Pass(bytes) {
+                let output = match readFile("{directory}/{name}.out") {
+                    Fail(_) => ""
+                    Pass(found) => trimEnd(found.toString())
+                }
+                samples.append(parse(name, bytes.toString(), output))
+            }
+        }
+    }
+    samples
+}
+
+fn parse(name!: String, text!: String, output!: String) -> Sample {
+    let source = lines(text)
+    mut header: Array<String> = []
+    mut index = 0
+    while index < source.count and startsWith(source[index], "##") {
+        header.append(trim(removePrefix(source[index], "##")))
+        index = index + 1
+    }
+    while index < source.count and trim(source[index]) == "" {
+        index = index + 1
+    }
+    mut body: Array<String> = []
+    while index < source.count {
+        body.append(source[index])
+        index = index + 1
+    }
+    let title = if header.count > 0 { header[0] } else { name }
+    mut description: Array<String> = []
+    mut line = 1
+    while line < header.count {
+        description.append(header[line])
+        line = line + 1
+    }
+    Sample(name: name, title: title, description: join(description, " "), code: trimEnd(join(body, "\n")), output: output)
+}

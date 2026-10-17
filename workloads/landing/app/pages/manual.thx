@@ -1,0 +1,95 @@
+## GET /manual — the handbook (docs/handbook) as one page.
+
+import { Page, repository } from "~/app/ui/page"
+import markdown, { Chapter, Heading } from "~/app/markdown"
+import config from "~/app/config"
+import { readFile } from "std/io"
+import http, { Request, Response } from "std/http"
+import { Pass, Fail } from "std/fallible"
+import { warn } from "std/logging"
+
+## Chapter files, in page order.
+export let names = ["introduction", "language", "std", "session", "cli", "editor"]
+
+type Loaded(chapter: Chapter, text: String, headings: Array<Heading>)
+
+export fn page(request!: Request) -> Response {
+    let loaded = load()
+    http.htmlResponse(
+        <Page title="Manual · Thoxa" request={request} current="manual">
+            <div class="manual">
+                <nav class="contents" aria-label="Contents">
+                    <p class="contents-title">Contents</p>
+                    {contents(loaded)}
+                </nav>
+                <article class="manual-body">
+                    <header class="manual-head">
+                        <h1>The Thoxa Manual</h1>
+                        <p>
+                            What the compiler, the standard library, and the tools do
+                            today. Built from <a href={"{repository}/tree/master/docs/handbook"}>docs/handbook</a>
+                            in the repository; a change to the language changes these pages
+                            in the same commit.
+                        </p>
+                        <details class="contents-inline">
+                            <summary>Contents</summary>
+                            {contents(loaded)}
+                        </details>
+                    </header>
+                    {for entry in loaded {
+                        <section class="chapter">{markdown.render(entry.text, entry.chapter, entry.headings)}</section>
+                    }}
+                </article>
+            </div>
+        </Page>
+    )
+}
+
+## Read every chapter. A chapter that cannot be read is left out and logged.
+fn load() -> Array<Loaded> {
+    let directory = config.manualRoot()
+    mut loaded: Array<Loaded> = []
+    mut number = 0
+    for name in names {
+        match readFile("{directory}/{name}.md") {
+            Fail(error) => warn("manual: {name}.md: {error}")
+            Pass(bytes) {
+                number = number + 1
+                let chapter = Chapter(name: name, chapters: names, directory: "docs/handbook", page: "")
+                let text = bytes.toString()
+                loaded.append(Loaded(chapter: chapter, text: text, headings: markdown.headings(text, chapter, number)))
+            }
+        }
+    }
+    loaded
+}
+
+## Chapters and their sections.
+fn contents(loaded!: Array<Loaded>) -> Node {
+    <ol class="toc">
+        {for entry in loaded { chapterEntry(entry) }}
+    </ol>
+}
+
+fn chapterEntry(entry!: Loaded) -> Node {
+    mut sections: Array<Node> = []
+    mut top: Array<Node> = []
+    for heading in entry.headings {
+        if heading.level == 1 {
+            top.append(link(heading, entry.chapter))
+        } else if heading.level == 2 {
+            sections.append(<li>{link(heading, entry.chapter)}</li>)
+        }
+    }
+    <li>
+        {top}
+        <ol>{sections}</ol>
+    </li>
+}
+
+fn link(heading!: Heading, chapter!: Chapter) -> Node {
+    <a href={"#{heading.id}"}>
+        <span class="number">{heading.number}</span>
+        {markdown.title(heading, chapter)}
+    </a>
+}

@@ -1,0 +1,457 @@
+## Code blocks on the site → highlighted spans.
+##
+## A scanner, not a parser. For Thoxa it colours comments, strings (a hole
+## `{…}` is scanned as code again), numbers, keywords, type names, calls, and
+## tag literals; text between tags stays text. For shell blocks it colours
+## comments only.
+
+import { Has, Not, May } from "std/fallible"
+
+let keywords = ["fn", "let", "mut", "if", "else", "match", "type", "export", "extern", "import", "from", "as", "and", "or", "not", "while", "loop", "break", "continue", "for", "in", "return", "where"]
+let constants = ["true", "false"]
+let verbs = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+
+let tab = 9
+let newline = 10
+let space = 32
+let quote = 34
+let hash = 35
+let leftParen = 40
+let minus = 45
+let dot = 46
+let slash = 47
+let less = 60
+let greater = 62
+let backslash = 92
+let leftBrace = 123
+let rightBrace = 125
+
+## Nodes for one stretch of source, and where the stretch ended.
+type Scanned(nodes: Array<Node>, end: Int64)
+
+## Highlight `text` written in `language` (`thx`, `bash`, anything else plain).
+export fn code(language!: String, text!: String) -> Array<Node> {
+    let source = Bytes.fromString(text)
+    if language == "thx" {
+        scan(source, 0, source.count)
+    } else if language == "bash" {
+        shell(source)
+    } else {
+        one(Text(s: text))
+    }
+}
+
+fn scan(source!: Bytes, start!: Int64, end!: Int64) -> Array<Node> {
+    mut nodes: Array<Node> = []
+    mut plain = start
+    mut at = start
+    while at < end {
+        match token(source, at, start, end) {
+            Not {
+                at = at + 1
+            }
+            Has(found) {
+                if at > plain {
+                    nodes.append(Text(s: slice(source, plain, at)))
+                }
+                for node in found.nodes {
+                    nodes.append(node)
+                }
+                at = found.end
+                plain = at
+            }
+        }
+    }
+    if end > plain {
+        nodes.append(Text(s: slice(source, plain, end)))
+    }
+    nodes
+}
+
+## The token that starts at `at`, if one does.
+fn token(source!: Bytes, at!: Int64, start!: Int64, end!: Int64) -> May<Scanned> {
+    let byte = source.get(at)
+    let after: Int64 = if at > start { source.get(at - 1) } else { space }
+    if byte == hash and after != backslash {
+        return Has(single("cm", source, at, lineEnd(source, at, end)))
+    }
+    if byte == quote {
+        return Has(stringAt(source, at, end))
+    }
+    if isWordByte(after) {
+        return Not()
+    }
+    if isDigit(byte) {
+        return Has(single("nu", source, at, numberEnd(source, at, end)))
+    }
+    if isLetter(byte) {
+        let stop = wordEnd(source, at, end)
+        return Has(single(wordKind(source, at, stop, end), source, at, stop))
+    }
+    if byte == less and startsTag(source, at, end) {
+        return Has(elementAt(source, at, end))
+    }
+    if byte == minus and at + 2 < end and source.get(at + 1) == minus and source.get(at + 2) == greater {
+        return Has(single("kw", source, at, at + 3))
+    }
+    Not()
+}
+
+fn wordKind(source!: Bytes, at!: Int64, stop!: Int64, end!: Int64) -> String {
+    let word = slice(source, at, stop)
+    if isOneOf(word, keywords) or isOneOf(word, verbs) {
+        "kw"
+    } else if isOneOf(word, constants) {
+        "nu"
+    } else if word == "sql" and stop < end and source.get(stop) == quote {
+        "kw"
+    } else if isUpper(source.get(at)) {
+        "ty"
+    } else if stop < end and source.get(stop) == leftParen {
+        "fn"
+    } else {
+        ""
+    }
+}
+
+## A string literal from its opening quote. Each hole is code; the braces
+## around it stay string-coloured.
+fn stringAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
+    mut nodes: Array<Node> = []
+    mut run = at
+    mut index = at + 1
+    while index < end {
+        let byte = source.get(index)
+        if byte == backslash {
+            index = index + 2
+        } else if byte == quote {
+            index = index + 1
+            break
+        } else if byte == leftBrace and index + 1 < end and source.get(index + 1) == leftBrace {
+            index = index + 2
+        } else if byte == leftBrace {
+            let close = matchingBrace(source, index, end)
+            nodes.append(span("st", slice(source, run, index + 1)))
+            for node in scan(source, index + 1, close) {
+                nodes.append(node)
+            }
+            run = close
+            index = close + 1
+        } else {
+            index = index + 1
+        }
+    }
+    let stop = if index > end { end } else { index }
+    if stop > run {
+        nodes.append(span("st", slice(source, run, stop)))
+    }
+    Scanned(nodes: nodes, end: stop)
+}
+
+## Index just past the string that opens at `at`.
+fn stringEnd(source!: Bytes, at!: Int64, end!: Int64) -> Int64 {
+    mut index = at + 1
+    while index < end {
+        let byte = source.get(index)
+        if byte == backslash {
+            index = index + 2
+        } else if byte == quote {
+            return index + 1
+        } else if byte == leftBrace and index + 1 < end and source.get(index + 1) == leftBrace {
+            index = index + 2
+        } else if byte == leftBrace {
+            index = matchingBrace(source, index, end) + 1
+        } else {
+            index = index + 1
+        }
+    }
+    end
+}
+
+## Index of the `}` that closes the `{` at `open` (or `end` if none does).
+fn matchingBrace(source!: Bytes, open!: Int64, end!: Int64) -> Int64 {
+    mut depth = 0
+    mut index = open
+    while index < end {
+        let byte = source.get(index)
+        if byte == quote {
+            index = stringEnd(source, index, end)
+        } else {
+            if byte == leftBrace {
+                depth = depth + 1
+            } else if byte == rightBrace {
+                depth = depth - 1
+                if depth == 0 {
+                    return index
+                }
+            }
+            index = index + 1
+        }
+    }
+    end
+}
+
+## `<name` or `<>` with nothing between: a tag literal, as the compiler reads it.
+fn startsTag(source!: Bytes, at!: Int64, end!: Int64) -> Bool {
+    if at + 1 >= end {
+        false
+    } else {
+        let next = source.get(at + 1)
+        isLetter(next) or next == greater
+    }
+}
+
+## A whole element: its head, then its children up to the matching close tag.
+fn elementAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
+    mut nodes: Array<Node> = []
+    let nameEnd = tagNameEnd(source, at + 1, end)
+    nodes.append(Text(s: "<"))
+    if nameEnd > at + 1 {
+        nodes.append(span("tag", slice(source, at + 1, nameEnd)))
+    }
+    mut run = nameEnd
+    mut index = nameEnd
+    mut selfClosing = false
+    while index < end {
+        let byte = source.get(index)
+        if byte == greater {
+            selfClosing = index > at and source.get(index - 1) == slash
+            index = index + 1
+            break
+        } else if byte == quote {
+            nodes.append(Text(s: slice(source, run, index)))
+            let stop = stringEnd(source, index, end)
+            nodes.append(span("st", slice(source, index, stop)))
+            index = stop
+            run = index
+        } else if byte == leftBrace {
+            let close = matchingBrace(source, index, end)
+            nodes.append(Text(s: slice(source, run, index + 1)))
+            for node in scan(source, index + 1, close) {
+                nodes.append(node)
+            }
+            index = close
+            run = index
+        } else if isLetter(byte) {
+            let stop = attributeEnd(source, index, end)
+            nodes.append(Text(s: slice(source, run, index)))
+            nodes.append(span("at", slice(source, index, stop)))
+            index = stop
+            run = index
+        } else {
+            index = index + 1
+        }
+    }
+    let headEnd = if index > end { end } else { index }
+    nodes.append(Text(s: slice(source, run, headEnd)))
+    if selfClosing {
+        Scanned(nodes: nodes, end: headEnd)
+    } else {
+        let children = childrenAt(source, headEnd, end)
+        for node in children.nodes {
+            nodes.append(node)
+        }
+        Scanned(nodes: nodes, end: children.end)
+    }
+}
+
+## Text, holes, and nested elements up to and including the close tag.
+fn childrenAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
+    mut nodes: Array<Node> = []
+    mut run = at
+    mut index = at
+    while index < end {
+        let byte = source.get(index)
+        let next: Int64 = if index + 1 < end { source.get(index + 1) } else { 0 }
+        if byte == leftBrace {
+            let close = matchingBrace(source, index, end)
+            nodes.append(Text(s: slice(source, run, index + 1)))
+            for node in scan(source, index + 1, close) {
+                nodes.append(node)
+            }
+            index = close
+            run = index
+        } else if byte == less and next == slash {
+            nodes.append(Text(s: slice(source, run, index)))
+            let nameEnd = tagNameEnd(source, index + 2, end)
+            nodes.append(Text(s: "</"))
+            if nameEnd > index + 2 {
+                nodes.append(span("tag", slice(source, index + 2, nameEnd)))
+            }
+            let close = findByte(source, greater, nameEnd, end)
+            let stop = if close < end { close + 1 } else { end }
+            nodes.append(Text(s: slice(source, nameEnd, stop)))
+            return Scanned(nodes: nodes, end: stop)
+        } else if byte == less and (isLetter(next) or next == greater) {
+            nodes.append(Text(s: slice(source, run, index)))
+            let inner = elementAt(source, index, end)
+            for node in inner.nodes {
+                nodes.append(node)
+            }
+            index = inner.end
+            run = index
+        } else if byte == hash and (index == 0 or source.get(index - 1) != backslash) {
+            nodes.append(Text(s: slice(source, run, index)))
+            let stop = lineEnd(source, index, end)
+            nodes.append(span("cm", slice(source, index, stop)))
+            index = stop
+            run = index
+        } else {
+            index = index + 1
+        }
+    }
+    nodes.append(Text(s: slice(source, run, end)))
+    Scanned(nodes: nodes, end: end)
+}
+
+## Shell: a `#` at the start of a word runs to the end of the line.
+fn shell(source!: Bytes) -> Array<Node> {
+    mut nodes: Array<Node> = []
+    mut run = 0
+    mut index = 0
+    while index < source.count {
+        let byte = source.get(index)
+        let wordStart = index == 0 or isBlank(source.get(index - 1))
+        if byte == hash and wordStart {
+            nodes.append(Text(s: slice(source, run, index)))
+            let stop = lineEnd(source, index, source.count)
+            nodes.append(span("cm", slice(source, index, stop)))
+            index = stop
+            run = index
+        } else {
+            index = index + 1
+        }
+    }
+    nodes.append(Text(s: slice(source, run, source.count)))
+    nodes
+}
+
+fn numberEnd(source!: Bytes, at!: Int64, end!: Int64) -> Int64 {
+    mut index = at
+    if at + 1 < end and source.get(at) == 48 and (source.get(at + 1) == 120 or source.get(at + 1) == 88) {
+        index = at + 2
+        while index < end and isHexDigit(source.get(index)) {
+            index = index + 1
+        }
+        return index
+    }
+    index = digitsEnd(source, index, end)
+    if index + 1 < end and source.get(index) == dot and isDigit(source.get(index + 1)) {
+        index = digitsEnd(source, index + 1, end)
+    }
+    if index < end and (source.get(index) == 101 or source.get(index) == 69) {
+        let sign = if index + 1 < end and (source.get(index + 1) == 43 or source.get(index + 1) == minus) { 2 } else { 1 }
+        if index + sign < end and isDigit(source.get(index + sign)) {
+            index = digitsEnd(source, index + sign, end)
+        }
+    }
+    if index + 2 < end and slice(source, index, index + 3) == "f64" {
+        index = index + 3
+    }
+    index
+}
+
+fn digitsEnd(source!: Bytes, at!: Int64, end!: Int64) -> Int64 {
+    mut index = at
+    while index < end and isDigit(source.get(index)) {
+        index = index + 1
+    }
+    index
+}
+
+fn wordEnd(source!: Bytes, at!: Int64, end!: Int64) -> Int64 {
+    mut index = at
+    while index < end and isWordByte(source.get(index)) {
+        index = index + 1
+    }
+    index
+}
+
+## Tag names may hold `-` (`data-x`) and `.`.
+fn tagNameEnd(source!: Bytes, at!: Int64, end!: Int64) -> Int64 {
+    mut index = at
+    while index < end and (isWordByte(source.get(index)) or source.get(index) == minus or source.get(index) == dot) {
+        index = index + 1
+    }
+    index
+}
+
+fn attributeEnd(source!: Bytes, at!: Int64, end!: Int64) -> Int64 {
+    mut index = at
+    while index < end and (isWordByte(source.get(index)) or source.get(index) == minus) {
+        index = index + 1
+    }
+    index
+}
+
+fn lineEnd(source!: Bytes, at!: Int64, end!: Int64) -> Int64 {
+    findByte(source, newline, at, end)
+}
+
+fn findByte(source!: Bytes, byte!: Int64, at!: Int64, end!: Int64) -> Int64 {
+    mut index = at
+    while index < end and source.get(index) != byte {
+        index = index + 1
+    }
+    index
+}
+
+fn single(kind!: String, source!: Bytes, at!: Int64, stop!: Int64) -> Scanned {
+    let text = slice(source, at, stop)
+    if kind == "" {
+        Scanned(nodes: one(Text(s: text)), end: stop)
+    } else {
+        Scanned(nodes: one(span(kind, text)), end: stop)
+    }
+}
+
+fn span(kind!: String, text!: String) -> Node {
+    <span class={"tk-{kind}"}>{text}</span>
+}
+
+fn one(node!: Node) -> Array<Node> {
+    mut nodes: Array<Node> = []
+    nodes.append(node)
+    nodes
+}
+
+fn slice(source!: Bytes, at!: Int64, stop!: Int64) -> String {
+    if stop > at {
+        source.slice(at, stop).toString()
+    } else {
+        ""
+    }
+}
+
+fn isOneOf(word!: String, words!: Array<String>) -> Bool {
+    for candidate in words {
+        if candidate == word {
+            return true
+        }
+    }
+    false
+}
+
+fn isLetter(byte!: Int64) -> Bool {
+    isUpper(byte) or (byte >= 97 and byte <= 122)
+}
+
+fn isUpper(byte!: Int64) -> Bool {
+    byte >= 65 and byte <= 90
+}
+
+fn isDigit(byte!: Int64) -> Bool {
+    byte >= 48 and byte <= 57
+}
+
+fn isHexDigit(byte!: Int64) -> Bool {
+    isDigit(byte) or (byte >= 97 and byte <= 102) or (byte >= 65 and byte <= 70)
+}
+
+fn isWordByte(byte!: Int64) -> Bool {
+    isLetter(byte) or isDigit(byte) or byte == 95
+}
+
+fn isBlank(byte!: Int64) -> Bool {
+    byte == space or byte == tab or byte == newline
+}

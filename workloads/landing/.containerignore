@@ -15,3 +15,6 @@
 !workloads/
 !workloads/landing/
 !workloads/landing/**
+!docs/
+!docs/handbook/
+!docs/handbook/**

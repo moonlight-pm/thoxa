@@ -1,0 +1,37 @@
+## HTML as values
+## A tag is an expression of type `Node`. A type with a `view` method is a
+## component. Text and attributes are escaped when the tree is written out;
+## there is no template language and no string building.
+import logging, { info } from "std/logging"
+
+type Drink(name: String, cents: Int64)
+
+type Menu(title: String) {
+    export fn view(children: Array<Node>) -> Node {
+        <section class="menu">
+            <h2>{title}</h2>
+            <ul>{children}</ul>
+        </section>
+    }
+}
+
+fn price(cents: Int64) -> String {
+    let rest = cents % 100
+    if rest < 10 { "${cents / 100}.0{rest}" } else { "${cents / 100}.{rest}" }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let drinks = [
+        Drink(name: "Espresso", cents: 300),
+        Drink(name: "Café <crème>", cents: 450),
+    ]
+    let page = <Menu title="Today">
+        {for drink in drinks {
+            <li data-cents={drink.cents}>{drink.name} · {price(drink.cents)}</li>
+        }}
+    </Menu>
+    info(page.html())
+    0
+}
