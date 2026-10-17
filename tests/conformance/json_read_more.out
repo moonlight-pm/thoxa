@@ -1,0 +1,31 @@
+circle: {"type":"Circle","radius":3}
+blank: {"type":"Blank"}
+unknown: 1 issue(s)
+  type: expected "Circle" | "Square" | "Blank", got Hexagon
+no type: 1 issue(s)
+  type is required
+type not a string: 1 issue(s)
+  type: expected string, got integer
+member issues: 2 issue(s)
+  side: expected integer, got string
+  label is required
+round trip: true
+tree round trip: {"type":"Branch","children":[{"type":"Leaf","value":1},{"type":"Branch","children":[{"type":"Leaf","value":2}]}]}
+drawing: 2 issue(s)
+  shapes.1.type is required
+  shapes.2.side is required
+inventory: {"stock":{"beans":4,"milk":2},"prices":{"beans":3.0,"milk":1.25}}
+inventory: 2 issue(s)
+  stock.beans: expected integer, got string
+  prices: expected object, got array
+event click: {"x":1,"tags":[true,null]}
+event ping: null
+event: 1 issue(s)
+  payload is required
+defaults: {"slug":"mocha","qty":1,"size":"small","note":"none"}
+given: {"slug":"mocha","qty":3,"size":"large"}
+default still checked: 1 issue(s)
+  qty: expected integer >= 1, got 0
+form defaults: {"slug":"mocha","qty":1,"size":"small","note":"none"}
+form given: {"slug":"mocha","qty":2,"size":"large","note":"rush"}
+pairs: 1

@@ -10357,7 +10357,7 @@ fn lower_type_read_static(
         .clone();
     if info.sum.is_some() && lookup_generated_read_fn(ctx, &info, mangled_ty, method).is_none() {
         return Err(Error::at(
-            format!("cannot `{method}` a union type (read is for constructor-param products and closed literal unions)"),
+            format!("cannot `{method}` this union: a union reads when its members are products whose fields read"),
             span,
         ));
     }
@@ -10373,8 +10373,9 @@ fn lower_type_read_static(
         }
         return Err(Error::at(
             format!(
-                "type `{}` cannot be read — only constructor-param products of \
-                 String, Int64, Float64, Bool, Array, May, and nested readable products",
+                "type `{}` cannot be read — its fields must be String, Int64, Float64, \
+                 Bool, refined or literal types, Array, May, Map<String, …>, Json, or \
+                 types that read (a type with its own toJson has no generated reader)",
                 type_source_name(&info, mangled_ty)
             ),
             span,

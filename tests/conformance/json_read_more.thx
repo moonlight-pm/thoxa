@@ -1,0 +1,105 @@
+## Reads cover what encodes: unions by "type", Map and Json fields,
+## constructor defaults (D182 §5).
+import { Json, Issue, message, encode } from "std/json"
+import { Pass, Fail, Trial, Has, Not, May } from "std/fallible"
+import { formPairs } from "std/http"
+import logging, { info } from "std/logging"
+
+type Circle(radius: Int64)
+type Square(side: Int64, label: String)
+type Blank
+type Shape = Circle | Square | Blank
+type Drawing(name: String, shapes: Array<Shape>)
+
+type Leaf(value: Int64)
+type Branch(children: Array<Tree>)
+type Tree = Leaf | Branch
+
+type Inventory(stock: Map<String, Int64>, prices: Map<String, Float64>)
+type Event(kind: String, payload: Json)
+
+type Qty = Int64 where >= 1
+type Size = "small" | "large"
+type Order(slug: String, qty: Qty = 1, size: Size = "small", note: May<String> = Has("none"))
+
+fn report(label!: String, issues!: Array<Issue>) {
+    info("{label}: {issues.count} issue(s)")
+    for issue in issues {
+        info("  {message(issue)}")
+    }
+}
+
+fn showShape(label!: String, read!: Trial<Shape, Array<Issue>>) {
+    match read {
+        Fail(issues) => report(label, issues)
+        Pass(shape) => info("{label}: {shape.encode()}")
+    }
+}
+
+fn showOrder(label!: String, read!: Trial<Order, Array<Issue>>) {
+    match read {
+        Fail(issues) => report(label, issues)
+        Pass(order) => info("{label}: {order.encode()}")
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## Unions, chosen by "type".
+    showShape("circle", Shape.read("{{\"type\":\"Circle\",\"radius\":3}}"))
+    showShape("blank", Shape.read("{{\"type\":\"Blank\"}}"))
+    showShape("unknown", Shape.read("{{\"type\":\"Hexagon\"}}"))
+    showShape("no type", Shape.read("{{\"radius\":3}}"))
+    showShape("type not a string", Shape.read("{{\"type\":7}}"))
+    showShape("member issues", Shape.read("{{\"type\":\"Square\",\"side\":\"wide\"}}"))
+
+    ## Encoding then reading gives the same value back.
+    let square: Shape = Square(side: 2, label: "tile")
+    match Shape.read(square.encode()) {
+        Pass(back) => info("round trip: {back == square}")
+        Fail(issues) => report("round trip", issues)
+    }
+    let one: Tree = Leaf(value: 1)
+    let two: Tree = Leaf(value: 2)
+    let inner: Tree = Branch(children: [two])
+    let tree: Tree = Branch(children: [one, inner])
+    match Tree.read(tree.encode()) {
+        Pass(back) => info("tree round trip: {back.encode()}")
+        Fail(issues) => report("tree", issues)
+    }
+
+    ## A field holding a union, in an array.
+    match Drawing.read("{{\"name\":\"d\",\"shapes\":[{{\"type\":\"Circle\",\"radius\":1}},{{\"kind\":\"x\"}},{{\"type\":\"Square\",\"label\":\"a\"}}]}}") {
+        Fail(issues) => report("drawing", issues)
+        Pass(drawing) => info("drawing: {drawing.shapes.count}")
+    }
+
+    ## Map fields.
+    match Inventory.read("{{\"stock\":{{\"beans\":4,\"milk\":2}},\"prices\":{{\"beans\":3,\"milk\":1.25}}}}") {
+        Fail(issues) => report("inventory", issues)
+        Pass(inventory) => info("inventory: {inventory.encode()}")
+    }
+    match Inventory.read("{{\"stock\":{{\"beans\":\"many\",\"milk\":2}},\"prices\":[]}}") {
+        Fail(issues) => report("inventory", issues)
+        Pass(inventory) => info("inventory: {inventory.encode()}")
+    }
+
+    ## Json fields hold any value.
+    for text in ["{{\"kind\":\"click\",\"payload\":{{\"x\":1,\"tags\":[true,null]}}}}", "{{\"kind\":\"ping\",\"payload\":null}}", "{{\"kind\":\"none\"}}"] {
+        match Event.read(text) {
+            Fail(issues) => report("event", issues)
+            Pass(event) => info("event {event.kind}: {encode(event.payload)}")
+        }
+    }
+
+    ## Constructor defaults fill missing keys, in JSON and in forms.
+    showOrder("defaults", Order.read("{{\"slug\":\"mocha\"}}"))
+    showOrder("given", Order.read("{{\"slug\":\"mocha\",\"qty\":3,\"size\":\"large\",\"note\":null}}"))
+    showOrder("default still checked", Order.read("{{\"slug\":\"mocha\",\"qty\":0}}"))
+    showOrder("form defaults", Order.readForm("slug=mocha&qty=&size="))
+    showOrder("form given", Order.readForm("slug=mocha&qty=2&size=large&note=rush"))
+    info("pairs: {formPairs("slug=mocha").count}")
+    0
+}

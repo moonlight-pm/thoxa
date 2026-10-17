@@ -60,20 +60,22 @@ cache shipped. **`having`/`else` parked indefinitely.**
 codegen, runtime semantics. Site and hosting work is paused (see holds). One
 language slice at a time, each with conformance.
 
-**Active: typed codecs (D182)**, freeze
-[`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md).
-Shipped §1 (`toJson` / `encode` on every encodable type, unions tagged by
-`"type"`), §2 (`T.read` / `T.fromJson` report every issue as
-`Trial<T, Array<Issue>>`), §3 (`T.readForm` reads forms and query strings
-into the same types), §4 (`{…}` / `[…]` literals where a `Json` is expected,
-`...` spreads), and §6 (a type's own `toJson` wins). **Next: §5**, reads of
-unions / `Map` / `Json` fields / constructor defaults.
+**Typed codecs (D182) shipped**, freeze
+[`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md):
+`toJson` / `encode` on every encodable type (unions tagged by `"type"`); reads
+report every issue as `Trial<T, Array<Issue>>`; `T.readForm` reads forms and
+query strings into the same types; `{…}` / `[…]` literals where a `Json` is
+expected, with `...` spreads; reads of unions, `Map` / `Json` fields, and
+constructor defaults; a type's own `toJson` wins. Its non-goals (renaming,
+generic types, top-level `Array` reads, custom decoding) stay parked.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
 D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
-`Float64` rounds unchecked.
+`Float64` rounds unchecked; an array literal of union members does not widen
+to the union (`[Leaf(…), Branch(…)]` where `Array<Tree>` is expected); an empty
+`[]` nested in an array literal is not typed by the expected element type.
 
 Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);
 release REPL ~**8 ms**/line. **D155** resource `drop` shipped. D153 simple-RC

@@ -2,10 +2,10 @@
 
 **Date:** 2026-10-16
 **Status:** target (freeze)
-**Implementation:** §1–§4, §6 shipped
+**Implementation:** shipped (§1–§6)
 **Decision:** D182 (amends D149: reads report every issue)
 **Gates:** per section below
-**Gaps:** see Non-goals
+**Gaps:** see Non-goals; in a form an absent `Bool` is `false` and an absent `Array` empty (no default), and a nested product takes no default
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D182 in
 [`decisions.md`](../decisions.md)

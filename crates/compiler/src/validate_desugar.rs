@@ -156,6 +156,10 @@ fn desugar_module_with(
         }
         if let Some(members) = encodable_union(td, module_id, world, resolve, &mut HashSet::new()) {
             encoders(&mut extra, gen_to_json_union(td, &members));
+            if decodable_union(td, module_id, world, resolve, &mut HashSet::new()).is_some() {
+                extra.push(gen_from_json_union(td, &members));
+                extra.push(gen_read(td));
+            }
             continue;
         }
         if encodable_product(td, module_id, world, resolve, &mut HashSet::new()) {
@@ -388,6 +392,10 @@ fn is_eligible(
     if td.params.is_empty() {
         return false;
     }
+    // Its own `toJson` writes a shape a generated reader would not expect.
+    if has_own_method(td, "toJson") {
+        return false;
+    }
     let key = format!("{module_id}::{}", td.name);
     if !visiting.insert(key.clone()) {
         return true;
@@ -407,7 +415,13 @@ enum Shape {
     Float,
     Array(Box<Shape>),
     May(Box<Shape>),
+    /// `Map<String, T>`: a JSON object (D182 §5).
+    Map(Box<Shape>),
+    /// `Json`: any JSON value (D182 §5).
+    Json,
     Product(String),
+    /// A union of products, chosen by its `"type"` key (D182 §5).
+    Union(String),
     Refined { name: String, base: String },
 }
 
@@ -440,9 +454,19 @@ fn shape_of(
             }
             TypeArg::Int { .. } => None,
         },
+        "Map" if ty.args.len() == 2 => match (&ty.args[0], &ty.args[1]) {
+            (TypeArg::Type(key), TypeArg::Type(value)) if key.name == "String" && key.args.is_empty() => {
+                let inner = shape_of(value, module_id, world, resolve, visiting)?;
+                Some(Shape::Map(Box::new(inner)))
+            }
+            _ => None,
+        },
         // remaining named types: refined aliases / readable products
-        other => {
+        other if ty.args.is_empty() => {
             let (def_mod, def_name) = resolve.get(module_id)?.get(other)?.clone();
+            if def_mod == JSON_MODULE_ID {
+                return (def_name == "Json").then_some(Shape::Json);
+            }
             let td = world.get(&def_mod)?.get(&def_name)?;
             if let Some((base, _)) = refined_alias_of(td, &def_mod, world, resolve) {
                 Some(Shape::Refined {
@@ -454,13 +478,50 @@ fn shape_of(
                     name: other.to_string(),
                     base: base.to_string(),
                 })
+            } else if decodable_union(td, &def_mod, world, resolve, visiting).is_some() {
+                Some(Shape::Union(other.to_string()))
             } else if is_eligible(td, &def_mod, world, resolve, visiting) {
                 Some(Shape::Product(other.to_string()))
             } else {
                 None
             }
         }
+        _ => None,
     }
+}
+
+/// A union of products whose members all read (D182 §5); a member with
+/// fields uses its own generated reader.
+fn decodable_union(
+    td: &TypeDef,
+    module_id: &str,
+    world: &World,
+    resolve: &Resolve,
+    visiting: &mut HashSet<String>,
+) -> Option<Vec<UnionMember>> {
+    if has_own_method(td, "toJson") {
+        return None;
+    }
+    let key = format!("{module_id}::{}", td.name);
+    if visiting.contains(&key) {
+        return Some(Vec::new());
+    }
+    let members = encodable_union(td, module_id, world, resolve, visiting)?;
+    visiting.insert(key.clone());
+    let ok = members.iter().all(|member| {
+        member.params.is_empty()
+            || resolve
+                .get(module_id)
+                .and_then(|names| names.get(&member.name))
+                .and_then(|(def_mod, def_name)| {
+                    world.get(def_mod).and_then(|tys| tys.get(def_name)).map(|m| (def_mod, m))
+                })
+                .is_some_and(|(def_mod, member_td)| {
+                    is_eligible(member_td, def_mod, world, resolve, visiting)
+                })
+    });
+    visiting.remove(&key);
+    ok.then_some(members)
 }
 
 /// `__read_T(s)`: parse, then `__fromJson_T` (D182 §2).
@@ -493,6 +554,8 @@ struct ReadableField {
     shape: Shape,
     ty: TypeExpr,
     check: Option<WhereClause>,
+    /// The constructor default a missing key takes (D182 §5).
+    default: Option<Expr>,
 }
 
 impl ReadableField {
@@ -526,6 +589,7 @@ fn readable_fields(
                 shape,
                 ty,
                 check: p.ty.where_clause.clone(),
+                default: p.default.clone(),
             })
         })
         .collect()
@@ -543,7 +607,7 @@ fn gen_from_json(td: &TypeDef, fields: &[ReadableField]) -> Function {
         )),
     )];
     for (index, field) in fields.iter().enumerate() {
-        let read = read_json_field(&field.name, &field.shape, &field.ty);
+        let read = read_json_field(field);
         items.push(let_bind_ty(
             &format!("__f{index}"),
             false,
@@ -665,7 +729,7 @@ fn gen_from_form(td: &TypeDef, fields: &[ReadableField]) -> Function {
         .iter()
         .enumerate()
         .map(|(index, field)| {
-            let read = read_form_field(&field.shape, &field.ty);
+            let read = read_form_field(field);
             let_bind_ty(
                 &format!("__f{index}"),
                 false,
@@ -688,8 +752,11 @@ fn gen_from_form(td: &TypeDef, fields: &[ReadableField]) -> Function {
 }
 
 /// A field from the form's pairs; its name and path are `__p`. Empty is
-/// absent for every type but `String`.
-fn read_form_field(shape: &Shape, ty: &TypeExpr) -> Expr {
+/// absent for every type but `String`. An absent `Bool` is `false` and an
+/// absent `Array` empty (an unchecked box sends nothing); other absent fields
+/// take their default.
+fn read_form_field(readable: &ReadableField) -> Expr {
+    let (shape, ty) = (&readable.shape, &readable.ty);
     let trial = ty_trial_issues(ty.clone());
     match shape {
         Shape::Product(type_name) => method_call(
@@ -701,8 +768,7 @@ fn read_form_field(shape: &Shape, ty: &TypeExpr) -> Expr {
         _ => {
             let absent = match shape {
                 Shape::Bool => typed("__absent", trial.clone(), call("Pass", vec![Arg::Pos(bool_lit(false))])),
-                Shape::May(_) => typed("__absent", trial.clone(), pass_not(ty)),
-                _ => missing(&trial),
+                _ => absent_field(readable),
             };
             let present = form_text(name("__text"), shape, ty, name("__p"));
             let present = if matches!(shape, Shape::Str) {
@@ -810,7 +876,9 @@ fn form_text(text: Expr, shape: &Shape, ty: &TypeExpr, path: Expr) -> Expr {
             )
         }
         // Not form scalars (`form_readable_product` keeps these out).
-        Shape::Array(_) | Shape::Product(_) => typed("__out", trial, missing_value()),
+        Shape::Array(_) | Shape::Map(_) | Shape::Json | Shape::Product(_) | Shape::Union(_) => {
+            typed("__out", trial, missing_value())
+        }
     }
 }
 
@@ -968,14 +1036,11 @@ fn collect_issues(fields: usize) -> Vec<BlockItem> {
 }
 
 /// A product field read from the object `__obj`; the path is `__p`.
-fn read_json_field(field_name: &str, shape: &Shape, ty: &TypeExpr) -> Expr {
-    let trial = ty_trial_issues(ty.clone());
-    let absent = match shape {
-        Shape::May(_) => typed("__absent", trial.clone(), pass_not(ty)),
-        _ => missing(&trial),
-    };
+fn read_json_field(field: &ReadableField) -> Expr {
+    let (shape, ty) = (&field.shape, &field.ty);
+    let absent = absent_field(field);
     match_expr(
-        method_call(name("__obj"), "get", vec![Arg::Pos(str_lit(field_name))]),
+        method_call(name("__obj"), "get", vec![Arg::Pos(str_lit(&field.name))]),
         vec![
             match_arm_block("Not", vec![], vec![], Some(absent)),
             match_arm_block(
@@ -1029,6 +1094,23 @@ fn checked_field(field_name: &str, read: Expr, ty: &TypeExpr, check: Option<&str
     block(items, checked)
 }
 
+/// A missing key: the field's default, `Not` for a `May`, else `Missing`.
+fn absent_field(field: &ReadableField) -> Expr {
+    let trial = ty_trial_issues(field.ty.clone());
+    match (&field.default, &field.shape) {
+        (Some(default), _) => typed(
+            "__absent",
+            trial,
+            call(
+                "Pass",
+                vec![Arg::Pos(typed("__default", field.ty.clone(), default.clone()))],
+            ),
+        ),
+        (None, Shape::May(_)) => typed("__absent", trial, pass_not(&field.ty)),
+        (None, _) => missing(&trial),
+    }
+}
+
 /// `Pass(Not)` for a `May` field that is absent.
 fn pass_not(ty: &TypeExpr) -> Expr {
     call(
@@ -1055,11 +1137,15 @@ fn convert_json(raw: Expr, shape: &Shape, ty: &TypeExpr, path: Expr, depth: usiz
         Shape::Int => json_call("asInt", vec![Arg::Pos(raw), Arg::Pos(path)]),
         Shape::Bool => json_call("asBool", vec![Arg::Pos(raw), Arg::Pos(path)]),
         Shape::Float => json_call("asFloat", vec![Arg::Pos(raw), Arg::Pos(path)]),
-        Shape::Product(type_name) | Shape::Refined { name: type_name, .. } => method_call(
+        Shape::Product(type_name)
+        | Shape::Union(type_name)
+        | Shape::Refined { name: type_name, .. } => method_call(
             name(type_name),
             "fromJson",
             vec![Arg::Pos(raw), Arg::Pos(path)],
         ),
+        Shape::Json => typed("__any", trial, call("Pass", vec![Arg::Pos(raw)])),
+        Shape::Map(inner) => convert_json_map(raw, inner, ty, path, depth),
         Shape::May(inner) => {
             let inner_ty = type_arg(ty, 0);
             let some = match_expr(
@@ -1222,6 +1308,218 @@ fn convert_json(raw: Expr, shape: &Shape, ty: &TypeExpr, path: Expr, depth: usiz
     }
 }
 
+/// `raw` as a `Map<String, T>`: an object whose every value reads as `T`,
+/// each at `path.key`.
+fn convert_json_map(raw: Expr, inner: &Shape, ty: &TypeExpr, path: Expr, depth: usize) -> Expr {
+    let trial = ty_trial_issues(ty.clone());
+    let value_ty = type_arg(ty, 1);
+    let at = |base: &str| format!("{base}{depth}");
+    let value = convert_json(
+        name(&at("__x")),
+        inner,
+        &value_ty,
+        json_call(
+            "joinPath",
+            vec![Arg::Pos(name(&at("__path"))), Arg::Pos(name(&at("__k")))],
+        ),
+        depth + 1,
+    );
+    let each = vec![
+        let_bind_ty(&at("__one"), false, ty_trial_issues(value_ty.clone()), value),
+        BlockItem::Expr(match_expr(
+            name(&at("__one")),
+            vec![
+                match_arm_block(
+                    "Pass",
+                    vec![Some(at("__v"))],
+                    vec![BlockItem::Expr(method_call(
+                        name(&at("__out")),
+                        "set",
+                        vec![Arg::Pos(name(&at("__k"))), Arg::Pos(name(&at("__v")))],
+                    ))],
+                    None,
+                ),
+                match_arm_block(
+                    "Fail",
+                    vec![Some(at("__found"))],
+                    vec![append_all(&at("__bad"), &at("__found"))],
+                    None,
+                ),
+            ],
+        )),
+    ];
+    let entries = block(
+        vec![
+            let_bind_ty(&at("__out"), true, ty.clone(), call("Map", vec![])),
+            let_bind_ty(&at("__bad"), true, ty_array(json_ty("Issue")), empty_array()),
+            for_each(&at("__k"), Some(&at("__x")), name(&at("__entries")), each),
+        ],
+        if_expr(
+            bin(BinaryOp::Gt, field(name(&at("__bad")), "count"), int_lit(0)),
+            Block {
+                items: vec![],
+                tail: Some(Box::new(typed(
+                    "__out",
+                    trial.clone(),
+                    call("Fail", vec![Arg::Pos(name(&at("__bad")))]),
+                ))),
+                span: dummy(),
+            },
+            Some(Block {
+                items: vec![],
+                tail: Some(Box::new(typed(
+                    "__out",
+                    trial.clone(),
+                    call("Pass", vec![Arg::Pos(name(&at("__out")))]),
+                ))),
+                span: dummy(),
+            }),
+        ),
+    );
+    block(
+        vec![
+            let_bind(&at("__path"), false, path),
+            let_bind_ty(
+                &at("__object"),
+                false,
+                ty_trial_issues(ty_map(ty_named("String"), json_ty("Json"))),
+                json_call("asObj", vec![Arg::Pos(raw), Arg::Pos(name(&at("__path")))]),
+            ),
+        ],
+        typed(
+            &at("__map"),
+            trial.clone(),
+            match_expr(
+                name(&at("__object")),
+                vec![
+                    match_arm_block(
+                        "Fail",
+                        vec![Some("__found".into())],
+                        vec![],
+                        Some(typed("__out", trial.clone(), call("Fail", vec![Arg::Pos(name("__found"))]))),
+                    ),
+                    match_arm_block("Pass", vec![Some(at("__entries"))], vec![], Some(entries)),
+                ],
+            ),
+        ),
+    )
+}
+
+/// `__fromJson_U` for a union of products: the `"type"` key names the
+/// member, whose own reader reads the rest of the object (D182 §5).
+fn gen_from_json_union(td: &TypeDef, members: &[UnionMember]) -> Function {
+    let trial = ty_trial_issues(ty_named(&td.name));
+    let mut items = vec![
+        let_bind(
+            "__obj",
+            false,
+            try_expr(json_call(
+                "asObj",
+                vec![Arg::Pos(name("v")), Arg::Pos(name("path"))],
+            )),
+        ),
+        let_bind(
+            "__p",
+            false,
+            json_call(
+                "joinPath",
+                vec![Arg::Pos(name("path")), Arg::Pos(str_lit("type"))],
+            ),
+        ),
+        let_bind_ty(
+            "__tag",
+            false,
+            ty_trial_issues(ty_named("String")),
+            match_expr(
+                method_call(name("__obj"), "get", vec![Arg::Pos(str_lit("type"))]),
+                vec![
+                    match_arm_block("Not", vec![], vec![], Some(missing(&ty_trial_issues(ty_named("String"))))),
+                    match_arm_block(
+                        "Has",
+                        vec![Some("__raw".into())],
+                        vec![],
+                        Some(json_call("asStr", vec![Arg::Pos(name("__raw")), Arg::Pos(name("__p"))])),
+                    ),
+                ],
+            ),
+        ),
+        let_bind("__name", false, try_expr(name("__tag"))),
+    ];
+    for member in members {
+        let read = if member.params.is_empty() {
+            typed(
+                "__out",
+                trial.clone(),
+                call(
+                    "Pass",
+                    vec![Arg::Pos(typed("__member", ty_named(&td.name), call(&member.name, vec![])))],
+                ),
+            )
+        } else {
+            match_expr(
+                method_call(
+                    name(&member.name),
+                    "fromJson",
+                    vec![Arg::Pos(name("v")), Arg::Pos(name("path"))],
+                ),
+                vec![
+                    match_arm_block(
+                        "Pass",
+                        vec![Some("__found".into())],
+                        vec![],
+                        Some(typed(
+                            "__out",
+                            trial.clone(),
+                            call(
+                                "Pass",
+                                vec![Arg::Pos(typed("__member", ty_named(&td.name), name("__found")))],
+                            ),
+                        )),
+                    ),
+                    match_arm_block(
+                        "Fail",
+                        vec![Some("__found".into())],
+                        vec![],
+                        Some(typed("__out", trial.clone(), call("Fail", vec![Arg::Pos(name("__found"))]))),
+                    ),
+                ],
+            )
+        };
+        items.push(BlockItem::Expr(if_expr(
+            bin(BinaryOp::Eq, name("__name"), str_lit(&member.name)),
+            block_stmts(vec![BlockItem::Expr(return_expr(read))]),
+            None,
+        )));
+    }
+    let expected = members
+        .iter()
+        .map(|member| format!("\"{}\"", member.name))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    Function {
+        exported: false,
+        name: format!("__fromJson_{}", td.name),
+        name_span: dummy(),
+        params: vec![
+            param("v", json_ty("Json")),
+            param_default("path", ty_named("String"), str_lit("")),
+        ],
+        return_type: Some(trial),
+        body: Block {
+            items,
+            tail: Some(Box::new(fail_with(json_call(
+                "issueMismatch",
+                vec![
+                    Arg::Pos(name("__p")),
+                    Arg::Pos(str_lit(&expected)),
+                    Arg::Pos(name("__name")),
+                ],
+            )))),
+            span: dummy(),
+        },
+    }
+}
+
 /// `Trial<T, Issue>` (from a `from` or a field check) as
 /// `Trial<T, Array<Issue>>`.
 fn single_issue(value: Expr, trial: &TypeExpr) -> Expr {
@@ -1340,7 +1638,8 @@ fn shape_base(shape: &Shape) -> &'static str {
         Shape::Float => "Float64",
         Shape::Array(_) => "Array",
         Shape::May(_) => "optional",
-        Shape::Product(_) => "object",
+        Shape::Map(_) | Shape::Product(_) | Shape::Union(_) => "object",
+        Shape::Json => "Json",
         Shape::Refined { base, .. } => match base.as_str() {
             "String" => "String",
             "Float64" => "Float64",
