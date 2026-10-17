@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-17 — C interop
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D190 | Every `extern fn` gets its own C prototype | cgen declares each extern under a private name bound to its symbol with an asm label (`int32_t thoxa_c_uname_<hash>(Thoxa_SystemName*) __asm__("uname");`), typed as the call passes its arguments: `const char *` for `String`, `void *` for `Bytes`, `T *` for `Address<T>`, the scalar types as they are. Calls use the private name. The name carries a hash of the C signature, so one symbol declared twice with different types (`open` with and without a mode) gets two prototypes. The system headers stay included but are no longer what declares an extern. | **Shipped.** Gate: `extern_prototypes` (`uname` with a typed struct pointer, `puts` and `fflush` from `stdio.h`, which the generated C does not include); every existing extern program and the libtcc session steps compile through the same prototypes. Before, an extern was called by its bare symbol and relied on a fixed header set to declare it, so `puts` or `uname` failed as implicit declarations under GCC 14, and an `Address<T>` argument failed against a header's own struct pointer type (`struct utsname *`). Chosen over dropping the headers and declaring the real names (GCC and Clang warn on redeclared builtins such as `memcpy`, and a header still included anywhere would conflict). Limit: a variadic C function is called through a fixed prototype, so a `Float64` in its variadic part is not guaranteed to arrive (x86-64 passes such a callee a vector-register count the fixed prototype does not set); integers, pointers, `String`, and `Bytes` are fine. |
+
 ## 2026-10-17 — thoxa.dev and the manual
 
 | ID | Decision | Choice | Notes |

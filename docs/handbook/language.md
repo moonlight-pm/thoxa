@@ -1309,12 +1309,16 @@ extern fn sysWrite(fd!: Int32, data!: Bytes, count!: UInt64) -> Int64 from "c" "
 Defaults on `extern` parameters are expanded at the call site before the C
 call. `extern` functions cannot be used as values or started with `-->`.
 
-The generated C gets its declarations of C functions from a fixed set of
-headers: `stdlib.h`, `string.h`, `unistd.h`, `fcntl.h`, `time.h`,
-`sys/socket.h`, `netinet/in.h`, `termios.h`, `sys/ioctl.h`, and the runtime's
-`thoxa_rt.h`. An `extern fn` for a function none of them declares fails in the
-C compiler (an implicit declaration). `stdio.h` is not in the set, so `puts`
-and `printf` cannot be called this way today.
+The compiler writes each extern's C prototype from its Thoxa signature, under
+a private name bound to the C symbol, so any function in the C library, the
+runtime, or another linked library can be called whether or not a system
+header declares it, and a header's own declaration never conflicts with it.
+
+A variadic C function (`printf`, `open`, `ioctl`) is called through a fixed
+prototype made from the extern's parameters. Integer, pointer, `String`, and
+`Bytes` arguments arrive correctly. A `Float64` in the variadic part is not
+guaranteed to: the x86-64 calling convention passes a variadic callee a count
+of vector registers, which a fixed prototype does not set.
 
 ### C-layout types
 
@@ -1340,10 +1344,25 @@ memset(regs, 0, 16)
 ```
 
 A `mut` local of a C-layout type passed where `Address<T>` is expected passes
-its address, to C or to a Thoxa function. The pointer has the Thoxa type's own
-C struct type, so a C parameter declared with a different struct type
-(`struct utsname *`) rejects it; pass it where C takes `void *` or a variadic
-argument (`memset`, `ioctl`). An `Address<T>` parameter passes on
+its address, to C or to a Thoxa function. The C function receives a pointer to
+the struct, so the Thoxa type's fields must match the C struct's layout:
+
+```thx
+## struct utsname on Linux: six 65-byte fields.
+type SystemName {
+    mut sysname: Array<Byte, 65>
+    mut nodename: Array<Byte, 65>
+    mut release: Array<Byte, 65>
+    mut version: Array<Byte, 65>
+    mut machine: Array<Byte, 65>
+    mut domainname: Array<Byte, 65>
+}
+
+extern fn uname(name!: Address<SystemName>) -> Int32 from "c"
+
+mut name = SystemName()
+uname(name)                     ## name.sysname now holds "Linux" and a NUL
+``` An `Address<T>` parameter passes on
 unchanged. A value of a type with `drop` passes its box pointer. C-layout types
 have no `==`, cannot be map keys, and have no JSON encoding.
 

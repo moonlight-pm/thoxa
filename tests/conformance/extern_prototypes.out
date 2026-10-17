@@ -1,0 +1,4 @@
+uname returned 0
+kernel Linux
+puts is in stdio.h, which the generated C does not include
+done

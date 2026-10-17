@@ -148,7 +148,7 @@ fn sampleSection(found!: Array<Sample>) -> Node {
             Each sample is a complete program from
             <a href={"{repository}/tree/master/workloads/landing/samples"}>workloads/landing/samples</a>.
             <code>cargo make test</code> runs each one and compares its output with what is
-            shown here; the server and the terminal program are compiled but not run.
+            shown here; the server, which never exits, is compiled but not run.
         </p>
         <nav class="sample-index" aria-label="Samples">
             {for sample in found {

@@ -107,6 +107,7 @@ pub fn emit_program_with(
     // Topological typedef order so nested fallible monomorphs see payload types
     // first (Pass__May requires May, Trial requires Pass, …).
     emit_typedefs_topo(&mut out, &program.types);
+    emit_extern_protos(&mut out, program);
 
     // Per-User-type field RC helpers for Array<User> (D65).
     // Emit helpers for any type referenced by *emitted* bodies so each TU is self-contained
@@ -739,6 +740,69 @@ fn c_val_ty(ty: &Ty, types: &[TypeLayout]) -> String {
         format!("{}*", c_ty(ty))
     } else {
         c_ty(ty)
+    }
+}
+
+/// `extern fn` prototypes (D190). Each C function is declared under a
+/// private name bound to its real symbol with an asm label, typed exactly as
+/// the call site passes its arguments: `const char *` for a `String`,
+/// `void *` for `Bytes`, `T *` for `Address<T>`. A header may declare the same
+/// function with other types (`const`, its own struct) without a conflict,
+/// and a function no header declares links the same way.
+fn emit_extern_protos(out: &mut String, program: &Program) {
+    let mut seen = HashSet::new();
+    for decl in &program.externs {
+        let params: Vec<Ty> = decl.params.iter().map(|(_, ty)| ty.clone()).collect();
+        let alias = extern_alias(&decl.c_symbol, &params, &decl.ret, &program.types);
+        if !seen.insert(alias.clone()) {
+            continue;
+        }
+        let args = if params.is_empty() {
+            "void".to_string()
+        } else {
+            params
+                .iter()
+                .map(|ty| extern_c_ty(ty, &program.types))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let _ = writeln!(
+            out,
+            "{} {alias}({args}) __asm__(\"{}\");",
+            extern_c_ty(&decl.ret, &program.types),
+            decl.c_symbol
+        );
+    }
+    if !seen.is_empty() {
+        out.push('\n');
+    }
+}
+
+/// The private C name of an extern: its symbol plus a hash of its C
+/// signature, so two declarations of one symbol with different types (`open`
+/// with and without a mode) get two prototypes.
+fn extern_alias(c_symbol: &str, params: &[Ty], ret: &Ty, types: &[TypeLayout]) -> String {
+    let mut signature = extern_c_ty(ret, types);
+    for ty in params {
+        signature.push(',');
+        signature.push_str(&extern_c_ty(ty, types));
+    }
+    let mut hash: u32 = 0x811c_9dc5;
+    for byte in signature.bytes() {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    format!("thoxa_c_{c_symbol}_{hash:08x}")
+}
+
+/// The C type an extern parameter or return has at the call: what the call
+/// site passes (`thoxa_string_cstr`, `thoxa_bytes_data`) or receives
+/// (`thoxa_string_from_cstr`).
+fn extern_c_ty(ty: &Ty, types: &[TypeLayout]) -> String {
+    match ty {
+        Ty::String => "const char *".into(),
+        Ty::Bytes => "void *".into(),
+        _ => c_val_ty(ty, types),
     }
 }
 
@@ -1694,7 +1758,7 @@ fn emit_rvalue(
                 if matches!(ret_ty, Ty::String) {
                     out.push_str("thoxa_string_from_cstr(");
                 }
-                let _ = write!(out, "{c_symbol}(");
+                let _ = write!(out, "{}(", extern_alias(c_symbol, arg_tys, ret_ty, types));
                 for (i, a) in args.iter().enumerate() {
                     if i > 0 {
                         out.push_str(", ");

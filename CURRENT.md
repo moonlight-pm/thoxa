@@ -14,6 +14,9 @@ short-circuit (D183), array literals take the expected element type (D184), a
 refined value's heap base is owned when read (D185, a use-after-free), `let`
 binds a Void value (D186), `Float64` text in full between 1e-7 and 1e21
 (D187), a session line that starts a statement is never a command (D188).
+Then **D190**: every `extern fn` gets its own C prototype (asm-labelled
+private name), so any linked C function can be called and `Address<T>`
+fits a C struct pointer parameter.
 2026-10-16: **Language pass (D173–D181):** `main`'s return is
 the exit status, 0–255 (D173); unannotated methods infer their return type,
 and `x?` then `Pass(value)` infers `Trial<T, E>` (D174); structural `==` on
@@ -84,15 +87,12 @@ generic types, top-level `Array` reads, custom decoding) stay parked.
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
 D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
-`Float64` rounds unchecked. Found 2026-10-17: `extern fn` only reaches C
-functions declared by the fixed header set cgen includes (`puts`, `uname`
-fail as implicit declarations), and `Address<T>` only fits `void *` /
-variadic C parameters; in `where`, `lo..hi` includes `hi` (unlike a `for`
+`Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
 range) and the message prints `lo..hi` for `lo..=hi`; indexing a `Map`
 through a field (`row.cells["name"]`) is an error (`.get` works); a method
 cannot call a sibling method by bare name; `T.from` without `std/json` in the
 program reports "cannot be read" instead of the missing import; a session
-command inside a block is not recognized (use `shell.run`).
+command inside a block is not recognized (use `shell.run`); `thoxa -c` with an `import` line runs nothing.
 
 Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);
 release REPL ~**8 ms**/line. **D155** resource `drop` shipped. D153 simple-RC

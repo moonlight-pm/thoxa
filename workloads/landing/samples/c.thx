@@ -1,25 +1,22 @@
 ## Calling C
-## `extern fn` declares a C function, here from the headers the generated C
-## includes. A type with body fields has C layout, and `Address<T>` passes it
-## by pointer. This program asks the terminal for its size with `ioctl(2)`
-## and writes the answer with `write(2)`.
+## `extern fn` declares a C function and the compiler writes its prototype,
+## so anything in libc (or another linked library) can be called. A type
+## with body fields has C layout, and `Address<T>` passes it by pointer. This
+## program asks the kernel its name with `uname(2)` and writes the answer
+## with `write(2)`.
 
-## struct winsize: four unsigned shorts (rows, columns, then pixels), read
-## here as two 32-bit words.
-type WindowSize {
-    mut cells: UInt32
-    mut pixels: UInt32
+## struct utsname on Linux: six 65-byte fields.
+type SystemName {
+    mut sysname: Array<Byte, 65>
+    mut nodename: Array<Byte, 65>
+    mut release: Array<Byte, 65>
+    mut version: Array<Byte, 65>
+    mut machine: Array<Byte, 65>
+    mut domainname: Array<Byte, 65>
 }
 
-extern fn isatty(fd!: Int32) -> Int32 from "c"
-extern fn ioctl(
-    fd!: Int32,
-    request!: UInt64,
-    size!: Address<WindowSize>
-) -> Int32 from "c"
+extern fn uname(name!: Address<SystemName>) -> Int32 from "c"
 extern fn write(fd!: Int32, data!: Bytes, count!: UInt64) -> Int64 from "c"
-
-let windowSizeRequest = 0x5413
 
 fn print(text!: String) {
     let data = Bytes.fromString("{text}\n")
@@ -27,11 +24,17 @@ fn print(text!: String) {
 }
 
 fn main() -> Int64 {
-    mut size = WindowSize()
-    if isatty(1) == 0 or ioctl(1, windowSizeRequest, size) != 0 {
-        print("standard output is not a terminal")
+    mut name = SystemName()
+    if uname(name) != 0 {
+        print("uname failed")
         return 1
     }
-    print("{size.cells >> 16} columns, {size.cells & 0xFFFF} rows")
+    mut kernel = Bytes(0)
+    mut index = 0
+    while index < 65 and name.sysname[index] != 0 {
+        kernel = kernel.insertAt(kernel.count, name.sysname[index])
+        index = index + 1
+    }
+    print("kernel: {kernel.toString()}")
     0
 }

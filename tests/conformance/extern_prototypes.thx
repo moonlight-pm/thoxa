@@ -1,0 +1,40 @@
+## `extern fn` reaches any C function, whether or not a header the generated
+## C includes declares it, and an `Address<T>` argument fits a parameter of
+## the C struct's own pointer type (D190).
+import logging, { info } from "std/logging"
+
+## struct utsname on Linux: six 65-byte fields.
+type SystemName {
+    mut sysname: Array<Byte, 65>
+    mut nodename: Array<Byte, 65>
+    mut release: Array<Byte, 65>
+    mut version: Array<Byte, 65>
+    mut machine: Array<Byte, 65>
+    mut domainname: Array<Byte, 65>
+}
+
+extern fn uname(name!: Address<SystemName>) -> Int32 from "c"
+extern fn puts(text!: String) -> Int32 from "c"
+extern fn flushAll(stream!: UInt64) -> Int32 from "c" "fflush"
+
+fn kernel(name!: SystemName) -> String {
+    mut text = Bytes(0)
+    mut index = 0
+    while index < 65 and name.sysname[index] != 0 {
+        text = text.insertAt(text.count, name.sysname[index])
+        index = index + 1
+    }
+    text.toString()
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut name = SystemName()
+    info("uname returned {uname(name)}")
+    info("kernel {kernel(name)}")
+    puts("puts is in stdio.h, which the generated C does not include")
+    flushAll(0)
+    info("done")
+    0
+}
