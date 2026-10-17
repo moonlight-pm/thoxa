@@ -1954,6 +1954,10 @@ impl Parser {
         if self.at_map_key_token(1) && self.peek_kind_is(2, TokenKind::Colon) {
             return true;
         }
+        // `{ ...ticket, ok: true }` (D182 §4); no block starts with `...`.
+        if self.peek_kind_is(1, TokenKind::DotDotDot) {
+            return true;
+        }
         self.call_key_end(1)
             .is_some_and(|after| self.peek_kind_is(after, TokenKind::Colon))
     }
@@ -2003,10 +2007,15 @@ impl Parser {
         let mut entries = Vec::new();
         if !self.at(TokenKind::RBrace) {
             loop {
-                let key = self.parse_map_key()?;
-                self.expect_kind(&TokenKind::Colon)?;
-                let val = self.parse_expr()?;
-                entries.push((key, val));
+                if self.at(TokenKind::DotDotDot) {
+                    self.bump();
+                    entries.push(MapEntry::Spread(self.parse_expr()?));
+                } else {
+                    let key = self.parse_map_key()?;
+                    self.expect_kind(&TokenKind::Colon)?;
+                    let val = self.parse_expr()?;
+                    entries.push(MapEntry::Pair(key, val));
+                }
                 if self.at(TokenKind::Comma) {
                     self.bump();
                     if self.at(TokenKind::RBrace) {

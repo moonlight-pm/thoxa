@@ -1,0 +1,8 @@
+## D182 §4: `...` spreads a product's fields or a map's entries.
+import { Json, encode } from "std/json"
+
+fn main() -> Int64 {
+    let label = "mocha"
+    let body: Json = { ok: true, ...label }
+    encode(body).count
+}

@@ -2,7 +2,7 @@
 //! R8: multi-file modules, import/export, module-level let/mut.
 
 use crate::ast::{
-    self, Arg, AssignTarget, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item,
+    self, Arg, AssignTarget, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item, MapEntry,
     MatchArm, Method, Pattern, TypeArg, TypeDef, TypeExpr, TypeLit, TypeMark, UnaryOp,
 };
 use crate::error::{Error, Result};
@@ -4105,9 +4105,8 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut CallNames) {
             }
         }
         ExprKind::MapLit(entries) => {
-            for (k, v) in entries {
-                collect_local_fn_calls_expr(k, out);
-                collect_local_fn_calls_expr(v, out);
+            for e in entries.iter().flat_map(|entry| entry.exprs()) {
+                collect_local_fn_calls_expr(e, out);
             }
         }
         ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
@@ -5328,9 +5327,8 @@ fn collect_expr_type_apps(expr: &Expr, out: &mut Vec<(TypeExpr, Span)>) {
             }
         }
         ExprKind::MapLit(entries) => {
-            for (k, v) in entries {
-                collect_expr_type_apps(k, out);
-                collect_expr_type_apps(v, out);
+            for e in entries.iter().flat_map(|entry| entry.exprs()) {
+                collect_expr_type_apps(e, out);
             }
         }
         ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
@@ -6828,7 +6826,10 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
         ExprKind::MapLit(entries) => ExprKind::MapLit(
             entries
                 .iter()
-                .map(|(k, v)| (subst_expr(k, subst), subst_expr(v, subst)))
+                .map(|entry| match entry {
+                    MapEntry::Pair(k, v) => MapEntry::Pair(subst_expr(k, subst), subst_expr(v, subst)),
+                    MapEntry::Spread(v) => MapEntry::Spread(subst_expr(v, subst)),
+                })
                 .collect(),
         ),
         ExprKind::If {
@@ -7698,6 +7699,10 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             return lower_empty_array_typed(ctx, elem.as_ref(), expr.span);
         }
     }
+    // `{ ok: true }` / `[1, 2]` where a Json is expected (D182 §4).
+    if let Some(json) = expect.filter(|_| codec::is_json_literal(ctx, expr, expect)) {
+        return codec::lower_json_literal(ctx, expr, json);
+    }
     // Fixed Array<T,N> from array literal when expected type is known (let/assign).
     if let Some(Ty::FixedArray { elem, len }) = expect {
         if let ExprKind::ArrayLit(elems) = &expr.kind {
@@ -8196,7 +8201,8 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
         ExprKind::ArrayLit(elems) => elems.iter().any(|e| expr_has_break(e, depth)),
         ExprKind::MapLit(entries) => entries
             .iter()
-            .any(|(k, v)| expr_has_break(k, depth) || expr_has_break(v, depth)),
+            .flat_map(|entry| entry.exprs())
+            .any(|e| expr_has_break(e, depth)),
         ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
             parts.iter().any(|p| match p {
                 InterpPart::Expr(e) => expr_has_break(e, depth),
@@ -8651,18 +8657,30 @@ fn lower_map_new(
     Ok((p, ty))
 }
 
-fn lower_map_lit(ctx: &mut LowerCtx, entries: &[(Expr, Expr)], span: Span) -> Result<(Place, Ty)> {
+fn lower_map_lit(ctx: &mut LowerCtx, entries: &[MapEntry], span: Span) -> Result<(Place, Ty)> {
     if entries.is_empty() {
         return Err(Error::at(
             "empty `{}` is a block; use `Map()` for an empty map",
             span,
         ));
     }
+    let mut pairs_in: Vec<(&Expr, &Expr)> = Vec::new();
+    for entry in entries {
+        match entry {
+            MapEntry::Pair(k, v) => pairs_in.push((k, v)),
+            MapEntry::Spread(v) => {
+                return Err(Error::at(
+                    "`...` spreads entries into a Json literal; a Map literal lists its entries",
+                    v.span,
+                ))
+            }
+        }
+    }
     let mut key_ty: Option<Ty> = None;
     let mut val_ty: Option<Ty> = None;
     let mut seen_keys: Vec<(Ty, String)> = Vec::new();
     let mut pairs: Vec<(Place, Place)> = Vec::new();
-    for (k, v) in entries {
+    for (k, v) in pairs_in {
         let (kp, kt) = lower_expr(ctx, k)?;
         if !is_map_key_ty(&kt) {
             return Err(Error::at(
@@ -12399,9 +12417,8 @@ fn materialize_expr_typespace(
             }
         }
         ExprKind::MapLit(entries) => {
-            for (k, v) in entries {
-                materialize_expr_typespace(k, types, layouts, name_map, def_mod)?;
-                materialize_expr_typespace(v, types, layouts, name_map, def_mod)?;
+            for e in entries.iter().flat_map(|entry| entry.exprs()) {
+                materialize_expr_typespace(e, types, layouts, name_map, def_mod)?;
             }
         }
         ExprKind::Block(b) => {

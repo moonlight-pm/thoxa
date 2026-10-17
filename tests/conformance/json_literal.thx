@@ -1,0 +1,52 @@
+## Map and array literals where a Json is expected (D182 §4).
+import { Json, JInt, decode, encode } from "std/json"
+import { Has, Not, May, Pass, Fail } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Ticket(id: Int64, name: String, note: May<String>)
+type Circle(radius: Int64)
+type Square(side: Int64)
+type Shape = Circle | Square
+
+fn reply(body!: Json) -> String {
+    encode(body)
+}
+
+fn ticketOk(ticket!: Ticket) -> Json {
+    { ok: true, ...ticket }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## Plain values, a nested literal, a mixed array, an empty object.
+    info(reply({ name: "ada", age: 36, admin: false, ratio: 0.5 }))
+    info(reply({ user: { name: "ada", tags: ["a", "b"] }, scores: [1, 2], meta: {} }))
+    info(reply([1, "two", 3.5, true, [], {}]))
+    let empty: Json = {}
+    info(encode(empty))
+    info(reply({ "content-type": "application/json", "x-count": 2 }))
+
+    ## Typed values convert with toJson.
+    let ticket = Ticket(id: 7, name: "mocha", note: Not())
+    let circle: Shape = Circle(radius: 2)
+    let counts: Map<String, Int64> = { espresso: 3, mocha: 1 }
+    let maybe: May<Int64> = Has(5)
+    let none: May<Int64> = Not()
+    let label = "flat white"
+    match decode("[1,{{\"a\":null}}]") {
+        Pass(tree) {
+            info(reply({ ticket: ticket, tickets: [ticket], shape: circle, counts: counts, maybe: maybe, none: none, label: label, tree: tree, raw: JInt(9) }))
+        }
+        Fail(error) => info("ERR:{error}")
+    }
+
+    ## Spreads: entries in order, a later key replaces an earlier one.
+    info(encode(ticketOk(ticket)))
+    info(reply({ ...ticket, name: "override" }))
+    info(reply({ name: "first", ...ticket }))
+    info(reply({ ...counts, total: 4 }))
+    info(reply({ kind: "shape", ...circle }))
+    0
+}

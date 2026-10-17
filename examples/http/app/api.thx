@@ -5,7 +5,7 @@ import orders, { CreateOrder, Ticket } from "./orders"
 import live from "./live"
 import http, { Request, Response, ok } from "std/http"
 import { Pass, Fail } from "std/fallible"
-import { Json, JBool, JObj, encode, Issue, Rejected, issueRejected, errorObject, errorsObject } from "std/json"
+import { Json, encode, Issue, Rejected, issueRejected, errorObject, errorsObject } from "std/json"
 
 export fn health() -> Response {
     ok(Bytes.fromString("ok\n"), "text/plain; charset=utf-8")
@@ -52,16 +52,7 @@ fn jsonStoreFail(error!: String) -> Response {
 }
 
 fn ticketOk(ticket!: Ticket) -> Json {
-    let raw: Json = ticket.toJson()
-    match raw {
-        JObj(fields) {
-            mut object = fields
-            object.set("ok", JBool(true))
-            let json: Json = JObj(object)
-            json
-        }
-        else => raw
-    }
+    { ...ticket, ok: true }
 }
 
 fn jsonOk(value!: Json) -> Response {

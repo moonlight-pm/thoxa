@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-16
 **Status:** target (freeze)
-**Implementation:** §1, §2, §3, §6 shipped
+**Implementation:** §1–§4, §6 shipped
 **Decision:** D182 (amends D149: reads report every issue)
 **Gates:** per section below
 **Gaps:** see Non-goals

@@ -1,0 +1,11 @@
+{"name":"ada","age":36,"admin":false,"ratio":0.5}
+{"user":{"name":"ada","tags":["a","b"]},"scores":[1,2],"meta":{}}
+[1,"two",3.5,true,[],{}]
+{}
+{"content-type":"application/json","x-count":2}
+{"ticket":{"id":7,"name":"mocha"},"tickets":[{"id":7,"name":"mocha"}],"shape":{"type":"Circle","radius":2},"counts":{"espresso":3,"mocha":1},"maybe":5,"none":null,"label":"flat white","tree":[1,{"a":null}],"raw":9}
+{"ok":true,"id":7,"name":"mocha"}
+{"id":7,"name":"override"}
+{"name":"mocha","id":7}
+{"espresso":3,"mocha":1,"total":4}
+{"kind":"shape","type":"Circle","radius":2}

@@ -65,8 +65,9 @@ language slice at a time, each with conformance.
 Shipped §1 (`toJson` / `encode` on every encodable type, unions tagged by
 `"type"`), §2 (`T.read` / `T.fromJson` report every issue as
 `Trial<T, Array<Issue>>`), §3 (`T.readForm` reads forms and query strings
-into the same types), and §6 (a type's own `toJson` wins). **Next: §4**
-`Json` literals; then §5 reads of unions / `Map` / `Json` fields / defaults.
+into the same types), §4 (`{…}` / `[…]` literals where a `Json` is expected,
+`...` spreads), and §6 (a type's own `toJson` wins). **Next: §5**, reads of
+unions / `Map` / `Json` fields / constructor defaults.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void

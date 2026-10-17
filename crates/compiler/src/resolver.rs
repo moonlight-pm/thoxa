@@ -992,9 +992,8 @@ impl<'a> Resolver<'a> {
                 }
             }
             ExprKind::MapLit(entries) => {
-                for (k, v) in entries {
-                    self.walk_expr(k, scope);
-                    self.walk_expr(v, scope);
+                for e in entries.iter().flat_map(|entry| entry.exprs()) {
+                    self.walk_expr(e, scope);
                 }
             }
             ExprKind::If {

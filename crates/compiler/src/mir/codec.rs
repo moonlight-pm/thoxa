@@ -1,14 +1,14 @@
 //! D182 §1: `toJson` / `encode` on values whose types have no generated
 //! encoder of their own: scalars, `Array`, `Map<String, T>`, `May`, and `Json`.
-//! Also why a type has no form reader (§3).
+//! Also why a type has no form reader (§3), and `Json` literals (§4).
 //!
 //! The conversion is built as Thoxa and lowered with `std/json`'s names in
 //! scope, so the caller need not import them. Elements and payloads convert by
 //! calling `toJson` on them: a named type inside uses its generated encoder,
 //! and nested structure comes back here.
 
-use super::{display_ty, lower_expr_expect, type_source_name, LowerCtx, Place, Ty};
-use crate::ast::{Arg, BlockItem, Expr};
+use super::{display_ty, lower_expr, lower_expr_expect, type_source_name, LowerCtx, Place, Ty};
+use crate::ast::{Arg, BlockItem, Expr, ExprKind, MapEntry};
 use crate::ast_build::*;
 use crate::error::{Error, Result};
 use crate::span::Span;
@@ -119,14 +119,16 @@ fn is_may(ctx: &LowerCtx, name: &str) -> bool {
     arms == ["Has", "Not"]
 }
 
+/// `{ let __json: Json = value; __json }`
+fn as_json(value: Expr) -> Expr {
+    block(
+        vec![let_bind_ty("__json", false, ty_named("Json"), value)],
+        name("__json"),
+    )
+}
+
 /// The conversion of the value bound to `input`, ending in a `Json`.
 fn encode_expr(input: &str, encoding: &Encoding) -> Expr {
-    let as_json = |value: Expr| {
-        block(
-            vec![let_bind_ty("__json", false, ty_named("Json"), value)],
-            name("__json"),
-        )
-    };
     let element = |value: &str| method_call(name(value), "toJson", vec![]);
     match encoding {
         Encoding::Scalar(ctor) => as_json(call(ctor, vec![Arg::Pos(name(input))])),
@@ -282,4 +284,182 @@ fn may_payload(ctx: &LowerCtx, name: &str) -> Option<Ty> {
         return None;
     };
     ctx.types.get(member)?.fields.first().map(|f| f.ty.clone())
+}
+
+/// D182 §4: a map or array literal, or an empty `{}`, where a `Json` is
+/// expected.
+pub(super) fn is_json_literal(ctx: &LowerCtx, expr: &Expr, expect: Option<&Ty>) -> bool {
+    expect.is_some_and(|ty| json_ty(ctx).as_ref() == Some(ty)) && literal_kind(expr)
+}
+
+fn literal_kind(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::MapLit(_) | ExprKind::ArrayLit(_) => true,
+        ExprKind::Block(body) => body.items.is_empty() && body.tail.is_none(),
+        _ => false,
+    }
+}
+
+/// Each value is lowered in order with the caller's names and becomes `Json`
+/// (a nested literal directly, anything else by `toJson`); the object or array
+/// is then built from those values.
+pub(super) fn lower_json_literal(ctx: &mut LowerCtx, expr: &Expr, json: &Ty) -> Result<(Place, Ty)> {
+    ctx.push_scope();
+    let built = build_json_literal(ctx, expr, json);
+    ctx.pop_scope();
+    built
+}
+
+fn build_json_literal(ctx: &mut LowerCtx, expr: &Expr, json: &Ty) -> Result<(Place, Ty)> {
+    let built = match &expr.kind {
+        ExprKind::ArrayLit(elems) => {
+            let mut items = Vec::new();
+            for elem in elems {
+                items.push(name(&bind_json_value(ctx, elem, json)?));
+            }
+            block(
+                vec![let_bind_ty(
+                    "__items",
+                    false,
+                    ty_array(ty_named("Json")),
+                    Expr {
+                        kind: ExprKind::ArrayLit(items),
+                        span: expr.span,
+                    },
+                )],
+                as_json(call("JArr", vec![Arg::Pos(name("__items"))])),
+            )
+        }
+        ExprKind::MapLit(entries) => {
+            let mut items = vec![let_bind_ty(
+                "__fields",
+                true,
+                ty_map(ty_named("String"), ty_named("Json")),
+                call("Map", vec![]),
+            )];
+            for entry in entries {
+                match entry {
+                    MapEntry::Pair(key, value) => {
+                        let key = bind_key(ctx, key)?;
+                        let value = bind_json_value(ctx, value, json)?;
+                        items.push(BlockItem::Expr(method_call(
+                            name("__fields"),
+                            "set",
+                            vec![Arg::Pos(name(&key)), Arg::Pos(name(&value))],
+                        )));
+                    }
+                    MapEntry::Spread(value) => {
+                        let spread = bind_spread(ctx, value)?;
+                        items.push(BlockItem::Expr(match_expr(
+                            name(&spread),
+                            vec![
+                                match_arm_block(
+                                    "JObj",
+                                    vec![Some("__spread".into())],
+                                    vec![for_each(
+                                        "__k",
+                                        Some("__x"),
+                                        name("__spread"),
+                                        vec![BlockItem::Expr(method_call(
+                                            name("__fields"),
+                                            "set",
+                                            vec![Arg::Pos(name("__k")), Arg::Pos(name("__x"))],
+                                        ))],
+                                    )],
+                                    None,
+                                ),
+                                else_arm(),
+                            ],
+                        )));
+                    }
+                }
+            }
+            block(items, as_json(call("JObj", vec![Arg::Pos(name("__fields"))])))
+        }
+        _ => as_json(call("JObj", vec![Arg::Pos(call("Map", vec![]))])),
+    };
+    ctx.with_def_mod_maps(JSON_MODULE, |ctx| lower_expr_expect(ctx, &built, Some(json)))
+}
+
+/// A value inside a `Json` literal, as `Json`, bound to a fresh name.
+fn bind_json_value(ctx: &mut LowerCtx, expr: &Expr, json: &Ty) -> Result<String> {
+    let (place, ty) = if literal_kind(expr) {
+        lower_json_literal(ctx, expr, json)?
+    } else {
+        lower_expr(ctx, expr)?
+    };
+    let place = if &ty == json {
+        place
+    } else {
+        to_json(ctx, place, &ty)?.0
+    };
+    Ok(bind_fresh(ctx, "__jsonValue", json, place))
+}
+
+/// An object key: a `String`.
+fn bind_key(ctx: &mut LowerCtx, key: &Expr) -> Result<String> {
+    let (place, ty) = lower_expr_expect(ctx, key, Some(&Ty::String))?;
+    if ty != Ty::String {
+        return Err(Error::at(
+            format!("a JSON object's keys are strings, not {}", display_ty(&ty)),
+            key.span,
+        ));
+    }
+    Ok(bind_fresh(ctx, "__jsonKey", &Ty::String, place))
+}
+
+/// `...value`: a product, a union of products, or a `Map<String, T>`, whose
+/// JSON is an object.
+fn bind_spread(ctx: &mut LowerCtx, value: &Expr) -> Result<String> {
+    let (place, ty) = lower_expr(ctx, value)?;
+    let object = match &ty {
+        Ty::Map { key, .. } => **key == Ty::String,
+        Ty::User(name) => {
+            !is_json_family(ctx, name)
+                && !is_may(ctx, name)
+                && ctx.types.get(name).is_some_and(|info| {
+                    info.refined.is_none()
+                        && info
+                            .sum
+                            .as_ref()
+                            .is_none_or(|sum| sum.variants.iter().all(|v| v.lit.is_none()))
+                })
+        }
+        _ => false,
+    };
+    if !object {
+        return Err(Error::at(
+            format!(
+                "`...` spreads the fields of a product or the entries of a Map<String, …>, not {}",
+                display_ty(&ty)
+            ),
+            value.span,
+        ));
+    }
+    let (place, json) = to_json(ctx, place, &ty)?;
+    Ok(bind_fresh(ctx, "__jsonSpread", &json, place))
+}
+
+/// `value.toJson()` for a value already lowered.
+fn to_json(ctx: &mut LowerCtx, value: Place, ty: &Ty) -> Result<(Place, Ty)> {
+    let input = bind_fresh(ctx, "__jsonIn", ty, value);
+    lower_expr(ctx, &method_call(name(&input), "toJson", vec![]))
+}
+
+fn bind_fresh(ctx: &mut LowerCtx, prefix: &str, ty: &Ty, place: Place) -> String {
+    let label = format!("{prefix}{}", ctx.temps);
+    ctx.bind_name(&label, ty.clone(), false, place);
+    label
+}
+
+fn else_arm() -> crate::ast::MatchArm {
+    crate::ast::MatchArm {
+        pattern: crate::ast::Pattern::Else { span: dummy() },
+        guard: None,
+        body: crate::ast::Block {
+            items: vec![],
+            tail: None,
+            span: dummy(),
+        },
+    }
 }

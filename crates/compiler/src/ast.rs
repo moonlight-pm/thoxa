@@ -374,7 +374,7 @@ pub enum ExprKind {
     /// `[e1, e2, …]` — dynamic Array literal.
     ArrayLit(Vec<Expr>),
     /// `{ k: v, … }` — Map literal (expression position; empty `{}` is still a block).
-    MapLit(Vec<(Expr, Expr)>),
+    MapLit(Vec<MapEntry>),
     If {
         cond: Box<Expr>,
         then_branch: Block,
@@ -440,6 +440,24 @@ pub enum Arg {
     },
     /// JSX `{...expr}` — HTML: `Array<Attr>`; component: same type as the ctor.
     Spread { value: Expr, span: Span },
+}
+
+/// One entry of a map literal: `key: value`, or `...value`, which spreads a
+/// product's or map's entries into a `Json` literal (D182 §4).
+#[derive(Debug, Clone)]
+pub enum MapEntry {
+    Pair(Expr, Expr),
+    Spread(Expr),
+}
+
+impl MapEntry {
+    /// The entry's expressions, key first.
+    pub fn exprs(&self) -> Vec<&Expr> {
+        match self {
+            MapEntry::Pair(key, value) => vec![key, value],
+            MapEntry::Spread(value) => vec![value],
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

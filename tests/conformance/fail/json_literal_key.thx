@@ -1,0 +1,7 @@
+## D182 §4: a JSON object's keys are strings.
+import { Json, encode } from "std/json"
+
+fn main() -> Int64 {
+    let body: Json = { 1: "one" }
+    encode(body).count
+}
