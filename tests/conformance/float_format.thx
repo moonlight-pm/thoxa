@@ -1,0 +1,14 @@
+## Float64 text is the shortest decimal that reads back as the same value.
+## Between 1e-7 and 1e21 it is written out in full, and an integral value
+## keeps `.0`; further from 1 it takes an exponent (D187).
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let values: Array<Float64> = [0, 1, 100, 1500, 0.15, 0.1 + 0.2, 123456.789, 0.001, 0.0000001, 0.00000001, 1e20, 1e21, 1.5e22, 0.0 - 42.5, 2.5e-10]
+    for value in values {
+        info("{value}")
+    }
+    0
+}

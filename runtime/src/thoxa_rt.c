@@ -383,11 +383,11 @@ ThoxaString *thoxa_string_from_f64(double v) {
         }
         return thoxa_string_from_cstr((bits >> 63) != 0 ? "-inf" : "inf");
     }
-    /* Shortest decimal that round-trips (so 0.15 prints as 0.15, not 0.1499…). */
-    int n = 0;
-    for (int prec = 1; prec <= 17; prec++) {
-        n = snprintf(buf, sizeof(buf), "%.*g", prec, v);
-        if (n < 0) {
+    /* Shortest decimal that round-trips (so 0.15 prints as 0.15, not 0.1499…):
+       the fewest significant digits, found in scientific form. */
+    int prec = 1;
+    for (; prec <= 17; prec++) {
+        if (snprintf(buf, sizeof(buf), "%.*e", prec - 1, v) < 0) {
             thoxa_panic("snprintf failed");
         }
         char *end = NULL;
@@ -396,19 +396,65 @@ ThoxaString *thoxa_string_from_f64(double v) {
             break;
         }
     }
-    int has_dot = 0;
-    for (int i = 0; i < n; i++) {
-        if (buf[i] == '.' || buf[i] == 'e' || buf[i] == 'E') {
-            has_dot = 1;
-            break;
+    if (prec > 17) {
+        prec = 17;
+    }
+    /* `buf` is `[-]d[.ddd]e±XX`. Collect the digits and the exponent. */
+    char digits[24];
+    int count = 0;
+    const char *at = buf;
+    int negative = *at == '-';
+    if (negative) {
+        at++;
+    }
+    while (*at && *at != 'e') {
+        if (*at != '.') {
+            digits[count++] = *at;
+        }
+        at++;
+    }
+    int exponent = *at == 'e' ? atoi(at + 1) : 0;
+    while (count > 1 && digits[count - 1] == '0') {
+        count--;
+    }
+    int n = 0;
+    if (exponent < -7 || exponent >= 21) {
+        /* Far from 1: exponent form, as `%g` writes it (`1e+21`, `1.5e-08`). */
+        n = snprintf(buf, sizeof(buf), "%.*g", count, v);
+        if (n < 0) {
+            thoxa_panic("snprintf failed");
+        }
+        return thoxa_string_new(buf, (size_t)n);
+    }
+    char out[64];
+    if (negative) {
+        out[n++] = '-';
+    }
+    if (exponent < 0) {
+        /* 0.000ddd */
+        out[n++] = '0';
+        out[n++] = '.';
+        for (int i = -1; i > exponent; i--) {
+            out[n++] = '0';
+        }
+        for (int i = 0; i < count; i++) {
+            out[n++] = digits[i];
+        }
+    } else {
+        /* ddd[000].ddd — an integral value keeps `.0`. */
+        for (int i = 0; i <= exponent; i++) {
+            out[n++] = i < count ? digits[i] : '0';
+        }
+        out[n++] = '.';
+        if (count > exponent + 1) {
+            for (int i = exponent + 1; i < count; i++) {
+                out[n++] = digits[i];
+            }
+        } else {
+            out[n++] = '0';
         }
     }
-    if (!has_dot && n + 2 < (int)sizeof(buf)) {
-        buf[n++] = '.';
-        buf[n++] = '0';
-        buf[n] = '\0';
-    }
-    return thoxa_string_new(buf, (size_t)n);
+    return thoxa_string_new(out, (size_t)n);
 }
 
 ThoxaString *thoxa_string_from_bool(bool v) {
