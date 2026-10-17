@@ -541,6 +541,9 @@ type Opt<T> = Box<T!> | Empty?
 let a: Opt<Int64> = Box(value: 7)
 ```
 
+A field of a generic type may be any integer type, `Float64`, `Bool`,
+`String`, `Bytes`, an `Array`, a `Map`, a user type, or `Void`.
+
 There are no generic functions, no constraints on type parameters, and no
 traits or interfaces. Methods of a generic type must annotate a non-`Void`
 return type.
@@ -579,11 +582,13 @@ left.
 | 7 | `<<` `>>` |
 | 8 | `+` `-` |
 | 9 | `*` `/` `%` |
-| 10 | unary `-` `not` `~` |
-| 11 | postfix `?`, `.field`, `.method(…)`, `[index]`, `(arguments)` |
+| 10 | `as` `as?` (see [Conversions](#conversions)) |
+| 11 | unary `-` `not` `~` |
+| 12 | postfix `?`, `.field`, `.method(…)`, `[index]`, `(arguments)` |
 
 Bitwise operators bind tighter than comparisons, so `flags & 4 == 4` is
-`(flags & 4) == 4`. Ranges (`a..b`, `a..=b`) are not expressions; they appear
+`(flags & 4) == 4`. A conversion binds tighter than arithmetic, so
+`a * b as Float64` is `a * (b as Float64)`. Ranges (`a..b`, `a..=b`) are not expressions; they appear
 only in `for` heads and `where` clauses.
 
 ### Operators
@@ -678,6 +683,73 @@ It is a compile error to compare values of different types, to use `<` or `>`
 on a product, union, array, or string, or to compare types where some field or
 member has no `==` (a `Map` or `Node` field). Types with `drop` and C-layout
 types have no `==`. There is no `==` on maps or function values.
+
+## Conversions
+
+`x as T` converts `x` to the type `T`. There is at most one conversion for
+each pair of types, and the result type says whether it can fail: `T` when it
+cannot, `Trial<T, Array<Issue>>` when it can. The type after `as` is a name
+with optional type arguments (`Order`, `Array<Order>`); a literal union or a
+function type needs a named alias.
+
+| From | To | Result |
+|------|----|--------|
+| a union member | its union | `T` |
+| a literal union | its base (`String`, `Int64`, `Bool`) | `T` |
+| a refined type | its base | `T` |
+| an integer type | a wider integer type, or `Float64` | `T` |
+| any type with a JSON encoding | `Json` | `T` (`toJson`) |
+| the base | a refined type | `Trial<T, Array<Issue>>` (the `where` check) |
+| `String` | a literal union | `Trial<T, Array<Issue>>` |
+| `Int64` | `Int32`, `UInt32`, `UInt64`, `Byte` | `Trial<T, Array<Issue>>` |
+| `Json` | any type with a reader | `Trial<T, Array<Issue>>` |
+
+A literal takes `T` as its expected type first, as it would in an annotated
+`let`: `3 as Quantity` is a `Quantity` (checked at compile time), `1 as
+Float64` a `Float64`, and `[] as Array<Int64>` an empty array of `Int64`.
+
+```thx
+type Quantity = Int64 where >= 1 & <= 12
+type Line(drink: String, quantity: Quantity = 1)
+
+let rows = [Line(drink: "mocha")]
+let body = rows as Json                       ## Json: cannot fail
+
+match requested as Quantity {                 ## Trial<Quantity, Array<Issue>>
+    Pass(quantity) => order(quantity)
+    Fail(issues) => reject(messages(issues))
+}
+
+let lines = json as Array<Line>               ## a top-level array reads too
+let small = 300 as Byte                       ## compile error: 300 does not fit
+let big = count as Byte                       ## Trial: "300 does not fit in Byte" at run time
+```
+
+A failed conversion's issues are those of a read: `expected integer <= 12,
+got 40`, `drink: expected string, got integer`, `0.quantity: …` inside an
+array. Checked conversions need `std/json` in the program, for `Issue`.
+
+**`x as? T`** is exactly `(x as T)?`: the converted value, or the `Fail`
+returned from the enclosing function, under the rules of
+[Propagating failure](#propagating-failure). It is written without a space,
+and on a conversion that cannot fail it is a compile error (write `as`).
+
+```thx
+fn total(json: Json) -> Trial<Int64, Array<Issue>> {
+    let lines = json as? Array<Line>
+    mut sum = 0
+    for line in lines {
+        sum = sum + line.quantity
+    }
+    Pass(sum)
+}
+```
+
+Not conversions, and compile errors that say so: text into a value
+(`text as Order`; text is parsed with `T.read` or `T.readForm`), a `Float64`
+into an integer type (no rounding rule is chosen), and keeping the low bits of
+an integer (`Byte(truncating: x)`). Implicit narrowing at an expected type
+still panics when the value does not fit; `as` is how to narrow without one.
 
 ## Control flow
 
@@ -1110,9 +1182,10 @@ match CreateOrder.read(body) {
 
 | Function | Result |
 |----------|--------|
+| `x as T` | Converts a base value, a string, or a `Json` value into `T` (see [Conversions](#conversions)): `Trial<T, Array<Issue>>` |
 | `T.from(x)` | Checks one base value (or string) against a refined or literal type: `Trial<T, Issue>` |
 | `T.read(text)` | Parses JSON text into `T`: `Trial<T, Array<Issue>>` |
-| `T.fromJson(json)` | The same from a `Json` tree |
+| `T.fromJson(json)` | The same from a `Json` tree (`json as T` also reads top-level arrays and maps) |
 | `T.readForm(text)` | Reads `application/x-www-form-urlencoded` text into a product: `Trial<T, Array<Issue>>` |
 | `t.encode()` | Compact JSON text |
 | `t.toJson()` | A `Json` tree |

@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 mod codec;
+mod convert;
 
 /// Synthetic union types inferred for unannotated `if` lub (D119).
 #[derive(Default)]
@@ -4088,7 +4089,9 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut CallNames) {
                 collect_local_fn_calls_expr(v, out);
             }
         }
-        ExprKind::Try(inner) => collect_local_fn_calls_expr(inner, out),
+        ExprKind::Try(inner) | ExprKind::Cast { expr: inner, .. } => {
+            collect_local_fn_calls_expr(inner, out)
+        }
         ExprKind::Block(b) => collect_local_fn_calls(b, out),
         ExprKind::Match { scrutinee, arms } => {
             collect_local_fn_calls_expr(scrutinee, out);
@@ -5524,9 +5527,15 @@ fn instantiate_product_mono(
         }
         let ty = resolve_ty(&te, types, name_map)?;
         // Allow User (File, nested May/Trial, …) and Void (Trial ok = Void).
+        // Narrower integers are plain scalars too (`Trial<Byte, …>` from a
+        // checked `as`, D191).
         let ok = matches!(
             ty,
             Ty::Int64
+                | Ty::Int32
+                | Ty::UInt32
+                | Ty::UInt64
+                | Ty::Byte
                 | Ty::Float64
                 | Ty::Bool
                 | Ty::String
@@ -5539,7 +5548,7 @@ fn instantiate_product_mono(
         if !ok {
             return Err(Error::at(
                 format!(
-                    "generic product field `{}` must be Int64, Float64, Bool, String, Bytes, Array, Map, User, or Void (got {ty:?})",
+                    "generic product field `{}` must be an integer type, Float64, Bool, String, Bytes, Array, Map, User, or Void (got {ty:?})",
                     p.name
                 ),
                 p.ty.span,
@@ -6872,6 +6881,15 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
         },
         ExprKind::Block(b) => ExprKind::Block(subst_block(b, subst)),
         ExprKind::Try(inner) => ExprKind::Try(Box::new(subst_expr(inner, subst))),
+        ExprKind::Cast {
+            expr: inner,
+            ty,
+            propagate,
+        } => ExprKind::Cast {
+            expr: Box::new(subst_expr(inner, subst)),
+            ty: subst_type_expr(ty, subst),
+            propagate: *propagate,
+        },
         ExprKind::Match { scrutinee, arms } => ExprKind::Match {
             scrutinee: Box::new(subst_expr(scrutinee, subst)),
             arms: arms
@@ -7912,6 +7930,11 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             Ok((place, ty))
         }
         ExprKind::Try(inner) => lower_try(ctx, inner, expr.span),
+        ExprKind::Cast {
+            expr: inner,
+            ty,
+            propagate,
+        } => convert::lower_cast(ctx, inner, ty, *propagate, expr.span),
         ExprKind::Match { scrutinee, arms } => lower_match(ctx, scrutinee, arms, expr.span),
     }
 }
@@ -8204,7 +8227,7 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
             .as_ref()
             .map(|e| expr_has_break(e, depth))
             .unwrap_or(false),
-        ExprKind::Try(e) => expr_has_break(e, depth),
+        ExprKind::Try(e) | ExprKind::Cast { expr: e, .. } => expr_has_break(e, depth),
         ExprKind::ArrayLit(elems) => elems.iter().any(|e| expr_has_break(e, depth)),
         ExprKind::MapLit(entries) => entries
             .iter()
@@ -12461,6 +12484,10 @@ fn materialize_expr_typespace(
             }
         }
         ExprKind::Try(inner) => {
+            materialize_expr_typespace(inner, types, layouts, name_map, def_mod)?;
+        }
+        ExprKind::Cast { expr: inner, ty, .. } => {
+            materialize_type_expr(ty, types, layouts, name_map, def_mod)?;
             materialize_expr_typespace(inner, types, layouts, name_map, def_mod)?;
         }
         ExprKind::ArrayLit(elems) => {

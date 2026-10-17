@@ -98,7 +98,7 @@ fn encoding_of(ctx: &LowerCtx, ty: &Ty, span: Span) -> Result<Option<Encoding>> 
     Ok(Some(encoding))
 }
 
-fn json_ty(ctx: &LowerCtx) -> Option<Ty> {
+pub(super) fn json_ty(ctx: &LowerCtx) -> Option<Ty> {
     let name = format!("{JSON_MODULE}_Json");
     ctx.types.contains_key(&name).then_some(Ty::User(name))
 }
@@ -441,12 +441,12 @@ fn bind_spread(ctx: &mut LowerCtx, value: &Expr) -> Result<String> {
 }
 
 /// `value.toJson()` for a value already lowered.
-fn to_json(ctx: &mut LowerCtx, value: Place, ty: &Ty) -> Result<(Place, Ty)> {
+pub(super) fn to_json(ctx: &mut LowerCtx, value: Place, ty: &Ty) -> Result<(Place, Ty)> {
     let input = bind_fresh(ctx, "__jsonIn", ty, value);
     lower_expr(ctx, &method_call(name(&input), "toJson", vec![]))
 }
 
-fn bind_fresh(ctx: &mut LowerCtx, prefix: &str, ty: &Ty, place: Place) -> String {
+pub(super) fn bind_fresh(ctx: &mut LowerCtx, prefix: &str, ty: &Ty, place: Place) -> String {
     let label = format!("{prefix}{}", ctx.temps);
     ctx.bind_name(&label, ty.clone(), false, place);
     label

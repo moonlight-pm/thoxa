@@ -1,0 +1,5 @@
+## No conversion is defined for this pair (D191 §1).
+fn main() -> Int64 {
+    let whole = 1.5 as Int64
+    0
+}

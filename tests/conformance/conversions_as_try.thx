@@ -1,0 +1,38 @@
+## `x as? T` is `(x as T)?` (D191 §2): the converted value, or the Fail
+## returned from the enclosing function.
+import { Pass, Fail, Trial } from "std/fallible"
+import { Json, Issue, messages } from "std/json"
+import logging, { info } from "std/logging"
+
+type Quantity = Int64 where >= 1 & <= 12
+type Line(drink: String, quantity: Quantity = 1)
+
+fn total(json: Json, extra: Int64) -> Trial<Int64, Array<Issue>> {
+    let lines = json as? Array<Line>
+    let added = extra as? Quantity
+    mut sum = added as Int64
+    for line in lines {
+        sum = sum + line.quantity
+    }
+    Pass(sum)
+}
+
+fn report(json: Json, extra: Int64) {
+    match total(json, extra) {
+        Pass(sum) => info("total {sum}")
+        Fail(issues) => info("rejected: {messages(issues)}")
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let lines: Json = [{ drink: "a" }, { drink: "b", quantity: 5 }]
+    report(lines, 2)
+    report(lines, 20)
+    let notList: Json = { drink: "a" }
+    report(notList, 2)
+    let badLine: Json = [{ drink: "a", quantity: 99 }]
+    report(badLine, 2)
+    0
+}

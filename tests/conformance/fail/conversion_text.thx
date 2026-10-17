@@ -1,0 +1,10 @@
+## Text is parsed, not converted (D191 §1).
+import { Json } from "std/json"
+
+type Line(drink: String)
+
+fn main() -> Int64 {
+    let body = "{{\"drink\": \"mocha\"}}"
+    let line = body as Line
+    0
+}

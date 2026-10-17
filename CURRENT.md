@@ -85,11 +85,11 @@ expected, with `...` spreads; reads of unions, `Map` / `Json` fields, and
 constructor defaults; a type's own `toJson` wins. Its non-goals (renaming,
 generic types, top-level `Array` reads, custom decoding) stay parked.
 
-**Next: conversions (D191)**, freeze
-[`docs/specs/2026-10-17-conversions.md`](docs/specs/2026-10-17-conversions.md),
-one slice per section: §1 `x as T` with the built-in conversion table, §2
-`x as? T`, §3 `from` clauses, §4 implicit encoding where a `Json` is expected,
-§5 typed body parameters in route clauses, §6 remove `T.from` / `T.fromJson`.
+**Now: conversions (D191)**, freeze
+[`docs/specs/2026-10-17-conversions.md`](docs/specs/2026-10-17-conversions.md).
+Shipped: §1 `x as T` with the built-in conversion table, §2 `x as? T`. Next:
+§3 `from` clauses, §4 implicit encoding where a `Json` is expected, §5 typed
+body parameters in route clauses, §6 remove `T.from` / `T.fromJson`.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void

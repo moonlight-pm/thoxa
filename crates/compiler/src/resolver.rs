@@ -1055,6 +1055,7 @@ impl<'a> Resolver<'a> {
             }
             ExprKind::Block(b) => self.walk_block(b, scope),
             ExprKind::Try(inner) => self.walk_expr(inner, scope),
+            ExprKind::Cast { expr: inner, .. } => self.walk_expr(inner, scope),
             ExprKind::Match { scrutinee, arms } => {
                 self.walk_expr(scrutinee, scope);
                 for arm in arms {

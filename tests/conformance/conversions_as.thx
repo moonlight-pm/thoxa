@@ -1,0 +1,85 @@
+## `x as T` (D191 §1): one conversion per pair of types. It gives `T` when the
+## conversion cannot fail and `Trial<T, Array<Issue>>` when it can.
+import { Pass, Fail, Trial } from "std/fallible"
+import { Json, Issue, messages } from "std/json"
+import logging, { info } from "std/logging"
+
+type Quantity = Int64 where >= 1 & <= 12
+type Size = "small" | "large"
+type Line(drink: String, size: Size, quantity: Quantity = 1)
+type Circle(radius: Float64)
+type Square(side: Float64)
+type Shape = Circle | Square
+
+fn describe(result: Trial<Line, Array<Issue>>) -> String {
+    match result {
+        Pass(line) => "ok {line.drink} {line.size} {line.quantity}"
+        Fail(issues) => "rejected: {messages(issues)}"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## Cannot fail: the result is the target type.
+    let shape = Circle(radius: 1.0) as Shape
+    let three = 3 as Quantity
+    let ratio = 1 as Float64
+    let empty = [] as Array<Int64>
+    info("{three} {ratio} {empty.count} {three as Int64 + 1}")
+    let small: Byte = 7
+    let count = 4
+    info("{small as Int64} {count as Float64}")
+    let size: Size = "large"
+    info("{size as String}")
+    let line = Line(drink: "mocha", size: "small", quantity: 2)
+    info((line as Json).encode())
+    info((shape as Json).encode())
+
+    ## Can fail: the result is a Trial.
+    for requested in [4, 40] {
+        match requested as Quantity {
+            Pass(found) => info("quantity {found}")
+            Fail(issues) => info("quantity: {messages(issues)}")
+        }
+    }
+    let name = "medium"
+    match name as Size {
+        Pass(found) => info("size {found}")
+        Fail(issues) => info("size: {messages(issues)}")
+    }
+    for value in [200, 300] {
+        match value as Byte {
+            Pass(found) => info("byte {found}")
+            Fail(issues) => info("byte: {messages(issues)}")
+        }
+    }
+
+    ## From Json: products, top-level arrays and maps, unions, scalars.
+    let good: Json = { drink: "mocha", size: "large", quantity: 3 }
+    let bad: Json = { drink: 4, size: "huge" }
+    info(describe(good as Line))
+    info(describe(bad as Line))
+    let list: Json = [{ drink: "a", size: "small" }, { drink: "b", size: "large", quantity: 5 }]
+    match list as Array<Line> {
+        Pass(lines) => info("{lines.count} lines, last {lines[1].drink}")
+        Fail(issues) => info(messages(issues))
+    }
+    let counts: Json = { a: 2, b: 30 }
+    match counts as Map<String, Quantity> {
+        Pass(found) => info("{found.count} counts")
+        Fail(issues) => info("counts: {messages(issues)}")
+    }
+    let square: Json = { "type": "Square", side: 2.0 }
+    match square as Shape {
+        Pass(found) => info("shape {found == Square(side: 2.0)}")
+        Fail(issues) => info(messages(issues))
+    }
+    let number = 7 as Json
+    match number as Int64 {
+        Pass(found) => info("number {found}")
+        Fail(issues) => info(messages(issues))
+    }
+    0
+}

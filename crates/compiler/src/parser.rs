@@ -1617,7 +1617,7 @@ impl Parser {
     }
 
     fn parse_mul(&mut self) -> Result<Expr> {
-        let mut left = self.parse_unary()?;
+        let mut left = self.parse_cast()?;
         loop {
             let op = match self.current().kind {
                 TokenKind::Star => BinaryOp::Mul,
@@ -1628,7 +1628,7 @@ impl Parser {
             let start = left.span.start;
             self.bump();
             self.enter_nesting()?;
-            let right = self.parse_unary()?;
+            let right = self.parse_cast()?;
             let end = right.span.end;
             left = Expr {
                 kind: ExprKind::Binary {
@@ -1640,6 +1640,79 @@ impl Parser {
             };
         }
         Ok(left)
+    }
+
+    /// `expr as Type` / `expr as? Type` (D191): binds tighter than `* / %` and
+    /// looser than unary operators and postfix `?` `.` `[]` calls.
+    fn parse_cast(&mut self) -> Result<Expr> {
+        let mut expr = self.parse_unary()?;
+        while self.at(TokenKind::As) {
+            let start = expr.span.start;
+            let as_span = self.peek_span();
+            self.bump();
+            let propagate = self.at(TokenKind::Question);
+            if propagate {
+                if self.peek_span().start != as_span.end {
+                    return Err(Error::at(
+                        "write `as?` with no space between `as` and `?`",
+                        self.peek_span(),
+                    ));
+                }
+                self.bump();
+            }
+            self.enter_nesting()?;
+            let ty = self.parse_cast_type()?;
+            let end = ty.span.end;
+            expr = Expr {
+                kind: ExprKind::Cast {
+                    expr: Box::new(expr),
+                    ty,
+                    propagate,
+                },
+                span: Span::new(start, end),
+            };
+        }
+        Ok(expr)
+    }
+
+    /// The type after `as`: a name with optional type arguments glued to it
+    /// (`Array<Order>`). A literal union or function type needs a named alias,
+    /// and a following `?` or `<` belongs to the expression.
+    fn parse_cast_type(&mut self) -> Result<TypeExpr> {
+        let TokenKind::Ident(_) = self.current().kind else {
+            return Err(Error::at(
+                "expected a type name after `as` (give a literal union or function type a name with `type`)",
+                self.peek_span(),
+            ));
+        };
+        let (name, start_span) = self.expect_ident()?;
+        let mut args = Vec::new();
+        let mut end = start_span.end;
+        if self.at(TokenKind::LAngle) && self.peek_span().start == start_span.end {
+            self.bump();
+            if !self.at_rangle() {
+                loop {
+                    args.push(self.parse_type_arg()?);
+                    if self.at(TokenKind::Comma) {
+                        self.bump();
+                        continue;
+                    }
+                    break;
+                }
+            }
+            self.expect_rangle()?;
+            end = self.prev_span().end;
+        }
+        Ok(TypeExpr {
+            name,
+            args,
+            span: Span::new(start_span.start, end),
+            lit: None,
+            mark: None,
+            union_members: None,
+            fn_type: None,
+            where_clause: None,
+        })
     }
 
     fn parse_unary(&mut self) -> Result<Expr> {

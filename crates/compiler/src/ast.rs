@@ -416,6 +416,13 @@ pub enum ExprKind {
     },
     Block(Block),
     Try(Box<Expr>),
+    /// `expr as Type` converts (D191 §1); `expr as? Type` is `(expr as Type)?`
+    /// (D191 §2, `propagate`).
+    Cast {
+        expr: Box<Expr>,
+        ty: TypeExpr,
+        propagate: bool,
+    },
     Match {
         scrutinee: Box<Expr>,
         arms: Vec<MatchArm>,

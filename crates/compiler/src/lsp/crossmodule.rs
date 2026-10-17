@@ -838,7 +838,9 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
             None
         }
         ExprKind::Field { base, .. } => walk_expr_member(base, span),
-        ExprKind::Unary { expr: inner, .. } | ExprKind::Try(inner) => walk_expr_member(inner, span),
+        ExprKind::Unary { expr: inner, .. }
+        | ExprKind::Try(inner)
+        | ExprKind::Cast { expr: inner, .. } => walk_expr_member(inner, span),
         ExprKind::Binary { left, right, .. } => {
             walk_expr_member(left, span).or_else(|| walk_expr_member(right, span))
         }
@@ -1288,6 +1290,7 @@ fn walk_expr_call_args(expr: &Expr, byte: usize, best: &mut Option<CallArgHit>) 
         }
         ExprKind::Unary { expr: inner, .. }
         | ExprKind::Try(inner)
+        | ExprKind::Cast { expr: inner, .. }
         | ExprKind::Field { base: inner, .. } => walk_expr_call_args(inner, byte, best),
         ExprKind::Binary { left, right, .. } => {
             walk_expr_call_args(left, byte, best);

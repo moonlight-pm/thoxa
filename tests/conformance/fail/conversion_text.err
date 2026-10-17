@@ -1,0 +1,2 @@
+no conversion from String to Line
+Line.read(text)

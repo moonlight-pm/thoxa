@@ -286,3 +286,18 @@ pub(crate) fn empty_array() -> Expr {
         span: dummy(),
     }
 }
+
+/// The part of a generated cast reader's name that names its target type
+/// (D191): `Array<Order>` → `Array_Order`. The codec pass and MIR derive it
+/// from the same `as` type, so they agree on the reader's name.
+pub(crate) fn cast_reader_key(ty: &TypeExpr) -> String {
+    let mut key = ty.name.clone();
+    for arg in &ty.args {
+        key.push('_');
+        match arg {
+            TypeArg::Type(inner) => key.push_str(&cast_reader_key(inner)),
+            TypeArg::Int { value, .. } => key.push_str(&value.to_string()),
+        }
+    }
+    key
+}

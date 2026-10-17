@@ -190,6 +190,9 @@ fn desugar_module_with(
             extra.push(gen_read_form(td));
         }
     }
+    for target in cast_targets(module) {
+        extra.extend(gen_cast_readers(&target, module_id, world, resolve));
+    }
     if extra.is_empty() {
         return Ok(());
     }
@@ -2322,5 +2325,310 @@ mod tests {
             .filter(|it| matches!(it, Item::Function(_)))
             .count();
         assert_eq!(fns, 0);
+    }
+}
+
+/// Every type that appears after `as` in the module, once per reader key
+/// (D191).
+fn cast_targets(module: &Module) -> Vec<TypeExpr> {
+    let mut found: Vec<TypeExpr> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut visit = |ty: &TypeExpr| {
+        if seen.insert(cast_reader_key(ty)) {
+            found.push(ty.clone());
+        }
+    };
+    for item in &module.items {
+        match item {
+            Item::Function(f) => casts_in_block(&f.body, &mut visit),
+            Item::Type(td) => {
+                for method in &td.methods {
+                    casts_in_block(&method.body, &mut visit);
+                }
+            }
+            Item::Global(global) => casts_in_expr(&global.init, &mut visit),
+            Item::SessionStmt(stmt) => casts_in_item(stmt, &mut visit),
+            Item::Extern(_) | Item::Import(_) => {}
+        }
+    }
+    found
+}
+
+fn casts_in_block(block: &Block, visit: &mut dyn FnMut(&TypeExpr)) {
+    for item in &block.items {
+        casts_in_item(item, visit);
+    }
+    if let Some(tail) = &block.tail {
+        casts_in_expr(tail, visit);
+    }
+}
+
+fn casts_in_item(item: &BlockItem, visit: &mut dyn FnMut(&TypeExpr)) {
+    match item {
+        BlockItem::Let { init, .. } => casts_in_expr(init, visit),
+        BlockItem::Assign { value, .. } => casts_in_expr(value, visit),
+        BlockItem::Expr(expr) => casts_in_expr(expr, visit),
+    }
+}
+
+fn casts_in_args(args: &[Arg], visit: &mut dyn FnMut(&TypeExpr)) {
+    for arg in args {
+        match arg {
+            Arg::Pos(value) | Arg::Named { value, .. } | Arg::Spread { value, .. } => {
+                casts_in_expr(value, visit)
+            }
+        }
+    }
+}
+
+fn casts_in_expr(expr: &Expr, visit: &mut dyn FnMut(&TypeExpr)) {
+    match &expr.kind {
+        ExprKind::Cast { expr: inner, ty, .. } => {
+            visit(ty);
+            casts_in_expr(inner, visit);
+        }
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_)
+        | ExprKind::String(_)
+        | ExprKind::Name(_)
+        | ExprKind::Break
+        | ExprKind::Continue => {}
+        ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
+            for part in parts {
+                if let InterpPart::Expr(inner) = part {
+                    casts_in_expr(inner, visit);
+                }
+            }
+        }
+        ExprKind::Unary { expr: inner, .. }
+        | ExprKind::Try(inner)
+        | ExprKind::Field { base: inner, .. } => casts_in_expr(inner, visit),
+        ExprKind::Binary { left, right, .. } => {
+            casts_in_expr(left, visit);
+            casts_in_expr(right, visit);
+        }
+        ExprKind::Call { args, .. } | ExprKind::Start { args, .. } => casts_in_args(args, visit),
+        ExprKind::IndirectCall { callee, args } => {
+            casts_in_expr(callee, visit);
+            casts_in_args(args, visit);
+        }
+        ExprKind::MethodCall { receiver, args, .. } => {
+            casts_in_expr(receiver, visit);
+            casts_in_args(args, visit);
+        }
+        ExprKind::Index { base, index } => {
+            casts_in_expr(base, visit);
+            casts_in_expr(index, visit);
+        }
+        ExprKind::ArrayLit(items) => {
+            for item in items {
+                casts_in_expr(item, visit);
+            }
+        }
+        ExprKind::MapLit(entries) => {
+            for entry in entries {
+                for inner in entry.exprs() {
+                    casts_in_expr(inner, visit);
+                }
+            }
+        }
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            casts_in_expr(cond, visit);
+            casts_in_block(then_branch, visit);
+            if let Some(branch) = else_branch {
+                casts_in_block(branch, visit);
+            }
+        }
+        ExprKind::While { cond, body } => {
+            casts_in_expr(cond, visit);
+            casts_in_block(body, visit);
+        }
+        ExprKind::Loop { body } => casts_in_block(body, visit),
+        ExprKind::For {
+            start, end, body, ..
+        } => {
+            casts_in_expr(start, visit);
+            if let Some(end) = end {
+                casts_in_expr(end, visit);
+            }
+            casts_in_block(body, visit);
+        }
+        ExprKind::Return { value } => {
+            if let Some(value) = value {
+                casts_in_expr(value, visit);
+            }
+        }
+        ExprKind::Block(block) => casts_in_block(block, visit),
+        ExprKind::Match { scrutinee, arms } => {
+            casts_in_expr(scrutinee, visit);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    casts_in_expr(guard, visit);
+                }
+                casts_in_block(&arm.body, visit);
+            }
+        }
+    }
+}
+
+/// The readers a checked `x as T` may call, generated in the module that
+/// casts (D191 §1): `__asJson_K` (from a `Json`), `__asBase_K` (into a
+/// refined type or a literal union), `__asNarrow_K` (into a narrower
+/// integer). MIR picks one by the operand's type; the others go unused.
+fn gen_cast_readers(
+    target: &TypeExpr,
+    module_id: &str,
+    world: &World,
+    resolve: &Resolve,
+) -> Vec<Function> {
+    let key = cast_reader_key(target);
+    let mut readers = Vec::new();
+    if !names_std_type(target, module_id, resolve) {
+        if let Some(shape) = shape_of(target, module_id, world, resolve, &mut HashSet::new()) {
+            if !matches!(shape, Shape::Json) {
+                readers.push(gen_as_json(&key, target, &shape));
+            }
+        }
+    }
+    if target.args.is_empty() {
+        let defined = resolve
+            .get(module_id)
+            .and_then(|names| names.get(&target.name))
+            .filter(|(def_mod, _)| !is_std_module(def_mod))
+            .and_then(|(def_mod, def_name)| {
+                world.get(def_mod).and_then(|tys| tys.get(def_name)).map(|td| (def_mod, td))
+            });
+        if let Some((def_mod, td)) = defined {
+            let base = refined_alias_of(td, def_mod, world, resolve)
+                .map(|(base, _)| base)
+                .or_else(|| pure_lit_union_of(td).map(|(base, _)| base));
+            if let Some(base) = base {
+                readers.push(gen_as_base(&key, target, base));
+            }
+        }
+        if let Some((min, max)) = narrow_range(&target.name) {
+            readers.push(gen_as_narrow(&key, target, min, max));
+        }
+    }
+    readers
+}
+
+/// A type that names a `std/` type other than `Json`: those have no
+/// generated readers.
+fn names_std_type(ty: &TypeExpr, module_id: &str, resolve: &Resolve) -> bool {
+    let own = resolve
+        .get(module_id)
+        .and_then(|names| names.get(&ty.name))
+        .is_some_and(|(def_mod, def_name)| {
+            is_std_module(def_mod) && !(def_mod == JSON_MODULE_ID && def_name == "Json")
+        });
+    own || ty.args.iter().any(|arg| match arg {
+        TypeArg::Type(inner) => names_std_type(inner, module_id, resolve),
+        TypeArg::Int { .. } => false,
+    })
+}
+
+/// `__asJson_K(value: Json) -> Trial<T, Array<Issue>>`: the reader D182
+/// builds for a field of type `T`, at the root.
+fn gen_as_json(key: &str, target: &TypeExpr, shape: &Shape) -> Function {
+    Function {
+        exported: false,
+        name: format!("__asJson_{key}"),
+        name_span: dummy(),
+        params: vec![param("value", json_ty("Json"))],
+        return_type: Some(ty_trial_issues(target.clone())),
+        body: Block {
+            items: vec![],
+            tail: Some(Box::new(convert_json(name("value"), shape, target, str_lit(""), 0))),
+            span: dummy(),
+        },
+    }
+}
+
+/// `__asBase_K(value: Base) -> Trial<T, Array<Issue>>`: `T.from`, its one
+/// issue in an array.
+fn gen_as_base(key: &str, target: &TypeExpr, base: &str) -> Function {
+    let trial = ty_trial_issues(target.clone());
+    Function {
+        exported: false,
+        name: format!("__asBase_{key}"),
+        name_span: dummy(),
+        params: vec![param("value", ty_named(base))],
+        return_type: Some(trial.clone()),
+        body: Block {
+            items: vec![],
+            tail: Some(Box::new(single_issue(
+                method_call(name(&target.name), "from", vec![Arg::Pos(name("value"))]),
+                &trial,
+            ))),
+            span: dummy(),
+        },
+    }
+}
+
+/// `__asNarrow_K(value: Int64) -> Trial<T, Array<Issue>>`: the value when it
+/// fits, else `Rejected("", "300 does not fit in Byte")`.
+fn gen_as_narrow(key: &str, target: &TypeExpr, min: i64, max: i64) -> Function {
+    let trial = ty_trial_issues(target.clone());
+    let fits = bin(
+        BinaryOp::And,
+        bin(BinaryOp::Ge, name("value"), int_lit(min)),
+        bin(BinaryOp::Le, name("value"), int_lit(max)),
+    );
+    let kept = call(
+        &target.name,
+        vec![Arg::Named {
+            name: "truncating".into(),
+            name_span: dummy(),
+            value: name("value"),
+        }],
+    );
+    let reason = Expr {
+        kind: ExprKind::Interpolate(vec![
+            InterpPart::Expr(name("value")),
+            InterpPart::Lit(format!(" does not fit in {}", target.name)),
+        ]),
+        span: dummy(),
+    };
+    let rejected = json_call("issueRejected", vec![Arg::Pos(str_lit("")), Arg::Pos(reason)]);
+    Function {
+        exported: false,
+        name: format!("__asNarrow_{key}"),
+        name_span: dummy(),
+        params: vec![param("value", ty_named("Int64"))],
+        return_type: Some(trial.clone()),
+        body: Block {
+            items: vec![],
+            tail: Some(Box::new(if_expr(
+                fits,
+                Block {
+                    items: vec![],
+                    tail: Some(Box::new(typed("__out", trial.clone(), call("Pass", vec![Arg::Pos(kept)])))),
+                    span: dummy(),
+                },
+                Some(Block {
+                    items: vec![],
+                    tail: Some(Box::new(typed("__out", trial, fail_with(rejected)))),
+                    span: dummy(),
+                }),
+            ))),
+            span: dummy(),
+        },
+    }
+}
+
+/// The values of a narrower integer type, as `Int64`.
+fn narrow_range(name: &str) -> Option<(i64, i64)> {
+    match name {
+        "Int32" => Some((i64::from(i32::MIN), i64::from(i32::MAX))),
+        "UInt32" => Some((0, i64::from(u32::MAX))),
+        "UInt64" => Some((0, i64::MAX)),
+        "Byte" => Some((0, 255)),
+        _ => None,
     }
 }

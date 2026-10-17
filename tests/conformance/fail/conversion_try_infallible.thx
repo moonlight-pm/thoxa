@@ -1,0 +1,11 @@
+## `as?` on a conversion that cannot fail (D191 §2).
+import { Pass, Fail, Trial } from "std/fallible"
+import { Json, Issue } from "std/json"
+
+fn wrap(rows: Array<Int64>) -> Trial<Json, Array<Issue>> {
+    Pass(rows as? Json)
+}
+
+fn main() -> Int64 {
+    0
+}

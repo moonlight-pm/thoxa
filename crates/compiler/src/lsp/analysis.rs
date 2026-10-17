@@ -1672,7 +1672,7 @@ import { Pass } from "std/fallible"
 fn main() -> Int64 {
     bar
     FOOBAR
-    as
+    in
     0
 }
 "#;
@@ -1688,8 +1688,8 @@ fn main() -> Int64 {
             "missing FOOBAR: {msgs:?}"
         );
         assert!(
-            msgs.iter().any(|m| m.contains("found As")),
-            "missing As: {msgs:?}"
+            msgs.iter().any(|m| m.contains("found In")),
+            "missing In: {msgs:?}"
         );
         let _ = std::fs::remove_file(&path);
     }

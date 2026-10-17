@@ -1,0 +1,16 @@
+3 1.0 0 4
+7 4.0
+large
+{"drink":"mocha","size":"small","quantity":2}
+{"type":"Circle","radius":1.0}
+quantity 4
+quantity: expected integer <= 12, got 40
+size: expected "small" | "large", got medium
+byte 200
+byte: 300 does not fit in Byte
+ok mocha large 3
+rejected: drink: expected string, got integer; size: expected "small" | "large", got huge
+2 lines, last b
+counts: b: expected integer <= 12, got 30
+shape true
+number 7

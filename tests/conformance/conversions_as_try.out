@@ -1,0 +1,4 @@
+total 8
+rejected: expected integer <= 12, got 20
+rejected: expected array, got object
+rejected: 0.quantity: expected integer <= 12, got 99
