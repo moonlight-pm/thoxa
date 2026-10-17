@@ -73,9 +73,7 @@ generic types, top-level `Array` reads, custom decoding) stay parked.
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
 D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
-`Float64` rounds unchecked; an array literal of union members does not widen
-to the union (`[Leaf(…), Branch(…)]` where `Array<Tree>` is expected); an empty
-`[]` nested in an array literal is not typed by the expected element type.
+`Float64` rounds unchecked.
 
 Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);
 release REPL ~**8 ms**/line. **D155** resource `drop` shipped. D153 simple-RC

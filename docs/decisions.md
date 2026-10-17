@@ -26,6 +26,7 @@ conformance gate that fails on the compiler before the fix.
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
+| D184 | An array literal takes its element type from the expected type | With an expected `Array<T>` (an annotation, a parameter, a return), each element is lowered expecting `T` and converted as an annotated `let` converts: a union member widens to the union, an integer to `Float64`, a literal or refined value is checked, and a nested `[]` takes the element type. Without an expected type the elements must share one type. | **Shipped.** Gate: `array_literal_expect`. Closes two CURRENT gaps: `[Leaf(…), Branch(…)]` where `Array<Tree>` is expected was "heterogeneous array", and `[[], [1]]` could not type its empty element. Found writing the home page's first sample (`let shapes: Array<Shape> = [Circle(…), Rect(…)]`). |
 | D183 | `and` / `or` short-circuit | `a and b` evaluates `b` only when `a` is true; `a or b` only when `a` is false. Lowered as `if a { b } else { false }` / `if a { true } else { b }`, so the right operand gets `if`'s scopes and drops. Both operands are Bool (`operator And expects Bool operands` otherwise). | **Shipped.** Gates: `short_circuit`, `fail/logical_operands`. Before, both operands were evaluated into places and joined with C `&&`, so `index < bytes.count and bytes.get(index) == 0` panicked out of range; the oracle SPEC always said short-circuit. Found writing the site's Markdown renderer. `==` on products still evaluates every field (D175). |
 
 ## 2026-10-16 — Typed codecs

@@ -1,0 +1,55 @@
+## An array literal takes its element type from what is expected (an
+## annotation, a parameter, a return): union members widen to the union,
+## integers to Float64, and a nested `[]` takes the element type (D184).
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Leaf(value: Int64)
+type Branch(left: Int64, right: Int64)
+type Tree = Leaf | Branch
+type Qty = Int64 where >= 1
+
+fn size(tree: Tree) -> Int64 {
+    match tree {
+        Leaf(value) => value
+        Branch(left, right) => left + right
+    }
+}
+
+fn total(trees: Array<Tree>) -> Int64 {
+    mut sum = 0
+    for tree in trees {
+        sum = sum + size(tree)
+    }
+    sum
+}
+
+fn forest() -> Array<Tree> {
+    [Branch(left: 1, right: 2), Leaf(value: 3)]
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let trees: Array<Tree> = [Leaf(value: 1), Branch(left: 2, right: 3)]
+    info("annotated {total(trees)}")
+    info("argument {total([Leaf(value: 4), Branch(left: 5, right: 6)])}")
+    info("return {total(forest())}")
+
+    let grid: Array<Array<Int64>> = [[], [1, 2], []]
+    info("grid {grid.count} {grid[0].count} {grid[1].count}")
+
+    let weights: Array<Float64> = [1, 2.5]
+    info("weights {weights[0] + weights[1]}")
+
+    let found: Array<May<Int64>> = [Has(1), Not()]
+    info("found {found[0] == Has(1)} {found[1] == Has(1)}")
+
+    let quantities: Array<Qty> = [1, 2]
+    info("quantities {quantities[0] + quantities[1]}")
+
+    let slugs: Array<"espresso" | "mocha"> = ["mocha", "espresso"]
+    info("slugs {slugs[0]} {slugs.count}")
+    0
+}

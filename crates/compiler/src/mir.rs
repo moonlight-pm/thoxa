@@ -7858,7 +7858,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             name_span,
         } => lower_field(ctx, base, name, *name_span),
         ExprKind::Index { base, index } => lower_index(ctx, base, index, expr.span),
-        ExprKind::ArrayLit(elems) => lower_array_lit(ctx, elems, expr.span),
+        ExprKind::ArrayLit(elems) => lower_array_lit(ctx, elems, expr.span, expect),
         ExprKind::MapLit(entries) => lower_map_lit(ctx, entries, expr.span),
         ExprKind::MethodCall {
             receiver,
@@ -8527,7 +8527,12 @@ fn lower_fixed_array_lit(
     Ok((p, arr_ty))
 }
 
-fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Place, Ty)> {
+fn lower_array_lit(
+    ctx: &mut LowerCtx,
+    elems: &[Expr],
+    span: Span,
+    expect: Option<&Ty>,
+) -> Result<(Place, Ty)> {
     if elems.is_empty() {
         // Untyped empty — bind site must supply Array<T> annotation.
         let p = ctx.fresh("aempty");
@@ -8548,10 +8553,23 @@ fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Pl
             },
         ));
     }
+    // An expected element type (an annotation, a parameter, a return) types
+    // every element: a union member widens to the union, an integer to
+    // Float64, and a nested `[]` takes the element type (D184).
+    let wanted = match expect {
+        Some(Ty::Array { elem }) if **elem != Ty::Void => Some(elem.as_ref().clone()),
+        _ => None,
+    };
     let mut places = Vec::new();
     let mut elem_ty: Option<Ty> = None;
     for e in elems {
-        let (p, ty) = lower_expr(ctx, e)?;
+        let (p, ty) = match &wanted {
+            Some(want) => {
+                let (p, ty) = lower_expr_expect(ctx, e, Some(want))?;
+                coerce_element(ctx, p, &ty, want, e)?
+            }
+            None => lower_expr(ctx, e)?,
+        };
         match &elem_ty {
             None => {
                 if !is_array_elem_ty(&ty) {
@@ -8595,6 +8613,32 @@ fn lower_array_lit(ctx: &mut LowerCtx, elems: &[Expr], span: Span) -> Result<(Pl
     );
     let _ = span;
     Ok((p, arr_ty))
+}
+
+/// An array element as the expected element type when it converts (as an
+/// annotated `let` would); otherwise unchanged, and the heterogeneous-array
+/// check reports it.
+fn coerce_element(
+    ctx: &mut LowerCtx,
+    place: Place,
+    ty: &Ty,
+    want: &Ty,
+    element: &Expr,
+) -> Result<(Place, Ty)> {
+    if ty == want {
+        return Ok((place, ty.clone()));
+    }
+    let literal = expr_as_type_lit(element);
+    if let Some(p) = try_sum_coerce(ctx, place.clone(), ty, want, literal.as_ref(), element.span)? {
+        return Ok((p, want.clone()));
+    }
+    if can_numeric_cast(ty, want) {
+        return Ok((coerce_place(ctx, place, ty, want, element.span)?, want.clone()));
+    }
+    if let Some(p) = try_refine_coerce(ctx, place.clone(), ty, want, literal.as_ref(), element.span)? {
+        return Ok((p, want.clone()));
+    }
+    Ok((place, ty.clone()))
 }
 
 fn coerce_map_key(ctx: &mut LowerCtx, key: Place, key_ty: &Ty) -> Place {
