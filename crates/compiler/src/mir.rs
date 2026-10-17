@@ -1404,12 +1404,14 @@ impl LowerCtx {
         }
         let expect = binding.ty.clone();
         let (place, ty) = lower_expr_expect(self, value, Some(&expect))?;
-        if ty != expect {
+        // Converts as the binding's annotation would (D192).
+        let Some(place) = coerce_to_expected(self, place, &ty, &expect, value)? else {
             return Err(Error::at(
                 format!("cannot reassign `{name}`: expected {expect:?}, found {ty:?}"),
                 value.span,
             ));
-        }
+        };
+        let ty = expect.clone();
         let bound = binding.place.clone();
         // `assign` Drops the old heap occupant, then Dups the RHS temp so both own.
         // FixedArray: cgen copies element-wise on `Use` (C arrays are not assignable).
@@ -7392,6 +7394,30 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
     }
 }
 
+/// A value where `expect` is expected (a `return`, an assignment): the
+/// conversions an annotated `let` makes — a union member into its union, a
+/// literal into a literal or refined type, a numeric conversion. `None` when
+/// none applies (D192).
+fn coerce_to_expected(
+    ctx: &mut LowerCtx,
+    place: Place,
+    ty: &Ty,
+    expect: &Ty,
+    value: &Expr,
+) -> Result<Option<Place>> {
+    if ty == expect {
+        return Ok(Some(place));
+    }
+    let literal = expr_as_type_lit(value);
+    if let Some(p) = try_sum_coerce(ctx, place.clone(), ty, expect, literal.as_ref(), value.span)? {
+        return Ok(Some(p));
+    }
+    if can_numeric_cast(ty, expect) {
+        return Ok(Some(coerce_place(ctx, place, ty, expect, value.span)?));
+    }
+    try_refine_coerce(ctx, place, ty, expect, literal.as_ref(), value.span)
+}
+
 /// A value bound under an annotation (`let x: T = …`, in a block or at module
 /// level) takes `T`: a sum member, a numeric conversion, or a refinement.
 fn coerce_annotated(
@@ -7992,20 +8018,12 @@ fn lower_return(ctx: &mut LowerCtx, value: Option<&Expr>, span: Span) -> Result<
             None
         }
         Some(e) => {
-            // `return []` with `-> Array<T>`: empty lit takes T from the return type.
-            let (place, ty) = if is_empty_array_lit(e) {
-                if let Ty::Array { elem } = &fn_ret {
-                    lower_empty_array_typed(ctx, elem.as_ref(), e.span)?
-                } else {
-                    lower_expr(ctx, e)?
-                }
-            } else {
-                lower_expr(ctx, e)?
-            };
+            // The return type is the expected type, as for a block's value
+            // (`return []`, `return Circle(…)` into a union, D192).
+            let expect = (fn_ret != Ty::Void).then(|| fn_ret.clone());
+            let (place, ty) = lower_expr_expect(ctx, e, expect.as_ref())?;
             if ty != fn_ret {
-                // Allow int width widen/narrow via existing coerce for ints if needed.
-                if can_numeric_cast(&ty, &fn_ret) {
-                    let place = coerce_place(ctx, place, &ty, &fn_ret, e.span)?;
+                if let Some(place) = coerce_to_expected(ctx, place.clone(), &ty, &fn_ret, e)? {
                     Some(place)
                 } else if fn_ret == Ty::Void && ty == Ty::Void {
                     None

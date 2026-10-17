@@ -194,7 +194,9 @@ directory); `~/…` import paths start there. See [Modules](#modules).
 ## Bindings
 
 `let name = expr` binds an immutable name. `mut name = expr` binds a mutable
-one, which `name = expr` reassigns. Assigning to a `let` is a compile error.
+one, which `name = expr` reassigns; the new value converts to the binding's
+type as it would under an annotation (a member into its union, an integer
+into `Float64`). Assigning to a `let` is a compile error.
 An annotation gives the type explicitly and is required where the value alone
 does not determine it:
 
@@ -862,7 +864,10 @@ Breaks of nested loops do not count for the outer one.
 ### return
 
 `return expr` (or `return` in a `Void` function) leaves the function early.
-`return` has the type Never, so an `if` or `match` arm that returns fits beside
+The value converts to the return type as a block's last value does: a union
+member into the union, a literal into a literal or refined type, an integer
+into `Float64`, `[]` and `Json` literals typed by it. `return` has the type
+Never, so an `if` or `match` arm that returns fits beside
 an arm of any other type:
 
 ```thx

@@ -1,0 +1,66 @@
+## `return` and `=` convert their value to the expected type the way an
+## annotated `let` and a block's last expression do (D192).
+import { Json } from "std/json"
+import logging, { info } from "std/logging"
+
+type Circle(radius: Float64)
+type Square(side: Float64)
+type Shape = Circle | Square
+type Quantity = Int64 where >= 1
+
+fn pick(round: Bool) -> Shape {
+    if round {
+        return Circle(radius: 1.0)
+    }
+    Square(side: 2.0)
+}
+
+fn mode(writing: Bool) -> "read" | "write" {
+    if writing {
+        return "write"
+    }
+    "read"
+}
+
+fn half(count: Int64) -> Float64 {
+    if count == 0 {
+        return 0
+    }
+    count / 2
+}
+
+fn none(empty: Bool) -> Array<Int64> {
+    if empty {
+        return []
+    }
+    let one = [1]
+    one
+}
+
+fn status(ok: Bool) -> Json {
+    if not ok {
+        return { ok: false, reason: "closed" }
+    }
+    let open: Json = [ok]
+    open
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info("{pick(true) == Circle(radius: 1.0)} {mode(true)} {half(0)} {half(7)} {none(true).count}")
+    info("{status(false).encode()} {status(true).encode()}")
+
+    mut shape: Shape = Circle(radius: 1.0)
+    let square = Square(side: 2.0)
+    shape = square
+    mut ratio: Float64 = 1.0
+    let count = 3
+    ratio = count
+    mut quantity: Quantity = 1
+    quantity = 5
+    mut reply: Json = [0]
+    reply = { ok: true }
+    info("{shape == Square(side: 2.0)} {ratio} {quantity} {reply.encode()}")
+    0
+}
