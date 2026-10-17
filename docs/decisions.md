@@ -19,6 +19,15 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-17 — Fixes found writing the manual and the site
+
+Each was found by code written for thoxa.dev or the manual, and each has a
+conformance gate that fails on the compiler before the fix.
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D183 | `and` / `or` short-circuit | `a and b` evaluates `b` only when `a` is true; `a or b` only when `a` is false. Lowered as `if a { b } else { false }` / `if a { true } else { b }`, so the right operand gets `if`'s scopes and drops. Both operands are Bool (`operator And expects Bool operands` otherwise). | **Shipped.** Gates: `short_circuit`, `fail/logical_operands`. Before, both operands were evaluated into places and joined with C `&&`, so `index < bytes.count and bytes.get(index) == 0` panicked out of range; the oracle SPEC always said short-circuit. Found writing the site's Markdown renderer. `==` on products still evaluates every field (D175). |
+
 ## 2026-10-16 — Typed codecs
 
 | ID | Decision | Choice | Notes |

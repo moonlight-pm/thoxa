@@ -1,0 +1,14 @@
+false
+true
+ran needed by and
+true
+ran needed by or
+false
+calls=2
+false true false
+true false false
+trimmed or empty: [  ]
+trimmed or empty: []
+trimmed or empty: [ b ]
+blanks=1
+mixed=true calls=2

@@ -1,0 +1,53 @@
+## `and` / `or` short-circuit: the right operand runs only when the left one
+## does not decide the result (D183).
+import logging, { info } from "std/logging"
+import { trim } from "std/str"
+
+mut calls = 0
+
+fn noted(label!: String, value!: Bool) -> Bool {
+    calls = calls + 1
+    info("ran {label}")
+    value
+}
+
+fn startsWithDigit(text!: String) -> Bool {
+    let bytes = Bytes.fromString(text)
+    bytes.count > 0 and bytes.get(0) >= 48 and bytes.get(0) <= 57
+}
+
+fn positiveAt(values!: Array<Int64>, index!: Int64) -> Bool {
+    index < values.count and values[index] > 0
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    info("{false and noted("right of and", true)}")
+    info("{true or noted("right of or", false)}")
+    info("{true and noted("needed by and", true)}")
+    info("{false or noted("needed by or", false)}")
+    info("calls={calls}")
+
+    info("{startsWithDigit("")} {startsWithDigit("7up")} {startsWithDigit("up7")}")
+    let values = [3, 0 - 1]
+    info("{positiveAt(values, 0)} {positiveAt(values, 1)} {positiveAt(values, 5)}")
+
+    ## A heap temporary in a skipped right operand is never built or dropped.
+    mut blanks = 0
+    for word in ["  ", "a", "", " b "] {
+        if word.count > 0 and trim(word) == "" {
+            blanks = blanks + 1
+        }
+        if word.count == 0 or trim(word) != word {
+            info("trimmed or empty: [{word}]")
+        }
+    }
+    info("blanks={blanks}")
+
+    ## Mixed: `and` binds tighter than `or`.
+    let mixed = false and noted("never", true) or true
+    info("mixed={mixed} calls={calls}")
+    0
+}

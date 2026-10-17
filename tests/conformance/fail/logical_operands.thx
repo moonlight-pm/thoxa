@@ -1,0 +1,9 @@
+## `and` / `or` take Bool on both sides.
+fn main() -> Int64 {
+    let count = 3
+    if count > 0 and count {
+        1
+    } else {
+        0
+    }
+}

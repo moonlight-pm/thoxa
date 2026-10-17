@@ -14205,6 +14205,9 @@ fn lower_binary(
     right: &Expr,
     span: Span,
 ) -> Result<(Place, Ty)> {
+    if matches!(op, BinaryOp::And | BinaryOp::Or) {
+        return lower_logical(ctx, op, left, right, span);
+    }
     let (l, lt) = lower_expr(ctx, left)?;
     let (r, rt) = lower_expr(ctx, right)?;
     let (l, lt) = unwrap_refined(ctx, l, &lt)?;
@@ -14474,6 +14477,49 @@ fn lower_binary(
             );
             Ok((p, Ty::Bool))
         }
+    }
+}
+
+/// `a and b` / `a or b` short-circuit (D183): lowered as
+/// `if a { b } else { false }` and `if a { true } else { b }`, so `b` runs
+/// only when `a` does not decide the result.
+fn lower_logical(
+    ctx: &mut LowerCtx,
+    op: BinaryOp,
+    left: &Expr,
+    right: &Expr,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let operands = || Error::at(format!("operator {op:?} expects Bool operands"), span);
+    let right_ty = infer_block_ty(ctx, &tail_block(right.clone()))?;
+    if !can_coerce_ty(&ctx.types, &right_ty, &Ty::Bool) {
+        return Err(operands());
+    }
+    let decided = Expr {
+        kind: ExprKind::Bool(matches!(op, BinaryOp::Or)),
+        span: right.span,
+    };
+    let (then_branch, else_branch) = if matches!(op, BinaryOp::And) {
+        (tail_block(right.clone()), tail_block(decided))
+    } else {
+        (tail_block(decided), tail_block(right.clone()))
+    };
+    lower_if(ctx, left, &then_branch, Some(&else_branch), span, Some(&Ty::Bool)).map_err(|error| {
+        if error.message == "`if` condition must be Bool" {
+            operands()
+        } else {
+            error
+        }
+    })
+}
+
+/// A block whose value is `expr`.
+fn tail_block(expr: Expr) -> Block {
+    let span = expr.span;
+    Block {
+        items: Vec::new(),
+        tail: Some(Box::new(expr)),
+        span,
     }
 }
 
