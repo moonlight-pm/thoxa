@@ -5,7 +5,7 @@ import appHttp from "~/app/http"
 import store from "~/app/store"
 import session from "~/app/session"
 import http, { Request, Response } from "std/http"
-import { Has, Not, May, Pass, Fail } from "std/fallible"
+import { Pass, Fail } from "std/fallible"
 import { isEmpty, trim } from "std/str"
 
 export fn page(request!: Request) -> Response {
@@ -53,17 +53,17 @@ fn welcome(request!: Request) -> Node {
     }
 }
 
+type SignIn(name: String)
+
 export fn signIn(request!: Request) -> Response {
     let redirect = http.seeOther("/")
     if not session.checkCsrf(request, request.body) {
         appHttp.formFailed(request, [appHttp.csrfRejected()])
     } else {
-        match http.formField(request.body, "name") {
-            Not {
-                redirect
-            }
-            Has(raw) {
-                let name = trim(raw)
+        match SignIn.readForm(request.body.toString()) {
+            Fail(_) => redirect
+            Pass(form) {
+                let name = trim(form.name)
                 if isEmpty(name) {
                     session.setName(request, "")
                     session.setFlash(request, "Name forgotten.")
