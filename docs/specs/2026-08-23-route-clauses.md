@@ -6,7 +6,7 @@
 **Decision:** D150
 **Gate:** `route_clauses`
 **Gaps:**
-- No JSON / form auto-bind (call `T.read` in the handler)
+- ~~No JSON / form auto-bind~~: typed body parameters since D191 §5
 - Miss is `notFound()` — no fallthrough / `May`
 - Router type must be nullary (no ctor params / body fields)
 - No compiler lang-items for `Request` / `Response`

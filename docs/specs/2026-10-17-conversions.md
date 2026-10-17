@@ -3,7 +3,7 @@
 **Date:** 2026-10-17
 **Status:** target (freeze)
 **Implementation:** shipped (§1–§6)
-**Decision:** D191 (builds on D182; replaces `T.from` and `T.fromJson` when §6 lands)
+**Decision:** D191 (builds on D182; replaced `T.from` and `T.fromJson` in §6)
 **Gates:** per section below
 **Gaps:** see Non-goals; generic types cannot declare `from` clauses; route body parameters take named types only
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)

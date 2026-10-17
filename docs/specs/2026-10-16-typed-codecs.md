@@ -3,7 +3,7 @@
 **Date:** 2026-10-16
 **Status:** target (freeze)
 **Implementation:** shipped (§1–§6)
-**Decision:** D182 (amends D149: reads report every issue)
+**Decision:** D182 (amends D149: reads report every issue). `T.fromJson` / `T.from` are replaced by `x as T` (D191 §6)
 **Gates:** per section below
 **Gaps:** see Non-goals; in a form an absent `Bool` is `false` and an absent `Array` empty (no default), and a nested product takes no default
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
@@ -173,10 +173,10 @@ features land once for JSON and forms.
 |------|-----|
 | Field renaming (`rename_all`) | No annotation syntax; wait for an external snake_case API |
 | Formats beyond JSON and forms | Wait for a third customer |
-| Top-level `Array<T>` / `Map` reads | No static-method syntax on structural types; wrap in a product |
+| ~~Top-level `Array<T>` / `Map` reads~~ | Shipped as `json as Array<T>` (D191 §1) |
 | Generic types (`Page<T>`) | Codecs are generated before monomorphization |
 | Generated codecs for `std/` types | Every program would compile them; `Issue` is written by hand |
-| Custom decoding | No static methods to hang it on |
+| ~~Custom decoding~~ | Shipped as a `from(json: Json)` clause (D191 §3) |
 | Encoding into a stream | Encode builds the `Json` tree, then the string |
 | `t.encodeForm()` | Wait for a use (redirects, links) |
-| Route clauses binding a body by `Content-Type` | Later, on top of §2 / §3 |
+| ~~Route clauses binding a body by `Content-Type`~~ | Shipped as typed body parameters (D191 §5) |
