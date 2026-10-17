@@ -15830,6 +15830,15 @@ fn unwrap_refined(ctx: &mut LowerCtx, place: Place, from: &Ty) -> Result<(Place,
             field: sanitize_field("value"),
         },
     );
+    // Like any field load: the base value is shared with the refined box, so
+    // own a separate reference (a refined String appended to an array was
+    // freed with the box while the array still held it).
+    if needs_drop(&base) {
+        ctx.stmts.push(Stmt::Dup {
+            place: p.clone(),
+            ty: base.clone(),
+        });
+    }
     Ok((p, base))
 }
 

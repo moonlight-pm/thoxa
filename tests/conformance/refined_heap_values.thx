@@ -1,0 +1,47 @@
+## A refined value shares its base with its box. Reading the base (to append
+## it, bind it, interpolate it, compare it) takes a reference of its own, so
+## the box can go away first (D185).
+import logging, { info } from "std/logging"
+import { Pass, Fail } from "std/fallible"
+import { message } from "std/json"
+
+type Name = String where >= 1
+type Person(name: Name)
+type Tag = String where <= 8
+
+mut seen: Array<String> = []
+
+fn remember(person!: Person) {
+    seen.append(person.name)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut names: Array<String> = []
+    for label in ["ada", "grace"] {
+        match Name.from("{label} the second") {
+            Fail(issue) => info(message(issue))
+            Pass(name) {
+                let person = Person(name: name)
+                names.append(person.name)
+                remember(person)
+                let plain: String = name
+                info("plain {plain}")
+            }
+        }
+    }
+    let noise = "{names.count} names, then enough text to reuse a freed block"
+    info(noise)
+    for name in names {
+        info("local {name}")
+    }
+    for name in seen {
+        info("module {name}")
+    }
+    match Tag.from("mocha") {
+        Pass(tag) => info("tag {tag} {tag == "mocha"}")
+        Fail(issue) => info(message(issue))
+    }
+    0
+}
