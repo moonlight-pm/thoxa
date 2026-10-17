@@ -18,7 +18,8 @@ Then **D190**: every `extern fn` gets its own C prototype (asm-labelled
 private name), so any linked C function can be called and `Address<T>`
 fits a C struct pointer parameter. Then **D191** (conversions: `as` /
 `as?`, `from` clauses, implicit encoding to `Json`, typed route body
-parameters) shipped in six slices, with D192 between them.
+parameters) shipped in six slices, with D192 between them and D193
+after.
 2026-10-16: **Language pass (D173–D181):** `main`'s return is
 the exit status, 0–255 (D173); unannotated methods infer their return type,
 and `x?` then `Pass(value)` infers `Trial<T, E>` (D174); structural `==` on
@@ -91,7 +92,10 @@ generic types, top-level `Array` reads, custom decoding) stay parked.
 clauses (a `from(json: Json)` clause is the type's reader), §4 implicit
 encoding where a `Json` is expected (and `match` takes its expected type), §5
 typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
-Also on the way: D192 (`return` / `=` convert to the expected type).
+Also on the way: D192 (`return` / `=` convert to the expected type) and D193
+(route clauses import only what they write; generated code names `std/http`
+itself). thoxa.dev still runs `32ea2c2`: its manual and feature list predate
+D191; redeploy (with Joshua's go) to publish them.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void
