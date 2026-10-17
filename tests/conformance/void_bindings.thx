@@ -1,0 +1,19 @@
+## A `let` may bind a Void value: a loop that breaks, a call that returns
+## nothing (D186).
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut count = 0
+    let finished = loop {
+        count = count + 1
+        if count == 3 {
+            break
+        }
+    }
+    let logged = info("count {count}")
+    let nothing = while false { }
+    info("done")
+    0
+}

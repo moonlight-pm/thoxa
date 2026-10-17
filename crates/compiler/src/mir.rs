@@ -7355,6 +7355,13 @@ fn lower_block_item(ctx: &mut LowerCtx, item: &BlockItem) -> Result<()> {
                 }
                 (place, ty)
             };
+            // A Void value holds nothing: the name refers to the unit place
+            // (copying it emitted C for an undeclared local, D186).
+            if ty == Ty::Void {
+                let (unit, _) = void_place(ctx);
+                ctx.define(name, Ty::Void, *mutable, unit);
+                return Ok(());
+            }
             ctx.bind_name(name, ty, *mutable, place);
             Ok(())
         }
