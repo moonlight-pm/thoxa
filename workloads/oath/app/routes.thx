@@ -4,7 +4,6 @@ import home from "./pages/home"
 import config from "./config"
 import httpStatic from "std/http/static"
 import { Request, Response, cached, withHeader } from "std/http"
-import { startsWith, toLowerAscii } from "std/str"
 
 ## Fonts, images and styles are all served here. Nothing runs script, embeds
 ## a frame, or posts a form.
@@ -32,8 +31,8 @@ type Routes {
 ## or a stylesheet is checked on every load, so a deploy shows at once.
 fn cacheControlFor(response!: Response) -> String {
     for header in response.headers {
-        if toLowerAscii(header.name) == "content-type" {
-            if startsWith(header.value, "image/") or startsWith(header.value, "font/") {
+        if header.name.toLower() == "content-type" {
+            if header.value.startsWith("image/") or header.value.startsWith("font/") {
                 return "public, max-age=86400"
             }
         }

@@ -1,0 +1,29 @@
+## Positional arguments first, then named ones (D194).
+## Free functions, methods, constructors, and namespace calls.
+
+import logging from "std/logging"
+
+fn format(template!: String, width: Int64 = 80, fill: String = ".") -> String {
+    "{template}:{width}:{fill}"
+}
+
+type Point(x: Int64, y: Int64 = 0) {
+    export fn moved(dx!: Int64, dy: Int64 = 0) -> Point {
+        Point(x: x + dx, y: y + dy)
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info(format("hi", width: 40))
+    logging.info(format("hi", fill: "-"))
+    logging.info(format("hi", 12, fill: "*"))
+    logging.info(format("hi"))
+    let moved = Point(x: 1).moved(2, dy: 5)
+    logging.info("{moved.x},{moved.y}")
+    let point = Point(3, y: 4)
+    logging.info("{point.x},{point.y}")
+    0
+}

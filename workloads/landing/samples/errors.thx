@@ -3,7 +3,7 @@
 ## unions from `std/fallible`. `?` unwraps a `Pass` or returns the `Fail` to
 ## the caller. There are no exceptions.
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { parseUInt, splitOnce, trim } from "std/str"
+import { parseUInt, splitOnce } from "std/str"
 import logging, { info } from "std/logging"
 
 type Setting(name: String, value: Int64)
@@ -13,11 +13,11 @@ fn parseLine(line: String) -> Trial<Setting, String> {
         Has(found) => found
         Not => return Fail("no `=` in `{line}`")
     }
-    let value = match parseUInt(trim(parts.after)) {
+    let value = match parseUInt(parts.after.trim()) {
         Has(number) => number
-        Not => return Fail("`{trim(parts.after)}` is not a number")
+        Not => return Fail("`{parts.after.trim()}` is not a number")
     }
-    Pass(Setting(name: trim(parts.before), value: value))
+    Pass(Setting(name: parts.before.trim(), value: value))
 }
 
 fn parseAll(lines: Array<String>) -> Trial<Array<Setting>, String> {

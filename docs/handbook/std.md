@@ -12,7 +12,7 @@ import server from "std/http/server"
 import { Router } from "std/http/static"
 import json, { Json, decode, encode } from "std/json"
 import sqlite, { lit, ident } from "std/sqlite"
-import { startsWith, dropPrefix } from "std/str"
+import { indexOf, padLeft } from "std/str"
 import { cwdShort, shortPath } from "std/path"
 import { localHms, userName, hostname } from "std/env"
 import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
@@ -38,7 +38,7 @@ The source is in [`std/`](../../std/).
 | `std/http/static` | A static-file `Router` |
 | `std/json` | The `Json` tree, `decode` / `encode`, and `Issue` for typed reads |
 | `std/sqlite` | Embedded SQLite: `open`, `exec`, `query`, `sql"…"` |
-| `std/str` | String search, slicing, splitting, trimming, case, parsing |
+| `std/str` | Byte-indexed string helpers: positions, padding, `splitOnce`, `parseUInt` (search, case, trimming, and splitting are [String methods](language.md#string)) |
 | `std/path` | Path manipulation and the working directory |
 | `std/env` | Environment variables, user, host, time of day |
 | `std/ansi` | Terminal colors |
@@ -321,7 +321,7 @@ transactions, extension loading, and tags other than `sql`.
 
 | Module | Functions |
 |--------|-----------|
-| `std/str` | `startsWith`, `endsWith`, `contains`, `indexOf`, `lastIndexOf`, `count`, and ignore-case variants; `substring`, `byteAt`, `truncate`, `reverse`, `repeat`; `replaceFirst`, `replaceAll`; `split`, `splitOnce`, `join`, `lines`; `trim`, `trimStart`, `trimEnd`, `trimNewline`, `padLeft`, `padRight`; `dropPrefix`, `dropSuffix`, `removePrefix`, `removeSuffix`; `toLowerAscii`, `toUpperAscii`, `equalsIgnoreCaseAscii`; `isEmpty`, `isAscii`, `length`; `parseUInt` (`May<Int64>`; above the `Int64` maximum is `Not`) |
+| `std/str` | Byte-indexed helpers (searching, case, trimming, splitting, and joining are [String methods](language.md#string)): `length`, `count` (occurrences), `indexOf`, `lastIndexOf` (`-1` when missing), `substring`, `byteAt`, `truncate`, `reverse`, `padLeft`, `padRight`, `splitOnce` (`May<Split>`), `parseUInt` (`May<Int64>`; above the `Int64` maximum is `Not`). Positions and widths count bytes, so they can cut a character in two |
 | `std/path` | `dirname`, `parent`, `basename`, `fileName`, `stem`, `extension`, `hasExtension`, `withExtension`, `withFileName`, `join`, `joinAll`, `parts`, `normalize`, `isAbsolute`, `isRelative`, `stripTrailingSlash`, `ensureTrailingSlash`, `cwd`, `shortPath`, `cwdShort` |
 | `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
 | `std/ansi` | `fg`, `bg`, `fgHex`, `bgHex`, `sgr0`, the 16 named colors, `parseRgba`. Hex colors are `#RRGGBB` or `#RRGGBBAA` (alpha ignored); an invalid one gives black |

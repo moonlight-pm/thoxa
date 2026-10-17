@@ -11,7 +11,7 @@
 
 import env, { getenvOr } from "std/env"
 import { Has, Not, May } from "std/fallible"
-import { parseUInt, isEmpty } from "std/str"
+import { parseUInt } from "std/str"
 
 export fn listenPort() -> Int64 {
     match portFromEnv("PORT") {
@@ -63,7 +63,7 @@ export fn samplesRoot() -> String {
 ## is relative to the workspace root (where `cargo make run` starts).
 fn directory(name!: String, fallback!: String) -> String {
     let root = getenvOr(name, fallback)
-    if isEmpty(root) {
+    if root.isEmpty() {
         fallback
     } else {
         root

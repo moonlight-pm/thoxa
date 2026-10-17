@@ -6,7 +6,6 @@ import net, { Socket } from "std/net"
 import http, { Request, Response, Header } from "std/http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import { info, warn } from "std/logging"
-import { toLowerAscii } from "std/str"
 
 let maxBodyBytes = 65536
 ## A slow or idle client cannot hold a task, and its fd, forever. The first
@@ -83,7 +82,7 @@ fn readUntil(peer!: Socket, start!: Bytes, need!: Int64, deadline!: Int64) -> Tr
 fn framingError(req!: Request) -> May<String> {
     mut lengths = 0
     for header in req.headers {
-        let name = toLowerAscii(header.name)
+        let name = header.name.toLower()
         if name == "transfer-encoding" {
             return Has("Transfer-Encoding is not supported")
         }

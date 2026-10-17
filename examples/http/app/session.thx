@@ -4,7 +4,6 @@
 import http, { Request, Response, Header, Cookie } from "std/http"
 import env from "std/env"
 import { Has, Not, May } from "std/fallible"
-import { isEmpty, toLowerAscii } from "std/str"
 
 let cookieName = "crema"
 let maxAgeSeconds = 2592000
@@ -53,7 +52,7 @@ fn put(bag!: Bag) {
 fn withCookieHeader(request!: Request, id!: String) -> Request {
     mut headers: Array<Header> = []
     for header in request.headers {
-        if toLowerAscii(header.name) != "cookie" {
+        if header.name.toLower() != "cookie" {
             headers.append(header)
         }
     }
@@ -157,7 +156,7 @@ export fn setName(request!: Request, name!: String) {
 
 export fn checkCsrf(request!: Request, body!: Bytes) -> Bool {
     let want = csrf(request)
-    if isEmpty(want) {
+    if want.isEmpty() {
         false
     } else {
         match http.formField(body, "csrf") {

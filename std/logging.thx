@@ -7,7 +7,6 @@
 
 import { Pass, Fail, Trial } from "std/fallible"
 import { getenv, localHms } from "./env"
-import { toLowerAscii } from "./str"
 
 extern fn sysWriteLineFd(fd!: Int32, s!: String) -> Int32 from "c" "thoxa_write_line_fd"
 extern fn sysOpenMode(path!: String, flags!: Int32, mode!: Int32) -> Int32 from "c" "open"
@@ -97,7 +96,7 @@ export fn levelName(level!: Int64) -> String {
 }
 
 export fn parseLevel(s!: String) -> Int64 {
-    let t = toLowerAscii(s)
+    let t = s.toLower()
     if t == "trace" {
         levelTrace
     } else {

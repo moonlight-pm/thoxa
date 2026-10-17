@@ -1,5 +1,5 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { startsWith, endsWith, isEmpty, length, repeat, contains, count, indexOf, lastIndexOf, substring, replaceFirst, replaceAll, equalsIgnoreCaseAscii, split, splitOnce, parseUInt, join as strJoin, dropPrefix, dropSuffix, removePrefix, removeSuffix, trimNewline, trim, trimStart, trimEnd, toLowerAscii, toUpperAscii, padLeft, padRight, byteAt, lines, startsWithIgnoreCaseAscii, endsWithIgnoreCaseAscii, containsIgnoreCaseAscii, truncate, reverse, isAscii } from "std/str"
+import { length, count, indexOf, lastIndexOf, substring, splitOnce, parseUInt, padLeft, padRight, byteAt, truncate, reverse } from "std/str"
 import { dirname, parent, basename, fileName, join, joinAll, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, withFileName, parts, stripTrailingSlash, ensureTrailingSlash, shortPath } from "std/path"
 import { hasEnv, getenvOr, home, tmpdir, shell, pathVar, pwd } from "std/env"
 import { branchName, branchSuffix, isRepo, repoRoot, isDetached, headLine } from "std/git"
@@ -11,29 +11,29 @@ fn main() -> Int64 {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
 
-    if startsWith("hello", "he") {
+    if "hello".startsWith("he") {
         logging.info("starts-ok")
     } else {
         logging.info("starts-bad")
     }
-    if endsWith("hello", "lo") {
+    if "hello".endsWith("lo") {
         logging.info("ends-ok")
     } else {
         logging.info("ends-bad")
     }
-    if isEmpty("") {
+    if "".isEmpty() {
         logging.info("empty-ok")
     } else {
         logging.info("empty-bad")
     }
-    logging.info(repeat("ab", 3))
-    logging.info(repeat("x", 0))
-    if contains("hello", "ell") {
+    logging.info("ab".repeat(3))
+    logging.info("x".repeat(0))
+    if "hello".contains("ell") {
         logging.info("contains-ok")
     } else {
         logging.info("contains-bad")
     }
-    if contains("hello", "xyz") {
+    if "hello".contains("xyz") {
         logging.info("contains-miss-bad")
     } else {
         logging.info("contains-miss-ok")
@@ -44,14 +44,14 @@ fn main() -> Int64 {
     logging.info("cnt={count(\"ababab\", \"ab\")}")
     logging.info("len={length(\"hi\")}")
     logging.info(substring("hello", 1, 4))
-    logging.info(replaceFirst("aa-aa", "aa", "b"))
-    logging.info(replaceAll("aa-aa", "aa", "b"))
-    if equalsIgnoreCaseAscii("AbC", "aBc") {
+    logging.info("aa-aa".replaceFirst("aa", "b"))
+    logging.info("aa-aa".replace("aa", "b"))
+    if "AbC".equals("aBc", ignoreCase: true) {
         logging.info("eq-ic-ok")
     } else {
         logging.info("eq-ic-bad")
     }
-    let parts = split("a,b,c", ",")
+    let parts = "a,b,c".split(",")
     logging.info("split={parts.count}:{parts[0]}:{parts[2]}")
     match splitOnce("a=b=c", "=") {
         Not => logging.info("once-miss")
@@ -75,46 +75,46 @@ fn main() -> Int64 {
     }
     logging.info(padLeft("7", 3, "0"))
     logging.info(padRight("x", 3, "."))
-    logging.info(dropPrefix("hello", "he"))
-    logging.info(dropSuffix("hello", "lo"))
-    logging.info(trimNewline("line\n"))
-    logging.info(trim("  hi\t\n"))
-    logging.info(trimStart("  hi"))
-    logging.info(trimEnd("hi  "))
+    logging.info("hello".removePrefix("he"))
+    logging.info("hello".removeSuffix("lo"))
+    logging.info("line\n".trimEnd())
+    logging.info("  hi\t\n".trim())
+    logging.info("  hi".trimStart())
+    logging.info("hi  ".trimEnd())
     logging.info("byte={byteAt(\"ABC\", 1)}")
     logging.info("byte-oob={byteAt(\"A\", 3)}")
-    let ls = lines("a\nb\r\nc")
+    let ls = "a\nb\r\nc".lines()
     logging.info("lines={ls.count}:{ls[0]}:{ls[1]}:{ls[2]}")
-    logging.info(strJoin(["x", "y", "z"], "-"))
-    if startsWithIgnoreCaseAscii("Hello", "he") {
+    logging.info(["x", "y", "z"].join("-"))
+    if "Hello".startsWith("he", ignoreCase: true) {
         logging.info("sw-ic-ok")
     } else {
         logging.info("sw-ic-bad")
     }
-    if endsWithIgnoreCaseAscii("Hello", "LO") {
+    if "Hello".endsWith("LO", ignoreCase: true) {
         logging.info("ew-ic-ok")
     } else {
         logging.info("ew-ic-bad")
     }
-    if containsIgnoreCaseAscii("AbCd", "bc") {
+    if "AbCd".contains("bc", ignoreCase: true) {
         logging.info("ci-ok")
     } else {
         logging.info("ci-bad")
     }
-    logging.info(removePrefix("hello", "he"))
-    logging.info(removePrefix("hello", "x"))
-    logging.info(removeSuffix("hello", "lo"))
-    logging.info(removeSuffix("hello", "x"))
+    logging.info("hello".removePrefix("he"))
+    logging.info("hello".removePrefix("x"))
+    logging.info("hello".removeSuffix("lo"))
+    logging.info("hello".removeSuffix("x"))
     logging.info(truncate("abcdef", 3))
     logging.info(truncate("ab", 10))
     logging.info(reverse("abc"))
-    if isAscii("hi") {
+    if "hi".isAscii() {
         logging.info("ascii-ok")
     } else {
         logging.info("ascii-bad")
     }
-    logging.info(toLowerAscii("AbC"))
-    logging.info(toUpperAscii("AbC"))
+    logging.info("AbC".toLower())
+    logging.info("AbC".toUpper())
     logging.info(dirname("/a/b/c"))
     logging.info(parent("/a/b/c"))
     logging.info(basename("/a/b/c"))

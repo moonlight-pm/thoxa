@@ -4,7 +4,6 @@
 ## Fail payloads are String.
 
 import { Pass, Fail, Trial } from "std/fallible"
-import { isEmpty, replaceAll } from "std/str"
 
 extern fn sysSqlOpen(path!: String) -> Int64 from "c" "thoxa_sql_open"
 extern fn sysSqlClose(handle!: Int64) -> Int32 from "c" "thoxa_sql_close"
@@ -45,7 +44,7 @@ export let null = Sql(text: "NULL")
 export fn lit(value: String) -> Sql {
     let q = "'"
     let doubled = "{q}{q}"
-    Sql(text: "{q}{replaceAll(value, q, doubled)}{q}")
+    Sql(text: "{q}{value.replace(q, doubled)}{q}")
 }
 
 export fn lit(value: Bool) -> Sql {
@@ -59,12 +58,12 @@ export fn lit(value: Bool) -> Sql {
 ## Quote an identifier (`"name"`). Empty names fail. Use `{ident(name)?}`
 ## inside `sql"…"` (spliced, not re-quoted).
 export fn ident(name!: String) -> Trial<Sql, String> {
-    if isEmpty(name) {
+    if name.isEmpty() {
         Fail("empty SQL identifier")
     } else {
         let quote = "\x22"
         let doubled = "{quote}{quote}"
-        Pass(Sql(text: "{quote}{replaceAll(name, quote, doubled)}{quote}"))
+        Pass(Sql(text: "{quote}{name.replace(quote, doubled)}{quote}"))
     }
 }
 

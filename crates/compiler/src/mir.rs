@@ -9534,6 +9534,12 @@ fn lower_field(
     match &base_ty {
         Ty::String => {
             if name != "count" {
+                if STRING_METHODS.iter().any(|(method, ..)| *method == name) {
+                    return Err(Error::at(
+                        format!("`{name}` on a String is a method: write `.{name}()`"),
+                        name_span,
+                    ));
+                }
                 return Err(Error::at(
                     format!("no field `{name}` on String (use .count)"),
                     name_span,
@@ -10248,6 +10254,24 @@ fn lower_method_call(
         {
             return Ok(result);
         }
+    }
+    // A refined String takes String's methods unless it declares its own (D195);
+    // its generated `toJson` / `encode` stay with the type.
+    let string_receiver = match &recv_ty {
+        Ty::String => true,
+        Ty::User(name) => {
+            refined_info(&ctx.types, &recv_ty).is_some_and(|info| info.base == Ty::String)
+                && !matches!(method, "toJson" | "encode")
+                && !ctx
+                    .types
+                    .get(name)
+                    .is_some_and(|info| info.methods.contains_key(method))
+        }
+        _ => false,
+    };
+    if string_receiver {
+        let (recv_p, _) = unwrap_refined(ctx, recv_p, &recv_ty)?;
+        return lower_string_method(ctx, recv_p, method, args, method_span);
     }
     match &recv_ty {
         Ty::Bytes => lower_bytes_method(ctx, recv_p, method, args, method_span),
@@ -11099,6 +11123,13 @@ fn lower_array_method(
             );
             Ok(void_place(ctx))
         }
+        "join" if *elem == Ty::String => {
+            let formal = vec![("separator".into(), Ty::String)];
+            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let mut all = vec![recv];
+            all.extend(places);
+            emit_call_result(ctx, Callee::Builtin("array_string_join".into()), all, Ty::String)
+        }
         "count" => Err(Error::at(
             "`count` on an Array is a property, not a method: write `.count`",
             span,
@@ -11108,6 +11139,91 @@ fn lower_array_method(
             span,
         )),
     }
+}
+
+/// String's methods (D195): `name → (runtime builtin, parameters, result)`.
+/// Every parameter after the first is labelled; `ignoreCase` defaults to false.
+const STRING_METHODS: &[(&str, &str, &[(&str, StringParam)], StringResult)] = &[
+    ("contains", "string_contains", &[("needle", StringParam::Text), IGNORE_CASE], StringResult::Bool),
+    ("startsWith", "string_starts_with", &[("prefix", StringParam::Text), IGNORE_CASE], StringResult::Bool),
+    ("endsWith", "string_ends_with", &[("suffix", StringParam::Text), IGNORE_CASE], StringResult::Bool),
+    ("equals", "string_equals", &[("other", StringParam::Text), IGNORE_CASE], StringResult::Bool),
+    ("isEmpty", "string_is_empty", &[], StringResult::Bool),
+    ("isAscii", "string_is_ascii", &[], StringResult::Bool),
+    ("toLower", "string_to_lower", &[], StringResult::Text),
+    ("toUpper", "string_to_upper", &[], StringResult::Text),
+    ("trim", "string_trim", &[], StringResult::Text),
+    ("trimStart", "string_trim_start", &[], StringResult::Text),
+    ("trimEnd", "string_trim_end", &[], StringResult::Text),
+    ("removePrefix", "string_remove_prefix", &[("prefix", StringParam::Text)], StringResult::Text),
+    ("removeSuffix", "string_remove_suffix", &[("suffix", StringParam::Text)], StringResult::Text),
+    ("replace", "string_replace", &[("old", StringParam::Text), ("new", StringParam::Text)], StringResult::Text),
+    ("replaceFirst", "string_replace_first", &[("old", StringParam::Text), ("new", StringParam::Text)], StringResult::Text),
+    ("repeat", "string_repeat", &[("count", StringParam::Int)], StringResult::Text),
+    ("split", "string_split", &[("separator", StringParam::Text)], StringResult::Lines),
+    ("lines", "string_lines", &[], StringResult::Lines),
+];
+
+const IGNORE_CASE: (&str, StringParam) = ("ignoreCase", StringParam::IgnoreCase);
+
+#[derive(Clone, Copy)]
+enum StringParam {
+    Text,
+    Int,
+    /// `Bool = false`
+    IgnoreCase,
+}
+
+#[derive(Clone, Copy)]
+enum StringResult {
+    Bool,
+    Text,
+    /// `Array<String>`
+    Lines,
+}
+
+fn lower_string_method(
+    ctx: &mut LowerCtx,
+    recv: Place,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let Some((_, builtin, params, result)) =
+        STRING_METHODS.iter().find(|(name, ..)| *name == method)
+    else {
+        if method == "count" {
+            return Err(Error::at(
+                "`count` on a String is a property, not a method: write `.count`",
+                span,
+            ));
+        }
+        let names: Vec<&str> = STRING_METHODS.iter().map(|(name, ..)| *name).collect();
+        return Err(Error::at(format!("no method `{method}` on String"), span)
+            .with_help(format!("String's methods: {}", names.join(", "))));
+    };
+    let mut formal = Vec::new();
+    let mut defaults = Vec::new();
+    for (name, param) in params.iter() {
+        let (ty, default) = match param {
+            StringParam::Text => (Ty::String, None),
+            StringParam::Int => (Ty::Int64, None),
+            StringParam::IgnoreCase => (Ty::Bool, Some(crate::ast_build::bool_lit(false))),
+        };
+        formal.push((name.to_string(), ty));
+        defaults.push(default);
+    }
+    let places = resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, "")?;
+    let ret = match result {
+        StringResult::Bool => Ty::Bool,
+        StringResult::Text => Ty::String,
+        StringResult::Lines => Ty::Array {
+            elem: Box::new(Ty::String),
+        },
+    };
+    let mut all = vec![recv];
+    all.extend(places);
+    emit_call_result(ctx, Callee::Builtin(builtin.to_string()), all, ret)
 }
 
 /// Bool array slots are int64 at runtime; cast when needed.
@@ -11508,12 +11624,15 @@ fn resolve_call_args_with_defaults(
         return resolve_call_args_with_spreads(ctx, formal, defaults, args, span, def_mod);
     }
 
-    let all_named = args.iter().all(|a| matches!(a, Arg::Named { .. }));
-    let all_pos = args.iter().all(|a| matches!(a, Arg::Pos(_)));
-
-    if !all_named && !all_pos {
-        return Err(Error::at("cannot mix positional and named arguments", span));
+    // Positional first, then named (D194): `format("hi", width: 40)`.
+    let positional = args.iter().take_while(|a| matches!(a, Arg::Pos(_))).count();
+    if args[positional..].iter().any(|a| matches!(a, Arg::Pos(_))) {
+        return Err(Error::at(
+            "a positional argument cannot follow a named one",
+            span,
+        ));
     }
+    let all_pos = positional == args.len();
 
     if all_pos {
         if args.len() > formal.len() {
@@ -11560,8 +11679,19 @@ fn resolve_call_args_with_defaults(
     }
 
     // Named: match by name; omitted formals use defaults; declaration order for result.
+    // Leading positional args fill the first formals.
+    if positional > formal.len() {
+        return Err(Error::at(
+            format!(
+                "expected at most {} argument(s), found {}",
+                formal.len(),
+                args.len()
+            ),
+            span,
+        ));
+    }
     let mut by_name: HashMap<String, &Expr> = HashMap::new();
-    for arg in args {
+    for arg in &args[positional..] {
         match arg {
             Arg::Named {
                 name,
@@ -11574,6 +11704,12 @@ fn resolve_call_args_with_defaults(
                         *name_span,
                     ));
                 }
+                if formal[..positional].iter().any(|(fname, _)| fname == name) {
+                    return Err(Error::at(
+                        format!("argument `{name}` is already given by position"),
+                        *name_span,
+                    ));
+                }
                 by_name.insert(name.clone(), value);
             }
             Arg::Pos(_) | Arg::Spread { .. } => unreachable!(),
@@ -11581,6 +11717,13 @@ fn resolve_call_args_with_defaults(
     }
     let mut places = Vec::new();
     for (i, (fname, fty)) in formal.iter().enumerate() {
+        if i < positional {
+            let Arg::Pos(expr) = &args[i] else {
+                unreachable!()
+            };
+            places.push(lower_arg_for_formal(ctx, expr, fty, fname, i)?);
+            continue;
+        }
         let (expr, is_default) = if let Some(e) = by_name.remove(fname) {
             (e, false)
         } else if let Some(d) = default_at(i) {

@@ -1,7 +1,6 @@
 ## `and` / `or` short-circuit: the right operand runs only when the left one
 ## does not decide the result (D183).
 import logging, { info } from "std/logging"
-import { trim } from "std/str"
 
 mut calls = 0
 
@@ -37,10 +36,10 @@ fn main() -> Int64 {
     ## A heap temporary in a skipped right operand is never built or dropped.
     mut blanks = 0
     for word in ["  ", "a", "", " b "] {
-        if word.count > 0 and trim(word) == "" {
+        if word.count > 0 and word.trim() == "" {
             blanks = blanks + 1
         }
-        if word.count == 0 or trim(word) != word {
+        if word.count == 0 or word.trim() != word {
             info("trimmed or empty: [{word}]")
         }
     }

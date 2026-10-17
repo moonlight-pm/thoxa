@@ -1,6 +1,5 @@
 ## std/Git — lightweight repo probes (no `git` subprocess).
 
-import { startsWith, dropPrefix, trimNewline } from "./str"
 import { dirname, cwd } from "./path"
 
 extern fn cOpen(path!: String, flags!: Int32) -> Int32 from "c" "open"
@@ -41,10 +40,10 @@ export fn branchName(startDir!: String) -> String {
                 break
             }
             let headPath = "{dir}/.git/HEAD"
-            let raw = trimNewline(readFileLimited(headPath, 256))
+            let raw = readFileLimited(headPath, 256).trimEnd()
             if raw != "" {
-                if startsWith(raw, refPrefix) {
-                    out = dropPrefix(raw, refPrefix)
+                if raw.startsWith(refPrefix) {
+                    out = raw.removePrefix(refPrefix)
                 }
                 break
             }
@@ -106,7 +105,7 @@ export fn isDetached(startDir!: String) -> Bool {
     if raw == "" {
         false
     } else {
-        if startsWith(raw, "ref: refs/heads/") {
+        if raw.startsWith("ref: refs/heads/") {
             false
         } else {
             true
@@ -127,7 +126,7 @@ export fn headLine(startDir!: String) -> String {
                 break
             }
             let headPath = "{dir}/.git/HEAD"
-            let raw = trimNewline(readFileLimited(headPath, 256))
+            let raw = readFileLimited(headPath, 256).trimEnd()
             if raw != "" {
                 out = raw
                 break

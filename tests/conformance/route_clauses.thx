@@ -1,6 +1,5 @@
 ## Type-body `GET "/…"` → generated `route(req) -> Response` (D150).
 import http, { Request, Response, ok, notFound, badRequest } from "std/http"
-import { trim } from "std/str"
 import logging, { info } from "std/logging"
 
 type Routes {
@@ -56,7 +55,7 @@ fn reqBody(method!: String, path!: String, body!: String) -> Request {
 }
 
 fn show(res!: Response) -> String {
-    "{res.status}|{trim(res.body.toString())}"
+    "{res.status}|{res.body.toString().trim()}"
 }
 
 fn main() -> Int64 {

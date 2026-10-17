@@ -6,7 +6,6 @@ import highlight from "~/app/highlight"
 import markdown, { Chapter } from "~/app/markdown"
 import manual from "~/app/pages/manual"
 import http, { Request, Response } from "std/http"
-import { isEmpty } from "std/str"
 
 export fn page(request!: Request) -> Response {
     http.htmlResponse(
@@ -173,7 +172,7 @@ fn sampleView(sample!: Sample, chapter!: Chapter) -> Node {
 }
 
 fn output(sample!: Sample) -> Node {
-    if isEmpty(sample.output) {
+    if sample.output.isEmpty() {
         <></>
     } else {
         <div class="output">

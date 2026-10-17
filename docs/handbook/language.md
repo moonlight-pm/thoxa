@@ -297,8 +297,42 @@ nothing); its one value is written `Void`. A `let` may bind a `Void` value
 
 A `String` is an immutable sequence of UTF-8 bytes. `.count` is its length in
 bytes (`"héllo".count` is `6`). Strings support `==` and `!=` (byte
-comparison); `<` and `>` on strings are a compile error. Searching, slicing,
-splitting, and case conversion are functions in [`std/str`](std.md#utility-modules).
+comparison); `<` and `>` on strings are a compile error.
+
+| Method | Result |
+|--------|--------|
+| `.contains(needle)`, `.startsWith(prefix)`, `.endsWith(suffix)` | `Bool` |
+| `.equals(other)` | `Bool`; `==` does the same |
+| `.isEmpty()`, `.isAscii()` | `Bool` |
+| `.toLower()`, `.toUpper()` | a new `String` |
+| `.trim()`, `.trimStart()`, `.trimEnd()` | without leading and/or trailing white space |
+| `.removePrefix(prefix)`, `.removeSuffix(suffix)` | without it; unchanged when it is not there |
+| `.replace(old, new)`, `.replaceFirst(old, new)` | every / the first `old` replaced; an empty `old` changes nothing |
+| `.repeat(count)` | the string `count` times; `""` when `count <= 0` |
+| `.split(separator)` | `Array<String>`, empty pieces kept; an empty separator gives `[s]` |
+| `.lines()` | `Array<String>`, split on `\n`, each without a trailing `\r` |
+
+`.join(separator)` on an `Array<String>` puts the separator between the
+elements. A [refined](#refinements) String has the same methods.
+
+`contains`, `startsWith`, `endsWith`, and `equals` take `ignoreCase: true`,
+which compares Unicode case folds:
+
+```thx
+"CAFÉ AU LAIT".contains("café", ignoreCase: true)    ## true
+"Straße".equals("STRASSE", ignoreCase: true)         ## true
+"Straße".toUpper()                                   ## "STRASSE"
+```
+
+Without `ignoreCase` the comparison is exact, byte for byte. `toLower` and
+`toUpper` use Unicode's default case mappings, so one character may become
+two (`ß` becomes `SS`); `Σ` always lowercases to `σ`, also at the end of a
+word, and there are no language-specific rules (Turkish `i`). White space is
+Unicode white space: space, tab, line ends, the no-break space, the
+ideographic space, and the other `White_Space` characters. Neither case
+folding nor `==` normalizes: a precomposed `é` is not `e` followed by a
+combining accent. Counting and cutting by position are functions in
+[`std/str`](std.md#utility-modules), and they count bytes.
 
 ### Bytes
 
@@ -621,8 +655,10 @@ let total = {
 
 ### Calls and arguments
 
-A call passes arguments either all by position or all by name. Mixing the two
-in one call is a compile error. Named arguments may appear in any order.
+A call passes its positional arguments first, then its named ones. Positional
+arguments fill the first parameters in order; named arguments fill the rest,
+in any order. A positional argument after a named one, or a named argument
+for a parameter already given by position, is a compile error.
 
 ```thx
 fn connect(host: String, port: Int64 = 8080, tls: Bool = false) -> String {
@@ -631,7 +667,8 @@ fn connect(host: String, port: Int64 = 8080, tls: Bool = false) -> String {
 
 connect("localhost", 9000)            ## positional
 connect(port: 1, host: "a")           ## named, any order
-## connect("a", tls: true)            ## compile error: cannot mix
+connect("a", tls: true)               ## positional, then named
+## connect(tls: true, "a")            ## compile error: positional after named
 ```
 
 A parameter with a default may be omitted: by name anywhere, by position at
@@ -768,7 +805,7 @@ type Fahrenheit(degrees: Float64) {
 
 type Email(address: String) {
     export from(text: String) -> Trial<Email, String> {
-        if contains(text, "@") {
+        if text.contains("@") {
             Pass(Email(address: text))
         } else {
             Fail("{text} is not an email address")

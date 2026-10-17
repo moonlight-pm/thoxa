@@ -1,6 +1,5 @@
 ## std/Path — path string helpers (POSIX `/` separators).
 
-import { startsWith, dropPrefix, split } from "./str"
 ## (dropPrefix used by withExtension; split by parts)
 
 extern fn sysGetcwd(buf!: Bytes, size!: UInt64) -> String from "c" "getcwd"
@@ -71,7 +70,7 @@ export fn join(left!: String, right!: String) -> String {
         if right == "" {
             left
         } else {
-            if startsWith(right, "/") {
+            if right.startsWith("/") {
                 right
             } else {
                 let lb = Bytes.fromString(left)
@@ -91,7 +90,7 @@ export fn join(left!: String, right!: String) -> String {
 
 ## True when `path` starts with `/` (POSIX absolute).
 export fn isAbsolute(path!: String) -> Bool {
-    startsWith(path, "/")
+    path.startsWith("/")
 }
 
 ## Collapse repeated `/` separators (does not resolve `.` / `..`).
@@ -180,8 +179,8 @@ export fn withExtension(path!: String, ext!: String) -> String {
     let dir = dirname(path)
     let st = stem(path)
     mut e = ext
-    if startsWith(ext, ".") {
-        e = dropPrefix(ext, ".")
+    if ext.startsWith(".") {
+        e = ext.removePrefix(".")
     }
     let base = if e == "" {
         st
@@ -216,7 +215,7 @@ export fn withFileName(path!: String, name!: String) -> String {
 ## Path components split on `/`. Leading `/` yields a leading empty string;
 ## trailing `/` yields a trailing empty string; `""` → `[""]`.
 export fn parts(path!: String) -> Array<String> {
-    split(path, "/")
+    path.split("/")
 }
 
 ## Remove one trailing `/` when present (root `"/"` stays `"/"`).
@@ -285,8 +284,8 @@ export fn shortPath(full!: String) -> String {
             path = "~"
         } else {
             let homeSlash = "{home}/"
-            if startsWith(full, homeSlash) {
-                let rest = dropPrefix(full, homeSlash)
+            if full.startsWith(homeSlash) {
+                let rest = full.removePrefix(homeSlash)
                 path = "~/{rest}"
             }
         }

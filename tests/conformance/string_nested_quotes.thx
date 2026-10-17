@@ -1,6 +1,6 @@
 ## D176: a hole `{…}` may hold strings of its own.
 import logging, { info } from "std/logging"
-import { indexOf, toUpperAscii } from "std/str"
+import { indexOf } from "std/str"
 
 fn greet(name!: String) -> String {
     "hi {name}"
@@ -20,7 +20,7 @@ fn main() -> Int64 {
     ## The older way, escaped quotes, still works.
     info("idx={indexOf(\"hello\", \"ll\")} new={indexOf("hello", "lo")}")
     let badge = Badge(label: "new", color: "#0a0")
-    info("{toUpperAscii(badge.label)} {badge.color == "#0a0"} {"plain"}")
+    info("{badge.label.toUpper()} {badge.color == "#0a0"} {"plain"}")
     ## Across lines.
     info("{greet(
         "multi"

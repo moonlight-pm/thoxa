@@ -1,0 +1,150 @@
+# Freeze: String methods and Unicode text (D195)
+
+**Date:** 2026-10-17
+**Status:** target (freeze)
+**Implementation:** §1–§3 shipped (slice 1); §4 not started (slice 2)
+**Decision:** D195 (needs D194, positional-then-named calls)
+**Gates:** `string_methods`, `stdlib`, `call_mixed_args`, `fail/call_positional_after_named`, `fail/call_named_twice`
+**Gaps:** §4; final sigma (`Σ` lowercases to `σ` everywhere); no normalization; no `\u{…}` escape
+**As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
+**Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D195 in
+[`decisions.md`](../decisions.md)
+
+---
+
+## Intent
+
+A String is UTF-8, end to end. Until now the string toolkit was free
+functions in `std/str`, written in Thoxa as loops over `Bytes`, and anything
+involving case worked on ASCII only (`containsIgnoreCaseAscii`). The runtime
+had no Unicode data, and nothing in it decoded UTF-8. Measured before this
+freeze:
+
+| Call | Result |
+|------|--------|
+| `containsIgnoreCaseAscii("CAFÉ AU LAIT", "café")` | `false` |
+| `containsIgnoreCaseAscii("Straße", "STRASSE")` | `false` |
+| `truncate("café", 4)` | `caf\xC3`, not UTF-8 |
+| `reverse("café")` | `\xA9\xC3fac`, not UTF-8 |
+| `padLeft("é", 3)` | one space, not two |
+
+This freeze moves the toolkit onto String as methods implemented in the C
+runtime, and makes case and white space Unicode. It does it in two slices:
+slice 1 takes everything that does not count or index (§1–§3); slice 2 settles
+what a String index counts and moves the rest (§4).
+
+```thx
+fn drinkMatches(drink!: Drink, query!: String) -> Bool {
+    drink.name.contains(query, ignoreCase: true) or
+        drink.notes.contains(query, ignoreCase: true) or
+        drink.slug.contains(query, ignoreCase: true)
+}
+
+"Straße".equals("STRASSE", ignoreCase: true)   ## true
+"Straße".toUpper()                             ## "STRASSE"
+"\tcafé\n".trim()                              ## "café"
+["été", "hiver"].join(" · ")                   ## "été · hiver"
+```
+
+## §1 Methods on String (slice 1)
+
+Methods are attached by the compiler, as `Bytes`, `Array`, and `Map` methods
+are (D149: no traits, no user extensions of built-in types). Each is a call
+into `thoxa_rt` that borrows its arguments and returns a new value; an
+unchanged input comes back shared, not copied.
+
+| Method | Result |
+|--------|--------|
+| `contains(needle, ignoreCase: Bool = false)` | `Bool` |
+| `startsWith(prefix, ignoreCase: Bool = false)` | `Bool` |
+| `endsWith(suffix, ignoreCase: Bool = false)` | `Bool` |
+| `equals(other, ignoreCase: Bool = false)` | `Bool`; without `ignoreCase` it is `==` |
+| `isEmpty()`, `isAscii()` | `Bool` |
+| `toLower()`, `toUpper()` | `String` |
+| `trim()`, `trimStart()`, `trimEnd()` | `String` |
+| `removePrefix(prefix)`, `removeSuffix(suffix)` | `String`, unchanged when absent |
+| `replace(old, new)`, `replaceFirst(old, new)` | `String`; every / the first non-overlapping `old`; an empty `old` changes nothing |
+| `repeat(count)` | `String`; `count <= 0` is `""` |
+| `split(separator)` | `Array<String>`; keeps empty pieces; an empty separator gives `[s]` |
+| `lines()` | `Array<String>`; splits on `\n` and drops one trailing `\r` per line |
+
+On `Array<String>`: `join(separator) -> String`.
+
+A refined String (`type Name = String where >= 1`) takes the same methods,
+unless it declares a method of the same name. `ignoreCase` is a labelled
+parameter, so the call is `s.contains(x, ignoreCase: true)`: positional
+arguments first, then named (D194, the oracle SPEC's call rule).
+
+## §2 Unicode semantics (slice 1)
+
+- **Exact operations compare bytes.** `contains`, `startsWith`, `endsWith`,
+  `split`, `replace`, and `removePrefix` / `removeSuffix` are exact on UTF-8:
+  a match of valid UTF-8 cannot begin or end inside a character.
+- **`ignoreCase: true` compares full case folds** (Unicode `CaseFolding.txt`,
+  statuses C and F): `Straße` = `STRASSE`, `CAFÉ` contains `café`, `ΣΊΣΥΦΟΣ`
+  contains `σίσυφος`. Both sides are folded and then compared as bytes, so a
+  prefix may match part of an expansion (`"ß".startsWith("s", ignoreCase:
+  true)` is true).
+- **`toLower` / `toUpper` use the full default mappings** (`UnicodeData.txt`
+  plus the unconditional entries of `SpecialCasing.txt`): `ß` → `SS`,
+  `İ` → `i̇`, `ǅ` → `Ǆ` / `ǆ`. Conditional mappings are left out: final sigma,
+  and the Turkish, Azeri, and Lithuanian rules.
+- **`trim` removes Unicode White_Space**: ASCII space, tab, and line ends,
+  plus U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F,
+  U+3000.
+- **A malformed byte passes through unchanged.** `Bytes.toString()` does not
+  check its input yet (§4), so a String can hold one.
+- **Not normalization.** Case-insensitive is not normalization-insensitive: a
+  precomposed `é` (U+00E9) does not match `e` + U+0301.
+
+## §3 The case tables (slice 1)
+
+`runtime/src/thoxa_unicode.h` is generated by `cargo make unicode <ucd-dir>`
+(`crates/make/src/unicode.rs`) from `UnicodeData.txt`, `SpecialCasing.txt`,
+and `CaseFolding.txt` of one Unicode version, downloaded from
+`https://www.unicode.org/Public/<version>/ucd/`; it names the version
+(`THOXA_UNICODE_VERSION`). As shipped: Unicode 17.0.0, about 12 KB of
+read-only data. Three tables (lower, upper, fold), each a sorted list of
+one-to-one ranges (`first..=last` every `stride` code points moves by
+`delta`) plus a short list of multi-code-point expansions, looked up by
+binary search. ASCII takes a fast path that skips the tables.
+
+Checked when generated: every code point's three mappings agreed with
+Python's `str.lower` / `upper` / `casefold` (Unicode 15.1) except four
+lowercase letters whose capitals arrived in 16.0 and 17.0.
+
+`std/str` keeps only what counts or cuts by bytes: `length`, `substring`,
+`count`, `padLeft`, `padRight`, `indexOf`, `lastIndexOf`, `splitOnce`,
+`parseUInt`, `byteAt`, `truncate`, `reverse`. The rest were removed, with
+every caller moved (D195 has no compatibility names).
+
+## §4 What a String counts (slice 2, decided, not started)
+
+**Joshua, 2026-10-17: Unicode scalars.** `.count`, and every method that
+takes or returns a position, count Unicode scalar values (code points), as
+the oracle SPEC's `Char` is a scalar:
+
+- `"café".count` is `4`; `.byteCount` is the length in bytes (sizes on the
+  wire, such as Content-Length).
+- `indexOf` / `lastIndexOf` (returning `May<Int64>`), `substring`,
+  `truncate`, `padLeft` / `padRight`, `reverse`, and `splitOnce` become
+  String methods in scalar positions; the byte-indexed `std/str` goes away.
+- `Bytes.toString()` checks its input, so a String is always valid UTF-8 (a
+  `Trial`, or U+FFFD for bad bytes: decide in the slice).
+- Every `.count` that means bytes today is audited and moved to `.byteCount`.
+
+**Revisit (Joshua, 2026-10-17):** "thoxa should be performant and that O(n)
+bothers me a little." Indexing by scalar is O(n) in a UTF-8 string; by byte it
+is O(1). The answer for now is that code which needs speed works in `Bytes`
+(or a byte view), and counts and positions stay scalars. Ways to revisit
+without changing the surface: cache the scalar count in the string header, mark
+all-ASCII strings so scalar index = byte index, or keep an index of positions
+on long strings. If those are not enough, reopen the unit itself (bytes with
+boundary checks, as Rust and Go do).
+
+## Non-goals
+
+- Grapheme clusters (`👍🏽` counts as two scalars), display width.
+- Locale-dependent case (Turkish `i`), collation, `<` on strings.
+- Normalization (NFC / NFD).
+- A general way to add methods to built-in types.

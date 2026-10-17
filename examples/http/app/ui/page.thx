@@ -2,11 +2,10 @@
 
 import session from "~/app/session"
 import http, { Request } from "std/http"
-import { isEmpty, startsWith } from "std/str"
 
 fn flashBanner(request!: Request) -> Node {
     let text = session.takeFlash(request)
-    if isEmpty(text) {
+    if text.isEmpty() {
         <></>
     } else {
         <p class="flash">{text}</p>
@@ -15,7 +14,7 @@ fn flashBanner(request!: Request) -> Node {
 
 fn navExtra(request!: Request) -> Node {
     let customer = session.greeting(request)
-    if isEmpty(customer) {
+    if customer.isEmpty() {
         <></>
     } else {
         <p class="nav-hi">Hi, {customer}</p>
@@ -29,7 +28,7 @@ fn navLink(href!: String, label!: String, path!: String) -> Node {
         if path == href {
             true
         } else {
-            startsWith(path, "{href}/")
+            path.startsWith("{href}/")
         }
     }
     if current {

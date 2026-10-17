@@ -6,7 +6,6 @@ import store from "~/app/store"
 import session from "~/app/session"
 import http, { Request, Response } from "std/http"
 import { Pass, Fail } from "std/fallible"
-import { isEmpty, trim } from "std/str"
 
 export fn page(request!: Request) -> Response {
     match store.drinkCount() {
@@ -29,7 +28,7 @@ export fn page(request!: Request) -> Response {
 
 fn welcome(request!: Request) -> Node {
     let customerName = session.greeting(request)
-    if isEmpty(customerName) {
+    if customerName.isEmpty() {
         <section class="card-form">
             <h2>Are you a regular?</h2>
             <p class="muted">Leave your name and the counter remembers you.</p>
@@ -63,8 +62,8 @@ export fn signIn(request!: Request) -> Response {
         match SignIn.readForm(request.body.toString()) {
             Fail(_) => redirect
             Pass(form) {
-                let name = trim(form.name)
-                if isEmpty(name) {
+                let name = form.name.trim()
+                if name.isEmpty() {
                     session.setName(request, "")
                     session.setFlash(request, "Name forgotten.")
                 } else {

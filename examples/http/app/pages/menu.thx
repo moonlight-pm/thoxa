@@ -6,7 +6,6 @@ import appHttp from "~/app/http"
 import store, { MenuView } from "~/app/store"
 import http, { Request, Response } from "std/http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { isEmpty, trim } from "std/str"
 
 export fn page(request!: Request) -> Response {
     match load(request) {
@@ -43,7 +42,7 @@ fn load(request!: Request) -> Trial<MenuView, String> {
 fn needleOf(request!: Request) -> String {
     match http.queryParam(request, "q") {
         Not => ""
-        Has(value) { trim(value) }
+        Has(value) { value.trim() }
     }
 }
 
@@ -53,7 +52,7 @@ fn results(view!: MenuView) -> Node {
     } else {
         <></>
     }
-    let clear = if isEmpty(view.needle) {
+    let clear = if view.needle.isEmpty() {
         <></>
     } else {
         <p class="muted">

@@ -6,7 +6,6 @@
 import { readFile } from "std/io"
 import { Request, Response, ok, okHead, notFound, forbidden, methodNotAllowed } from "std/http"
 import { Pass, Fail } from "std/fallible"
-import { contains } from "std/str"
 import { warn } from "std/logging"
 
 ## Split URL path on `/` into non-empty segments.
@@ -112,15 +111,15 @@ fn contentTypeFor(path!: String) -> String {
 
 ## Missing path / directory (expected on index fallback and 404).
 fn isMissingish(err!: String) -> Bool {
-    if contains(err, "No such file") {
+    if err.contains("No such file") {
         true
     } else {
-        contains(err, "Is a directory")
+        err.contains("Is a directory")
     }
 }
 
 fn isForbiddenish(err!: String) -> Bool {
-    contains(err, "Permission denied")
+    err.contains("Permission denied")
 }
 
 ## Turn a successful file body into GET or HEAD Response.

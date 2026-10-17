@@ -1,0 +1,48 @@
+## Methods on String (D195). Strings are UTF-8: `ignoreCase:` compares
+## Unicode case folds, toLower / toUpper use the full Unicode mappings, and
+## trim removes Unicode white space.
+
+import logging from "std/logging"
+
+type Name = String where >= 1
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## Search is exact by default.
+    let menu = "CAFÉ AU LAIT"
+    logging.info("{menu.contains("AU")} {menu.contains("café")} {menu.contains("")}")
+    logging.info("{menu.contains("café", ignoreCase: true)}")
+    logging.info("{"Straße".equals("STRASSE", ignoreCase: true)} {"Straße".equals("STRASSE")}")
+    logging.info("{"Éclair".startsWith("éc", ignoreCase: true)} {"Éclair".startsWith("éc")}")
+    logging.info("{"naïve CAFÉ".endsWith("café", ignoreCase: true)} {"naïve".endsWith("ïve")}")
+    logging.info("{"ΣΊΣΥΦΟΣ".contains("σίσυφος", ignoreCase: true)}")
+
+    ## Case conversion: one character may become two.
+    logging.info("Straße".toUpper())
+    logging.info("ΣΊΣΥΦΟΣ".toLower())
+    logging.info("ǅemal".toUpper())
+    logging.info("ÀÉÎÕÜ Ж".toLower())
+
+    ## Trim: ASCII and Unicode white space (no-break space, ideographic space).
+    logging.info("[{"  \t hi \r\n".trim()}]")
+    logging.info("[{" café ".trim()}]")
+    logging.info("[{"  x  ".trimStart()}] [{"  x  ".trimEnd()}]")
+
+    ## Pieces.
+    logging.info("{"one,two,,three,".split(",")}")
+    logging.info("{"no separator".split("")}")
+    logging.info("{"first\r\nsecond\nthird".lines()}")
+    logging.info(["été", "hiver", "printemps"].join(" · "))
+    logging.info("{"a-b-a-b".replace("a", "ä")} {"a-b-a-b".replaceFirst("a", "ä")}")
+    logging.info("{"keep".replace("", "x")} {"ab".repeat(3)}[{"ab".repeat(0)}]")
+    logging.info("{"/menu/latte".removePrefix("/menu/")} {"latte.thx".removeSuffix(".md")}")
+    logging.info("{"".isEmpty()} {"é".isEmpty()} {"plain".isAscii()} {"café".isAscii()}")
+
+    ## Labelled arguments may be named; a refined String takes the methods too.
+    logging.info("{"Hello".startsWith(prefix: "HE", ignoreCase: true)}")
+    let name: Name = "Ada Lovelace"
+    logging.info("{name.contains("LOVE", ignoreCase: true)} {name.toUpper()}")
+    0
+}

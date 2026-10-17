@@ -19,7 +19,11 @@ private name), so any linked C function can be called and `Address<T>`
 fits a C struct pointer parameter. Then **D191** (conversions: `as` /
 `as?`, `from` clauses, implicit encoding to `Json`, typed route body
 parameters) shipped in six slices, with D192 between them and D193
-after.
+after. Then, at Joshua's request, **D195 slice 1**: methods on String
+(`s.contains(x, ignoreCase: true)`, `toLower`, `trim`, `split`, …) with
+Unicode case folding, case mapping, and white space from generated Unicode
+17.0 tables, replacing most of `std/str`; it needed **D194**, positional
+arguments then named ones in one call (the oracle SPEC's rule).
 2026-10-16: **Language pass (D173–D181):** `main`'s return is
 the exit status, 0–255 (D173); unannotated methods infer their return type,
 and `x?` then `Pass(value)` infers `Trial<T, E>` (D174); structural `==` on
@@ -77,6 +81,15 @@ codegen, runtime semantics. Site and hosting work is paused (see holds); the
 2026-10-17 thoxa.dev rewrite was an explicit request, not a change of focus.
 One language slice at a time, each with conformance.
 
+**Next: String slice 2 (D195 §4)**, freeze
+[`docs/specs/2026-10-17-string-methods.md`](docs/specs/2026-10-17-string-methods.md):
+`.count` and positions count Unicode scalars (decided by Joshua), `.byteCount`
+counts bytes (audit every byte-meaning `.count`), `Bytes.toString()` checks
+UTF-8, and the byte-indexed `std/str` helpers (`indexOf`, `substring`,
+`truncate`, `padLeft`, `reverse`, `splitOnce`, …) become String methods.
+Joshua flagged the O(n) cost of scalar indexing to revisit; the freeze lists
+ways that keep the surface (cached count, ASCII flag, position index).
+
 **Typed codecs (D182) shipped**, freeze
 [`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md):
 `toJson` / `encode` on every encodable type (unions tagged by `"type"`); reads
@@ -101,7 +114,7 @@ itself). thoxa.dev runs `2e59a4c` (manual and feature list include D191).
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
 D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
-`Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
+`Float64` rounds unchecked. Found 2026-10-17: `.count` on a refined String is an error (its methods work since D195; fold into slice 2); in `where`, `lo..hi` includes `hi` (unlike a `for`
 range) and the message prints `lo..hi` for `lo..=hi`; indexing a `Map`
 through a field (`row.cells["name"]`) is an error (`.get` works); a method
 cannot call a sibling method by bare name; a session command inside a block
@@ -123,10 +136,11 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D191 conversions (six slices) with D192 and D193, and
+**Shipped recently:** D195 slice 1 (String methods, Unicode case) and D194
+(positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 150 programs, 36 rejections, 9 site samples, 279 unit tests;
-`cargo make test-asan` 140 clean, 10 excepted (2026-10-17). Before them: the
+`cargo make test` 152 programs, 38 rejections, 9 site samples, 279 unit tests;
+`cargo make test-asan` 142 clean, 10 excepted (2026-10-17). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 session step compile cache (D105 §3.5): no per-line
 scratch `.thx`; reuse prelude MIR; libtcc base image (in memory since **D169**) + ~500-line step C.
@@ -141,7 +155,7 @@ process libc via `/proc/self/maps` so NixOS/Oath session steps work
 without `/usr/lib/libc.so`. **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
 (`http_net_err`); bounded ASan pass (88 non-fiber clean on 2026-09-03, 109 on
-2026-10-15, 140 on 2026-10-17; 10 task programs excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
+2026-10-15, 142 on 2026-10-17; 10 task programs excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
 early-return drops from the final `drop_places` set; extra-retain `jsx` /
 `multi_clause` / `sqlite`; **D154** callee-owned heap params; nested Array/Map
 lits; overwrite-drop; **D152** match/init RC.

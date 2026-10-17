@@ -6,7 +6,6 @@
 import config from "./config"
 import { readFile } from "std/io"
 import { Pass, Fail } from "std/fallible"
-import { join, lines, removePrefix, startsWith, trim, trimEnd } from "std/str"
 import { warn } from "std/logging"
 
 ## In page order.
@@ -24,7 +23,7 @@ export fn load() -> Array<Sample> {
             Pass(bytes) {
                 let output = match readFile("{directory}/{name}.out") {
                     Fail(_) => ""
-                    Pass(found) => trimEnd(found.toString())
+                    Pass(found) => found.toString().trimEnd()
                 }
                 samples.append(parse(name, bytes.toString(), output))
             }
@@ -34,14 +33,14 @@ export fn load() -> Array<Sample> {
 }
 
 fn parse(name!: String, text!: String, output!: String) -> Sample {
-    let source = lines(text)
+    let source = text.lines()
     mut header: Array<String> = []
     mut index = 0
-    while index < source.count and startsWith(source[index], "##") {
-        header.append(trim(removePrefix(source[index], "##")))
+    while index < source.count and source[index].startsWith("##") {
+        header.append(source[index].removePrefix("##").trim())
         index = index + 1
     }
-    while index < source.count and trim(source[index]) == "" {
+    while index < source.count and source[index].trim() == "" {
         index = index + 1
     }
     mut body: Array<String> = []
@@ -56,5 +55,5 @@ fn parse(name!: String, text!: String, output!: String) -> Sample {
         description.append(header[line])
         line = line + 1
     }
-    Sample(name: name, title: title, description: join(description, " "), code: trimEnd(join(body, "\n")), output: output)
+    Sample(name: name, title: title, description: description.join(" "), code: body.join("\n").trimEnd(), output: output)
 }

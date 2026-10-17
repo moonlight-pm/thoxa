@@ -1,7 +1,6 @@
 ## `from` clauses declare conversions into a type (D191 §3). The return type
 ## says whether a conversion can fail; `as?` propagates its failure.
 import { Pass, Fail, Trial } from "std/fallible"
-import { contains } from "std/str"
 import logging, { info } from "std/logging"
 
 type Celsius(degrees: Float64)
@@ -20,7 +19,7 @@ type Kelvin(degrees: Float64)
 
 type Email(address: String) {
     export from(text: String) -> Trial<Email, String> {
-        if contains(text, "@") {
+        if text.contains("@") {
             Pass(Email(address: text))
         } else {
             Fail("{text} is not an email address")

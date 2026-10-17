@@ -1,0 +1,9 @@
+## A positional argument cannot follow a named one (D194).
+fn format(template!: String, width: Int64 = 80) -> String {
+    "{template}:{width}"
+}
+
+fn main() -> Int64 {
+    let text = format(width: 40, "hi")
+    0
+}

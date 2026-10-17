@@ -4,7 +4,6 @@
 ## `async`, no `await`: the same function works in a task or out of one.
 import net, { Socket, createSocket } from "std/net"
 import { Pass, Fail, Trial } from "std/fallible"
-import { toUpperAscii } from "std/str"
 import logging, { info } from "std/logging"
 
 fn listen(listener!: Socket, clients!: Int64) -> Trial<Void, String> {
@@ -17,7 +16,7 @@ fn listen(listener!: Socket, clients!: Int64) -> Trial<Void, String> {
 
 fn answer(peer!: Socket) -> Trial<Void, String> {
     let request = peer.receive().toString()
-    peer.sendAll(Bytes.fromString(toUpperAscii(request)))?
+    peer.sendAll(Bytes.fromString(request.toUpper()))?
     peer.close()
     Pass(Void)
 }

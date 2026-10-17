@@ -1,7 +1,6 @@
 ## App layer — drink catalog types + seed (rows live in SQLite).
 
 import { Pass, Fail, Trial } from "std/fallible"
-import { containsIgnoreCaseAscii, isEmpty, trim } from "std/str"
 
 export type Dark
 export type Medium
@@ -103,8 +102,8 @@ export fn seedDrinks() -> Array<Drink> {
 }
 
 export fn filterDrinks(drinks!: Array<Drink>, needle!: String) -> Array<Drink> {
-    let query = trim(needle)
-    if isEmpty(query) {
+    let query = needle.trim()
+    if query.isEmpty() {
         drinks
     } else {
         mut matches: Array<Drink> = []
@@ -118,17 +117,8 @@ export fn filterDrinks(drinks!: Array<Drink>, needle!: String) -> Array<Drink> {
 }
 
 fn drinkMatches(drink!: Drink, query!: String) -> Bool {
-    if containsIgnoreCaseAscii(drink.name, query) {
-        true
-    } else {
-        if containsIgnoreCaseAscii(drink.notes, query) {
-            true
-        } else {
-            if containsIgnoreCaseAscii(roastLabel(drink.roast), query) {
-                true
-            } else {
-                containsIgnoreCaseAscii(drink.slug, query)
-            }
-        }
-    }
+    drink.name.contains(query, ignoreCase: true) or
+        drink.notes.contains(query, ignoreCase: true) or
+        roastLabel(drink.roast).contains(query, ignoreCase: true) or
+        drink.slug.contains(query, ignoreCase: true)
 }

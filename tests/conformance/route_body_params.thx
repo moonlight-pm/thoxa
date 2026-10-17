@@ -4,7 +4,6 @@
 import http, { Request, Response, Header, ok, notFound, badRequest } from "std/http"
 import { Pass, Fail, Trial } from "std/fallible"
 import { Issue, messages } from "std/json"
-import { trim } from "std/str"
 import logging, { info } from "std/logging"
 
 type Quantity = Int64 where >= 1 & <= 12
@@ -49,7 +48,7 @@ fn send(method!: String, path!: String, query!: String, contentType!: String, bo
 }
 
 fn show(response!: Response) -> String {
-    "{response.status} {trim(response.body.toString())}"
+    "{response.status} {response.body.toString().trim()}"
 }
 
 fn main() -> Int64 {

@@ -303,6 +303,37 @@ bool thoxa_string_eq(const ThoxaString *a, const ThoxaString *b);
 const char *thoxa_string_cstr(const ThoxaString *s);
 size_t thoxa_string_len(const ThoxaString *s);
 
+/* String methods (D195). All borrow their arguments; String / Array results
+ * are new owned references (an unchanged input comes back as a +1 share).
+ * Case conversion and ignore_case use the Unicode tables (thoxa_unicode.h):
+ * full default case mappings and full case folding. */
+ThoxaString *thoxa_string_to_lower(const ThoxaString *s);
+ThoxaString *thoxa_string_to_upper(const ThoxaString *s);
+bool thoxa_string_equals(const ThoxaString *a, const ThoxaString *b, bool ignore_case);
+bool thoxa_string_contains(const ThoxaString *s, const ThoxaString *needle, bool ignore_case);
+bool thoxa_string_starts_with(const ThoxaString *s, const ThoxaString *prefix, bool ignore_case);
+bool thoxa_string_ends_with(const ThoxaString *s, const ThoxaString *suffix, bool ignore_case);
+bool thoxa_string_is_empty(const ThoxaString *s);
+bool thoxa_string_is_ascii(const ThoxaString *s);
+/* Trim Unicode White_Space. */
+ThoxaString *thoxa_string_trim(const ThoxaString *s);
+ThoxaString *thoxa_string_trim_start(const ThoxaString *s);
+ThoxaString *thoxa_string_trim_end(const ThoxaString *s);
+ThoxaString *thoxa_string_remove_prefix(const ThoxaString *s, const ThoxaString *prefix);
+ThoxaString *thoxa_string_remove_suffix(const ThoxaString *s, const ThoxaString *suffix);
+/* Every / the first non-overlapping `old`; an empty `old` changes nothing. */
+ThoxaString *thoxa_string_replace(
+    const ThoxaString *s,
+    const ThoxaString *old,
+    const ThoxaString *replacement
+);
+ThoxaString *thoxa_string_replace_first(
+    const ThoxaString *s,
+    const ThoxaString *old,
+    const ThoxaString *replacement
+);
+ThoxaString *thoxa_string_repeat(const ThoxaString *s, int64_t count);
+
 /* Best-effort write of C string bytes + '\n' to fd (1/2/file). Returns 0 / -1.
  * Takes const char* so Thoxa `extern … from "c"` String args marshal cleanly. */
 int32_t thoxa_write_line_fd(int32_t fd, const char *s);
@@ -495,6 +526,11 @@ ThoxaArray *thoxa_argv_to_array(int argc, char **argv);
 ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a);
 /* Display as `["a", "b"]` for String arrays. */
 ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a);
+/* String methods returning or taking Array<String> (D195). An empty
+ * separator gives [s]; lines split on "\n" and drop one trailing "\r". */
+ThoxaArray *thoxa_string_split(const ThoxaString *s, const ThoxaString *separator);
+ThoxaArray *thoxa_string_lines(const ThoxaString *s);
+ThoxaString *thoxa_array_string_join(const ThoxaArray *parts, const ThoxaString *separator);
 /* Drop with element RC walk when heap_elems. Prefer over bare thoxa_drop. */
 void thoxa_array_drop(ThoxaArray *a);
 /* Drop calling `elem_drop` on each element first (User inline arrays). */

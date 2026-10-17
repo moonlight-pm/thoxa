@@ -4,7 +4,6 @@ import home from "./pages/home"
 import config from "./config"
 import httpStatic from "std/http/static"
 import { Request, Response, cached, withHeader } from "std/http"
-import { startsWith, toLowerAscii } from "std/str"
 
 ## Fonts come from Google. Nothing runs script, embeds a frame, or posts a form.
 let contentSecurityPolicy = "default-src 'none'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
@@ -23,8 +22,8 @@ type Routes {
 ## or a stylesheet is checked on every load, so a deploy shows at once.
 fn cacheControlFor(response!: Response) -> String {
     for header in response.headers {
-        if toLowerAscii(header.name) == "content-type" {
-            if startsWith(header.value, "image/") or startsWith(header.value, "font/") {
+        if header.name.toLower() == "content-type" {
+            if header.value.startsWith("image/") or header.value.startsWith("font/") {
                 return "public, max-age=86400"
             }
         }

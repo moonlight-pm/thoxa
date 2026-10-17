@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::time::SystemTime;
 
+mod unicode;
+
 fn main() {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
@@ -30,6 +32,7 @@ fn main() {
         "emit-c" => cmd_emit_c(&args),
         "clean" => cmd_clean(&args),
         "zed" => cmd_zed(&args),
+        "unicode" => cmd_unicode(&args),
         other => {
             eprintln!("unknown make command `{other}` (try `cargo make help`)");
             2
@@ -62,6 +65,8 @@ Commands:
     cargo make zed                  Sync editor into local Zed (LSP + grammar + lang)
     cargo make zed --grammar        Only rebuild/install tree-sitter grammar WASM
     cargo make zed --all            Also rebuild extension.wasm (rare)
+    cargo make unicode <ucd-dir>    Regenerate runtime/src/thoxa_unicode.h from the
+                                    Unicode Character Database (case tables, D195)
 
 A directory argument resolves to <dir>/main.thx (same as `thoxa run <dir>`).
 
@@ -69,6 +74,27 @@ After `cargo make zed`: restart the language server in Zed (grammar colors may
 need a full Zed quit/restart). See extras/README.md.
 "
     );
+}
+
+fn cmd_unicode(args: &[String]) -> i32 {
+    let [ucd] = args else {
+        eprintln!(
+            "usage: cargo make unicode <ucd-dir>  (UnicodeData.txt, SpecialCasing.txt, \
+             CaseFolding.txt from https://www.unicode.org/Public/<version>/ucd/)"
+        );
+        return 2;
+    };
+    let out = workspace_root().join("runtime/src/thoxa_unicode.h");
+    match unicode::generate(Path::new(ucd), &out) {
+        Ok(summary) => {
+            eprintln!("wrote {} ({summary})", out.display());
+            0
+        }
+        Err(error) => {
+            eprintln!("cargo make unicode: {error}");
+            1
+        }
+    }
 }
 
 fn workspace_root() -> PathBuf {

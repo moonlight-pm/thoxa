@@ -1688,10 +1688,10 @@ fn main() -> Int64 {
             .expect("workspace root");
         let main = workspace.join("tests/conformance/_lsp_std_nav.thx");
         // Ephemeral file under workspace so relative paths / std resolve.
-        let text = "import { isEmpty } from \"std/str\"\nfn main() -> Int64 { if isEmpty(\"\") { 1 } else { 0 } }\n";
+        let text = "import { length } from \"std/str\"\nfn main() -> Int64 { length(\"\") }\n";
         fs::write(&main, text).unwrap();
         let main_uri = convert::path_to_uri(&main.to_string_lossy());
-        let call = text.rfind("isEmpty").unwrap();
+        let call = text.rfind("length").unwrap();
         let p = span::byte_to_position(text, call);
 
         let msgs = exchange(&[

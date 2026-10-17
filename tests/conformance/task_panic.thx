@@ -7,7 +7,6 @@ import http, { Request, Response } from "std/http"
 import server from "std/http/server"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
-import { startsWith } from "std/str"
 
 mut held: Map<Int64, Socket> = Map()
 
@@ -61,7 +60,7 @@ fn fetch(port!: Int64, path!: String) -> Trial<String, String> {
     if text == "" {
         Pass("closed with no reply")
     } else {
-        if startsWith(text, "HTTP/1.1 200 OK") {
+        if text.startsWith("HTTP/1.1 200 OK") {
             Pass("200 OK")
         } else {
             Pass("unexpected reply")

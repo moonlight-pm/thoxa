@@ -1,5 +1,6 @@
 #define _DEFAULT_SOURCE
 #include "thoxa_rt.h"
+#include "thoxa_unicode.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -496,6 +497,595 @@ const char *thoxa_string_cstr(const ThoxaString *s) {
 
 size_t thoxa_string_len(const ThoxaString *s) {
     return s ? s->len : 0;
+}
+
+/* --- String methods (D195) ----------------------------------------------
+ *
+ * Strings are UTF-8. Search, split, and replace compare bytes, which is exact
+ * for UTF-8 (a match cannot start inside a character). Case conversion and
+ * `ignoreCase:` decode code points and map them through the Unicode tables in
+ * thoxa_unicode.h: toLower / toUpper use the full default mappings
+ * (`ß` → `SS`), ignoreCase compares full case folds (`Straße` = `STRASSE`).
+ * A malformed byte passes through unchanged.
+ */
+
+typedef struct CaseTable {
+    const ThoxaCaseRange *ranges;
+    size_t range_count;
+    const ThoxaCaseExpansion *expansions;
+    size_t expansion_count;
+    /* ASCII fast path: bytes ascii_first..=ascii_last move by ascii_delta. */
+    uint8_t ascii_first;
+    uint8_t ascii_last;
+    int ascii_delta;
+} CaseTable;
+
+#define CASE_TABLE(name, first, last, delta)                                  \
+    {thoxa_##name##_ranges,                                                   \
+     sizeof(thoxa_##name##_ranges) / sizeof(thoxa_##name##_ranges[0]),        \
+     thoxa_##name##_expansions,                                               \
+     sizeof(thoxa_##name##_expansions) / sizeof(thoxa_##name##_expansions[0]), \
+     first,                                                                   \
+     last,                                                                    \
+     delta}
+
+static const CaseTable case_lower = CASE_TABLE(lower, 'A', 'Z', 32);
+static const CaseTable case_upper = CASE_TABLE(upper, 'a', 'z', -32);
+static const CaseTable case_fold = CASE_TABLE(fold, 'A', 'Z', 32);
+
+/* One UTF-8 sequence at p (n > 0 bytes left): sets *code and returns its
+ * length. A malformed sequence is its first byte, *code = UINT32_MAX. */
+static size_t utf8_decode(const uint8_t *p, size_t n, uint32_t *code) {
+    uint8_t lead = p[0];
+    if (lead < 0x80) {
+        *code = lead;
+        return 1;
+    }
+    size_t len;
+    uint32_t value;
+    uint32_t min;
+    if ((lead & 0xE0) == 0xC0) {
+        len = 2;
+        value = lead & 0x1F;
+        min = 0x80;
+    } else if ((lead & 0xF0) == 0xE0) {
+        len = 3;
+        value = lead & 0x0F;
+        min = 0x800;
+    } else if ((lead & 0xF8) == 0xF0) {
+        len = 4;
+        value = lead & 0x07;
+        min = 0x10000;
+    } else {
+        *code = UINT32_MAX;
+        return 1;
+    }
+    if (len > n) {
+        *code = UINT32_MAX;
+        return 1;
+    }
+    for (size_t i = 1; i < len; i++) {
+        if ((p[i] & 0xC0) != 0x80) {
+            *code = UINT32_MAX;
+            return 1;
+        }
+        value = (value << 6) | (p[i] & 0x3F);
+    }
+    if (value < min || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
+        *code = UINT32_MAX;
+        return 1;
+    }
+    *code = value;
+    return len;
+}
+
+static size_t utf8_encode(uint32_t code, char *out) {
+    if (code < 0x80) {
+        out[0] = (char)code;
+        return 1;
+    }
+    if (code < 0x800) {
+        out[0] = (char)(0xC0 | (code >> 6));
+        out[1] = (char)(0x80 | (code & 0x3F));
+        return 2;
+    }
+    if (code < 0x10000) {
+        out[0] = (char)(0xE0 | (code >> 12));
+        out[1] = (char)(0x80 | ((code >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (code & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (code >> 18));
+    out[1] = (char)(0x80 | ((code >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((code >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (code & 0x3F));
+    return 4;
+}
+
+/* Map `code` through `table` into out[0..3]; returns how many code points. */
+static size_t case_map(const CaseTable *table, uint32_t code, uint32_t out[3]) {
+    size_t low = 0;
+    size_t high = table->expansion_count;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        const ThoxaCaseExpansion *entry = &table->expansions[mid];
+        if (entry->code == code) {
+            size_t count = 0;
+            while (count < 3 && entry->to[count] != 0) {
+                out[count] = entry->to[count];
+                count++;
+            }
+            return count;
+        }
+        if (entry->code < code) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    /* Last range whose first <= code. */
+    low = 0;
+    high = table->range_count;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        if (table->ranges[mid].first <= code) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    out[0] = code;
+    if (low > 0) {
+        const ThoxaCaseRange *range = &table->ranges[low - 1];
+        if (code <= range->last && (code - range->first) % range->stride == 0) {
+            out[0] = (uint32_t)((int64_t)code + range->delta);
+        }
+    }
+    return 1;
+}
+
+/* Growable text; short results stay in `inline_data`. Pass by pointer only. */
+typedef struct Text {
+    char *data;
+    size_t len;
+    size_t cap;
+    char inline_data[192];
+} Text;
+
+static void text_init(Text *text) {
+    text->data = text->inline_data;
+    text->len = 0;
+    text->cap = sizeof(text->inline_data);
+}
+
+static void text_reserve(Text *text, size_t extra) {
+    size_t need = size_add(text->len, extra);
+    if (need <= text->cap) {
+        return;
+    }
+    size_t cap = text->cap;
+    while (cap < need) {
+        cap = size_dbl(cap);
+    }
+    char *grown;
+    if (text->data == text->inline_data) {
+        grown = (char *)malloc(cap);
+        if (grown) {
+            memcpy(grown, text->data, text->len);
+        }
+    } else {
+        grown = (char *)realloc(text->data, cap);
+    }
+    if (!grown) {
+        thoxa_panic("out of memory");
+    }
+    text->data = grown;
+    text->cap = cap;
+}
+
+static void text_put(Text *text, const char *bytes, size_t len) {
+    if (len == 0) {
+        return;
+    }
+    text_reserve(text, len);
+    memcpy(text->data + text->len, bytes, len);
+    text->len += len;
+}
+
+static void text_free(Text *text) {
+    if (text->data != text->inline_data) {
+        free(text->data);
+    }
+}
+
+static ThoxaString *text_finish(Text *text) {
+    ThoxaString *s = thoxa_string_new(text->data, text->len);
+    text_free(text);
+    return s;
+}
+
+/* Append `len` bytes of `data` mapped through `table`; stops once the output
+ * holds at least `limit` bytes (SIZE_MAX: map everything). */
+static void case_map_text(
+    const CaseTable *table,
+    const char *data,
+    size_t len,
+    size_t limit,
+    Text *out
+) {
+    const uint8_t *p = (const uint8_t *)data;
+    size_t i = 0;
+    while (i < len && out->len < limit) {
+        uint8_t byte = p[i];
+        if (byte < 0x80) {
+            char mapped = (char)byte;
+            if (byte >= table->ascii_first && byte <= table->ascii_last) {
+                mapped = (char)(byte + table->ascii_delta);
+            }
+            text_put(out, &mapped, 1);
+            i++;
+            continue;
+        }
+        uint32_t code;
+        size_t step = utf8_decode(p + i, len - i, &code);
+        if (code == UINT32_MAX) {
+            text_put(out, data + i, 1);
+        } else {
+            uint32_t mapped[3];
+            size_t count = case_map(table, code, mapped);
+            char encoded[12];
+            size_t used = 0;
+            for (size_t k = 0; k < count; k++) {
+                used += utf8_encode(mapped[k], encoded + used);
+            }
+            text_put(out, encoded, used);
+        }
+        i += step;
+    }
+}
+
+static void case_fold_string(const ThoxaString *s, size_t limit, Text *out) {
+    text_init(out);
+    if (s) {
+        case_map_text(&case_fold, s->data, s->len, limit, out);
+    }
+}
+
+static const char *find_bytes(
+    const char *haystack,
+    size_t haystack_len,
+    const char *needle,
+    size_t needle_len
+) {
+    if (needle_len == 0) {
+        return haystack;
+    }
+    if (needle_len > haystack_len) {
+        return NULL;
+    }
+    const char *last = haystack + (haystack_len - needle_len);
+    const char *at = haystack;
+    while (at <= last) {
+        at = (const char *)memchr(at, needle[0], (size_t)(last - at) + 1);
+        if (!at) {
+            return NULL;
+        }
+        if (memcmp(at, needle, needle_len) == 0) {
+            return at;
+        }
+        at++;
+    }
+    return NULL;
+}
+
+/* A +1 share of `s` (a new empty string for NULL). */
+static ThoxaString *string_share(const ThoxaString *s) {
+    if (!s) {
+        return thoxa_string_new("", 0);
+    }
+    thoxa_dup((void *)s);
+    return (ThoxaString *)s;
+}
+
+static const char *string_data(const ThoxaString *s) {
+    return s ? s->data : "";
+}
+
+ThoxaString *thoxa_string_to_lower(const ThoxaString *s) {
+    Text out;
+    text_init(&out);
+    if (s) {
+        case_map_text(&case_lower, s->data, s->len, SIZE_MAX, &out);
+    }
+    return text_finish(&out);
+}
+
+ThoxaString *thoxa_string_to_upper(const ThoxaString *s) {
+    Text out;
+    text_init(&out);
+    if (s) {
+        case_map_text(&case_upper, s->data, s->len, SIZE_MAX, &out);
+    }
+    return text_finish(&out);
+}
+
+bool thoxa_string_equals(const ThoxaString *a, const ThoxaString *b, bool ignore_case) {
+    if (!ignore_case) {
+        return thoxa_string_eq(a, b);
+    }
+    Text left;
+    Text right;
+    case_fold_string(a, SIZE_MAX, &left);
+    case_fold_string(b, SIZE_MAX, &right);
+    bool equal = left.len == right.len && memcmp(left.data, right.data, left.len) == 0;
+    text_free(&left);
+    text_free(&right);
+    return equal;
+}
+
+bool thoxa_string_contains(const ThoxaString *s, const ThoxaString *needle, bool ignore_case) {
+    if (!ignore_case) {
+        return find_bytes(string_data(s), thoxa_string_len(s), string_data(needle),
+                          thoxa_string_len(needle)) != NULL;
+    }
+    Text haystack;
+    Text folded;
+    case_fold_string(s, SIZE_MAX, &haystack);
+    case_fold_string(needle, SIZE_MAX, &folded);
+    bool found = find_bytes(haystack.data, haystack.len, folded.data, folded.len) != NULL;
+    text_free(&haystack);
+    text_free(&folded);
+    return found;
+}
+
+bool thoxa_string_starts_with(const ThoxaString *s, const ThoxaString *prefix, bool ignore_case) {
+    if (!ignore_case) {
+        size_t len = thoxa_string_len(prefix);
+        return len <= thoxa_string_len(s) && memcmp(string_data(s), string_data(prefix), len) == 0;
+    }
+    Text folded;
+    Text head;
+    case_fold_string(prefix, SIZE_MAX, &folded);
+    case_fold_string(s, folded.len, &head);
+    bool starts = head.len >= folded.len && memcmp(head.data, folded.data, folded.len) == 0;
+    text_free(&folded);
+    text_free(&head);
+    return starts;
+}
+
+bool thoxa_string_ends_with(const ThoxaString *s, const ThoxaString *suffix, bool ignore_case) {
+    if (!ignore_case) {
+        size_t len = thoxa_string_len(suffix);
+        size_t total = thoxa_string_len(s);
+        return len <= total && memcmp(string_data(s) + (total - len), string_data(suffix), len) == 0;
+    }
+    Text whole;
+    Text folded;
+    case_fold_string(s, SIZE_MAX, &whole);
+    case_fold_string(suffix, SIZE_MAX, &folded);
+    bool ends = whole.len >= folded.len &&
+                memcmp(whole.data + (whole.len - folded.len), folded.data, folded.len) == 0;
+    text_free(&whole);
+    text_free(&folded);
+    return ends;
+}
+
+bool thoxa_string_is_empty(const ThoxaString *s) {
+    return thoxa_string_len(s) == 0;
+}
+
+bool thoxa_string_is_ascii(const ThoxaString *s) {
+    size_t len = thoxa_string_len(s);
+    for (size_t i = 0; i < len; i++) {
+        if ((uint8_t)s->data[i] >= 0x80) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Unicode White_Space (PropList.txt). */
+static bool is_white_space(uint32_t code) {
+    return (code >= 0x09 && code <= 0x0D) || code == 0x20 || code == 0x85 || code == 0xA0 ||
+           code == 0x1680 || (code >= 0x2000 && code <= 0x200A) || code == 0x2028 ||
+           code == 0x2029 || code == 0x202F || code == 0x205F || code == 0x3000;
+}
+
+/* Bytes of leading white space in data[0..len). */
+static size_t white_space_head(const char *data, size_t len) {
+    const uint8_t *p = (const uint8_t *)data;
+    size_t i = 0;
+    while (i < len) {
+        uint32_t code;
+        size_t step = utf8_decode(p + i, len - i, &code);
+        if (!is_white_space(code)) {
+            break;
+        }
+        i += step;
+    }
+    return i;
+}
+
+/* Bytes of trailing white space in data[0..len). */
+static size_t white_space_tail(const char *data, size_t len) {
+    const uint8_t *p = (const uint8_t *)data;
+    size_t end = len;
+    while (end > 0) {
+        size_t start = end - 1;
+        while (start > 0 && end - start < 4 && (p[start] & 0xC0) == 0x80) {
+            start--;
+        }
+        uint32_t code;
+        size_t step = utf8_decode(p + start, end - start, &code);
+        if (start + step != end || !is_white_space(code)) {
+            break;
+        }
+        end = start;
+    }
+    return len - end;
+}
+
+static ThoxaString *string_part(const ThoxaString *s, size_t start, size_t end) {
+    if (start == 0 && end == thoxa_string_len(s)) {
+        return string_share(s);
+    }
+    return thoxa_string_new(string_data(s) + start, end - start);
+}
+
+ThoxaString *thoxa_string_trim(const ThoxaString *s) {
+    size_t len = thoxa_string_len(s);
+    size_t head = white_space_head(string_data(s), len);
+    size_t tail = white_space_tail(string_data(s) + head, len - head);
+    return string_part(s, head, len - tail);
+}
+
+ThoxaString *thoxa_string_trim_start(const ThoxaString *s) {
+    size_t len = thoxa_string_len(s);
+    return string_part(s, white_space_head(string_data(s), len), len);
+}
+
+ThoxaString *thoxa_string_trim_end(const ThoxaString *s) {
+    size_t len = thoxa_string_len(s);
+    return string_part(s, 0, len - white_space_tail(string_data(s), len));
+}
+
+ThoxaString *thoxa_string_remove_prefix(const ThoxaString *s, const ThoxaString *prefix) {
+    size_t len = thoxa_string_len(s);
+    if (!thoxa_string_starts_with(s, prefix, false)) {
+        return string_share(s);
+    }
+    return string_part(s, thoxa_string_len(prefix), len);
+}
+
+ThoxaString *thoxa_string_remove_suffix(const ThoxaString *s, const ThoxaString *suffix) {
+    size_t len = thoxa_string_len(s);
+    if (!thoxa_string_ends_with(s, suffix, false)) {
+        return string_share(s);
+    }
+    return string_part(s, 0, len - thoxa_string_len(suffix));
+}
+
+static ThoxaString *string_replace(
+    const ThoxaString *s,
+    const ThoxaString *old,
+    const ThoxaString *replacement,
+    bool first_only
+) {
+    size_t old_len = thoxa_string_len(old);
+    const char *data = string_data(s);
+    size_t len = thoxa_string_len(s);
+    const char *at = old_len == 0 ? NULL : find_bytes(data, len, string_data(old), old_len);
+    if (!at) {
+        return string_share(s);
+    }
+    Text out;
+    text_init(&out);
+    const char *rest = data;
+    const char *end = data + len;
+    while (at) {
+        text_put(&out, rest, (size_t)(at - rest));
+        text_put(&out, string_data(replacement), thoxa_string_len(replacement));
+        rest = at + old_len;
+        if (first_only) {
+            break;
+        }
+        at = find_bytes(rest, (size_t)(end - rest), string_data(old), old_len);
+    }
+    text_put(&out, rest, (size_t)(end - rest));
+    return text_finish(&out);
+}
+
+ThoxaString *thoxa_string_replace(
+    const ThoxaString *s,
+    const ThoxaString *old,
+    const ThoxaString *replacement
+) {
+    return string_replace(s, old, replacement, false);
+}
+
+ThoxaString *thoxa_string_replace_first(
+    const ThoxaString *s,
+    const ThoxaString *old,
+    const ThoxaString *replacement
+) {
+    return string_replace(s, old, replacement, true);
+}
+
+ThoxaString *thoxa_string_repeat(const ThoxaString *s, int64_t count) {
+    size_t len = thoxa_string_len(s);
+    if (count <= 0 || len == 0) {
+        return thoxa_string_new("", 0);
+    }
+    size_t total = size_mul(len, (size_t)count);
+    ThoxaString *out = (ThoxaString *)thoxa_alloc(string_payload_size(total), THOXA_TAG_STRING);
+    out->len = total;
+    for (size_t i = 0; i < (size_t)count; i++) {
+        memcpy(out->data + i * len, s->data, len);
+    }
+    out->data[total] = '\0';
+    return out;
+}
+
+static ThoxaArray *append_part(ThoxaArray *parts, const char *data, size_t len) {
+    ThoxaString *part = thoxa_string_new(data, len);
+    parts = thoxa_array_append_ptr(parts, part);
+    thoxa_drop(part);
+    return parts;
+}
+
+ThoxaArray *thoxa_string_split(const ThoxaString *s, const ThoxaString *separator) {
+    const char *data = string_data(s);
+    size_t len = thoxa_string_len(s);
+    size_t separator_len = thoxa_string_len(separator);
+    ThoxaArray *parts = thoxa_array_new(1);
+    if (separator_len == 0) {
+        return append_part(parts, data, len);
+    }
+    const char *rest = data;
+    const char *end = data + len;
+    for (;;) {
+        const char *at = find_bytes(rest, (size_t)(end - rest), string_data(separator), separator_len);
+        if (!at) {
+            return append_part(parts, rest, (size_t)(end - rest));
+        }
+        parts = append_part(parts, rest, (size_t)(at - rest));
+        rest = at + separator_len;
+    }
+}
+
+ThoxaArray *thoxa_string_lines(const ThoxaString *s) {
+    const char *data = string_data(s);
+    size_t len = thoxa_string_len(s);
+    ThoxaArray *lines = thoxa_array_new(1);
+    const char *rest = data;
+    const char *end = data + len;
+    for (;;) {
+        const char *at = (const char *)memchr(rest, '\n', (size_t)(end - rest));
+        const char *line_end = at ? at : end;
+        size_t line_len = (size_t)(line_end - rest);
+        if (line_len > 0 && rest[line_len - 1] == '\r') {
+            line_len--;
+        }
+        lines = append_part(lines, rest, line_len);
+        if (!at) {
+            return lines;
+        }
+        rest = at + 1;
+    }
+}
+
+ThoxaString *thoxa_array_string_join(const ThoxaArray *parts, const ThoxaString *separator) {
+    int64_t count = thoxa_array_count(parts);
+    Text out;
+    text_init(&out);
+    for (int64_t i = 0; i < count; i++) {
+        if (i > 0) {
+            text_put(&out, string_data(separator), thoxa_string_len(separator));
+        }
+        const ThoxaString *part = (const ThoxaString *)thoxa_array_get_ptr(parts, i);
+        text_put(&out, string_data(part), thoxa_string_len(part));
+    }
+    return text_finish(&out);
 }
 
 int32_t thoxa_write_line_fd(int32_t fd, const char *s) {
