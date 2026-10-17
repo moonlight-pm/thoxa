@@ -132,6 +132,7 @@ body with `readBody`.
 | `writeResponse(response)` | Status line, headers, and body as `Bytes`. CR and LF are removed from header names and values, so a value cannot start another header |
 | Lookup | `headerGet`, `contentLength`, `queryMap`, `queryParam`, `formField`, `cookie` |
 | Maps | `parseQuery`, `parseForm`, `parseCookies` (each to `Map<String, String>`), `urlDecode` |
+| Typed route bodies | `bodyKind(request)` (`"query"`, `"json"`, `"form"`, or `"other"`), `unsupportedMediaType()` (415), `issuesResponse(request, issues)` (400, JSON or text); the code generated for route body parameters calls these |
 | Forms | `formPairs(text)` to `Array<FormPair>` (repeated names kept); `formValue` (the last value) / `formValues` (all); `formInt` / `formFloat` (JSON number syntax, `Array<Issue>` on failure). `T.readForm` is built on these |
 | Cookies | `Cookie` (`.header()`), `SameSite`, `withCookie`, `clearCookie` |
 | Responses | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `htmlResponseStatus`, `htmlFragment`, `notModified`, `cached` / `etagOf` / `withCache`, `response` / `responseHead` |

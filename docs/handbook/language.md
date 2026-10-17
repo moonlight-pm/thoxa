@@ -1438,10 +1438,48 @@ let response = Routes().route(request)
 | No route matches | `notFound()`; there is no fallthrough |
 | Captures | `:name` in any segment, bound to a parameter of type `String` or `Int64`; non-digits for an `Int64` give `badRequest("invalid name")` |
 | `Request` parameter | optional, any name; not a capture |
+| Body parameter | any other parameter, at most one: reads the body (or a GET's query) into its type, below |
 | Imports | the module must import the names the generated code calls: `Request`, `Response`, `ok`, `notFound`, and `badRequest` if any capture is `Int64` |
 
-`route` looks only at `request.method` and `request.path`. Reading a body is
-the handler's job: call `T.read` or `T.readForm`.
+`route` matches on `request.method` and `request.path`.
+
+**Body parameters.** A parameter that is neither a capture nor the `Request`
+reads the request into its type, which must have a reader (see
+[Typed data](#typed-data)):
+
+| Request | Read as |
+|---------|---------|
+| `GET` / `HEAD` | the query string, as a form (`T.readForm(request.query)`) |
+| `Content-Type: application/json` | JSON (`T.read(body)`) |
+| `Content-Type: application/x-www-form-urlencoded` | a form (`T.readForm(body)`) |
+| any other or no `Content-Type` | `415 Unsupported Media Type` |
+
+When the parameter's type is `T` and the read fails, the clause does not run:
+a JSON request gets `400` with `errorsObject(issues)`, a form or query `400`
+with `messages(issues)` as text. When the type is `Trial<T, Array<Issue>>`,
+the clause always runs and handles the failure itself (a form page, a
+redirect). A type that a form cannot hold (a `Map` field, a union) answers a
+form or query with one issue, `T is read from JSON only`. Body parameters need
+`std/json` in the program.
+
+```thx
+type Routes {
+    POST "/api/orders" (order: CreateOrder) -> Response {
+        place(order)                          ## a bad body already got a 400
+    }
+
+    POST "/orders" (order: Trial<CreateOrder, Array<Issue>>, request: Request) -> Response {
+        match order {
+            Pass(found) => placed(found, request)
+            Fail(issues) => formPage(request, issues)
+        }
+    }
+
+    GET "/search" (search: Search) -> String {   ## /search?term=mocha
+        results(search.term)
+    }
+}
+```
 
 ## C interop
 

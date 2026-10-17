@@ -207,7 +207,8 @@ fn desugar_module_with(
     for target in cast_targets(module) {
         extra.extend(gen_cast_readers(&target, module_id, world, resolve));
     }
-    if extra.is_empty() {
+    let filled = fill_body_readers(module, module_id, world, resolve, forms);
+    if extra.is_empty() && !filled {
         return Ok(());
     }
     let defined: HashSet<&str> = types.iter().map(|td| td.name.as_str()).collect();
@@ -2741,4 +2742,83 @@ fn gen_custom_from_json(td: &TypeDef, index: usize, fallible: bool) -> Function 
             span: dummy(),
         },
     }
+}
+
+/// Give each `__routeBody_K(request)` stub the route desugar added its body
+/// (D191 §5): the query or a form body through `T.readForm` when `T` reads
+/// from a form, a JSON body through `T.read`. Returns whether any was filled.
+fn fill_body_readers(
+    module: &mut Module,
+    module_id: &str,
+    world: &World,
+    resolve: &Resolve,
+    forms: bool,
+) -> bool {
+    let mut filled = false;
+    for item in &mut module.items {
+        let Item::Function(f) = item else {
+            continue;
+        };
+        if !f.name.starts_with(crate::route_desugar::BODY_READER_PREFIX)
+            || !f.body.items.is_empty()
+            || f.body.tail.is_some()
+        {
+            continue;
+        }
+        let Some(TypeArg::Type(target)) = f.return_type.as_ref().and_then(|t| t.args.first()) else {
+            continue;
+        };
+        let target = target.clone();
+        let trial = ty_trial_issues(target.clone());
+        let form_ok = forms
+            && resolve
+                .get(module_id)
+                .and_then(|names| names.get(&target.name))
+                .and_then(|(def_mod, def_name)| {
+                    world.get(def_mod).and_then(|tys| tys.get(def_name)).map(|td| (def_mod, td))
+                })
+                .is_some_and(|(def_mod, td)| {
+                    form_readable_product(td, def_mod, world, resolve, &mut HashSet::new())
+                });
+        let body_text = method_call(field(name("request"), "body"), "toString", vec![]);
+        let form_read = |text: Expr| {
+            if form_ok {
+                method_call(name(&target.name), "readForm", vec![Arg::Pos(text)])
+            } else {
+                typed(
+                    "__out",
+                    trial.clone(),
+                    fail_with(json_call(
+                        "issueRejected",
+                        vec![
+                            Arg::Pos(str_lit("")),
+                            Arg::Pos(str_lit(&format!("{} is read from JSON only", target.name))),
+                        ],
+                    )),
+                )
+            }
+        };
+        let when = |kind: &str, value: Expr| {
+            BlockItem::Expr(if_expr(
+                bin(BinaryOp::Eq, name("__kind"), str_lit(kind)),
+                block_stmts(vec![BlockItem::Expr(return_expr(value))]),
+                None,
+            ))
+        };
+        f.body = Block {
+            items: vec![
+                let_bind("__kind", false, http_call("bodyKind", vec![Arg::Pos(name("request"))])),
+                when("query", form_read(field(name("request"), "query"))),
+                when("form", form_read(body_text.clone())),
+            ],
+            tail: Some(Box::new(method_call(
+                name(&target.name),
+                "read",
+                vec![Arg::Pos(body_text)],
+            ))),
+            span: dummy(),
+        };
+        filled = true;
+    }
+    filled
 }

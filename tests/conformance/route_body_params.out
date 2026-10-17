@@ -1,0 +1,12 @@
+200 2 x mocha
+400 {"ok":false,"errors":[{"path":"drink","error":"drink: expected string, got integer","expected":"string","got":"integer"},{"path":"quantity","error":"quantity: expected integer <= 12, got 40","expected":"integer <= 12","got":"40"}]}
+200 3 x tea
+400 drink is required; quantity: expected integer <= 12, got 99
+415 send application/json or application/x-www-form-urlencoded
+200 placed tea
+200 form page: drink is required; quantity: expected integer >= 1, got 0
+200 searching [flat white]
+200 searching []
+200 1 tags
+400 Note is read from JSON only
+200 POST item 7: latte

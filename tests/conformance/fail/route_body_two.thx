@@ -1,0 +1,16 @@
+## A route clause reads the body into one parameter at most (D191 §5).
+import { Request, Response, ok, notFound, badRequest } from "std/http"
+import { Issue } from "std/json"
+
+type Order(drink: String)
+type Note(text: String)
+
+type Routes {
+    POST "/both" (order: Order, note: Note) -> String {
+        order.drink
+    }
+}
+
+fn main() -> Int64 {
+    0
+}

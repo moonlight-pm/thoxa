@@ -19,6 +19,7 @@
 //! Branch `experiment/router-clause-syntax`. No HTTP lang-items.
 
 use crate::ast::*;
+use crate::ast_build::{cast_reader_key, match_arm_block, match_expr};
 use crate::error::{Error, Result};
 use crate::loader::Package;
 use crate::span::Span;
@@ -27,12 +28,32 @@ use std::collections::HashSet;
 const SEGMENTS_FN: &str = "__routeSegments";
 const PARSE_INT_FN: &str = "__routeParseInt64";
 const PARSE_INT_TY: &str = "__RouteInt64";
+/// `__routeBody_K(request) -> Trial<T, Array<Issue>>`: added empty here, given
+/// its body by the codec pass, which knows whether `T` reads from a form
+/// (D191 §5).
+pub const BODY_READER_PREFIX: &str = "__routeBody_";
 
 /// Rewrite every type that has `routes` into handler free functions plus
 /// `route(req: Request) -> Response` on the type. Clears `routes`.
 pub fn desugar_package(package: &mut Package) -> Result<()> {
+    let json = package.modules.iter().any(|m| m.id == "std_json");
     for m in &mut package.modules {
-        desugar_module(&mut m.ast)?;
+        desugar_module(&mut m.ast).map_err(|error| {
+            if error.path.is_none() {
+                error.with_path(m.path.clone())
+            } else {
+                error
+            }
+        })?;
+        let reads_body = m.ast.items.iter().any(|item| {
+            matches!(item, Item::Function(f) if f.name.starts_with(BODY_READER_PREFIX))
+        });
+        if reads_body && !json {
+            return Err(Error::new(
+                "a typed route body parameter reads JSON and forms: import { Issue } from \"std/json\"",
+            )
+            .with_path(m.path.clone()));
+        }
     }
     Ok(())
 }
@@ -43,13 +64,22 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
     let mut extra_types: Vec<TypeDef> = Vec::new();
     let mut need_segments = false;
     let mut need_parse_int = false;
+    let mut bodies: Vec<TypeExpr> = Vec::new();
     for item in &mut module.items {
         if let Item::Type(td) = item {
             let (fns, flags) = desugar_type(td)?;
             extra_fns.extend(fns);
             need_segments |= flags.need_segments;
             need_parse_int |= flags.need_parse_int;
+            for target in flags.bodies {
+                if !bodies.iter().any(|seen| cast_reader_key(seen) == cast_reader_key(&target)) {
+                    bodies.push(target);
+                }
+            }
         }
+    }
+    for target in &bodies {
+        extra_fns.push(body_reader_stub(target));
     }
     if need_parse_int {
         extra_types.push(parse_int_type());
@@ -70,6 +100,8 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
 struct DesugarFlags {
     need_segments: bool,
     need_parse_int: bool,
+    /// Types read by typed body parameters (one reader each per module).
+    bodies: Vec<TypeExpr>,
 }
 
 /// Returns synthetic free functions for handlers (to append to the module).
@@ -77,6 +109,7 @@ fn desugar_type(td: &mut TypeDef) -> Result<(Vec<Function>, DesugarFlags)> {
     let empty = DesugarFlags {
         need_segments: false,
         need_parse_int: false,
+        bodies: Vec::new(),
     };
     if td.routes.is_empty() {
         return Ok((Vec::new(), empty));
@@ -125,6 +158,11 @@ fn desugar_type(td: &mut TypeDef) -> Result<(Vec<Function>, DesugarFlags)> {
             )
         }) {
             flags.need_parse_int = true;
+        }
+        for slot in &slots {
+            if let CallSlot::Body { target, .. } = slot {
+                flags.bodies.push(target.clone());
+            }
         }
 
         let ret_kind = classify_return(&r)?;
@@ -178,6 +216,11 @@ enum HandlerRet {
 enum CallSlot {
     Req,
     Cap { name: String, ty: CapTy, seg: usize },
+    /// A parameter that reads the request body (or a GET's query) into
+    /// `target` (D191 §5). With `handles_failure` (the parameter is
+    /// `Trial<T, Array<Issue>>`) the clause gets the read's result; otherwise a
+    /// failed read is answered with a 400 before the clause runs.
+    Body { target: TypeExpr, handles_failure: bool },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -281,7 +324,22 @@ fn validate_formals(r: &RouteClause, pat: &PathPattern) -> Result<Vec<CallSlot>>
     let mut have_req = false;
     let mut slots: Vec<CallSlot> = Vec::new();
 
+    let mut have_body = false;
     for p in &r.params {
+        if let Some((target, handles_failure)) = body_target(p, &cap_names) {
+            if have_body {
+                return Err(Error::at(
+                    "a route clause reads the request body into one parameter at most",
+                    p.name_span,
+                ));
+            }
+            have_body = true;
+            slots.push(CallSlot::Body {
+                target,
+                handles_failure,
+            });
+            continue;
+        }
         if p.ty.name == "Request" && !cap_names.contains(p.name.as_str()) {
             if have_req {
                 return Err(Error::at(
@@ -339,6 +397,125 @@ fn validate_formals(r: &RouteClause, pat: &PathPattern) -> Result<Vec<CallSlot>>
     Ok(slots)
 }
 
+/// A parameter that is neither a path capture nor the `Request` reads the
+/// body: `T` (a named type) or `Trial<T, Array<Issue>>`.
+fn body_target(p: &Param, cap_names: &HashSet<&str>) -> Option<(TypeExpr, bool)> {
+    if cap_names.contains(p.name.as_str()) || p.ty.name == "Request" {
+        return None;
+    }
+    if p.ty.name == "Trial" && p.ty.args.len() == 2 {
+        if let TypeArg::Type(inner) = &p.ty.args[0] {
+            return Some((inner.clone(), true));
+        }
+    }
+    (p.ty.args.is_empty() && p.ty.union_members.is_none() && p.ty.lit.is_none())
+        .then(|| (p.ty.clone(), false))
+}
+
+/// `fn __routeBody_K(request: Request) -> Trial<T, Array<Issue>> {}`
+fn body_reader_stub(target: &TypeExpr) -> Function {
+    let issues = ty_array(ty_named("std_json_Issue"));
+    let trial = TypeExpr {
+        name: "Trial".into(),
+        args: vec![TypeArg::Type(target.clone()), TypeArg::Type(issues)],
+        span: dummy(),
+        lit: None,
+        mark: None,
+        union_members: None,
+        fn_type: None,
+        where_clause: None,
+    };
+    Function {
+        exported: false,
+        name: format!("{BODY_READER_PREFIX}{}", cast_reader_key(target)),
+        name_span: dummy(),
+        params: vec![param("request", ty_request())],
+        return_type: Some(trial),
+        body: Block {
+            items: vec![],
+            tail: None,
+            span: dummy(),
+        },
+    }
+}
+
+/// The handler call, after reading a typed body parameter when there is one:
+/// 415 for a body it does not read, then the read, then a 400 for a failed
+/// read (unless the clause takes the `Trial`).
+fn handler_call(h: &HandlerMeta) -> Expr {
+    let returned = return_handler_call(&h.handler_name, call_args(&h.slots), h.ret);
+    let Some((target, handles_failure)) = h.slots.iter().find_map(|slot| match slot {
+        CallSlot::Body {
+            target,
+            handles_failure,
+        } => Some((target, *handles_failure)),
+        _ => None,
+    }) else {
+        return returned;
+    };
+    let unsupported = if_expr(
+        bin(
+            BinaryOp::Eq,
+            call("std_http_bodyKind", vec![Arg::Pos(name("req"))]),
+            str_lit("other"),
+        ),
+        block_stmts(vec![BlockItem::Expr(return_value(call(
+            "std_http_unsupportedMediaType",
+            vec![],
+        )))]),
+        None,
+    );
+    let read = let_bind(
+        "__body",
+        false,
+        call(
+            &format!("{BODY_READER_PREFIX}{}", cast_reader_key(target)),
+            vec![Arg::Pos(name("req"))],
+        ),
+    );
+    let rest = if handles_failure {
+        returned
+    } else {
+        match_expr(
+            name("__body"),
+            vec![
+                match_arm_block(
+                    "Fail",
+                    vec![Some("__issues".into())],
+                    vec![BlockItem::Expr(return_value(call(
+                        "std_http_issuesResponse",
+                        vec![Arg::Pos(name("req")), Arg::Pos(name("__issues"))],
+                    )))],
+                    None,
+                ),
+                match_arm_block(
+                    "Pass",
+                    vec![Some("__value".into())],
+                    vec![BlockItem::Expr(returned)],
+                    None,
+                ),
+            ],
+        )
+    };
+    Expr {
+        kind: ExprKind::Block(block_stmts(vec![
+            BlockItem::Expr(unsupported),
+            read,
+            BlockItem::Expr(rest),
+        ])),
+        span: dummy(),
+    }
+}
+
+fn return_value(value: Expr) -> Expr {
+    Expr {
+        kind: ExprKind::Return {
+            value: Some(Box::new(value)),
+        },
+        span: dummy(),
+    }
+}
+
 fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Method> {
     let mut items: Vec<BlockItem> = Vec::new();
     for h in handlers {
@@ -368,7 +545,7 @@ fn handler_try_if(h: &HandlerMeta) -> Result<Expr> {
     let inner = match &h.pattern {
         PathPattern::Exact(pat) => {
             let path_ok = bin(BinaryOp::Eq, field(name("req"), "path"), str_lit(pat));
-            let call = return_handler_call(&h.handler_name, call_args(&h.slots), h.ret);
+            let call = handler_call(h);
             if_expr(path_ok, block_stmts(vec![BlockItem::Expr(call)]), None)
         }
         PathPattern::Segments(segs) => segments_block(h, segs)?,
@@ -392,6 +569,11 @@ fn call_args(slots: &[CallSlot]) -> Vec<Arg> {
                 ..
             } => Arg::Pos(name(n)),
             CallSlot::Cap { seg, .. } => Arg::Pos(index(name("segs"), int_lit(*seg as i64))),
+            CallSlot::Body {
+                handles_failure: true,
+                ..
+            } => Arg::Pos(name("__body")),
+            CallSlot::Body { .. } => Arg::Pos(name("__value")),
         })
         .collect()
 }
@@ -400,7 +582,7 @@ fn segments_block(h: &HandlerMeta, segs: &[Seg]) -> Result<Expr> {
     let n = segs.len() as i64;
     // All `if`s here are statements (no tail) so a missing else is Void, not
     // a Response-vs-Void lub. Hits `return` from the then branch.
-    let mut core = return_handler_call(&h.handler_name, call_args(&h.slots), h.ret);
+    let mut core = handler_call(h);
 
     for slot in h.slots.iter().rev() {
         let CallSlot::Cap {

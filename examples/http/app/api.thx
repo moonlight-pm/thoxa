@@ -3,26 +3,22 @@
 import store from "./store"
 import orders, { CreateOrder, Ticket } from "./orders"
 import live from "./live"
-import http, { Request, Response, ok } from "std/http"
+import http, { Response, ok } from "std/http"
 import { Pass, Fail } from "std/fallible"
-import { Json, encode, Issue, Rejected, issueRejected, errorObject, errorsObject } from "std/json"
+import { Json, encode, Issue, Rejected, issueRejected, errorObject } from "std/json"
 
 export fn health() -> Response {
     ok(Bytes.fromString("ok\n"), "text/plain; charset=utf-8")
 }
 
-## POST /api/orders — `{"slug":"mocha","qty":2}` → priced ticket.
-export fn createOrder(request!: Request) -> Response {
-    match CreateOrder.read(request.body.toString()) {
-        Fail(issues) => jsonResponse(400, "Bad Request", errorsObject(issues))
-        Pass(order) {
-            match orders.place(order) {
-                Fail(error) => placeOrderFail(error)
-                Pass(ticket) {
-                    live.broadcast()
-                    jsonOk(ticketOk(ticket))
-                }
-            }
+## POST /api/orders — `{"slug":"mocha","qty":2}` → priced ticket. The route
+## reads the body into the order; a bad one never gets here (400).
+export fn createOrder(order!: CreateOrder) -> Response {
+    match orders.place(order) {
+        Fail(error) => placeOrderFail(error)
+        Pass(ticket) {
+            live.broadcast()
+            jsonOk(ticketOk(ticket))
         }
     }
 }

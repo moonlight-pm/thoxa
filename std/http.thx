@@ -4,7 +4,7 @@
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import { toLowerAscii, trim, split, splitOnce, parseUInt, isEmpty, contains, substring, replaceAll } from "std/str"
-import { JInt, JFloat, decode, Issue, issueMismatch } from "std/json"
+import { JInt, JFloat, decode, encode, errorsObject, messages, Issue, issueMismatch } from "std/json"
 
 ## One header field: name and value as Strings (ASCII for this demo).
 export type Header(name: String, value: String)
@@ -822,4 +822,54 @@ export fn finalize(method!: String, res!: Response, keepAlive!: Bool) -> Respons
         headers: headers,
         body: body
     )
+}
+
+## How a typed route body parameter reads a request (D191 §5): `"query"` for
+## GET / HEAD, `"json"` or `"form"` by `Content-Type`, else `"other"`.
+export fn bodyKind(request!: Request) -> String {
+    if request.method == "GET" or request.method == "HEAD" {
+        return "query"
+    }
+    match headerGet(request, "Content-Type") {
+        Not => "other"
+        Has(value) {
+            let media = match splitOnce(value, ";") {
+                Has(parts) => parts.before
+                Not => value
+            }
+            let kind = toLowerAscii(trim(media))
+            if kind == "application/json" {
+                "json"
+            } else if kind == "application/x-www-form-urlencoded" {
+                "form"
+            } else {
+                "other"
+            }
+        }
+    }
+}
+
+## 415: a typed route body parameter was sent a body it does not read.
+export fn unsupportedMediaType() -> Response {
+    response(
+        415,
+        "Unsupported Media Type",
+        "text/plain; charset=utf-8",
+        Bytes.fromString("send application/json or application/x-www-form-urlencoded\n")
+    )
+}
+
+## 400 for a typed route body parameter whose read failed: the issues as JSON
+## (`errorsObject`) for a JSON request, as text otherwise.
+export fn issuesResponse(request!: Request, issues!: Array<Issue>) -> Response {
+    if bodyKind(request) == "json" {
+        response(
+            400,
+            "Bad Request",
+            "application/json; charset=utf-8",
+            Bytes.fromString(encode(errorsObject(issues)))
+        )
+    } else {
+        response(400, "Bad Request", "text/plain; charset=utf-8", Bytes.fromString("{messages(issues)}\n"))
+    }
 }

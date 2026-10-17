@@ -8,6 +8,7 @@ import drink from "./pages/drink"
 import ticket from "./pages/ticket"
 import board from "./pages/board"
 import api from "./api"
+import { CreateOrder } from "./orders"
 import session from "./session"
 import appHttp from "./http"
 import httpStatic from "std/http/static"
@@ -53,8 +54,8 @@ type Routes {
         api.listOrders()
     }
 
-    POST "/api/orders" (request: Request) -> Response {
-        api.createOrder(request)
+    POST "/api/orders" (order: CreateOrder) -> Response {
+        api.createOrder(order)
     }
 
     POST "/orders" (request: Request) -> Response {

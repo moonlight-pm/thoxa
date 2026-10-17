@@ -90,7 +90,7 @@ generic types, top-level `Array` reads, custom decoding) stay parked.
 Shipped: §1 `x as T` with the built-in conversion table, §2 `x as? T`, §3
 `from` clauses (a `from(json: Json)` clause is the type's reader), §4
 implicit encoding where a `Json` is expected (and `match` takes its expected
-type). Next: §5 typed body parameters in route clauses, §6 remove `T.from` /
+type), §5 typed body parameters in route clauses. Next: §6 remove `T.from` /
 `T.fromJson`.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):

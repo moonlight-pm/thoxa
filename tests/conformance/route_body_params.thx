@@ -1,0 +1,74 @@
+## A route clause parameter of a readable type binds the request body, or a
+## GET's query string, by Content-Type (D191 §5). A failed read answers 400
+## before the clause runs, unless the parameter is a Trial.
+import http, { Request, Response, Header, ok, notFound, badRequest } from "std/http"
+import { Pass, Fail, Trial } from "std/fallible"
+import { Issue, messages } from "std/json"
+import { trim } from "std/str"
+import logging, { info } from "std/logging"
+
+type Quantity = Int64 where >= 1 & <= 12
+type CreateOrder(drink: String, quantity: Quantity = 1)
+type Search(term: String = "")
+type Note(tags: Map<String, String>)
+
+type Routes {
+    POST "/orders" (order: CreateOrder) -> String {
+        "{order.quantity} x {order.drink}"
+    }
+
+    POST "/form" (order: Trial<CreateOrder, Array<Issue>>) -> String {
+        match order {
+            Pass(found) => "placed {found.drink}"
+            Fail(issues) => "form page: {messages(issues)}"
+        }
+    }
+
+    GET "/search" (search: Search) -> String {
+        "searching [{search.term}]"
+    }
+
+    POST "/notes" (note: Note) -> String {
+        "{note.tags.count} tags"
+    }
+
+    POST "/items/:id" (id: Int64, order: CreateOrder, request: Request) -> String {
+        "{request.method} item {id}: {order.drink}"
+    }
+}
+
+fn send(method!: String, path!: String, query!: String, contentType!: String, body!: String) -> Request {
+    Request(
+        method: method,
+        path: path,
+        query: query,
+        version: "HTTP/1.1",
+        headers: [Header(name: "Content-Type", value: contentType)],
+        body: Bytes.fromString(body)
+    )
+}
+
+fn show(response!: Response) -> String {
+    "{response.status} {trim(response.body.toString())}"
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let routes = Routes()
+    let json = "application/json; charset=utf-8"
+    let form = "application/x-www-form-urlencoded"
+    info(show(routes.route(send("POST", "/orders", "", json, "{{\"drink\": \"mocha\", \"quantity\": 2}}"))))
+    info(show(routes.route(send("POST", "/orders", "", json, "{{\"drink\": 4, \"quantity\": 40}}"))))
+    info(show(routes.route(send("POST", "/orders", "", form, "drink=tea&quantity=3"))))
+    info(show(routes.route(send("POST", "/orders", "", form, "quantity=99"))))
+    info(show(routes.route(send("POST", "/orders", "", "text/plain", "mocha"))))
+    info(show(routes.route(send("POST", "/form", "", form, "drink=tea"))))
+    info(show(routes.route(send("POST", "/form", "", form, "quantity=0"))))
+    info(show(routes.route(send("GET", "/search", "term=flat+white", "", ""))))
+    info(show(routes.route(send("GET", "/search", "", "", ""))))
+    info(show(routes.route(send("POST", "/notes", "", json, "{{\"tags\": {{\"a\": \"b\"}}}}"))))
+    info(show(routes.route(send("POST", "/notes", "", form, "tags=a"))))
+    info(show(routes.route(send("POST", "/items/7", "", json, "{{\"drink\": \"latte\"}}"))))
+    0
+}
