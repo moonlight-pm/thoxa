@@ -98,7 +98,7 @@ block:
 **Status:** target (freeze) | historical
 **Implementation:** shipped | partial | not started
 **Gaps:** (bullets or “none for this freeze”)
-**As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
+**As-built:** [`capabilities.md`](capabilities.md) · [`architecture.md`](architecture.md)
 ```
 
 - Freezes stay **normative desired shape**. Do not rewrite them into changelogs.
