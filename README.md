@@ -1,129 +1,146 @@
 # Thoxa
 
-Native Thoxa: compile-to-C, hybrid value layout, simple RC heading toward
-Perceus. Interactive **session** face is bare `thoxa` (REPL + no-main scripts).
+Thoxa is a statically typed, expression-oriented programming language. The
+compiler, written in Rust, translates Thoxa to C; a C compiler links that with
+a small C runtime into a native executable. The same language is the input of
+an interactive shell: run `thoxa` with no arguments and a line that reads as a
+command runs as one, while everything else is Thoxa.
 
-> **Pre-alpha.** Syntax and semantics track the Python oracle at
-> [`apocrypha/old/ThoxaPython/spec`](apocrypha/old/ThoxaPython/spec) only as
-> features earn conformance tests here.
+**Site:** [thoxa.dev](https://thoxa.dev) · **Manual:**
+[thoxa.dev/manual](https://thoxa.dev/manual) (the same text as
+[`docs/handbook/`](docs/handbook/))
 
-## Start here
+> **Pre-alpha.** The syntax and semantics still change, there are no releases,
+> and it runs on Linux x86-64 only.
 
-| Doc | Purpose |
-|-----|---------|
-| [`AGENTS.md`](./AGENTS.md) | Agent / contributor workflow |
-| [`CURRENT.md`](./CURRENT.md) | **Living** priority + locks |
-| [`docs/capabilities.md`](./docs/capabilities.md) | As-built capability maturity |
-| [`docs/handbook/`](./docs/handbook/) | User manual (shipped only) |
-| [`docs/progress-model.md`](./docs/progress-model.md) | How focus / as-built / target / handbook fit |
-| [`docs/README.md`](./docs/README.md) | Full documentation map |
+```thx
+import { Pass, Fail } from "std/fallible"
+import { messages } from "std/json"
+import logging, { info } from "std/logging"
 
-## Quickstart
+type Quantity = Int64 where >= 1 & <= 12
+type Size = "small" | "large"
+type Line(drink: String, size: Size, quantity: Quantity = 1)
 
-```bash
-# Build runtime + run the conformance suite
-cargo make test
-
-# Run a Thoxa file
-cargo make run tests/conformance/hello.thx
-
-# Example: Little Crema (multi-route; Ctrl-C to stop; port 9091)
-cargo make run examples/http
-
-# thoxa.dev landing (Ctrl-C to stop; port 8088)
-cargo make run workloads/landing
-
-# sola.computer teaser (Ctrl-C to stop; port 8089)
-cargo make run workloads/sola
-
-# oath.wicket.cloud (Ctrl-C to stop; port 8090)
-cargo make run workloads/oath
-
-# Example: kilo editor (needs a real TTY; Ctrl-Q to quit)
-cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
-
-# Session REPL (product shell)
-cargo make shell
-# or: cargo run -p thoxa --
-
-# Emit C only (under target/thoxa/c/)
-cargo make emit-c tests/conformance/hello.thx
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match Line.read("{{\"drink\": \"mocha\", \"size\": \"huge\", \"quantity\": 40}}") {
+        Pass(line) => info(line.encode())
+        Fail(issues) => info(messages(issues))
+    }
+    0
+}
 ```
-
-Compiler CLI (also available via `cargo run -p thoxa -- …`):
-
-```bash
-cargo run -p thoxa -- run tests/conformance/hello.thx
-cargo run -p thoxa -- build tests/conformance/hello.thx -o hello
-cargo run -p thoxa -- emit-c tests/conformance/hello.thx
-cargo run -p thoxa -- check path.thx
-cargo run -p thoxa -- lsp
-```
-
-## Layout
 
 ```text
-crates/compiler   thoxa CLI + compiler library (incl. session REPL + lsp)
-crates/make       xtask (cargo make …)
-runtime/          C runtime (thoxa_rt)
-std/              product standard library (std/… imports)
-tests/conformance definition of done (.thx + .out)
-examples/         runnable demos (http server, kilo editor)
-workloads/       deployed Thoxa programs (landing = thoxa.dev; sola = sola.computer)
-vendor/           vendored upstream (TinyCC for session libtcc; SQLite amalgamation)
-docs/             canonical engineering + handbook
-CURRENT.md        living session handoff
-extras/           non-product DX (tree-sitter, Zed, dogfood shell)
-apocrypha/        history + Python oracle (not product)
+size: expected "small" | "large", got huge; quantity: expected integer <= 12, got 40
 ```
 
-### Build products (`target/`)
+## What is in it
 
-| Path | Role |
-|------|------|
-| `target/rust/` | Cargo (compiler + xtask binaries, deps) |
-| `target/c/` | C runtime objects + `libthoxa_rt.a` |
-| `target/thoxa/c/` | Generated C from Thoxa sources |
-| `target/thoxa/bin/` | Linked Thoxa program binaries + freshness `*.stamp` |
-| `target/thoxa/bin-leak/` | LSan-linked programs (`THOXA_SANITIZE=leak`; **D151**) |
-| `target/thoxa/bin-address/` | ASan-linked programs (`THOXA_SANITIZE=address`) |
+- Products, unions, literal types, refinements (`Int64 where >= 1`), generic
+  types, function types; local inference; pattern matching with guards.
+- Errors as values: `May<T>` and `Trial<T, E>` from `std/fallible`, with `?`.
+- Reference counting with copy-on-write arrays and maps; `fn drop()` for
+  resources. No garbage collector, no borrow checker.
+- `-->` starts a task; socket operations park it. One OS thread, no
+  `async`/`await`.
+- JSON and form readers, and encoders, generated from type definitions.
+- Tag literals (HTML as typed values), route clauses, an HTTP/1.1 server,
+  `sql"…"` with SQLite.
+- `extern fn` to call C, C-layout types, `Address<T>`.
+- `thoxa run`, `build`, `check` (with `--json`), `lsp`; a Zed extension.
 
-`cargo make clean` removes `target/c` and `target/thoxa`.  
-`cargo make clean --all` also removes `target/rust`.
+What it does not have yet: closures, generic functions, traits, threads, a
+package manager, releases. The [manual](https://thoxa.dev/manual) states
+exactly what works.
 
-## Editor / C language server
+## Building
 
-The runtime lives under `runtime/` with headers in `runtime/include/`. Editors
-using **clangd** need that include path. On **NixOS**, clangd also needs host
-system include dirs — real `cc` works; only the language server is confused.
+You need a Rust toolchain, a C compiler (`cc`: GCC or Clang), and `make` (the
+build compiles the vendored TinyCC that the shell uses).
 
 ```bash
-cargo make runtime    # builds libthoxa_rt.a and writes compile_commands.json
+git clone https://github.com/moonlight-pm/thoxa
+cd thoxa
+cargo build -p thoxa            # the compiler: target/rust/debug/thoxa
+cargo make test                 # conformance suite, site samples, unit tests
 ```
 
-That `compile_commands.json` includes `-Iruntime/include` **and** the host `cc`
-system include dirs. Then **reload the window / restart clangd**.
+`cargo make` is a Cargo alias for the repository's task runner
+([`crates/make`](crates/make)).
 
-Fallback: committed [`.clangd`](.clangd) with `-Iruntime/include`.
-
-### Thoxa in Zed
+## Using it
 
 ```bash
-cargo make zed            # sync grammar + language files + build thoxa for LSP
-cargo make zed --grammar  # grammar WASM only
-cargo make zed --all      # also rebuild the WASM extension shim
+thoxa run path.thx [args…]      # compile and run (a directory runs its main.thx)
+thoxa build path.thx -o out     # compile to a binary
+thoxa check path.thx            # typecheck; --json for machine-readable diagnostics
+thoxa                           # the interactive shell
+thoxa lsp                       # language server (stdio)
 ```
 
-See [`extras/README.md`](extras/README.md) and
+From a checkout, `cargo run -p thoxa -- …` or `target/rust/debug/thoxa …`.
+Programs to try:
+
+```bash
+cargo make run tests/conformance/hello.thx
+cargo make run examples/http                  # a small web app with SQLite (port 9091)
+cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt   # a terminal text editor
+cargo make run workloads/landing              # thoxa.dev itself (port 8088)
+cargo make shell                              # the shell, release build
+```
+
+## Repository
+
+```text
+crates/compiler   the thoxa binary: compiler, shell, language server
+crates/make       task runner (cargo make …)
+runtime/          the C runtime (thoxa_rt)
+std/              the standard library (std/… imports)
+tests/conformance programs with expected output; the definition of done
+examples/         runnable programs: examples/http (web app), examples/kilo (editor)
+workloads/        deployed Thoxa programs: landing = thoxa.dev, sola, oath
+extras/           editor support (Tree-sitter grammar, Zed) and a dogfood shell
+vendor/           TinyCC (for the shell) and the SQLite amalgamation
+docs/             manual (docs/handbook) and engineering docs
+apocrypha/        earlier attempts and the Python prototype; history only
+```
+
+Build output goes under `target/`: `target/rust/` (Cargo), `target/c/` (the
+runtime library), `target/thoxa/` (generated C and program binaries).
+`cargo make clean` removes `target/c` and `target/thoxa`; `--all` also removes
+`target/rust`.
+
+## Documentation
+
+| Document | What it is |
+|----------|------------|
+| [`docs/handbook/`](docs/handbook/) | The manual: shipped behaviour only, rendered at thoxa.dev/manual |
+| [`docs/capabilities.md`](docs/capabilities.md) | Each capability's status, gates, and known gaps |
+| [`docs/decisions.md`](docs/decisions.md) | Design decisions by id (D1…) |
+| [`docs/architecture.md`](docs/architecture.md) | Pipeline, crates, runtime layout |
+| [`docs/specs/`](docs/specs/) | Design freezes |
+| [`CURRENT.md`](CURRENT.md) | Current focus |
+| [`AGENTS.md`](AGENTS.md) | How work is done here (slices, conformance, docs) |
+
+A feature counts as done when a program in `tests/conformance/` compiles,
+runs, and matches its `.out` under `cargo make test`, which also runs every
+program under LeakSanitizer.
+
+## Editor setup
+
+**Zed:** `cargo make zed` builds the grammar, installs the language files, and
+links `thoxa` for the language server; restart Zed afterwards. See
 [`docs/handbook/editor.md`](docs/handbook/editor.md).
 
-## Docs
+**clangd** (for the C runtime): `cargo make runtime` writes a
+`compile_commands.json` with `-Iruntime/include` and the host compiler's
+system include directories. The committed [`.clangd`](.clangd) is a fallback.
 
-- [CURRENT — what next](CURRENT.md)
-- [Capabilities](docs/capabilities.md)
-- [Handbook (user)](docs/handbook/)
-- [Progress model](docs/progress-model.md)
-- [Documentation map](docs/README.md)
-- [Decisions](docs/decisions.md)
-- [Architecture](docs/architecture.md)
-- [Roadmap](docs/roadmap.md)
+## Problems
+
+Report bugs and questions at
+[github.com/moonlight-pm/thoxa/issues](https://github.com/moonlight-pm/thoxa/issues),
+with a short `.thx` file, the command, and the output of `thoxa version`.
