@@ -145,6 +145,12 @@ fn desugar_line(line: &str) -> Result<String> {
     if is_decl_prefix(trimmed) {
         return Ok(line.to_string());
     }
+    // A Thoxa statement keyword, or a line that opens a block continuing on
+    // the next lines, is Thoxa, never a command: `for x in xs {` on its own
+    // does not parse, and used to run a program named `for` (D188).
+    if starts_with_statement_keyword(trimmed) || nesting_delta(line) > 0 {
+        return Ok(line.to_string());
+    }
     let indent: String = line
         .chars()
         .take_while(|c| *c == ' ' || *c == '\t')
@@ -182,6 +188,19 @@ fn stages_are_pure_int_literals(stages: &[Vec<String>]) -> bool {
     stages
         .iter()
         .all(|stage| stage.len() == 1 && stage[0].parse::<i64>().is_ok())
+}
+
+/// `if`, `for`, `while`, `loop`, `match`, `return`, `break`, `continue` as the
+/// line's first word.
+fn starts_with_statement_keyword(t: &str) -> bool {
+    let word: String = t.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+    let rest = &t[word.len()..];
+    let ends_word = rest.is_empty() || rest.starts_with([' ', '\t', '{', '(']);
+    ends_word
+        && matches!(
+            word.as_str(),
+            "if" | "for" | "while" | "loop" | "match" | "return" | "break" | "continue"
+        )
 }
 
 fn is_decl_prefix(t: &str) -> bool {
@@ -663,6 +682,20 @@ export fn n() -> Int64 { 1 }
             !out.contains("shell ="),
             "must not session-desugar type fields:\n{out}"
         );
+    }
+
+    /// A top-level `for` / `if` spanning lines stays Thoxa; its first line
+    /// alone does not parse and used to run a program named `for` (D188).
+    #[test]
+    fn desugar_keeps_multiline_statement_blocks() {
+        let src = "for value in [1, 2, 3] {\n    seen = seen + value\n}\nls\n";
+        let out = desugar_session_source(src).unwrap();
+        assert!(out.contains("for value in [1, 2, 3] {"), "got:\n{out}");
+        assert!(!out.contains(r#"shell.run(["for""#), "got:\n{out}");
+        assert!(out.contains(r#"shell = shell.run(["ls"])"#), "got:\n{out}");
+        let src = "if seen > 5 { shell = shell.run([\"echo\", \"many\"]) }\n";
+        let out = desugar_session_source(src).unwrap();
+        assert!(!out.contains(r#"shell.run(["if""#), "got:\n{out}");
     }
 
     #[test]
