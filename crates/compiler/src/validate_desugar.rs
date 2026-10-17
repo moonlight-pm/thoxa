@@ -138,6 +138,8 @@ fn desugar_module_with(
         if let Some((base, clause)) = refined_alias_of(td, module_id, world, resolve) {
             extra.push(gen_from_refined(td, base, &clause));
             encoders(&mut extra, gen_to_json_refined(td, base));
+            extra.push(gen_from_json_scalar(td, base));
+            extra.push(gen_read(td));
             continue;
         }
         if let Some((base, lits)) = pure_lit_union_of(td) {
@@ -166,7 +168,9 @@ fn desugar_module_with(
                 td.name_span,
             ));
         }
-        extra.push(gen_from_json(td, module_id, world, resolve)?);
+        let (from_json, checks) = gen_from_json(td, module_id, world, resolve)?;
+        extra.push(from_json);
+        extra.extend(checks);
         extra.push(gen_read(td));
     }
     if extra.is_empty() {
@@ -446,78 +450,82 @@ fn shape_of(
     }
 }
 
+/// `__read_T(s)`: parse, then `__fromJson_T` (D182 §2).
 fn gen_read(td: &TypeDef) -> Function {
-    let from = format!("__fromJson_{}", td.name);
     Function {
         exported: false,
         name: format!("__read_{}", td.name),
         name_span: dummy(),
         params: vec![param("s", ty_named("String"))],
-        return_type: Some(ty_trial(ty_named(&td.name))),
+        return_type: Some(ty_trial_issues(ty_named(&td.name))),
         body: Block {
             items: vec![let_bind(
-                "v",
+                "__tree",
                 false,
                 try_expr(json_call("readJson", vec![Arg::Pos(name("s"))])),
             )],
             tail: Some(Box::new(call(
-                &from,
-                vec![Arg::Pos(name("v")), Arg::Pos(str_lit(""))],
+                &format!("__fromJson_{}", td.name),
+                vec![Arg::Pos(name("__tree")), Arg::Pos(str_lit(""))],
             ))),
             span: dummy(),
         },
     }
 }
 
+/// `__fromJson_T` for a product: every field is read, and the issues of all
+/// of them are reported together (D182 §2). A field with its own `where`
+/// gets a `__check_T_field` function, returned beside.
 fn gen_from_json(
     td: &TypeDef,
     module_id: &str,
-    world: &HashMap<String, HashMap<String, TypeDef>>,
-    resolve: &HashMap<String, HashMap<String, (String, String)>>,
-) -> Result<Function> {
+    world: &World,
+    resolve: &Resolve,
+) -> Result<(Function, Vec<Function>)> {
     let mut visiting = HashSet::new();
+    let mut checks = Vec::new();
     let mut items = vec![let_bind(
-        "m",
+        "__obj",
         false,
-        try_expr(json_call("asObj",
+        try_expr(json_call(
+            "asObj",
             vec![Arg::Pos(name("v")), Arg::Pos(name("path"))],
         )),
     )];
-    let mut ctor_args = Vec::new();
-    for p in &td.params {
+    for (index, p) in td.params.iter().enumerate() {
         let shape = shape_of(&p.ty, module_id, world, resolve, &mut visiting).ok_or_else(|| {
             Error::at(
                 format!("internal: field `{}` not readable", p.name),
                 p.name_span,
             )
         })?;
-        let mut ann = p.ty.clone();
-        ann.where_clause = None;
+        let mut ty = p.ty.clone();
+        ty.where_clause = None;
+        let check = p.ty.where_clause.as_ref().map(|clause| {
+            let check = gen_field_check(td, &p.name, shape_base(&shape), clause);
+            let check_name = check.name.clone();
+            checks.push(check);
+            check_name
+        });
         items.push(let_bind_ty(
-            &p.name,
+            &format!("__f{index}"),
             false,
-            ann,
-            field_value(&p.name, &shape, &p.ty),
+            ty_trial_issues(ty.clone()),
+            read_json_field(&p.name, &shape, &ty, check.as_deref()),
         ));
-        if let Some(w) = &p.ty.where_clause {
-            let base = shape_base(&shape);
-            let pvar = format!("{}Path", p.name);
-            items.push(let_bind(
-                &pvar,
-                false,
-                json_call("joinPath",
-                    vec![Arg::Pos(name("path")), Arg::Pos(str_lit(&p.name))],
-                ),
-            ));
-            items.extend(where_guard_items_at(&p.name, base, &w.expr, &pvar));
-        }
-        ctor_args.push(Arg::Named {
+    }
+    items.extend(collect_issues(td.params.len()));
+    let ctor_args = td
+        .params
+        .iter()
+        .enumerate()
+        .map(|(index, p)| Arg::Named {
             name: p.name.clone(),
             name_span: dummy(),
-            value: name(&p.name),
-        });
-    }
-    Ok(Function {
+            value: try_expr(name(&format!("__f{index}"))),
+        })
+        .collect();
+    let function = Function {
         exported: false,
         name: format!("__fromJson_{}", td.name),
         name_span: dummy(),
@@ -525,7 +533,7 @@ fn gen_from_json(
             param("v", json_ty("Json")),
             param_default("path", ty_named("String"), str_lit("")),
         ],
-        return_type: Some(ty_trial(ty_named(&td.name))),
+        return_type: Some(ty_trial_issues(ty_named(&td.name))),
         body: Block {
             items,
             tail: Some(Box::new(call(
@@ -534,246 +542,389 @@ fn gen_from_json(
             ))),
             span: dummy(),
         },
-    })
+    };
+    Ok((function, checks))
 }
 
-fn field_value(field: &str, shape: &Shape, ty: &TypeExpr) -> Expr {
-    match shape {
-        Shape::Str => try_expr(json_call("strField",
-            vec![
-                Arg::Pos(name("m")),
-                Arg::Pos(str_lit(field)),
-                Arg::Pos(name("path")),
-            ],
-        )),
-        Shape::Int => try_expr(json_call("intField",
-            vec![
-                Arg::Pos(name("m")),
-                Arg::Pos(str_lit(field)),
-                Arg::Pos(name("path")),
-            ],
-        )),
-        Shape::Bool => try_expr(json_call("boolField",
-            vec![
-                Arg::Pos(name("m")),
-                Arg::Pos(str_lit(field)),
-                Arg::Pos(name("path")),
-            ],
-        )),
-        Shape::Float => try_expr(json_call("floatField",
-            vec![
-                Arg::Pos(name("m")),
-                Arg::Pos(str_lit(field)),
-                Arg::Pos(name("path")),
-            ],
-        )),
-        Shape::Refined { name: tn, base } => {
-            let helper = match base.as_str() {
-                "String" => "strField",
-                "Float64" => "floatField",
-                "Bool" => "boolField",
-                _ => "intField",
-            };
-            let raw = try_expr(json_call(helper,
-                vec![
-                    Arg::Pos(name("m")),
-                    Arg::Pos(str_lit(field)),
-                    Arg::Pos(name("path")),
-                ],
-            ));
-            try_expr(method_call(
-                name(tn),
-                "from",
-                vec![
-                    Arg::Pos(raw),
-                    Arg::Pos(json_call("joinPath",
-                        vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field))],
-                    )),
-                ],
-            ))
-        }
-        Shape::Product(tn) => {
-            let raw = try_expr(json_call("field",
-                vec![
-                    Arg::Pos(name("m")),
-                    Arg::Pos(str_lit(field)),
-                    Arg::Pos(name("path")),
-                ],
-            ));
-            try_expr(method_call(
-                name(tn),
-                "fromJson",
-                vec![
-                    Arg::Pos(raw),
-                    Arg::Pos(json_call("joinPath",
-                        vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field))],
-                    )),
-                ],
-            ))
-        }
-        Shape::Array(elem) => {
-            let raw = try_expr(json_call("field",
-                vec![
-                    Arg::Pos(name("m")),
-                    Arg::Pos(str_lit(field)),
-                    Arg::Pos(name("path")),
-                ],
-            ));
-            let arr_path = json_call("joinPath",
-                vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field))],
-            );
-            convert_array(raw, elem, arr_path, ty)
-        }
-        Shape::May(inner) => may_field_value(field, inner),
+/// `__check_T_field(value, path) -> Trial<Base, Issue>`: a field's own
+/// `where`, as a refined type's `from` checks it.
+fn gen_field_check(td: &TypeDef, field: &str, base: &str, clause: &WhereClause) -> Function {
+    let items = where_guard_items("value", base, &clause.expr);
+    Function {
+        exported: false,
+        name: format!("__check_{}_{field}", td.name),
+        name_span: dummy(),
+        params: vec![param("value", ty_named(base)), param("path", ty_named("String"))],
+        return_type: Some(ty_trial_issue(ty_named(base))),
+        body: Block {
+            items,
+            tail: Some(Box::new(call("Pass", vec![Arg::Pos(name("value"))]))),
+            span: dummy(),
+        },
     }
 }
 
-fn may_field_value(field: &str, inner: &Shape) -> Expr {
-    let path = json_call("joinPath",
-        vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field))],
-    );
-    let inner_ty = ty_of_shape(inner);
-    let may_ty = ty_may(inner_ty.clone());
-    match_expr(
-        method_call(name("m"), "get", vec![Arg::Pos(str_lit(field))]),
+/// `mut __issues = []`, every field's issues appended in order, and a
+/// `Fail(__issues)` return when there are any.
+fn collect_issues(fields: usize) -> Vec<BlockItem> {
+    let mut items = vec![let_bind_ty(
+        "__issues",
+        true,
+        ty_array(json_ty("Issue")),
+        empty_array(),
+    )];
+    for index in 0..fields {
+        items.push(BlockItem::Expr(match_expr(
+            name(&format!("__f{index}")),
+            vec![
+                match_arm_block(
+                    "Fail",
+                    vec![Some("__found".into())],
+                    vec![append_all("__issues", "__found")],
+                    None,
+                ),
+                else_arm(),
+            ],
+        )));
+    }
+    items.push(BlockItem::Expr(if_expr(
+        bin(
+            BinaryOp::Gt,
+            field(name("__issues"), "count"),
+            int_lit(0),
+        ),
+        block_stmts(vec![BlockItem::Expr(return_expr(call(
+            "Fail",
+            vec![Arg::Pos(name("__issues"))],
+        )))]),
+        None,
+    )));
+    items
+}
+
+/// A product field read from the object `__obj` at `path.field`.
+fn read_json_field(field_name: &str, shape: &Shape, ty: &TypeExpr, check: Option<&str>) -> Expr {
+    let trial = ty_trial_issues(ty.clone());
+    let absent = match shape {
+        Shape::May(_) => typed(
+            "__absent",
+            trial.clone(),
+            call("Pass", vec![Arg::Pos(typed("__none", ty.clone(), call("Not", vec![])))]),
+        ),
+        _ => typed(
+            "__absent",
+            trial.clone(),
+            fail_with(json_call("issueMissing", vec![Arg::Pos(name("__p"))])),
+        ),
+    };
+    let read = match_expr(
+        method_call(name("__obj"), "get", vec![Arg::Pos(str_lit(field_name))]),
         vec![
-            match_arm_block(
-                "Not",
-                vec![],
-                vec![let_bind_ty("absent", false, may_ty.clone(), call("Not", vec![]))],
-                Some(name("absent")),
-            ),
+            match_arm_block("Not", vec![], vec![], Some(absent)),
             match_arm_block(
                 "Has",
-                vec![Some("raw".into())],
+                vec![Some("__raw".into())],
                 vec![],
-                Some(if_expr(
-                    json_call("isNull", vec![Arg::Pos(name("raw"))]),
+                Some(convert_json(name("__raw"), shape, ty, name("__p"), 0)),
+            ),
+        ],
+    );
+    let mut items = vec![
+        let_bind(
+            "__p",
+            false,
+            json_call(
+                "joinPath",
+                vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field_name))],
+            ),
+        ),
+        let_bind_ty("__read", false, trial.clone(), read),
+    ];
+    let Some(check) = check else {
+        return block(items, name("__read"));
+    };
+    // A field's own `where` runs on the value once it has its type.
+    items.push(let_bind_ty(
+        "__checked",
+        false,
+        trial.clone(),
+        match_expr(
+            name("__read"),
+            vec![
+                match_arm_block(
+                    "Fail",
+                    vec![Some("__found".into())],
+                    vec![],
+                    Some(typed("__out", trial.clone(), call("Fail", vec![Arg::Pos(name("__found"))]))),
+                ),
+                match_arm_block(
+                    "Pass",
+                    vec![Some("__value".into())],
+                    vec![],
+                    Some(single_issue(
+                        call(check, vec![Arg::Pos(name("__value")), Arg::Pos(name("__p"))]),
+                        &trial,
+                    )),
+                ),
+            ],
+        ),
+    ));
+    block(items, name("__checked"))
+}
+
+/// `raw` (a `Json` name) as `ty`, at `path`: a `Trial<ty, Array<Issue>>`.
+/// `depth` keeps the names of nested arrays apart.
+fn convert_json(raw: Expr, shape: &Shape, ty: &TypeExpr, path: Expr, depth: usize) -> Expr {
+    let trial = ty_trial_issues(ty.clone());
+    match shape {
+        Shape::Str => json_call("asStr", vec![Arg::Pos(raw), Arg::Pos(path)]),
+        Shape::Int => json_call("asInt", vec![Arg::Pos(raw), Arg::Pos(path)]),
+        Shape::Bool => json_call("asBool", vec![Arg::Pos(raw), Arg::Pos(path)]),
+        Shape::Float => json_call("asFloat", vec![Arg::Pos(raw), Arg::Pos(path)]),
+        Shape::Product(type_name) | Shape::Refined { name: type_name, .. } => method_call(
+            name(type_name),
+            "fromJson",
+            vec![Arg::Pos(raw), Arg::Pos(path)],
+        ),
+        Shape::May(inner) => {
+            let inner_ty = type_arg(ty, 0);
+            let some = match_expr(
+                convert_json(raw.clone(), inner, &inner_ty, path, depth + 1),
+                vec![
+                    match_arm_block(
+                        "Pass",
+                        vec![Some("__some".into())],
+                        vec![],
+                        Some(typed(
+                            "__out",
+                            trial.clone(),
+                            call(
+                                "Pass",
+                                vec![Arg::Pos(typed(
+                                    "__has",
+                                    ty.clone(),
+                                    call("Has", vec![Arg::Pos(name("__some"))]),
+                                ))],
+                            ),
+                        )),
+                    ),
+                    match_arm_block(
+                        "Fail",
+                        vec![Some("__found".into())],
+                        vec![],
+                        Some(typed("__out", trial.clone(), call("Fail", vec![Arg::Pos(name("__found"))]))),
+                    ),
+                ],
+            );
+            typed(
+                "__maybe",
+                trial.clone(),
+                if_expr(
+                    json_call("isNull", vec![Arg::Pos(raw)]),
                     Block {
-                        items: vec![let_bind_ty(
-                            "absent",
-                            false,
-                            may_ty.clone(),
-                            call("Not", vec![]),
-                        )],
-                        tail: Some(Box::new(name("absent"))),
+                        items: vec![],
+                        tail: Some(Box::new(typed(
+                            "__out",
+                            trial.clone(),
+                            call(
+                                "Pass",
+                                vec![Arg::Pos(typed("__none", ty.clone(), call("Not", vec![])))],
+                            ),
+                        ))),
                         span: dummy(),
                     },
                     Some(Block {
-                        items: vec![
-                            let_bind_ty(
-                                "one",
-                                false,
-                                inner_ty,
-                                try_expr(convert_value(name("raw"), inner, path)),
-                            ),
-                            let_bind_ty(
-                                "present",
-                                false,
-                                may_ty,
-                                call("Has", vec![Arg::Pos(name("one"))]),
-                            ),
-                        ],
-                        tail: Some(Box::new(name("present"))),
+                        items: vec![],
+                        tail: Some(Box::new(some)),
                         span: dummy(),
                     }),
+                ),
+            )
+        }
+        Shape::Array(elem) => {
+            let elem_ty = type_arg(ty, 0);
+            let at = |base: &str| format!("{base}{depth}");
+            let element = convert_json(
+                name(&at("__x")),
+                elem,
+                &elem_ty,
+                json_call(
+                    "joinPath",
+                    vec![Arg::Pos(name(&at("__path"))), Arg::Pos(interp_int(&at("__i")))],
+                ),
+                depth + 1,
+            );
+            let each = vec![
+                let_bind_ty(&at("__one"), false, ty_trial_issues(elem_ty.clone()), element),
+                BlockItem::Expr(match_expr(
+                    name(&at("__one")),
+                    vec![
+                        match_arm_block(
+                            "Pass",
+                            vec![Some(at("__v"))],
+                            vec![BlockItem::Expr(method_call(
+                                name(&at("__out")),
+                                "append",
+                                vec![Arg::Pos(name(&at("__v")))],
+                            ))],
+                            None,
+                        ),
+                        match_arm_block(
+                            "Fail",
+                            vec![Some(at("__found"))],
+                            vec![append_all(&at("__bad"), &at("__found"))],
+                            None,
+                        ),
+                    ],
                 )),
+                assign(&at("__i"), bin(BinaryOp::Add, name(&at("__i")), int_lit(1))),
+            ];
+            let elements = block(
+                vec![
+                    let_bind_ty(&at("__out"), true, ty.clone(), empty_array()),
+                    let_bind_ty(&at("__bad"), true, ty_array(json_ty("Issue")), empty_array()),
+                    let_bind(&at("__i"), true, int_lit(0)),
+                    for_each(&at("__x"), None, name(&at("__xs")), each),
+                ],
+                if_expr(
+                    bin(BinaryOp::Gt, field(name(&at("__bad")), "count"), int_lit(0)),
+                    Block {
+                        items: vec![],
+                        tail: Some(Box::new(typed(
+                            "__out",
+                            trial.clone(),
+                            call("Fail", vec![Arg::Pos(name(&at("__bad")))]),
+                        ))),
+                        span: dummy(),
+                    },
+                    Some(Block {
+                        items: vec![],
+                        tail: Some(Box::new(typed(
+                            "__out",
+                            trial.clone(),
+                            call("Pass", vec![Arg::Pos(name(&at("__out")))]),
+                        ))),
+                        span: dummy(),
+                    }),
+                ),
+            );
+            block(
+                vec![
+                    let_bind(&at("__path"), false, path),
+                    let_bind_ty(
+                        &at("__list"),
+                        false,
+                        ty_trial_issues(ty_array(json_ty("Json"))),
+                        json_call("asArr", vec![Arg::Pos(raw), Arg::Pos(name(&at("__path")))]),
+                    ),
+                ],
+                typed(
+                    &at("__array"),
+                    trial.clone(),
+                    match_expr(
+                        name(&at("__list")),
+                        vec![
+                            match_arm_block(
+                                "Fail",
+                                vec![Some("__found".into())],
+                                vec![],
+                                Some(typed(
+                                    "__out",
+                                    trial.clone(),
+                                    call("Fail", vec![Arg::Pos(name("__found"))]),
+                                )),
+                            ),
+                            match_arm_block(
+                                "Pass",
+                                vec![Some(at("__xs"))],
+                                vec![],
+                                Some(elements),
+                            ),
+                        ],
+                    ),
+                ),
+            )
+        }
+    }
+}
+
+/// `Trial<T, Issue>` (from a `from` or a field check) as
+/// `Trial<T, Array<Issue>>`.
+fn single_issue(value: Expr, trial: &TypeExpr) -> Expr {
+    match_expr(
+        value,
+        vec![
+            match_arm_block(
+                "Pass",
+                vec![Some("__ok".into())],
+                vec![],
+                Some(typed("__out", trial.clone(), call("Pass", vec![Arg::Pos(name("__ok"))]))),
+            ),
+            match_arm_block(
+                "Fail",
+                vec![Some("__issue".into())],
+                vec![],
+                Some(typed("__out", trial.clone(), fail_with(name("__issue")))),
             ),
         ],
     )
 }
 
-fn convert_array(raw: Expr, elem: &Shape, path: Expr, ty: &TypeExpr) -> Expr {
-    let out_ty = ty.clone();
-    Expr {
-        kind: ExprKind::Block(Block {
-            items: vec![
-                let_bind(
-                    "xs",
-                    false,
-                    try_expr(json_call("asArr", vec![Arg::Pos(raw), Arg::Pos(path.clone())])),
-                ),
-                let_bind_ty(
-                    "out",
-                    true,
-                    out_ty,
-                    Expr {
-                        kind: ExprKind::ArrayLit(vec![]),
-                        span: dummy(),
-                    },
-                ),
-                let_bind("i", true, int_lit(0)),
-                BlockItem::Expr(Expr {
-                    kind: ExprKind::For {
-                        name: "x".into(),
-                        name_span: dummy(),
-                        value: None,
-                        start: Box::new(name("xs")),
-                        end: None,
-                        inclusive: false,
-                        body: Block {
-                            items: vec![
-                                let_bind(
-                                    "one",
-                                    false,
-                                    try_expr(convert_value(
-                                        name("x"),
-                                        elem,
-                                        json_call("joinPath",
-                                            vec![Arg::Pos(path), Arg::Pos(interp_int("i"))],
-                                        ),
-                                    )),
-                                ),
-                                BlockItem::Expr(method_call(
-                                    name("out"),
-                                    "append",
-                                    vec![Arg::Pos(name("one"))],
-                                )),
-                                assign("i", bin(BinaryOp::Add, name("i"), int_lit(1))),
-                            ],
-                            tail: None,
-                            span: dummy(),
-                        },
-                    },
-                    span: dummy(),
-                }),
-            ],
-            tail: Some(Box::new(name("out"))),
+/// `Fail([issue])`
+fn fail_with(issue: Expr) -> Expr {
+    call(
+        "Fail",
+        vec![Arg::Pos(Expr {
+            kind: ExprKind::ArrayLit(vec![issue]),
             span: dummy(),
-        }),
-        span: dummy(),
+        })],
+    )
+}
+
+/// `for __e in found { into.append(__e) }`
+fn append_all(into: &str, found: &str) -> BlockItem {
+    for_each(
+        "__e",
+        None,
+        name(found),
+        vec![BlockItem::Expr(method_call(
+            name(into),
+            "append",
+            vec![Arg::Pos(name("__e"))],
+        ))],
+    )
+}
+
+/// `{ let label: ty = value; label }`: gives `value` its type.
+fn typed(label: &str, ty: TypeExpr, value: Expr) -> Expr {
+    block(vec![let_bind_ty(label, false, ty, value)], name(label))
+}
+
+fn type_arg(ty: &TypeExpr, index: usize) -> TypeExpr {
+    match ty.args.get(index) {
+        Some(TypeArg::Type(inner)) => inner.clone(),
+        _ => ty_named("Void"),
     }
 }
 
-fn convert_value(val: Expr, shape: &Shape, path: Expr) -> Expr {
-    match shape {
-        Shape::Str => json_call("asStr", vec![Arg::Pos(val), Arg::Pos(path)]),
-        Shape::Int => json_call("asInt", vec![Arg::Pos(val), Arg::Pos(path)]),
-        Shape::Bool => json_call("asBool", vec![Arg::Pos(val), Arg::Pos(path)]),
-        Shape::Float => json_call("asFloat", vec![Arg::Pos(val), Arg::Pos(path)]),
-        Shape::Product(tn) => method_call(name(tn), "fromJson", vec![Arg::Pos(val), Arg::Pos(path)]),
-        Shape::Refined { name: tn, .. } => {
-            method_call(name(tn), "from", vec![Arg::Pos(val), Arg::Pos(path)])
-        }
-        Shape::Array(elem) => convert_array(val, elem, path, &ty_array(json_ty("Json"))),
-        Shape::May(inner) => {
-            if_expr(
-                json_call("isNull", vec![Arg::Pos(val.clone())]),
-                Block {
-                    items: vec![],
-                    tail: Some(Box::new(call("Not", vec![]))),
-                    span: dummy(),
-                },
-                Some(Block {
-                    items: vec![],
-                    tail: Some(Box::new(call(
-                        "Has",
-                        vec![Arg::Pos(try_expr(convert_value(val, inner, path)))],
-                    ))),
-                    span: dummy(),
-                }),
-            )
-        }
+fn else_arm() -> MatchArm {
+    MatchArm {
+        pattern: Pattern::Else { span: dummy() },
+        guard: None,
+        body: Block {
+            items: vec![],
+            tail: None,
+            span: dummy(),
+        },
+    }
+}
+
+fn return_expr(value: Expr) -> Expr {
+    Expr {
+        kind: ExprKind::Return {
+            value: Some(Box::new(value)),
+        },
+        span: dummy(),
     }
 }
 
@@ -919,7 +1070,7 @@ fn gen_from_lit_union(td: &TypeDef, _base: &str, lits: &[TypeLit]) -> Function {
             param("n", ty_named(_base)),
             param_default("path", ty_named("String"), str_lit("")),
         ],
-        return_type: Some(ty_trial(ty_named(&td.name))),
+        return_type: Some(ty_trial_issue(ty_named(&td.name))),
         body: Block {
             items,
             tail: Some(Box::new(call(
@@ -954,29 +1105,34 @@ fn gen_to_json_lit_union(td: &TypeDef, base: &str) -> Function {
     }
 }
 
+/// `__fromJson_T` for a refined or literal type: the base value, then `from`.
 fn gen_from_json_scalar(td: &TypeDef, base: &str) -> Function {
-    let from = format!("__fromJson_{}", td.name);
+    let trial = ty_trial_issues(ty_named(&td.name));
     Function {
         exported: false,
-        name: from,
+        name: format!("__fromJson_{}", td.name),
         name_span: dummy(),
         params: vec![
             param("v", json_ty("Json")),
             param_default("path", ty_named("String"), str_lit("")),
         ],
-        return_type: Some(ty_trial(ty_named(&td.name))),
+        return_type: Some(trial.clone()),
         body: Block {
             items: vec![let_bind(
-                "raw",
+                "__base",
                 false,
-                try_expr(json_call(as_helper_for_base(base),
+                try_expr(json_call(
+                    as_helper_for_base(base),
                     vec![Arg::Pos(name("v")), Arg::Pos(name("path"))],
                 )),
             )],
-            tail: Some(Box::new(method_call(
-                name(&td.name),
-                "from",
-                vec![Arg::Pos(name("raw")), Arg::Pos(name("path"))],
+            tail: Some(Box::new(single_issue(
+                method_call(
+                    name(&td.name),
+                    "from",
+                    vec![Arg::Pos(name("__base")), Arg::Pos(name("path"))],
+                ),
+                &trial,
             ))),
             span: dummy(),
         },
@@ -1127,7 +1283,7 @@ fn gen_from_refined(td: &TypeDef, base: &str, clause: &WhereClause) -> Function 
             param("n", ty_named(base)),
             param_default("path", ty_named("String"), str_lit("")),
         ],
-        return_type: Some(ty_trial(ty_named(&td.name))),
+        return_type: Some(ty_trial_issue(ty_named(&td.name))),
         body: Block {
             items,
             tail: Some(Box::new(call(
@@ -1370,23 +1526,20 @@ fn ensure_import(module: &mut Module, path: &str, names: &[&str]) {
     );
 }
 
-
-fn ty_of_shape(shape: &Shape) -> TypeExpr {
-    match shape {
-        Shape::Str => ty_named("String"),
-        Shape::Int => ty_named("Int64"),
-        Shape::Bool => ty_named("Bool"),
-        Shape::Float => ty_named("Float64"),
-        Shape::Array(elem) => ty_array(ty_of_shape(elem)),
-        Shape::May(inner) => ty_may(ty_of_shape(inner)),
-        Shape::Product(n) | Shape::Refined { name: n, .. } => ty_named(n),
-    }
+/// `Trial<ok, Issue>`: one value's check (`from`).
+fn ty_trial_issue(ok: TypeExpr) -> TypeExpr {
+    ty_trial_of(ok, json_ty("Issue"))
 }
 
-fn ty_trial(ok: TypeExpr) -> TypeExpr {
+/// `Trial<ok, Array<Issue>>`: a read reports every issue (D182 §2).
+fn ty_trial_issues(ok: TypeExpr) -> TypeExpr {
+    ty_trial_of(ok, ty_array(json_ty("Issue")))
+}
+
+fn ty_trial_of(ok: TypeExpr, error: TypeExpr) -> TypeExpr {
     TypeExpr {
         name: "Trial".into(),
-        args: vec![TypeArg::Type(ok), TypeArg::Type(json_ty("Issue"))],
+        args: vec![TypeArg::Type(ok), TypeArg::Type(error)],
         span: dummy(),
         lit: None,
         mark: None,

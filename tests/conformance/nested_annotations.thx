@@ -1,0 +1,28 @@
+## A generic type written only in a nested `let` annotation (an `if` body, a
+## match arm, a loop) is instantiated like one at the top of the body.
+import { Pass, Fail, Trial, Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let count = 2
+    if count > 1 {
+        let found: Trial<Array<Int64>, String> = Pass([1, 2])
+        match found {
+            Pass(values) => info("if: {values.count}")
+            Fail(error) => info("if: {error}")
+        }
+    }
+    for index in 0..1 {
+        let maybe: May<Array<String>> = Has(["a"])
+        match maybe {
+            Has(words) {
+                let pairs: Map<String, Array<Bool>> = { first: [true] }
+                info("loop {index}: {words.count} {pairs.count}")
+            }
+            Not => info("loop {index}: none")
+        }
+    }
+    0
+}

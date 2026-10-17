@@ -119,119 +119,123 @@ export fn issueRejected(path!: String, reason!: String) -> Issue {
     Rejected(path, reason)
 }
 
-export fn errorObject(e!: Issue) -> Json {
-    mut m: Map<String, Json> = Map()
-    m.set("ok", JBool(false))
-    match e {
-        Missing(path) {
-            m.set("path", JStr(path))
-            m.set("error", JStr("{path} is required"))
+## Every issue's message, joined with "; " (D182 §2).
+export fn messages(issues!: Array<Issue>) -> String {
+    mut out = ""
+    for issue in issues {
+        if out.count == 0 {
+            out = message(issue)
+        } else {
+            out = "{out}; {message(issue)}"
         }
-        Mismatch(path, expected, got) {
-            let msg = if path.count == 0 {
-                "expected {expected}, got {got}"
-            } else {
-                "{path}: expected {expected}, got {got}"
-            }
-            m.set("path", JStr(path))
-            m.set("error", JStr(msg))
+    }
+    out
+}
+
+## One issue as an object: `path`, `error`, and a mismatch's `expected` / `got`.
+export fn issueObject(e!: Issue) -> Json {
+    mut m: Map<String, Json> = Map()
+    m.set("path", JStr(issuePath(e)))
+    m.set("error", JStr(message(e)))
+    match e {
+        Mismatch(_, expected, got) {
             m.set("expected", JStr(expected))
             m.set("got", JStr(got))
         }
-        Rejected(path, reason) {
-            m.set("path", JStr(path))
-            m.set("error", JStr(reason))
-        }
+        else { }
     }
     JObj(m)
 }
 
-export fn readJson(s!: String) -> Trial<Json, Issue> {
+## `{"ok": false, …issueObject(e)}`
+export fn errorObject(e!: Issue) -> Json {
+    mut m: Map<String, Json> = Map()
+    m.set("ok", JBool(false))
+    match issueObject(e) {
+        JObj(fields) {
+            for key, value in fields {
+                m.set(key, value)
+            }
+        }
+        else { }
+    }
+    JObj(m)
+}
+
+## `{"ok": false, "errors": [issueObject(e), …]}` (D182 §2).
+export fn errorsObject(issues!: Array<Issue>) -> Json {
+    mut errors: Array<Json> = []
+    for issue in issues {
+        errors.append(issueObject(issue))
+    }
+    mut m: Map<String, Json> = Map()
+    m.set("ok", JBool(false))
+    m.set("errors", JArr(errors))
+    JObj(m)
+}
+
+export fn issuePath(e!: Issue) -> String {
+    match e {
+        Missing(path) => path
+        Mismatch(path, _, _) => path
+        Rejected(path, _) => path
+    }
+}
+
+## The read helpers below report issues as `Array<Issue>`, like `T.read`
+## (D182 §2); generated readers call them.
+
+export fn readJson(s!: String) -> Trial<Json, Array<Issue>> {
     match decode(s) {
-        Fail(e) => Fail(Rejected("", "bad json: {e}"))
+        Fail(e) => Fail([issueRejected("", "bad json: {e}")])
         Pass(v) => Pass(v)
     }
 }
 
-export fn asObj(v!: Json, path!: String) -> Trial<Map<String, Json>, Issue> {
+export fn asObj(v!: Json, path!: String) -> Trial<Map<String, Json>, Array<Issue>> {
     match v {
         JObj(m) => Pass(m)
-        else => Fail(issueMismatch(path, "object", kind(v)))
+        else => Fail([issueMismatch(path, "object", kind(v))])
     }
 }
 
-export fn asStr(v!: Json, path!: String) -> Trial<String, Issue> {
+export fn asStr(v!: Json, path!: String) -> Trial<String, Array<Issue>> {
     match v {
         JStr(s) => Pass(s)
-        else => Fail(issueMismatch(path, "string", kind(v)))
+        else => Fail([issueMismatch(path, "string", kind(v))])
     }
 }
 
-export fn asInt(v!: Json, path!: String) -> Trial<Int64, Issue> {
+export fn asInt(v!: Json, path!: String) -> Trial<Int64, Array<Issue>> {
     match v {
         JInt(n) => Pass(n)
-        else => Fail(issueMismatch(path, "integer", kind(v)))
+        else => Fail([issueMismatch(path, "integer", kind(v))])
     }
 }
 
-export fn asBool(v!: Json, path!: String) -> Trial<Bool, Issue> {
+export fn asBool(v!: Json, path!: String) -> Trial<Bool, Array<Issue>> {
     match v {
         JBool(b) => Pass(b)
-        else => Fail(issueMismatch(path, "boolean", kind(v)))
+        else => Fail([issueMismatch(path, "boolean", kind(v))])
     }
 }
 
-export fn asFloat(v!: Json, path!: String) -> Trial<Float64, Issue> {
+## A JSON integer is a number too.
+export fn asFloat(v!: Json, path!: String) -> Trial<Float64, Array<Issue>> {
     match v {
         JFloat(f) => Pass(f)
-        else => Fail(issueMismatch(path, "float", kind(v)))
+        JInt(n) {
+            let f: Float64 = n
+            Pass(f)
+        }
+        else => Fail([issueMismatch(path, "number", kind(v))])
     }
 }
 
-export fn asArr(v!: Json, path!: String) -> Trial<Array<Json>, Issue> {
+export fn asArr(v!: Json, path!: String) -> Trial<Array<Json>, Array<Issue>> {
     match v {
         JArr(xs) => Pass(xs)
-        else => Fail(issueMismatch(path, "array", kind(v)))
-    }
-}
-
-export fn field(m!: Map<String, Json>, key!: String, path!: String) -> Trial<Json, Issue> {
-    let p = joinPath(path, key)
-    match m.get(key) {
-        Not => Fail(issueMissing(p))
-        Has(v) => Pass(v)
-    }
-}
-
-export fn strField(m!: Map<String, Json>, key!: String, path!: String) -> Trial<String, Issue> {
-    let p = joinPath(path, key)
-    match m.get(key) {
-        Not => Fail(issueMissing(p))
-        Has(v) => asStr(v, p)
-    }
-}
-
-export fn intField(m!: Map<String, Json>, key!: String, path!: String) -> Trial<Int64, Issue> {
-    let p = joinPath(path, key)
-    match m.get(key) {
-        Not => Fail(issueMissing(p))
-        Has(v) => asInt(v, p)
-    }
-}
-
-export fn boolField(m!: Map<String, Json>, key!: String, path!: String) -> Trial<Bool, Issue> {
-    let p = joinPath(path, key)
-    match m.get(key) {
-        Not => Fail(issueMissing(p))
-        Has(v) => asBool(v, p)
-    }
-}
-
-export fn floatField(m!: Map<String, Json>, key!: String, path!: String) -> Trial<Float64, Issue> {
-    let p = joinPath(path, key)
-    match m.get(key) {
-        Not => Fail(issueMissing(p))
-        Has(v) => asFloat(v, p)
+        else => Fail([issueMismatch(path, "array", kind(v))])
     }
 }
 

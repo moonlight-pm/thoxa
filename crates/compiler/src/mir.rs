@@ -5237,13 +5237,110 @@ fn collect_item_type_apps(item: &Item, out: &mut Vec<(TypeExpr, Span)>) {
     }
 }
 
+/// Type applications in a body's `let` annotations, nested blocks included
+/// (an `if` / `match` arm, a loop, a block expression).
 fn collect_block_type_apps(block: &Block, out: &mut Vec<(TypeExpr, Span)>) {
     for it in &block.items {
         match it {
-            BlockItem::Let { ty: Some(t), .. } => collect_type_apps(t, out),
-            BlockItem::Let { .. } => {}
-            _ => {}
+            BlockItem::Let { ty, init, .. } => {
+                if let Some(t) = ty {
+                    collect_type_apps(t, out);
+                }
+                collect_expr_type_apps(init, out);
+            }
+            BlockItem::Assign { value, .. } => collect_expr_type_apps(value, out),
+            BlockItem::Expr(e) => collect_expr_type_apps(e, out),
         }
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_type_apps(tail, out);
+    }
+}
+
+fn collect_expr_type_apps(expr: &Expr, out: &mut Vec<(TypeExpr, Span)>) {
+    let args_of = |args: &[Arg], out: &mut Vec<(TypeExpr, Span)>| {
+        for a in args {
+            match a {
+                Arg::Pos(e) | Arg::Named { value: e, .. } | Arg::Spread { value: e, .. } => {
+                    collect_expr_type_apps(e, out)
+                }
+            }
+        }
+    };
+    match &expr.kind {
+        ExprKind::Block(body) | ExprKind::Loop { body } => collect_block_type_apps(body, out),
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            collect_expr_type_apps(cond, out);
+            collect_block_type_apps(then_branch, out);
+            if let Some(e) = else_branch {
+                collect_block_type_apps(e, out);
+            }
+        }
+        ExprKind::While { cond, body } => {
+            collect_expr_type_apps(cond, out);
+            collect_block_type_apps(body, out);
+        }
+        ExprKind::For {
+            start, end, body, ..
+        } => {
+            collect_expr_type_apps(start, out);
+            if let Some(e) = end {
+                collect_expr_type_apps(e, out);
+            }
+            collect_block_type_apps(body, out);
+        }
+        ExprKind::Match { scrutinee, arms } => {
+            collect_expr_type_apps(scrutinee, out);
+            for arm in arms {
+                if let Some(g) = &arm.guard {
+                    collect_expr_type_apps(g, out);
+                }
+                collect_block_type_apps(&arm.body, out);
+            }
+        }
+        ExprKind::Call { args, .. } | ExprKind::Start { args, .. } => args_of(args, out),
+        ExprKind::IndirectCall { callee, args } => {
+            collect_expr_type_apps(callee, out);
+            args_of(args, out);
+        }
+        ExprKind::MethodCall { receiver, args, .. } => {
+            collect_expr_type_apps(receiver, out);
+            args_of(args, out);
+        }
+        ExprKind::Field { base, .. } | ExprKind::Try(base) => collect_expr_type_apps(base, out),
+        ExprKind::Unary { expr: inner, .. } => collect_expr_type_apps(inner, out),
+        ExprKind::Index { base, index } => {
+            collect_expr_type_apps(base, out);
+            collect_expr_type_apps(index, out);
+        }
+        ExprKind::Binary { left, right, .. } => {
+            collect_expr_type_apps(left, out);
+            collect_expr_type_apps(right, out);
+        }
+        ExprKind::Return { value: Some(v) } => collect_expr_type_apps(v, out),
+        ExprKind::ArrayLit(elems) => {
+            for e in elems {
+                collect_expr_type_apps(e, out);
+            }
+        }
+        ExprKind::MapLit(entries) => {
+            for (k, v) in entries {
+                collect_expr_type_apps(k, out);
+                collect_expr_type_apps(v, out);
+            }
+        }
+        ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
+            for part in parts {
+                if let InterpPart::Expr(e) = part {
+                    collect_expr_type_apps(e, out);
+                }
+            }
+        }
+        _ => {}
     }
 }
 

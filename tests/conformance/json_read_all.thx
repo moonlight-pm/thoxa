@@ -1,0 +1,74 @@
+## A read reports every issue, in field order, with each one's path (D182 §2).
+import { Issue, message, messages, errorsObject, encode } from "std/json"
+import { Pass, Fail, Trial, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Qty = Int64 where >= 1
+type Slug = "espresso" | "mocha"
+type Order(slug: Slug, qty: Qty)
+type Basket(owner: String, orders: Array<Order>, note: May<String>)
+type Grid(rows: Array<Array<Int64>>)
+type Reading(celsius: Float64, label: String where >= 2)
+
+fn report(label!: String, issues!: Array<Issue>) {
+    info("{label}: {issues.count} issue(s)")
+    for issue in issues {
+        info("  {message(issue)}")
+    }
+}
+
+fn showOrder(label!: String, read!: Trial<Order, Array<Issue>>) {
+    match read {
+        Fail(issues) => report(label, issues)
+        Pass(order) => info("{label}: {order.slug} x{order.qty}")
+    }
+}
+
+fn showBasket(label!: String, read!: Trial<Basket, Array<Issue>>) {
+    match read {
+        Fail(issues) => report(label, issues)
+        Pass(basket) => info("{label}: {basket.owner} has {basket.orders.count}")
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    showOrder("good", Order.read("{{\"slug\":\"mocha\",\"qty\":2}}"))
+    showOrder("both fields", Order.read("{{\"slug\":\"chai\",\"qty\":0}}"))
+    showOrder("missing and mismatched", Order.read("{{\"slug\":1}}"))
+    showOrder("not an object", Order.read("[1]"))
+    showOrder("bad json", Order.read("{{"))
+
+    showBasket("good basket", Basket.read("{{\"owner\":\"ada\",\"orders\":[{{\"slug\":\"mocha\",\"qty\":1}}],\"note\":null}}"))
+    showBasket(
+        "elements",
+        Basket.read("{{\"owner\":7,\"orders\":[{{\"slug\":\"mocha\",\"qty\":1}},{{\"slug\":\"tea\",\"qty\":1}},{{\"slug\":\"espresso\"}}],\"note\":3}}")
+    )
+    showBasket("orders not an array", Basket.read("{{\"owner\":\"bo\",\"orders\":{{}}}}"))
+
+    match Grid.read("{{\"rows\":[[1,2],[\"x\",4,true]]}}") {
+        Fail(issues) => report("nested arrays", issues)
+        Pass(grid) => info("grid: {grid.rows.count}")
+    }
+
+    ## A JSON integer is a number; a field's own `where` adds its issue too.
+    match Reading.read("{{\"celsius\":21,\"label\":\"a\"}}") {
+        Fail(issues) => report("reading", issues)
+        Pass(reading) => info("reading: {reading.celsius} {reading.label}")
+    }
+    match Reading.read("{{\"celsius\":21,\"label\":\"kitchen\"}}") {
+        Fail(issues) => report("reading", issues)
+        Pass(reading) => info("reading: {reading.celsius} {reading.label}")
+    }
+
+    match Order.read("{{\"slug\":\"chai\"}}") {
+        Fail(issues) {
+            info(messages(issues))
+            info(encode(errorsObject(issues)))
+        }
+        Pass(order) => info("unexpected {order.slug}")
+    }
+    0
+}

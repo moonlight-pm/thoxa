@@ -172,7 +172,7 @@ A type is a predicate. **`where`** narrows it; **`T.read` / `T.from`** inhabit
 it (**D149**). Not a schema library and not traits.
 
 ```thx
-import { Issue, message } from "std/json"
+import { Issue, messages } from "std/json"
 import { Pass, Fail, Trial } from "std/fallible"
 
 type Qty = Int64 where >= 1
@@ -183,7 +183,7 @@ let a: Qty = 2              ## literal inhabits
 let n: Int64 = a            ## Qty → Int64 is implicit
 ## let b: Qty = n           ## type error — use Qty.from(n)
 match CreateOrder.read(body) {
-    Fail(e) => info(message(e))
+    Fail(issues) => info(messages(issues))     ## every bad field
     Pass(o) => info(o.encode())
 }
 ```
@@ -195,15 +195,15 @@ match CreateOrder.read(body) {
 | Messages | Optional template after a conjunct (`{value}`, `{expected}`, `{path}`) |
 | Narrowing | `type Dozen = Qty where <= 12` intersects clauses. Empty types are errors |
 | `T.from(x)` | Runtime base / string → `Trial<T, Issue>` |
-| `T.read(s)` | JSON string → `Trial<T, Issue>` (tree `decode` first, then shape + `where`) |
+| `T.read(s)` / `T.fromJson(json)` | JSON string / tree → `Trial<T, Array<Issue>>` (tree `decode` first, then shape + `where`). Every field is checked: each missing or mismatched field adds its issue, nested products and array elements add theirs (`orders.1.slug`) (**D182**) |
 | `t.encode()` / `t.toJson()` | Compact JSON / a `Json` tree, for every encodable value (**D182**): scalars, `Array`, `Map<String, T>`, `May` (`null` when `Not`), `Json`, refined and literal types, products (a `Not` field is left out), unions of products as `{"type": "Member", …}`. A type's own exported `toJson` is used instead, inside other types too. `Bytes` and other non-JSON types are an error naming the type |
-| `Issue` | `Missing \| Mismatch \| Rejected` in [`std/json`](std.md). Fail-fast. `message(e)` |
+| `Issue` | `Missing \| Mismatch \| Rejected` in [`std/json`](std.md). `message(e)` for one, `messages(issues)` for a read's; `errorsObject(issues)` for a JSON reply |
 | `May<T>` fields | Missing or JSON `null` → `Not`. Write `May<Qty>`, not `May<Int64 where …>` |
 
 Closed slugs are **literal unions** (`"espresso" \| "mocha"`), a subtype of
 `String` — prefer that over `String where "a" \| "b"`. Tree `decode` /
-`encode` of `Json` stay **D141** (`Fail(String)` for syntax). No collect-all,
-no cross-field `where` on a product, no regex.
+`encode` of `Json` stay **D141** (`Fail(String)` for syntax). No cross-field
+`where` on a product, no regex.
 
 ## Control flow
 

@@ -208,9 +208,9 @@ Object literals in Thoxa strings need `{{` / `}}` (`"{{\"qty\":2}}"` is
 | `encode(v)` | Compact JSON. Object keys in insertion order |
 | Numbers | No `.` / exponent → `JInt` (Int64 range or fail). Else `JFloat`. Non-finite fails |
 | Strings | Escapes `\" \\ \/ \b \f \n \r \t \uXXXX` including surrogate pairs |
-| `Issue` | `Missing \| Mismatch \| Rejected` — fail-fast shape/refinement for **`Type.read`** (**D149**). `message(e)` |
+| `Issue` | `Missing \| Mismatch \| Rejected` — shape / refinement problems from **`Type.read`**, which reports every one as `Array<Issue>` (**D149**, **D182**). `message(e)`, `messages(issues)`, `issueObject(e)`, `errorObject(e)`, `errorsObject(issues)` |
 | Typed read | Compiler-attached `T.read(s)` / `T.from(x)` / `t.encode()` — language, not a derive. See [language.md](language.md#refinements-and-typeread) |
-| Not shipped | Pretty-print, comments, trailing commas, `NaN` / `Infinity` tokens, `jsonResponse`, collect-all issues |
+| Not shipped | Pretty-print, comments, trailing commas, `NaN` / `Infinity` tokens, `jsonResponse` |
 
 ### Sqlite (`std/sqlite`)
 

@@ -1,5 +1,5 @@
 ## `type T = Int64 where …` + Type.read / Type.from (builtin validation).
-import { Issue, message } from "std/json"
+import { Issue, message, messages } from "std/json"
 import { Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
 
@@ -18,9 +18,9 @@ fn showQ(t: Trial<Qty, Issue>) -> String {
     }
 }
 
-fn showO(t: Trial<Order, Issue>) -> String {
+fn showO(t: Trial<Order, Array<Issue>>) -> String {
     match t {
-        Fail(e) => "ERR:{message(e)}"
+        Fail(issues) => "ERR:{messages(issues)}"
         Pass(o) => "{o.slug}:{o.qty}"
     }
 }
@@ -49,11 +49,11 @@ fn main() -> Int64 {
     info(showO(Order.read("{{\"slug\":\"mocha\",\"qty\":2}}")))
     info(showO(Order.read("{{\"slug\":\"mocha\",\"qty\":0}}")))
     match Line.read("{{\"n\":0}}") {
-        Fail(e) => info("line:{message(e)}")
+        Fail(issues) => info("line:{messages(issues)}")
         Pass(x) => info("lineok:{x.n}")
     }
     match Order.read("{{\"slug\":\"mocha\",\"qty\":2}}") {
-        Fail(e) => info("enc:{message(e)}")
+        Fail(issues) => info("enc:{messages(issues)}")
         Pass(o) => info(o.encode())
     }
     match DrinkSlug.from("chai") {
@@ -68,15 +68,15 @@ fn main() -> Int64 {
         }
     }
     match Drink.read("{{\"slug\":\"espresso\"}}") {
-        Fail(e) => info("dr:{message(e)}")
+        Fail(issues) => info("dr:{messages(issues)}")
         Pass(d) => info("drok:{d.slug}")
     }
     match DrinkSlug.read("\"espresso\"") {
-        Fail(e) => info("sr:{message(e)}")
+        Fail(issues) => info("sr:{messages(issues)}")
         Pass(s) => info("srok:{s}")
     }
     match Drink.read("{{\"slug\":\"chai\"}}") {
-        Fail(e) => info("dr2:{message(e)}")
+        Fail(issues) => info("dr2:{messages(issues)}")
         Pass(d) => info("drok2:{d.slug}")
     }
     match Closed.from("c") {

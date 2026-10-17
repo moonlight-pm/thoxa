@@ -112,19 +112,6 @@ pub(crate) fn ty_array(elem: TypeExpr) -> TypeExpr {
     }
 }
 
-pub(crate) fn ty_may(inner: TypeExpr) -> TypeExpr {
-    TypeExpr {
-        name: "May".into(),
-        args: vec![TypeArg::Type(inner)],
-        span: dummy(),
-        lit: None,
-        mark: None,
-        union_members: None,
-        fn_type: None,
-        where_clause: None,
-    }
-}
-
 pub(crate) fn param(name: &str, ty: TypeExpr) -> Param {
     Param {
         name: name.into(),

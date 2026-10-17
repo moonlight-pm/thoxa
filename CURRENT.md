@@ -63,9 +63,10 @@ language slice at a time, each with conformance.
 **Active: typed codecs (D182)**, freeze
 [`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md).
 Shipped §1 (`toJson` / `encode` on every encodable type, unions tagged by
-`"type"`) and §6 (a type's own `toJson` wins). **Next: §2**, reads report
-every issue (`Trial<T, Array<Issue>>`); then §3 `T.readForm`, §4 `Json`
-literals, §5 reads of unions / `Map` / `Json` fields / defaults.
+`"type"`), §2 (`T.read` / `T.fromJson` report every issue as
+`Trial<T, Array<Issue>>`), and §6 (a type's own `toJson` wins). **Next: §3**
+`T.readForm`; then §4 `Json` literals, §5 reads of unions / `Map` / `Json`
+fields / defaults.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void
@@ -195,7 +196,7 @@ its Socket from `server.peerOf(request)` (**D168**). Cookie and `Cache-Control` 
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
 | Node / tag literals | Builtin **`Node`** (`Element \| Text \| Fragment`) + JSX tags (**D147**). No import. PascalCase is `Type(…).view(children:)`. `{e}` children/attrs stringify String / Int64 / Float64 / Bool; `{for}` collects `Array<Node>`. `.html()` is the markup codec — not generic `toString`. Comparison `<` needs a space (`a < b`). |
-| Refinements / `Type.read` | `where` refinements are real types (**D149**). `T.read` / `T.from` → `Trial<T, Issue>` (`Issue` in `std/json`). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No collect-all; no cross-field `where`; write `May<Qty>`. |
+| Refinements / `Type.read` | `where` refinements are real types (**D149**). `T.from` → `Trial<T, Issue>`; `T.read` / `T.fromJson` → `Trial<T, Array<Issue>>` with every issue (**D182** §2; `Issue` in `std/json`). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No cross-field `where`; write `May<Qty>`. |
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. No JSON/form bind; no fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Resource `drop` | Product `fn drop()` on last RC (**D155**). Heap box; copies share. `File` / `Socket` / `Db` close in `drop`. Explicit `close` stays inert. Only the defining module calls the constructor (**D168**). No unions / C-layout / multi-clause `drop`. Not Perceus. |

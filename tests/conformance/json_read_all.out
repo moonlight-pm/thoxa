@@ -1,0 +1,27 @@
+good: mocha x2
+both fields: 2 issue(s)
+  slug: expected "espresso" | "mocha", got chai
+  qty: expected integer >= 1, got 0
+missing and mismatched: 2 issue(s)
+  slug: expected string, got integer
+  qty is required
+not an object: 1 issue(s)
+  expected object, got array
+bad json: 1 issue(s)
+  bad json: unexpected end
+good basket: ada has 1
+elements: 4 issue(s)
+  owner: expected string, got integer
+  orders.1.slug: expected "espresso" | "mocha", got tea
+  orders.2.qty is required
+  note: expected string, got integer
+orders not an array: 1 issue(s)
+  orders: expected array, got object
+nested arrays: 2 issue(s)
+  rows.1.0: expected integer, got string
+  rows.1.2: expected integer, got boolean
+reading: 1 issue(s)
+  label: expected length >= 2, got a
+reading: 21.0 kitchen
+slug: expected "espresso" | "mocha", got chai; qty is required
+{"ok":false,"errors":[{"path":"slug","error":"slug: expected \"espresso\" | \"mocha\", got chai","expected":"\"espresso\" | \"mocha\"","got":"chai"},{"path":"qty","error":"qty is required"}]}
