@@ -1,6 +1,6 @@
 ## oath.wicket.cloud landing — process entry.
 ##
-##   cargo make run containers/oath
+##   cargo make run workloads/oath
 ##
 ## Prints the listen URL and opens it in the local browser (xdg-open).
 ## Set THOXA_NO_BROWSER=1 to skip. No-op when DISPLAY / WAYLAND_DISPLAY are unset.

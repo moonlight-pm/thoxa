@@ -1,5 +1,5 @@
 # oath.wicket.cloud landing.
-# Apply: wicketctl workload apply aulos --file containers/oath/workload.toml --confirm
+# Apply: wicketctl workload apply aulos --file workloads/oath/workload.toml --confirm
 #
 # Stable id: keep the existing public workload.
 

@@ -1,11 +1,11 @@
-## Process env for the sola.computer landing container.
+## Process env for the oath.wicket.cloud landing container.
 ##
 ## Listen (first set wins):
 ##   PORT                Wicket-assigned (preferred)
 ##   WICKET_PORT_HTTP    Wicket named port `http`
-##   THOXA_PORT          local / image default (8089 locally; image 8080)
+##   THOXA_PORT          local / image default (8090 locally; image 8080)
 ##
-##   THOXA_STATIC        asset root (default containers/sola/web)
+##   THOXA_STATIC        asset root (default workloads/oath/web)
 
 import env, { getenvOr } from "std/env"
 import { Has, Not, May } from "std/fallible"
@@ -20,7 +20,7 @@ export fn listenPort() -> Int64 {
                 Not {
                     match portFromEnv("THOXA_PORT") {
                         Has(n) => n
-                        Not => 8089
+                        Not => 8090
                     }
                 }
             }
@@ -46,9 +46,9 @@ fn portFromEnv(name!: String) -> May<Int64> {
 }
 
 export fn staticRoot() -> String {
-    let root = getenvOr("THOXA_STATIC", "containers/sola/web")
+    let root = getenvOr("THOXA_STATIC", "workloads/oath/web")
     if isEmpty(root) {
-        "containers/sola/web"
+        "workloads/oath/web"
     } else {
         root
     }

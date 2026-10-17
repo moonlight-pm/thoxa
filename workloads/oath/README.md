@@ -1,4 +1,4 @@
-# containers/oath — oath.wicket.cloud
+# workloads/oath — oath.wicket.cloud
 
 Public site for **https://oath.wicket.cloud/**. Written in Thoxa. Front page
 is the OS pitch. `GET /map` is a short page (not the
@@ -14,7 +14,7 @@ Not product std. Not an `examples/` demo.
 From the workspace root (asset paths are cwd-relative):
 
 ```bash
-cargo make run containers/oath
+cargo make run workloads/oath
 # prints http://127.0.0.1:8090/ and opens it (xdg-open)
 # THOXA_NO_BROWSER=1 skips the browser
 ```
@@ -22,7 +22,7 @@ cargo make run containers/oath
 | Env | Default |
 |-----|---------|
 | `THOXA_PORT` | `8090` locally (landing is 8088, sola 8089). Image sets `8080`. |
-| `THOXA_STATIC` | `containers/oath/web` |
+| `THOXA_STATIC` | `workloads/oath/web` |
 
 ## Headers
 
@@ -44,11 +44,11 @@ PID 1, ends on SIGTERM (D170). The first build pulls the Rust base image; the
 compiler then builds in about 15 s, and the three site images share that stage.
 
 ```bash
-podman build -f containers/oath/Containerfile \
-  --ignorefile containers/oath/.containerignore \
+podman build -f workloads/oath/Containerfile \
+  --ignorefile workloads/oath/.containerignore \
   -t oath-landing:latest -t registry.wicket.cloud/oath-landing:latest .
 wicketctl registry push aulos --image oath-landing:latest
-wicketctl workload apply aulos --file containers/oath/workload.toml --confirm
+wicketctl workload apply aulos --file workloads/oath/workload.toml --confirm
 ```
 
 Wicket injects `PORT` / `WICKET_PORT_HTTP`.

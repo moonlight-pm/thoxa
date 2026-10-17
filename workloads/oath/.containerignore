@@ -12,6 +12,6 @@
 !runtime/**
 !std/
 !std/**
-!containers/
-!containers/landing/
-!containers/landing/**
+!workloads/
+!workloads/oath/
+!workloads/oath/**

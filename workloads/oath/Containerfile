@@ -1,16 +1,16 @@
-# sola.computer landing.
+# oath.wicket.cloud landing.
 #
 # The image builds the compiler, emits the site's C, and compiles that C with
 # thoxa_rt, so an image built from a commit runs that commit's Thoxa (no host
 # emit-c step). Both bases are pinned by digest; the final stage installs
 # nothing. The server runs as nobody and, as PID 1, ends on SIGTERM (D170).
 #
-#   podman build -f containers/sola/Containerfile \
-#     --ignorefile containers/sola/.containerignore \
-#     -t registry.wicket.cloud/sola-landing:latest .
+#   podman build -f workloads/oath/Containerfile \
+#     --ignorefile workloads/oath/.containerignore \
+#     -t registry.wicket.cloud/oath-landing:latest .
 #
 # Wicket injects PORT / WICKET_PORT_HTTP.
-#   podman run --rm -p 8080:8080 sola-landing:latest
+#   podman run --rm -p 8080:8080 oath-landing:latest
 
 # Identical in all three site images up to the site's own COPY, so podman
 # builds the compiler and the runtime once for them.
@@ -25,16 +25,16 @@ COPY std std
 RUN cargo build --release --locked -p thoxa
 # Same flags as the thoxa driver: -fwrapv makes Int64 overflow wrap (D157).
 RUN gcc -std=c11 -O2 -fwrapv -fPIC -c runtime/src/thoxa_rt.c -I runtime/include -o thoxa_rt.o
-COPY containers/sola containers/sola
-RUN target/rust/release/thoxa emit-c containers/sola \
- && gcc -std=c11 -O2 -fwrapv target/thoxa/c/sola.c thoxa_rt.o -I runtime/include -lm -o /sola-landing
+COPY workloads/oath workloads/oath
+RUN target/rust/release/thoxa emit-c workloads/oath \
+ && gcc -std=c11 -O2 -fwrapv target/thoxa/c/oath.c thoxa_rt.o -I runtime/include -lm -o /oath-landing
 
 FROM docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
-COPY --from=build /sola-landing /usr/local/bin/sola-landing
-COPY containers/sola/web /app/web
-RUN chmod 0755 /usr/local /usr/local/bin /usr/local/bin/sola-landing
+COPY --from=build /oath-landing /usr/local/bin/oath-landing
+COPY workloads/oath/web /app/web
+RUN chmod 0755 /usr/local /usr/local/bin /usr/local/bin/oath-landing
 USER 65534:65534
 ENV THOXA_PORT=8080
 ENV THOXA_STATIC=/app/web
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/sola-landing"]
+ENTRYPOINT ["/usr/local/bin/oath-landing"]

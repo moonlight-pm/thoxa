@@ -31,13 +31,13 @@ cargo make run tests/conformance/hello.thx
 cargo make run examples/http
 
 # thoxa.dev landing (Ctrl-C to stop; port 8088)
-cargo make run containers/landing
+cargo make run workloads/landing
 
 # sola.computer teaser (Ctrl-C to stop; port 8089)
-cargo make run containers/sola
+cargo make run workloads/sola
 
 # oath.wicket.cloud (Ctrl-C to stop; port 8090)
-cargo make run containers/oath
+cargo make run workloads/oath
 
 # Example: kilo editor (needs a real TTY; Ctrl-Q to quit)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
@@ -69,7 +69,7 @@ runtime/          C runtime (thoxa_rt)
 std/              product standard library (std/… imports)
 tests/conformance definition of done (.thx + .out)
 examples/         runnable demos (http server, kilo editor)
-containers/       deployed Thoxa programs (landing = thoxa.dev; sola = sola.computer)
+workloads/       deployed Thoxa programs (landing = thoxa.dev; sola = sola.computer)
 vendor/           vendored upstream (TinyCC for session libtcc; SQLite amalgamation)
 docs/             canonical engineering + handbook
 CURRENT.md        living session handoff

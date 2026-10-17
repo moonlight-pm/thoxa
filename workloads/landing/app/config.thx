@@ -5,7 +5,7 @@
 ##   WICKET_PORT_HTTP    Wicket named port `http`
 ##   THOXA_PORT          local / image default (8088 locally; image 8080)
 ##
-##   THOXA_STATIC        asset root (default containers/landing/web)
+##   THOXA_STATIC        asset root (default workloads/landing/web)
 
 import env, { getenvOr } from "std/env"
 import { Has, Not, May } from "std/fallible"
@@ -46,9 +46,9 @@ fn portFromEnv(name!: String) -> May<Int64> {
 }
 
 export fn staticRoot() -> String {
-    let root = getenvOr("THOXA_STATIC", "containers/landing/web")
+    let root = getenvOr("THOXA_STATIC", "workloads/landing/web")
     if isEmpty(root) {
-        "containers/landing/web"
+        "workloads/landing/web"
     } else {
         root
     }

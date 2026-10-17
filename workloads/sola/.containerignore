@@ -12,6 +12,6 @@
 !runtime/**
 !std/
 !std/**
-!containers/
-!containers/sola/
-!containers/sola/**
+!workloads/
+!workloads/sola/
+!workloads/sola/**

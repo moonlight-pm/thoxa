@@ -1,4 +1,4 @@
-# containers
+# workloads
 
 Deployed Thoxa programs, each with a `Containerfile`.
 

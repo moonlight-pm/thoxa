@@ -47,8 +47,8 @@ documented ASan). Alloc size wrap panics; `Socket.close` clears `fd`.
 `HEAP_ELEMS`, heap params owned (**D154**), early-return final `drop_places`,
 if/match result overwrite-drop. Language harvest **D147–D150** shipped.
 **D151** LeakSanitizer is the default leak gate; **D152** match/init RC.
-`containers/landing` = thoxa.dev; `containers/sola` = sola.computer;
-`containers/oath` = oath.wicket.cloud.
+`workloads/landing` = thoxa.dev; `workloads/sola` = sola.computer;
+`workloads/oath` = oath.wicket.cloud.
 Crema Phase **E** through **E5**; **E6** WebSockets parked. Session compile
 cache shipped. **`having`/`else` parked indefinitely.**
 
@@ -142,14 +142,14 @@ the site work: the event loop's wake scan and blocking log writes (finding
 conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
 delete its line). Further **`std/` growth is sample-driven** (D97/D136).
 Crema **domain** (pages, models, cookies policy) stays in `examples/http/`.
-Public sites are **`containers/landing`** (thoxa.dev),
-**`containers/sola`** (sola.computer), and **`containers/oath`**
+Public sites are **`workloads/landing`** (thoxa.dev),
+**`workloads/sola`** (sola.computer), and **`workloads/oath`**
 (oath.wicket.cloud) — not `examples/`, not `extras/`.
 
 **Explicit holds:**
 
 - **Site and hosting work** (paused 2026-10-16 at Joshua's request; the focus
-  is the core language): `containers/`, `std/http/server` tuning, deploys
+  is the core language): `workloads/`, `std/http/server` tuning, deploys
 - **`having` / `else` May sugar** (parked indefinitely — `match` is enough)
 - **Crema domain in `std/`** (pages/models/layout — example-only)
 - **Remaining session / shell residual** (redir polish, Shell import-first, libtcc process-RT / license — parked; line editor **D156** and compile cache shipped)
@@ -257,9 +257,9 @@ cargo make test
 cargo make test-asan
 cargo test -p thoxa --lib
 cargo make run examples/http
-cargo make run containers/landing
-cargo make run containers/sola
-cargo make run containers/oath
+cargo make run workloads/landing
+cargo make run workloads/sola
+cargo make run workloads/oath
 cargo run -p thoxa -- tests/conformance/param_defaults.thx
 printf 'echo hi\nexit\n' | cargo run -p thoxa --
 ```

@@ -6,8 +6,8 @@ Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
 **As of:** 2026-10-16 (structural `==` expanded in MIR; generated Map key ops and in-order compaction after `remove`; `main` exit status checked; the lexer follows interpolation holes. 2026-10-15: deadline-aware fd waits; checked shifts; `tests/conformance/fail/`. 2026-10-14: batch CLI on a large-stack thread; session steps run through `thoxa_session_call`; guarded task stacks; no `_Thread_local` in the runtime; 2026-09-04: session compile cache: re-lower `Shell.step` + libtcc base `.o`; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
-`containers/landing` thoxa.dev live; `containers/sola` sola.computer live;
-`containers/oath` oath.wicket.cloud live; static JPEG/font MIME;
+`workloads/landing` thoxa.dev live; `workloads/sola` sola.computer live;
+`workloads/oath` oath.wicket.cloud live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 **D145** `htmlFragment` / `cached`;
 **D144** `sql"…"`;
@@ -62,7 +62,7 @@ step `.so` on the happy path.
 | `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, `Json`, `Sqlite`, Str/Path/Env/…) |
 | `tests/conformance/` | `.thx` + `.out` gate; `fail/` holds programs that must be rejected or panic (`.err` lines must appear in stderr) |
 | `examples/` | Runnable demos (`http` Crema-lite, `kilo` terminal editor); not the gate |
-| `containers/` | Deployed Thoxa programs (`landing` = thoxa.dev, `sola` = sola.computer, `oath` = oath.wicket.cloud); not the gate. Each image builds `thoxa` and emits the site's C in a digest-pinned `rust` stage, then runs it as UID 65534 from a digest-pinned `debian:bookworm-slim` |
+| `workloads/` | Deployed Thoxa programs (`landing` = thoxa.dev, `sola` = sola.computer, `oath` = oath.wicket.cloud); not the gate. Each image builds `thoxa` and emits the site's C in a digest-pinned `rust` stage, then runs it as UID 65534 from a digest-pinned `debian:bookworm-slim` |
 | `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
 | `apocrypha/` | Historical + Python oracle |
 

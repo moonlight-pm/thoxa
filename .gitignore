@@ -17,6 +17,6 @@
 /scratch
 
 # Local SQLite for deployed sites
-/containers/landing/data/
-/containers/sola/data/
+/workloads/landing/data/
+/workloads/sola/data/
 /.worktrees/

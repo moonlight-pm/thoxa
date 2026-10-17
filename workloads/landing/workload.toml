@@ -1,5 +1,5 @@
 # thoxa.dev landing.
-# Apply: wicketctl workload apply aulos --file containers/landing/workload.toml --confirm
+# Apply: wicketctl workload apply aulos --file workloads/landing/workload.toml --confirm
 #
 # Stable ids assigned on first apply (L1/L2 paths use these, not the name).
 
