@@ -51,17 +51,7 @@ export fn storeFailed(request!: Request, error!: String) -> Response {
     )
 }
 
-export fn formFailed(request!: Request, error!: Issue) -> Response {
-    let detail = match error {
-        Rejected(path, reason) {
-            if path == "store" {
-                "The counter could not write that ticket."
-            } else {
-                message(error)
-            }
-        }
-        else => message(error)
-    }
+export fn formFailed(request!: Request, issues!: Array<Issue>) -> Response {
     failPage(
         request,
         400,
@@ -69,10 +59,25 @@ export fn formFailed(request!: Request, error!: Issue) -> Response {
         "Form",
         <>
             <h1>Could not take that</h1>
-            <p class="muted">{detail}</p>
+            {for issue in issues {
+                <p class="muted">{detail(issue)}</p>
+            }}
             <p class="back"><a href="/menu">← Back to the menu</a></p>
         </>
     )
+}
+
+fn detail(issue!: Issue) -> String {
+    match issue {
+        Rejected(path, reason) {
+            if path == "store" {
+                "The counter could not write that ticket."
+            } else {
+                message(issue)
+            }
+        }
+        else => message(issue)
+    }
 }
 
 export fn csrfRejected() -> Issue {

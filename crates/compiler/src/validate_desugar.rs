@@ -22,6 +22,8 @@ use std::collections::{HashMap, HashSet};
 const JSON_PATH: &str = "std/json";
 const JSON_MODULE_ID: &str = "std_json";
 const FALLIBLE_PATH: &str = "std/fallible";
+const HTTP_PATH: &str = "std/http";
+const HTTP_MODULE_ID: &str = "std_http";
 
 const FALLIBLE_NAMES: &[&str] = &["Pass", "Fail", "Trial", "Has", "Not", "May"];
 
@@ -75,11 +77,12 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
         resolve.insert(m.id.clone(), map);
     }
 
+    let forms = package.modules.iter().any(|m| m.id == HTTP_MODULE_ID);
     for m in &mut package.modules {
         if is_std_module(&m.id) {
             continue;
         }
-        desugar_module_with(&mut m.ast, &m.id, &world, &resolve)?;
+        desugar_module_with(&mut m.ast, &m.id, &world, &resolve, forms)?;
     }
     Ok(())
 }
@@ -102,7 +105,8 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
     world.insert("local".into(), local);
     let mut resolve = HashMap::new();
     resolve.insert("local".into(), resolve_local);
-    desugar_module_with(module, "local", &world, &resolve)
+    let forms = module_imports_path(module, HTTP_PATH);
+    desugar_module_with(module, "local", &world, &resolve, forms)
 }
 
 fn is_std_module(id: &str) -> bool {
@@ -114,6 +118,7 @@ fn desugar_module_with(
     module_id: &str,
     world: &World,
     resolve: &Resolve,
+    forms: bool,
 ) -> Result<()> {
     let mut extra: Vec<Function> = Vec::new();
     let types: Vec<TypeDef> = module
@@ -168,10 +173,18 @@ fn desugar_module_with(
                 td.name_span,
             ));
         }
-        let (from_json, checks) = gen_from_json(td, module_id, world, resolve)?;
-        extra.push(from_json);
-        extra.extend(checks);
+        let fields = readable_fields(td, module_id, world, resolve)?;
+        for field in &fields {
+            if let Some(clause) = &field.check {
+                extra.push(gen_field_check(td, &field.name, shape_base(&field.shape), clause));
+            }
+        }
+        extra.push(gen_from_json(td, &fields));
         extra.push(gen_read(td));
+        if forms && form_readable_product(td, module_id, world, resolve, &mut HashSet::new()) {
+            extra.push(gen_from_form(td, &fields));
+            extra.push(gen_read_form(td));
+        }
     }
     if extra.is_empty() {
         return Ok(());
@@ -473,17 +486,54 @@ fn gen_read(td: &TypeDef) -> Function {
     }
 }
 
-/// `__fromJson_T` for a product: every field is read, and the issues of all
-/// of them are reported together (D182 §2). A field with its own `where`
-/// gets a `__check_T_field` function, returned beside.
-fn gen_from_json(
+/// A product field as the readers see it: its shape, its type without a
+/// `where`, and its own `where`, checked by `__check_T_field`.
+struct ReadableField {
+    name: String,
+    shape: Shape,
+    ty: TypeExpr,
+    check: Option<WhereClause>,
+}
+
+impl ReadableField {
+    fn check_name(&self, td: &TypeDef) -> Option<String> {
+        self.check
+            .as_ref()
+            .map(|_| format!("__check_{}_{}", td.name, self.name))
+    }
+}
+
+fn readable_fields(
     td: &TypeDef,
     module_id: &str,
     world: &World,
     resolve: &Resolve,
-) -> Result<(Function, Vec<Function>)> {
+) -> Result<Vec<ReadableField>> {
     let mut visiting = HashSet::new();
-    let mut checks = Vec::new();
+    td.params
+        .iter()
+        .map(|p| {
+            let shape = shape_of(&p.ty, module_id, world, resolve, &mut visiting).ok_or_else(|| {
+                Error::at(
+                    format!("internal: field `{}` not readable", p.name),
+                    p.name_span,
+                )
+            })?;
+            let mut ty = p.ty.clone();
+            ty.where_clause = None;
+            Ok(ReadableField {
+                name: p.name.clone(),
+                shape,
+                ty,
+                check: p.ty.where_clause.clone(),
+            })
+        })
+        .collect()
+}
+
+/// `__fromJson_T` for a product: every field is read, and the issues of all
+/// of them are reported together (D182 §2).
+fn gen_from_json(td: &TypeDef, fields: &[ReadableField]) -> Function {
     let mut items = vec![let_bind(
         "__obj",
         false,
@@ -492,40 +542,16 @@ fn gen_from_json(
             vec![Arg::Pos(name("v")), Arg::Pos(name("path"))],
         )),
     )];
-    for (index, p) in td.params.iter().enumerate() {
-        let shape = shape_of(&p.ty, module_id, world, resolve, &mut visiting).ok_or_else(|| {
-            Error::at(
-                format!("internal: field `{}` not readable", p.name),
-                p.name_span,
-            )
-        })?;
-        let mut ty = p.ty.clone();
-        ty.where_clause = None;
-        let check = p.ty.where_clause.as_ref().map(|clause| {
-            let check = gen_field_check(td, &p.name, shape_base(&shape), clause);
-            let check_name = check.name.clone();
-            checks.push(check);
-            check_name
-        });
+    for (index, field) in fields.iter().enumerate() {
+        let read = read_json_field(&field.name, &field.shape, &field.ty);
         items.push(let_bind_ty(
             &format!("__f{index}"),
             false,
-            ty_trial_issues(ty.clone()),
-            read_json_field(&p.name, &shape, &ty, check.as_deref()),
+            ty_trial_issues(field.ty.clone()),
+            checked_field(&field.name, read, &field.ty, field.check_name(td).as_deref()),
         ));
     }
-    items.extend(collect_issues(td.params.len()));
-    let ctor_args = td
-        .params
-        .iter()
-        .enumerate()
-        .map(|(index, p)| Arg::Named {
-            name: p.name.clone(),
-            name_span: dummy(),
-            value: try_expr(name(&format!("__f{index}"))),
-        })
-        .collect();
-    let function = Function {
+    Function {
         exported: false,
         name: format!("__fromJson_{}", td.name),
         name_span: dummy(),
@@ -534,16 +560,355 @@ fn gen_from_json(
             param_default("path", ty_named("String"), str_lit("")),
         ],
         return_type: Some(ty_trial_issues(ty_named(&td.name))),
+        body: build_from_fields(td, fields, items),
+    }
+}
+
+/// The issues of every field, then the value: the end of a reader's body.
+fn build_from_fields(td: &TypeDef, fields: &[ReadableField], mut items: Vec<BlockItem>) -> Block {
+    items.extend(collect_issues(fields.len()));
+    let ctor_args = fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| Arg::Named {
+            name: field.name.clone(),
+            name_span: dummy(),
+            value: try_expr(name(&format!("__f{index}"))),
+        })
+        .collect();
+    Block {
+        items,
+        tail: Some(Box::new(call(
+            "Pass",
+            vec![Arg::Pos(call(&td.name, ctor_args))],
+        ))),
+        span: dummy(),
+    }
+}
+
+// ── Forms (D182 §3) ─────────────────────────────────────────────────────────
+
+/// A product a form can fill: fields of scalars, refined or literal types,
+/// `May` or `Array` of those, and nested such products (as `field.sub`).
+fn form_readable_product(
+    td: &TypeDef,
+    module_id: &str,
+    world: &World,
+    resolve: &Resolve,
+    visiting: &mut HashSet<String>,
+) -> bool {
+    if !plain_product(td) || td.params.is_empty() {
+        return false;
+    }
+    // A product that holds itself would need endless names.
+    let key = format!("{module_id}::{}", td.name);
+    if !visiting.insert(key.clone()) {
+        return false;
+    }
+    let ok = td.params.iter().all(|p| {
+        let Some(shape) = shape_of(&p.ty, module_id, world, resolve, &mut HashSet::new()) else {
+            return false;
+        };
+        match &shape {
+            Shape::May(inner) | Shape::Array(inner) => form_scalar(inner),
+            Shape::Product(type_name) => resolve
+                .get(module_id)
+                .and_then(|names| names.get(type_name))
+                .and_then(|(def_mod, def_name)| {
+                    world.get(def_mod).and_then(|tys| tys.get(def_name)).map(|inner| (def_mod, inner))
+                })
+                .is_some_and(|(def_mod, inner)| {
+                    form_readable_product(inner, def_mod, world, resolve, visiting)
+                }),
+            other => form_scalar(other),
+        }
+    });
+    visiting.remove(&key);
+    ok
+}
+
+/// One form value: a scalar, or a refined or literal type over one.
+fn form_scalar(shape: &Shape) -> bool {
+    matches!(
+        shape,
+        Shape::Str | Shape::Int | Shape::Float | Shape::Bool | Shape::Refined { .. }
+    )
+}
+
+/// `__readForm_T(text)`: the pairs of a form body or query string, then
+/// `__fromForm_T`.
+fn gen_read_form(td: &TypeDef) -> Function {
+    Function {
+        exported: false,
+        name: format!("__readForm_{}", td.name),
+        name_span: dummy(),
+        params: vec![param("text", ty_named("String"))],
+        return_type: Some(ty_trial_issues(ty_named(&td.name))),
         body: Block {
-            items,
+            items: vec![],
             tail: Some(Box::new(call(
-                "Pass",
-                vec![Arg::Pos(call(&td.name, ctor_args))],
+                &format!("__fromForm_{}", td.name),
+                vec![
+                    Arg::Pos(http_call("formPairs", vec![Arg::Pos(name("text"))])),
+                    Arg::Pos(str_lit("")),
+                ],
             ))),
             span: dummy(),
         },
-    };
-    Ok((function, checks))
+    }
+}
+
+/// `__fromForm_T(pairs, path)`: each field from the value named
+/// `path.field`, every issue reported together.
+fn gen_from_form(td: &TypeDef, fields: &[ReadableField]) -> Function {
+    let items = fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let read = read_form_field(&field.shape, &field.ty);
+            let_bind_ty(
+                &format!("__f{index}"),
+                false,
+                ty_trial_issues(field.ty.clone()),
+                checked_field(&field.name, read, &field.ty, field.check_name(td).as_deref()),
+            )
+        })
+        .collect();
+    Function {
+        exported: false,
+        name: format!("__fromForm_{}", td.name),
+        name_span: dummy(),
+        params: vec![
+            param("pairs", ty_array(http_ty("FormPair"))),
+            param_default("path", ty_named("String"), str_lit("")),
+        ],
+        return_type: Some(ty_trial_issues(ty_named(&td.name))),
+        body: build_from_fields(td, fields, items),
+    }
+}
+
+/// A field from the form's pairs; its name and path are `__p`. Empty is
+/// absent for every type but `String`.
+fn read_form_field(shape: &Shape, ty: &TypeExpr) -> Expr {
+    let trial = ty_trial_issues(ty.clone());
+    match shape {
+        Shape::Product(type_name) => method_call(
+            name(type_name),
+            "fromForm",
+            vec![Arg::Pos(name("pairs")), Arg::Pos(name("__p"))],
+        ),
+        Shape::Array(elem) => form_array(elem, ty),
+        _ => {
+            let absent = match shape {
+                Shape::Bool => typed("__absent", trial.clone(), call("Pass", vec![Arg::Pos(bool_lit(false))])),
+                Shape::May(_) => typed("__absent", trial.clone(), pass_not(ty)),
+                _ => missing(&trial),
+            };
+            let present = form_text(name("__text"), shape, ty, name("__p"));
+            let present = if matches!(shape, Shape::Str) {
+                present
+            } else {
+                if_expr(
+                    bin(BinaryOp::Eq, field(name("__text"), "count"), int_lit(0)),
+                    Block {
+                        items: vec![],
+                        tail: Some(Box::new(absent.clone())),
+                        span: dummy(),
+                    },
+                    Some(Block {
+                        items: vec![],
+                        tail: Some(Box::new(present)),
+                        span: dummy(),
+                    }),
+                )
+            };
+            typed(
+                "__field",
+                trial,
+                match_expr(
+                    http_call("formValue", vec![Arg::Pos(name("pairs")), Arg::Pos(name("__p"))]),
+                    vec![
+                        match_arm_block("Not", vec![], vec![], Some(absent)),
+                        match_arm_block("Has", vec![Some("__text".into())], vec![], Some(present)),
+                    ],
+                ),
+            )
+        }
+    }
+}
+
+/// The text of one present value as `ty`: a `Trial<ty, Array<Issue>>`.
+fn form_text(text: Expr, shape: &Shape, ty: &TypeExpr, path: Expr) -> Expr {
+    let trial = ty_trial_issues(ty.clone());
+    match shape {
+        Shape::Str => typed("__out", trial, call("Pass", vec![Arg::Pos(text)])),
+        Shape::Int => http_call("formInt", vec![Arg::Pos(text), Arg::Pos(path)]),
+        Shape::Float => http_call("formFloat", vec![Arg::Pos(text), Arg::Pos(path)]),
+        Shape::Bool => typed("__out", trial, call("Pass", vec![Arg::Pos(bool_lit(true))])),
+        Shape::Refined { name: type_name, base } => {
+            let base_shape = match base.as_str() {
+                "String" => Shape::Str,
+                "Float64" => Shape::Float,
+                "Bool" => Shape::Bool,
+                _ => Shape::Int,
+            };
+            let base_ty = ty_named(shape_base(&base_shape));
+            match_expr(
+                form_text(text, &base_shape, &base_ty, path.clone()),
+                vec![
+                    match_arm_block(
+                        "Fail",
+                        vec![Some("__found".into())],
+                        vec![],
+                        Some(typed("__out", trial.clone(), call("Fail", vec![Arg::Pos(name("__found"))]))),
+                    ),
+                    match_arm_block(
+                        "Pass",
+                        vec![Some("__base".into())],
+                        vec![],
+                        Some(single_issue(
+                            method_call(
+                                name(type_name),
+                                "from",
+                                vec![Arg::Pos(name("__base")), Arg::Pos(path)],
+                            ),
+                            &trial,
+                        )),
+                    ),
+                ],
+            )
+        }
+        Shape::May(inner) => {
+            let inner_ty = type_arg(ty, 0);
+            match_expr(
+                form_text(text, inner, &inner_ty, path),
+                vec![
+                    match_arm_block(
+                        "Pass",
+                        vec![Some("__some".into())],
+                        vec![],
+                        Some(typed(
+                            "__out",
+                            trial.clone(),
+                            call(
+                                "Pass",
+                                vec![Arg::Pos(typed(
+                                    "__has",
+                                    ty.clone(),
+                                    call("Has", vec![Arg::Pos(name("__some"))]),
+                                ))],
+                            ),
+                        )),
+                    ),
+                    match_arm_block(
+                        "Fail",
+                        vec![Some("__found".into())],
+                        vec![],
+                        Some(typed("__out", trial, call("Fail", vec![Arg::Pos(name("__found"))]))),
+                    ),
+                ],
+            )
+        }
+        // Not form scalars (`form_readable_product` keeps these out).
+        Shape::Array(_) | Shape::Product(_) => typed("__out", trial, missing_value()),
+    }
+}
+
+/// `Fail([issueMissing(__p)])` without a type of its own.
+fn missing_value() -> Expr {
+    fail_with(json_call("issueMissing", vec![Arg::Pos(name("__p"))]))
+}
+
+/// One element per value named `__p`, in order; an empty value is skipped
+/// unless the elements are strings.
+fn form_array(elem: &Shape, ty: &TypeExpr) -> Expr {
+    let trial = ty_trial_issues(ty.clone());
+    let elem_ty = type_arg(ty, 0);
+    let element = form_text(
+        name("__text"),
+        elem,
+        &elem_ty,
+        json_call(
+            "joinPath",
+            vec![Arg::Pos(name("__p")), Arg::Pos(interp_int("__i"))],
+        ),
+    );
+    let mut each = vec![
+        let_bind_ty("__one", false, ty_trial_issues(elem_ty.clone()), element),
+        BlockItem::Expr(match_expr(
+            name("__one"),
+            vec![
+                match_arm_block(
+                    "Pass",
+                    vec![Some("__v".into())],
+                    vec![BlockItem::Expr(method_call(
+                        name("__out"),
+                        "append",
+                        vec![Arg::Pos(name("__v"))],
+                    ))],
+                    None,
+                ),
+                match_arm_block(
+                    "Fail",
+                    vec![Some("__found".into())],
+                    vec![append_all("__bad", "__found")],
+                    None,
+                ),
+            ],
+        )),
+    ];
+    if !matches!(elem, Shape::Str) {
+        each = vec![BlockItem::Expr(if_expr(
+            bin(BinaryOp::Gt, field(name("__text"), "count"), int_lit(0)),
+            block_stmts(each),
+            None,
+        ))];
+    }
+    each.push(assign("__i", bin(BinaryOp::Add, name("__i"), int_lit(1))));
+    block(
+        vec![
+            let_bind_ty("__out", true, ty.clone(), empty_array()),
+            let_bind_ty("__bad", true, ty_array(json_ty("Issue")), empty_array()),
+            let_bind("__i", true, int_lit(0)),
+            for_each(
+                "__text",
+                None,
+                http_call("formValues", vec![Arg::Pos(name("pairs")), Arg::Pos(name("__p"))]),
+                each,
+            ),
+        ],
+        if_expr(
+            bin(BinaryOp::Gt, field(name("__bad"), "count"), int_lit(0)),
+            Block {
+                items: vec![],
+                tail: Some(Box::new(typed(
+                    "__result",
+                    trial.clone(),
+                    call("Fail", vec![Arg::Pos(name("__bad"))]),
+                ))),
+                span: dummy(),
+            },
+            Some(Block {
+                items: vec![],
+                tail: Some(Box::new(typed(
+                    "__result",
+                    trial,
+                    call("Pass", vec![Arg::Pos(name("__out"))]),
+                ))),
+                span: dummy(),
+            }),
+        ),
+    )
+}
+
+/// A call to a `std/http` function by its mangled name.
+fn http_call(callee: &str, args: Vec<Arg>) -> Expr {
+    call(&format!("{HTTP_MODULE_ID}_{callee}"), args)
+}
+
+/// A `std/http` type by its mangled name.
+fn http_ty(name: &str) -> TypeExpr {
+    ty_named(&format!("{HTTP_MODULE_ID}_{name}"))
 }
 
 /// `__check_T_field(value, path) -> Trial<Base, Issue>`: a field's own
@@ -602,22 +967,14 @@ fn collect_issues(fields: usize) -> Vec<BlockItem> {
     items
 }
 
-/// A product field read from the object `__obj` at `path.field`.
-fn read_json_field(field_name: &str, shape: &Shape, ty: &TypeExpr, check: Option<&str>) -> Expr {
+/// A product field read from the object `__obj`; the path is `__p`.
+fn read_json_field(field_name: &str, shape: &Shape, ty: &TypeExpr) -> Expr {
     let trial = ty_trial_issues(ty.clone());
     let absent = match shape {
-        Shape::May(_) => typed(
-            "__absent",
-            trial.clone(),
-            call("Pass", vec![Arg::Pos(typed("__none", ty.clone(), call("Not", vec![])))]),
-        ),
-        _ => typed(
-            "__absent",
-            trial.clone(),
-            fail_with(json_call("issueMissing", vec![Arg::Pos(name("__p"))])),
-        ),
+        Shape::May(_) => typed("__absent", trial.clone(), pass_not(ty)),
+        _ => missing(&trial),
     };
-    let read = match_expr(
+    match_expr(
         method_call(name("__obj"), "get", vec![Arg::Pos(str_lit(field_name))]),
         vec![
             match_arm_block("Not", vec![], vec![], Some(absent)),
@@ -628,8 +985,14 @@ fn read_json_field(field_name: &str, shape: &Shape, ty: &TypeExpr, check: Option
                 Some(convert_json(name("__raw"), shape, ty, name("__p"), 0)),
             ),
         ],
-    );
-    let mut items = vec![
+    )
+}
+
+/// `{ let __p = joinPath(path, "field"); read }`, then the field's own
+/// `where` once the value has its type.
+fn checked_field(field_name: &str, read: Expr, ty: &TypeExpr, check: Option<&str>) -> Expr {
+    let trial = ty_trial_issues(ty.clone());
+    let items = vec![
         let_bind(
             "__p",
             false,
@@ -643,33 +1006,44 @@ fn read_json_field(field_name: &str, shape: &Shape, ty: &TypeExpr, check: Option
     let Some(check) = check else {
         return block(items, name("__read"));
     };
-    // A field's own `where` runs on the value once it has its type.
-    items.push(let_bind_ty(
-        "__checked",
-        false,
+    let checked = match_expr(
+        name("__read"),
+        vec![
+            match_arm_block(
+                "Fail",
+                vec![Some("__found".into())],
+                vec![],
+                Some(typed("__out", trial.clone(), call("Fail", vec![Arg::Pos(name("__found"))]))),
+            ),
+            match_arm_block(
+                "Pass",
+                vec![Some("__value".into())],
+                vec![],
+                Some(single_issue(
+                    call(check, vec![Arg::Pos(name("__value")), Arg::Pos(name("__p"))]),
+                    &trial,
+                )),
+            ),
+        ],
+    );
+    block(items, checked)
+}
+
+/// `Pass(Not)` for a `May` field that is absent.
+fn pass_not(ty: &TypeExpr) -> Expr {
+    call(
+        "Pass",
+        vec![Arg::Pos(typed("__none", ty.clone(), call("Not", vec![])))],
+    )
+}
+
+/// `Fail([issueMissing(__p)])`
+fn missing(trial: &TypeExpr) -> Expr {
+    typed(
+        "__absent",
         trial.clone(),
-        match_expr(
-            name("__read"),
-            vec![
-                match_arm_block(
-                    "Fail",
-                    vec![Some("__found".into())],
-                    vec![],
-                    Some(typed("__out", trial.clone(), call("Fail", vec![Arg::Pos(name("__found"))]))),
-                ),
-                match_arm_block(
-                    "Pass",
-                    vec![Some("__value".into())],
-                    vec![],
-                    Some(single_issue(
-                        call(check, vec![Arg::Pos(name("__value")), Arg::Pos(name("__p"))]),
-                        &trial,
-                    )),
-                ),
-            ],
-        ),
-    ));
-    block(items, name("__checked"))
+        fail_with(json_call("issueMissing", vec![Arg::Pos(name("__p"))])),
+    )
 }
 
 /// `raw` (a `Json` name) as `ty`, at `path`: a `Trial<ty, Array<Issue>>`.

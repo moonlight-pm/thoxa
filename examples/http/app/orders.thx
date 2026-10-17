@@ -1,10 +1,8 @@
 ## App layer — place an order (JSON and HTML share this).
 
 import store, { DrinkMiss, DrinkHit } from "./store"
-import http from "std/http"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { parseUInt } from "std/str"
-import { Issue, issueMissing, issueMismatch, issueRejected } from "std/json"
+import { Issue, issueRejected } from "std/json"
 
 export type Qty = Int64 where >= 1
 export type DrinkSlug = "espresso" | "cold-brew" | "cappuccino" | "flat-white" | "pour-over" | "mocha"
@@ -18,33 +16,6 @@ export type Ticket(
     unitCents: Int64,
     totalCents: Int64
 )
-
-export fn fromForm(body!: Bytes) -> Trial<CreateOrder, Issue> {
-    match http.formField(body, "slug") {
-        Not => Fail(issueMissing("slug"))
-        Has(slugRaw) {
-            match DrinkSlug.from(slugRaw) {
-                Fail(error) => Fail(error)
-                Pass(slug) {
-                    match http.formField(body, "qty") {
-                        Not => Fail(issueMissing("qty"))
-                        Has(qtyRaw) {
-                            match parseUInt(qtyRaw) {
-                                Not => Fail(issueMismatch("qty", "integer", qtyRaw))
-                                Has(count) {
-                                    match Qty.from(count) {
-                                        Fail(error) => Fail(error)
-                                        Pass(qty) => Pass(CreateOrder(slug: slug, qty: qty))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 export fn place(order!: CreateOrder) -> Trial<Ticket, Issue> {
     match store.findBySlug(order.slug) {

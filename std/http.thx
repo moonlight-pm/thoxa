@@ -4,6 +4,7 @@
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import { toLowerAscii, trim, split, splitOnce, parseUInt, isEmpty, contains, substring, replaceAll } from "std/str"
+import { JInt, JFloat, decode, Issue, issueMismatch } from "std/json"
 
 ## One header field: name and value as Strings (ASCII for this demo).
 export type Header(name: String, value: String)
@@ -419,6 +420,80 @@ export fn parseForm(body!: Bytes) -> Map<String, String> {
 
 export fn formField(body!: Bytes, key!: String) -> May<String> {
     parseForm(body)[key]
+}
+
+## One `name=value` pair of a form body or query string, decoded (D182 §3).
+export type FormPair(name: String, value: String)
+
+## Every pair in order, repeated names kept (`tag=a&tag=b`). `T.readForm`
+## reads these.
+export fn formPairs(text!: String) -> Array<FormPair> {
+    mut pairs: Array<FormPair> = []
+    for part in split(text, "&") {
+        if not isEmpty(part) {
+            match splitOnce(part, "=") {
+                Not {
+                    pairs.append(FormPair(name: urlDecode(part), value: ""))
+                }
+                Has(cut) {
+                    pairs.append(FormPair(name: urlDecode(cut.before), value: urlDecode(cut.after)))
+                }
+            }
+        }
+    }
+    pairs
+}
+
+## The last value named `name`.
+export fn formValue(pairs!: Array<FormPair>, name!: String) -> May<String> {
+    mut found: May<String> = Not()
+    for pair in pairs {
+        if pair.name == name {
+            found = Has(pair.value)
+        }
+    }
+    found
+}
+
+## Every value named `name`, in order.
+export fn formValues(pairs!: Array<FormPair>, name!: String) -> Array<String> {
+    mut found: Array<String> = []
+    for pair in pairs {
+        if pair.name == name {
+            found.append(pair.value)
+        }
+    }
+    found
+}
+
+## A form field's text as an integer (a JSON integer: `42`, `-3`).
+export fn formInt(text!: String, path!: String) -> Trial<Int64, Array<Issue>> {
+    match decode(trim(text)) {
+        Pass(value) {
+            match value {
+                JInt(n) => Pass(n)
+                else => Fail([issueMismatch(path, "integer", text)])
+            }
+        }
+        Fail(_) => Fail([issueMismatch(path, "integer", text)])
+    }
+}
+
+## A form field's text as a number (a JSON number: `2`, `-1.5`, `1e3`).
+export fn formFloat(text!: String, path!: String) -> Trial<Float64, Array<Issue>> {
+    match decode(trim(text)) {
+        Pass(value) {
+            match value {
+                JFloat(f) => Pass(f)
+                JInt(n) {
+                    let f: Float64 = n
+                    Pass(f)
+                }
+                else => Fail([issueMismatch(path, "number", text)])
+            }
+        }
+        Fail(_) => Fail([issueMismatch(path, "number", text)])
+    }
 }
 
 export fn parseCookies(header!: String) -> Map<String, String> {

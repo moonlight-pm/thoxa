@@ -119,6 +119,7 @@ leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
 | Lookup | `headerGet`, `contentLength`, `queryMap`, `queryParam`, `formField`, `cookie` |
 | Stream | `Request.peerFd` (host fd, else 0; the key `server.peerOf` looks up); `streamed()` (status 0 — handler owns the socket) |
 | Maps | `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`; `urlDecode` |
+| Forms | `formPairs(text)` → `Array<FormPair>` (repeated names kept), `formValue` (last) / `formValues` (all), `formInt` / `formFloat` (JSON numbers, `Array<Issue>` on failure). `T.readForm` is built on these (**D182**) |
 | Cookies | `Cookie` (`.header()`), `SameSite`, `withCookie`, `clearCookie` (**D142**) |
 | Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `htmlResponseStatus`, `htmlFragment`, `notModified`, `cached` / `etagOf` / `withCache`, `response` / `responseHead` |
 | Connection | `wantsKeepAlive`, `finalize` (HEAD drops body; rewrites `Connection`) |

@@ -1,0 +1,101 @@
+## T.readForm reads a form body or query string into a type (D182 §3).
+import { Issue, message } from "std/json"
+import { Pass, Fail, Trial, Has, Not, May } from "std/fallible"
+import { formPairs } from "std/http"
+import logging, { info } from "std/logging"
+
+type Qty = Int64 where >= 1
+type Slug = "espresso" | "mocha"
+type CreateOrder(slug: Slug, qty: Qty)
+
+type Topic = "art" | "music" | "dance"
+type Location(city: String, zip: Int64)
+type Signup(
+    name: String,
+    age: May<Int64>,
+    newsletter: Bool,
+    topics: Array<Topic>,
+    address: Location,
+    ratio: Float64,
+    note: May<String>
+)
+type Pin(code: String where >= 4)
+type MenuSearch(q: May<String>, page: May<Int64>)
+
+fn report(label!: String, issues!: Array<Issue>) {
+    info("{label}: {issues.count} issue(s)")
+    for issue in issues {
+        info("  {message(issue)}")
+    }
+}
+
+fn showOrder(label!: String, read!: Trial<CreateOrder, Array<Issue>>) {
+    match read {
+        Fail(issues) => report(label, issues)
+        Pass(order) => info("{label}: {order.slug} x{order.qty}")
+    }
+}
+
+fn showSignup(label!: String, read!: Trial<Signup, Array<Issue>>) {
+    match read {
+        Fail(issues) => report(label, issues)
+        Pass(signup) {
+            let age = match signup.age {
+                Has(years) => "{years}"
+                Not => "none"
+            }
+            let note = match signup.note {
+                Has(text) => text
+                Not => "none"
+            }
+            info("{label}: name={signup.name} age={age} newsletter={signup.newsletter} topics={signup.topics.count} city={signup.address.city} zip={signup.address.zip} ratio={signup.ratio} note={note}")
+        }
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    showOrder("good", CreateOrder.readForm("slug=mocha&qty=2"))
+    showOrder("both bad", CreateOrder.readForm("slug=chai&qty=0"))
+    showOrder("empty is absent", CreateOrder.readForm("qty="))
+    showOrder("not a number", CreateOrder.readForm("slug=mocha&qty=two"))
+    showOrder("extra keys", CreateOrder.readForm("csrf=abc&slug=espresso&qty=1&submit=Order"))
+    showOrder("last value wins", CreateOrder.readForm("slug=espresso&qty=1&qty=3"))
+
+    showSignup(
+        "signup",
+        Signup.readForm("name=Ada+Lovelace&age=&topics=art&topics=music&address.city=Oslo&address.zip=150&ratio=1.5&note=a%26b")
+    )
+    showSignup("checked box", Signup.readForm("name=&newsletter=on&address.city=&address.zip=7&ratio=2&age=36"))
+    showSignup(
+        "signup issues",
+        Signup.readForm("newsletter=on&topics=art&topics=chess&topics=&address.city=Oslo&ratio=fast&age=old")
+    )
+
+    match Pin.readForm("code=12") {
+        Fail(issues) => report("pin", issues)
+        Pass(pin) => info("pin: {pin.code}")
+    }
+
+    for query in ["q=flat+white&page=2", "", "page=x"] {
+        match MenuSearch.readForm(query) {
+            Fail(issues) => report("query", issues)
+            Pass(search) {
+                let needle = match search.q {
+                    Has(text) => text
+                    Not => "(all)"
+                }
+                let page = match search.page {
+                    Has(number) => number
+                    Not => 1
+                }
+                info("query: {needle} page {page}")
+            }
+        }
+    }
+
+    info("pairs: {formPairs("a=1&a=2&b").count}")
+    0
+}

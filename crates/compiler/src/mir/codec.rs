@@ -1,5 +1,6 @@
 //! D182 §1: `toJson` / `encode` on values whose types have no generated
 //! encoder of their own: scalars, `Array`, `Map<String, T>`, `May`, and `Json`.
+//! Also why a type has no form reader (§3).
 //!
 //! The conversion is built as Thoxa and lowered with `std/json`'s names in
 //! scope, so the caller need not import them. Elements and payloads convert by
@@ -13,6 +14,7 @@ use crate::error::{Error, Result};
 use crate::span::Span;
 
 const JSON_MODULE: &str = "std_json";
+const HTTP_MODULE: &str = "std_http";
 
 /// `std/json` types that are themselves JSON (`Json` and its members).
 const JSON_FAMILY: &[&str] = &[
@@ -184,4 +186,100 @@ fn encode_expr(input: &str, encoding: &Encoding) -> Expr {
             ],
         ),
     }
+}
+
+/// Why `T.readForm` has no generated reader for `mangled` (D182 §3).
+pub(super) fn form_unreadable(ctx: &LowerCtx, mangled: &str, span: Span) -> Error {
+    let shown = display_ty(&Ty::User(mangled.to_string()));
+    if !ctx.types.contains_key(&format!("{HTTP_MODULE}_FormPair")) {
+        return Error::at(
+            format!("`readForm` needs std/http in the program to read `{shown}`"),
+            span,
+        );
+    }
+    if ctx.types.get(mangled).is_some_and(|info| info.sum.is_some()) {
+        return Error::at(
+            format!("cannot read `{shown}` from a form: a form fills a product, not a union"),
+            span,
+        );
+    }
+    let message = match form_problem(ctx, mangled, "", &mut Vec::new()) {
+        Some((field, ty)) => format!(
+            "cannot read `{shown}` from a form: field `{field}` is {}, which a form cannot hold",
+            display_ty(&ty)
+        ),
+        None => format!("cannot read `{shown}` from a form"),
+    };
+    Error::at(message, span).with_help(
+        "a form holds String, Int64, Float64, Bool, refined and literal types, May or \
+         Array of those, and nested products of them",
+    )
+}
+
+/// The first field (as `outer.inner`) a form cannot hold, and its type.
+fn form_problem(
+    ctx: &LowerCtx,
+    mangled: &str,
+    prefix: &str,
+    seen: &mut Vec<String>,
+) -> Option<(String, Ty)> {
+    let info = ctx.types.get(mangled)?;
+    seen.push(mangled.to_string());
+    for field in &info.fields {
+        let path = if prefix.is_empty() {
+            field.name.clone()
+        } else {
+            format!("{prefix}.{}", field.name)
+        };
+        let ok = match &field.ty {
+            Ty::Array { elem } => form_value(ctx, elem),
+            Ty::User(name) if is_may(ctx, name) => may_payload(ctx, name)
+                .is_some_and(|payload| form_value(ctx, &payload)),
+            Ty::User(name) if is_product(ctx, name) => {
+                if seen.contains(name) {
+                    return Some((path, field.ty.clone()));
+                }
+                if let Some(problem) = form_problem(ctx, name, &path, seen) {
+                    return Some(problem);
+                }
+                true
+            }
+            other => form_value(ctx, other),
+        };
+        if !ok {
+            return Some((path, field.ty.clone()));
+        }
+    }
+    None
+}
+
+/// One form value: a scalar, a refined type, or a literal union.
+fn form_value(ctx: &LowerCtx, ty: &Ty) -> bool {
+    match ty {
+        Ty::String | Ty::Int64 | Ty::Float64 | Ty::Bool => true,
+        Ty::User(name) => ctx.types.get(name).is_some_and(|info| {
+            info.refined.is_some()
+                || info
+                    .sum
+                    .as_ref()
+                    .is_some_and(|sum| sum.variants.iter().all(|v| v.lit.is_some()))
+        }),
+        _ => false,
+    }
+}
+
+fn is_product(ctx: &LowerCtx, name: &str) -> bool {
+    ctx.types
+        .get(name)
+        .is_some_and(|info| info.sum.is_none() && info.refined.is_none() && !info.zero_init)
+}
+
+/// `T` of a `May<T>` monomorph: the field of its `Has` arm.
+fn may_payload(ctx: &LowerCtx, name: &str) -> Option<Ty> {
+    let sum = ctx.types.get(name)?.sum.as_ref()?;
+    let has = sum.variants.iter().find(|v| v.name == "Has")?;
+    let Ty::User(member) = &has.ty else {
+        return None;
+    };
+    ctx.types.get(member)?.fields.first().map(|f| f.ty.clone())
 }

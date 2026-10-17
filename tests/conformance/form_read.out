@@ -1,0 +1,26 @@
+good: mocha x2
+both bad: 2 issue(s)
+  slug: expected "espresso" | "mocha", got chai
+  qty: expected integer >= 1, got 0
+empty is absent: 2 issue(s)
+  slug is required
+  qty is required
+not a number: 1 issue(s)
+  qty: expected integer, got two
+extra keys: espresso x1
+last value wins: espresso x3
+signup: name=Ada Lovelace age=none newsletter=false topics=2 city=Oslo zip=150 ratio=1.5 note=a&b
+checked box: name= age=36 newsletter=true topics=0 city= zip=7 ratio=2.0 note=none
+signup issues: 5 issue(s)
+  name is required
+  age: expected integer, got old
+  topics.1: expected "art" | "music" | "dance", got chess
+  address.zip is required
+  ratio: expected number, got fast
+pin: 1 issue(s)
+  code: expected length >= 4, got 12
+query: flat white page 2
+query: (all) page 1
+query: 1 issue(s)
+  page: expected integer, got x
+pairs: 3

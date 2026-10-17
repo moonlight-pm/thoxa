@@ -196,6 +196,7 @@ match CreateOrder.read(body) {
 | Narrowing | `type Dozen = Qty where <= 12` intersects clauses. Empty types are errors |
 | `T.from(x)` | Runtime base / string → `Trial<T, Issue>` |
 | `T.read(s)` / `T.fromJson(json)` | JSON string / tree → `Trial<T, Array<Issue>>` (tree `decode` first, then shape + `where`). Every field is checked: each missing or mismatched field adds its issue, nested products and array elements add theirs (`orders.1.slug`) (**D182**) |
+| `T.readForm(text)` | A form body (`request.body.toString()`) or query string (`request.query`) → `Trial<T, Array<Issue>>` (**D182**). Fields: `String`, `Int64`, `Float64`, `Bool` (a checked box), refined and literal types, `May` / `Array` of those (an `Array` takes repeated names), nested products as `field.sub`. Empty means absent except for `String`. Needs `std/http` in the program |
 | `t.encode()` / `t.toJson()` | Compact JSON / a `Json` tree, for every encodable value (**D182**): scalars, `Array`, `Map<String, T>`, `May` (`null` when `Not`), `Json`, refined and literal types, products (a `Not` field is left out), unions of products as `{"type": "Member", …}`. A type's own exported `toJson` is used instead, inside other types too. `Bytes` and other non-JSON types are an error naming the type |
 | `Issue` | `Missing \| Mismatch \| Rejected` in [`std/json`](std.md). `message(e)` for one, `messages(issues)` for a read's; `errorsObject(issues)` for a JSON reply |
 | `May<T>` fields | Missing or JSON `null` → `Not`. Write `May<Qty>`, not `May<Int64 where …>` |

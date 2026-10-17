@@ -56,7 +56,7 @@ fn welcome(request!: Request) -> Node {
 export fn signIn(request!: Request) -> Response {
     let redirect = http.seeOther("/")
     if not session.checkCsrf(request, request.body) {
-        appHttp.formFailed(request, appHttp.csrfRejected())
+        appHttp.formFailed(request, [appHttp.csrfRejected()])
     } else {
         match http.formField(request.body, "name") {
             Not {

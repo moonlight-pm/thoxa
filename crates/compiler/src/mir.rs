@@ -9813,7 +9813,10 @@ fn lower_method_call(
         if type_name == "Bytes" && ctx.lookup(type_name).is_none() {
             return lower_bytes_static(ctx, method, args, method_span);
         }
-        if matches!(method, "read" | "fromJson" | "from" | "encode" | "toJson")
+        if matches!(
+            method,
+            "read" | "fromJson" | "readForm" | "fromForm" | "from" | "encode" | "toJson"
+        )
             && ctx.lookup(type_name).is_none()
         {
             if let Some(mangled_ty) = ctx.resolve_type_name(type_name) {
@@ -9906,7 +9909,7 @@ fn lower_method_call(
         }
     }
     // `api.CreateOrder.read(s)` — type qualifier under a namespace.
-    if matches!(method, "read" | "fromJson") {
+    if matches!(method, "read" | "fromJson" | "readForm" | "fromForm") {
         if let ExprKind::Field {
             base,
             name: ty_name,
@@ -10347,6 +10350,9 @@ fn lower_type_read_static(
         ));
     }
     let Some(mangled_fn) = lookup_generated_read_fn(ctx, &info, mangled_ty, method) else {
+        if matches!(method, "readForm" | "fromForm") {
+            return Err(codec::form_unreadable(ctx, mangled_ty, span));
+        }
         return Err(Error::at(
             format!(
                 "type `{}` cannot be read — only constructor-param products of \
@@ -15384,7 +15390,7 @@ fn form_unbound_method(
         .get(type_name)
         .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?
         .clone();
-    if matches!(method, "read" | "fromJson") {
+    if matches!(method, "read" | "fromJson" | "readForm" | "fromForm") {
         if let Some(mangled_fn) = lookup_generated_read_fn(ctx, &info, type_name, method) {
             let sig = ctx.fns.get(&mangled_fn).unwrap().clone();
             refuse_fn_value(sig.multi_clause, false, method, span)?;

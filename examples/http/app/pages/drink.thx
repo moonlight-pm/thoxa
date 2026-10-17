@@ -4,7 +4,7 @@ import { Page, csrfField } from "~/app/ui/page"
 import appHttp from "~/app/http"
 import models, { Drink, formatPrice, roastLabel } from "~/app/models"
 import store, { DrinkMiss, DrinkHit } from "~/app/store"
-import orders from "~/app/orders"
+import orders, { CreateOrder } from "~/app/orders"
 import session from "~/app/session"
 import live from "~/app/live"
 import http, { Request, Response } from "std/http"
@@ -55,13 +55,13 @@ fn orderForm(drink!: Drink, request!: Request) -> Node {
 
 export fn submit(request!: Request) -> Response {
     if not session.checkCsrf(request, request.body) {
-        appHttp.formFailed(request, appHttp.csrfRejected())
+        appHttp.formFailed(request, [appHttp.csrfRejected()])
     } else {
-        match orders.fromForm(request.body) {
-            Fail(error) => appHttp.formFailed(request, error)
+        match CreateOrder.readForm(request.body.toString()) {
+            Fail(issues) => appHttp.formFailed(request, issues)
             Pass(order) {
                 match orders.place(order) {
-                    Fail(error) => appHttp.formFailed(request, error)
+                    Fail(error) => appHttp.formFailed(request, [error])
                     Pass(ticket) {
                         session.setFlash(request, "Poured {ticket.qty} × {ticket.name}.")
                         live.broadcast()
