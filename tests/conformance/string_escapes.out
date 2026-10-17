@@ -3,4 +3,4 @@ reset: 27 99
 bell then digit: 7 55
 nul: count=3 bytes=120 0 121
 delete: 127
-unicode: 2
+unicode: 2 bytes, 1 scalar

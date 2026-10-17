@@ -144,7 +144,7 @@ static size_t size_dbl(size_t n) {
 }
 
 static size_t string_payload_size(size_t len) {
-    return size_add(sizeof(size_t), size_add(len, 1));
+    return size_add(sizeof(ThoxaString), size_add(len, 1));
 }
 
 static size_t bytes_payload_size(size_t len) {
@@ -314,14 +314,137 @@ void thoxa_fn_release(ThoxaFn *fn) {
 
 /* --- String ------------------------------------------------------------- */
 
-ThoxaString *thoxa_string_new(const char *bytes, size_t len) {
-    size_t payload = string_payload_size(len);
-    ThoxaString *s = (ThoxaString *)thoxa_alloc(payload, THOXA_TAG_STRING);
+/*
+ * Every String holds valid UTF-8 and knows its scalar count (D195):
+ * thoxa_string_new replaces each maximal ill-formed subsequence with U+FFFD
+ * (Unicode §3.9, as WHATWG decoders do), so a String from Bytes, C, or a
+ * file is always text.
+ */
+
+/* One UTF-8 sequence at p (n > 0 bytes left): sets *code and returns its
+ * length. An ill-formed sequence sets *code = UINT32_MAX and returns the
+ * length of its maximal subpart (at least 1). */
+static size_t utf8_decode(const uint8_t *p, size_t n, uint32_t *code) {
+    uint8_t lead = p[0];
+    if (lead < 0x80) {
+        *code = lead;
+        return 1;
+    }
+    size_t len;
+    uint32_t value;
+    /* Well-formed range of the second byte (Unicode Table 3-7). */
+    uint8_t low = 0x80;
+    uint8_t high = 0xBF;
+    if (lead >= 0xC2 && lead <= 0xDF) {
+        len = 2;
+        value = lead & 0x1F;
+    } else if (lead >= 0xE0 && lead <= 0xEF) {
+        len = 3;
+        value = lead & 0x0F;
+        low = lead == 0xE0 ? 0xA0 : 0x80;
+        high = lead == 0xED ? 0x9F : 0xBF;
+    } else if (lead >= 0xF0 && lead <= 0xF4) {
+        len = 4;
+        value = lead & 0x07;
+        low = lead == 0xF0 ? 0x90 : 0x80;
+        high = lead == 0xF4 ? 0x8F : 0xBF;
+    } else {
+        *code = UINT32_MAX;
+        return 1;
+    }
+    for (size_t i = 1; i < len; i++) {
+        if (i >= n || p[i] < low || p[i] > high) {
+            *code = UINT32_MAX;
+            return i;
+        }
+        value = (value << 6) | (p[i] & 0x3F);
+        low = 0x80;
+        high = 0xBF;
+    }
+    *code = value;
+    return len;
+}
+
+/* Scalars in data[0..len), or SIZE_MAX when it is not valid UTF-8. */
+static size_t utf8_count(const char *data, size_t len) {
+    const uint8_t *p = (const uint8_t *)data;
+    size_t count = 0;
+    size_t i = 0;
+    while (i < len) {
+        if (len - i >= 8) {
+            uint64_t word;
+            memcpy(&word, p + i, 8);
+            if ((word & 0x8080808080808080ull) == 0) {
+                i += 8;
+                count += 8;
+                continue;
+            }
+        }
+        if (p[i] < 0x80) {
+            i++;
+        } else {
+            uint32_t code;
+            i += utf8_decode(p + i, len - i, &code);
+            if (code == UINT32_MAX) {
+                return SIZE_MAX;
+            }
+        }
+        count++;
+    }
+    return count;
+}
+
+/* An uninitialized String of `len` bytes holding `count` scalars. */
+static ThoxaString *string_alloc(size_t len, size_t count) {
+    ThoxaString *s = (ThoxaString *)thoxa_alloc(string_payload_size(len), THOXA_TAG_STRING);
     s->len = len;
-    if (len > 0 && bytes) {
+    s->count = count;
+    s->data[len] = '\0';
+    return s;
+}
+
+/* data[0..len) with each maximal ill-formed subsequence as U+FFFD. */
+static ThoxaString *string_repaired(const char *data, size_t len) {
+    static const char replacement[] = "\xEF\xBF\xBD";
+    const uint8_t *p = (const uint8_t *)data;
+    size_t out_len = 0;
+    size_t count = 0;
+    for (size_t i = 0; i < len; count++) {
+        uint32_t code;
+        size_t step = utf8_decode(p + i, len - i, &code);
+        out_len = size_add(out_len, code == UINT32_MAX ? 3 : step);
+        i += step;
+    }
+    ThoxaString *s = string_alloc(out_len, count);
+    size_t used = 0;
+    for (size_t i = 0; i < len;) {
+        uint32_t code;
+        size_t step = utf8_decode(p + i, len - i, &code);
+        if (code == UINT32_MAX) {
+            memcpy(s->data + used, replacement, 3);
+            used += 3;
+        } else {
+            memcpy(s->data + used, data + i, step);
+            used += step;
+        }
+        i += step;
+    }
+    return s;
+}
+
+ThoxaString *thoxa_string_new(const char *bytes, size_t len) {
+    if (!bytes) {
+        /* `len` NUL bytes: valid, one scalar each. */
+        return string_alloc(len, len);
+    }
+    size_t count = utf8_count(bytes, len);
+    if (count == SIZE_MAX) {
+        return string_repaired(bytes, len);
+    }
+    ThoxaString *s = string_alloc(len, count);
+    if (len > 0) {
         memcpy(s->data, bytes, len);
     }
-    s->data[len] = '\0';
     return s;
 }
 
@@ -466,16 +589,13 @@ ThoxaString *thoxa_string_concat(const ThoxaString *a, const ThoxaString *b) {
     size_t alen = a ? a->len : 0;
     size_t blen = b ? b->len : 0;
     size_t len = size_add(alen, blen);
-    size_t payload = string_payload_size(len);
-    ThoxaString *s = (ThoxaString *)thoxa_alloc(payload, THOXA_TAG_STRING);
-    s->len = len;
+    ThoxaString *s = string_alloc(len, (a ? a->count : 0) + (b ? b->count : 0));
     if (alen > 0) {
         memcpy(s->data, a->data, alen);
     }
     if (blen > 0) {
         memcpy(s->data + alen, b->data, blen);
     }
-    s->data[len] = '\0';
     return s;
 }
 
@@ -497,6 +617,10 @@ const char *thoxa_string_cstr(const ThoxaString *s) {
 
 size_t thoxa_string_len(const ThoxaString *s) {
     return s ? s->len : 0;
+}
+
+size_t thoxa_string_count(const ThoxaString *s) {
+    return s ? s->count : 0;
 }
 
 /* --- String methods (D195) ----------------------------------------------
@@ -532,52 +656,6 @@ typedef struct CaseTable {
 static const CaseTable case_lower = CASE_TABLE(lower, 'A', 'Z', 32);
 static const CaseTable case_upper = CASE_TABLE(upper, 'a', 'z', -32);
 static const CaseTable case_fold = CASE_TABLE(fold, 'A', 'Z', 32);
-
-/* One UTF-8 sequence at p (n > 0 bytes left): sets *code and returns its
- * length. A malformed sequence is its first byte, *code = UINT32_MAX. */
-static size_t utf8_decode(const uint8_t *p, size_t n, uint32_t *code) {
-    uint8_t lead = p[0];
-    if (lead < 0x80) {
-        *code = lead;
-        return 1;
-    }
-    size_t len;
-    uint32_t value;
-    uint32_t min;
-    if ((lead & 0xE0) == 0xC0) {
-        len = 2;
-        value = lead & 0x1F;
-        min = 0x80;
-    } else if ((lead & 0xF0) == 0xE0) {
-        len = 3;
-        value = lead & 0x0F;
-        min = 0x800;
-    } else if ((lead & 0xF8) == 0xF0) {
-        len = 4;
-        value = lead & 0x07;
-        min = 0x10000;
-    } else {
-        *code = UINT32_MAX;
-        return 1;
-    }
-    if (len > n) {
-        *code = UINT32_MAX;
-        return 1;
-    }
-    for (size_t i = 1; i < len; i++) {
-        if ((p[i] & 0xC0) != 0x80) {
-            *code = UINT32_MAX;
-            return 1;
-        }
-        value = (value << 6) | (p[i] & 0x3F);
-    }
-    if (value < min || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
-        *code = UINT32_MAX;
-        return 1;
-    }
-    *code = value;
-    return len;
-}
 
 static size_t utf8_encode(uint32_t code, char *out) {
     if (code < 0x80) {
@@ -1017,12 +1095,189 @@ ThoxaString *thoxa_string_repeat(const ThoxaString *s, int64_t count) {
         return thoxa_string_new("", 0);
     }
     size_t total = size_mul(len, (size_t)count);
-    ThoxaString *out = (ThoxaString *)thoxa_alloc(string_payload_size(total), THOXA_TAG_STRING);
-    out->len = total;
+    ThoxaString *out = string_alloc(total, s->count * (size_t)count);
     for (size_t i = 0; i < (size_t)count; i++) {
         memcpy(out->data + i * len, s->data, len);
     }
-    out->data[total] = '\0';
+    return out;
+}
+
+/* Positions count Unicode scalars (D195 §4). An all-ASCII String
+ * (count == len) indexes in O(1); any other walks from the nearer end. */
+
+static bool is_continuation(uint8_t byte) {
+    return (byte & 0xC0) == 0x80;
+}
+
+/* Byte offset of scalar `index` (clamped to count). */
+static size_t scalar_offset(const ThoxaString *s, size_t index) {
+    size_t len = thoxa_string_len(s);
+    size_t count = thoxa_string_count(s);
+    if (index >= count) {
+        return len;
+    }
+    if (count == len) {
+        return index;
+    }
+    const uint8_t *p = (const uint8_t *)s->data;
+    size_t at;
+    if (index <= count / 2) {
+        at = 0;
+        for (size_t seen = 0; seen < index; seen++) {
+            at++;
+            while (at < len && is_continuation(p[at])) {
+                at++;
+            }
+        }
+    } else {
+        at = len;
+        for (size_t seen = count; seen > index; seen--) {
+            at--;
+            while (at > 0 && is_continuation(p[at])) {
+                at--;
+            }
+        }
+    }
+    return at;
+}
+
+/* Scalar index of byte offset `at` (a character boundary). */
+static size_t scalar_index(const ThoxaString *s, size_t at) {
+    size_t len = thoxa_string_len(s);
+    size_t count = thoxa_string_count(s);
+    if (count == len) {
+        return at;
+    }
+    const uint8_t *p = (const uint8_t *)s->data;
+    size_t scalars = 0;
+    if (at <= len / 2) {
+        for (size_t i = 0; i < at; i++) {
+            scalars += !is_continuation(p[i]);
+        }
+        return scalars;
+    }
+    for (size_t i = at; i < len; i++) {
+        scalars += !is_continuation(p[i]);
+    }
+    return count - scalars;
+}
+
+/* Bytes [start, end) of s, known to hold `count` scalars. */
+static ThoxaString *string_slice(const ThoxaString *s, size_t start, size_t end, size_t count) {
+    if (start == 0 && end == thoxa_string_len(s)) {
+        return string_share(s);
+    }
+    ThoxaString *out = string_alloc(end - start, count);
+    memcpy(out->data, s->data + start, end - start);
+    return out;
+}
+
+int64_t thoxa_string_index_of(const ThoxaString *s, const ThoxaString *needle) {
+    const char *data = string_data(s);
+    const char *at =
+        find_bytes(data, thoxa_string_len(s), string_data(needle), thoxa_string_len(needle));
+    return at ? (int64_t)scalar_index(s, (size_t)(at - data)) : -1;
+}
+
+int64_t thoxa_string_last_index_of(const ThoxaString *s, const ThoxaString *needle) {
+    size_t len = thoxa_string_len(s);
+    size_t needle_len = thoxa_string_len(needle);
+    if (needle_len > len) {
+        return -1;
+    }
+    const char *data = string_data(s);
+    for (size_t at = len - needle_len + 1; at-- > 0;) {
+        if (memcmp(data + at, string_data(needle), needle_len) == 0) {
+            return (int64_t)scalar_index(s, at);
+        }
+    }
+    return -1;
+}
+
+static size_t clamp_index(int64_t index, size_t count) {
+    if (index <= 0) {
+        return 0;
+    }
+    return (uint64_t)index > count ? count : (size_t)index;
+}
+
+ThoxaString *thoxa_string_substring(const ThoxaString *s, int64_t start, int64_t end) {
+    size_t count = thoxa_string_count(s);
+    size_t first = clamp_index(start, count);
+    size_t last = clamp_index(end, count);
+    if (first >= last) {
+        return thoxa_string_new("", 0);
+    }
+    return string_slice(s, scalar_offset(s, first), scalar_offset(s, last), last - first);
+}
+
+ThoxaString *thoxa_string_truncate(const ThoxaString *s, int64_t max) {
+    return thoxa_string_substring(s, 0, max);
+}
+
+/* `width - count` scalars of `pad` (a space when empty), repeated and cut. */
+static void put_padding(Text *out, const ThoxaString *s, int64_t width, const ThoxaString *pad) {
+    size_t count = thoxa_string_count(s);
+    if (width <= 0 || (uint64_t)width <= count) {
+        return;
+    }
+    size_t need = (size_t)width - count;
+    if (thoxa_string_len(pad) == 0) {
+        while (need-- > 0) {
+            text_put(out, " ", 1);
+        }
+        return;
+    }
+    while (need >= pad->count) {
+        text_put(out, pad->data, pad->len);
+        need -= pad->count;
+    }
+    if (need > 0) {
+        text_put(out, pad->data, scalar_offset(pad, need));
+    }
+}
+
+ThoxaString *thoxa_string_pad_left(const ThoxaString *s, int64_t width, const ThoxaString *pad) {
+    if (width <= 0 || (uint64_t)width <= thoxa_string_count(s)) {
+        return string_share(s);
+    }
+    Text out;
+    text_init(&out);
+    put_padding(&out, s, width, pad);
+    text_put(&out, string_data(s), thoxa_string_len(s));
+    return text_finish(&out);
+}
+
+ThoxaString *thoxa_string_pad_right(const ThoxaString *s, int64_t width, const ThoxaString *pad) {
+    if (width <= 0 || (uint64_t)width <= thoxa_string_count(s)) {
+        return string_share(s);
+    }
+    Text out;
+    text_init(&out);
+    text_put(&out, string_data(s), thoxa_string_len(s));
+    put_padding(&out, s, width, pad);
+    return text_finish(&out);
+}
+
+/* Scalars in reverse order (a combining mark ends up before its base). */
+ThoxaString *thoxa_string_reverse(const ThoxaString *s) {
+    size_t len = thoxa_string_len(s);
+    if (len == 0) {
+        return thoxa_string_new("", 0);
+    }
+    ThoxaString *out = string_alloc(len, s->count);
+    const uint8_t *p = (const uint8_t *)s->data;
+    size_t end = len;
+    size_t used = 0;
+    while (end > 0) {
+        size_t start = end - 1;
+        while (start > 0 && is_continuation(p[start])) {
+            start--;
+        }
+        memcpy(out->data + used, s->data + start, end - start);
+        used += end - start;
+        end = start;
+    }
     return out;
 }
 

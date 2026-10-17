@@ -30,6 +30,6 @@ fn main() -> Int64 {
     let delete = "\x7f"
     info("delete: {byteList(delete)}")
     let accent = "é"
-    info("unicode: {accent.count}")
+    info("unicode: {accent.byteCount} bytes, {accent.count} scalar")
     0
 }

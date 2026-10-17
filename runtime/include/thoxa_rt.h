@@ -275,11 +275,14 @@ void thoxa_fn_release(ThoxaFn *fn);
 /* --- String (immutable UTF-8, RC heap) ---------------------------------- */
 
 /*
- * Layout: [ThoxaHeader][ThoxaString { len, data[len+1] }]
- * A ThoxaString* points at the payload (after the header).
+ * Layout: [ThoxaHeader][ThoxaString { len, count, data[len+1] }]
+ * A ThoxaString* points at the payload (after the header). `data` is always
+ * valid UTF-8 (thoxa_string_new repairs ill-formed input with U+FFFD);
+ * `len` counts bytes and `count` Unicode scalars (D195).
  */
 typedef struct ThoxaString {
     size_t len;
+    size_t count;
     char data[];
 } ThoxaString;
 
@@ -302,6 +305,8 @@ ThoxaString *thoxa_string_concat(const ThoxaString *a, const ThoxaString *b);
 bool thoxa_string_eq(const ThoxaString *a, const ThoxaString *b);
 const char *thoxa_string_cstr(const ThoxaString *s);
 size_t thoxa_string_len(const ThoxaString *s);
+/* Unicode scalars (`.count`); `thoxa_string_len` is bytes (`.byteCount`). */
+size_t thoxa_string_count(const ThoxaString *s);
 
 /* String methods (D195). All borrow their arguments; String / Array results
  * are new owned references (an unchanged input comes back as a +1 share).
@@ -333,6 +338,16 @@ ThoxaString *thoxa_string_replace_first(
     const ThoxaString *replacement
 );
 ThoxaString *thoxa_string_repeat(const ThoxaString *s, int64_t count);
+/* Positions count Unicode scalars (D195 §4); out-of-range positions clamp.
+ * index_of / last_index_of return -1 when `needle` is missing. */
+int64_t thoxa_string_index_of(const ThoxaString *s, const ThoxaString *needle);
+int64_t thoxa_string_last_index_of(const ThoxaString *s, const ThoxaString *needle);
+ThoxaString *thoxa_string_substring(const ThoxaString *s, int64_t start, int64_t end);
+ThoxaString *thoxa_string_truncate(const ThoxaString *s, int64_t max);
+/* Pad to `width` scalars with `pad` repeated (a space when `pad` is empty). */
+ThoxaString *thoxa_string_pad_left(const ThoxaString *s, int64_t width, const ThoxaString *pad);
+ThoxaString *thoxa_string_pad_right(const ThoxaString *s, int64_t width, const ThoxaString *pad);
+ThoxaString *thoxa_string_reverse(const ThoxaString *s);
 
 /* Best-effort write of C string bytes + '\n' to fd (1/2/file). Returns 0 / -1.
  * Takes const char* so Thoxa `extern … from "c"` String args marshal cleanly. */

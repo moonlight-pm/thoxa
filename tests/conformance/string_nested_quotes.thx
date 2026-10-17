@@ -1,6 +1,5 @@
 ## D176: a hole `{…}` may hold strings of its own.
 import logging, { info } from "std/logging"
-import { indexOf } from "std/str"
 
 fn greet(name!: String) -> String {
     "hi {name}"
@@ -18,7 +17,7 @@ fn main() -> Int64 {
     ## Quotes, `#`, braces and escapes inside the nested string.
     info("{greet("#fff")} {greet("{{x}}")} {greet("say \"hi\"")} {greet("tab\tend")}")
     ## The older way, escaped quotes, still works.
-    info("idx={indexOf(\"hello\", \"ll\")} new={indexOf("hello", "lo")}")
+    info("idx={\"hello\".substring(2, 4)} new={"hello".substring(3, 5)}")
     let badge = Badge(label: "new", color: "#0a0")
     info("{badge.label.toUpper()} {badge.color == "#0a0"} {"plain"}")
     ## Across lines.

@@ -8,7 +8,7 @@
 
 import highlight from "./highlight"
 import { Has, Not, May } from "std/fallible"
-import { Split, length, splitOnce, substring } from "std/str"
+import { Split, splitOnce } from "std/str"
 
 let repository = "https://github.com/moonlight-pm/thoxa/"
 
@@ -46,7 +46,7 @@ export fn headings(text!: String, chapter!: Chapter, number!: Int64) -> Array<He
             fenced = not fenced
         } else if not fenced and headingLevel(line) > 0 {
             let level = headingLevel(line)
-            let title = substring(line, level + 1, length(line)).trim()
+            let title = line.substring(level + 1, line.count).trim()
             if level == 1 {
                 found.append(Heading(level: 1, id: chapter.name, number: "{number}", title: title))
             } else {
@@ -238,7 +238,7 @@ fn list(source!: Array<String>, at!: Int64, chapter!: Chapter) -> Parsed {
         let width = markerWidth(line)
         let indent = spaces(width)
         mut body: Array<String> = []
-        body.append(substring(line, width, length(line)))
+        body.append(line.substring(width, line.count))
         index = index + 1
         while index < source.count {
             let next = source[index]
@@ -250,7 +250,7 @@ fn list(source!: Array<String>, at!: Int64, chapter!: Chapter) -> Parsed {
                     break
                 }
             } else if next.startsWith(indent) {
-                body.append(substring(next, width, length(next)))
+                body.append(next.substring(width, next.count))
                 index = index + 1
             } else {
                 break
@@ -491,8 +491,8 @@ fn slug(title!: String) -> String {
 
 ## CommonMark: one space is stripped from each end when both ends have one.
 fn codeText(text!: String) -> String {
-    if length(text) > 2 and text.startsWith(" ") and text.endsWith(" ") {
-        substring(text, 1, length(text) - 1)
+    if text.count > 2 and text.startsWith(" ") and text.endsWith(" ") {
+        text.substring(1, text.count - 1)
     } else {
         text
     }

@@ -1,11 +1,18 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { length, count, indexOf, lastIndexOf, substring, splitOnce, parseUInt, padLeft, padRight, byteAt, truncate, reverse } from "std/str"
+import { splitOnce, parseUInt } from "std/str"
 import { dirname, parent, basename, fileName, join, joinAll, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, withFileName, parts, stripTrailingSlash, ensureTrailingSlash, shortPath } from "std/path"
 import { hasEnv, getenvOr, home, tmpdir, shell, pathVar, pwd } from "std/env"
 import { branchName, branchSuffix, isRepo, repoRoot, isDetached, headLine } from "std/git"
 import { fg, fgHex, sgr0, cyan, brightWhite, parseRgba } from "std/ansi"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging from "std/logging"
+
+fn shown(index!: May<Int64>) -> String {
+    match index {
+        Has(at) => "{at}"
+        Not => "Not"
+    }
+}
 
 fn main() -> Int64 {
     logging.toStdout()
@@ -38,12 +45,11 @@ fn main() -> Int64 {
     } else {
         logging.info("contains-miss-ok")
     }
-    logging.info("idx={indexOf(\"hello\", \"ll\")}")
-    logging.info("idx-miss={indexOf(\"hello\", \"zz\")}")
-    logging.info("last={lastIndexOf(\"ababa\", \"ab\")}")
-    logging.info("cnt={count(\"ababab\", \"ab\")}")
-    logging.info("len={length(\"hi\")}")
-    logging.info(substring("hello", 1, 4))
+    logging.info("idx={shown("hello".indexOf("ll"))}")
+    logging.info("idx-miss={shown("hello".indexOf("zz"))}")
+    logging.info("last={shown("ababa".lastIndexOf("ab"))}")
+    logging.info("len={"hi".count}")
+    logging.info("hello".substring(1, 4))
     logging.info("aa-aa".replaceFirst("aa", "b"))
     logging.info("aa-aa".replace("aa", "b"))
     if "AbC".equals("aBc", ignoreCase: true) {
@@ -73,16 +79,14 @@ fn main() -> Int64 {
         Not => logging.info("uint-empty")
         Has(_) { logging.info("uint-empty-hit") }
     }
-    logging.info(padLeft("7", 3, "0"))
-    logging.info(padRight("x", 3, "."))
+    logging.info("7".padLeft(3, "0"))
+    logging.info("x".padRight(3, pad: "."))
     logging.info("hello".removePrefix("he"))
     logging.info("hello".removeSuffix("lo"))
     logging.info("line\n".trimEnd())
     logging.info("  hi\t\n".trim())
     logging.info("  hi".trimStart())
     logging.info("hi  ".trimEnd())
-    logging.info("byte={byteAt(\"ABC\", 1)}")
-    logging.info("byte-oob={byteAt(\"A\", 3)}")
     let ls = "a\nb\r\nc".lines()
     logging.info("lines={ls.count}:{ls[0]}:{ls[1]}:{ls[2]}")
     logging.info(["x", "y", "z"].join("-"))
@@ -105,9 +109,9 @@ fn main() -> Int64 {
     logging.info("hello".removePrefix("x"))
     logging.info("hello".removeSuffix("lo"))
     logging.info("hello".removeSuffix("x"))
-    logging.info(truncate("abcdef", 3))
-    logging.info(truncate("ab", 10))
-    logging.info(reverse("abc"))
+    logging.info("abcdef".truncate(3))
+    logging.info("ab".truncate(10))
+    logging.info("abc".reverse())
     if "hi".isAscii() {
         logging.info("ascii-ok")
     } else {
@@ -181,7 +185,7 @@ fn main() -> Int64 {
     }
     ## pwd may fail in weird sandboxes; treat empty as call-ok only when non-empty fails.
     let p = pwd()
-    if length(p) < 0 {
+    if p.count < 0 {
         logging.info("pwd-bad")
     } else {
         logging.info("pwd-call-ok")
@@ -242,7 +246,7 @@ fn main() -> Int64 {
     }
     ## shell() is getenv("SHELL"); value may be empty — just prove the call.
     let sh = shell()
-    if length(sh) < 0 {
+    if sh.count < 0 {
         logging.info("shell-bad")
     } else {
         logging.info("shell-call-ok")

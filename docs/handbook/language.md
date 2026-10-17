@@ -295,8 +295,15 @@ nothing); its one value is written `Void`. A `let` may bind a `Void` value
 
 ### String
 
-A `String` is an immutable sequence of UTF-8 bytes. `.count` is its length in
-bytes (`"héllo".count` is `6`). Strings support `==` and `!=` (byte
+A `String` is immutable Unicode text, stored as UTF-8. It is always valid
+UTF-8: text made from bytes (`bytes.toString()`, a C string, a file) has each
+ill-formed sequence replaced by U+FFFD, the replacement character `�`.
+
+`.count` is the number of Unicode scalars (code points) and `.byteCount` the
+number of UTF-8 bytes: `"héllo".count` is `5` and `"héllo".byteCount` is `6`.
+Positions and widths in the methods below count scalars too. A scalar is not
+always one visible character: an accent written as a combining mark, or an
+emoji with a skin tone, is two. Strings support `==` and `!=` (byte
 comparison); `<` and `>` on strings are a compile error.
 
 | Method | Result |
@@ -311,6 +318,11 @@ comparison); `<` and `>` on strings are a compile error.
 | `.repeat(count)` | the string `count` times; `""` when `count <= 0` |
 | `.split(separator)` | `Array<String>`, empty pieces kept; an empty separator gives `[s]` |
 | `.lines()` | `Array<String>`, split on `\n`, each without a trailing `\r` |
+| `.indexOf(needle)`, `.lastIndexOf(needle)` | `May<Int64>`, the position of the first / last `needle` |
+| `.substring(start, end)` | the scalars from `start` up to `end`; positions outside the string are clamped |
+| `.truncate(max)` | the first `max` scalars |
+| `.padLeft(width, pad: " ")`, `.padRight(width, pad: " ")` | padded with `pad`, repeated, to `width` scalars |
+| `.reverse()` | the scalars in reverse order |
 
 `.join(separator)` on an `Array<String>` puts the separator between the
 elements. A [refined](#refinements) String has the same methods.
@@ -331,8 +343,20 @@ word, and there are no language-specific rules (Turkish `i`). White space is
 Unicode white space: space, tab, line ends, the no-break space, the
 ideographic space, and the other `White_Space` characters. Neither case
 folding nor `==` normalizes: a precomposed `é` is not `e` followed by a
-combining accent. Counting and cutting by position are functions in
-[`std/str`](std.md#utility-modules), and they count bytes.
+combining accent.
+
+```thx
+let phrase = "naïve café"
+phrase.count                  ## 10
+phrase.byteCount              ## 12
+phrase.indexOf("café")        ## Has(6)
+phrase.substring(6, 10)       ## "café"
+"42".padLeft(5, "0")          ## "00042"
+```
+
+`.count` takes constant time. A position takes constant time in an all-ASCII
+string and otherwise is found by walking from the nearer end, so code that
+indexes a long non-ASCII string in a loop is better written over `Bytes`.
 
 ### Bytes
 
@@ -351,7 +375,7 @@ visible through `alias`.
 | `.insertAt(at, byte)` | a new `Bytes` with `byte` inserted |
 | `.removeAt(at)` | a new `Bytes` without the byte at `at` |
 | `.equals(other)` | `Bool`; `==` does the same |
-| `.toString()` | a `String` with the same bytes |
+| `.toString()` | a `String` with the same bytes; each ill-formed UTF-8 sequence becomes U+FFFD |
 
 There is no `"…" as Bytes`; use `Bytes.fromString`.
 
@@ -552,7 +576,7 @@ type Order(slug: String, qty: Int64 where >= 1)
 | Piece | Meaning |
 |-------|---------|
 | Comparisons | `>= 1`, `< 10`, `== 0`, `!= 0` |
-| Ranges | `1..64` includes both ends (`1..=64` means the same); `..64` is at most 64, `1..` at least 1. On `Int64` / `Float64` they test the value; on `String` / `Array` they test `.count` |
+| Ranges | `1..64` includes both ends (`1..=64` means the same); `..64` is at most 64, `1..` at least 1. On `Int64` / `Float64` they test the value; on `String` / `Array` they test `.count` (scalars for a `String`) |
 | Literals | `String where "a" \| "b"` (prefer a literal union) |
 | Combination | `&` (and), `\|` (or), parentheses. Outside a `where`, `\|` is still a union |
 | Messages | A string after a predicate replaces its error message; it may use `{value}`, `{expected}`, `{path}` |
@@ -1153,8 +1177,9 @@ fn half(x: Int64) -> Trial<Int64, String> {
 ```
 
 Matching on a `May` or `Trial` returned from another module does not by itself
-need the import; constructing one, annotating with the type, or calling a
-built-in that produces one (`Bytes.find`, `map[key]`) does.
+need the import; constructing one or annotating with the type does. A
+built-in that produces one (`Bytes.find`, `String.indexOf`, `map[key]`) needs
+`std/fallible` in the program; importing `Has` and `Not` to match is enough.
 
 ### Propagating failure
 

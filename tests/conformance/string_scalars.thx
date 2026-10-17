@@ -1,0 +1,75 @@
+## A String counts Unicode scalars (D195 §4): `.count` and every position are
+## scalars, `.byteCount` is bytes. Every String is valid UTF-8: text from Bytes
+## has each ill-formed sequence replaced by U+FFFD.
+
+import { Has, Not, Pass, Fail } from "std/fallible"
+import { messages } from "std/json"
+import logging, { info } from "std/logging"
+
+type Tag = String where <= 8
+
+fn bytesOf(values!: Array<Int64>) -> Bytes {
+    mut out = Bytes(values.count)
+    mut index = 0
+    for value in values {
+        out.set(index, value)
+        index = index + 1
+    }
+    out
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## Counting.
+    let word = "café"
+    info("{word.count} scalars, {word.byteCount} bytes")
+    info("{"日本語".count} {"日本語".byteCount} {"".count}")
+
+    ## Positions.
+    let phrase = "naïve café crème"
+    match phrase.indexOf("café") {
+        Has(at) => info("café at {at}")
+        Not => info("café missing")
+    }
+    match phrase.lastIndexOf("è") {
+        Has(at) => info("last è at {at}")
+        Not => info("è missing")
+    }
+    match phrase.indexOf("tea") {
+        Has(at) => info("tea at {at}")
+        Not => info("no tea")
+    }
+    info(phrase.substring(6, 10))
+    info("[{phrase.substring(-3, 5)}] [{phrase.substring(11, 99)}] [{phrase.substring(8, 2)}]")
+    info("日本語テキスト".substring(2, 5))
+    info("{"café au lait".truncate(4)}|{"thé".truncate(9)}|{"x".truncate(0)}")
+
+    ## Widths.
+    info("[{"é".padLeft(3)}] [{"42".padLeft(6, "·-")}] [{"ab".padRight(4, pad: "xyz")}]")
+    info("café".reverse())
+
+    ## Ill-formed input becomes U+FFFD, one per maximal ill-formed part.
+    let stray = bytesOf([97, 255, 98]).toString()
+    info("{stray} {stray.count} {stray.byteCount}")
+    let cut = bytesOf([226, 130, 65]).toString()
+    info("{cut} {cut.count}")
+    let overlong = bytesOf([192, 128]).toString()
+    info("{overlong} {overlong.count}")
+    let surrogate = bytesOf([237, 160, 128]).toString()
+    info("{surrogate} {surrogate.count}")
+
+    ## A refined String counts scalars too, at compile time and at run time.
+    let five: Tag = "ééééé"
+    info("{five.count} {five.byteCount}")
+    match "é".repeat(5) as Tag {
+        Pass(tag) => info("tag {tag.count}")
+        Fail(issues) => info("rejected: {messages(issues)}")
+    }
+    match "é".repeat(9) as Tag {
+        Pass(tag) => info("tag {tag.count}")
+        Fail(issues) => info("rejected: {messages(issues)}")
+    }
+    0
+}

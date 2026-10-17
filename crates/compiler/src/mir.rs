@@ -9531,26 +9531,39 @@ fn lower_field(
     }
 
     let (base_p, base_ty) = lower_expr(ctx, base)?;
+    // A refined String has String's `.count` / `.byteCount` (D195).
+    let (base_p, base_ty) = if matches!(name, "count" | "byteCount")
+        && refined_info(&ctx.types, &base_ty).is_some_and(|info| info.base == Ty::String)
+    {
+        unwrap_refined(ctx, base_p, &base_ty)?
+    } else {
+        (base_p, base_ty)
+    };
     match &base_ty {
         Ty::String => {
-            if name != "count" {
-                if STRING_METHODS.iter().any(|(method, ..)| *method == name) {
+            // `.count` is Unicode scalars, `.byteCount` bytes (D195 §4).
+            let builtin = match name {
+                "count" => "string_count",
+                "byteCount" => "string_len",
+                _ => {
+                    if STRING_METHODS.iter().any(|(method, ..)| *method == name) {
+                        return Err(Error::at(
+                            format!("`{name}` on a String is a method: write `.{name}()`"),
+                            name_span,
+                        ));
+                    }
                     return Err(Error::at(
-                        format!("`{name}` on a String is a method: write `.{name}()`"),
+                        format!("no field `{name}` on String (use .count or .byteCount)"),
                         name_span,
                     ));
                 }
-                return Err(Error::at(
-                    format!("no field `{name}` on String (use .count)"),
-                    name_span,
-                ));
-            }
+            };
             let p = ctx.fresh("scnt");
             ctx.assign(
                 p.clone(),
                 Ty::Int64,
                 RValue::Call {
-                    callee: Callee::Builtin("string_len".into()),
+                    callee: Callee::Builtin(builtin.into()),
                     args: vec![base_p],
                 },
             );
@@ -11162,6 +11175,14 @@ const STRING_METHODS: &[(&str, &str, &[(&str, StringParam)], StringResult)] = &[
     ("repeat", "string_repeat", &[("count", StringParam::Int)], StringResult::Text),
     ("split", "string_split", &[("separator", StringParam::Text)], StringResult::Lines),
     ("lines", "string_lines", &[], StringResult::Lines),
+    // Positions and widths count Unicode scalars (D195 §4).
+    ("indexOf", "string_index_of", &[("needle", StringParam::Text)], StringResult::Index),
+    ("lastIndexOf", "string_last_index_of", &[("needle", StringParam::Text)], StringResult::Index),
+    ("substring", "string_substring", &[("start", StringParam::Int), ("end", StringParam::Int)], StringResult::Text),
+    ("truncate", "string_truncate", &[("max", StringParam::Int)], StringResult::Text),
+    ("padLeft", "string_pad_left", &[("width", StringParam::Int), ("pad", StringParam::Pad)], StringResult::Text),
+    ("padRight", "string_pad_right", &[("width", StringParam::Int), ("pad", StringParam::Pad)], StringResult::Text),
+    ("reverse", "string_reverse", &[], StringResult::Text),
 ];
 
 const IGNORE_CASE: (&str, StringParam) = ("ignoreCase", StringParam::IgnoreCase);
@@ -11172,6 +11193,8 @@ enum StringParam {
     Int,
     /// `Bool = false`
     IgnoreCase,
+    /// `String = " "`
+    Pad,
 }
 
 #[derive(Clone, Copy)]
@@ -11180,6 +11203,8 @@ enum StringResult {
     Text,
     /// `Array<String>`
     Lines,
+    /// `May<Int64>` from a runtime index, `-1` when missing
+    Index,
 }
 
 fn lower_string_method(
@@ -11209,6 +11234,7 @@ fn lower_string_method(
             StringParam::Text => (Ty::String, None),
             StringParam::Int => (Ty::Int64, None),
             StringParam::IgnoreCase => (Ty::Bool, Some(crate::ast_build::bool_lit(false))),
+            StringParam::Pad => (Ty::String, Some(crate::ast_build::str_lit(" "))),
         };
         formal.push((name.to_string(), ty));
         defaults.push(default);
@@ -11220,10 +11246,15 @@ fn lower_string_method(
         StringResult::Lines => Ty::Array {
             elem: Box::new(Ty::String),
         },
+        StringResult::Index => Ty::Int64,
     };
     let mut all = vec![recv];
     all.extend(places);
-    emit_call_result(ctx, Callee::Builtin(builtin.to_string()), all, ret)
+    let (value, ty) = emit_call_result(ctx, Callee::Builtin(builtin.to_string()), all, ret)?;
+    match result {
+        StringResult::Index => index_to_may(ctx, value, span),
+        _ => Ok((value, ty)),
+    }
 }
 
 /// Bool array slots are int64 at runtime; cast when needed.
@@ -11379,73 +11410,7 @@ fn lower_bytes_method(
                     args: all,
                 },
             );
-            // Wrap runtime -1 / index into May<Int64> (requires `import … from "std/fallible"`).
-            let may_ty = fallible_mono(ctx, "May", &[Ty::Int64], span)?;
-            let out = ctx.fresh("findm");
-            init_place(ctx, &out, &may_ty)?;
-            let zero = ctx.fresh("fz");
-            ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
-            let missing = ctx.fresh("fmiss");
-            ctx.assign(
-                missing.clone(),
-                Ty::Bool,
-                RValue::Binary {
-                    op: BinaryOp::Lt,
-                    left: idx.clone(),
-                    right: zero,
-                },
-            );
-            let outer = std::mem::take(&mut ctx.stmts);
-            let not_m = match union_arm_payload(&ctx.types, &may_ty, "Not") {
-                Some(Ty::User(n)) => n,
-                _ => {
-                    return Err(Error::at("internal: May missing Not arm", span));
-                }
-            };
-            let has_m = match union_arm_payload(&ctx.types, &may_ty, "Has") {
-                Some(Ty::User(n)) => n,
-                _ => {
-                    return Err(Error::at("internal: May missing Has arm", span));
-                }
-            };
-            // then: Not arm
-            let mut then_body = Vec::new();
-            {
-                let saved = std::mem::take(&mut ctx.stmts);
-                ctx.stmts = then_body;
-                let (not_p, not_ty) = construct_product(ctx, &not_m, &[], span)?;
-                let (inj, _) = inject_into_union(ctx, not_p, &not_ty, &may_ty, span)?;
-                ctx.assign(out.clone(), may_ty.clone(), RValue::Use(inj));
-                then_body = std::mem::take(&mut ctx.stmts);
-                ctx.stmts = saved;
-            }
-            // else: Has(idx)
-            let mut else_body = Vec::new();
-            {
-                let saved = std::mem::take(&mut ctx.stmts);
-                ctx.stmts = else_body;
-                let hp = ctx.fresh("has");
-                let hty = Ty::User(has_m.clone());
-                ctx.assign(
-                    hp.clone(),
-                    hty.clone(),
-                    RValue::StructLit {
-                        type_name: has_m,
-                        fields: vec![idx],
-                    },
-                );
-                let (inj, _) = inject_into_union(ctx, hp, &hty, &may_ty, span)?;
-                ctx.assign(out.clone(), may_ty.clone(), RValue::Use(inj));
-                else_body = std::mem::take(&mut ctx.stmts);
-                ctx.stmts = saved;
-            }
-            ctx.stmts = outer;
-            ctx.stmts.push(Stmt::If {
-                cond: missing,
-                then_body,
-                else_body,
-            });
-            Ok((out, may_ty))
+            index_to_may(ctx, idx, span)
         }
         "toString" => {
             if !args.is_empty() {
@@ -11552,6 +11517,77 @@ fn clear_moved_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) {
 }
 
 /// Emit a call that either assigns a result or is evaluated for side effects (Void).
+/// A runtime index, `-1` when missing, as `May<Int64>`: `Has(index)` or `Not`
+/// (`Bytes.find`, `String.indexOf`).
+fn index_to_may(ctx: &mut LowerCtx, idx: Place, span: Span) -> Result<(Place, Ty)> {
+    let may_ty = fallible_mono(ctx, "May", &[Ty::Int64], span)?;
+    let out = ctx.fresh("findm");
+    init_place(ctx, &out, &may_ty)?;
+    let zero = ctx.fresh("fz");
+    ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
+    let missing = ctx.fresh("fmiss");
+    ctx.assign(
+        missing.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Lt,
+            left: idx.clone(),
+            right: zero,
+        },
+    );
+    let outer = std::mem::take(&mut ctx.stmts);
+    let not_m = match union_arm_payload(&ctx.types, &may_ty, "Not") {
+        Some(Ty::User(n)) => n,
+        _ => {
+            return Err(Error::at("internal: May missing Not arm", span));
+        }
+    };
+    let has_m = match union_arm_payload(&ctx.types, &may_ty, "Has") {
+        Some(Ty::User(n)) => n,
+        _ => {
+            return Err(Error::at("internal: May missing Has arm", span));
+        }
+    };
+    // then: Not arm
+    let mut then_body = Vec::new();
+    {
+        let saved = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = then_body;
+        let (not_p, not_ty) = construct_product(ctx, &not_m, &[], span)?;
+        let (inj, _) = inject_into_union(ctx, not_p, &not_ty, &may_ty, span)?;
+        ctx.assign(out.clone(), may_ty.clone(), RValue::Use(inj));
+        then_body = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = saved;
+    }
+    // else: Has(idx)
+    let mut else_body = Vec::new();
+    {
+        let saved = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = else_body;
+        let hp = ctx.fresh("has");
+        let hty = Ty::User(has_m.clone());
+        ctx.assign(
+            hp.clone(),
+            hty.clone(),
+            RValue::StructLit {
+                type_name: has_m,
+                fields: vec![idx],
+            },
+        );
+        let (inj, _) = inject_into_union(ctx, hp, &hty, &may_ty, span)?;
+        ctx.assign(out.clone(), may_ty.clone(), RValue::Use(inj));
+        else_body = std::mem::take(&mut ctx.stmts);
+        ctx.stmts = saved;
+    }
+    ctx.stmts = outer;
+    ctx.stmts.push(Stmt::If {
+        cond: missing,
+        then_body,
+        else_body,
+    });
+    Ok((out, may_ty))
+}
+
 fn emit_call_result(
     ctx: &mut LowerCtx,
     callee: Callee,
@@ -15265,7 +15301,15 @@ fn lower_field_eq(
 
 /// Resolve a `std/fallible` monomorph (`May`/`Trial`/…) if imported in this module.
 fn fallible_mono(ctx: &LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Result<Ty> {
-    let Some(base) = ctx.name_to_type.get(base_src).cloned() else {
+    // A built-in result (`Bytes.find`, `String.indexOf`) needs std/fallible
+    // in the program, not `May` imported by name.
+    let std_base = format!("std_fallible_{base_src}");
+    let base = ctx.name_to_type.get(base_src).cloned().or_else(|| {
+        ctx.types
+            .contains_key(&mono_type_name(&std_base, args))
+            .then_some(std_base)
+    });
+    let Some(base) = base else {
         return Err(Error::coded_at(
             crate::diagnostic::CODE_FALLIBLE_IMPORT,
             format!(

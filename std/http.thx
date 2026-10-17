@@ -3,7 +3,7 @@
 ## Hosts complete the body via `std/http/server.readBody`. Fail payloads are String.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { splitOnce, parseUInt, substring } from "std/str"
+import { splitOnce, parseUInt } from "std/str"
 import { JInt, JFloat, decode, encode, errorsObject, messages, Issue, issueMismatch } from "std/json"
 
 ## One header field: name and value as Strings (ASCII for this demo).
@@ -650,7 +650,7 @@ fn hex8(n!: Int64) -> String {
             break
         }
         let nibble = (n >> shift) & 15
-        out = "{out}{substring(digits, nibble, nibble + 1)}"
+        out = "{out}{digits.substring(nibble, nibble + 1)}"
         shift = shift - 4
     }
     out

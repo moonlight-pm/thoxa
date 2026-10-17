@@ -1,0 +1,18 @@
+4 scalars, 5 bytes
+3 9 0
+café at 6
+last è at 13
+no tea
+café
+[naïve] [crème] []
+語テキ
+café|thé|
+[  é] [·-·-42] [abxy]
+éfac
+a�b 3 5
+�A 2
+�� 2
+��� 3
+5 10
+tag 5
+rejected: expected length <= 8, got ééééééééé

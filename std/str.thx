@@ -1,238 +1,29 @@
-## std/str — byte-indexed String helpers.
+## std/str — text helpers that are not String methods.
 ##
-## Search, case, trim, split, replace, and join are methods on String
-## (`s.contains(x, ignoreCase: true)`, D195). What is left here counts or
-## cuts by bytes; it moves onto String with Unicode scalar indexes next.
+## Everything a String does to itself is a method (`s.contains(x)`,
+## `s.indexOf(x)`, `s.substring(1, 4)`, D195). What is left here returns a
+## std type (`splitOnce` → `Split`) or parses text (`parseUInt`).
 
 import { Has, Not, May } from "std/fallible"
 
-## Byte length of `s`.
-export fn length(s!: String) -> Int64 {
-    Bytes.fromString(s).count
-}
-
-## Substring from `start` (inclusive) to `end` (exclusive), clamped to bounds.
-export fn substring(s!: String, start!: Int64, end!: Int64) -> String {
-    let b = Bytes.fromString(s)
-    mut a = start
-    mut z = end
-    if a < 0 {
-        a = 0
-    }
-    if z < 0 {
-        z = 0
-    }
-    if a > b.count {
-        a = b.count
-    }
-    if z > b.count {
-        z = b.count
-    }
-    if a >= z {
-        ""
-    } else {
-        b.slice(a, z).toString()
-    }
-}
-
-## Count non-overlapping occurrences of `needle` (`""` → 0).
-export fn count(s!: String, needle!: String) -> Int64 {
-    let nlen = Bytes.fromString(needle).count
-    if nlen == 0 {
-        0
-    } else {
-        mut total = 0
-        mut rest = s
-        loop {
-            let i = indexOf(rest, needle)
-            if i < 0 {
-                break
-            }
-            total = total + 1
-            let r = Bytes.fromString(rest)
-            let next = i + nlen
-            if next >= r.count {
-                break
-            }
-            rest = r.slice(next, r.count).toString()
-        }
-        total
-    }
-}
-
-## Pad on the left with `pad` (defaults to space) until at least `width` bytes.
-export fn padLeft(s!: String, width!: Int64, pad!: String = " ") -> String {
-    let cur = length(s)
-    if cur >= width {
-        s
-    } else {
-        let need = width - cur
-        let unit = if pad == "" {
-            " "
-        } else {
-            pad
-        }
-        let u = length(unit)
-        mut out = ""
-        mut left = need
-        loop {
-            if left <= 0 {
-                break
-            }
-            if left >= u {
-                out = "{out}{unit}"
-                left = left - u
-            } else {
-                out = "{out}{Bytes.fromString(unit).slice(0, left).toString()}"
-                left = 0
-            }
-        }
-        "{out}{s}"
-    }
-}
-
-## Pad on the right with `pad` until at least `width` bytes.
-export fn padRight(s!: String, width!: Int64, pad!: String = " ") -> String {
-    let cur = length(s)
-    if cur >= width {
-        s
-    } else {
-        let need = width - cur
-        let unit = if pad == "" {
-            " "
-        } else {
-            pad
-        }
-        let u = length(unit)
-        mut out = s
-        mut left = need
-        loop {
-            if left <= 0 {
-                break
-            }
-            if left >= u {
-                out = "{out}{unit}"
-                left = left - u
-            } else {
-                out = "{out}{Bytes.fromString(unit).slice(0, left).toString()}"
-                left = 0
-            }
-        }
-        out
-    }
-}
-
-## First index of `needle` in `s`, or `-1` if missing (byte-oriented).
-export fn indexOf(s!: String, needle!: String) -> Int64 {
-    let a = Bytes.fromString(s)
-    let b = Bytes.fromString(needle)
-    if b.count == 0 {
-        0
-    } else {
-        if b.count > a.count {
-            0 - 1
-        } else {
-            mut found = 0 - 1
-            mut i = 0
-            let last = a.count - b.count
-            loop {
-                if i > last {
-                    break
-                }
-                mut j = 0
-                mut ok = true
-                loop {
-                    if j >= b.count {
-                        break
-                    }
-                    if a.get(i + j) != b.get(j) {
-                        ok = false
-                        break
-                    }
-                    j = j + 1
-                }
-                if ok {
-                    found = i
-                    break
-                }
-                i = i + 1
-            }
-            found
-        }
-    }
-}
-
-## Last index of `needle` in `s`, or `-1` if missing.
-export fn lastIndexOf(s!: String, needle!: String) -> Int64 {
-    let a = Bytes.fromString(s)
-    let b = Bytes.fromString(needle)
-    if b.count == 0 {
-        a.count
-    } else {
-        if b.count > a.count {
-            0 - 1
-        } else {
-            mut found = 0 - 1
-            mut i = a.count - b.count
-            loop {
-                if i < 0 {
-                    break
-                }
-                mut j = 0
-                mut ok = true
-                loop {
-                    if j >= b.count {
-                        break
-                    }
-                    if a.get(i + j) != b.get(j) {
-                        ok = false
-                        break
-                    }
-                    j = j + 1
-                }
-                if ok {
-                    found = i
-                    break
-                }
-                i = i - 1
-            }
-            found
-        }
-    }
-}
-
-## First `sep` only. Empty `sep` or no match → `Not`.
+## Text before and after the first `sep`. Empty `sep` or no match → `Not`.
 export type Split(before: String, after: String)
 
 export fn splitOnce(s!: String, sep!: String) -> May<Split> {
-    if sep == "" {
+    if sep.isEmpty() {
         Not()
     } else {
-        let i = indexOf(s, sep)
-        if i < 0 {
-            Not()
-        } else {
-            let b = Bytes.fromString(s)
-            let slen = Bytes.fromString(sep).count
-            let before = if i == 0 {
-                ""
-            } else {
-                b.slice(0, i).toString()
-            }
-            let afterStart = i + slen
-            let after = if afterStart >= b.count {
-                ""
-            } else {
-                b.slice(afterStart, b.count).toString()
-            }
-            Has(Split(before: before, after: after))
+        match s.indexOf(sep) {
+            Not => Not()
+            Has(at) => Has(Split(before: s.substring(0, at), after: s.substring(at + sep.count, s.count)))
         }
     }
 }
 
 ## Unsigned decimal digits only. Empty or any non-digit → `Not`.
 export fn parseUInt(s!: String) -> May<Int64> {
-    let n = length(s)
+    let digits = Bytes.fromString(s)
+    let n = digits.count
     if n == 0 {
         Not()
     } else {
@@ -243,7 +34,7 @@ export fn parseUInt(s!: String) -> May<Int64> {
             if i >= n {
                 break
             }
-            let c = byteAt(s, i)
+            let c = digits.get(i)
             if c < 48 {
                 ok = false
                 break
@@ -266,52 +57,5 @@ export fn parseUInt(s!: String) -> May<Int64> {
         } else {
             Not()
         }
-    }
-}
-
-## Byte at index `i`, or `-1` if out of range.
-export fn byteAt(s!: String, i!: Int64) -> Int64 {
-    let b = Bytes.fromString(s)
-    if i < 0 {
-        0 - 1
-    } else {
-        if i >= b.count {
-            0 - 1
-        } else {
-            b.get(i)
-        }
-    }
-}
-
-## First `max` bytes of `s` (`max <= 0` → `""`; `max >= length` → `s`).
-export fn truncate(s!: String, max!: Int64) -> String {
-    if max <= 0 {
-        ""
-    } else {
-        let b = Bytes.fromString(s)
-        if b.count <= max {
-            s
-        } else {
-            b.slice(0, max).toString()
-        }
-    }
-}
-
-## Reverse byte order (not Unicode-aware).
-export fn reverse(s!: String) -> String {
-    let b = Bytes.fromString(s)
-    if b.count == 0 {
-        ""
-    } else {
-        mut out = Bytes(b.count)
-        mut i = 0
-        loop {
-            if i >= b.count {
-                break
-            }
-            out.set(i, b.get(b.count - 1 - i))
-            i = i + 1
-        }
-        out.toString()
     }
 }

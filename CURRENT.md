@@ -23,7 +23,11 @@ after. Then, at Joshua's request, **D195 slice 1**: methods on String
 (`s.contains(x, ignoreCase: true)`, `toLower`, `trim`, `split`, …) with
 Unicode case folding, case mapping, and white space from generated Unicode
 17.0 tables, replacing most of `std/str`; it needed **D194**, positional
-arguments then named ones in one call (the oracle SPEC's rule).
+arguments then named ones in one call (the oracle SPEC's rule). Then **D195
+slice 2**: `.count` and positions count Unicode scalars (`.byteCount` for
+bytes; the count is cached, so `.count` stays O(1)), every String is valid
+UTF-8 (U+FFFD repair), and `indexOf` / `substring` / `truncate` / `padLeft` /
+`reverse` are methods; `std/str` keeps `splitOnce` and `parseUInt`.
 2026-10-16: **Language pass (D173–D181):** `main`'s return is
 the exit status, 0–255 (D173); unannotated methods infer their return type,
 and `x?` then `Pass(value)` infers `Trial<T, E>` (D174); structural `==` on
@@ -81,14 +85,11 @@ codegen, runtime semantics. Site and hosting work is paused (see holds); the
 2026-10-17 thoxa.dev rewrite was an explicit request, not a change of focus.
 One language slice at a time, each with conformance.
 
-**Next: String slice 2 (D195 §4)**, freeze
+**Strings (D195) shipped**, freeze
 [`docs/specs/2026-10-17-string-methods.md`](docs/specs/2026-10-17-string-methods.md):
-`.count` and positions count Unicode scalars (decided by Joshua), `.byteCount`
-counts bytes (audit every byte-meaning `.count`), `Bytes.toString()` checks
-UTF-8, and the byte-indexed `std/str` helpers (`indexOf`, `substring`,
-`truncate`, `padLeft`, `reverse`, `splitOnce`, …) become String methods.
-Joshua flagged the O(n) cost of scalar indexing to revisit; the freeze lists
-ways that keep the surface (cached count, ASCII flag, position index).
+methods on String, Unicode case and white space, scalar counts and positions,
+always-valid UTF-8. Revisit (Joshua): positions in long non-ASCII text are
+O(n); the freeze §4 lists what is left to try if programs show it.
 
 **Typed codecs (D182) shipped**, freeze
 [`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md):
@@ -114,13 +115,13 @@ itself). thoxa.dev runs `2e59a4c` (manual and feature list include D191).
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
 D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
-`Float64` rounds unchecked. Found 2026-10-17: `.count` on a refined String is an error (its methods work since D195; fold into slice 2); in `where`, `lo..hi` includes `hi` (unlike a `for`
+`Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
 range) and the message prints `lo..hi` for `lo..=hi`; indexing a `Map`
 through a field (`row.cells["name"]`) is an error (`.get` works); a method
 cannot call a sibling method by bare name; a session command inside a block
 is not recognized (use `shell.run`); `thoxa -c` with an `import` line runs
 nothing. From D191: generic types cannot declare `from` clauses; route body
-parameters take named types only.
+parameters take named types only. From D195: final sigma (`Σ` → `ς`), no `\u{…}` string escape, no normalization.
 
 Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);
 release REPL ~**8 ms**/line. **D155** resource `drop` shipped. D153 simple-RC
@@ -136,11 +137,11 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D195 slice 1 (String methods, Unicode case) and D194
-(positional then named arguments). D191 conversions (six slices) with D192 and D193, and
+**Shipped recently:** D195 (String methods, Unicode case, scalar counts and
+positions, valid UTF-8; two slices) and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 152 programs, 38 rejections, 9 site samples, 279 unit tests;
-`cargo make test-asan` 142 clean, 10 excepted (2026-10-17). Before them: the
+`cargo make test` 153 programs, 38 rejections, 9 site samples, 279 unit tests;
+`cargo make test-asan` 143 clean, 10 excepted (2026-10-17). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 session step compile cache (D105 §3.5): no per-line
 scratch `.thx`; reuse prelude MIR; libtcc base image (in memory since **D169**) + ~500-line step C.
@@ -155,7 +156,7 @@ process libc via `/proc/self/maps` so NixOS/Oath session steps work
 without `/usr/lib/libc.so`. **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
 (`http_net_err`); bounded ASan pass (88 non-fiber clean on 2026-09-03, 109 on
-2026-10-15, 142 on 2026-10-17; 10 task programs excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
+2026-10-15, 143 on 2026-10-17; 10 task programs excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
 early-return drops from the final `drop_places` set; extra-retain `jsx` /
 `multi_clause` / `sqlite`; **D154** callee-owned heap params; nested Array/Map
 lits; overwrite-drop; **D152** match/init RC.

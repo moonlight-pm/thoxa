@@ -2,10 +2,10 @@
 
 **Date:** 2026-10-17
 **Status:** target (freeze)
-**Implementation:** §1–§3 shipped (slice 1); §4 not started (slice 2)
+**Implementation:** shipped (§1–§3 slice 1, §4 slice 2)
 **Decision:** D195 (needs D194, positional-then-named calls)
-**Gates:** `string_methods`, `stdlib`, `call_mixed_args`, `fail/call_positional_after_named`, `fail/call_named_twice`
-**Gaps:** §4; final sigma (`Σ` lowercases to `σ` everywhere); no normalization; no `\u{…}` escape
+**Gates:** `string_methods`, `string_scalars`, `string_escapes`, `stdlib`, `call_mixed_args`, `fail/call_positional_after_named`, `fail/call_named_twice`
+**Gaps:** final sigma (`Σ` lowercases to `σ` everywhere); no normalization; no `\u{…}` escape; a C string that is not UTF-8 (a Latin-1 file name) is repaired, so it cannot round-trip; positions in a long non-ASCII string are O(n)
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D195 in
 [`decisions.md`](../decisions.md)
@@ -92,8 +92,8 @@ arguments first, then named (D194, the oracle SPEC's call rule).
 - **`trim` removes Unicode White_Space**: ASCII space, tab, and line ends,
   plus U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F,
   U+3000.
-- **A malformed byte passes through unchanged.** `Bytes.toString()` does not
-  check its input yet (§4), so a String can hold one.
+- **Every String is valid UTF-8** (§4), so the operations above never meet a
+  malformed byte.
 - **Not normalization.** Case-insensitive is not normalization-insensitive: a
   precomposed `é` (U+00E9) does not match `e` + U+0301.
 
@@ -113,34 +113,59 @@ Checked when generated: every code point's three mappings agreed with
 Python's `str.lower` / `upper` / `casefold` (Unicode 15.1) except four
 lowercase letters whose capitals arrived in 16.0 and 17.0.
 
-`std/str` keeps only what counts or cuts by bytes: `length`, `substring`,
-`count`, `padLeft`, `padRight`, `indexOf`, `lastIndexOf`, `splitOnce`,
-`parseUInt`, `byteAt`, `truncate`, `reverse`. The rest were removed, with
-every caller moved (D195 has no compatibility names).
+After slice 1, `std/str` kept only what counts or cuts by bytes; slice 2 (§4)
+moved that onto String too. The removed functions have no compatibility
+names; every caller moved.
 
-## §4 What a String counts (slice 2, decided, not started)
+## §4 What a String counts (slice 2)
 
 **Joshua, 2026-10-17: Unicode scalars.** `.count`, and every method that
 takes or returns a position, count Unicode scalar values (code points), as
-the oracle SPEC's `Char` is a scalar:
+the oracle SPEC's `Char` is a scalar.
 
-- `"café".count` is `4`; `.byteCount` is the length in bytes (sizes on the
-  wire, such as Content-Length).
-- `indexOf` / `lastIndexOf` (returning `May<Int64>`), `substring`,
-  `truncate`, `padLeft` / `padRight`, `reverse`, and `splitOnce` become
-  String methods in scalar positions; the byte-indexed `std/str` goes away.
-- `Bytes.toString()` checks its input, so a String is always valid UTF-8 (a
-  `Trial`, or U+FFFD for bad bytes: decide in the slice).
-- Every `.count` that means bytes today is audited and moved to `.byteCount`.
+- **`.count` is scalars, `.byteCount` bytes** (`"café"`: 4 and 5), on String
+  and on refined Strings. A `where` length test on a String counts scalars at
+  run time, as the compile-time check of a literal already did.
+- **Position methods** (positions clamp to `0..count`):
 
-**Revisit (Joshua, 2026-10-17):** "thoxa should be performant and that O(n)
-bothers me a little." Indexing by scalar is O(n) in a UTF-8 string; by byte it
-is O(1). The answer for now is that code which needs speed works in `Bytes`
-(or a byte view), and counts and positions stay scalars. Ways to revisit
-without changing the surface: cache the scalar count in the string header, mark
-all-ASCII strings so scalar index = byte index, or keep an index of positions
-on long strings. If those are not enough, reopen the unit itself (bytes with
-boundary checks, as Rust and Go do).
+  | Method | Result |
+  |--------|--------|
+  | `indexOf(needle)`, `lastIndexOf(needle)` | `May<Int64>`; an empty needle is at 0 / at `count` |
+  | `substring(start, end)` | `String`; `""` when `start >= end` |
+  | `truncate(max)` | the first `max` scalars |
+  | `padLeft(width, pad: String = " ")`, `padRight(…)` | `pad` repeated, its last copy cut, to `width` scalars; an empty `pad` is a space |
+  | `reverse()` | scalars in reverse order (a combining mark moves before its base) |
+
+- **Every String is valid UTF-8.** `thoxa_string_new`, which every String
+  goes through (`Bytes.toString()`, C strings from `extern` calls, the
+  runtime's own builders), replaces each maximal ill-formed subsequence with
+  U+FFFD, as the Unicode Standard (§3.9) and WHATWG decoders do. So
+  `Bytes.toString()` still cannot fail; code that must reject bad input checks
+  the bytes itself.
+- **`std/str` keeps two functions.** `splitOnce` returns `May<Split>`, a std
+  type, and a built-in method cannot return one (the compiler does not load
+  `std/str` on its own); `parseUInt` parses text rather than operating on it.
+  `length` (now `.count`), `count(s, needle)`, and `byteAt` were removed
+  without replacement; no program needed them (`Bytes` has bytes).
+- **A built-in `May<Int64>`** (`String.indexOf`, `Bytes.find`) needs
+  `std/fallible` in the program, not `May` imported by name.
+- **The audit** of every `.count` on a String (each lowered in every program,
+  std included) found one that meant bytes, a test of a literal's encoding;
+  wire sizes such as Content-Length were already computed on `Bytes`.
+
+**Cost, and the revisit (Joshua, 2026-10-17):** "thoxa should be performant
+and that O(n) bothers me a little." As built:
+
+- Every String stores its scalar count beside its byte length, computed once
+  while the bytes are validated (an 8-bytes-at-a-time ASCII path), so `.count`
+  is O(1) and concatenation adds the two counts.
+- In an all-ASCII String (count = bytes) a position is a byte offset: O(1).
+- Otherwise a position walks from the nearer end: O(n). Code that indexes a
+  long non-ASCII string in a loop should work in `Bytes`.
+
+Still open: an index of positions kept on long non-ASCII strings, or
+reopening the unit itself (bytes with boundary checks, as Rust and Go do), if
+real programs show the walk.
 
 ## Non-goals
 

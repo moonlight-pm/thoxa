@@ -12,7 +12,7 @@ import server from "std/http/server"
 import { Router } from "std/http/static"
 import json, { Json, decode, encode } from "std/json"
 import sqlite, { lit, ident } from "std/sqlite"
-import { indexOf, padLeft } from "std/str"
+import { splitOnce, parseUInt } from "std/str"
 import { cwdShort, shortPath } from "std/path"
 import { localHms, userName, hostname } from "std/env"
 import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
@@ -38,7 +38,7 @@ The source is in [`std/`](../../std/).
 | `std/http/static` | A static-file `Router` |
 | `std/json` | The `Json` tree, `decode` / `encode`, and `Issue` for typed reads |
 | `std/sqlite` | Embedded SQLite: `open`, `exec`, `query`, `sql"…"` |
-| `std/str` | Byte-indexed string helpers: positions, padding, `splitOnce`, `parseUInt` (search, case, trimming, and splitting are [String methods](language.md#string)) |
+| `std/str` | `splitOnce` and `parseUInt` (everything else a string does is a [String method](language.md#string)) |
 | `std/path` | Path manipulation and the working directory |
 | `std/env` | Environment variables, user, host, time of day |
 | `std/ansi` | Terminal colors |
@@ -321,7 +321,7 @@ transactions, extension loading, and tags other than `sql`.
 
 | Module | Functions |
 |--------|-----------|
-| `std/str` | Byte-indexed helpers (searching, case, trimming, splitting, and joining are [String methods](language.md#string)): `length`, `count` (occurrences), `indexOf`, `lastIndexOf` (`-1` when missing), `substring`, `byteAt`, `truncate`, `reverse`, `padLeft`, `padRight`, `splitOnce` (`May<Split>`), `parseUInt` (`May<Int64>`; above the `Int64` maximum is `Not`). Positions and widths count bytes, so they can cut a character in two |
+| `std/str` | `splitOnce(s, separator)`: `May<Split>`, the text `before` and `after` the first separator (`Not` when it is missing or empty); `parseUInt(s)`: `May<Int64>` from decimal digits (above the `Int64` maximum is `Not`). Searching, case, trimming, splitting, positions, and padding are [String methods](language.md#string) |
 | `std/path` | `dirname`, `parent`, `basename`, `fileName`, `stem`, `extension`, `hasExtension`, `withExtension`, `withFileName`, `join`, `joinAll`, `parts`, `normalize`, `isAbsolute`, `isRelative`, `stripTrailingSlash`, `ensureTrailingSlash`, `cwd`, `shortPath`, `cwdShort` |
 | `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
 | `std/ansi` | `fg`, `bg`, `fgHex`, `bgHex`, `sgr0`, the 16 named colors, `parseRgba`. Hex colors are `#RRGGBB` or `#RRGGBBAA` (alpha ignored); an invalid one gives black |

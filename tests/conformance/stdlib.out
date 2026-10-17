@@ -6,9 +6,8 @@ ababab
 contains-ok
 contains-miss-ok
 idx=2
-idx-miss=-1
+idx-miss=Not
 last=2
-cnt=3
 len=2
 ell
 b-aa
@@ -28,8 +27,6 @@ line
 hi
 hi
 hi
-byte=66
-byte-oob=-1
 lines=3:a:b:c
 x-y-z
 sw-ic-ok
