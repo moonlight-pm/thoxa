@@ -94,8 +94,7 @@ encoding where a `Json` is expected (and `match` takes its expected type), §5
 typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
 Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 (route clauses import only what they write; generated code names `std/http`
-itself). thoxa.dev still runs `32ea2c2`: its manual and feature list predate
-D191; redeploy (with Joshua's go) to publish them.
+itself). thoxa.dev runs `2e59a4c` (manual and feature list include D191).
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void
@@ -149,7 +148,7 @@ lits; overwrite-drop; **D152** match/init RC.
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`); redefining a
 session `fn` is an error, not a replacement; no CI (R8, deferred). Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14) and the copied site templates (finding 38). thoxa.dev runs `32ea2c2` (D189, D190; redeployed 2026-10-17); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
+14) and the copied site templates (finding 38). thoxa.dev runs `2e59a4c` (D189–D193; redeployed 2026-10-17); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
 
 ### Proceed order
 
