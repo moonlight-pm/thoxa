@@ -1,41 +1,44 @@
-# Thoxa handbook
+# Thoxa manual
 
-User-facing documentation for **native Thoxa as it works today**.
+The manual for Thoxa as it is implemented today. The site renders these files,
+in this order, as one page at [thoxa.dev/manual](https://thoxa.dev/manual).
 
-This is the product manual: shipped behavior only. Engineering progress and
-roadmap live under [`../capabilities.md`](../capabilities.md),
-[`../roadmap.md`](../roadmap.md), and root
-[`../../CURRENT.md`](../../CURRENT.md).
+| Chapter | Contents |
+|---------|----------|
+| [Introduction](introduction.md) | What Thoxa is, status, building from source, a first program |
+| [Language](language.md) | Syntax, types, expressions, functions, modules, concurrency, typed data, C interop |
+| [Standard library](std.md) | The `std/…` modules |
+| [Session](session.md) | The interactive shell and session scripts |
+| [Command line](cli.md) | `thoxa` commands, diagnostics, exit status, environment |
+| [Editor](editor.md) | Zed support and `thoxa lsp` |
 
-> **Pre-alpha.** Surface grows when conformance tests land. Oracle SPEC under
-> `apocrypha/old/ThoxaPython` is a reference, not a promise.
+Engineering status and plans are elsewhere:
+[`../capabilities.md`](../capabilities.md) (what exists, with gaps),
+[`../roadmap.md`](../roadmap.md), and [`../../CURRENT.md`](../../CURRENT.md).
 
-## Contents
+## Rules for this manual
 
-| Page | Topic |
-|------|--------|
-| [CLI](cli.md) | Commands, build products, common workflows |
-| [Language](language.md) | Types, control flow, errors, modules (shipped subset) |
-| [Session](session.md) | Bare `thoxa` REPL (emacs editor + Tab), scripts, command sugar, rc |
-| [Standard library](std.md) | `std/…` modules |
-| [Editor](editor.md) | Zed + `thoxa lsp` (honest limits) |
-
-## Quickstart
-
-```bash
-cargo make test
-cargo make run tests/conformance/hello.thx
-cargo make run examples/http          # Crema-lite HTTP example (port 9091; experiment)
-cargo make run workloads/landing     # thoxa.dev (port 8088)
-cargo make run workloads/sola        # sola.computer teaser (port 8089)
-cargo make run workloads/oath        # oath.wicket.cloud (port 8090)
-cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt  # TTY editor
-cargo run -p thoxa --                 # session REPL
-cargo run -p thoxa -- run path.thx    # program or session script
-```
-
-## Rules of this handbook
-
-- Document **what works**.
-- Label **partial** surfaces with limits.
-- Do not present deferred features (Perceus, effects, full SPEC) as available.
+- Document shipped behaviour only. A feature belongs here when a conformance
+  test exercises it. A partial feature is described with its limits, or left
+  out.
+- Never describe plans as facts. "Will" does not appear here.
+- Write for people using the language: plain, exact, upfront about limits, no
+  promotional language. State each rule once, in the section where a reader
+  would look for it, and follow it with a short example.
+- Decision ids (`D182`) belong in [`../capabilities.md`](../capabilities.md)
+  and [`../decisions.md`](../decisions.md), not in this text.
+- Every complete program in the manual must compile and run as shown.
+- The site's renderer supports a Markdown subset; stay inside it:
+  - one `#` heading per file (the chapter title, unnumbered); `##` and `###`
+    for sections, `####` sparingly;
+  - paragraphs, `- ` and `1. ` lists (continuation lines indented to the item's
+    text), fenced code marked `thx`, `bash`, or `text`;
+  - pipe tables with a header row and a `|---|` separator; `\|` for a literal
+    pipe inside a cell;
+  - inline `code`, **bold**, *italic* (asterisks), and `[text](target)` links;
+  - `> ` blockquotes;
+  - no raw HTML, images, footnotes, reference links, setext headings, or
+    horizontal rules.
+- Link another chapter as `std.md#section-slug`, the same chapter as `#slug`,
+  and anything outside the manual by a relative path (`../decisions.md`); the
+  site turns those into links to the repository.

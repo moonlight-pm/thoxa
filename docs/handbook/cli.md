@@ -1,36 +1,37 @@
-# CLI
+# Command line
 
-The product binary is **`thoxa`** (`cargo run -p thoxa -- …`, or via
-`cargo make`).
+The product binary is `thoxa`. In a checkout, run it as
+`target/rust/debug/thoxa`, `cargo run -p thoxa -- …`, or through the
+`cargo make` tasks below.
 
-## Invocations
+## Commands
 
-| Command | Behavior |
-|---------|----------|
-| `thoxa` (no args) | Session **REPL** (TTY: emacs editor + Tab complete + rc) |
-| `thoxa -l` / `thoxa --login` | Same as bare REPL (login-shell argv) |
-| `thoxa -c '<chunk>'` | One-shot session chunk (POSIX `sh -c`) |
-| `thoxa repl` | Same as bare REPL |
-| `thoxa path.thx` | Program if `fn main` exists; else **session script** |
-| `thoxa dir/` | Runs `dir/main.thx` if present |
-| `thoxa run path [args…]` | Compile and run; trailing args go to `fn main(arguments: Array<String>)` (D121). Reuses `target/thoxa/bin/*` when inputs are unchanged. |
-| `thoxa build path -o out` | Compile to a binary (same reuse; prints `up to date` when skipped) |
-| `thoxa check path` | Typecheck only (no C emit); multi-diagnostic when possible; **pretty** codes/caret/help |
-| `thoxa check path --json` | Same check; machine-readable report (stable fields + compiler identity) |
-| `thoxa emit-c path` | Emit C under `target/thoxa/c/` |
-| `thoxa lsp` | Language server (stdio) |
-| `thoxa version` | Build identity: package + git hash (+`.dirty`) + binary path |
+| Command | Behaviour |
+|---------|-----------|
+| `thoxa` | Interactive shell (see [Session](session.md)) |
+| `thoxa -l`, `thoxa --login`, `thoxa repl` | The same shell |
+| `thoxa -c '<chunk>'` | Runs one session chunk, like `sh -c` |
+| `thoxa path.thx` | Runs a program if the file has `fn main`, otherwise a session script |
+| `thoxa dir/` | Runs `dir/main.thx` |
+| `thoxa run path [args…]` | Compiles and runs; the remaining arguments go to `main(arguments: Array<String>)` |
+| `thoxa build path -o out` | Compiles to an executable |
+| `thoxa check path` | Typechecks only; reports as many errors as it can |
+| `thoxa check path --json` | The same, as one JSON object |
+| `thoxa emit-c path` | Writes the generated C under `target/thoxa/c/` |
+| `thoxa lsp` | Language server on standard input and output |
+| `thoxa version` | Build identity: package version, git hash (`.dirty` when the tree had changes), binary path |
 
-Also accepted: `thoxa --version`, `thoxa -V`. Flag order for check is flexible:
-`thoxa check --json path` works too.
+`thoxa --version` and `thoxa -V` are the same as `thoxa version`. The order of
+`check`'s arguments is free: `thoxa check --json path` works.
 
-Use `thoxa version` to confirm which binary is on `PATH` (what Zed launches after
-`cargo make zed`). After rebuilding, **restart the language server** so LSP
-picks up the new process.
+`run` and `build` reuse the binary in `target/thoxa/bin/` when the package,
+`std/`, the runtime, and the compiler are unchanged; `build` then prints
+`up to date`. Set `THOXA_FORCE_BUILD=1` to rebuild anyway. Every C compile
+passes `-fwrapv`, so integer overflow wraps as the language requires.
 
-### `thoxa check` diagnostics
+## Diagnostics
 
-Default output is human-oriented (D124):
+`thoxa check` prints diagnostics for people by default:
 
 ```text
 error[THX001]: undefined name `x`
@@ -41,71 +42,83 @@ error[THX001]: undefined name `x`
   = help: declare the name, import it, or fix the spelling
 ```
 
-Stable codes when recognized include `THX001` (undefined / unknown name),
-`THX002` (type mismatch), `THX003` (unknown type), `THX004` (Fallible import),
-`THX005` (top-level statement with `fn main`), `THX010` (unused import —
-**warning**), and a few others. Not every message is catalogued yet; free-form
-errors still print without a code.
+| Code | Meaning |
+|------|---------|
+| `THX001` | undefined or unknown name |
+| `THX002` | type mismatch |
+| `THX003` | unknown type |
+| `THX004` | `May` / `Trial` used without importing `std/fallible` |
+| `THX005` | a top-level statement in a program with `fn main` |
+| `THX008` | syntax error |
+| `THX010` | unused import (a warning) |
 
-**Exit status:** `0` when there are no **errors** (warnings alone still succeed).
-`--json` sets `"ok": true` the same way.
+Not every message has a code yet; uncoded errors print without one.
 
-`--json` prints a single JSON object: `ok`, `compiler.version` / `compiler.path`,
-and `diagnostics[]` with `code`, `severity`, `message`, `path`, 1-based
-`line`/`column`, byte spans, `help`, `expected`/`actual`, and `related`.
-
-Prefer **`cargo make`** helpers from a workspace checkout:
-
-```bash
-cargo make test              # conformance suite (LeakSanitizer; D151), then fail/ rejections + unit tests
-cargo make run path.thx
-cargo make run examples/http # Crema-lite HTTP example (port 9091; experiment)
-# kilo editor (real TTY; Ctrl-Q quit, 3× if dirty)
-cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt
-cargo run -p thoxa -- run examples/kilo   # empty buffer
-cargo make shell             # bare thoxa REPL (release binary)
-cargo make shell --login     # clean login-like env
-cargo make emit-c path.thx
-cargo make runtime           # libthoxa_rt.a + compile_commands.json
-cargo make zed               # sync Zed extras + LSP binary
-```
+The exit status is 0 when there are no errors; warnings alone still succeed.
+`--json` prints a single object with `ok` (the same rule), `compiler.version`,
+`compiler.path`, and `diagnostics[]`. Each diagnostic has `code`, `severity`,
+`message`, `path`, 1-based `line` and `column`, byte spans, `help`,
+`expected` / `actual`, and `related`.
 
 ## Exit status
 
-`thoxa run` exits with the program's status: what `main` returns, `0` to
-`255` (outside that range it panics, **D173**), or 128 + signal for a program
-a signal ended (134 after a panic).
+`thoxa run` exits with the program's status: what `main` returned (0 to 255;
+outside that range the program panics), 134 after a panic, or 128 + signal
+when a signal ended the program.
 
 ## Signals
 
-A compiled program keeps the default signal actions. One exception: as PID 1
-(a container's entrypoint, where the kernel would drop them) SIGTERM and
-SIGINT end the program at once with status 128 + signal, so `podman stop`
-does not wait for SIGKILL (**D170**). A request in flight is cut; there is no
-drain.
+A compiled program keeps the default signal actions, with one exception: as
+PID 1 (a container's entrypoint, where the kernel ignores signals that have no
+handler) SIGTERM and SIGINT end the program at once with status 128 + signal,
+so `podman stop` does not wait for SIGKILL. A request in flight is cut off;
+there is no graceful drain.
+
+## Tasks in a checkout
+
+`cargo make` is a Cargo alias for the repository's task runner. Prefer it to
+ad-hoc scripts.
+
+```bash
+cargo make test              # conformance suite under LeakSanitizer, expected failures, unit tests
+cargo make test-asan         # conformance under AddressSanitizer (programs without tasks)
+cargo make run path.thx      # compile and run
+cargo make run examples/http # the example HTTP server (port 9091)
+cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt   # the kilo editor (needs a terminal; Ctrl-Q quits, three times if unsaved)
+cargo make shell             # the interactive shell (release build)
+cargo make shell --login     # the same with a clean, login-like environment
+cargo make emit-c path.thx   # generated C only
+cargo make runtime           # libthoxa_rt.a and compile_commands.json
+cargo make zed               # install the Zed extension and the language server
+cargo make clean             # remove target/c and target/thoxa (--all also removes target/rust)
+```
 
 ## Build products
 
-| Path | Role |
-|------|------|
-| `target/rust/` | Cargo outputs |
-| `target/c/` | Runtime objects + `libthoxa_rt.a` |
+| Path | Contents |
+|------|----------|
+| `target/rust/` | Cargo outputs (the compiler and task runner) |
+| `target/c/` | Runtime objects and `libthoxa_rt.a` |
 | `target/thoxa/c/` | Generated C |
-| `target/thoxa/bin/` | Linked program binaries + `*.stamp` (freshness fingerprint) |
-| `target/thoxa/bin-leak/` | LSan-linked programs (`THOXA_SANITIZE=leak`) |
-| `target/thoxa/bin-address/` | ASan-linked programs (`THOXA_SANITIZE=address`) |
+| `target/thoxa/bin/` | Linked programs and `*.stamp` freshness fingerprints |
+| `target/thoxa/bin-leak/` | Programs linked with LeakSanitizer (`THOXA_SANITIZE=leak`) |
+| `target/thoxa/bin-address/` | Programs linked with AddressSanitizer (`THOXA_SANITIZE=address`) |
 
-## Environment (selected)
+## Environment
 
-| Variable | Role |
-|----------|------|
-| `THOXA_STD` | Override product `std/` root |
-| `THOXA_ROOT` | Workspace/product root for std resolution |
-| `THOXA_SHELL_RC` | Override session rc path |
-| `THOXA_NORC` | Skip session rc when set |
-| `THOXA_HISTFILE` | Session history path; empty disables history |
-| `THOXA_STATUS` | Set by REPL host for prompt helpers |
-| `THOXA_FORCE_BUILD` | Set to `1` to ignore the program-binary stamp and rebuild |
-| `THOXA_SANITIZE` | Batch `cc` only: `leak` (LeakSanitizer) or `address` (ASan). Product default is unset. Session/libtcc ignores this. `cargo make test` always uses `leak`. `cargo make test-asan` uses `address` on non-fiber conformance (`asan-skip` lists `-->` programs). |
+| Variable | Effect |
+|----------|--------|
+| `THOXA_STD` | The `std/` directory to use |
+| `THOXA_ROOT` | The root to find `std/` under |
+| `THOXA_FORCE_BUILD` | `1` ignores the binary stamp and rebuilds |
+| `THOXA_SANITIZE` | `leak` or `address` links programs with that sanitizer (batch `cc` builds only; the interactive shell ignores it). Unset by default |
+| `THOXA_SHELL_RC` | The shell's rc file |
+| `THOXA_NORC` | Set to skip the rc file |
+| `THOXA_HISTFILE` | The shell's history file; empty disables history |
+| `THOXA_STATUS` | Set by the shell while `prompt()` runs |
+| `THOXA_LOG_LEVEL`, `THOXA_LOG_SINK` | Initial logger level and sink (see [std/logging](std.md#stdlogging)) |
 
-Details for session: [session.md](session.md).
+`cargo make test` always sets `THOXA_SANITIZE=leak`. `cargo make test-asan`
+uses `address` on the programs that start no tasks (the ones listed in
+`tests/conformance/asan-skip` use tasks, whose stack switching AddressSanitizer
+does not follow).

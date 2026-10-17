@@ -1,76 +1,78 @@
-# Editor (Zed + `thoxa lsp`)
+# Editor
 
-Native editor support targets **Zed** with a thin Tree-sitter grammar and a
-real **`thoxa lsp`** that reuses the compiler frontend (diagnostics should not
-drift from `thoxa check`).
+Editor support targets [Zed](https://zed.dev): a Tree-sitter grammar for
+syntax colour, and `thoxa lsp`, a language server that runs the compiler's own
+front end, so its diagnostics match `thoxa check`.
 
-## Setup (workspace)
+## Setup
+
+From a checkout:
 
 ```bash
-cargo make zed            # grammar + language files + thoxa for LSP
-cargo make zed --grammar  # grammar WASM only
-cargo make zed --all      # also rebuild extension WASM shim
+cargo make zed            # grammar, language files, and thoxa for the language server
+cargo make zed --grammar  # the grammar WASM only
+cargo make zed --all      # also rebuild the extension's WASM shim
 ```
 
-See [`../../extras/README.md`](../../extras/README.md). After sync, restart the
-language server (grammar color changes may need a full quit/restart).
+See [`extras/README.md`](../../extras/README.md). After syncing, restart the
+language server; colour changes in the grammar may need Zed to be quit and
+started again.
 
-## Which `thoxa` is Zed using?
+## Which thoxa Zed runs
 
-Zed launches **`thoxa` on PATH** (after `cargo make zed`, usually
-`~/.local/bin/thoxa` → `target/rust/debug/thoxa`).
+Zed starts the `thoxa` on `PATH`. After `cargo make zed` that is usually
+`~/.local/bin/thoxa`, a link to `target/rust/debug/thoxa`.
 
-1. Rebuild: `cargo build -p thoxa` or `cargo make zed`
-2. In Zed: **`editor: restart language server`**
-3. Confirm identity:
-   - Shell: `thoxa version` → `thoxa 0.1.0+<hash>[.dirty]  path=…`
-   - Zed: **`zed: open language server logs`** — look for  
-     `thoxa-lsp: thoxa 0.1.0+<hash>  path=…`  
-     (stderr on start + `window/logMessage` after initialize; **no toast**)
+1. Rebuild: `cargo build -p thoxa` or `cargo make zed`.
+2. In Zed, run `editor: restart language server`.
+3. Compare identities. In a shell, `thoxa version` prints
+   `thoxa 0.1.0+<hash>[.dirty]  path=…`. In Zed,
+   `zed: open language server logs` shows
+   `thoxa-lsp: thoxa 0.1.0+<hash>  path=…` (written to standard
+   error at start and sent as a log message after initialize; there is no
+   notification).
 
-If the hash in logs does not match `git rev-parse --short=12 HEAD` (or
-`thoxa version` after a rebuild), the running LSP process is still old —
-restart again.
+If the hash in the log differs from `git rev-parse --short=12 HEAD` (or from
+`thoxa version` after a rebuild), the running server is an old process;
+restart it again.
 
-## What works
+## Features
 
 | Feature | Notes |
-|---------|--------|
-| Diagnostics | Same engine as `thoxa check` (**D124**). **Multi-diag** + **structured codes** (`THX…`), help text (folded into the LSP message), and `relatedInformation` when labels exist. **Unused imports** are **warnings** (`THX010`, severity Warning). Parse recovery still typechecks the rest of a function after a bad token. Programs with `fn main` reject bare top-level statements with a clear span. Mid-expression recovery is still limited. |
-| Syntax color | Tree-sitter Thoxa grammar. `<` reads as the compiler reads it: `Array<Int64>` is type arguments, `<div` / `<>` (no space) is a tag, `a < b` compares. JSX island paints tags, attributes (boolean and `{...spread}` too) and `<>` fragments. A string's `{holes}` are coloured as code, strings inside them included (**D176**); `\n` / `\xHH` are escapes. `sql"…"` injects Zed's SQL grammar into the body; `{holes}` stay Thoxa. `-->` is a keyword (nowait, **D148**), as are `where` (**D149**) and type-body `GET`/`POST`/… (**D150**). With `semantic_tokens = "combined"`, the LSP colours calls, tag names, and attributes; prose between tags keeps the grammar's colour |
-| Hover | Signature + contiguous `##` docs. Unannotated free **`fn`** show **typecheck return type** (**D129** inference, e.g. `Trial<Void, String>`, `Int64`); unannotated methods show their inferred type too (**D174**); `extern` defaults to **`-> Void`** unless annotated; **`main` → `Int64`**; fallback same if lower failed. **`let` / `mut`** show `let a: Type` when nav has a type hint (annotation or inferred init). **Call arguments** show the formal (`backlog: Int64` on `listen(16)`) when the callee is resolvable (local or cross-module). Builtin types include **`Node`** / `Element` / `Text` / `Fragment` / `Attr` (**D147**); `.html()` itself has no dedicated hover (MIR builtin, same as `String.count`) |
-| Go to definition | Incl. some cross-module (`./`, `~/`) |
-| Go-to-def / hover on methods | Linked when receiver has a type hint: annotation, ctor, method/fn return (generic head + type-param subst), copy-let, match payload, if/else, block, **match**, **module-level let** inits, or **`?` on Trial/May** (success type) |
-| Cross-module jump | `./`, `~/`, and **`std/…`** named roots; open buffer preferred over disk. Namespace free fns (`net.createSocket`) and **typed methods on values from those calls after `?`** (`server.reuseAddr` → `Socket.reuseAddr` in `Net.thx`) |
-| References | Local file + open buffers + **package-tree `.thx` on disk** (under nearest `main.thx` / `.git` root; same-dir fallback) that selective-import the export |
-| Rename | Local + open buffers + **package-tree disk** selective-import renames when renaming an export |
-| Document symbols | Outline |
-| Workspace symbols | `workspace/symbol` — search open buffers + package-tree `.thx` (same root walk as multi-file refs) |
-| Open buffers | Overlay wins over disk for package check |
+|---------|-------|
+| Diagnostics | The same engine as `thoxa check`: several diagnostics per file, `THX…` codes, help text (folded into the message), and related locations. Unused imports are warnings (`THX010`). After a syntax error the parser recovers at the next statement and keeps checking the rest of the function; recovery inside an expression is limited. A program with `fn main` reports bare top-level statements at their span |
+| Syntax colour | Tree-sitter. `<` reads as the compiler reads it: `Array<Int64>` is type arguments, `<div` / `<>` (no space) starts a tag, `a < b` compares. Tags, attributes (boolean and `{...spread}`), and fragments are coloured. A string's `{holes}` are coloured as code, including strings inside them; `\n` and `\xHH` are escapes. The body of `sql"…"` uses Zed's SQL grammar, with holes still Thoxa. `-->`, `where`, and the route verbs in type bodies are keywords. With `semantic_tokens = "combined"` the server also colours calls, tag names, and attributes |
+| Hover | The signature and the contiguous `##` comments above it. Functions and methods without `->` show their inferred return type; `extern` shows `-> Void` unless annotated; `main` shows `-> Int64`. `let` / `mut` show their type when it is known (`let a: Response`). A call argument shows its parameter (`backlog: Int64` on `listen(16)`) when the callee can be resolved. The built-in `Node`, `Element`, `Text`, `Fragment`, and `Attr` have hovers; built-in members such as `.html()` and `String.count` do not |
+| Go to definition | Local, `./`, `~/`, and `std/…` modules; an open buffer is preferred to the file on disk. Namespace functions (`net.createSocket`) and methods on a value whose type is known: from an annotation, a constructor, a function or method return (including generic types), a copy, a match payload, `if` / `match` / block results, a module `let`, or `?` on a `Trial` / `May` |
+| References | The file, open buffers, and `.thx` files in the package tree that import the name |
+| Rename | The same scope as references |
+| Document symbols | The outline of the file |
+| Workspace symbols | A substring search over open buffers and the package tree, up to 100 results |
+| Open buffers | An unsaved buffer is what the server checks, not the file on disk |
 
-Library buffers without `main` typecheck as libraries (no false “requires main”).
-Nested files in a directory package resolve `~/…` from the nearest `main.thx`
-(same as `thoxa run examples/http`), not from the open file’s directory.
+A file without `main` is checked as a library (no "requires main" error).
+In a directory package, `~/…` resolves from the nearest `main.thx`, as
+`thoxa run` does, not from the open file's directory. The package tree is the
+directory of the nearest `main.thx` or `.git`, searched to a fixed depth.
 
-## Limits (partial)
+## Limits
 
-- Typed member navigation still misses some **untyped** expressions (no recoverable type).
-- Call-arg hover needs a resolvable callee (local or import path on disk / open buffer).
-- Package-tree refs/rename and **workspace symbols** use the same root walk
-  (nearest `main.thx` / `.git`; capped — not an unbounded home walk / multi-root).
-- Parse recovery is **statement-oriented** (top-level items + mid-block); not full mid-expression recovery.
-- MIR lower still uses its own env (shared-resolver migration is deferred architecture, not day-to-day polish).
-- **No Python** in the product editor path.
-- `build` / `run` still stop at errors (soft-recovered AST is for **check / LSP** multi-diag only).
+- Member navigation fails on expressions whose type the server cannot recover.
+- Call-argument hover needs a callee it can resolve.
+- Parse recovery works per statement, not inside expressions.
+- `thoxa build` and `thoxa run` stop at the first error; only `check` and the
+  language server recover and report more.
+- The server re-checks the whole package on every change (no debounce).
 
-## C runtime in editors (clangd)
+## C runtime headers (clangd)
 
-Runtime headers live under `runtime/include/`. Generate
+The runtime's headers are in `runtime/include/`. Generate
 `compile_commands.json` with:
 
 ```bash
 cargo make runtime
 ```
 
-Then reload the window / restart clangd. Fallback: committed `.clangd` with
-`-Iruntime/include`.
+then restart clangd. On NixOS this also records the host compiler's system
+include directories, which clangd cannot find by itself. A committed `.clangd`
+with `-Iruntime/include` is the fallback.

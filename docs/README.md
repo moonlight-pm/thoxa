@@ -39,7 +39,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`architecture.md`](architecture.md) | Pipeline, crates, runtime, build products | **As-built** map |
 | [`roadmap.md`](roadmap.md) | Phases: done, remaining, unplanned | **Horizon** |
 | [`decisions.md`](decisions.md) | Locked D-ids | Decisions |
-| [`handbook/`](handbook/) | User manual (CLI, language, session, std, editor) | **Product** |
+| [`handbook/`](handbook/) | The manual (introduction, language, std, session, cli, editor); rendered at thoxa.dev/manual | **Product** |
 | [`specs/`](specs/) | Design freezes — **target** architecture | **Target** |
 | [`ideas/`](ideas/) | Parked design thoughts (not active until promoted) | Idea |
 | [`conventions.md`](conventions.md) | How we write docs and commit meta | Process |

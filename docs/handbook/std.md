@@ -1,281 +1,339 @@
-# Standard library (`std/`)
+# Standard library
 
-Import product modules with the **`std/…`** named root:
+The standard library is a set of Thoxa modules under `std/`, imported by path:
 
 ```thx
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import logging, { info, warn } from "std/logging"   ## ns + selective (D127)
+import logging, { info, warn } from "std/logging"
 import { readFile } from "std/io"
 import net, { Socket } from "std/net"
 import http from "std/http"
 import server from "std/http/server"
 import { Router } from "std/http/static"
-import { defaultPrompt } from "std/prompt"
-import { startsWith, dropPrefix } from "std/str"
-import { cwdShort, shortPath } from "std/path"
-import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
-import { localHms, userName, hostname } from "std/env"
-import { branch } from "std/git"
 import json, { Json, decode, encode } from "std/json"
 import sqlite, { lit, ident } from "std/sqlite"
+import { startsWith, dropPrefix } from "std/str"
+import { cwdShort, shortPath } from "std/path"
+import { localHms, userName, hostname } from "std/env"
+import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
+import { branch } from "std/git"
+import { defaultPrompt } from "std/prompt"
 ```
 
-## Modules (current)
+The library is small and grows when a real program needs something. Failures
+are reported as `Trial<…, String>` with a short message
+(`"open: No such file or directory"`), except where noted. File and socket code is Linux-specific.
+The source is in [`std/`](../../std/).
 
-| Module | Role |
-|--------|------|
-| `std/shell` | Session `type Shell` + process builtins; auto-injected for session scripts (pulls fallible + logging) |
-| `std/fallible` | Exported `May<T> = Has<T!> \| Not?`, `Trial<P,F> = Pass<P!> \| Fail<F?>` — **import required** for programs (D123; not ambient) |
-| `std/logging` | Default process logger (**D125**): `trace`/`debug`/`info`/`warn`/`error`/`emit`; configure via namespace; short emit via selective import. No ambient `println` |
-| `std/io` | Files (**D126**): `readFile` / `writeFile` / `appendFile`, `File`, OpenMode |
-| `std/net` | TCP sockets (**D126**): `Socket`, `receiveRequest`, `sendAll` |
-| `std/http` | HTTP/1.1 protocol (**D126**/**D136**/**D137**/**D142**/**D145**/**D146**): parse/write, query/form/cookie helpers, `htmlResponse` / `htmlResponseStatus` / `htmlFragment`, `cached` / ETag, `Cookie` / `withCookie`, `streamed()` / `peerFd` |
-| `std/http/server` | HTTP/1.1 host loop (**D136**/**D139**/**D146**): `serve` / `serveOne` / `readBody`; SSE `peerOf` / `beginEventStream` / `sendEvent` |
-| `std/http/static` | Static-file `Router` (**D126**/**D139**); depends on io + http |
-| `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")` — session-style prompt |
-| `std/str` | match/search (incl. ignore-case), slice/`byteAt`/`truncate`/`reverse`, replace, `split`/`splitOnce`/`join`/`lines`, `parseUInt` (above Int64 max → `Not`), pad/trim, `removePrefix`/`removeSuffix`, `isAscii` |
-| `std/path` | `dirname`/`parent`/`basename`/`fileName`/`join`/`joinAll`/`parts`/`stripTrailingSlash`/`ensureTrailingSlash`/`isAbsolute`/`isRelative`/`normalize`/`extension`/`hasExtension`/`stem`/`withExtension`/`withFileName`/`cwd`/`shortPath`/`cwdShort` |
-| `std/ansi` | `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` |
-| `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
-| `std/git` | `branchName` / `branchSuffix` / `branch` / `branchHere` / `isRepo` / `repoRoot` / `isDetached` / `headLine` via `.git/HEAD` |
-| `std/json` | Dynamic `Json` tree (**D141**): `decode` / `encode`. **`Issue`** + `message` for **`Type.read`** (**D149**) |
-| `std/sqlite` | Embedded SQLite (**D143**/**D144**): `open` / `exec` / `query`; `sql"…"` |
+## Modules
 
-### Logging (default logger)
+| Module | Contents |
+|--------|----------|
+| `std/fallible` | `May<T>` (`Has` / `Not`) and `Trial<P, F>` (`Pass` / `Fail`) |
+| `std/logging` | The process logger: `trace`, `debug`, `info`, `warn`, `error`, `emit`; level, sink, format |
+| `std/io` | Files: `readFile`, `writeFile`, `appendFile`, `File`, open modes |
+| `std/net` | TCP sockets: `Socket`, `createSocket`, `receiveRequest`, `sendAll` |
+| `std/http` | HTTP/1.1 messages: parse and write, query / form / cookie helpers, HTML responses, ETags, cookies |
+| `std/http/server` | An HTTP/1.1 server loop: `serve`, `serveOne`, `readBody`, server-sent events |
+| `std/http/static` | A static-file `Router` |
+| `std/json` | The `Json` tree, `decode` / `encode`, and `Issue` for typed reads |
+| `std/sqlite` | Embedded SQLite: `open`, `exec`, `query`, `sql"…"` |
+| `std/str` | String search, slicing, splitting, trimming, case, parsing |
+| `std/path` | Path manipulation and the working directory |
+| `std/env` | Environment variables, user, host, time of day |
+| `std/ansi` | Terminal colors |
+| `std/git` | Branch and repository facts read from `.git/HEAD` |
+| `std/prompt` | `defaultPrompt` for the interactive shell |
+| `std/shell` | The interactive shell's `Shell` type and process builtins, loaded automatically for session scripts (see [Session](session.md)) |
 
-**Preferred import style** (apps): namespace for configure + selective level names
-for short call sites (see `examples/http`):
+## std/fallible
 
 ```thx
-import logging, { info, warn, error, debug } from "std/logging"
+type May<T> = Has<T!> | Not?
+type Trial<P, F> = Pass<P!> | Fail<F?>
+```
+
+These are ordinary unions, not built-ins, and a program must import the names
+it uses. See [Errors and panics](language.md#errors-and-panics).
+
+## std/logging
+
+The logger is process-wide. Import the namespace to configure it and the level
+functions by name to call them:
+
+```thx
+import logging, { info, error, debug } from "std/logging"
+import { Pass, Fail } from "std/fallible"
 
 fn main() -> Int64 {
-    info("listen")                   ## stderr, full format, min level Info
+    info("listen")                   ## stderr, full format, level Info
     logging.setLevel(logging.levelDebug)
     debug("detail")
     match logging.toFile("/tmp/app.log") {
         Pass(_) { }
-        Fail(e) { error("log file: {e}") }
+        Fail(problem) { error("log file: {problem}") }
     }
-    ## Golden / data on stdout:
-    logging.toStdout()
+    logging.toStdout()               ## plain lines on stdout
     logging.setFormat(logging.formatPlain)
     info("payload")
     0
 }
 ```
 
-Namespace-only or selective-only still work. Combined
-`import logging, { info, … } from "std/logging"` is the usual app face (**D127**).
+| Setting | Default | Change with |
+|---------|---------|-------------|
+| Minimum level | Info | `setLevel(levelTrace \| levelDebug \| levelInfo \| levelWarn \| levelError)` |
+| Sink | standard error | `toStderr()`, `toStdout()`, `toFile(path)`, `setSink(target)` |
+| Format | full (`HH:MM:SS LEVEL message`) | `setFormat(formatFull \| formatPlain)` |
 
-| Knob | Default |
-|------|---------|
-| Min level | Info (`levelInfo`) |
-| Sink | stderr (`toStderr`) |
-| Format | full (`HH:MM:SS LEVEL message`) |
+`THOXA_LOG_LEVEL` and `THOXA_LOG_SINK` set the level and sink; they are read
+once, on first use. There is one logger per process; named loggers do not
+exist.
 
-Env (applied once on first use): `THOXA_LOG_LEVEL`, `THOXA_LOG_SINK`. Multiple
-named loggers (`initLog`) are **not** shipped yet.
+## std/io
 
-### Io (`std/io`)
+| Name | Description |
+|------|-------------|
+| `readFile(path)` / `writeFile(path, data)` / `appendFile(path, data)` | Whole-file operations; the file is closed on success and on failure |
+| `openFile(path, flags = oRdonly, mode = oMode644)` | Opens a `File` |
+| `File` | `readAll`, `write`, `seek`, `position`, `close`, `isOpen`. The last reference closes it (`drop`) |
+| `OpenMode` | `Rdonly \| Wronly \| Rdwr`, with `openModeBits` |
+| Flags | `oRdonly`, `oWronly`, `oRdwr`, `oCreat`, `oTrunc`, `oAppend`, `oMode644` (combine with `+`) |
+| Seek origins | `seekSet`, `seekCur`, `seekEnd` |
 
-Linux file I/O. Fail payloads are **String** (`"op: strerror"` or a short
-message).
+## std/net
 
-| Surface | Notes |
-|---------|--------|
-| `readFile` / `writeFile` / `appendFile` | Whole-file helpers; close on both success and failure after open |
-| `openFile(path, flags = oRdonly, mode = oMode644)` | Returns `File` |
-| `File` | `readAll`, `write`, `seek`, `position`, `close`, `isOpen`. Last RC runs `drop()` which closes (**D155**) |
-| `OpenMode` | `Rdonly \| Wronly \| Rdwr` + `openModeBits` |
-| Flag lets | `oRdonly` / `oWronly` / `oRdwr` / `oCreat` / `oTrunc` / `oAppend` / `oMode644` |
-| Seek | `seekSet` / `seekCur` / `seekEnd` |
+IPv4 TCP sockets.
 
-### Net (`std/net`)
-
-IPv4 TCP (`AF_INET` stream). Fail payloads are String.
-
-| Surface | Notes |
-|---------|--------|
+| Name | Description |
+|------|-------------|
 | `createSocket()` | `Trial<Socket, String>` |
-| `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close`, `isOpen`. `close` writes `fd = -1` (second close is a no-op, same as `File`). Last RC runs `drop()` which closes (**D155**). Only `std/net` builds one (**D168**): get it from `createSocket`, `accept`, or `server.peerOf` |
-| `receive(deadline: 0)` | One `recv` chunk (empty on close, error, or deadline) |
-| `receiveRequest(deadline: 0, buffered: Bytes(0))` | Until `\r\n\r\n` or 64 KiB cap / peer close, starting from `buffered` (bytes already read; no recv if they hold a whole header block). The result can run past the headers. A deadline with nothing read is an empty `Pass` (quiet close); mid-headers it is `Fail("request timed out")` |
-| `send` / `sendAll(data, deadline: 0)` | One write vs drain partial writes |
-| `nowMs()` | Monotonic milliseconds. A deadline is `nowMs() + budget`; 0 means none (**D165**) |
-| `ownByTask(socket)` | The running task owns the socket: if the task panics, the runtime closes it and sets its `fd` to -1, so every copy reads closed (**D166** / **D168**). Ownership ends at `close` / `drop` or when the task returns. No-op outside a task |
-| `taskOwnedSockets()` | Open sockets owned by tasks, across all tasks |
+| `Socket` | `reuseAddr`, `bind`, `listen`, `accept`, `connect`, `localPort`, `close`, `isOpen`. `close` sets `fd` to -1; a second `close` does nothing. The last reference closes it. Only `std/net` constructs a `Socket`: get one from `createSocket`, `accept`, or `server.peerOf` |
+| `receive(deadline: 0)` | One `recv` chunk; empty on close, error, or deadline |
+| `receiveRequest(deadline: 0, buffered: Bytes(0))` | Reads until `\r\n\r\n`, the 64 KiB cap, or the peer closing, starting from `buffered` (bytes already read; it does not read at all if they already hold a header block). The result can run past the headers. A deadline with nothing read is an empty `Pass` (a quiet close); a deadline in the middle of the headers is `Fail("request timed out")` |
+| `send(data)` / `sendAll(data, deadline: 0)` | One write / write until everything is sent |
+| `nowMs()` | Monotonic milliseconds. A deadline is `nowMs() + budget`; 0 means none |
+| `ownByTask(socket)` | The running task owns the socket: if the task panics, the runtime closes it and sets `fd` to -1 in every copy. Ownership ends at `close` / `drop` or when the task returns. Does nothing outside a task |
+| `taskOwnedSockets()` | The number of open sockets owned by tasks |
 
-### Http (`std/http`)
+Socket operations park the calling task instead of blocking the process; see
+[Concurrency](language.md#concurrency).
 
-Pure protocol (no syscalls). `parseRequest` fills `query` (no leading `?`) and
-leaves `body` empty; hosts complete the body via `std/http/server.readBody`.
+## std/http
 
-| Surface | Notes |
-|---------|--------|
-| `Header` / `Request` / `Response` | Constructor-param products. `Request.query` is the `?…` tail |
-| `parseRequest` | `Trial<Request, String>`; requires `\r\n\r\n`; path is query-stripped. Method, request target, and header names must be visible ASCII (no space, control byte, or raw non-ASCII) |
-| `writeResponse` | Status line + headers + body → `Bytes`. CR / LF in header names and values are dropped, so a value cannot start another header |
+HTTP/1.1 messages, with no system calls of its own. `parseRequest` fills
+`query` (without the leading `?`) and leaves `body` empty; the server fills the
+body with `readBody`.
+
+| Name | Description |
+|------|-------------|
+| `Header`, `Request`, `Response` | Plain products. `Request.query` is the text after `?` |
+| `parseRequest(bytes)` | `Trial<Request, String>`; needs a complete header block. The path excludes the query. The method, target, and header names must be visible ASCII |
+| `writeResponse(response)` | Status line, headers, and body as `Bytes`. CR and LF are removed from header names and values, so a value cannot start another header |
 | Lookup | `headerGet`, `contentLength`, `queryMap`, `queryParam`, `formField`, `cookie` |
-| Stream | `Request.peerFd` (host fd, else 0; the key `server.peerOf` looks up); `streamed()` (status 0 — handler owns the socket) |
-| Maps | `parseQuery` / `parseForm` / `parseCookies` → `Map<String, String>`; `urlDecode` |
-| Forms | `formPairs(text)` → `Array<FormPair>` (repeated names kept), `formValue` (last) / `formValues` (all), `formInt` / `formFloat` (JSON numbers, `Array<Issue>` on failure). `T.readForm` is built on these (**D182**) |
-| Cookies | `Cookie` (`.header()`), `SameSite`, `withCookie`, `clearCookie` (**D142**) |
-| Response | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `htmlResponseStatus`, `htmlFragment`, `notModified`, `cached` / `etagOf` / `withCache`, `response` / `responseHead` |
-| Connection | `wantsKeepAlive`, `finalize` (HEAD drops body; rewrites `Connection`) |
+| Maps | `parseQuery`, `parseForm`, `parseCookies` (each to `Map<String, String>`), `urlDecode` |
+| Forms | `formPairs(text)` to `Array<FormPair>` (repeated names kept); `formValue` (the last value) / `formValues` (all); `formInt` / `formFloat` (JSON number syntax, `Array<Issue>` on failure). `T.readForm` is built on these |
+| Cookies | `Cookie` (`.header()`), `SameSite`, `withCookie`, `clearCookie` |
+| Responses | `ok`, `okHead`, `notFound`, `forbidden`, `badRequest`, `methodNotAllowed`, `seeOther`, `withHeader`, `htmlResponse`, `htmlResponseStatus`, `htmlFragment`, `notModified`, `cached` / `etagOf` / `withCache`, `response` / `responseHead` |
+| Streaming | `Request.peerFd` (the connection's descriptor, the key `server.peerOf` uses; 0 outside a server); `streamed()` (status 0: the handler wrote the response itself) |
+| Connection | `wantsKeepAlive`, `finalize` (drops the body for `HEAD`; sets `Connection`) |
 
-`htmlResponse` takes a builtin `Node` (**D147**) and sends `<!DOCTYPE html>` plus
-`root.html()` as `text/html; charset=utf-8` (status 200). `htmlResponseStatus`
-is the same at a chosen status (HTML 404 / 400). `htmlFragment` is the snippet
-without the doctype. `cached(req, res, cacheControl)` attaches a
-strong content-hash `ETag` and `Cache-Control`; a matching `If-None-Match`
-returns **304** (no `Content-Length`). Cache *policy* (`private, no-cache` vs `max-age`) stays in
-the caller. `cookie` looks up one name on the `Cookie` header (empty value
-is `Not`).
+`htmlResponse(root)` takes a `Node` and sends `<!DOCTYPE html>` plus
+`root.html()` as `text/html; charset=utf-8` with status 200.
+`htmlResponseStatus` does the same with another status (an HTML 404 or 400).
+`htmlFragment` sends the markup without a doctype.
 
-`Cookie(name, value, …)` builds a `Set-Cookie` value. Defaults: `path="/"`,
-`sameSite="Lax"`, session (`maxAge` is `Not`), not HttpOnly/Secure. Empty
-`path` / `domain` omit those attributes. `withCookie` appends the header;
-`clearCookie(name)` expires it (`Max-Age=0`). Values are not escaped. App
-policy (which name, how long, HttpOnly) stays in the caller.
+`cached(request, response, cacheControl)` adds a strong `ETag` (a hash of the
+body) and `Cache-Control`. When the request's `If-None-Match` matches, it
+returns 304 with no body. The cache policy (`private, no-cache`,
+`max-age=…`) is the caller's choice.
 
-### HttpServer (`std/http/server`)
+`cookie(request, name)` looks up one cookie; an empty value is `Not`.
+`Cookie(name, value, …)` builds a `Set-Cookie` value. Defaults: `path` `"/"`,
+`sameSite` `"Lax"`, a session cookie (`maxAge` is `Not`), neither `httpOnly`
+nor `secure`. An empty `path` or `domain` omits that attribute. Values are not
+escaped. `withCookie` appends the header; `clearCookie(name)` expires a cookie
+(`Max-Age=0`).
 
-Host loop over `std/net`. Completes `Request.body` (64 KiB cap). A client gets
-10 s from accept to send its first request's headers, 30 s idle between
-kept-alive requests, and 30 s each to send a body and to take a response;
-`serve` closes new connections at accept while 1024 are open (**D165**).
-`serveOne` owns its peer, so if `handle` panics the runtime ends that
-connection's task and closes the peer; the server keeps serving (**D166**).
-Requests a client sends without waiting for replies (pipelining) are answered
-in order (**D171**).
+## std/http/server
 
-| Surface | Notes |
-|---------|--------|
-| `serve(port, handle)` | Listen forever; `--> serveOne` per accept (**D132** handle, **D148** nowait). Logs `http://127.0.0.1:{port}/`. App `handle` is often `Routes().route` (**D150**) |
-| `serveOne(peer, handle)` | One keep-alive connection. Owns `peer` (`ownByTask`), so a panic in `handle` closes it. Bytes read past one request start the next |
-| `peerOf(request)` | `May<Socket>`: the connection `request` arrived on, while it is open (**D168**). An SSE handler writes its stream there and may keep the Socket; it reads closed once the client leaves |
-| `bindListen(port)` | `createSocket` + reuse + bind + listen |
-| `readBody(peer, raw, req, deadline: 0)` / `readRequest(peer, deadline: 0)` | `Content-Length` entity; no `Content-Length` is an empty body (**D171**); empty method/path = quiet close. `Transfer-Encoding`, two `Content-Length`s, or a non-numeric one are refused (400). `readRequest` drops bytes past its request; `serveOne` keeps them |
-| `writeResponse(peer, method, res, keepAlive, deadline: 0)` | `finalize` + `sendAll` |
-| `beginEventStream` / `sendEvent` | SSE prelude + `data:` lines (**D146**) on the Socket from `peerOf`. `streamed()` skips the normal write |
+A server loop on top of `std/net`.
 
-HEAD is answered by GET handlers; `finalize` still sees the real method.
+```thx
+import server from "std/http/server"
+import { Request, Response, ok, notFound } from "std/http"
+import { Pass, Fail } from "std/fallible"
+import { warn } from "std/logging"
 
-### HttpStatic (`std/http/static`)
+type Routes {
+    GET "/" {
+        "hello"
+    }
+}
 
-| Surface | Notes |
-|---------|--------|
-| `Router(root: String)` | `handle(req) -> Response` — always a Response (never Trial) |
-| Methods | **GET** and **HEAD** only; else **405** + `Allow` |
-| Paths | Absolute (`/…`); `.` / `..` → 404; directories serve `index.html` |
-| Types | `.html` `text/html`; `.css` `text/css`; `.js` `text/javascript`; `.txt` `text/plain`; `.jpg`/`.jpeg` `image/jpeg`; `.png` `.gif` `.svg` `.webp` `.ico`; `.woff`/`.woff2`; else octet-stream |
-| Errors | Permission denied → **403** (logged); missing → **404**; other Io → log + 404 |
+fn handle(request: Request) -> Response {
+    Routes().route(request)
+}
 
-Runnable demos: `cargo make run examples/http` (Crema-lite **experiment** —
-`server.serve(routes.port, routes.handle)` on product `http` / `http/server` / `http/static`;
-app/domain is not product std; see `examples/http/README.md`).
-`cargo make run workloads/landing` — thoxa.dev (port **8088**).
-`cargo make run workloads/sola` — sola.computer teaser (port **8089**).
-`cargo make run workloads/oath` — oath.wicket.cloud (port **8090**).
+fn main() -> Int64 {
+    match server.serve(8080, handle) {
+        Pass => 0
+        Fail(problem) {
+            warn("server: {problem}")
+            1
+        }
+    }
+}
+```
 
-Hex colors: primary `#RRGGBB`, also `#RRGGBBAA` (alpha ignored for SGR). Invalid
-hex → black SGR.
+| Name | Description |
+|------|-------------|
+| `serve(port, handle)` | Listens forever and starts `serveOne` as a task for each connection. Logs `http://127.0.0.1:{port}/` |
+| `serveOne(peer, handle)` | Serves one keep-alive connection. It owns `peer` (`ownByTask`), so a panic in `handle` closes that connection only. Bytes read past one request start the next |
+| `peerOf(request)` | `May<Socket>`: the connection the request arrived on, while it is open. A server-sent-events handler writes its stream there and may keep the socket; it reads closed once the client leaves |
+| `bindListen(port)` | `createSocket`, `reuseAddr`, `bind`, `listen` |
+| `readBody(peer, raw, request, deadline: 0)` / `readRequest(peer, deadline: 0)` | Reads a `Content-Length` body; no `Content-Length` means an empty body. An empty method or path is a quiet close. `Transfer-Encoding`, two `Content-Length` headers, or a non-numeric one get a 400. `readRequest` drops bytes past its request; `serveOne` keeps them |
+| `writeResponse(peer, method, response, keepAlive, deadline: 0)` | `finalize`, then `sendAll` |
+| `beginEventStream(peer)` / `sendEvent(peer, data)` | Server-sent events: the stream header, then `data:` lines, on the socket from `peerOf`. Return `streamed()` from the handler |
 
-### Json (`std/json`)
+Limits and timeouts: a request body may be at most 64 KiB. A client has 10 s
+from accept to send its first request's headers, 30 s of idle time between
+kept-alive requests, and 30 s each to send a body and to receive a response.
+While 1024 connections are open, `serve` closes new ones at accept. Requests a
+client sends without waiting for replies (pipelining) are answered in order.
+`HEAD` is answered by the `GET` handler; `finalize` drops the body.
 
-Dynamic tree. Callers map to domain types by hand (**D141**). Fail payloads
-are String.
+## std/http/static
+
+| Name | Description |
+|------|-------------|
+| `Router(root: String)` | `.handle(request)` serves a file under `root` and always returns a `Response` |
+| Methods | `GET` and `HEAD`; anything else is 405 with `Allow` |
+| Paths | Absolute (`/…`). Paths containing `.` or `..` segments are 404. A directory serves its `index.html` |
+| Types | `.html` `text/html`, `.css` `text/css`, `.js` `text/javascript`, `.txt` `text/plain`, `.jpg` / `.jpeg` `image/jpeg`, `.png`, `.gif`, `.svg`, `.webp`, `.ico`, `.woff` / `.woff2`; anything else `application/octet-stream` |
+| Errors | permission denied: 403 (logged); missing: 404; any other error: logged, 404 |
+
+Example servers in the repository: `cargo make run examples/http` (an
+order-taking demo using `http`, `http/server`, `http/static`, `json`, and
+`sqlite`; see `examples/http/README.md`), and the deployed sites
+`workloads/landing` (thoxa.dev, port 8088), `workloads/sola` (sola.computer,
+port 8089), and `workloads/oath` (oath.wicket.cloud, port 8090).
+
+## std/json
+
+A dynamic JSON tree. For typed data, use `T.read` / `t.encode()` (see
+[Typed data](language.md#typed-data)); this module is the layer underneath.
 
 ```thx
 import { decode, encode } from "std/json"
 import { Pass, Fail } from "std/fallible"
-import { info, error } from "std/logging"
+import logging, { info, error } from "std/logging"
 
-match decode("[1,true,\"mocha\"]") {
-    Fail(e) => error(e)
-    Pass(v) => info(encode(v))
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match decode("[1,true,\"mocha\"]") {
+        Fail(problem) => error(problem)
+        Pass(value) => info(encode(value))
+    }
+    0
 }
 ```
 
-Object literals in Thoxa strings need `{{` / `}}` (`"{{\"qty\":2}}"` is
-`{"qty":2}`). Match `JObj` / `JInt` / … to walk the tree; `qty: 2` stays
-`JInt`.
-
-| Surface | Notes |
-|---------|--------|
+| Name | Description |
+|------|-------------|
 | `Json` | `JNull \| JBool \| JInt \| JFloat \| JStr \| JArr \| JObj` |
-| `decode(s)` | `Trial<Json, String>`. One value; trailing junk fails. Arrays/objects nest at most 128 deep (`nested too deep`) |
-| `encode(v)` | Compact JSON. Object keys in insertion order |
-| Numbers | No `.` / exponent → `JInt` (Int64 range or fail). Else `JFloat`. Non-finite fails |
-| Strings | Escapes `\" \\ \/ \b \f \n \r \t \uXXXX` including surrogate pairs |
-| `Issue` | `Missing \| Mismatch \| Rejected` — shape / refinement problems from **`Type.read`**, which reports every one as `Array<Issue>` (**D149**, **D182**). `message(e)`, `messages(issues)`, `issueObject(e)`, `errorObject(e)`, `errorsObject(issues)` |
-| Typed read | Compiler-attached `T.read(s)` / `T.from(x)` / `t.encode()` — language, not a derive. See [language.md](language.md#refinements-and-typeread) |
-| Not shipped | Pretty-print, comments, trailing commas, `NaN` / `Infinity` tokens, `jsonResponse` |
+| `decode(text)` | `Trial<Json, String>`. One value; trailing text fails. Arrays and objects nest at most 128 deep |
+| `encode(value)` | Compact JSON; object keys in insertion order |
+| Numbers | Without `.` or an exponent: `JInt` (must fit `Int64`). Otherwise `JFloat`. Non-finite numbers fail |
+| Strings | Escapes `\" \\ \/ \b \f \n \r \t \uXXXX`, including surrogate pairs |
+| `kind(value)`, `isNull(value)` | The member name / whether it is `JNull` |
+| `Issue` | `Missing(path) \| Mismatch(path, expected, got) \| Rejected(path, reason)`: what typed reads report |
+| Issue helpers | `message(issue)`, `messages(issues)` (joined with `; `), `issuePath`, `issueMissing` / `issueMismatch` / `issueRejected` (constructors returning `Issue`) |
+| Error replies | `issueObject(issue)`, `errorObject(issue)` (`{"ok": false, …}`), `errorsObject(issues)` (`{"ok": false, "errors": […]}`) |
 
-### Sqlite (`std/sqlite`)
+A JSON object written in a Thoxa string needs `{{` / `}}` (`"{{\"qty\":2}}"`
+is `{"qty":2}`); a `Json` literal avoids that (see
+[Json literals](language.md#json-literals)). Not supported: pretty printing,
+comments, trailing commas, `NaN` / `Infinity`.
 
-Embedded SQLite (**D143**). The amalgamation is compiled into `libthoxa_rt`.
-Write **`sql"…"`** (**D144**) — a tagged interpolator (no space after `sql`).
-Holes are embedded as SQL: strings are quoted, numbers are digits, `Sql`
-fragments (`ident`, `null`, `lit`) are spliced. `exec` / `query` take `Sql`.
+## std/sqlite
+
+SQLite, compiled into the runtime. Statements are `Sql` values written with
+the `sql"…"` tagged string: each `{hole}` is embedded as SQL, so strings are
+quoted, numbers are digits, and `Sql` fragments are spliced. A plain `"…"`
+string with holes is ordinary concatenation and is not accepted by `exec` or
+`query`.
 
 ```thx
-import sqlite from "std/sqlite"
-import { ident } from "std/sqlite"
+import sqlite, { ident } from "std/sqlite"
+import { Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
 
-let db = sqlite.open(":memory:")?
-db.exec(sql"
-    CREATE TABLE orders (
-        slug TEXT,
-        qty  INTEGER
-    )
-")?
-db.exec(sql"
-    INSERT INTO orders (slug, qty)
-    VALUES ({slug}, {qty})
-")?
-let rows = db.query(sql"
-    SELECT slug, qty
-    FROM {ident(table)?}
-")?
+fn run() -> Trial<Int64, String> {
+    let db = sqlite.open(":memory:")?
+    db.exec(sql"
+        CREATE TABLE orders (
+            slug TEXT,
+            qty  INTEGER
+        )
+    ")?
+    let slug = "mocha"
+    let qty = 2
+    db.exec(sql"
+        INSERT INTO orders (slug, qty)
+        VALUES ({slug}, {qty})
+    ")?
+    let table = "orders"
+    let rows = db.query(sql"
+        SELECT slug, qty
+        FROM {ident(table)?}
+    ")?
+    Pass(rows.count)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match run() {
+        Pass(count) => info("{count} row")
+        Fail(problem) => info(problem)
+    }
+    0
+}
 ```
 
-| Surface | Notes |
-|---------|--------|
-| `sql"…"` | Tagged interpolator → `Sql`. Import `std/sqlite` so `Sql` exists |
-| `open(path)` | `Trial<Db, String>`. `":memory:"` is allowed |
-| `Db` | `exec` / `query` / `close` / `isOpen`. Last RC runs `drop()` which closes (**D155**) |
-| `Db.exec` / `Db.query` | Take `Sql`. `query` → `Array<Row>` |
-| `Row` | `cells: Map<String, SqlValue>` |
+| Name | Description |
+|------|-------------|
+| `sql"…"` | A tagged string producing `Sql`. No space after `sql`. Import `std/sqlite` so `Sql` exists. Like any string it may span lines; newlines are kept |
+| `open(path)` | `Trial<Db, String>`; `":memory:"` is allowed |
+| `Db` | `exec(sql)` (`Trial<Void, String>`), `query(sql)` (`Trial<Array<Row>, String>`), `lastInsertRowid()`, `changes()`, `close()`, `isOpen()`. The last reference closes it |
+| `Row` | `cells: Map<String, SqlValue>`, keyed by column name |
 | `SqlValue` | `SqlNull \| SqlInt \| SqlFloat \| SqlText` |
-| `ident(name)` | Quoted `"name"` as `Sql` (`Trial`; empty fails) |
-| `null` / `lit` | `NULL` token / explicit literal fragment |
-| Numbers | `{qty}` → digits |
+| `ident(name)` | A quoted identifier (`"name"`) as `Sql`; `Trial`, empty names fail |
+| `null`, `lit(value)` | The `NULL` token; an explicit literal fragment |
 
-A plain `"… {slug} …"` string is still concatenation. `sql"…"` is the
-safe form. `sql "…"` (space) is not a tag. Both `"…"` and `sql"…"` may
-span lines; newlines are kept (no dedent).
+Not supported: blobs, prepared statements with `?` parameters, explicit
+transactions, extension loading, and tags other than `sql`.
 
-Not shipped: blobs, prepared `?` binds, explicit transactions, extension
-loading, general `tag"…"` interpolators.
+## Utility modules
+
+| Module | Functions |
+|--------|-----------|
+| `std/str` | `startsWith`, `endsWith`, `contains`, `indexOf`, `lastIndexOf`, `count`, and ignore-case variants; `substring`, `byteAt`, `truncate`, `reverse`, `repeat`; `replaceFirst`, `replaceAll`; `split`, `splitOnce`, `join`, `lines`; `trim`, `trimStart`, `trimEnd`, `trimNewline`, `padLeft`, `padRight`; `dropPrefix`, `dropSuffix`, `removePrefix`, `removeSuffix`; `toLowerAscii`, `toUpperAscii`, `equalsIgnoreCaseAscii`; `isEmpty`, `isAscii`, `length`; `parseUInt` (`May<Int64>`; above the `Int64` maximum is `Not`) |
+| `std/path` | `dirname`, `parent`, `basename`, `fileName`, `stem`, `extension`, `hasExtension`, `withExtension`, `withFileName`, `join`, `joinAll`, `parts`, `normalize`, `isAbsolute`, `isRelative`, `stripTrailingSlash`, `ensureTrailingSlash`, `cwd`, `shortPath`, `cwdShort` |
+| `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
+| `std/ansi` | `fg`, `bg`, `fgHex`, `bgHex`, `sgr0`, the 16 named colors, `parseRgba`. Hex colors are `#RRGGBB` or `#RRGGBBAA` (alpha ignored); an invalid one gives black |
+| `std/git` | `branchName`, `branchSuffix`, `branch`, `branchHere`, `isRepo`, `repoRoot`, `isDetached`, `headLine` |
+| `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")`, the shell's default prompt |
+
+Positions and lengths in `std/str` count bytes, not characters.
 
 ## Resolution order
 
-1. `THOXA_STD` if set  
-2. `{THOXA_ROOT}/std`  
-3. Workspace `std/`  
-4. `std/` next to the `thoxa` binary  
+The compiler looks for `std/` in this order:
 
-## Limits
-
-This is a **thin** library grown from real samples. Fallibility types live in
-`std/fallible` and are imported like other std modules. Named **`ffi`** root is
-deferred. I/O and HTTP are **Linux product track** (x86_64 sockaddr pack, Linux
-open flags). Windows is out of scope. Fail payloads are String (not an
-`Error` protocol).
-
-New helpers land when real samples need them — not via a free-floating
-“expand the stdlib” backlog.
-
-Source tree: [`../../std/`](../../std/).
+1. `THOXA_STD`, if set
+2. `{THOXA_ROOT}/std`
+3. `std/` in the workspace
+4. `std/` next to the `thoxa` binary

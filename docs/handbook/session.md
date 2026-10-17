@@ -1,139 +1,162 @@
-# Session (REPL and scripts)
+# Session
 
-**Thoxa is the session language.** Interactive use and no-`main` scripts share
-one model: a live **`Shell`** value, optional command sugar, compile-to-C, and
-execution against session state.
-
-Product face: **bare `thoxa`** (not `extras/shell`).
+`thoxa` with no arguments is an interactive shell, and a `.thx` file without a
+`main` is a session script. Both run Thoxa: there is no second command
+language. Familiar command lines (`ls -al`, `echo hi | wc -c`) are sugar for
+calls on a `Shell` value, and everything else is ordinary Thoxa compiled to C.
 
 ## Modes
 
 | Invocation | Mode |
 |------------|------|
-| `thoxa` / `thoxa repl` / `thoxa -l` | Long-lived REPL (login shells use `-l` / argv0 `-thoxa`) |
-| `thoxa -c '<chunk>'` | One-shot session (what `ssh host cmd` runs) |
-| `thoxa file.thx` without `fn main` | Session script (one-shot) |
-| `thoxa file.thx` with `fn main` | Ordinary **program** (top-level statements illegal) |
-| `thoxa dir/` | `main.thx` program entry |
-
-Session scripts use top-level statements as the body of `Shell.step`. Programs
-must keep the file top level to declarations only — put work inside `main`.
+| `thoxa`, `thoxa repl`, `thoxa -l` / `--login` | Interactive shell (a login shell passes `-l`, or argv0 `-thoxa`) |
+| `thoxa -c '<chunk>'` | Runs one chunk and exits (what `ssh host cmd` runs) |
+| `thoxa file.thx`, no `fn main` | Session script, run once |
+| `thoxa file.thx`, with `fn main` | A program; top-level statements are a compile error |
+| `thoxa dir/` | Runs `dir/main.thx` as a program |
 
 ## Shell
 
-Session code runs as the body of `Shell.step` (conceptually). The session value
-carries at least:
+Session code runs as the body of a method `Shell.step` on a live `Shell`
+value. The value carries at least:
 
 ```text
 type Shell(status: Int64) { … methods … }
 ```
 
-Builtins and process helpers are ordinary methods (echo, pwd, cd, run, runIo,
-pipeline, …). Default definition lives in product **`std/shell.thx`** and is
-auto-injected when a session script has no user `type Shell`.
-**`status`** is the last outcome (0 = success). Process exit of a one-shot
-script is final `status`. There is no required bash-style `$?` core.
+`status` is the outcome of the last command (0 is success); the exit status of
+a session script is its final `status`. There is no `$?`. The built-in
+commands and process helpers are ordinary methods (`echo`, `pwd`, `cd`, `run`,
+`runIo`, `pipeline`, …) defined in [`std/shell.thx`](../../std/shell.thx),
+which is loaded automatically when a session script defines no `type Shell` of
+its own.
 
-Shell uses `May` / `Has` / `Not` from **`std/fallible`**. When the product Shell
-is injected, Fallible is loaded into the package so those names resolve for the
-session entry (you do not need a separate Fallible import solely for Shell).
-Ordinary programs with `fn main` still **must** import Fallible themselves when
-they use May/Trial.
+`Shell` uses `May`, `Has`, and `Not`, so loading it also loads `std/fallible`;
+session code can use those names without importing them. Programs with
+`fn main` must import `std/fallible` themselves.
 
 ## Command sugar
 
-Familiar command lines desugar to Thoxa on `Shell`:
+A line that reads as a command line becomes a call on the shell:
 
-| You type | Toward |
-|----------|--------|
+| You type | Becomes |
+|----------|---------|
 | `echo a b` | `shell = shell.echo(["a", "b"])` |
 | `cd /tmp` | `shell = shell.cd(…)` |
 | `uname -a` | `shell = shell.run(["uname", "-a"])` |
-| `ls -al` / `--all` | Flags desugar as command words (not Thoxa subtraction) |
-| `echo hi \| cat` | `shell = shell.pipeline(…)` (OS pipes; last-stage status) |
-| `cmd > f` / `>>` / `<` | `shell = shell.runIo(…)` (PATH command; whitespace around ops) |
-| `1 - 2` / `1 \| 2` / `1 > 0` | Stays pure Thoxa arithmetic / BitOr / comparison |
+| `ls -al`, `ls --all` | flags are command words, not subtraction |
+| `echo hi \| cat` | `shell = shell.pipeline(…)` (OS pipes; the status is the last stage's) |
+| `cmd > file`, `cmd >> file`, `cmd < file` | `shell = shell.runIo(…)` |
+| `1 - 2`, `1 \| 2`, `1 > 0` | stay Thoxa: subtraction, bitwise or, comparison |
 
-Quotes follow the same word-split rules as the dogfood shell (double/single
-quotes, backslash escapes). Command words are literal text: `awk '{print $2}'`
-passes the braces through (they are not Thoxa interpolation). There is **no**
-shell `if`/`for`/`fn` dialect — programming is Thoxa.
+Words split as in a POSIX shell: double and single quotes and backslash
+escapes. Command words are literal text, so `awk '{print $2}'` passes the
+braces through rather than reading them as interpolation. There is no shell
+`if`, `for`, or function syntax; control flow is Thoxa.
+
+Only a top-level line can be a command. A line that starts with `if`, `for`,
+`while`, `loop`, `match`, `return`, `break`, or `continue`, or that opens a
+block continuing on the next lines, is Thoxa. Inside such a block, call the
+shell directly:
+
+```thx
+let names = ["ada", "grace"]
+for name in names {
+    shell = shell.run(["echo", "hello", name])
+}
+```
+
+A Thoxa value does not reach a command line by interpolation (`echo {name}`
+is not a command); pass it in the argument list of `shell.run` as above.
+
+### Pipelines and redirections
+
+| Form | Behaviour |
+|------|-----------|
+| `a \| b \| c` | OS pipes; the status is the last stage's |
+| `cmd > file` | standard output to `file`, truncating |
+| `cmd >> file` | standard output appended to `file` |
+| `cmd < file` | standard input from `file` |
+| `<` with `>` or `>>` | both on one command |
+
+Redirection operators must be separate words (surrounded by whitespace). They
+run commands found on `PATH` (so `echo` is the system one), not the
+`Shell.echo` builtin.
+There is no `2>` and no redirection on individual pipeline stages.
 
 ## REPL behavior
 
-- Declarations (`import`, `type`, `fn`, …) **accumulate** across chunks.
-- A top-level `let` / `mut` runs its initializer **once**, at that line, and
-  keeps its value for the rest of the session (**D169**). Later lines and new
-  declarations do not run it again, and assignments to a `mut` persist. If the
-  initializer panics, the binding is not defined. Module state in `std/` is
-  kept the same way.
+- Declarations (`import`, `type`, `fn`, …) accumulate across lines. A
+  declaration that does not compile is reported and not kept.
+- A top-level `let` or `mut` runs its initializer once, at that line, and keeps
+  its value for the rest of the session. Later lines and new declarations do
+  not run it again, and assignments to a `mut` persist. If the initializer
+  panics, the name is not defined. Module state in `std/` is kept the same way.
 
-```thx
-§ mut seen = 0
-§ seen = seen + 1
-§ seen = seen + 1
-§ logging.info("{seen}")      ## 2
-§ let log = io.openFile("/tmp/log", io.oWronly + io.oCreat)   ## opened once
-```
-- Top-level statements run as this chunk’s `step` body.
-- Failed compiles print diagnostics and keep prior session state (status ≠ 0).
-  A declaration that does not compile is reported and **not** kept.
-- A panic or crash inside a line prints its message and returns status 134
-  (panic) or 128 + signal (crash); the session keeps running (**D160**).
-- While a command runs, Ctrl-C stops the command, not the session.
-  Commands start with default signal handling (`yes | head -n1` ends quietly).
-- Editing an imported `.thx` file (or `std/`) is picked up on the next line.
-- Continuation prompt `> ` for unfinished blocks; primary prompt defaults to
-  `§ ` unless customized. No startup banner.
-- Interactive TTY uses an **emacs** line editor (GNU readline-style keys).
-  Tab completes: first word → Shell methods + PATH commands + keywords +
-  accumulated `fn`/`let`/`type` names; later words → files; `cd` → dirs;
-  `std/…` → product std modules. Ctrl-C cancels the line (session stays).
-  Ctrl-D on an empty line exits. History:
-  `$XDG_STATE_HOME/thoxa/history` (else `~/.local/state/thoxa/history`).
-  Override or disable with `THOXA_HISTFILE` (empty = no history). Piped /
-  non-TTY input is still cooked `read_line` (no editor, no rc).
-- Executable lines (including `cd`, `status`, `|`, redirections) run as compiled
-  session steps (in-process libtcc) — no separate host command shortcuts.
+  ```thx
+  § mut seen = 0
+  § seen = seen + 1
+  § seen = seen + 1
+  § logging.info("{seen}")      ## 2
+  § let log = io.openFile("/tmp/log", io.oWronly + io.oCreat)   ## opened once
+  ```
 
-### Line editor keys (emacs)
+- Top-level statements run as that line's `step`.
+- A line that fails to compile prints diagnostics, sets a non-zero status, and
+  leaves the session as it was.
+- A panic or crash inside a line prints its message and sets status 134 (a
+  panic) or 128 + signal (a crash); the session keeps running.
+- While a command runs, Ctrl-C stops the command, not the session. Commands
+  start with default signal handling, so `yes | head -n1` ends quietly.
+- Edits to an imported `.thx` file (or to `std/`) take effect on the next
+  line.
+- The primary prompt is `§ ` unless customized; the continuation prompt for an
+  unfinished block is `> `. There is no startup banner.
+- Every line, including `cd`, `status`, pipelines, and redirections, runs as a
+  compiled step, in process (TinyCC). There are no special host commands.
+
+### Line editing
+
+On a terminal the shell uses an Emacs-style line editor. Tab completes: the
+first word against `Shell` methods, `PATH` commands, keywords, and declared
+`fn` / `let` / `type` names; later words against files; `cd` arguments against
+directories; `std/…` against standard modules. History is kept in
+`$XDG_STATE_HOME/thoxa/history` (else `~/.local/state/thoxa/history`);
+`THOXA_HISTFILE` overrides the path, and an empty value disables history. Input
+that is not a terminal is read line by line, with no editor and no rc file.
 
 | Key | Action |
 |-----|--------|
-| Tab | Complete (list on a second Tab if ambiguous) |
+| Tab | Complete (a second Tab lists the choices) |
 | Ctrl-A / Ctrl-E | Start / end of line |
-| Ctrl-B / Ctrl-F | Back / forward char |
-| Alt-B / Alt-F | Back / forward word |
-| Ctrl-K | Kill to end of line |
-| Ctrl-U | Kill to start of line |
-| Ctrl-W | Kill previous word |
-| Ctrl-Y | Yank |
-| Ctrl-P / Ctrl-N | Previous / next history |
-| Ctrl-R | Reverse history search |
-| Ctrl-T | Transpose chars |
-| Ctrl-L | Clear screen |
+| Ctrl-B / Ctrl-F | Back / forward one character |
+| Alt-B / Alt-F | Back / forward one word |
+| Ctrl-K | Delete to end of line |
+| Ctrl-U | Delete to start of line |
+| Ctrl-W | Delete the previous word |
+| Ctrl-Y | Paste the last deletion |
+| Ctrl-P / Ctrl-N | Previous / next history entry |
+| Ctrl-R | Search history backwards |
+| Ctrl-T | Swap two characters |
+| Ctrl-L | Clear the screen |
 | Ctrl-_ | Undo |
-| Ctrl-C | Discard line |
-| Ctrl-D | Delete char, or EOF if empty |
+| Ctrl-C | Discard the line |
+| Ctrl-D | Delete a character, or exit on an empty line |
 
 ### rc file
 
-Interactive TTY REPL loads:
+An interactive shell on a terminal loads `~/.config/thoxa/shell.thx` at
+start. A missing file is not an error. `THOXA_SHELL_RC` names another file;
+`THOXA_NORC` skips it. Piped input, `thoxa -c`, and session scripts do not load
+it.
 
-```text
-~/.config/thoxa/shell.thx
-```
-
-Missing file = no-op. Overrides: `THOXA_SHELL_RC`, `THOXA_NORC`.  
-Piped / non-interactive REPL and session scripts do **not** load rc.
-
-Line comments (`#` / `##`) are comments, not strings: punctuation in them
-(apostrophes, parentheses, backticks) does not glue later `import` / `fn`
+`#` and `##` lines in the rc file are comments, so punctuation in them
+(apostrophes, parentheses, backticks) does not join later `import` / `fn`
 lines. Declarations accumulate; top-level statements run once.
 
 ### Custom prompt
 
-Optional in rc / accumulated decls:
+Define `prompt` in the rc file (or at the prompt):
 
 ```thx
 fn prompt() -> String {
@@ -141,58 +164,41 @@ fn prompt() -> String {
 }
 ```
 
-The host rebuilds and calls this via the session step path (stdout captured).
-`THOXA_STATUS` is set for prompt code.
+The shell calls it before each line; `THOXA_STATUS` holds the last status
+while it runs.
 
 ### Custom PATH
 
-Optional:
+Define `path` to compute the command search path:
 
 ```thx
 fn path(parent: Array<String>) -> Array<String> {
-    parent   ## or replace entirely; [] clears PATH
+    parent   ## or a new list; [] clears PATH
 }
 ```
 
-Return value **replaces** process PATH (joined with `:`). Host keeps toolchain
-resolution for `cc` / `ar` when PATH is emptied.
+The returned array replaces the process `PATH` (joined with `:`). The shell
+still finds `cc` and `ar` for its own use when `PATH` is empty.
 
-### Relocated install (Oath `pkg:thoxa`)
+### Relocated installs
 
-A prefix-dir install sets `THOXA_ROOT`, `THOXA_STD`, `THOXA_TCCDIR`, and
-optional `THOXA_C_INCLUDE` / `THOXA_TCC_LIBPATHS` so session steps do not
-need the build machine's Nix paths. REPL / `thoxa -c` use libtcc (no
-guest `cc`). `thoxa build` / `thoxa run` of programs still need `cc`.
-Session steps compile in memory and write nothing to disk. With
-`THOXA_REPL_KEEP_C=1` the generated C goes under `$XDG_CACHE_HOME/thoxa/repl`
-(or `~/.cache/thoxa/repl`) — not the store.
-
-### Pipelines and redirections
-
-| Sugar | Behavior |
-|-------|----------|
-| `a \| b \| c` | `Shell.pipeline` — OS pipes; status = last stage |
-| `cmd > file` | Truncate/write stdout via `Shell.runIo` |
-| `cmd >> file` | Append stdout |
-| `cmd < file` | stdin from file |
-| Combined `<` and `>` / `>>` | Supported on one command |
-
-Redir ops must be separate words (whitespace). Uses PATH commands (including
-`echo`), not the Thoxa `Shell.echo` builtin. No stderr redir (`2>`) yet; pipe
-stages do not yet carry per-stage redirs.
+An install outside the build tree (such as Oath's `pkg:thoxa`) sets
+`THOXA_ROOT`, `THOXA_STD`, `THOXA_TCCDIR`, and optionally `THOXA_C_INCLUDE` /
+`THOXA_TCC_LIBPATHS`, so that session steps do not depend on the build
+machine's paths. The interactive shell and `thoxa -c` compile with the built-in
+TinyCC and need no system C compiler; `thoxa build` and `thoxa run` of programs
+still need `cc`. Session steps compile in memory and write nothing to disk.
+With `THOXA_REPL_KEEP_C=1` the generated C is kept under
+`$XDG_CACHE_HOME/thoxa/repl` (or `~/.cache/thoxa/repl`).
 
 ## Session scripts
 
-A file without `main` is wrapped: declarations stay at module scope; statements
-become `Shell.step`; synthetic `main` returns `step().status`.
+A file without `main` is wrapped: its declarations stay at module scope, its
+statements become `Shell.step`, and a generated `main` returns the final
+`status`.
 
-## Dogfood package
+## The extras/shell package
 
-`extras/shell` is a pure-Thoxa prototype of the Shell API for ladder dogfood.
-It is **not** the product session face. Prefer:
-
-```bash
-cargo make shell
-# or
-cargo run -p thoxa --
-```
+`extras/shell` is an earlier pure-Thoxa prototype of the `Shell` API, kept as a
+test program. It is not the shell; use `thoxa` (or `cargo make shell` in a
+checkout).

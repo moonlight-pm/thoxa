@@ -45,7 +45,7 @@ Incomplete meta work means incomplete product work.
 | As-built map | `docs/architecture.md` | Pipeline, crates, runtime |
 | Target design | `docs/specs/*` | Freezes (desired shape) |
 | Horizon | `docs/roadmap.md` | Phase-level program status |
-| Product docs | `docs/handbook/` | **Shipped** user truth only |
+| Product docs | `docs/handbook/` | **Shipped** user truth only; rendered publicly at thoxa.dev/manual (Markdown subset and voice: `docs/handbook/README.md`) |
 | Decisions | `docs/decisions.md` | D-ids |
 
 **End of every real product slice (same change as code):**
