@@ -1409,7 +1409,7 @@ parameters or fields. The compiler generates
 `route(request: Request) -> Response`.
 
 ```thx
-import http, { Request, Response, ok, notFound, badRequest } from "std/http"
+import { Request, Response, ok } from "std/http"
 
 type Routes {
     GET "/home" {
@@ -1437,7 +1437,7 @@ let response = Routes().route(request)
 | Captures | `:name` in any segment, bound to a parameter of type `String` or `Int64`; non-digits for an `Int64` give `badRequest("invalid name")` |
 | `Request` parameter | optional, any name; not a capture |
 | Body parameter | any other parameter, at most one: reads the body (or a GET's query) into its type, below |
-| Imports | the module must import the names the generated code calls: `Request`, `Response`, `ok`, `notFound`, and `badRequest` if any capture is `Int64` |
+| Imports | only what the clauses themselves write; the generated `route` names `std/http`'s `Request`, `Response`, `ok`, `notFound`, and `badRequest` itself |
 
 `route` matches on `request.method` and `request.path`.
 

@@ -3,7 +3,7 @@
 import home from "./pages/home"
 import config from "./config"
 import httpStatic from "std/http/static"
-import http, { Request, Response, notFound, cached, withHeader } from "std/http"
+import { Request, Response, cached, withHeader } from "std/http"
 import { startsWith, toLowerAscii } from "std/str"
 
 ## Fonts, images and styles are all served here. Nothing runs script, embeds

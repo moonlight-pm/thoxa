@@ -13,8 +13,10 @@
 //! Optional formal `req: Request` is passed through. Path captures (`String` or
 //! `Int64`) may appear in any segment (`/user/:userId/edit`).
 //!
-//! Compiler only names userland `Request` / `Response` / `ok` / `notFound` /
-//! `badRequest`. Segment split and int parse are generated helpers.
+//! Generated code calls `std/http`'s `Request`, `Response`, `ok`, `notFound`,
+//! and `badRequest` by the module's own name when it defines or imports one,
+//! and by the mangled name (`std_http_ok`) otherwise, so a module imports only
+//! what it writes. Segment split and int parse are generated helpers.
 //!
 //! Branch `experiment/router-clause-syntax`. No HTTP lang-items.
 
@@ -32,6 +34,59 @@ const PARSE_INT_TY: &str = "__RouteInt64";
 /// its body by the codec pass, which knows whether `T` reads from a form
 /// (D191 §5).
 pub const BODY_READER_PREFIX: &str = "__routeBody_";
+
+/// The names generated route code uses for `std/http` items: the module's
+/// own when it defines or imports one (hover then shows `Response`), the
+/// mangled one otherwise.
+struct HttpNames {
+    request: String,
+    response: String,
+    ok: String,
+    not_found: String,
+    bad_request: String,
+}
+
+impl HttpNames {
+    fn of(module: &Module) -> Self {
+        let mut local: HashSet<String> = HashSet::new();
+        for item in &module.items {
+            match item {
+                Item::Function(f) => {
+                    local.insert(f.name.clone());
+                }
+                Item::Type(td) => {
+                    local.insert(td.name.clone());
+                }
+                Item::Import(import) => {
+                    let names = match &import.kind {
+                        ImportKind::Selective(names) => names.as_slice(),
+                        ImportKind::Combined { names, .. } => names.as_slice(),
+                        ImportKind::Namespace { .. } => &[],
+                    };
+                    for imported in names {
+                        let bound = imported.alias.as_ref().map(|(alias, _)| alias).unwrap_or(&imported.name);
+                        local.insert(bound.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        let pick = |name: &str| {
+            if local.contains(name) {
+                name.to_string()
+            } else {
+                format!("std_http_{name}")
+            }
+        };
+        HttpNames {
+            request: pick("Request"),
+            response: pick("Response"),
+            ok: pick("ok"),
+            not_found: pick("notFound"),
+            bad_request: pick("badRequest"),
+        }
+    }
+}
 
 /// Rewrite every type that has `routes` into handler free functions plus
 /// `route(req: Request) -> Response` on the type. Clears `routes`.
@@ -65,9 +120,10 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
     let mut need_segments = false;
     let mut need_parse_int = false;
     let mut bodies: Vec<TypeExpr> = Vec::new();
+    let names = HttpNames::of(module);
     for item in &mut module.items {
         if let Item::Type(td) = item {
-            let (fns, flags) = desugar_type(td)?;
+            let (fns, flags) = desugar_type(td, &names)?;
             extra_fns.extend(fns);
             need_segments |= flags.need_segments;
             need_parse_int |= flags.need_parse_int;
@@ -79,7 +135,7 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
         }
     }
     for target in &bodies {
-        extra_fns.push(body_reader_stub(target));
+        extra_fns.push(body_reader_stub(target, &names));
     }
     if need_parse_int {
         extra_types.push(parse_int_type());
@@ -105,7 +161,7 @@ struct DesugarFlags {
 }
 
 /// Returns synthetic free functions for handlers (to append to the module).
-fn desugar_type(td: &mut TypeDef) -> Result<(Vec<Function>, DesugarFlags)> {
+fn desugar_type(td: &mut TypeDef, names: &HttpNames) -> Result<(Vec<Function>, DesugarFlags)> {
     let empty = DesugarFlags {
         need_segments: false,
         need_parse_int: false,
@@ -168,7 +224,7 @@ fn desugar_type(td: &mut TypeDef) -> Result<(Vec<Function>, DesugarFlags)> {
         let ret_kind = classify_return(&r)?;
         let ret_ty = match ret_kind {
             HandlerRet::Text => ty_string(),
-            HandlerRet::Response => ty_response(),
+            HandlerRet::Response => ty_named(&names.response),
         };
 
         handlers.push(HandlerMeta {
@@ -191,7 +247,7 @@ fn desugar_type(td: &mut TypeDef) -> Result<(Vec<Function>, DesugarFlags)> {
     }
 
     let route_span = handlers.first().map(|h| h.def_span).unwrap_or(td.name_span);
-    td.methods.push(build_route_method(&handlers, route_span)?);
+    td.methods.push(build_route_method(&handlers, route_span, names)?);
     Ok((free_fns, flags))
 }
 
@@ -413,7 +469,7 @@ fn body_target(p: &Param, cap_names: &HashSet<&str>) -> Option<(TypeExpr, bool)>
 }
 
 /// `fn __routeBody_K(request: Request) -> Trial<T, Array<Issue>> {}`
-fn body_reader_stub(target: &TypeExpr) -> Function {
+fn body_reader_stub(target: &TypeExpr, names: &HttpNames) -> Function {
     let issues = ty_array(ty_named("std_json_Issue"));
     let trial = TypeExpr {
         name: "Trial".into(),
@@ -429,7 +485,7 @@ fn body_reader_stub(target: &TypeExpr) -> Function {
         exported: false,
         name: format!("{BODY_READER_PREFIX}{}", cast_reader_key(target)),
         name_span: dummy(),
-        params: vec![param("request", ty_request())],
+        params: vec![param("request", ty_named(&names.request))],
         return_type: Some(trial),
         body: Block {
             items: vec![],
@@ -442,8 +498,8 @@ fn body_reader_stub(target: &TypeExpr) -> Function {
 /// The handler call, after reading a typed body parameter when there is one:
 /// 415 for a body it does not read, then the read, then a 400 for a failed
 /// read (unless the clause takes the `Trial`).
-fn handler_call(h: &HandlerMeta) -> Expr {
-    let returned = return_handler_call(&h.handler_name, call_args(&h.slots), h.ret);
+fn handler_call(h: &HandlerMeta, names: &HttpNames) -> Expr {
+    let returned = return_handler_call(&h.handler_name, call_args(&h.slots), h.ret, names);
     let Some((target, handles_failure)) = h.slots.iter().find_map(|slot| match slot {
         CallSlot::Body {
             target,
@@ -516,27 +572,27 @@ fn return_value(value: Expr) -> Expr {
     }
 }
 
-fn build_route_method(handlers: &[HandlerMeta], name_span: Span) -> Result<Method> {
+fn build_route_method(handlers: &[HandlerMeta], name_span: Span, names: &HttpNames) -> Result<Method> {
     let mut items: Vec<BlockItem> = Vec::new();
     for h in handlers {
-        items.push(BlockItem::Expr(handler_try_if(h)?));
+        items.push(BlockItem::Expr(handler_try_if(h, names)?));
     }
     let body = Block {
         items,
-        tail: Some(Box::new(call("notFound", vec![]))),
+        tail: Some(Box::new(call(&names.not_found, vec![]))),
         span: name_span,
     };
     Ok(Method {
         exported: true,
         name: "route".into(),
         name_span,
-        params: vec![param("req", ty_request())],
-        return_type: Some(ty_response()),
+        params: vec![param("req", ty_named(&names.request))],
+        return_type: Some(ty_named(&names.response)),
         body,
     })
 }
 
-fn handler_try_if(h: &HandlerMeta) -> Result<Expr> {
+fn handler_try_if(h: &HandlerMeta, names: &HttpNames) -> Result<Expr> {
     let method_ok = bin(
         BinaryOp::Eq,
         field(name("req"), "method"),
@@ -545,10 +601,10 @@ fn handler_try_if(h: &HandlerMeta) -> Result<Expr> {
     let inner = match &h.pattern {
         PathPattern::Exact(pat) => {
             let path_ok = bin(BinaryOp::Eq, field(name("req"), "path"), str_lit(pat));
-            let call = handler_call(h);
+            let call = handler_call(h, names);
             if_expr(path_ok, block_stmts(vec![BlockItem::Expr(call)]), None)
         }
-        PathPattern::Segments(segs) => segments_block(h, segs)?,
+        PathPattern::Segments(segs) => segments_block(h, segs, names)?,
     };
     // Statement `if` (not a tail): then contains `return`, else is absent.
     Ok(if_expr(
@@ -578,11 +634,11 @@ fn call_args(slots: &[CallSlot]) -> Vec<Arg> {
         .collect()
 }
 
-fn segments_block(h: &HandlerMeta, segs: &[Seg]) -> Result<Expr> {
+fn segments_block(h: &HandlerMeta, segs: &[Seg], names: &HttpNames) -> Result<Expr> {
     let n = segs.len() as i64;
     // All `if`s here are statements (no tail) so a missing else is Void, not
     // a Response-vs-Void lub. Hits `return` from the then branch.
-    let mut core = handler_call(h);
+    let mut core = handler_call(h, names);
 
     for slot in h.slots.iter().rev() {
         let CallSlot::Cap {
@@ -608,7 +664,7 @@ fn segments_block(h: &HandlerMeta, segs: &[Seg]) -> Result<Expr> {
         let else_b = block_stmts(vec![BlockItem::Expr(Expr {
             kind: ExprKind::Return {
                 value: Some(Box::new(call(
-                    "badRequest",
+                    &names.bad_request,
                     vec![Arg::Pos(str_lit(&format!("invalid {cap}")))],
                 ))),
             },
@@ -664,13 +720,13 @@ fn as_stmt_block(e: Expr) -> Block {
     }
 }
 
-fn return_handler_call(handler: &str, args: Vec<Arg>, ret: HandlerRet) -> Expr {
+fn return_handler_call(handler: &str, args: Vec<Arg>, ret: HandlerRet, names: &HttpNames) -> Expr {
     let inner = call(handler, args);
     let value = match ret {
         HandlerRet::Response => inner,
         HandlerRet::Text => {
             let bytes = method_call(name("Bytes"), "fromString", vec![Arg::Pos(inner)]);
-            call("ok", vec![Arg::Pos(bytes), Arg::Pos(str_lit("text/plain"))])
+            call(&names.ok, vec![Arg::Pos(bytes), Arg::Pos(str_lit("text/plain"))])
         }
     };
     Expr {
@@ -940,13 +996,6 @@ fn ty_string() -> TypeExpr {
     ty_named("String")
 }
 
-fn ty_request() -> TypeExpr {
-    ty_named("Request")
-}
-
-fn ty_response() -> TypeExpr {
-    ty_named("Response")
-}
 
 fn ty_bool() -> TypeExpr {
     ty_named("Bool")
@@ -1189,9 +1238,10 @@ mod tests {
                 assert_eq!(td.methods[0].name, "route");
                 assert_eq!(td.methods[0].params.len(), 1);
                 assert_eq!(td.methods[0].params[0].name, "req");
-                assert_eq!(td.methods[0].params[0].ty.name, "Request");
+                // Nothing imported: generated code names std/http itself.
+                assert_eq!(td.methods[0].params[0].ty.name, "std_http_Request");
                 let ret = td.methods[0].return_type.as_ref().expect("route ret");
-                assert_eq!(ret.name, "Response");
+                assert_eq!(ret.name, "std_http_Response");
             }
             _ => panic!("expected type"),
         }
@@ -1219,6 +1269,7 @@ mod tests {
     fn desugar_response_passthrough() {
         let module = parse_desugar(
             r#"
+            import { Request, Response, notFound } from "std/http"
             type MyRouter {
                 GET "/home" { "Home" }
                 GET "/health" -> Response { notFound() }
@@ -1226,7 +1277,8 @@ mod tests {
             fn main() -> Int64 { 0 }
         "#,
         );
-        match &module.items[0] {
+        // `Response` is imported: generated code uses the module's own name.
+        match &module.items[1] {
             Item::Type(td) => {
                 let ret = td.methods[0].return_type.as_ref().expect("route ret");
                 assert_eq!(ret.name, "Response");

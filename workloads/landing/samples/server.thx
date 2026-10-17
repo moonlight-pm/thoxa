@@ -3,8 +3,7 @@
 ## its `route` function. `serve` runs it on one OS thread, a task per
 ## connection. The form is read into a type, the list is written as JSON.
 import server from "std/http/server"
-import { Request, Response, ok, notFound, badRequest } from "std/http"
-import { seeOther, htmlResponse } from "std/http"
+import { Request, Response, ok, badRequest, seeOther, htmlResponse } from "std/http"
 import { Pass, Fail } from "std/fallible"
 import { messages } from "std/json"
 

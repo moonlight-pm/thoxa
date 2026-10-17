@@ -4,7 +4,7 @@ import home from "./pages/home"
 import manual from "./pages/manual"
 import config from "./config"
 import httpStatic from "std/http/static"
-import http, { Request, Response, notFound, cached, withHeader } from "std/http"
+import { Request, Response, cached, withHeader } from "std/http"
 import { startsWith, toLowerAscii } from "std/str"
 
 ## Fonts come from Google. Nothing runs script, embeds a frame, or posts a form.

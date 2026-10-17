@@ -12,7 +12,7 @@ import { CreateOrder } from "./orders"
 import session from "./session"
 import appHttp from "./http"
 import httpStatic from "std/http/static"
-import http, { Request, Response, notFound, badRequest } from "std/http"
+import { Request, Response } from "std/http"
 
 let staticRoot = "examples/http/web"
 export let port = 9091

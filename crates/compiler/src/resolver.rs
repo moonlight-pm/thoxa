@@ -223,6 +223,22 @@ struct Resolver<'a> {
 
 /// `Trial<T, E>?` / `May<T>?` → success head `T` (first type-arg head).
 /// Non-fallible nav types pass through unchanged.
+/// A type name as source writes it. Generated code may name a `std/` type by
+/// its mangled name (`std_http_Response`, route clauses); hover shows
+/// `Response`.
+fn source_type_name(name: &str) -> String {
+    if let Some(rest) = name.strip_prefix("std_") {
+        let bytes = rest.as_bytes();
+        let start = (1..bytes.len())
+            .filter(|&i| bytes[i].is_ascii_uppercase() && bytes[i - 1] == b'_')
+            .last();
+        if let Some(start) = start {
+            return rest[start..].to_string();
+        }
+    }
+    name.to_string()
+}
+
 pub fn unwrap_fallible_nav_ty(t: NavTy) -> NavTy {
     if (t.head == "Trial" || t.head == "May") && !t.args.is_empty() {
         NavTy {
@@ -386,7 +402,7 @@ impl<'a> Resolver<'a> {
             }
         }
         Some(NavTy {
-            head: te.name.clone(),
+            head: source_type_name(&te.name),
             args,
         })
     }
