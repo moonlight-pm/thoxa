@@ -527,7 +527,7 @@ type Order(slug: String, qty: Int64 where >= 1)
 A literal that satisfies the predicate converts implicitly (`let q: Qty = 2`).
 A refined value converts to its base type implicitly (`let n: Int64 = q`).
 Going from the base type to the refined one is checked at run time with
-`T.from` (see [Typed data](#typed-data)). There are no predicates across
+`value as T`, which gives a `Trial` (see [Conversions](#conversions)). There are no predicates across
 fields of a product and no regular expressions.
 
 ### Generic types
@@ -1259,10 +1259,8 @@ match CreateOrder.read(body) {
 
 | Function | Result |
 |----------|--------|
-| `x as T` | Converts a base value, a string, or a `Json` value into `T` (see [Conversions](#conversions)): `Trial<T, Array<Issue>>` |
-| `T.from(x)` | Checks one base value (or string) against a refined or literal type: `Trial<T, Issue>` |
+| `x as T` | Converts a base value, a string, or a `Json` value into `T` (see [Conversions](#conversions)): `Trial<T, Array<Issue>>`; `json as Array<T>` reads a top-level array |
 | `T.read(text)` | Parses JSON text into `T`: `Trial<T, Array<Issue>>` |
-| `T.fromJson(json)` | The same from a `Json` tree (`json as T` also reads top-level arrays and maps) |
 | `T.readForm(text)` | Reads `application/x-www-form-urlencoded` text into a product: `Trial<T, Array<Issue>>` |
 | `t.encode()` | Compact JSON text |
 | `t.toJson()` | A `Json` tree |

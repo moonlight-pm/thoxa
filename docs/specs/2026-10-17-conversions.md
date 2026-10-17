@@ -2,10 +2,10 @@
 
 **Date:** 2026-10-17
 **Status:** target (freeze)
-**Implementation:** partial (§1–§5 shipped)
+**Implementation:** shipped (§1–§6)
 **Decision:** D191 (builds on D182; replaces `T.from` and `T.fromJson` when §6 lands)
 **Gates:** per section below
-**Gaps:** §6 not started; see Non-goals
+**Gaps:** see Non-goals; generic types cannot declare `from` clauses; route body parameters take named types only
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D191 in
 [`decisions.md`](../decisions.md)

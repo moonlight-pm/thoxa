@@ -9953,13 +9953,31 @@ fn lower_method_call(
         if type_name == "Bytes" && ctx.lookup(type_name).is_none() {
             return lower_bytes_static(ctx, method, args, method_span);
         }
-        if matches!(
-            method,
-            "read" | "fromJson" | "readForm" | "fromForm" | "from" | "encode" | "toJson"
-        )
+        // `T.from(x)` and `T.fromJson(json)` became `x as T` (D191 §6).
+        if matches!(method, "from" | "fromJson")
+            && ctx.lookup(type_name).is_none()
+            && ctx.resolve_type_name(type_name).is_some()
+        {
+            let operand = if method == "from" { "value" } else { "json" };
+            return Err(Error::at(
+                format!("`{type_name}.{method}({operand})` is written `{operand} as {type_name}`"),
+                method_span,
+            )
+            .with_help("`as` gives a Trial<T, Array<Issue>> when the conversion can fail"));
+        }
+        // Generated readers call `T.__from` / `T.__fromJson`, names user code
+        // cannot write.
+        let internal = match method {
+            "__from" => Some("from"),
+            "__fromJson" => Some("fromJson"),
+            _ => None,
+        };
+        if (internal.is_some()
+            || matches!(method, "read" | "readForm" | "fromForm" | "encode" | "toJson"))
             && ctx.lookup(type_name).is_none()
         {
             if let Some(mangled_ty) = ctx.resolve_type_name(type_name) {
+                let method = internal.unwrap_or(method);
                 return lower_type_read_static(ctx, &mangled_ty, method, args, method_span);
             }
         }
@@ -10049,7 +10067,7 @@ fn lower_method_call(
         }
     }
     // `api.CreateOrder.read(s)` — type qualifier under a namespace.
-    if matches!(method, "read" | "fromJson" | "readForm" | "fromForm") {
+    if matches!(method, "read" | "readForm" | "fromForm") {
         if let ExprKind::Field {
             base,
             name: ty_name,
@@ -15630,7 +15648,7 @@ fn form_unbound_method(
         .get(type_name)
         .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?
         .clone();
-    if matches!(method, "read" | "fromJson" | "readForm" | "fromForm") {
+    if matches!(method, "read" | "readForm" | "fromForm") {
         if let Some(mangled_fn) = lookup_generated_read_fn(ctx, &info, type_name, method) {
             let sig = ctx.fns.get(&mangled_fn).unwrap().clone();
             refuse_fn_value(sig.multi_clause, false, method, span)?;

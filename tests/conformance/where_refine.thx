@@ -1,5 +1,5 @@
-## `type T = Int64 where …` + Type.read / Type.from (builtin validation).
-import { Issue, message, messages } from "std/json"
+## `type T = Int64 where …` + Type.read / `x as T` (builtin validation; `as` replaced Type.from, D191).
+import { Issue, messages } from "std/json"
 import { Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
 
@@ -11,9 +11,9 @@ type DrinkSlug = "espresso" | "mocha"
 type Drink(slug: DrinkSlug)
 type Closed = String where "a" | "b"
 
-fn showQ(t: Trial<Qty, Issue>) -> String {
+fn showQ(t: Trial<Qty, Array<Issue>>) -> String {
     match t {
-        Fail(e) => "ERR:{message(e)}"
+        Fail(issues) => "ERR:{messages(issues)}"
         Pass(q) => "ok:{q}"
     }
 }
@@ -35,15 +35,16 @@ fn main() -> Int64 {
     info("base:{n}")
     info("{a + 40}")
 
-    info(showQ(Qty.from(3)))
-    info(showQ(Qty.from(0)))
-    match Dozen.from(5) {
-        Fail(e) => info("ERR:{message(e)}")
-        Pass(q) => info("ok:{q}")
-    }
-    match Dozen.from(13) {
-        Fail(e) => info("ERR:{message(e)}")
-        Pass(q) => info("ok:{q}")
+    ## A literal operand would be checked at compile time; these are values.
+    let three = 3
+    let zero = 0
+    info(showQ(three as Qty))
+    info(showQ(zero as Qty))
+    for value in [5, 13] {
+        match value as Dozen {
+            Fail(issues) => info("ERR:{messages(issues)}")
+            Pass(q) => info("ok:{q}")
+        }
     }
 
     info(showO(Order.read("{{\"slug\":\"mocha\",\"qty\":2}}")))
@@ -56,12 +57,14 @@ fn main() -> Int64 {
         Fail(issues) => info("enc:{messages(issues)}")
         Pass(o) => info(o.encode())
     }
-    match DrinkSlug.from("chai") {
-        Fail(e) => info("slug:{message(e)}")
+    let chai = "chai"
+    let mocha = "mocha"
+    match chai as DrinkSlug {
+        Fail(issues) => info("slug:{messages(issues)}")
         Pass(s) => info("slugok:{s}")
     }
-    match DrinkSlug.from("mocha") {
-        Fail(e) => info("slug2:{message(e)}")
+    match mocha as DrinkSlug {
+        Fail(issues) => info("slug2:{messages(issues)}")
         Pass(s) {
             let asStr: String = s
             info("slugok:{asStr}")
@@ -79,8 +82,9 @@ fn main() -> Int64 {
         Fail(issues) => info("dr2:{messages(issues)}")
         Pass(d) => info("drok2:{d.slug}")
     }
-    match Closed.from("c") {
-        Fail(e) => info("cl:{message(e)}")
+    let c = "c"
+    match c as Closed {
+        Fail(issues) => info("cl:{messages(issues)}")
         Pass(s) => info("clok:{s}")
     }
     0

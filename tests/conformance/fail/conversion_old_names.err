@@ -1,0 +1,2 @@
+`Quantity.from(value)` is written `value as Quantity`
+`Line.fromJson(json)` is written `json as Line`

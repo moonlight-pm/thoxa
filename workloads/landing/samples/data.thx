@@ -1,6 +1,6 @@
 ## Types that check their values
 ## `where` narrows a type; a literal union names the values a string may
-## take. `T.fromJson` (or `T.read` for text) builds a `T` and reports every
+## take. `json as T` (or `T.read` for text) builds a `T` and reports every
 ## problem it finds; `encode` writes any value back out. Nothing is derived
 ## or registered: the compiler reads the type.
 import { Pass, Fail } from "std/fallible"
@@ -21,7 +21,7 @@ fn main() -> Int64 {
         lines: [{ drink: "mocha", size: "huge", quantity: 40 }],
     }
     for input in [good, bad] {
-        match Order.fromJson(input) {
+        match input as Order {
             Pass(order) => info("ok: {order.encode()}")
             Fail(issues) => info("rejected: {messages(issues)}")
         }

@@ -856,7 +856,7 @@ fn form_text(text: Expr, shape: &Shape, ty: &TypeExpr, path: Expr) -> Expr {
                         Some(single_issue(
                             method_call(
                                 name(type_name),
-                                "from",
+                                "__from",
                                 vec![Arg::Pos(name("__base")), Arg::Pos(path)],
                             ),
                             &trial,
@@ -1162,7 +1162,7 @@ fn convert_json(raw: Expr, shape: &Shape, ty: &TypeExpr, path: Expr, depth: usiz
         | Shape::Union(type_name)
         | Shape::Refined { name: type_name, .. } => method_call(
             name(type_name),
-            "fromJson",
+            "__fromJson",
             vec![Arg::Pos(raw), Arg::Pos(path)],
         ),
         Shape::Json => typed("__any", trial, call("Pass", vec![Arg::Pos(raw)])),
@@ -1480,7 +1480,7 @@ fn gen_from_json_union(td: &TypeDef, members: &[UnionMember]) -> Function {
             match_expr(
                 method_call(
                     name(&member.name),
-                    "fromJson",
+                    "__fromJson",
                     vec![Arg::Pos(name("v")), Arg::Pos(name("path"))],
                 ),
                 vec![
@@ -1823,7 +1823,7 @@ fn gen_from_json_scalar(td: &TypeDef, base: &str) -> Function {
             tail: Some(Box::new(single_issue(
                 method_call(
                     name(&td.name),
-                    "from",
+                    "__from",
                     vec![Arg::Pos(name("__base")), Arg::Pos(name("path"))],
                 ),
                 &trial,
@@ -2581,7 +2581,7 @@ fn gen_as_base(key: &str, target: &TypeExpr, base: &str) -> Function {
         body: Block {
             items: vec![],
             tail: Some(Box::new(single_issue(
-                method_call(name(&target.name), "from", vec![Arg::Pos(name("value"))]),
+                method_call(name(&target.name), "__from", vec![Arg::Pos(name("value"))]),
                 &trial,
             ))),
             span: dummy(),

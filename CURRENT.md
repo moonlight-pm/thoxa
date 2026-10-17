@@ -16,9 +16,9 @@ binds a Void value (D186), `Float64` text in full between 1e-7 and 1e21
 (D187), a session line that starts a statement is never a command (D188).
 Then **D190**: every `extern fn` gets its own C prototype (asm-labelled
 private name), so any linked C function can be called and `Address<T>`
-fits a C struct pointer parameter. Then **D191** frozen (not started):
-conversions — `as` / `as?`, `from` clauses, implicit encoding to `Json`,
-typed route body parameters; next language slice is its §1.
+fits a C struct pointer parameter. Then **D191** (conversions: `as` /
+`as?`, `from` clauses, implicit encoding to `Json`, typed route body
+parameters) shipped in six slices, with D192 between them.
 2026-10-16: **Language pass (D173–D181):** `main`'s return is
 the exit status, 0–255 (D173); unannotated methods infer their return type,
 and `x?` then `Pass(value)` infers `Trial<T, E>` (D174); structural `==` on
@@ -85,13 +85,13 @@ expected, with `...` spreads; reads of unions, `Map` / `Json` fields, and
 constructor defaults; a type's own `toJson` wins. Its non-goals (renaming,
 generic types, top-level `Array` reads, custom decoding) stay parked.
 
-**Now: conversions (D191)**, freeze
-[`docs/specs/2026-10-17-conversions.md`](docs/specs/2026-10-17-conversions.md).
-Shipped: §1 `x as T` with the built-in conversion table, §2 `x as? T`, §3
-`from` clauses (a `from(json: Json)` clause is the type's reader), §4
-implicit encoding where a `Json` is expected (and `match` takes its expected
-type), §5 typed body parameters in route clauses. Next: §6 remove `T.from` /
-`T.fromJson`.
+**Conversions (D191) shipped**, freeze
+[`docs/specs/2026-10-17-conversions.md`](docs/specs/2026-10-17-conversions.md):
+§1 `x as T` with the built-in conversion table, §2 `x as? T`, §3 `from`
+clauses (a `from(json: Json)` clause is the type's reader), §4 implicit
+encoding where a `Json` is expected (and `match` takes its expected type), §5
+typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
+Also on the way: D192 (`return` / `=` convert to the expected type).
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void

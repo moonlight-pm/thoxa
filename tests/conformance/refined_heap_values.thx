@@ -3,7 +3,7 @@
 ## the box can go away first (D185).
 import logging, { info } from "std/logging"
 import { Pass, Fail } from "std/fallible"
-import { message } from "std/json"
+import { messages } from "std/json"
 
 type Name = String where >= 1
 type Person(name: Name)
@@ -20,8 +20,8 @@ fn main() -> Int64 {
     logging.setFormat(logging.formatPlain)
     mut names: Array<String> = []
     for label in ["ada", "grace"] {
-        match Name.from("{label} the second") {
-            Fail(issue) => info(message(issue))
+        match "{label} the second" as Name {
+            Fail(issues) => info(messages(issues))
             Pass(name) {
                 let person = Person(name: name)
                 names.append(person.name)
@@ -39,9 +39,10 @@ fn main() -> Int64 {
     for name in seen {
         info("module {name}")
     }
-    match Tag.from("mocha") {
+    let word = "mocha"
+    match word as Tag {
         Pass(tag) => info("tag {tag} {tag == "mocha"}")
-        Fail(issue) => info(message(issue))
+        Fail(issues) => info(messages(issues))
     }
     0
 }

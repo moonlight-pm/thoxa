@@ -1,0 +1,18 @@
+## `T.from(x)` and `T.fromJson(json)` were replaced by `x as T` (D191 §6).
+import { Json, Issue } from "std/json"
+import { Pass, Fail, Trial } from "std/fallible"
+
+type Quantity = Int64 where >= 1
+type Line(drink: String)
+
+fn quantity(count: Int64) -> Trial<Quantity, Issue> {
+    Quantity.from(count)
+}
+
+fn line(json: Json) -> Trial<Line, Array<Issue>> {
+    Line.fromJson(json)
+}
+
+fn main() -> Int64 {
+    0
+}
