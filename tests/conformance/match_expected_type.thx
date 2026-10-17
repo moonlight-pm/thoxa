@@ -1,0 +1,42 @@
+## A match whose value has an expected type converts each arm to it, as an
+## `if` does: arms may be different members of an expected union (D191 §4).
+import logging, { info } from "std/logging"
+
+type Circle(radius: Float64)
+type Square(side: Float64)
+type Shape = Circle | Square
+type Small
+type Large(count: Int64)
+type Size = Small | Large
+
+fn byNumber(choice: Int64) -> Shape {
+    match choice {
+        0 => Circle(radius: 1.0)
+        else => Square(side: 2.0)
+    }
+}
+
+fn byName(name: String) -> Shape {
+    match name {
+        "round" => Circle(radius: 3.0)
+        other => Square(side: 4.0)
+    }
+}
+
+fn grow(size: Size) -> Shape {
+    match size {
+        Small => Circle(radius: 0.5)
+        Large(count) => Square(side: count * 1.0)
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let ratio: Float64 = match byNumber(1) {
+        Circle(radius) => radius
+        Square(side) => 2
+    }
+    info("{byNumber(0) == Circle(radius: 1.0)} {byName("square") == Square(side: 4.0)} {grow(Large(count: 3)) == Square(side: 3.0)} {ratio}")
+    0
+}

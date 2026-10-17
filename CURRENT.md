@@ -88,9 +88,10 @@ generic types, top-level `Array` reads, custom decoding) stay parked.
 **Now: conversions (D191)**, freeze
 [`docs/specs/2026-10-17-conversions.md`](docs/specs/2026-10-17-conversions.md).
 Shipped: §1 `x as T` with the built-in conversion table, §2 `x as? T`, §3
-`from` clauses (a `from(json: Json)` clause is the type's reader). Next: §4
-implicit encoding where a `Json` is expected, §5 typed body parameters in
-route clauses, §6 remove `T.from` / `T.fromJson`.
+`from` clauses (a `from(json: Json)` clause is the type's reader), §4
+implicit encoding where a `Json` is expected (and `match` takes its expected
+type). Next: §5 typed body parameters in route clauses, §6 remove `T.from` /
+`T.fromJson`.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void

@@ -1,0 +1,65 @@
+## A value with a JSON encoding converts to Json wherever a Json is expected
+## (D191 §4): arguments, constructor fields, annotated lets, array elements,
+## returns, branches, and assignments. Decoding is never implicit.
+import { Has, Not, May } from "std/fallible"
+import { Json, encode } from "std/json"
+import logging, { info } from "std/logging"
+
+type Size = "small" | "large"
+type Line(drink: String, size: Size)
+type Event(name: String, data: Json)
+
+fn show(value: Json) -> String {
+    encode(value)
+}
+
+fn rows() -> Json {
+    [Line(drink: "mocha", size: "small"), Line(drink: "tea", size: "large")]
+}
+
+fn summary(empty: Bool, lines: Array<Line>) -> Json {
+    if empty {
+        return "nothing yet"
+    }
+    if lines.count == 1 { lines[0] } else { lines.count }
+}
+
+fn label(choice: Int64) -> Json {
+    match choice {
+        0 => "zero"
+        1 => 1.5
+        else => [choice]
+    }
+}
+
+fn describe(value: Line) -> String {
+    "a line for {value.drink}"
+}
+
+fn describe(value: Json) -> String {
+    "json {encode(value)}"
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let line = Line(drink: "mocha", size: "large")
+    let maybe: May<Int64> = Not()
+    info(show(line))
+    info(show(42))
+    info(show(maybe))
+    info(show([1, 2]))
+    let event = Event(name: "order", data: line)
+    info(show(event))
+    let stored: Json = line
+    let mixed: Array<Json> = [line, 7, "seven", true]
+    info("{show(stored)} {show(mixed)}")
+    info(show(rows()))
+    info("{show(summary(true, []))} {show(summary(false, [line]))} {show(summary(false, [line, line]))}")
+    info("{show(label(0))} {show(label(1))} {show(label(2))}")
+    mut reply: Json = "pending"
+    reply = line
+    info(show(reply))
+    info("{describe(line)} | {describe(stored)}")
+    0
+}

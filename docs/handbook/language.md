@@ -918,6 +918,12 @@ visible in it. A guarded arm does not count toward covering its member.
 **Exhaustiveness.** A match on a union must cover every member or end with
 `else`; otherwise it is a compile error that names the missing members.
 
+**Value.** A match's value is its arms' value. Where a type is expected (a
+return, an annotated `let`, an argument), each arm converts to it as a
+block's last value does, so arms may be different members of an expected
+union, or values that encode into an expected `Json`. Without an expected
+type, the arms must have the same type.
+
 **`Node` values** match with `Element(tag, attrs, children)`, `Text(s)`, and
 `Fragment(children)`.
 
@@ -1331,23 +1337,32 @@ non-`String` keys, unions that mix literals and products, generic types, and
 `Trial` have no encoding; using one is a compile error that names the type
 (and the field, when there is one). Types in `std/` get no generated codec.
 
-### Json literals
+### Json literals and implicit encoding
 
-Where a `Json` is expected (a parameter, a return, an annotated `let`, a
-value inside another `Json` literal), a map literal is a JSON object and an
-array literal is a JSON array; `{}` is an empty object. A value that is not
-`Json` converts with `toJson`. `...value` inside an object literal spreads a
-product's fields or a `Map<String, T>`'s entries; a later key replaces an
-earlier one. Elsewhere nothing converts implicitly: write `x.toJson()`.
+Where a `Json` is expected — a parameter, a constructor field, a return, an
+annotated `let`, an assignment, an element of `Array<Json>`, a branch of an
+`if` or a `match` — a value of any type with a JSON encoding converts as
+`x as Json` would. A map literal there is a JSON object and an array literal a
+JSON array; `{}` is an empty object. `...value` inside an object literal
+spreads a product's fields or a `Map<String, T>`'s entries; a later key
+replaces an earlier one.
 
 ```thx
 fn ticketJson(ticket: Ticket) -> Json {
     { ...ticket, ok: true }
 }
+
+jsonOk(rows)                                  ## Array<OrderRow> → Json
+let event = Event(name: "order", data: line)  ## a Json field takes a Line
 ```
 
-Not available: field renaming, reading a top-level `Array` or `Map` (wrap it in
-a product), codecs for generic types, custom decoders, and encoding to a form.
+Only encoding is implicit. A `Json` where another type is expected is a
+compile error that says to write `json as T`, because reading can fail. A
+multi-clause function with clauses for both `T` and `Json` still picks the
+clause by the argument's exact type.
+
+Not available: field renaming, codecs for generic types, and encoding to a
+form.
 
 ## Tag literals and Node
 

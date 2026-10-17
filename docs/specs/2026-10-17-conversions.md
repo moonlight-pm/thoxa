@@ -2,10 +2,10 @@
 
 **Date:** 2026-10-17
 **Status:** target (freeze)
-**Implementation:** partial (§1–§3 shipped)
+**Implementation:** partial (§1–§4 shipped)
 **Decision:** D191 (builds on D182; replaces `T.from` and `T.fromJson` when §6 lands)
 **Gates:** per section below
-**Gaps:** §4–§6 not started; see Non-goals
+**Gaps:** §5–§6 not started; see Non-goals
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D191 in
 [`decisions.md`](../decisions.md)

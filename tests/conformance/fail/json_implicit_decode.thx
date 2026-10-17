@@ -1,0 +1,14 @@
+## Decoding is never implicit (D191 §4): a Json is not a Line.
+import { Json } from "std/json"
+
+type Line(drink: String)
+
+fn place(order: Line) -> String {
+    order.drink
+}
+
+fn main() -> Int64 {
+    let body: Json = { drink: "mocha" }
+    place(body)
+    0
+}

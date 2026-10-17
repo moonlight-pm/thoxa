@@ -6459,6 +6459,19 @@ fn refine_formal_to_clause(
         }
     }
 
+    // Clause is a smaller union (`Json` in a domain that also holds `Line`):
+    // remap the members it has; the clause gate excluded the others.
+    if let (Ty::User(dn), Ty::User(cn)) = (domain_ty, clause_ty) {
+        let domain_sum = ctx.types.get(dn).and_then(|i| i.sum.clone());
+        let clause_sum = ctx.types.get(cn).and_then(|i| i.sum.clone());
+        if let (Some(ds), Some(cs)) = (domain_sum, clause_sum) {
+            let domain_keys: HashSet<String> = ds.variants.iter().map(sum_variant_key).collect();
+            if cs.variants.iter().all(|v| domain_keys.contains(&sum_variant_key(v))) {
+                return emit_sum_remap(ctx, place, dn, cn, &ds, &cs, true);
+            }
+        }
+    }
+
     // Last resort: alias domain place (typing uses clause_ty via define).
     let _ = span;
     Ok(place)
@@ -7144,9 +7157,12 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
                     None if can_numeric_cast(&ty, expect) => {
                         coerce_place(ctx, place, &ty, expect, tail.span)?
                     }
-                    None => {
-                        return Err(Error::at(ctx.type_mismatch_msg(expect, &ty), tail.span));
-                    }
+                    None => match convert::encode_where_json_expected(ctx, place, &ty, expect)? {
+                        Some(p) => p,
+                        None => {
+                            return Err(Error::at(ctx.type_mismatch_msg(expect, &ty), tail.span));
+                        }
+                    },
                 }
             } else {
                 place
@@ -7415,7 +7431,10 @@ fn coerce_to_expected(
     if can_numeric_cast(ty, expect) {
         return Ok(Some(coerce_place(ctx, place, ty, expect, value.span)?));
     }
-    try_refine_coerce(ctx, place, ty, expect, literal.as_ref(), value.span)
+    if let Some(p) = try_refine_coerce(ctx, place.clone(), ty, expect, literal.as_ref(), value.span)? {
+        return Ok(Some(p));
+    }
+    convert::encode_where_json_expected(ctx, place, ty, expect)
 }
 
 /// A value bound under an annotation (`let x: T = …`, in a block or at module
@@ -7439,13 +7458,20 @@ fn coerce_annotated(
     if can_numeric_cast(ty, expect) {
         return coerce_place(ctx, place, ty, expect, init.span);
     }
-    if let Some(p) = try_refine_coerce(ctx, place, ty, expect, literal.as_ref(), name_span)? {
+    if let Some(p) = try_refine_coerce(ctx, place.clone(), ty, expect, literal.as_ref(), name_span)? {
         return Ok(p);
     }
-    Err(Error::at(
+    if let Some(p) = convert::encode_where_json_expected(ctx, place, ty, expect)? {
+        return Ok(p);
+    }
+    let error = Error::at(
         format!("type annotation mismatch for `{name}`: expected {expect:?}, found {ty:?}"),
         name_span,
-    ))
+    );
+    Err(match convert::decode_hint(ctx, ty, expect) {
+        Some(hint) => error.with_help(hint),
+        None => error,
+    })
 }
 
 fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Result<()> {
@@ -7962,7 +7988,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             ty,
             propagate,
         } => convert::lower_cast(ctx, inner, ty, *propagate, expr.span),
-        ExprKind::Match { scrutinee, arms } => lower_match(ctx, scrutinee, arms, expr.span),
+        ExprKind::Match { scrutinee, arms } => lower_match(ctx, scrutinee, arms, expr.span, expect),
     }
 }
 
@@ -8685,6 +8711,9 @@ fn coerce_element(
         return Ok((coerce_place(ctx, place, ty, want, element.span)?, want.clone()));
     }
     if let Some(p) = try_refine_coerce(ctx, place.clone(), ty, want, literal.as_ref(), element.span)? {
+        return Ok((p, want.clone()));
+    }
+    if let Some(p) = convert::encode_where_json_expected(ctx, place.clone(), ty, want)? {
         return Ok((p, want.clone()));
     }
     Ok((place, ty.clone()))
@@ -11758,21 +11787,27 @@ fn lower_arg_for_formal(
         Ok(rp)
     } else if let Some(p) = try_sum_coerce(
         ctx,
-        p,
+        p.clone(),
         &ty,
         formal_ty,
         expr_as_type_lit(expr).as_ref(),
         expr.span,
     )? {
         Ok(p)
+    } else if let Some(p) = convert::encode_where_json_expected(ctx, p, &ty, formal_ty)? {
+        Ok(p)
     } else {
-        Err(Error::at(
+        let error = Error::at(
             format!(
                 "argument {} (`{formal_name}`): expected {formal_ty:?}, found {ty:?}",
                 index + 1
             ),
             expr.span,
-        ))
+        );
+        Err(match convert::decode_hint(ctx, &ty, formal_ty) {
+            Some(hint) => error.with_help(hint),
+            None => error,
+        })
     }
 }
 
@@ -12728,6 +12763,18 @@ fn ty_eq(types: &HashMap<String, TypeInfo>, a: &Ty, b: &Ty) -> bool {
 }
 
 /// Whether `from` can be coerced to `to` (equality, inject, or transparent remap).
+/// [`can_coerce_ty`], or a value with a JSON encoding where a `Json` is
+/// expected (D191 §4). Only for an expected type: dispatch and unification
+/// never encode.
+fn fits_expected(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool {
+    can_coerce_ty(types, from, to)
+        || (matches!(to, Ty::User(n) if n == "std_json_Json")
+            && !matches!(
+                from,
+                Ty::Void | Ty::Fn { .. } | Ty::Bytes | Ty::Buffer | Ty::Node | Ty::Address(_)
+            ))
+}
+
 fn can_coerce_ty(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool {
     // Bottom type flows into any expectation (diverging `loop`, D128).
     if is_never(from) {
@@ -12774,6 +12821,9 @@ fn can_coerce_ty(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool 
 }
 
 /// Remap a sum value to another union with the same member set (D119).
+/// `place` of union `from_n` as union `to_n`, member by member. With
+/// `narrowing`, members `to_n` lacks are skipped: the caller has checked the
+/// value is not one of them (a multi-clause arm for a smaller union).
 fn emit_sum_remap(
     ctx: &mut LowerCtx,
     place: Place,
@@ -12781,6 +12831,7 @@ fn emit_sum_remap(
     to_n: &str,
     from_sum: &SumInfo,
     to_sum: &SumInfo,
+    narrowing: bool,
 ) -> Result<Place> {
     let mut to_by_key: HashMap<String, (u32, Ty)> = HashMap::new();
     for v in &to_sum.variants {
@@ -12805,6 +12856,9 @@ fn emit_sum_remap(
     for fv in from_sum.variants.iter().rev() {
         let key = sum_variant_key(fv);
         let Some(&(to_tag, ref to_payload_ty)) = to_by_key.get(&key) else {
+            if narrowing {
+                continue;
+            }
             return Err(Error::new(format!(
                 "internal: cannot remap union member `{key}` from `{from_n}` to `{to_n}`"
             )));
@@ -12899,7 +12953,7 @@ fn try_sum_coerce(
             let to_set = sum_member_set(&ts);
             let from_set = sum_member_set(&fs);
             if !from_set.is_empty() && from_set.iter().all(|k| to_set.contains(k)) {
-                return Ok(Some(emit_sum_remap(ctx, place, from_n, to_n, &fs, &ts)?));
+                return Ok(Some(emit_sum_remap(ctx, place, from_n, to_n, &fs, &ts, false)?));
             }
         }
     }
@@ -13012,7 +13066,12 @@ fn lower_match(
     scrutinee: &Expr,
     arms: &[MatchArm],
     span: Span,
+    expect: Option<&Ty>,
 ) -> Result<(Place, Ty)> {
+    // With an expected type every arm's value converts to it, as a block's
+    // last value does: arms may be different members of an expected union,
+    // or values that encode into an expected Json (D191 §4).
+    let expect = expect.filter(|ty| **ty != Ty::Void);
     if arms.is_empty() {
         return Err(Error::at("match requires at least one arm", span));
     }
@@ -13020,20 +13079,38 @@ fn lower_match(
     let (scrut_p, scrut_ty) = lower_expr(ctx, scrutinee)?;
     // May/Trial are residual-marked user unions — use general sum match.
     if matches!(scrut_ty, Ty::String | Ty::Int64 | Ty::Bool) {
-        return lower_match_value(ctx, scrut_p, scrut_ty, arms, span);
+        return lower_match_value(ctx, scrut_p, scrut_ty, arms, span, expect);
     }
     if scrut_ty == Ty::Node {
-        return lower_match_node(ctx, scrut_p, arms, span);
+        return lower_match_node(ctx, scrut_p, arms, span, expect);
     }
     if let Ty::User(ref n) = &scrut_ty {
         if ctx.types.get(n).and_then(|i| i.sum.as_ref()).is_some() {
-            return lower_match_sum(ctx, scrut_p, scrut_ty, arms, span);
+            return lower_match_sum(ctx, scrut_p, scrut_ty, arms, span, expect);
         }
     }
     Err(Error::at(
         "match supports Trial, May, String, Int64, Bool, Node, or union types",
         span,
     ))
+}
+
+/// A match arm's value: lowered expecting the match's expected type and
+/// converted to it when it differs (a member into the expected union, a value
+/// into an expected Json). Without one, or when nothing converts, it is left
+/// as is and the arm-type check reports a mismatch.
+fn lower_arm_value(ctx: &mut LowerCtx, tail: &Expr, expect: Option<&Ty>) -> Result<(Place, Ty)> {
+    let (place, ty) = lower_expr_expect(ctx, tail, expect)?;
+    let Some(want) = expect else {
+        return Ok((place, ty));
+    };
+    if ty == *want || ty == Ty::Void || is_never(&ty) {
+        return Ok((place, ty));
+    }
+    match coerce_to_expected(ctx, place.clone(), &ty, want, tail)? {
+        Some(converted) => Ok((converted, want.clone())),
+        None => Ok((place, ty)),
+    }
 }
 
 fn finish_match_arm_ty(
@@ -13099,6 +13176,7 @@ fn lower_match_node(
     scrut_p: Place,
     arms: &[MatchArm],
     span: Span,
+    expect: Option<&Ty>,
 ) -> Result<(Place, Ty)> {
     let sum = node_sum_info();
     let (tag_p, _) = emit_call_result(
@@ -13141,7 +13219,7 @@ fn lower_match_node(
                 let outer = std::mem::take(&mut ctx.stmts);
                 lower_block_items(ctx, &arm.body.items)?;
                 let arm_val = match &arm.body.tail {
-                    Some(t) => Some(lower_expr(ctx, t)?),
+                    Some(t) => Some(lower_arm_value(ctx, t, expect)?),
                     None => None,
                 };
                 let mut body = std::mem::take(&mut ctx.stmts);
@@ -13170,6 +13248,7 @@ fn lower_match_node(
                         &mut result_ty,
                         span,
                         Vec::new(),
+                        expect,
                     )?;
                     codes.push(ArmCode {
                         tag: Some(variant.tag),
@@ -13195,7 +13274,7 @@ fn lower_match_node(
                     ctx.define(name, Ty::Node, false, bound);
                     lower_block_items(ctx, &arm.body.items)?;
                     let arm_val = match &arm.body.tail {
-                        Some(t) => Some(lower_expr(ctx, t)?),
+                        Some(t) => Some(lower_arm_value(ctx, t, expect)?),
                         None => None,
                     };
                     ctx.pop_scope();
@@ -13281,7 +13360,7 @@ fn lower_match_node(
                 let prefix = std::mem::take(&mut ctx.stmts);
                 ctx.stmts = outer;
                 let lowered =
-                    lower_union_arm_body(ctx, arm, &result_place, &mut result_ty, span, prefix);
+                    lower_union_arm_body(ctx, arm, &result_place, &mut result_ty, span, prefix, expect);
                 ctx.pop_scope();
                 let (prefix, guard, body) = lowered?;
                 codes.push(ArmCode {
@@ -13369,6 +13448,7 @@ fn lower_match_sum(
     scrut_ty: Ty,
     arms: &[MatchArm],
     span: Span,
+    expect: Option<&Ty>,
 ) -> Result<(Place, Ty)> {
     let Ty::User(sum_name) = &scrut_ty else {
         return Err(Error::at("internal: sum match on non-User", span));
@@ -13429,10 +13509,7 @@ fn lower_match_sum(
                 let outer = std::mem::take(&mut ctx.stmts);
                 lower_block_items(ctx, &arm.body.items)?;
                 let arm_val = match &arm.body.tail {
-                    Some(t) => {
-                        let (p, ty) = lower_expr(ctx, t)?;
-                        Some((p, ty))
-                    }
+                    Some(t) => Some(lower_arm_value(ctx, t, expect)?),
                     None => None,
                 };
                 let mut body = std::mem::take(&mut ctx.stmts);
@@ -13464,6 +13541,7 @@ fn lower_match_sum(
                         &mut result_ty,
                         span,
                         Vec::new(),
+                        expect,
                     )?;
                     codes.push(ArmCode {
                         tag: Some(variant.tag),
@@ -13492,10 +13570,7 @@ fn lower_match_sum(
                     ctx.define(name, scrut_ty.clone(), false, bound);
                     lower_block_items(ctx, &arm.body.items)?;
                     let arm_val = match &arm.body.tail {
-                        Some(t) => {
-                            let (p, ty) = lower_expr(ctx, t)?;
-                            Some((p, ty))
-                        }
+                        Some(t) => Some(lower_arm_value(ctx, t, expect)?),
                         None => None,
                     };
                     ctx.pop_scope();
@@ -13611,7 +13686,7 @@ fn lower_match_sum(
                 }
                 let prefix = std::mem::take(&mut ctx.stmts);
                 let lowered =
-                    lower_union_arm_body(ctx, arm, &result_place, &mut result_ty, span, prefix);
+                    lower_union_arm_body(ctx, arm, &result_place, &mut result_ty, span, prefix, expect);
                 ctx.pop_scope();
                 let (prefix, guard, body) = lowered?;
                 ctx.stmts = outer;
@@ -13646,6 +13721,7 @@ fn lower_match_sum(
                     &mut result_ty,
                     span,
                     Vec::new(),
+                    expect,
                 )?;
                 codes.push(ArmCode {
                     tag: Some(variant.tag),
@@ -13740,6 +13816,7 @@ fn lower_union_arm_body(
     result_ty: &mut Option<Ty>,
     span: Span,
     mut prefix: Vec<Stmt>,
+    expect: Option<&Ty>,
 ) -> Result<(Vec<Stmt>, Option<Place>, Vec<Stmt>)> {
     let outer = std::mem::take(&mut ctx.stmts);
     let guard = if let Some(gexpr) = &arm.guard {
@@ -13757,10 +13834,7 @@ fn lower_union_arm_body(
     };
     lower_block_items(ctx, &arm.body.items)?;
     let arm_val = match &arm.body.tail {
-        Some(t) => {
-            let (p, ty) = lower_expr(ctx, t)?;
-            Some((p, ty))
-        }
+        Some(t) => Some(lower_arm_value(ctx, t, expect)?),
         None => None,
     };
     let mut body = std::mem::take(&mut ctx.stmts);
@@ -13777,6 +13851,7 @@ fn lower_match_value(
     scrut_ty: Ty,
     arms: &[MatchArm],
     span: Span,
+    expect: Option<&Ty>,
 ) -> Result<(Place, Ty)> {
     let mut lit_arms: Vec<&MatchArm> = Vec::new();
     let mut catch_arm: Option<&MatchArm> = None; // else or bare bind (D110)
@@ -13869,9 +13944,13 @@ fn lower_match_value(
         }
     }
 
-    // Unify arm body types.
-    let mut result_ty: Option<Ty> = None;
-    for arm in lit_arms.iter().chain(std::iter::once(&catch_arm)) {
+    // Unify arm body types; an expected type is the result type.
+    let mut result_ty: Option<Ty> = expect.cloned();
+    for arm in lit_arms
+        .iter()
+        .chain(std::iter::once(&catch_arm))
+        .filter(|_| expect.is_none())
+    {
         ctx.push_scope();
         if let Pattern::Bind { name, .. } = &arm.pattern {
             // Scrutinee binding for type inference of the arm body.
@@ -16174,8 +16253,8 @@ fn lower_if(
         // type cannot be met; fall through to unify (Void) and its error.
         if *exp != Ty::Void
             && else_branch.is_some()
-            && can_coerce_ty(&ctx.types, &then_ty, exp)
-            && (can_coerce_ty(&ctx.types, &else_ty, exp) || else_ty == Ty::Void)
+            && fits_expected(&ctx.types, &then_ty, exp)
+            && (fits_expected(&ctx.types, &else_ty, exp) || else_ty == Ty::Void)
         {
             exp.clone()
         } else {
@@ -16499,6 +16578,9 @@ fn lower_block_into(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Op
                     return Ok(Some(coerce_place(ctx, place, &ty, expect, tail.span)?));
                 }
                 None => {
+                    if let Some(p) = convert::encode_where_json_expected(ctx, place, &ty, expect)? {
+                        return Ok(Some(p));
+                    }
                     return Err(Error::at(
                         format!("expected {expect:?}, found {ty:?}"),
                         tail.span,

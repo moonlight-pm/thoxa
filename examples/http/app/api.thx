@@ -30,7 +30,7 @@ export fn createOrder(request!: Request) -> Response {
 export fn listOrders() -> Response {
     match store.listOrders() {
         Fail(error) => jsonStoreFail(error)
-        Pass(rows) => jsonOk(rows.toJson())
+        Pass(rows) => jsonOk(rows)
     }
 }
 

@@ -1,0 +1,11 @@
+{"drink":"mocha","size":"large"}
+42
+null
+[1,2]
+{"name":"order","data":{"drink":"mocha","size":"large"}}
+{"drink":"mocha","size":"large"} [{"drink":"mocha","size":"large"},7,"seven",true]
+[{"drink":"mocha","size":"small"},{"drink":"tea","size":"large"}]
+"nothing yet" {"drink":"mocha","size":"large"} 2
+"zero" 1.5 [2]
+{"drink":"mocha","size":"large"}
+a line for mocha | json {"drink":"mocha","size":"large"}

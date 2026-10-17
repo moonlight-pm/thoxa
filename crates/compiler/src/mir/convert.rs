@@ -19,7 +19,7 @@
 
 use super::codec::{bind_fresh, json_ty, to_json};
 use super::{
-    coerce_place, display_ty, emit_call_result, int_range, is_pure_lit_sum_of_kind,
+    coerce_place, display_ty, emit_call_result, int_range, is_never, is_pure_lit_sum_of_kind,
     lower_arg_for_formal, lower_expr, lower_expr_expect, lower_try_sum, refined_info, resolve_ty,
     try_sum_coerce, type_source_name, unwrap_refined, Callee, LitKind, LowerCtx, Place, Ty,
 };
@@ -270,4 +270,36 @@ fn no_conversion(ctx: &LowerCtx, from: &Ty, to: &Ty, span: Span) -> Error {
     } else {
         error
     }
+}
+
+/// D191 §4: a value whose type has a JSON encoding, where a `Json` is
+/// expected (an argument, a field, a `let` annotation, an array element, a
+/// return, an assignment), converts as `x as Json` would. Nothing else becomes
+/// implicit: decoding needs `as`.
+pub(super) fn encode_where_json_expected(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    expected: &Ty,
+) -> Result<Option<Place>> {
+    if json_ty(ctx).as_ref() != Some(expected)
+        || from == expected
+        || *from == Ty::Void
+        || is_never(from)
+    {
+        return Ok(None);
+    }
+    let (place, _) = to_json(ctx, place, from)?;
+    Ok(Some(place))
+}
+
+/// A hint for a `Json` given where another type is expected: decoding is
+/// written with `as`.
+pub(super) fn decode_hint(ctx: &LowerCtx, from: &Ty, expected: &Ty) -> Option<String> {
+    (json_ty(ctx).as_ref() == Some(from) && json_ty(ctx).as_ref() != Some(expected)).then(|| {
+        format!(
+            "a Json value does not convert implicitly: write `value as {}` and handle the Trial",
+            display_ty(expected)
+        )
+    })
 }
