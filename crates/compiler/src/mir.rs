@@ -13,6 +13,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
+mod codec;
+
 /// Synthetic union types inferred for unannotated `if` lub (D119).
 #[derive(Default)]
 struct SyntheticRegistry {
@@ -1287,7 +1289,13 @@ impl LowerCtx {
         if name == "Attr" {
             return Some("Attr".into());
         }
-        self.name_to_type.get(name).cloned()
+        if let Some(mangled) = self.name_to_type.get(name) {
+            return Some(mangled.clone());
+        }
+        // Generated codecs name std types by their mangled name (D182); a
+        // name a program writes never contains `_` beside other characters.
+        (name.len() > 1 && name.contains('_') && self.types.contains_key(name))
+            .then(|| name.to_string())
     }
 
     fn fresh(&mut self, prefix: &str) -> Place {
@@ -9976,6 +9984,13 @@ fn lower_method_call(
             ));
         }
     }
+    if matches!(method, "toJson" | "encode") && args.is_empty() {
+        if let Some(result) =
+            codec::lower_structural_encode(ctx, recv_p.clone(), &recv_ty, method, method_span)?
+        {
+            return Ok(result);
+        }
+    }
     match &recv_ty {
         Ty::Bytes => lower_bytes_method(ctx, recv_p, method, args, method_span),
         Ty::Buffer => lower_buffer_method(ctx, recv_p, method, args, method_span, false),
@@ -10021,6 +10036,20 @@ fn lower_method_call(
                             vec![pass],
                             sig.ret,
                         );
+                    }
+                    if !info.methods.contains_key(method) {
+                        return Err(Error::at(
+                            format!(
+                                "{} has no JSON encoding",
+                                display_ty(&recv_ty)
+                            ),
+                            method_span,
+                        )
+                        .with_help(
+                            "a product or union encodes when its fields are String, integers, \
+                             Float64, Bool, Array, Map<String, …>, May, Json, or types that \
+                             encode; std/json must be in the program",
+                        ));
                     }
                 }
             }

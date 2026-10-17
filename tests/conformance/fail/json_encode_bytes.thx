@@ -1,0 +1,7 @@
+## D182 §1: JSON has no bytes, so Bytes does not encode.
+import { Json } from "std/json"
+
+fn main() -> Int64 {
+    let payload = Bytes(3)
+    payload.encode().count
+}

@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-16 — Typed codecs
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D182 | Typed codecs: everything encodes, reads report every issue, forms read like JSON | Freeze [`specs/2026-10-16-typed-codecs.md`](specs/2026-10-16-typed-codecs.md). §1 `toJson` / `encode` on every encodable type (scalars, `Array`, `Map<String, T>`, `May`, `Json`, refined, literal unions, products, unions of products tagged by a `"type"` key). §2 `T.read` / `T.fromJson` return `Trial<T, Array<Issue>>` with every issue (amends D149's fail-fast); `T.from` keeps one `Issue`. §3 `T.readForm(text)` reads urlencoded forms and query strings into the same types; empty means absent except for `String`. §4 `{…}` / `[…]` literals where a `Json` is expected, values via `toJson`, `...` spreads. §5 reads of unions, `Map` / `Json` fields, constructor defaults. §6 a type's own `toJson` wins. | **Partly shipped:** §1 and §6 (gates `json_encode`, `json_custom_encode`, `fail/json_encode_*`). Joshua, 2026-10-16: collect every issue, for JSON as well as forms; empty is absent. No traits (as D149). Slices in section order, each with its gate. A type's own `toJson` counts only when exported (methods are private otherwise). |
+
 ## 2026-10-15 — Review follow-ups
 
 | ID | Decision | Choice | Notes |

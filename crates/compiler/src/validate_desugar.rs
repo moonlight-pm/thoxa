@@ -1,30 +1,44 @@
-//! D149: generate `Type.read` / `Type.fromJson` helpers for constructor-param
-//! products (builtin validation, slice 1 — no `where` yet).
+//! D149 / D182: generate the codecs the compiler attaches to a type.
 //!
-//! For each eligible product type in a non-`std/` module, emit:
-//! - `__fromJson_T(v: Json, path: String = "") -> Trial<T, Issue>`
-//! - `__read_T(s: String) -> Trial<T, Issue>`
+//! For each type in a non-`std/` module, once `std/json` is in the package:
+//! - encodable products, unions of products, refined types, and literal unions
+//!   get `__toJson_T(v: T) -> Json` and `__encode_T(v: T) -> String` (D182 §1);
+//! - readable products, refined types, and literal unions also get
+//!   `__fromJson_T(v: Json, path: String = "") -> Trial<T, Issue>` and
+//!   `__read_T(s: String) -> Trial<T, Issue>` (`__from_T` for refined /
+//!   literal types).
 //!
-//! Call sites `T.read(s)` / `T.fromJson(v)` are rewritten in MIR to these fns.
-//! The defining module must be able to see `std/json` + `std/fallible` names;
-//! missing names are merged into existing imports (or a new selective import).
+//! Call sites `T.read(s)` / `T.fromJson(v)` / `x.toJson()` are rewritten in MIR
+//! to these fns. Generated code names `std/json` items by their mangled names
+//! (`std_json_JObj`), so the module needs no import of its own and its names
+//! cannot clash; `std/fallible` names are imported when missing.
 
 use crate::ast::*;
+use crate::ast_build::*;
 use crate::error::{Error, Result};
 use crate::loader::{self, BoundImport, Package};
-use crate::span::Span;
 use std::collections::{HashMap, HashSet};
 
 const JSON_PATH: &str = "std/json";
+const JSON_MODULE_ID: &str = "std_json";
 const FALLIBLE_PATH: &str = "std/fallible";
-
-const JSON_CORE: &[&str] = &["Json", "Issue", "readJson", "asObj"];
 
 const FALLIBLE_NAMES: &[&str] = &["Pass", "Fail", "Trial", "Has", "Not", "May"];
 
+/// `std/json` types that are themselves JSON (`Json` and its members).
+const JSON_FAMILY: &[&str] = &[
+    "Json", "JNull", "JBool", "JInt", "JFloat", "JStr", "JArr", "JObj",
+];
+
+type World = HashMap<String, HashMap<String, TypeDef>>;
+type Resolve = HashMap<String, HashMap<String, (String, String)>>;
+
 pub fn desugar_package(package: &mut Package) -> Result<()> {
+    if !package.modules.iter().any(|m| m.id == JSON_MODULE_ID) {
+        return Ok(());
+    }
     let import_maps = loader::build_import_maps(package)?;
-    let mut world: HashMap<String, HashMap<String, TypeDef>> = HashMap::new();
+    let mut world: World = HashMap::new();
     for m in &package.modules {
         let mut tys = HashMap::new();
         for item in &m.ast.items {
@@ -34,7 +48,7 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
         }
         world.insert(m.id.clone(), tys);
     }
-    let mut resolve: HashMap<String, HashMap<String, (String, String)>> = HashMap::new();
+    let mut resolve: Resolve = HashMap::new();
     for m in &package.modules {
         let mut map = HashMap::new();
         for item in &m.ast.items {
@@ -70,8 +84,12 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
     Ok(())
 }
 
-/// Single-file / LSP path: generate readers for local eligible products.
+/// Single-file / LSP path: generate codecs for local types when the module
+/// imports `std/json`.
 pub fn desugar_module(module: &mut Module) -> Result<()> {
+    if !module_imports_path(module, JSON_PATH) {
+        return Ok(());
+    }
     let mut world = HashMap::new();
     let mut local = HashMap::new();
     let mut resolve_local = HashMap::new();
@@ -94,57 +112,49 @@ fn is_std_module(id: &str) -> bool {
 fn desugar_module_with(
     module: &mut Module,
     module_id: &str,
-    world: &HashMap<String, HashMap<String, TypeDef>>,
-    resolve: &HashMap<String, HashMap<String, (String, String)>>,
+    world: &World,
+    resolve: &Resolve,
 ) -> Result<()> {
     let mut extra: Vec<Function> = Vec::new();
-    let mut names: Vec<String> = Vec::new();
-    let mut json_need: HashSet<String> = JSON_CORE.iter().map(|s| (*s).to_string()).collect();
-    for item in &module.items {
-        if let Item::Type(td) = item {
-            names.push(td.name.clone());
-        }
-    }
-    let mut any = false;
-    for name in names {
-        let td = {
-            let Item::Type(td) = module
-                .items
-                .iter()
-                .find(|it| matches!(it, Item::Type(t) if t.name == name))
-                .unwrap()
-            else {
-                continue;
-            };
-            td.clone()
+    let types: Vec<TypeDef> = module
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Type(td) => Some(td.clone()),
+            _ => None,
+        })
+        .collect();
+    for td in &types {
+        let own_to_json = has_own_method(td, "toJson");
+        let own_encode = has_own_method(td, "encode");
+        let encoders = |extra: &mut Vec<Function>, to_json: Function| {
+            if !own_to_json {
+                extra.push(to_json);
+            }
+            if !own_encode {
+                extra.push(gen_encode(td));
+            }
         };
-        if let Some((base, clause)) = refined_alias_of(&td, module_id, world, resolve) {
-            extra.push(gen_from_refined(&td, base, &clause));
-            extra.push(gen_to_json_refined(&td, base));
-            extra.push(gen_encode(&td));
-            json_need.insert("Issue".into());
-            json_need.insert("issueMismatch".into());
-            json_need.insert("issueRejected".into());
-            json_need.insert("encode".into());
-            json_need.insert(json_ctor_for_base(base).into());
-            any = true;
+        if let Some((base, clause)) = refined_alias_of(td, module_id, world, resolve) {
+            extra.push(gen_from_refined(td, base, &clause));
+            encoders(&mut extra, gen_to_json_refined(td, base));
             continue;
         }
-        if let Some((base, lits)) = pure_lit_union_of(&td) {
-            extra.push(gen_from_lit_union(&td, base, &lits));
-            extra.push(gen_to_json_lit_union(&td, base));
-            extra.push(gen_encode(&td));
-            extra.push(gen_from_json_scalar(&td, base));
-            extra.push(gen_read(&td));
-            json_need.insert("Issue".into());
-            json_need.insert("issueMismatch".into());
-            json_need.insert("encode".into());
-            json_need.insert(json_ctor_for_base(base).into());
-            json_need.insert(as_helper_for_base(base).into());
-            any = true;
+        if let Some((base, lits)) = pure_lit_union_of(td) {
+            extra.push(gen_from_lit_union(td, base, &lits));
+            encoders(&mut extra, gen_to_json_lit_union(td, base));
+            extra.push(gen_from_json_scalar(td, base));
+            extra.push(gen_read(td));
             continue;
         }
-        if !is_eligible(&td, module_id, world, resolve, &mut HashSet::new()) {
+        if let Some(members) = encodable_union(td, module_id, world, resolve, &mut HashSet::new()) {
+            encoders(&mut extra, gen_to_json_union(td, &members));
+            continue;
+        }
+        if encodable_product(td, module_id, world, resolve, &mut HashSet::new()) {
+            encoders(&mut extra, gen_to_json(td));
+        }
+        if !is_eligible(td, module_id, world, resolve, &mut HashSet::new()) {
             continue;
         }
         if td.methods.iter().any(|m| m.name == "read" || m.name == "fromJson") {
@@ -156,47 +166,19 @@ fn desugar_module_with(
                 td.name_span,
             ));
         }
-        for p in &td.params {
-            if let Some(sh) = shape_of(
-                &p.ty,
-                module_id,
-                world,
-                resolve,
-                &mut HashSet::new(),
-            ) {
-                need_json_names(&sh, &mut json_need);
-                need_encode_names(&sh, &mut json_need);
-            }
-            if p.ty.where_clause.is_some() {
-                json_need.insert("issueMismatch".into());
-                json_need.insert("issueRejected".into());
-                json_need.insert("Issue".into());
-                json_need.insert("joinPath".into());
-            }
-            if p.ty.name == "May" {
-                json_need.insert("isNull".into());
-            }
-        }
-        extra.push(gen_from_json(&td, module_id, world, resolve)?);
-        extra.push(gen_read(&td));
-        extra.push(gen_to_json(&td, module_id, world, resolve)?);
-        extra.push(gen_encode(&td));
-        json_need.insert("encode".into());
-        json_need.insert("JObj".into());
-        any = true;
+        extra.push(gen_from_json(td, module_id, world, resolve)?);
+        extra.push(gen_read(td));
     }
-    if !any {
+    if extra.is_empty() {
         return Ok(());
     }
-    if !module_imports_path(module, JSON_PATH) {
-        // Loader already ran: do not inject a new `std/json` specifier.
-        return Ok(());
-    }
-    let json_names: Vec<&str> = json_need.iter().map(|s| s.as_str()).collect();
-    ensure_import(module, JSON_PATH, &json_names);
-    if module_imports_path(module, FALLIBLE_PATH) {
-        ensure_import(module, FALLIBLE_PATH, FALLIBLE_NAMES);
-    }
+    let defined: HashSet<&str> = types.iter().map(|td| td.name.as_str()).collect();
+    let fallible: Vec<&str> = FALLIBLE_NAMES
+        .iter()
+        .copied()
+        .filter(|name| !defined.contains(name))
+        .collect();
+    ensure_import(module, FALLIBLE_PATH, &fallible);
     for f in extra {
         module.items.push(Item::Function(f));
     }
@@ -208,6 +190,166 @@ fn module_imports_path(module: &Module, path: &str) -> bool {
         Item::Import(imp) => imp.path == path,
         _ => false,
     })
+}
+
+/// A field type whose values `toJson` can write (D182 §1). Structure
+/// (`Array`, `Map<String, T>`, `May`) is converted by MIR; named types need a
+/// generated (or their own) encoder.
+fn encodable_ty(
+    ty: &TypeExpr,
+    module_id: &str,
+    world: &World,
+    resolve: &Resolve,
+    visiting: &mut HashSet<String>,
+) -> bool {
+    if ty.fn_type.is_some() || ty.union_members.is_some() || ty.lit.is_some() {
+        return false;
+    }
+    let arg = |index: usize| match ty.args.get(index) {
+        Some(TypeArg::Type(inner)) => Some(inner),
+        _ => None,
+    };
+    match (ty.name.as_str(), ty.args.len()) {
+        ("String" | "Int64" | "Int32" | "UInt32" | "UInt64" | "Byte" | "UInt8" | "Float64"
+        | "Bool", 0) => true,
+        ("Array" | "May", 1) => {
+            arg(0).is_some_and(|inner| encodable_ty(inner, module_id, world, resolve, visiting))
+        }
+        ("Map", 2) => {
+            arg(0).is_some_and(|key| key.name == "String" && key.args.is_empty())
+                && arg(1).is_some_and(|value| {
+                    encodable_ty(value, module_id, world, resolve, visiting)
+                })
+        }
+        (_, 0) => {
+            let Some((def_mod, def_name)) = resolve.get(module_id).and_then(|m| m.get(&ty.name))
+            else {
+                return false;
+            };
+            if def_mod == JSON_MODULE_ID {
+                return JSON_FAMILY.contains(&def_name.as_str());
+            }
+            if is_std_module(def_mod) {
+                return false;
+            }
+            let Some(td) = world.get(def_mod).and_then(|tys| tys.get(def_name)) else {
+                return false;
+            };
+            has_own_method(td, "toJson")
+                || refined_alias_of(td, def_mod, world, resolve).is_some()
+                || pure_lit_union_of(td).is_some()
+                || encodable_union(td, def_mod, world, resolve, visiting).is_some()
+                || encodable_product(td, def_mod, world, resolve, visiting)
+        }
+        _ => false,
+    }
+}
+
+/// An exported method the type defines itself: its own `toJson` replaces the
+/// generated one (D182 §6).
+fn has_own_method(td: &TypeDef, method: &str) -> bool {
+    td.methods.iter().any(|m| m.name == method && m.exported)
+}
+
+/// A plain product (constructor params, no body fields, not generic, not a
+/// resource) whose fields all encode.
+fn plain_product(td: &TypeDef) -> bool {
+    td.union_members.is_none()
+        && td.type_params.is_empty()
+        && td.fields.is_empty()
+        && !td.methods.iter().any(|m| m.name == "drop")
+}
+
+fn encodable_product(
+    td: &TypeDef,
+    module_id: &str,
+    world: &World,
+    resolve: &Resolve,
+    visiting: &mut HashSet<String>,
+) -> bool {
+    if !plain_product(td) || td.params.is_empty() {
+        return false;
+    }
+    let key = format!("{module_id}::{}", td.name);
+    if !visiting.insert(key.clone()) {
+        return true;
+    }
+    let ok = td
+        .params
+        .iter()
+        .all(|p| encodable_ty(&p.ty, module_id, world, resolve, visiting));
+    visiting.remove(&key);
+    ok
+}
+
+/// One member of an encodable union: its name and its fields (none for a
+/// member with no constructor params).
+struct UnionMember {
+    name: String,
+    params: Vec<Param>,
+}
+
+/// A union whose members are all plain products whose fields encode
+/// (D182 §1: written as the member's object with a `"type"` key). A union
+/// reached again through its own members is assumed to encode.
+fn encodable_union(
+    td: &TypeDef,
+    module_id: &str,
+    world: &World,
+    resolve: &Resolve,
+    visiting: &mut HashSet<String>,
+) -> Option<Vec<UnionMember>> {
+    let members = td.union_members.as_ref()?;
+    if members.len() < 2 || !td.type_params.is_empty() {
+        return None;
+    }
+    let key = format!("{module_id}::{}", td.name);
+    if !visiting.insert(key.clone()) {
+        return Some(Vec::new());
+    }
+    let result = union_members_of(members, module_id, world, resolve, visiting);
+    visiting.remove(&key);
+    result
+}
+
+fn union_members_of(
+    members: &[TypeExpr],
+    module_id: &str,
+    world: &World,
+    resolve: &Resolve,
+    visiting: &mut HashSet<String>,
+) -> Option<Vec<UnionMember>> {
+    let mut out = Vec::new();
+    for member in members {
+        if member.lit.is_some()
+            || member.where_clause.is_some()
+            || member.union_members.is_some()
+            || member.fn_type.is_some()
+            || !member.args.is_empty()
+        {
+            return None;
+        }
+        let (def_mod, def_name) = resolve.get(module_id)?.get(&member.name)?.clone();
+        if is_std_module(&def_mod) {
+            return None;
+        }
+        let member_td = world.get(&def_mod)?.get(&def_name)?;
+        if !plain_product(member_td) {
+            return None;
+        }
+        if !member_td
+            .params
+            .iter()
+            .all(|p| encodable_ty(&p.ty, &def_mod, world, resolve, visiting))
+        {
+            return None;
+        }
+        out.push(UnionMember {
+            name: member.name.clone(),
+            params: member_td.params.clone(),
+        });
+    }
+    Some(out)
 }
 
 fn is_eligible(
@@ -250,118 +392,6 @@ enum Shape {
     May(Box<Shape>),
     Product(String),
     Refined { name: String, base: String },
-}
-
-fn need_json_names(shape: &Shape, need: &mut HashSet<String>) {
-    match shape {
-        Shape::Str => {
-            need.insert("strField".into());
-        }
-        Shape::Int => {
-            need.insert("intField".into());
-        }
-        Shape::Bool => {
-            need.insert("boolField".into());
-        }
-        Shape::Float => {
-            need.insert("floatField".into());
-        }
-        Shape::Product(_) => {
-            need.insert("field".into());
-            need.insert("joinPath".into());
-        }
-        Shape::Array(elem) => {
-            need.insert("field".into());
-            need.insert("asArr".into());
-            need.insert("joinPath".into());
-            need_json_names(elem, need);
-            match elem.as_ref() {
-                Shape::Str => {
-                    need.insert("asStr".into());
-                }
-                Shape::Int => {
-                    need.insert("asInt".into());
-                }
-                Shape::Bool => {
-                    need.insert("asBool".into());
-                }
-                Shape::Float => {
-                    need.insert("asFloat".into());
-                }
-                _ => {}
-            }
-        }
-        Shape::May(inner) => {
-            need.insert("isNull".into());
-            need.insert("joinPath".into());
-            need_json_names(inner, need);
-            match inner.as_ref() {
-                Shape::Str => {
-                    need.insert("asStr".into());
-                }
-                Shape::Int => {
-                    need.insert("asInt".into());
-                }
-                Shape::Bool => {
-                    need.insert("asBool".into());
-                }
-                Shape::Float => {
-                    need.insert("asFloat".into());
-                }
-                Shape::Product(_) => {
-                    need.insert("joinPath".into());
-                }
-                _ => {}
-            }
-        }
-        Shape::Refined { base, .. } => {
-            need.insert("joinPath".into());
-            match base.as_str() {
-                "String" => {
-                    need.insert("strField".into());
-                }
-                "Float64" => {
-                    need.insert("floatField".into());
-                }
-                "Bool" => {
-                    need.insert("boolField".into());
-                }
-                _ => {
-                    need.insert("intField".into());
-                }
-            }
-        }
-    }
-}
-
-fn need_encode_names(shape: &Shape, need: &mut HashSet<String>) {
-    match shape {
-        Shape::Str => {
-            need.insert("JStr".into());
-        }
-        Shape::Int => {
-            need.insert("JInt".into());
-        }
-        Shape::Bool => {
-            need.insert("JBool".into());
-        }
-        Shape::Float => {
-            need.insert("JFloat".into());
-        }
-        Shape::Product(_) => {
-            need.insert("JObj".into());
-        }
-        Shape::Refined { base, .. } => {
-            need.insert(json_ctor_for_base(base).into());
-        }
-        Shape::Array(elem) => {
-            need.insert("JArr".into());
-            need_encode_names(elem, need);
-        }
-        Shape::May(inner) => {
-            need_encode_names(inner, need);
-        }
-    }
 }
 
 fn shape_of(
@@ -428,7 +458,7 @@ fn gen_read(td: &TypeDef) -> Function {
             items: vec![let_bind(
                 "v",
                 false,
-                try_expr(call("readJson", vec![Arg::Pos(name("s"))])),
+                try_expr(json_call("readJson", vec![Arg::Pos(name("s"))])),
             )],
             tail: Some(Box::new(call(
                 &from,
@@ -449,8 +479,7 @@ fn gen_from_json(
     let mut items = vec![let_bind(
         "m",
         false,
-        try_expr(call(
-            "asObj",
+        try_expr(json_call("asObj",
             vec![Arg::Pos(name("v")), Arg::Pos(name("path"))],
         )),
     )];
@@ -476,8 +505,7 @@ fn gen_from_json(
             items.push(let_bind(
                 &pvar,
                 false,
-                call(
-                    "joinPath",
+                json_call("joinPath",
                     vec![Arg::Pos(name("path")), Arg::Pos(str_lit(&p.name))],
                 ),
             ));
@@ -494,7 +522,7 @@ fn gen_from_json(
         name: format!("__fromJson_{}", td.name),
         name_span: dummy(),
         params: vec![
-            param("v", ty_named("Json")),
+            param("v", json_ty("Json")),
             param_default("path", ty_named("String"), str_lit("")),
         ],
         return_type: Some(ty_trial(ty_named(&td.name))),
@@ -511,32 +539,28 @@ fn gen_from_json(
 
 fn field_value(field: &str, shape: &Shape, ty: &TypeExpr) -> Expr {
     match shape {
-        Shape::Str => try_expr(call(
-            "strField",
+        Shape::Str => try_expr(json_call("strField",
             vec![
                 Arg::Pos(name("m")),
                 Arg::Pos(str_lit(field)),
                 Arg::Pos(name("path")),
             ],
         )),
-        Shape::Int => try_expr(call(
-            "intField",
+        Shape::Int => try_expr(json_call("intField",
             vec![
                 Arg::Pos(name("m")),
                 Arg::Pos(str_lit(field)),
                 Arg::Pos(name("path")),
             ],
         )),
-        Shape::Bool => try_expr(call(
-            "boolField",
+        Shape::Bool => try_expr(json_call("boolField",
             vec![
                 Arg::Pos(name("m")),
                 Arg::Pos(str_lit(field)),
                 Arg::Pos(name("path")),
             ],
         )),
-        Shape::Float => try_expr(call(
-            "floatField",
+        Shape::Float => try_expr(json_call("floatField",
             vec![
                 Arg::Pos(name("m")),
                 Arg::Pos(str_lit(field)),
@@ -550,8 +574,7 @@ fn field_value(field: &str, shape: &Shape, ty: &TypeExpr) -> Expr {
                 "Bool" => "boolField",
                 _ => "intField",
             };
-            let raw = try_expr(call(
-                helper,
+            let raw = try_expr(json_call(helper,
                 vec![
                     Arg::Pos(name("m")),
                     Arg::Pos(str_lit(field)),
@@ -563,16 +586,14 @@ fn field_value(field: &str, shape: &Shape, ty: &TypeExpr) -> Expr {
                 "from",
                 vec![
                     Arg::Pos(raw),
-                    Arg::Pos(call(
-                        "joinPath",
+                    Arg::Pos(json_call("joinPath",
                         vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field))],
                     )),
                 ],
             ))
         }
         Shape::Product(tn) => {
-            let raw = try_expr(call(
-                "field",
+            let raw = try_expr(json_call("field",
                 vec![
                     Arg::Pos(name("m")),
                     Arg::Pos(str_lit(field)),
@@ -584,24 +605,21 @@ fn field_value(field: &str, shape: &Shape, ty: &TypeExpr) -> Expr {
                 "fromJson",
                 vec![
                     Arg::Pos(raw),
-                    Arg::Pos(call(
-                        "joinPath",
+                    Arg::Pos(json_call("joinPath",
                         vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field))],
                     )),
                 ],
             ))
         }
         Shape::Array(elem) => {
-            let raw = try_expr(call(
-                "field",
+            let raw = try_expr(json_call("field",
                 vec![
                     Arg::Pos(name("m")),
                     Arg::Pos(str_lit(field)),
                     Arg::Pos(name("path")),
                 ],
             ));
-            let arr_path = call(
-                "joinPath",
+            let arr_path = json_call("joinPath",
                 vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field))],
             );
             convert_array(raw, elem, arr_path, ty)
@@ -611,8 +629,7 @@ fn field_value(field: &str, shape: &Shape, ty: &TypeExpr) -> Expr {
 }
 
 fn may_field_value(field: &str, inner: &Shape) -> Expr {
-    let path = call(
-        "joinPath",
+    let path = json_call("joinPath",
         vec![Arg::Pos(name("path")), Arg::Pos(str_lit(field))],
     );
     let inner_ty = ty_of_shape(inner);
@@ -631,7 +648,7 @@ fn may_field_value(field: &str, inner: &Shape) -> Expr {
                 vec![Some("raw".into())],
                 vec![],
                 Some(if_expr(
-                    call("isNull", vec![Arg::Pos(name("raw"))]),
+                    json_call("isNull", vec![Arg::Pos(name("raw"))]),
                     Block {
                         items: vec![let_bind_ty(
                             "absent",
@@ -674,7 +691,7 @@ fn convert_array(raw: Expr, elem: &Shape, path: Expr, ty: &TypeExpr) -> Expr {
                 let_bind(
                     "xs",
                     false,
-                    try_expr(call("asArr", vec![Arg::Pos(raw), Arg::Pos(path.clone())])),
+                    try_expr(json_call("asArr", vec![Arg::Pos(raw), Arg::Pos(path.clone())])),
                 ),
                 let_bind_ty(
                     "out",
@@ -702,8 +719,7 @@ fn convert_array(raw: Expr, elem: &Shape, path: Expr, ty: &TypeExpr) -> Expr {
                                     try_expr(convert_value(
                                         name("x"),
                                         elem,
-                                        call(
-                                            "joinPath",
+                                        json_call("joinPath",
                                             vec![Arg::Pos(path), Arg::Pos(interp_int("i"))],
                                         ),
                                     )),
@@ -731,18 +747,18 @@ fn convert_array(raw: Expr, elem: &Shape, path: Expr, ty: &TypeExpr) -> Expr {
 
 fn convert_value(val: Expr, shape: &Shape, path: Expr) -> Expr {
     match shape {
-        Shape::Str => call("asStr", vec![Arg::Pos(val), Arg::Pos(path)]),
-        Shape::Int => call("asInt", vec![Arg::Pos(val), Arg::Pos(path)]),
-        Shape::Bool => call("asBool", vec![Arg::Pos(val), Arg::Pos(path)]),
-        Shape::Float => call("asFloat", vec![Arg::Pos(val), Arg::Pos(path)]),
+        Shape::Str => json_call("asStr", vec![Arg::Pos(val), Arg::Pos(path)]),
+        Shape::Int => json_call("asInt", vec![Arg::Pos(val), Arg::Pos(path)]),
+        Shape::Bool => json_call("asBool", vec![Arg::Pos(val), Arg::Pos(path)]),
+        Shape::Float => json_call("asFloat", vec![Arg::Pos(val), Arg::Pos(path)]),
         Shape::Product(tn) => method_call(name(tn), "fromJson", vec![Arg::Pos(val), Arg::Pos(path)]),
         Shape::Refined { name: tn, .. } => {
             method_call(name(tn), "from", vec![Arg::Pos(val), Arg::Pos(path)])
         }
-        Shape::Array(elem) => convert_array(val, elem, path, &ty_array(ty_named("Json"))),
+        Shape::Array(elem) => convert_array(val, elem, path, &ty_array(json_ty("Json"))),
         Shape::May(inner) => {
             if_expr(
-                call("isNull", vec![Arg::Pos(val.clone())]),
+                json_call("isNull", vec![Arg::Pos(val.clone())]),
                 Block {
                     items: vec![],
                     tail: Some(Box::new(call("Not", vec![]))),
@@ -908,8 +924,7 @@ fn gen_from_lit_union(td: &TypeDef, _base: &str, lits: &[TypeLit]) -> Function {
             items,
             tail: Some(Box::new(call(
                 "Fail",
-                vec![Arg::Pos(call(
-                    "issueMismatch",
+                vec![Arg::Pos(json_call("issueMismatch",
                     vec![
                         Arg::Pos(name("path")),
                         Arg::Pos(str_lit(&expected)),
@@ -928,11 +943,10 @@ fn gen_to_json_lit_union(td: &TypeDef, base: &str) -> Function {
         name: format!("__toJson_{}", td.name),
         name_span: dummy(),
         params: vec![param("v", ty_named(&td.name))],
-        return_type: Some(ty_named("Json")),
+        return_type: Some(json_ty("Json")),
         body: Block {
             items: vec![],
-            tail: Some(Box::new(call(
-                json_ctor_for_base(base),
+            tail: Some(Box::new(json_call(json_ctor_for_base(base),
                 vec![Arg::Pos(name("v"))],
             ))),
             span: dummy(),
@@ -947,7 +961,7 @@ fn gen_from_json_scalar(td: &TypeDef, base: &str) -> Function {
         name: from,
         name_span: dummy(),
         params: vec![
-            param("v", ty_named("Json")),
+            param("v", json_ty("Json")),
             param_default("path", ty_named("String"), str_lit("")),
         ],
         return_type: Some(ty_trial(ty_named(&td.name))),
@@ -955,8 +969,7 @@ fn gen_from_json_scalar(td: &TypeDef, base: &str) -> Function {
             items: vec![let_bind(
                 "raw",
                 false,
-                try_expr(call(
-                    as_helper_for_base(base),
+                try_expr(json_call(as_helper_for_base(base),
                     vec![Arg::Pos(name("v")), Arg::Pos(name("path"))],
                 )),
             )],
@@ -979,8 +992,7 @@ fn gen_encode(td: &TypeDef) -> Function {
         return_type: Some(ty_named("String")),
         body: Block {
             items: vec![],
-            tail: Some(Box::new(call(
-                "encode",
+            tail: Some(Box::new(json_call("encode",
                 vec![Arg::Pos(method_call(name("v"), "toJson", vec![]))],
             ))),
             span: dummy(),
@@ -994,11 +1006,10 @@ fn gen_to_json_refined(td: &TypeDef, base: &str) -> Function {
         name: format!("__toJson_{}", td.name),
         name_span: dummy(),
         params: vec![param("v", ty_named(&td.name))],
-        return_type: Some(ty_named("Json")),
+        return_type: Some(json_ty("Json")),
         body: Block {
             items: vec![],
-            tail: Some(Box::new(call(
-                json_ctor_for_base(base),
+            tail: Some(Box::new(json_call(json_ctor_for_base(base),
                 vec![Arg::Pos(field(name("v"), "value"))],
             ))),
             span: dummy(),
@@ -1006,149 +1017,103 @@ fn gen_to_json_refined(td: &TypeDef, base: &str) -> Function {
     }
 }
 
-fn gen_to_json(
-    td: &TypeDef,
-    module_id: &str,
-    world: &HashMap<String, HashMap<String, TypeDef>>,
-    resolve: &HashMap<String, HashMap<String, (String, String)>>,
-) -> Result<Function> {
-    let mut visiting = HashSet::new();
-    let mut items = vec![let_bind_ty(
-        "m",
-        true,
-        TypeExpr {
-            name: "Map".into(),
-            args: vec![
-                TypeArg::Type(ty_named("String")),
-                TypeArg::Type(ty_named("Json")),
-            ],
-            span: dummy(),
-            lit: None,
-            mark: None,
-            union_members: None,
-            fn_type: None,
-            where_clause: None,
-        },
-        call("Map", vec![]),
-    )];
+/// `{ "a": v.a.toJson(), … }`; a `May` field that is `Not` is left out.
+fn gen_to_json(td: &TypeDef) -> Function {
+    let mut items = vec![json_object_start()];
     for p in &td.params {
-        let shape = shape_of(&p.ty, module_id, world, resolve, &mut visiting).ok_or_else(|| {
-            Error::at(
-                format!("internal: field `{}` not encodable", p.name),
-                p.name_span,
-            )
-        })?;
-        match &shape {
-            Shape::May(inner) => {
-                items.push(BlockItem::Expr(match_expr(
-                    field(name("v"), &p.name),
-                    vec![
-                        match_arm_block("Not", vec![], vec![], None),
-                        match_arm_block(
-                            "Has",
-                            vec![Some("x".into())],
-                            vec![BlockItem::Expr(method_call(
-                                name("m"),
-                                "set",
-                                vec![
-                                    Arg::Pos(str_lit(&p.name)),
-                                    Arg::Pos(encode_elem_value(name("x"), inner)),
-                                ],
-                            ))],
-                            None,
-                        ),
-                    ],
-                )));
-            }
-            _ => {
-                items.push(BlockItem::Expr(method_call(
-                    name("m"),
-                    "set",
-                    vec![
-                        Arg::Pos(str_lit(&p.name)),
-                        Arg::Pos(encode_field_value(&p.name, &shape)),
-                    ],
-                )));
-            }
-        }
+        items.push(set_field_json(&p.name, field(name("v"), &p.name), &p.ty));
     }
-    Ok(Function {
+    Function {
         exported: false,
         name: format!("__toJson_{}", td.name),
         name_span: dummy(),
         params: vec![param("v", ty_named(&td.name))],
-        return_type: Some(ty_named("Json")),
+        return_type: Some(json_ty("Json")),
         body: Block {
             items,
-            tail: Some(Box::new(call("JObj", vec![Arg::Pos(name("m"))]))),
+            tail: Some(Box::new(json_object_end())),
             span: dummy(),
         },
-    })
-}
-
-fn encode_field_value(field_name: &str, shape: &Shape) -> Expr {
-    let src = field(name("v"), field_name);
-    match shape {
-        Shape::Str => call("JStr", vec![Arg::Pos(src)]),
-        Shape::Int => call("JInt", vec![Arg::Pos(src)]),
-        Shape::Bool => call("JBool", vec![Arg::Pos(src)]),
-        Shape::Float => call("JFloat", vec![Arg::Pos(src)]),
-        Shape::Product(_) | Shape::Refined { .. } => method_call(src, "toJson", vec![]),
-        Shape::Array(elem) => encode_array(src, elem),
-        Shape::May(inner) => encode_elem_value(src, inner),
     }
 }
 
-fn encode_array(src: Expr, elem: &Shape) -> Expr {
-    Expr {
-        kind: ExprKind::Block(Block {
-            items: vec![
-                let_bind_ty(
-                    "out",
-                    true,
-                    ty_array(ty_named("Json")),
-                    Expr {
-                        kind: ExprKind::ArrayLit(vec![]),
-                        span: dummy(),
-                    },
-                ),
-                BlockItem::Expr(Expr {
-                    kind: ExprKind::For {
-                        name: "x".into(),
-                        name_span: dummy(),
-                        value: None,
-                        start: Box::new(src),
-                        end: None,
-                        inclusive: false,
-                        body: Block {
-                            items: vec![BlockItem::Expr(method_call(
-                                name("out"),
-                                "append",
-                                vec![Arg::Pos(encode_elem_value(name("x"), elem))],
-                            ))],
-                            tail: None,
-                            span: dummy(),
-                        },
-                    },
-                    span: dummy(),
-                }),
-            ],
-            tail: Some(Box::new(call("JArr", vec![Arg::Pos(name("out"))]))),
+/// D182 §1: `{ "type": "Member", …its fields }` for the member `v` holds.
+fn gen_to_json_union(td: &TypeDef, members: &[UnionMember]) -> Function {
+    let arms = members
+        .iter()
+        .map(|member| {
+            let binds: Vec<String> = (0..member.params.len()).map(|i| format!("__{i}")).collect();
+            let mut items = vec![BlockItem::Expr(method_call(
+                name("__m"),
+                "set",
+                vec![
+                    Arg::Pos(str_lit("type")),
+                    Arg::Pos(json_call("JStr", vec![Arg::Pos(str_lit(&member.name))])),
+                ],
+            ))];
+            for (p, bind) in member.params.iter().zip(&binds) {
+                items.push(set_field_json(&p.name, name(bind), &p.ty));
+            }
+            match_arm_block(
+                &member.name,
+                binds.into_iter().map(Some).collect(),
+                items,
+                None,
+            )
+        })
+        .collect();
+    Function {
+        exported: false,
+        name: format!("__toJson_{}", td.name),
+        name_span: dummy(),
+        params: vec![param("v", ty_named(&td.name))],
+        return_type: Some(json_ty("Json")),
+        body: Block {
+            items: vec![json_object_start(), BlockItem::Expr(match_expr(name("v"), arms))],
+            tail: Some(Box::new(json_object_end())),
             span: dummy(),
-        }),
-        span: dummy(),
+        },
     }
 }
 
-fn encode_elem_value(src: Expr, shape: &Shape) -> Expr {
-    match shape {
-        Shape::Str => call("JStr", vec![Arg::Pos(src)]),
-        Shape::Int => call("JInt", vec![Arg::Pos(src)]),
-        Shape::Bool => call("JBool", vec![Arg::Pos(src)]),
-        Shape::Float => call("JFloat", vec![Arg::Pos(src)]),
-        Shape::Product(_) | Shape::Refined { .. } => method_call(src, "toJson", vec![]),
-        Shape::Array(elem) => encode_array(src, elem),
-        Shape::May(inner) => encode_elem_value(src, inner),
+/// `mut __m: Map<String, Json> = Map()`
+fn json_object_start() -> BlockItem {
+    let_bind_ty(
+        "__m",
+        true,
+        ty_map(ty_named("String"), json_ty("Json")),
+        call("Map", vec![]),
+    )
+}
+
+/// `JObj(__m)`
+fn json_object_end() -> Expr {
+    json_call("JObj", vec![Arg::Pos(name("__m"))])
+}
+
+/// `__m.set("key", value.toJson())`, or for a `May` field only when it holds
+/// a value.
+fn set_field_json(key: &str, value: Expr, ty: &TypeExpr) -> BlockItem {
+    let set = |value: Expr| {
+        BlockItem::Expr(method_call(
+            name("__m"),
+            "set",
+            vec![
+                Arg::Pos(str_lit(key)),
+                Arg::Pos(method_call(value, "toJson", vec![])),
+            ],
+        ))
+    };
+    if ty.name == "May" && ty.args.len() == 1 {
+        BlockItem::Expr(match_expr(
+            value,
+            vec![
+                match_arm_block("Not", vec![], vec![], None),
+                match_arm_block("Has", vec![Some("__x".into())], vec![set(name("__x"))], None),
+            ],
+        ))
+    } else {
+        set(value)
     }
 }
 
@@ -1268,16 +1233,14 @@ fn fail_where_at(val: &str, base: &str, expr: &WhereExpr, path_var: &str) -> Exp
 
 fn fail_issue_at(val: &str, expected: &str, tmpl: Option<&str>, path_var: &str) -> Expr {
     let issue = if let Some(t) = tmpl {
-        call(
-            "issueRejected",
+        json_call("issueRejected",
             vec![
                 Arg::Pos(name(path_var)),
                 Arg::Pos(template_expr_at(t, val, expected, path_var)),
             ],
         )
     } else {
-        call(
-            "issueMismatch",
+        json_call("issueMismatch",
             vec![
                 Arg::Pos(name(path_var)),
                 Arg::Pos(str_lit(expected)),
@@ -1351,85 +1314,6 @@ fn lit_expr(l: &WhereLit) -> Expr {
     }
 }
 
-fn if_expr(cond: Expr, then_branch: Block, else_branch: Option<Block>) -> Expr {
-    Expr {
-        kind: ExprKind::If {
-            cond: Box::new(cond),
-            then_branch,
-            else_branch,
-        },
-        span: dummy(),
-    }
-}
-
-fn match_expr(scrutinee: Expr, arms: Vec<MatchArm>) -> Expr {
-    Expr {
-        kind: ExprKind::Match {
-            scrutinee: Box::new(scrutinee),
-            arms,
-        },
-        span: dummy(),
-    }
-}
-
-fn match_arm_block(
-    name: &str,
-    binds: Vec<Option<String>>,
-    items: Vec<BlockItem>,
-    tail: Option<Expr>,
-) -> MatchArm {
-    MatchArm {
-        pattern: Pattern::Variant {
-            name: name.into(),
-            binds,
-            bind_span: dummy(),
-            span: dummy(),
-        },
-        guard: None,
-        body: Block {
-            items,
-            tail: tail.map(Box::new),
-            span: dummy(),
-        },
-    }
-}
-
-fn un(op: UnaryOp, expr: Expr) -> Expr {
-    Expr {
-        kind: ExprKind::Unary {
-            op,
-            expr: Box::new(expr),
-        },
-        span: dummy(),
-    }
-}
-
-fn bool_lit(b: bool) -> Expr {
-    Expr {
-        kind: ExprKind::Bool(b),
-        span: dummy(),
-    }
-}
-
-fn field(base: Expr, fname: &str) -> Expr {
-    Expr {
-        kind: ExprKind::Field {
-            base: Box::new(base),
-            name: fname.into(),
-            name_span: dummy(),
-        },
-        span: dummy(),
-    }
-}
-
-fn block_stmts(items: Vec<BlockItem>) -> Block {
-    Block {
-        items,
-        tail: None,
-        span: dummy(),
-    }
-}
-
 fn ensure_import(module: &mut Module, path: &str, names: &[&str]) {
     let mut have: HashSet<String> = HashSet::new();
     for item in &module.items {
@@ -1486,50 +1370,6 @@ fn ensure_import(module: &mut Module, path: &str, names: &[&str]) {
     );
 }
 
-// ── AST builders ────────────────────────────────────────────────────────────
-
-fn dummy() -> Span {
-    Span::dummy()
-}
-
-fn ty_named(name: &str) -> TypeExpr {
-    TypeExpr {
-        name: name.into(),
-        args: vec![],
-        span: dummy(),
-        lit: None,
-        mark: None,
-        union_members: None,
-        fn_type: None,
-        where_clause: None,
-    }
-}
-
-fn ty_array(elem: TypeExpr) -> TypeExpr {
-    TypeExpr {
-        name: "Array".into(),
-        args: vec![TypeArg::Type(elem)],
-        span: dummy(),
-        lit: None,
-        mark: None,
-        union_members: None,
-        fn_type: None,
-        where_clause: None,
-    }
-}
-
-fn ty_may(inner: TypeExpr) -> TypeExpr {
-    TypeExpr {
-        name: "May".into(),
-        args: vec![TypeArg::Type(inner)],
-        span: dummy(),
-        lit: None,
-        mark: None,
-        union_members: None,
-        fn_type: None,
-        where_clause: None,
-    }
-}
 
 fn ty_of_shape(shape: &Shape) -> TypeExpr {
     match shape {
@@ -1546,7 +1386,7 @@ fn ty_of_shape(shape: &Shape) -> TypeExpr {
 fn ty_trial(ok: TypeExpr) -> TypeExpr {
     TypeExpr {
         name: "Trial".into(),
-        args: vec![TypeArg::Type(ok), TypeArg::Type(ty_named("Issue"))],
+        args: vec![TypeArg::Type(ok), TypeArg::Type(json_ty("Issue"))],
         span: dummy(),
         lit: None,
         mark: None,
@@ -1556,122 +1396,14 @@ fn ty_trial(ok: TypeExpr) -> TypeExpr {
     }
 }
 
-fn param(name: &str, ty: TypeExpr) -> Param {
-    Param {
-        name: name.into(),
-        name_span: dummy(),
-        positional: false,
-        ty,
-        default: None,
-    }
+/// A call to a `std/json` function or constructor by its mangled name.
+fn json_call(callee: &str, args: Vec<Arg>) -> Expr {
+    call(&format!("{JSON_MODULE_ID}_{callee}"), args)
 }
 
-fn param_default(name: &str, ty: TypeExpr, default: Expr) -> Param {
-    Param {
-        name: name.into(),
-        name_span: dummy(),
-        positional: false,
-        ty,
-        default: Some(default),
-    }
-}
-
-fn call(callee: &str, args: Vec<Arg>) -> Expr {
-    Expr {
-        kind: ExprKind::Call {
-            callee: callee.into(),
-            args,
-        },
-        span: dummy(),
-    }
-}
-
-fn method_call(receiver: Expr, method: &str, args: Vec<Arg>) -> Expr {
-    Expr {
-        kind: ExprKind::MethodCall {
-            receiver: Box::new(receiver),
-            method: method.into(),
-            method_span: dummy(),
-            args,
-        },
-        span: dummy(),
-    }
-}
-
-fn try_expr(e: Expr) -> Expr {
-    Expr {
-        kind: ExprKind::Try(Box::new(e)),
-        span: dummy(),
-    }
-}
-
-fn name(s: &str) -> Expr {
-    Expr {
-        kind: ExprKind::Name(s.into()),
-        span: dummy(),
-    }
-}
-
-fn str_lit(s: &str) -> Expr {
-    Expr {
-        kind: ExprKind::String(s.into()),
-        span: dummy(),
-    }
-}
-
-fn int_lit(n: i64) -> Expr {
-    Expr {
-        kind: ExprKind::Int(n),
-        span: dummy(),
-    }
-}
-
-fn interp_int(var: &str) -> Expr {
-    Expr {
-        kind: ExprKind::Interpolate(vec![InterpPart::Expr(name(var))]),
-        span: dummy(),
-    }
-}
-
-fn bin(op: BinaryOp, left: Expr, right: Expr) -> Expr {
-    Expr {
-        kind: ExprKind::Binary {
-            op,
-            left: Box::new(left),
-            right: Box::new(right),
-        },
-        span: dummy(),
-    }
-}
-
-fn let_bind(name: &str, mutable: bool, init: Expr) -> BlockItem {
-    BlockItem::Let {
-        name: name.into(),
-        name_span: dummy(),
-        mutable,
-        ty: None,
-        init,
-    }
-}
-
-fn let_bind_ty(name: &str, mutable: bool, ty: TypeExpr, init: Expr) -> BlockItem {
-    BlockItem::Let {
-        name: name.into(),
-        name_span: dummy(),
-        mutable,
-        ty: Some(ty),
-        init,
-    }
-}
-
-fn assign(name: &str, value: Expr) -> BlockItem {
-    BlockItem::Assign {
-        target: AssignTarget::Name {
-            name: name.into(),
-            name_span: dummy(),
-        },
-        value,
-    }
+/// A `std/json` type by its mangled name.
+fn json_ty(name: &str) -> TypeExpr {
+    ty_named(&format!("{JSON_MODULE_ID}_{name}"))
 }
 
 #[cfg(test)]

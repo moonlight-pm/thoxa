@@ -1,0 +1,24 @@
+"say \"hi\""
+42
+2.5
+true
+[1,2,3]
+[[1,2],[3]]
+[]
+{"ada":3,"bob":5}
+7
+null
+[null,{"a":1}]
+{"item":"mocha","qty":2,"size":"large"}
+{"type":"Circle","radius":3}
+{"type":"Square","side":2,"label":"tile"}
+{"type":"Blank"}
+{"id":7,"lines":[{"item":"mocha","qty":2,"size":"large"},{"item":"espresso","qty":1,"size":"small"}],"tags":{"table":"4"},"shape":{"type":"Square","side":2,"label":"tile"},"extra":1}
+{"id":8,"lines":[],"tags":{},"note":"rush","shape":{"type":"Blank"},"extra":"x"}
+[{"type":"Circle","radius":3},{"type":"Blank"}]
+{"first":{"item":"mocha","qty":2,"size":"large"}}
+{"label":"root","children":[{"label":"leaf","children":[]}]}
+-3
+255
+{"level":0.5,"on":false}
+{"item":"mocha","qty":2,"size":"large"}

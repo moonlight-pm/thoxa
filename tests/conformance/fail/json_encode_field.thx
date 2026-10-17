@@ -1,0 +1,9 @@
+## D182 §1: a product encodes only when every field does.
+import { Json } from "std/json"
+
+type Upload(name: String, payload: Bytes)
+
+fn main() -> Int64 {
+    let upload = Upload(name: "a", payload: Bytes(3))
+    upload.encode().count
+}

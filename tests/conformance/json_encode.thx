@@ -1,0 +1,96 @@
+## toJson / encode on every encodable type (D182 §1).
+import { Json, JInt, JStr, decode, encode } from "std/json"
+import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
+import { Shape, Circle, Square, Blank } from "./codecmod/shapes"
+import logging, { info } from "std/logging"
+
+type Qty = Int64 where >= 1
+type Size = "small" | "large"
+type Line(item: String, qty: Qty, size: Size)
+type Order(
+    id: Int64,
+    lines: Array<Line>,
+    tags: Map<String, String>,
+    note: May<String>,
+    shape: Shape,
+    extra: Json
+)
+type Tree(label: String, children: Array<Tree>)
+type Gauge(level: Float64, on: Bool)
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## Scalars.
+    let word = "say \"hi\""
+    let count = 42
+    let ratio = 2.5
+    let flag = true
+    info(word.encode())
+    info(count.encode())
+    info(ratio.encode())
+    info(flag.encode())
+
+    ## Structure.
+    let numbers = [1, 2, 3]
+    let grid = [[1, 2], [3]]
+    let empty: Array<String> = []
+    info(numbers.encode())
+    info(grid.encode())
+    info(empty.encode())
+    let scores: Map<String, Int64> = { ada: 3, bob: 5 }
+    info(scores.encode())
+    let some: May<Int64> = Has(7)
+    let none: May<Int64> = Not()
+    info(some.encode())
+    info(none.encode())
+
+    ## Json is already Json.
+    match decode("[null,{{\"a\":1}}]") {
+        Pass(tree) => info(tree.encode())
+        Fail(error) => info("ERR:{error}")
+    }
+
+    ## Products, refined and literal fields, unions, a May field left out.
+    let line = Line(item: "mocha", qty: 2, size: "large")
+    info(line.encode())
+    let circle: Shape = Circle(radius: 3)
+    let square: Shape = Square(side: 2, label: "tile")
+    let blank: Shape = Blank()
+    info(circle.encode())
+    info(square.encode())
+    info(blank.encode())
+    let order = Order(
+        id: 7,
+        lines: [line, Line(item: "espresso", qty: 1, size: "small")],
+        tags: { table: "4" },
+        note: Not(),
+        shape: square,
+        extra: JInt(1)
+    )
+    info(order.encode())
+    let noted = Order(id: 8, lines: [], tags: Map(), note: Has("rush"), shape: blank, extra: JStr("x"))
+    info(noted.encode())
+
+    ## Collections of named types.
+    info([circle, blank].encode())
+    let byName: Map<String, Line> = { first: line }
+    info(byName.encode())
+
+    ## A recursive type.
+    let tree = Tree(label: "root", children: [Tree(label: "leaf", children: [])])
+    info(tree.encode())
+
+    ## Other number widths, Float64 and Bool fields.
+    let small: Int32 = -3
+    let bits: Byte = 255
+    info(small.encode())
+    info(bits.encode())
+    info(Gauge(level: 0.5, on: false).encode())
+
+    ## toJson gives the tree.
+    let json: Json = line.toJson()
+    info(encode(json))
+    0
+}

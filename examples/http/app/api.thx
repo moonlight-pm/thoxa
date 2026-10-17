@@ -1,11 +1,11 @@
 ## App layer — JSON HTTP handlers (no HTML shell).
 
-import store, { OrderRow } from "./store"
+import store from "./store"
 import orders, { CreateOrder, Ticket } from "./orders"
 import live from "./live"
 import http, { Request, Response, ok } from "std/http"
 import { Pass, Fail } from "std/fallible"
-import { Json, JArr, JBool, JInt, JObj, JStr, encode, Issue, Rejected, issueRejected, errorObject } from "std/json"
+import { Json, JBool, JObj, encode, Issue, Rejected, issueRejected, errorObject } from "std/json"
 
 export fn health() -> Response {
     ok(Bytes.fromString("ok\n"), "text/plain; charset=utf-8")
@@ -30,13 +30,7 @@ export fn createOrder(request!: Request) -> Response {
 export fn listOrders() -> Response {
     match store.listOrders() {
         Fail(error) => jsonStoreFail(error)
-        Pass(rows) {
-            mut items: Array<Json> = []
-            for row in rows {
-                items.append(orderJson(row))
-            }
-            jsonOk(JArr(items))
-        }
+        Pass(rows) => jsonOk(rows.toJson())
     }
 }
 
@@ -51,17 +45,6 @@ fn placeOrderFail(error!: Issue) -> Response {
         }
         else => jsonIssue(error)
     }
-}
-
-fn orderJson(row!: OrderRow) -> Json {
-    mut fields: Map<String, Json> = Map()
-    fields.set("id", JInt(row.id))
-    fields.set("slug", JStr(row.slug))
-    fields.set("name", JStr(row.name))
-    fields.set("qty", JInt(row.qty))
-    fields.set("unitCents", JInt(row.unitCents))
-    fields.set("totalCents", JInt(row.totalCents))
-    JObj(fields)
 }
 
 fn jsonStoreFail(error!: String) -> Response {

@@ -60,6 +60,13 @@ cache shipped. **`having`/`else` parked indefinitely.**
 codegen, runtime semantics. Site and hosting work is paused (see holds). One
 language slice at a time, each with conformance.
 
+**Active: typed codecs (D182)**, freeze
+[`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md).
+Shipped §1 (`toJson` / `encode` on every encodable type, unions tagged by
+`"type"`) and §6 (a type's own `toJson` wins). **Next: §2**, reads report
+every issue (`Trial<T, Array<Issue>>`); then §3 `T.readForm`, §4 `Json`
+literals, §5 reads of unions / `Map` / `Json` fields / defaults.
+
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,

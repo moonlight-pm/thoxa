@@ -1,6 +1,7 @@
 //! Thoxa native compiler library (compile-to-C).
 
 pub mod ast;
+pub(crate) mod ast_build;
 pub mod cgen;
 pub mod command;
 pub mod diagnostic;

@@ -196,7 +196,7 @@ match CreateOrder.read(body) {
 | Narrowing | `type Dozen = Qty where <= 12` intersects clauses. Empty types are errors |
 | `T.from(x)` | Runtime base / string → `Trial<T, Issue>` |
 | `T.read(s)` | JSON string → `Trial<T, Issue>` (tree `decode` first, then shape + `where`) |
-| `t.encode()` / `t.toJson()` | Back to compact JSON / `Json` |
+| `t.encode()` / `t.toJson()` | Compact JSON / a `Json` tree, for every encodable value (**D182**): scalars, `Array`, `Map<String, T>`, `May` (`null` when `Not`), `Json`, refined and literal types, products (a `Not` field is left out), unions of products as `{"type": "Member", …}`. A type's own exported `toJson` is used instead, inside other types too. `Bytes` and other non-JSON types are an error naming the type |
 | `Issue` | `Missing \| Mismatch \| Rejected` in [`std/json`](std.md). Fail-fast. `message(e)` |
 | `May<T>` fields | Missing or JSON `null` → `Not`. Write `May<Qty>`, not `May<Int64 where …>` |
 

@@ -1,0 +1,6 @@
+## A module that never imports std/json: its types still encode (D182 §1).
+
+export type Circle(radius: Int64)
+export type Square(side: Int64, label: String)
+export type Blank
+export type Shape = Circle | Square | Blank
