@@ -67,6 +67,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`specs/2026-09-02-simple-rc-correctness.md`](specs/2026-09-02-simple-rc-correctness.md) | Simple-RC correctness (LSan empty, then ASan) | **shipped** (D153 gate 2026-09-03; ASan not default; Perceus not unparked) |
 | [`specs/2026-09-03-resource-drop.md`](specs/2026-09-03-resource-drop.md) | Last-RC `fn drop()` boxes | **shipped** (D155; File/Socket/Db) |
 | [`specs/2026-10-16-typed-codecs.md`](specs/2026-10-16-typed-codecs.md) | Typed codecs: encode all, collect-all reads, forms, `Json` literals | **shipped** (D182) |
+| [`specs/2026-10-17-conversions.md`](specs/2026-10-17-conversions.md) | Conversions: `as` / `as?`, `from` clauses, implicit `Json`, route body parameters | **spec'd** (D191) |
 
 ## Related trees (not under `docs/`)
 
