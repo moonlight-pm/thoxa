@@ -135,8 +135,7 @@ lits; overwrite-drop; **D152** match/init RC.
 command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`); redefining a
 session `fn` is an error, not a replacement; no CI (R8, deferred). Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14) and the copied site templates (finding 38). The sites run `e0c0bcf`
-(D170–D172, redeployed 2026-10-16).
+14) and the copied site templates (finding 38). thoxa.dev runs `9a435b4` (D189, redeployed 2026-10-17); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
 
 ### Proceed order
 
