@@ -130,6 +130,13 @@ fn desugar_module_with(
         })
         .collect();
     for td in &types {
+        // A `from(json: Json)` clause is the type's reader (D191 §3): the
+        // codecs wrap it instead of generating one.
+        let custom_reader = json_conversion(td, module_id, resolve)?;
+        if let Some((index, fallible)) = custom_reader {
+            extra.push(gen_custom_from_json(td, index, fallible));
+            extra.push(gen_read(td));
+        }
         let own_to_json = has_own_method(td, "toJson");
         let own_encode = has_own_method(td, "encode");
         let encoders = |extra: &mut Vec<Function>, to_json: Function| {
@@ -140,23 +147,30 @@ fn desugar_module_with(
                 extra.push(gen_encode(td));
             }
         };
+        let generated_reader = custom_reader.is_none();
         if let Some((base, clause)) = refined_alias_of(td, module_id, world, resolve) {
             extra.push(gen_from_refined(td, base, &clause));
             encoders(&mut extra, gen_to_json_refined(td, base));
-            extra.push(gen_from_json_scalar(td, base));
-            extra.push(gen_read(td));
+            if generated_reader {
+                extra.push(gen_from_json_scalar(td, base));
+                extra.push(gen_read(td));
+            }
             continue;
         }
         if let Some((base, lits)) = pure_lit_union_of(td) {
             extra.push(gen_from_lit_union(td, base, &lits));
             encoders(&mut extra, gen_to_json_lit_union(td, base));
-            extra.push(gen_from_json_scalar(td, base));
-            extra.push(gen_read(td));
+            if generated_reader {
+                extra.push(gen_from_json_scalar(td, base));
+                extra.push(gen_read(td));
+            }
             continue;
         }
         if let Some(members) = encodable_union(td, module_id, world, resolve, &mut HashSet::new()) {
             encoders(&mut extra, gen_to_json_union(td, &members));
-            if decodable_union(td, module_id, world, resolve, &mut HashSet::new()).is_some() {
+            if generated_reader
+                && decodable_union(td, module_id, world, resolve, &mut HashSet::new()).is_some()
+            {
                 extra.push(gen_from_json_union(td, &members));
                 extra.push(gen_read(td));
             }
@@ -165,7 +179,7 @@ fn desugar_module_with(
         if encodable_product(td, module_id, world, resolve, &mut HashSet::new()) {
             encoders(&mut extra, gen_to_json(td));
         }
-        if !is_eligible(td, module_id, world, resolve, &mut HashSet::new()) {
+        if !generated_reader || !is_eligible(td, module_id, world, resolve, &mut HashSet::new()) {
             continue;
         }
         if td.methods.iter().any(|m| m.name == "read" || m.name == "fromJson") {
@@ -471,6 +485,9 @@ fn shape_of(
                 return (def_name == "Json").then_some(Shape::Json);
             }
             let td = world.get(&def_mod)?.get(&def_name)?;
+            if json_conversion(td, &def_mod, resolve).ok().flatten().is_some() {
+                return Some(Shape::Product(other.to_string()));
+            }
             if let Some((base, _)) = refined_alias_of(td, &def_mod, world, resolve) {
                 Some(Shape::Refined {
                     name: other.to_string(),
@@ -2630,5 +2647,98 @@ fn narrow_range(name: &str) -> Option<(i64, i64)> {
         "UInt64" => Some((0, i64::MAX)),
         "Byte" => Some((0, 255)),
         _ => None,
+    }
+}
+
+/// The type's `from(json: Json)` clause, if it has one (D191 §3): its index and
+/// whether it can fail. Such a clause is the type's JSON reader, so it
+/// returns the type or `Trial<T, Array<Issue>>`.
+fn json_conversion(td: &TypeDef, module_id: &str, resolve: &Resolve) -> Result<Option<(usize, bool)>> {
+    for (index, clause) in td.conversions.iter().enumerate() {
+        let source = &clause.param.ty;
+        let is_json = source.args.is_empty()
+            && resolve
+                .get(module_id)
+                .and_then(|names| names.get(&source.name))
+                .is_some_and(|(def_mod, def_name)| def_mod == JSON_MODULE_ID && def_name == "Json");
+        if !is_json {
+            continue;
+        }
+        let returns = &clause.return_type;
+        if returns.name == td.name {
+            return Ok(Some((index, false)));
+        }
+        let issues = matches!(
+            returns.args.get(1),
+            Some(TypeArg::Type(error)) if error.name == "Array"
+                && matches!(error.args.first(), Some(TypeArg::Type(item)) if item.name == "Issue")
+        );
+        if !issues {
+            return Err(Error::at(
+                format!(
+                    "a `from(json: Json)` clause is the JSON reader of `{0}`, so it returns `{0}` or `Trial<{0}, Array<Issue>>`",
+                    td.name
+                ),
+                returns.span,
+            ));
+        }
+        return Ok(Some((index, true)));
+    }
+    Ok(None)
+}
+
+/// `__fromJson_T(v, path)` over the type's own `from(json: Json)` clause. The
+/// clause reports paths from its own root; they are moved under `path`.
+fn gen_custom_from_json(td: &TypeDef, index: usize, fallible: bool) -> Function {
+    let trial = ty_trial_issues(ty_named(&td.name));
+    let converted = call(
+        &crate::conversion_desugar::conversion_fn_name(&td.name, index),
+        vec![Arg::Pos(name("v"))],
+    );
+    let tail = if fallible {
+        match_expr(
+            converted,
+            vec![
+                match_arm_block(
+                    "Pass",
+                    vec![Some("__found".into())],
+                    vec![],
+                    Some(typed("__out", trial.clone(), call("Pass", vec![Arg::Pos(name("__found"))]))),
+                ),
+                match_arm_block(
+                    "Fail",
+                    vec![Some("__issues".into())],
+                    vec![],
+                    Some(typed(
+                        "__out",
+                        trial.clone(),
+                        call(
+                            "Fail",
+                            vec![Arg::Pos(json_call(
+                                "underPath",
+                                vec![Arg::Pos(name("__issues")), Arg::Pos(name("path"))],
+                            ))],
+                        ),
+                    )),
+                ),
+            ],
+        )
+    } else {
+        typed("__out", trial, call("Pass", vec![Arg::Pos(converted)]))
+    };
+    Function {
+        exported: false,
+        name: format!("__fromJson_{}", td.name),
+        name_span: dummy(),
+        params: vec![
+            param("v", json_ty("Json")),
+            param_default("path", ty_named("String"), str_lit("")),
+        ],
+        return_type: Some(ty_trial_issues(ty_named(&td.name))),
+        body: Block {
+            items: vec![],
+            tail: Some(Box::new(tail)),
+            span: dummy(),
+        },
     }
 }

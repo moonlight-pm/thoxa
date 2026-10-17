@@ -409,6 +409,7 @@ impl Parser {
                 fields: Vec::new(),
                 methods: Vec::new(),
                 routes: Vec::new(),
+                conversions: Vec::new(),
                 union_members: Some(members),
             });
         }
@@ -438,12 +439,19 @@ impl Parser {
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         let mut routes = Vec::new();
+        let mut conversions = Vec::new();
         if self.at(TokenKind::LBrace) {
             self.bump();
             let mut type_body_errors: Vec<Error> = Vec::new();
             while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
                 let start_pos = self.pos;
-                let item_res: Result<()> = if self.at(TokenKind::Fn) || self.at(TokenKind::Export) {
+                let item_res: Result<()> = if self.at(TokenKind::From)
+                    || (self.at(TokenKind::Export) && self.peek_kind_is(1, TokenKind::From))
+                {
+                    self.parse_conversion().map(|c| {
+                        conversions.push(c);
+                    })
+                } else if self.at(TokenKind::Fn) || self.at(TokenKind::Export) {
                     self.parse_method().map(|m| {
                         methods.push(m);
                     })
@@ -476,6 +484,7 @@ impl Parser {
                         while !self.at(TokenKind::Eof) && !self.at(TokenKind::RBrace) {
                             if self.at(TokenKind::Fn)
                                 || self.at(TokenKind::Export)
+                                || self.at(TokenKind::From)
                                 || self.at(TokenKind::Mut)
                                 || self.at(TokenKind::Let)
                                 || self.at_route_method()
@@ -523,7 +532,51 @@ impl Parser {
             fields,
             methods,
             routes,
+            conversions,
             union_members: None,
+        })
+    }
+
+    /// `[export] from(source: S) -> T { … }` in a type body (D191 §3).
+    fn parse_conversion(&mut self) -> Result<Conversion> {
+        let exported = if self.at(TokenKind::Export) {
+            self.bump();
+            true
+        } else {
+            false
+        };
+        let span = self.peek_span();
+        self.expect_kind(&TokenKind::From)?;
+        self.expect_kind(&TokenKind::LParen)?;
+        if self.at(TokenKind::RParen) {
+            return Err(Error::at(
+                "a `from` clause takes one parameter, the value it converts from",
+                self.peek_span(),
+            ));
+        }
+        let param = self.parse_param()?;
+        if self.at(TokenKind::Comma) {
+            return Err(Error::at(
+                "a `from` clause takes one parameter, the value it converts from",
+                self.peek_span(),
+            ));
+        }
+        self.expect_kind(&TokenKind::RParen)?;
+        if !self.at(TokenKind::Arrow) {
+            return Err(Error::at(
+                "a `from` clause needs a return type: the type itself, or `Trial<Type, E>`",
+                self.peek_span(),
+            ));
+        }
+        self.bump();
+        let return_type = self.parse_type()?;
+        let body = self.parse_block()?;
+        Ok(Conversion {
+            exported,
+            span,
+            param,
+            return_type,
+            body,
         })
     }
 

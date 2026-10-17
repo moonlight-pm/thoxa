@@ -2,10 +2,10 @@
 
 **Date:** 2026-10-17
 **Status:** target (freeze)
-**Implementation:** partial (§1–§2 shipped)
+**Implementation:** partial (§1–§3 shipped)
 **Decision:** D191 (builds on D182; replaces `T.from` and `T.fromJson` when §6 lands)
 **Gates:** per section below
-**Gaps:** §3–§6 not started; see Non-goals
+**Gaps:** §4–§6 not started; see Non-goals
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D191 in
 [`decisions.md`](../decisions.md)
@@ -162,8 +162,10 @@ type Fahrenheit(degrees: Float64) {
   (D182 §6), since `Json` is not a user type.
 - A clause replaces the generated conversion for its pair. A
   `from(json: Json)` clause is the type's reader: `json as T` calls it, and so
-  do `T.read(text)` (after decoding) and reads of fields of type `T`. This is
-  the custom decoding D182 parked.
+  do `T.read(text)` (after decoding) and reads of fields of type `T`. It
+  returns `T` or `Trial<T, Array<Issue>>`; a field read moves its issues
+  under the field's path (`std/json` `underPath`). This is the custom
+  decoding D182 parked.
 - A conversion that would make a pair ambiguous (a clause for a pair the
   table already covers implicitly, such as member into union) is an error.
 

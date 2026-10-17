@@ -1586,6 +1586,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
     let lower_started = std::time::Instant::now();
     // D150: type-body `GET "/…"` → handlers + `route` (names Request/Response/ok).
     let mut package = package.clone();
+    crate::conversion_desugar::desugar_package(&mut package)?;
     crate::route_desugar::desugar_package(&mut package)?;
     crate::validate_desugar::desugar_package(&mut package)?;
     let package = &package;

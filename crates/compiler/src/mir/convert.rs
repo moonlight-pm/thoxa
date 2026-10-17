@@ -12,14 +12,18 @@
 //!   `Json`), `__asBase_K` (into a refined type or a literal union), and
 //!   `__asNarrow_K` (into a narrower integer).
 //!
+//! A `from` clause on the target that takes the operand's type comes first and
+//! replaces the built-in conversion (§3).
+//!
 //! Text is parsed, not converted: `String as Order` points at `T.read`.
 
 use super::codec::{bind_fresh, json_ty, to_json};
 use super::{
-    coerce_place, display_ty, int_range, is_pure_lit_sum_of_kind, lower_expr, lower_expr_expect,
-    lower_try_sum, refined_info, resolve_ty, try_sum_coerce, unwrap_refined, LitKind, LowerCtx,
-    Place, Ty,
+    coerce_place, display_ty, emit_call_result, int_range, is_pure_lit_sum_of_kind,
+    lower_arg_for_formal, lower_expr, lower_expr_expect, lower_try_sum, refined_info, resolve_ty,
+    try_sum_coerce, type_source_name, unwrap_refined, Callee, LitKind, LowerCtx, Place, Ty,
 };
+use crate::conversion_desugar::conversion_fn_name;
 use crate::ast::{Arg, Expr, ExprKind, TypeExpr, UnaryOp};
 use crate::ast_build::{call, cast_reader_key, name};
 use crate::error::{Error, Result};
@@ -33,12 +37,15 @@ pub(super) fn lower_cast(
     span: Span,
 ) -> Result<(Place, Ty)> {
     let to = resolve_ty(target, &ctx.types, &ctx.name_to_type)?;
-    let (place, from) = if takes_expected_type(operand) {
+    let (place, from) = if takes_expected_type(operand) && holds_literals(ctx, &to) {
         lower_expr_expect(ctx, operand, Some(&to))?
     } else {
         lower_expr(ctx, operand)?
     };
-    let (place, ty, checked) = convert(ctx, place, &from, &to, target, span)?;
+    let (place, ty, checked) = match declared(ctx, place.clone(), &from, &to, span)? {
+        Some(converted) => converted,
+        None => convert(ctx, place, &from, &to, target, span)?,
+    };
     if !propagate {
         return Ok((place, ty));
     }
@@ -75,6 +82,69 @@ fn takes_expected_type(operand: &Expr) -> bool {
             expr,
         } => matches!(expr.kind, ExprKind::Int(_) | ExprKind::Float(_)),
         _ => false,
+    }
+}
+
+/// A `from` clause on the target that takes the operand's type (D191 §3). It
+/// replaces any built-in conversion for the pair. The clauses are the
+/// functions `__conversion_T_N` in the target's module.
+fn declared(
+    ctx: &mut LowerCtx,
+    place: Place,
+    from: &Ty,
+    to: &Ty,
+    span: Span,
+) -> Result<Option<(Place, Ty, bool)>> {
+    let Ty::User(target) = to else {
+        return Ok(None);
+    };
+    let Some(info) = ctx.types.get(target).cloned() else {
+        return Ok(None);
+    };
+    let type_name = type_source_name(&info, target);
+    for index in 0.. {
+        let short = conversion_fn_name(&type_name, index);
+        let long = format!("{}_{short}", info.def_mod);
+        let Some(sig) = ctx.fns.get(&short).or_else(|| ctx.fns.get(&long)).cloned() else {
+            return Ok(None);
+        };
+        let param = sig.params[0].1.clone();
+        if param != *from {
+            continue;
+        }
+        let exported = ctx
+            .module_exports
+            .get(&info.def_mod)
+            .is_some_and(|exports| exports.fns.contains_key(&short));
+        if ctx.module_id != info.def_mod && !exported {
+            return Err(Error::at(
+                format!(
+                    "the conversion from {} to {} is not exported: write `export from(…)` in `{type_name}`",
+                    display_ty(from),
+                    display_ty(to)
+                ),
+                span,
+            ));
+        }
+        let input = bind_fresh(ctx, "__castIn", from, place);
+        let argument = lower_arg_for_formal(ctx, &name(&input), &param, "source", 0)?;
+        let (place, ty) =
+            emit_call_result(ctx, Callee::User(sig.mangled.clone()), vec![argument], sig.ret)?;
+        let checked = ty != *to;
+        return Ok(Some((place, ty, checked)));
+    }
+    Ok(None)
+}
+
+/// A target a literal can be written as directly: anything but a plain
+/// product, which a literal reaches only through a `from` clause
+/// (`"a@b" as Email`).
+fn holds_literals(ctx: &LowerCtx, to: &Ty) -> bool {
+    match to {
+        Ty::User(name) => ctx.types.get(name).is_none_or(|info| {
+            info.sum.is_some() || info.refined.is_some() || json_ty(ctx).as_ref() == Some(to)
+        }),
+        _ => true,
     }
 }
 

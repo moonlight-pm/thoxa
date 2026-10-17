@@ -1,0 +1,53 @@
+## `from` clauses declare conversions into a type (D191 §3). The return type
+## says whether a conversion can fail; `as?` propagates its failure.
+import { Pass, Fail, Trial } from "std/fallible"
+import { contains } from "std/str"
+import logging, { info } from "std/logging"
+
+type Celsius(degrees: Float64)
+
+type Fahrenheit(degrees: Float64) {
+    export from(celsius: Celsius) -> Fahrenheit {
+        Fahrenheit(degrees: celsius.degrees * 1.8 + 32.0)
+    }
+
+    export from(kelvin: Kelvin) -> Fahrenheit {
+        Fahrenheit(degrees: (kelvin.degrees - 273.15) * 1.8 + 32.0)
+    }
+}
+
+type Kelvin(degrees: Float64)
+
+type Email(address: String) {
+    export from(text: String) -> Trial<Email, String> {
+        if contains(text, "@") {
+            Pass(Email(address: text))
+        } else {
+            Fail("{text} is not an email address")
+        }
+    }
+}
+
+fn contact(text: String) -> Trial<String, String> {
+    let email = text as? Email
+    Pass("mail to {email.address}")
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let hot = Celsius(degrees: 40.0) as Fahrenheit
+    let cold = Kelvin(degrees: 273.15) as Fahrenheit
+    info("{hot.degrees} {cold.degrees}")
+    for text in ["ada@example.com", "ada"] {
+        match contact(text) {
+            Pass(line) => info(line)
+            Fail(reason) => info("no: {reason}")
+        }
+    }
+    match "grace@example.com" as Email {
+        Pass(email) => info("literal {email.address}")
+        Fail(reason) => info(reason)
+    }
+    0
+}

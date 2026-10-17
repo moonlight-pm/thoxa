@@ -4,6 +4,7 @@ pub mod ast;
 pub(crate) mod ast_build;
 pub mod cgen;
 pub mod command;
+pub mod conversion_desugar;
 pub mod diagnostic;
 pub mod driver;
 pub mod error;

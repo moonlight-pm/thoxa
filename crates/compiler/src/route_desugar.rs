@@ -511,6 +511,7 @@ fn parse_int_type() -> TypeDef {
         fields: vec![],
         methods: vec![],
         routes: vec![],
+        conversions: vec![],
         union_members: None,
     }
 }

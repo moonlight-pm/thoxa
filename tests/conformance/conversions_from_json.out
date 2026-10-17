@@ -1,0 +1,4 @@
+point 3,4
+read: a point is [x, y]
+home at 5,6: {"name":"home","at":[5,6]}
+marker: at: expected array, got object

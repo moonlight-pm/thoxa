@@ -1,0 +1,46 @@
+## A `from(json: Json)` clause is the type's JSON reader (D191 §3): `json as T`,
+## `T.read`, and reads of fields of type `T` all use it, and its issues land
+## under the field being read.
+import { Pass, Fail, Trial } from "std/fallible"
+import { Json, Issue, messages, issueRejected } from "std/json"
+import logging, { info } from "std/logging"
+
+## A point is written as [x, y].
+type Point(x: Int64, y: Int64) {
+    export from(json: Json) -> Trial<Point, Array<Issue>> {
+        let pair = json as? Array<Int64>
+        if pair.count != 2 {
+            return Fail([issueRejected("", "a point is [x, y]")])
+        }
+        Pass(Point(x: pair[0], y: pair[1]))
+    }
+
+    export fn toJson() -> Json {
+        [x, y]
+    }
+}
+
+type Marker(name: String, at: Point)
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let pair: Json = [3, 4]
+    match pair as Point {
+        Pass(point) => info("point {point.x},{point.y}")
+        Fail(issues) => info(messages(issues))
+    }
+    match Point.read("[1, 2, 3]") {
+        Pass(point) => info("point {point.x}")
+        Fail(issues) => info("read: {messages(issues)}")
+    }
+    match Marker.read("{{\"name\": \"home\", \"at\": [5, 6]}}") {
+        Pass(marker) => info("{marker.name} at {marker.at.x},{marker.at.y}: {marker.encode()}")
+        Fail(issues) => info(messages(issues))
+    }
+    match Marker.read("{{\"name\": \"home\", \"at\": {{\"x\": 1}}}}") {
+        Pass(marker) => info(marker.name)
+        Fail(issues) => info("marker: {messages(issues)}")
+    }
+    0
+}

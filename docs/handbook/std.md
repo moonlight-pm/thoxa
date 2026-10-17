@@ -249,7 +249,7 @@ fn main() -> Int64 {
 | Strings | Escapes `\" \\ \/ \b \f \n \r \t \uXXXX`, including surrogate pairs |
 | `kind(value)`, `isNull(value)` | The member name / whether it is `JNull` |
 | `Issue` | `Missing(path) \| Mismatch(path, expected, got) \| Rejected(path, reason)`: what typed reads report |
-| Issue helpers | `message(issue)`, `messages(issues)` (joined with `; `), `issuePath`, `issueMissing` / `issueMismatch` / `issueRejected` (constructors returning `Issue`) |
+| Issue helpers | `message(issue)`, `messages(issues)` (joined with `; `), `issuePath`, `issueMissing` / `issueMismatch` / `issueRejected` (constructors returning `Issue`), `underPath(issues, parent)` (each path moved under `parent`) |
 | Error replies | `issueObject(issue)`, `errorObject(issue)` (`{"ok": false, …}`), `errorsObject(issues)` (`{"ok": false, "errors": […]}`) |
 
 A JSON object written in a Thoxa string needs `{{` / `}}` (`"{{\"qty\":2}}"`

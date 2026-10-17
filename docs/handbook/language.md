@@ -751,6 +751,72 @@ into an integer type (no rounding rule is chosen), and keeping the low bits of
 an integer (`Byte(truncating: x)`). Implicit narrowing at an expected type
 still panics when the value does not fit; `as` is how to narrow without one.
 
+### from clauses
+
+A type declares conversions into itself with `from` clauses in its body:
+
+```thx
+type Celsius(degrees: Float64)
+
+type Fahrenheit(degrees: Float64) {
+    export from(celsius: Celsius) -> Fahrenheit {
+        Fahrenheit(degrees: celsius.degrees * 1.8 + 32.0)
+    }
+}
+
+type Email(address: String) {
+    export from(text: String) -> Trial<Email, String> {
+        if contains(text, "@") {
+            Pass(Email(address: text))
+        } else {
+            Fail("{text} is not an email address")
+        }
+    }
+}
+
+let hot = Celsius(degrees: 40.0) as Fahrenheit      ## Fahrenheit
+let email = "ada@example.com" as Email              ## Trial<Email, String>
+```
+
+- A clause takes one parameter, the source, without a default, and returns the
+  type itself (the conversion cannot fail) or `Trial<Type, E>` for any `E`.
+  The return type is required.
+- A clause has no receiver: the type's fields are not in scope. It is a
+  constructor, not a method.
+- A type may have several clauses for different source types; two for the
+  same source, or one from the type itself, are compile errors. Generic types
+  cannot declare clauses.
+- `export` makes a conversion usable outside the type's module, as for
+  methods.
+- A clause replaces any built-in conversion for its pair, and `as?` on a
+  fallible clause propagates its `E`.
+- Only the target declares conversions into itself. Conversion into `Json` is
+  the exception: a type declares it with its own `toJson` (see
+  [Encoding](#encoding)).
+
+A `from(json: Json)` clause is the type's JSON reader. It returns the type or
+`Trial<Type, Array<Issue>>`, and `json as T`, `T.read(text)`, and the read of
+any field of type `T` call it; a field read places its issues under the
+field's path (`at: expected array, got object`). With its own `toJson` a type
+owns both directions of its JSON:
+
+```thx
+## A point is written as [x, y].
+type Point(x: Int64, y: Int64) {
+    export from(json: Json) -> Trial<Point, Array<Issue>> {
+        let pair = json as? Array<Int64>
+        if pair.count != 2 {
+            return Fail([issueRejected("", "a point is [x, y]")])
+        }
+        Pass(Point(x: pair[0], y: pair[1]))
+    }
+
+    export fn toJson() -> Json {
+        [x, y]
+    }
+}
+```
+
 ## Control flow
 
 `if`, `match`, and blocks are expressions. `while`, `for`, and an `if` without
@@ -1253,7 +1319,8 @@ error at the `readForm` call that names the field. An absent `Bool` or
 | union of products | the member's object with `"type": "Member"` first |
 
 A type that defines its own exported `fn toJson() -> Json` is encoded by it,
-including inside other types, and gets no generated reader. `Bytes`, `Buffer`,
+including inside other types, and gets no generated reader (a
+[`from(json: Json)` clause](#from-clauses) gives it one). `Bytes`, `Buffer`,
 `Node`, functions, `Address`, types with `drop`, C-layout types, maps with
 non-`String` keys, unions that mix literals and products, generic types, and
 `Trial` have no encoding; using one is a compile error that names the type

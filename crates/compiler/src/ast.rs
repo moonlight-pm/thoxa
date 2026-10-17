@@ -96,8 +96,23 @@ pub struct TypeDef {
     /// HTTP-style route clauses in the type body (`GET "/…" { … }`, **D150**).
     /// Cleared by `route_desugar` into handlers + `route`.
     pub routes: Vec<RouteClause>,
+    /// `from(source: S) -> T { … }` conversions into the type (D191 §3).
+    /// `conversion_desugar` adds a free function for each; the clauses stay
+    /// so later passes can see which sources a type converts from.
+    pub conversions: Vec<Conversion>,
     /// `type Name = A | B | …` (D118). When set, params/fields/methods must be empty.
     pub union_members: Option<Vec<TypeExpr>>,
+}
+
+/// `[export] from(source: S) -> T { … }` in `type T`'s body: a conversion into
+/// `T` (D191 §3). No receiver; the return type is `T` or `Trial<T, E>`.
+#[derive(Debug, Clone)]
+pub struct Conversion {
+    pub exported: bool,
+    pub span: Span,
+    pub param: Param,
+    pub return_type: TypeExpr,
+    pub body: Block,
 }
 
 /// `GET "/home" { … }` / `PUT "/user/:id" (id: Int64) -> T { … }` inside a type body (**D150**).

@@ -1,0 +1,12 @@
+## A `from` clause returns its type, or a Trial of it (D191 §3).
+type Celsius(degrees: Float64)
+
+type Fahrenheit(degrees: Float64) {
+    export from(celsius: Celsius) -> Float64 {
+        celsius.degrees * 1.8 + 32.0
+    }
+}
+
+fn main() -> Int64 {
+    0
+}

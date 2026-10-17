@@ -182,6 +182,26 @@ export fn issuePath(e!: Issue) -> String {
     }
 }
 
+## `issues` moved under `parent`: each path joined onto it, an empty path
+## becoming `parent` itself. A type's own reader reports paths from its root;
+## reading it as a field puts them under the field (D191 §3).
+export fn underPath(issues!: Array<Issue>, parent!: String) -> Array<Issue> {
+    if parent.count == 0 {
+        return issues
+    }
+    mut moved: Array<Issue> = []
+    for issue in issues {
+        let at = if issuePath(issue).count == 0 { parent } else { joinPath(parent, issuePath(issue)) }
+        let placed = match issue {
+            Missing(_) => issueMissing(at)
+            Mismatch(_, expected, got) => issueMismatch(at, expected, got)
+            Rejected(_, reason) => issueRejected(at, reason)
+        }
+        moved.append(placed)
+    }
+    moved
+}
+
 ## The read helpers below report issues as `Array<Issue>`, like `T.read`
 ## (D182 §2); generated readers call them.
 
