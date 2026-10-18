@@ -19,7 +19,7 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
-## 2026-10-18 — Language gap pass (Joshua: "cover all these -- keep going, pick your order"): D207–
+## 2026-10-18 — Language gap pass (Joshua: "cover all these -- keep going, pick your order"): D207–D226
 
 | ID | Decision | Choice | Notes |
 |----|----------|--------|-------|
