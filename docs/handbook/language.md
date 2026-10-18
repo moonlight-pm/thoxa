@@ -386,18 +386,18 @@ byte methods (`byteAt`, `byteSlice`, `byteIndexOf`).
 
 ### Bytes
 
-`Bytes` is a fixed-length array of bytes. `Bytes(n)` makes `n` zero bytes;
-`Bytes.fromString(s)` copies a string's bytes.
+`Bytes` is a fixed-length array of bytes. `Bytes(count)` makes `count` zero
+bytes; `Bytes.fromString(text)` copies a string's bytes.
 **A `Bytes` value is shared, not copied:** `let alias = b` refers to the same bytes, and `b.set(0, 65)` is
 visible through `alias`.
 
 | Member | Result |
 |--------|--------|
 | `.count` | length |
-| `.get(i)` | the byte at `i` as `Int64`; out of range panics |
-| `.set(i, byte)` | writes in place |
+| `.get(index)` | the byte at `index` as `Int64`; out of range panics |
+| `.set(index, byte)` | writes in place |
 | `.slice(start, end)` | a new `Bytes` from `start` up to `end` |
-| `.find(needle)`, `.find(needle, from)` | `May<Int64>`, the first index of `needle` |
+| `.find(needle, from: 0)` | `May<Int64>`, the first index of `needle` at or after `from` |
 | `.insertAt(at, byte)` | a new `Bytes` with `byte` inserted |
 | `.removeAt(at)` | a new `Bytes` without the byte at `at` |
 | `.equals(other)` | `Bool`; `==` does the same |
@@ -408,7 +408,7 @@ There is no `"…" as Bytes`; use `Bytes.fromString`.
 ### Buffer
 
 `Buffer` is a growable byte buffer with value semantics (copy on write).
-`Buffer()` is empty; `Buffer(capacity)` reserves space. Capacity doubles as
+`Buffer()` is empty; `Buffer(capacity: 64)` reserves space. Capacity doubles as
 bytes are appended.
 
 | Member | Result |
@@ -443,10 +443,10 @@ mut names: Array<String> = []
 | `a[i]` | the element; an index out of range panics with `array index out of bounds` |
 | `a[i] = v` | replaces an element (needs a `mut` place) |
 | `.count` | length |
-| `.append(v)` | adds at the end |
+| `.append(item)` | adds at the end |
 | `.dropLast()` | removes the last element; panics on an empty array |
-| `.insertAt(i, v)` | inserts before index `i` |
-| `.removeAt(i)` | removes index `i` |
+| `.insertAt(at, item)` | inserts before index `at` |
+| `.removeAt(at)` | removes index `at` |
 
 The writing members return `Void` and need a writable place: write
 `xs.append(4)`, not `xs = xs.append(4)`. Arrays may nest; an inner array is
@@ -481,10 +481,10 @@ for name, age in ages {
 
 | Member | Result |
 |--------|--------|
-| `m[k]`, `.get(k)` | `May<V>` (requires `std/fallible` in scope) |
-| `.has(k)` | `Bool` |
-| `m[k] = v`, `.set(k, v)` | inserts or replaces |
-| `.remove(k)` | removes; a missing key is a no-op |
+| `m[key]`, `.get(key)` | `May<V>` (requires `std/fallible` in scope) |
+| `.has(key)` | `Bool` |
+| `m[key] = value`, `.set(key, value)` | inserts or replaces |
+| `.remove(key)` | removes; a missing key is a no-op |
 | `.count` | number of entries |
 | `.keys()` / `.values()` | snapshots as `Array` |
 
@@ -745,17 +745,20 @@ It is still a labelled argument, so it goes after the positional ones, and
 also labels the name keeps the bare one positional: with
 `fn scale(value!: Int64, factor: Int64 = 2)`, `scale(factor)` is
 `scale(factor: factor)` and is missing `value`, while
-`scale(factor, factor: 3)` passes `factor` as `value`. Methods built into the
-runtime (on `Array`, `Map`, and `Bytes`), the `Element` constructor, and calls
-through a function value take no labels from a declaration, so they do not
-pun.
+`scale(factor, factor: 3)` passes `factor` as `value`.
+
+Built-in methods and constructors follow the same rule. Their parameters are
+positional (`items.append(item)`, `ages.set("ada", 36)`, `Text("hi")`) except
+the options: `from:` on `byteIndexOf` and `Bytes.find`, `Buffer(capacity:)`,
+and `Element(tag:, attrs:, kids:)`. The tables below show each one's labels.
 
 A parameter with a default may be omitted. Default expressions are evaluated
 at the call site, and free names in them resolve in the module that defines
 the function, so callers need not import them. A parameter without a default
 may not follow one with a default. The mark is required on every parameter of
 an `extern` function and must match across the clauses of a multi-clause
-function. Calls through a function value are positional.
+function. A function type has no parameter names, so a call through a function value
+passes every argument by position; a label there is an error.
 
 There is no spread or variadic argument syntax in calls; a component's
 `{...value}` in a tag literal is the one spread (see
@@ -1039,8 +1042,8 @@ block's last value does, so arms may be different members of an expected
 union, or values that encode into an expected `Json`. Without an expected
 type, the arms must have the same type.
 
-**`Node` values** match with `Element(tag, attrs, children)`, `Text(s)`, and
-`Fragment(children)`.
+**`Node` values** match with `Element(tag, attrs, kids)`, `Text(text)`, and
+`Fragment(kids)`.
 
 ## Functions
 
@@ -1541,8 +1544,8 @@ info(page.html())
 | Spreads | `{...attrs}` on an element takes an `Array<Attr>` (later attributes append); on a component it copies a product's fields |
 | Text | Whitespace-only gaps between tags are dropped. `#` starts a comment; `\#` is a literal `#` |
 | Void elements | `br` `hr` `img` `input` `meta` `link` render with no closing tag |
-| Matching | `Element(tag, attrs, children)` / `Text(s)` / `Fragment(children)` |
-| Constructors | `Element`, `Text`, `Fragment`, and `Attr` are built in |
+| Matching | `Element(tag, attrs, kids)` / `Text(text)` / `Fragment(kids)` |
+| Constructors | Built in: `Element(tag: "p", attrs: [], kids: [])`, `Text("hi")`, `Fragment([…])`, `Attr(name: "id", value: "x")` |
 
 `<` starts a tag only when a name or `>` follows it directly; see
 [Line breaks](#line-breaks). `http.htmlResponse(root)` sends a page with a

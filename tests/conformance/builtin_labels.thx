@@ -1,0 +1,58 @@
+## Built-in methods and constructors follow D200 (D203): their parameters are
+## positional except the options (`from:`, `capacity:`, Element's fields), and
+## a bare name puns like any labelled argument (D202).
+import logging, { info } from "std/logging"
+import { Has, Not } from "std/fallible"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let hay = Bytes.fromString("abcabc")
+    let needle = Bytes.fromString("bc")
+    let from = 2
+    match hay.find(needle) {
+        Has(at) => info("find {at}")
+        Not => info("find none")
+    }
+    match hay.find(needle, from) {
+        Has(at) => info("find from {from}: {at}")
+        Not => info("find none")
+    }
+    match hay.find(needle, from: 5) {
+        Has(at) => info("find from 5: {at}")
+        Not => info("find from 5: none")
+    }
+    match "a-b-c".byteIndexOf("-", from) {
+        Has(at) => info("byteIndexOf from {from}: {at}")
+        Not => info("byteIndexOf none")
+    }
+
+    let capacity = 16
+    mut buffer = Buffer(capacity)
+    buffer.append(72)
+    buffer.appendBytes(Bytes.fromString("i"))
+    mut other = Buffer(capacity: 4)
+    other.append(33)
+    info("{buffer.freeze().toString()}{other.freeze().toString()} {buffer.capacity >= 16}")
+
+    mut items: Array<String> = []
+    items.append("b")
+    items.insertAt(0, "a")
+    items.append("c")
+    items.removeAt(2)
+    info("{items.count} {items[0]}{items[1]}")
+
+    mut ages: Map<String, Int64> = Map()
+    ages.set("ada", 36)
+    info("{ages.has("ada")} {ages.count}")
+
+    let tag = "p"
+    let attrs = [Attr(name: "class", value: "note")]
+    let kids = [Text("hi "), Fragment([Text("there")])]
+    let paragraph = Element(tag, attrs, kids)
+    let heading = Element(tag: "h1", attrs: [], kids: [Text("title")])
+    info(paragraph.html())
+    info(heading.html())
+    0
+}

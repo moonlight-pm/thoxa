@@ -1,0 +1,11 @@
+## A function type has no parameter names, so a call through a function
+## value passes its arguments by position (D203).
+fn double(value!: Int64) -> Int64 {
+    value * 2
+}
+
+fn main() -> Int64 {
+    let apply = double
+    let result = apply(value: 3)
+    0
+}

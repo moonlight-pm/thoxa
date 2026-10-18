@@ -64,11 +64,11 @@ fn main() -> Int64 {
     let fromSpread = <Card {...card}><em>via</em></Card>
     logging.info(fromSpread.html())
 
-    let built = Element(tag: "span", attrs: [Attr(name: "class", value: "t")], kids: [Text(s: "go")])
+    let built = Element(tag: "span", attrs: [Attr(name: "class", value: "t")], kids: [Text("go")])
     logging.info(built.html())
     logging.info(kindName(<p>Hi</p>))
-    logging.info(kindName(Text(s: "a")))
-    logging.info(kindName(Fragment(kids: [<b>1</b>])))
+    logging.info(kindName(Text("a")))
+    logging.info(kindName(Fragment([<b>1</b>])))
 
     ## `#` is a comment. `\#` is a literal hash in JSX text.
     let number = 3

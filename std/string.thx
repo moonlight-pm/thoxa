@@ -134,7 +134,7 @@ extend String as text {
             mut parts: Array<String> = []
             mut start = 0
             loop {
-                match text.byteIndexOf(separator, start) {
+                match text.byteIndexOf(separator, from: start) {
                     Has(at) {
                         parts.append(text.byteSlice(start, at))
                         start = at + separator.byteCount
@@ -184,7 +184,7 @@ extend String as text {
         mut found = -1
         mut next = 0
         loop {
-            match text.byteIndexOf(needle, next) {
+            match text.byteIndexOf(needle, from: next) {
                 Has(at) {
                     found = at
                     next = at + 1
@@ -523,7 +523,7 @@ fn replaceIn(text!: String, old!: String, new!: String, firstOnly!: Bool) -> Str
         mut out = Buffer()
         mut start = 0
         loop {
-            match text.byteIndexOf(old, start) {
+            match text.byteIndexOf(old, from: start) {
                 Has(at) {
                     out.appendBytes(Bytes.fromString(text.byteSlice(start, at)))
                     out.appendBytes(replacement)

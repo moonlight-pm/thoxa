@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-18 (D202 label punning; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
+**As of:** 2026-10-18 (D202 label punning, D203 built-in labels; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
 handbook rendered as one page. The handbook was rewritten as a reference
@@ -110,9 +110,13 @@ match arm may be one assignment.
 labelled parameter it names, `connect(host, deadline)`, `Point(x, y)`; std,
 the examples, and the sites use it.
 
-**Proposed, awaiting Joshua** (standing order): check built-in methods'
-labels too (and so pun them: `Element(tag: …, attrs: …, kids)`); let a
-method's field be passed `mut`.
+**D203** (2026-10-18, Joshua: "do the builtin label checks next"): built-in
+methods and constructors follow D200, positional except their options
+(`find(needle, from: 3)`, `Buffer(capacity:)`, `Element(tag:, attrs:,
+kids:)`), so they pun too; `Text("hi")`, `Fragment([…])`.
+
+**Proposed, awaiting Joshua** (standing order): let a method's field be
+passed `mut`.
 
 **Typed codecs (D182) shipped**, freeze
 [`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md):

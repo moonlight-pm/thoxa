@@ -1,0 +1,9 @@
+## A built-in method's options are labelled, like a parameter without `!`
+## (D203): `find(needle, from: 3)`.
+import { Has, Not } from "std/fallible"
+
+fn main() -> Int64 {
+    let hay = Bytes.fromString("abcabc")
+    let found = hay.find(Bytes.fromString("c"), 3)
+    0
+}

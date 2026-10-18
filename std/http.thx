@@ -130,13 +130,13 @@ export fn parseRequest(raw!: Bytes) -> Trial<Request, String> {
                         Fail("malformed request line")
                     }
                     Has(sp1) {
-                        match reqLine.find(sp, sp1 + 1) {
+                        match reqLine.find(sp, from: sp1 + 1) {
                             Not {
                                 Fail("malformed request line")
                             }
                             Has(sp2) {
                                 ## Reject extra spaces / extra tokens on the request line.
-                                match reqLine.find(sp, sp2 + 1) {
+                                match reqLine.find(sp, from: sp2 + 1) {
                                     Has(_) {
                                         Fail("malformed request line")
                                     }
@@ -199,7 +199,7 @@ fn parseRequestBody(
             let n = headerBlock.count
             loop {
                 if pos >= n { break }
-                let lineEnd = match headerBlock.find(crlf, pos) {
+                let lineEnd = match headerBlock.find(crlf, from: pos) {
                     Not { n }
                     Has(next) { next }
                 }
@@ -210,7 +210,7 @@ fn parseRequestBody(
                     let h = parseHeaderLine(line, colon)?
                     headers.append(h)
                 }
-                match headerBlock.find(crlf, pos) {
+                match headerBlock.find(crlf, from: pos) {
                     Not { break }
                     Has(next) {
                         pos = next + 2

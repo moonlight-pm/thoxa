@@ -10765,8 +10765,16 @@ fn lower_type_read_static(
         .get(&mangled_fn)
         .ok_or_else(|| Error::at(format!("internal: missing `{mangled_fn}`"), span))?
         .clone();
-    let arg_places =
-        resolve_call_args_with_defaults(ctx, &sig.params, &sig.defaults, args, span, &sig.def_mod)?;
+    let arg_places = resolve_call_args_full(
+        ctx,
+        &sig.params,
+        &sig.defaults,
+        &[],
+        &sig.positional,
+        args,
+        span,
+        &sig.def_mod,
+    )?;
     emit_call_result(ctx, Callee::User(sig.mangled.clone()), arg_places, sig.ret)
 }
 
@@ -10778,7 +10786,7 @@ fn lower_bytes_static(
 ) -> Result<(Place, Ty)> {
     match method {
         "fromString" => {
-            let formal = vec![("s".into(), Ty::String)];
+            let formal = vec![("text".into(), Ty::String)];
             let places = resolve_call_args(ctx, &formal, args, span)?;
             emit_call_result(
                 ctx,
@@ -10796,7 +10804,7 @@ fn lower_bytes_static(
 
 /// `Bytes(n)` — zero-filled buffer of length `n` (R9 / D18).
 fn lower_bytes_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
-    let formal = vec![("n".into(), Ty::Int64)];
+    let formal = vec![("count".into(), Ty::Int64)];
     let places = resolve_call_args(ctx, &formal, args, span)?;
     emit_call_result(ctx, Callee::Builtin("bytes_new".into()), places, Ty::Bytes)
 }
@@ -10811,7 +10819,7 @@ fn lower_buffer_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
         ),
         1 => {
             let formal = vec![("capacity".into(), Ty::Int64)];
-            let places = resolve_call_args(ctx, &formal, args, span)?;
+            let places = resolve_call_args_full(ctx, &formal, &[], &[], &[false], args, span, "")?;
             emit_call_result(
                 ctx,
                 Callee::Builtin("buffer_with_capacity".into()),
@@ -10820,7 +10828,7 @@ fn lower_buffer_new(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Pla
             )
         }
         _ => Err(Error::at(
-            "`Buffer()` / `Buffer(capacity)` expects 0 or 1 argument",
+            "`Buffer()` / `Buffer(capacity: n)` expects 0 or 1 argument",
             span,
         )),
     }
@@ -10860,8 +10868,7 @@ fn lower_html_el(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place,
         ("attrs".into(), attr_array_ty()),
         ("kids".into(), node_array_ty()),
     ];
-    let defaults = vec![None, None, None];
-    let places = resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, "")?;
+    let places = resolve_call_args_full(ctx, &formal, &[], &[], &[false; 3], args, span, "")?;
     emit_call_result(ctx, Callee::Builtin("html_el".into()), places, Ty::Node)
 }
 
@@ -10870,14 +10877,14 @@ fn lower_html_element_ctor(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Resu
 }
 
 fn lower_html_text_ctor(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
-    let formal = vec![("s".into(), Ty::String)];
-    let places = resolve_call_args_with_defaults(ctx, &formal, &[None], args, span, "")?;
+    let formal = vec![("text".into(), Ty::String)];
+    let places = resolve_call_args(ctx, &formal, args, span)?;
     emit_call_result(ctx, Callee::Builtin("html_text".into()), places, Ty::Node)
 }
 
 fn lower_html_frag_ctor(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
     let formal = vec![("kids".into(), node_array_ty())];
-    let places = resolve_call_args_with_defaults(ctx, &formal, &[None], args, span, "")?;
+    let places = resolve_call_args(ctx, &formal, args, span)?;
     emit_call_result(ctx, Callee::Builtin("html_frag".into()), places, Ty::Node)
 }
 
@@ -11442,7 +11449,7 @@ const STRING_PRIMITIVES: &[(&str, &str, &[(&str, StringParam)], StringResult)] =
 enum StringParam {
     Text,
     Int,
-    /// `Int64 = 0`
+    /// `from: Int64 = 0`, labelled
     From,
 }
 
@@ -11488,6 +11495,7 @@ fn lower_string_method(
     };
     let mut formal = Vec::new();
     let mut defaults = Vec::new();
+    let mut marked = Vec::new();
     for (name, param) in params.iter() {
         let (ty, default) = match param {
             StringParam::Text => (Ty::String, None),
@@ -11496,8 +11504,9 @@ fn lower_string_method(
         };
         formal.push((name.to_string(), ty));
         defaults.push(default);
+        marked.push(!matches!(param, StringParam::From));
     }
-    let places = resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, "")?;
+    let places = resolve_call_args_full(ctx, &formal, &defaults, &[], &marked, args, span, "")?;
     let ret = match result {
         StringResult::Int | StringResult::Index => Ty::Int64,
         StringResult::Text => Ty::String,
@@ -11610,14 +11619,14 @@ fn lower_bytes_method(
 ) -> Result<(Place, Ty)> {
     match method {
         "get" => {
-            let formal = vec![("i".into(), Ty::Int64)];
+            let formal = vec![("index".into(), Ty::Int64)];
             let places = resolve_call_args(ctx, &formal, args, span)?;
             let mut all = vec![recv];
             all.extend(places);
             emit_call_result(ctx, Callee::Builtin("bytes_get".into()), all, Ty::Int64)
         }
         "set" => {
-            let formal = vec![("i".into(), Ty::Int64), ("b".into(), Ty::Int64)];
+            let formal = vec![("index".into(), Ty::Int64), ("byte".into(), Ty::Int64)];
             let places = resolve_call_args(ctx, &formal, args, span)?;
             let mut all = vec![recv];
             all.extend(places);
@@ -11631,30 +11640,13 @@ fn lower_bytes_method(
             emit_call_result(ctx, Callee::Builtin("bytes_slice".into()), all, Ty::Bytes)
         }
         "find" => {
-            // `find(needle[, from]) -> May<Int64>` — Has(i) or Not (never -1 at surface).
-            let (needle_args, from_default) = match args.len() {
-                1 => (args, true),
-                2 => (args, false),
-                _ => {
-                    return Err(Error::at(
-                        "Bytes.find expects 1 or 2 arguments (needle[, from])",
-                        span,
-                    ));
-                }
-            };
-            let formal = if from_default {
-                vec![("needle".into(), Ty::Bytes)]
-            } else {
-                vec![("needle".into(), Ty::Bytes), ("from".into(), Ty::Int64)]
-            };
-            let places = resolve_call_args(ctx, &formal, needle_args, span)?;
+            // `find(needle, from: 0) -> May<Int64>`: Has(offset) or Not (never -1 at surface).
+            let formal = vec![("needle".into(), Ty::Bytes), ("from".into(), Ty::Int64)];
+            let defaults = vec![None, Some(crate::ast_build::int_lit(0))];
+            let places =
+                resolve_call_args_full(ctx, &formal, &defaults, &[], &[true, false], args, span, "")?;
             let mut all = vec![recv];
             all.extend(places);
-            if from_default {
-                let z = ctx.fresh("from");
-                ctx.assign(z.clone(), Ty::Int64, RValue::Int(0));
-                all.push(z);
-            }
             let idx = ctx.fresh("findi");
             ctx.assign(
                 idx.clone(),
@@ -11883,33 +11875,24 @@ fn heap_args_to_move(callee: &Callee, args: &[Place]) -> Vec<Place> {
     }
 }
 
+/// Arguments for a built-in whose parameters are all positional, as if
+/// declared `!` (D200, D203): `items.append(item)`, `map.set(key, value)`.
 fn resolve_call_args(
     ctx: &mut LowerCtx,
     formal: &[(String, Ty)],
     args: &[Arg],
     span: Span,
 ) -> Result<Vec<Place>> {
-    resolve_call_args_with_defaults(ctx, formal, &[], args, span, "")
+    let marked = vec![true; formal.len()];
+    resolve_call_args_full(ctx, formal, &[], &[], &marked, args, span, "")
 }
 
-/// Like [`resolve_call_args`], but `defaults[i]` fills formal `i` when omitted.
-/// `defaults` may be shorter than `formal` (missing entries mean no default).
-/// Default expressions resolve free names in `def_mod` (defining module — D116).
-fn resolve_call_args_with_defaults(
-    ctx: &mut LowerCtx,
-    formal: &[(String, Ty)],
-    defaults: &[Option<Expr>],
-    args: &[Arg],
-    span: Span,
-    def_mod: &str,
-) -> Result<Vec<Place>> {
-    resolve_call_args_full(ctx, formal, defaults, &[], &[], args, span, def_mod)
-}
-
-/// Like [`resolve_call_args_with_defaults`]; `mutable[i]` marks a `mut`
-/// parameter (D199), whose argument is `mut binding`, passed by address, and
-/// `marked[i]` a `!` parameter: those go by position, the rest by label
-/// (D200). An empty `marked` (built-in formals) is not checked.
+/// The places for a call's arguments, in `formal`'s order. `defaults[i]`
+/// fills formal `i` when omitted (`defaults` may be shorter than `formal`);
+/// default expressions resolve free names in `def_mod` (defining module,
+/// D116). `mutable[i]` marks a `mut` parameter (D199), whose argument is
+/// `mut binding`, passed by address, and `marked[i]` a `!` parameter: those go
+/// by position, the rest by label (D200; built-ins too, D203).
 #[allow(clippy::too_many_arguments)]
 fn resolve_call_args_full(
     ctx: &mut LowerCtx,
@@ -12046,6 +12029,11 @@ fn resolve_call_args_full(
                         format!("argument `{name}` is already given by position"),
                         *name_span,
                     ));
+                }
+                if !formal.iter().any(|(fname, _)| fname == name) {
+                    let names: Vec<&str> = formal.iter().map(|(fname, _)| fname.as_str()).collect();
+                    return Err(Error::at(format!("unknown argument `{name}`"), *name_span)
+                        .with_help(format!("the parameters are {}", names.join(", "))));
                 }
                 by_name.insert(name.clone(), value);
             }
@@ -12206,7 +12194,7 @@ fn resolve_call_args_with_spreads(
 /// `deadline` (or `mut deadline`) where the callee has a labelled
 /// `deadline` is `deadline: deadline`, so `connect(host, deadline)` needs no
 /// `deadline: deadline`. A call that also labels `deadline:` keeps the bare
-/// one positional. Built-in formals (empty `marked`) are not punned.
+/// one positional.
 fn punned_arguments(formal: &[(String, Ty)], marked: &[bool], args: &[Arg]) -> Vec<Option<String>> {
     let labelled_in_call = |name: &str| {
         args.iter()
@@ -12236,9 +12224,6 @@ fn check_argument_labels(
     args: &[Arg],
     positional: usize,
 ) -> Result<()> {
-    if marked.is_empty() {
-        return Ok(());
-    }
     for (index, arg) in args[..positional].iter().enumerate() {
         let (Some((name, _)), Arg::Pos(value)) = (formal.get(index), arg) else {
             continue;
@@ -16391,13 +16376,21 @@ fn lower_indirect_call(
             span,
         ));
     };
+    if let Some(Arg::Named { name, name_span, .. }) =
+        args.iter().find(|arg| matches!(arg, Arg::Named { .. }))
+    {
+        return Err(Error::at(
+            format!("a call through a function value passes `{name}` by position"),
+            *name_span,
+        )
+        .with_help("a function type has no parameter names, so its arguments go by position"));
+    }
     let formal: Vec<(String, Ty)> = params
         .iter()
         .enumerate()
         .map(|(i, t)| (format!("a{i}"), t.clone()))
         .collect();
-    let defaults = vec![None; formal.len()];
-    let arg_places = resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, "")?;
+    let arg_places = resolve_call_args(ctx, &formal, args, span)?;
     emit_call_result(
         ctx,
         Callee::Indirect {

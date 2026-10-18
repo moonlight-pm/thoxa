@@ -34,14 +34,14 @@ fn summarize(wire!: Bytes) -> String {
     mut lines = ""
     mut at = 0
     loop {
-        let start = match wire.find(marker, at) {
+        let start = match wire.find(marker, from: at) {
             Has(found) => found
             Not => wire.count
         }
         if start >= wire.count {
             break
         }
-        let next = match wire.find(marker, start + 1) {
+        let next = match wire.find(marker, from: start + 1) {
             Has(found) => found
             Not => wire.count
         }

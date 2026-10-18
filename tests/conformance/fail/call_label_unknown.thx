@@ -1,0 +1,6 @@
+## A label that names no parameter is reported at the label, with the
+## parameters' names.
+fn main() -> Int64 {
+    let node = Element(tag: "p", attributes: [], kids: [])
+    0
+}

@@ -37,7 +37,7 @@ export fn code(language!: String, text!: String) -> Array<Node> {
     } else if language == "bash" {
         shell(source)
     } else {
-        one(Text(s: text))
+        one(Text(text))
     }
 }
 
@@ -52,7 +52,7 @@ fn scan(source!: Bytes, start!: Int64, end!: Int64) -> Array<Node> {
             }
             Has(found) {
                 if at > plain {
-                    nodes.append(Text(s: slice(source, plain, at)))
+                    nodes.append(Text(slice(source, plain, at)))
                 }
                 for node in found.nodes {
                     nodes.append(node)
@@ -63,7 +63,7 @@ fn scan(source!: Bytes, start!: Int64, end!: Int64) -> Array<Node> {
         }
     }
     if end > plain {
-        nodes.append(Text(s: slice(source, plain, end)))
+        nodes.append(Text(slice(source, plain, end)))
     }
     nodes
 }
@@ -205,7 +205,7 @@ fn startsTag(source!: Bytes, at!: Int64, end!: Int64) -> Bool {
 fn elementAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
     mut nodes: Array<Node> = []
     let nameEnd = tagNameEnd(source, at + 1, end)
-    nodes.append(Text(s: "<"))
+    nodes.append(Text("<"))
     if nameEnd > at + 1 {
         nodes.append(span("tag", slice(source, at + 1, nameEnd)))
     }
@@ -219,14 +219,14 @@ fn elementAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
             index = index + 1
             break
         } else if byte == quote {
-            nodes.append(Text(s: slice(source, run, index)))
+            nodes.append(Text(slice(source, run, index)))
             let stop = stringEnd(source, index, end)
             nodes.append(span("st", slice(source, index, stop)))
             index = stop
             run = index
         } else if byte == leftBrace {
             let close = matchingBrace(source, index, end)
-            nodes.append(Text(s: slice(source, run, index + 1)))
+            nodes.append(Text(slice(source, run, index + 1)))
             for node in scan(source, index + 1, close) {
                 nodes.append(node)
             }
@@ -234,7 +234,7 @@ fn elementAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
             run = index
         } else if isLetter(byte) {
             let stop = attributeEnd(source, index, end)
-            nodes.append(Text(s: slice(source, run, index)))
+            nodes.append(Text(slice(source, run, index)))
             nodes.append(span("at", slice(source, index, stop)))
             index = stop
             run = index
@@ -243,7 +243,7 @@ fn elementAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
         }
     }
     let headEnd = if index > end { end } else { index }
-    nodes.append(Text(s: slice(source, run, headEnd)))
+    nodes.append(Text(slice(source, run, headEnd)))
     if selfClosing {
         Scanned(nodes, end: headEnd)
     } else {
@@ -265,25 +265,25 @@ fn childrenAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
         let next: Int64 = if index + 1 < end { source.get(index + 1) } else { 0 }
         if byte == leftBrace {
             let close = matchingBrace(source, index, end)
-            nodes.append(Text(s: slice(source, run, index + 1)))
+            nodes.append(Text(slice(source, run, index + 1)))
             for node in scan(source, index + 1, close) {
                 nodes.append(node)
             }
             index = close
             run = index
         } else if byte == less and next == slash {
-            nodes.append(Text(s: slice(source, run, index)))
+            nodes.append(Text(slice(source, run, index)))
             let nameEnd = tagNameEnd(source, index + 2, end)
-            nodes.append(Text(s: "</"))
+            nodes.append(Text("</"))
             if nameEnd > index + 2 {
                 nodes.append(span("tag", slice(source, index + 2, nameEnd)))
             }
             let close = findByte(source, greater, nameEnd, end)
             let stop = if close < end { close + 1 } else { end }
-            nodes.append(Text(s: slice(source, nameEnd, stop)))
+            nodes.append(Text(slice(source, nameEnd, stop)))
             return Scanned(nodes, end: stop)
         } else if byte == less and (isLetter(next) or next == greater) {
-            nodes.append(Text(s: slice(source, run, index)))
+            nodes.append(Text(slice(source, run, index)))
             let inner = elementAt(source, index, end)
             for node in inner.nodes {
                 nodes.append(node)
@@ -291,7 +291,7 @@ fn childrenAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
             index = inner.end
             run = index
         } else if byte == hash and (index == 0 or source.get(index - 1) != backslash) {
-            nodes.append(Text(s: slice(source, run, index)))
+            nodes.append(Text(slice(source, run, index)))
             let stop = lineEnd(source, index, end)
             nodes.append(span("cm", slice(source, index, stop)))
             index = stop
@@ -300,7 +300,7 @@ fn childrenAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
             index = index + 1
         }
     }
-    nodes.append(Text(s: slice(source, run, end)))
+    nodes.append(Text(slice(source, run, end)))
     Scanned(nodes, end)
 }
 
@@ -313,7 +313,7 @@ fn shell(source!: Bytes) -> Array<Node> {
         let byte = source.get(index)
         let wordStart = index == 0 or isBlank(source.get(index - 1))
         if byte == hash and wordStart {
-            nodes.append(Text(s: slice(source, run, index)))
+            nodes.append(Text(slice(source, run, index)))
             let stop = lineEnd(source, index, source.count)
             nodes.append(span("cm", slice(source, index, stop)))
             index = stop
@@ -322,7 +322,7 @@ fn shell(source!: Bytes) -> Array<Node> {
             index = index + 1
         }
     }
-    nodes.append(Text(s: slice(source, run, source.count)))
+    nodes.append(Text(slice(source, run, source.count)))
     nodes
 }
 
@@ -399,7 +399,7 @@ fn findByte(source!: Bytes, byte!: Int64, at!: Int64, end!: Int64) -> Int64 {
 fn single(kind!: String, source!: Bytes, at!: Int64, stop!: Int64) -> Scanned {
     let text = slice(source, at, stop)
     if kind == "" {
-        Scanned(nodes: one(Text(s: text)), end: stop)
+        Scanned(nodes: one(Text(text)), end: stop)
     } else {
         Scanned(nodes: one(span(kind, text)), end: stop)
     }

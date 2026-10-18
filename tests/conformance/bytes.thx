@@ -38,7 +38,7 @@ fn main() -> Int64 {
         Has(i) { logging.info("{i}") }
         Not { logging.info("none") }
     }
-    match hay.find(needle, 1) {
+    match hay.find(needle, from: 1) {
         Has(i) { logging.info("{i}") }
         Not { logging.info("none") }
     }

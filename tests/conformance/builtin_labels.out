@@ -1,0 +1,9 @@
+find 1
+find from 2: 4
+find from 5: none
+byteIndexOf from 2: 3
+Hi! true
+2 ab
+true 1
+<p class="note">hi there</p>
+<h1>title</h1>

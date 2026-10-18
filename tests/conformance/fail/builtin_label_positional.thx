@@ -1,0 +1,6 @@
+## A built-in method's subject is positional, like a `!` parameter (D203).
+fn main() -> Int64 {
+    mut items: Array<Int64> = []
+    items.append(item: 3)
+    0
+}
