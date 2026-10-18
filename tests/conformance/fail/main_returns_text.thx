@@ -1,0 +1,4 @@
+## D223: an unannotated `main` returns its exit status or nothing.
+fn main() {
+    "done"
+}

@@ -63,7 +63,7 @@ The exit status is 0 when there are no errors; warnings alone still succeed.
 ## Exit status
 
 `thoxa run` exits with the program's status: what `main` returned (0 to 255;
-outside that range the program panics), 134 after a panic, or 128 + signal
+outside that range the program panics; 0 when `main` returns nothing), 134 after a panic, or 128 + signal
 when a signal ended the program.
 
 ## Signals

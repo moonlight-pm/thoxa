@@ -3363,8 +3363,8 @@ fn resolve_return_ty(
 ) -> Result<Ty> {
     let is_main = is_entry && f.name == "main";
     match f.return_type.as_ref() {
-        None if is_main => Ok(Ty::Int64),
-        // D129: unannotated non-main is inferred later; placeholder Void until then.
+        // D129: unannotated functions, `main` too (D223), are inferred later;
+        // placeholder Void until then.
         None => Ok(Ty::Void),
         Some(t) => {
             let ty = resolve_ty(t, types, name_map)?;
@@ -4422,13 +4422,10 @@ fn infer_unannotated_returns(
         .map(|job| (job, subst_method(&job.method, &job.subst)))
         .collect();
 
-    // Candidates: unannotated non-main free functions and, since D174,
-    // unannotated methods (single-clause; `drop` is always Void).
+    // Candidates: unannotated free functions (`main` too, D223) and, since
+    // D174, unannotated methods (`drop` is always Void).
     let mut candidates: Vec<InferCandidate> = Vec::new();
     for (mod_id, mangled, f, is_entry) in free_fns {
-        if *is_entry && f.name == "main" {
-            continue;
-        }
         // D131: a multi-clause function joins its clauses' types; one whose
         // clauses all annotate was joined when it was merged.
         if let Some(clauses) = multi_free.get(mangled) {
@@ -4726,6 +4723,25 @@ fn infer_unannotated_returns(
         pending = waiting;
     }
 
+    // D223: an unannotated `main` returns the exit status, `Int64`, or
+    // nothing (it then exits 0).
+    if let Some((mod_id, _, f, _)) = free_fns
+        .iter()
+        .find(|(_, _, f, is_entry)| *is_entry && f.name == "main" && f.return_type.is_none())
+    {
+        let ret = fns.get("main").map(|sig| sig.ret.clone()).unwrap_or(Ty::Void);
+        if !matches!(ret, Ty::Int64 | Ty::Void | Ty::Never) {
+            let error = Error::at(
+                format!(
+                    "`main` ends with a {} value: it returns its exit status (`Int64`) or nothing",
+                    display_ty(&ret)
+                ),
+                f.name_span,
+            )
+            .with_help("end `main` with a status such as `0`, or with a statement");
+            infer_errors.push(in_module_id(error, package, mod_id));
+        }
+    }
     if !infer_errors.is_empty() {
         return Err(errors_to_multi(infer_errors));
     }

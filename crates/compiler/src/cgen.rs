@@ -324,12 +324,21 @@ pub fn emit_program_with(
 
     match entry {
         EntryPoint::Main => {
-            let main_takes_args = program
+            let main_fn = program
                 .functions
                 .iter()
-                .find(|f| f.is_main || (f.name == "main" && f.receiver.is_none()))
-                .map(|f| !f.params.is_empty())
-                .unwrap_or(false);
+                .find(|f| f.is_main || (f.name == "main" && f.receiver.is_none()));
+            let main_takes_args = main_fn.map(|f| !f.params.is_empty()).unwrap_or(false);
+            // A `main` that returns nothing exits 0 (D223).
+            let call_main = |args: &str| match main_fn.map(|f| &f.ret_ty) {
+                Some(Ty::Void | Ty::Never) => {
+                    format!("    thoxa_fn_main({args});
+    int64_t thoxa_rc = 0;
+")
+                }
+                _ => format!("    int64_t thoxa_rc = thoxa_fn_main({args});
+"),
+            };
             if main_takes_args {
                 // `fn main(arguments: Array<String>)` — pass process argv.
                 out.push_str("int main(int argc, char **argv) {\n");
@@ -338,7 +347,7 @@ pub fn emit_program_with(
                     out.push_str("    thoxa_module_init();\n");
                 }
                 out.push_str("    ThoxaArray *thoxa_args = thoxa_argv_to_array(argc, argv);\n");
-                out.push_str("    int64_t thoxa_rc = thoxa_fn_main(thoxa_args);\n");
+                out.push_str(&call_main("thoxa_args"));
                 out.push_str("    thoxa_array_drop(thoxa_args);\n");
                 out.push_str("    thoxa_sched_drain();\n");
                 out.push_str("    return thoxa_exit_status(thoxa_rc);\n");
@@ -349,7 +358,7 @@ pub fn emit_program_with(
                 if has_init {
                     out.push_str("    thoxa_module_init();\n");
                 }
-                out.push_str("    int64_t thoxa_rc = thoxa_fn_main();\n");
+                out.push_str(&call_main(""));
                 out.push_str("    thoxa_sched_drain();\n");
                 out.push_str("    return thoxa_exit_status(thoxa_rc);\n");
                 out.push_str("}\n");

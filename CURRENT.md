@@ -157,7 +157,8 @@ whole range (wrapping, unsigned `/ % < >>`; mixing with a signed value is an
 error); **D220** multi-clause methods write their fields; **D221** a
 multi-clause body may call unannotated functions (it is inferred in the same
 rounds); **D222** (Joshua's call) `where` ranges mean what `for` ranges do,
-`0..24` stops before 24 and `1..=64` includes 64.
+`0..24` stops before 24 and `1..=64` includes 64; **D223** (Joshua's call) a
+`main` without `->` that returns nothing exits 0 (`fn main() { info("hi") }`).
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 `Int64` →

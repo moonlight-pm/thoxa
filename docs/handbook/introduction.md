@@ -52,11 +52,10 @@ standard library through `THOXA_ROOT` / `THOXA_STD` or next to the binary; see
 ```thx
 import logging, { info } from "std/logging"
 
-fn main() -> Int64 {
+fn main() {
     logging.toStdout()
     logging.setFormat(logging.formatPlain)
     info("hello, world")
-    0
 }
 ```
 
@@ -68,7 +67,8 @@ thoxa check hello.thx            # typecheck only
 
 There is no built-in `print`. Output goes through the logger in
 `std/logging`; `toStdout()` and `formatPlain` make `info` write plain lines to
-standard output. `main` returns the process exit status.
+standard output. A `main` that returns nothing exits with status 0; one
+declared `-> Int64` returns the process exit status.
 
 A program reads its command-line arguments by declaring them:
 

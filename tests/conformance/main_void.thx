@@ -1,0 +1,10 @@
+## D223: a `main` without `->` whose body ends in a statement returns
+## nothing and exits 0. (One that ends in an Int64 returns its exit status,
+## D173, and `fn main() -> Int64` keeps that rule.)
+import logging, { info } from "std/logging"
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info("hello")
+}

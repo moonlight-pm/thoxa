@@ -189,10 +189,14 @@ fn main(arguments: Array<String>) -> Int64 {
 }
 ```
 
-What `main` returns is the process exit status, `0` to `255`. An unannotated
-`main` returns `Int64`. Any other value panics once the program's tasks have
-finished: `thoxa panic: main returned 256; an exit status is 0 to 255`. (The
-kernel would keep only the low 8 bits, so `256` would read as success.)
+What `main` returns is the process exit status, `0` to `255`. A `main`
+without `->` infers its type like any function: one that ends with an
+`Int64` returns it as the status, and one that ends with a statement returns
+nothing and exits 0. Any other type is a compile error, and so is a `main`
+that returns a status on one path and nothing on another (write `-> Int64`).
+A status outside `0` to `255` panics once the program's tasks have finished:
+`thoxa panic: main returned 256; an exit status is 0 to 255`. (The kernel would
+keep only the low 8 bits, so `256` would read as success.)
 After `main` returns, the program keeps running until every task it started
 has finished, then exits.
 
@@ -1156,7 +1160,7 @@ function or method without `->` infers its return type from its exits:
 - a recursive or mutually recursive function must be annotated; the error
   names each function on the cycle.
 
-An unannotated `main` returns `Int64` and `drop` always returns `Void`. A
+An unannotated `main` returns `Int64` or nothing (see [Entry point](#entry-point)), and `drop` always returns `Void`. A
 multi-clause function or method without `->` joins its clauses' types. A
 generic type's method is inferred for each instance, so `first()` on a
 `Shelf<String>` is a `String`.

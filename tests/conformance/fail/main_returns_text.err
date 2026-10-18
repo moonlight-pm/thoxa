@@ -1,0 +1,1 @@
+`main` ends with a String value: it returns its exit status (`Int64`) or nothing
