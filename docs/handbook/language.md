@@ -768,7 +768,8 @@ There is no spread or variadic argument syntax in calls; a component's
 ### Field access, methods, indexing
 
 `value.field` reads a field. `value.method(args)` calls a method.
-`value[index]` indexes an array, a fixed array, or a map. A `Type.method`
+`value[index]` indexes an array, a fixed array, or a map, a field as well
+as a binding (`row.cells["name"]`). A `Type.method`
 without a receiver is an unbound method (see
 [Function values](#function-values)); `Type.read(…)` and the other
 [typed-data](#typed-data) functions are called on the type.

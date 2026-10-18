@@ -9980,31 +9980,25 @@ fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Res
                 );
                 return Ok((p, elem_ty));
             }
-            Ty::Array { elem } => {
-                // Load dynamic Array field, then index like a local Array.
-                let arr_p = ctx.fresh("afld");
-                let arr_ty = finfo.ty.clone();
+            _ => {
+                // Load the field (an Array, a Map, …), then index it like a local.
+                let field_p = ctx.fresh("afld");
+                let field_ty = finfo.ty.clone();
                 ctx.assign(
-                    arr_p.clone(),
-                    arr_ty.clone(),
+                    field_p.clone(),
+                    field_ty.clone(),
                     RValue::Field {
                         base: struct_p,
                         field: sanitize_field(name),
                     },
                 );
-                if needs_drop(&arr_ty) {
+                if needs_drop(&field_ty) {
                     ctx.stmts.push(Stmt::Dup {
-                        place: arr_p.clone(),
-                        ty: arr_ty,
+                        place: field_p.clone(),
+                        ty: field_ty.clone(),
                     });
                 }
-                return lower_array_index(ctx, arr_p, elem.as_ref().clone(), index);
-            }
-            other => {
-                return Err(Error::at(
-                    format!("cannot index non-array field type {other:?}"),
-                    *name_span,
-                ));
+                return lower_index_value(ctx, field_p, &field_ty, index, span);
             }
         }
     }
@@ -10043,7 +10037,18 @@ fn lower_index(ctx: &mut LowerCtx, base: &Expr, index: &Expr, span: Span) -> Res
         );
         return Ok((p, elem_ty));
     }
-    match &base_ty {
+    lower_index_value(ctx, base_p, &base_ty, index, span)
+}
+
+/// Index a lowered dynamic `Array` (by position) or `Map` (by key, a `May`).
+fn lower_index_value(
+    ctx: &mut LowerCtx,
+    base_p: Place,
+    base_ty: &Ty,
+    index: &Expr,
+    span: Span,
+) -> Result<(Place, Ty)> {
+    match base_ty {
         Ty::Array { elem } => lower_array_index(ctx, base_p, elem.as_ref().clone(), index),
         Ty::Map { key, val } => {
             let (kp, kt) = lower_expr(ctx, index)?;

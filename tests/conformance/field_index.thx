@@ -1,0 +1,30 @@
+## A field indexes as a local does: an Array field by position, a Map field
+## by key (a `May`), through any chain of fields.
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Row(cells: Map<String, String>, grid: Array<Array<Int64>>)
+
+type Sheet(title: String, row: Row)
+
+fn describe(row!: Row, column!: String) -> String {
+    match row.cells[column] {
+        Has(cell) => "{column}={cell}"
+        Not => "{column} missing"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let row = Row(cells: {"name": "tea", "price": "4"}, grid: [[1, 2], [3, 4]])
+    info(describe(row, "name"))
+    info(describe(row, "size"))
+    let sheet = Sheet(title: "menu", row: row)
+    match sheet.row.cells["price"] {
+        Has(price) => info("price {price}")
+        Not => info("no price")
+    }
+    info("{sheet.row.grid[1][0]} {row.grid[0][1]}")
+    0
+}

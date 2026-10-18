@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-18 — Language gap pass (Joshua: "cover all these -- keep going, pick your order"): D207–
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D207 | A field indexes as a local does | `row.cells["name"]` is a `May<V>` and `row.grid[1][0]` an element, through any chain of fields (`sheet.row.cells[k]`): the field is loaded, then indexed by `lower_index_value`, the code a local `Array` / `Map` uses. A fixed-array field still indexes in place. | **Shipped.** Gate: `field_index` (LeakSanitizer). Before, any field but an `Array` or fixed array was `cannot index non-array field type Map …`; `.get(key)` worked. Writes are unchanged: from outside its type a field is read-only (D180). |
+
 ## 2026-10-18 — Label punning, built-in labels (Joshua: "do label punning next", "do the builtin label checks next", "Hit all three proposals"): D202–D206
 
 | ID | Decision | Choice | Notes |

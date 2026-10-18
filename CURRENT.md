@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-18 (D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-18 (gap pass from D207, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -136,13 +136,17 @@ Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 (route clauses import only what they write; generated code names `std/http`
 itself). thoxa.dev runs `2e59a4c` (manual and feature list include D191).
 
+**Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
+order"):** working down the list below one slice at a time, each with
+conformance and docs. Shipped so far: **D207** a field indexes as a local
+(`row.cells["name"]`).
+
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
 D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
 `Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
-range) and the message prints `lo..hi` for `lo..=hi`; indexing a `Map`
-through a field (`row.cells["name"]`) is an error (`.get` works); a method
+range) and the message prints `lo..hi` for `lo..=hi`; a method
 cannot call a sibling method by bare name; a session command inside a block
 is not recognized (use `shell.run`); `thoxa -c` with an `import` line runs
 nothing. From D191: generic types cannot declare `from` clauses; route body
