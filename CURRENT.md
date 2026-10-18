@@ -168,7 +168,13 @@ positional argument into a pun is refused.
 found 2026-10-17: a session command inside a block
 is not recognized (use `shell.run`). From D195: no normalization.
 From D206: a heap field passed `mut` is copied on the callee's
-first write (it is shared with the receiver until the write-back).
+first write (it is shared with the receiver until the write-back). Found in
+the 2026-10-18 pass: a generic constructor does not infer its type arguments
+from its arguments (`Shelf(items: [1, 2])` needs `let s: Shelf<Int64>`;
+instances are made before bodies are lowered, so this needs lazy
+instantiation); multi-clause parameters cannot join `Int64` and `Float64`
+(no union of built-in scalars); a `UInt64` above `Int64` max cannot be
+written to JSON.
 
 **To discuss (Joshua, 2026-10-18):** TypeScript-style destructuring as
 arguments. Field access does not pun (`options.deadline` stays positional;
