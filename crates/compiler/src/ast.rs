@@ -235,10 +235,12 @@ pub enum WherePred {
     Lt(WhereLit),
     Eq(WhereLit),
     Ne(WhereLit),
-    /// Inclusive range. Missing end is unbounded.
+    /// `lo..hi` stops before `hi`, as a `for` range does; `lo..=hi`
+    /// (`inclusive`) includes it (D222). A missing end is unbounded.
     Range {
         lo: Option<WhereLit>,
         hi: Option<WhereLit>,
+        inclusive: bool,
     },
     /// Membership (`where "espresso"`).
     Lit(WhereLit),

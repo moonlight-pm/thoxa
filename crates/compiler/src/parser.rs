@@ -1163,21 +1163,32 @@ impl Parser {
             self.bump();
             return Ok(WherePred::Ne(self.parse_where_lit()?));
         }
-        if self.at(TokenKind::DotDot) {
+        // `..64` stops before 64, `..=64` includes it (D222).
+        if self.at(TokenKind::DotDot) || self.at(TokenKind::DotDotEq) {
+            let inclusive = self.at(TokenKind::DotDotEq);
             self.bump();
             let hi = Some(self.parse_where_lit()?);
-            return Ok(WherePred::Range { lo: None, hi });
+            return Ok(WherePred::Range {
+                lo: None,
+                hi,
+                inclusive,
+            });
         }
         // `1..64` / `1..=64` / `"espresso"` / `0`
         let lo = self.parse_where_lit()?;
         if self.at(TokenKind::DotDot) || self.at(TokenKind::DotDotEq) {
+            let inclusive = self.at(TokenKind::DotDotEq);
             self.bump();
             let hi = if self.at_where_lit() {
                 Some(self.parse_where_lit()?)
             } else {
                 None
             };
-            return Ok(WherePred::Range { lo: Some(lo), hi });
+            return Ok(WherePred::Range {
+                lo: Some(lo),
+                hi,
+                inclusive,
+            });
         }
         Ok(WherePred::Lit(lo))
     }

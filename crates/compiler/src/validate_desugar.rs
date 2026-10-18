@@ -2058,13 +2058,15 @@ fn pred_cond(val: &str, base: &str, pred: &WherePred) -> Expr {
         WherePred::Lt(l) => bin(BinaryOp::Lt, lhs, lit_expr(l)),
         WherePred::Eq(l) => bin(BinaryOp::Eq, lhs, lit_expr(l)),
         WherePred::Ne(l) => bin(BinaryOp::Ne, lhs, lit_expr(l)),
-        WherePred::Range { lo, hi } => {
+        WherePred::Range { lo, hi, inclusive } => {
             let mut c = match lo {
                 Some(l) => bin(BinaryOp::Ge, lhs.clone(), lit_expr(l)),
                 None => bool_lit(true),
             };
             if let Some(h) = hi {
-                c = bin(BinaryOp::And, c, bin(BinaryOp::Le, lhs, lit_expr(h)));
+                // `lo..hi` stops before `hi`, as a `for` range does (D222).
+                let below = if *inclusive { BinaryOp::Le } else { BinaryOp::Lt };
+                c = bin(BinaryOp::And, c, bin(below, lhs, lit_expr(h)));
             }
             c
         }

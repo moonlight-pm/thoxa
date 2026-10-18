@@ -156,12 +156,12 @@ arrays and Float64, and be Float64 (SameValueZero: NaN finds NaN); **D215**
 whole range (wrapping, unsigned `/ % < >>`; mixing with a signed value is an
 error); **D220** multi-clause methods write their fields; **D221** a
 multi-clause body may call unannotated functions (it is inferred in the same
-rounds).
+rounds); **D222** (Joshua's call) `where` ranges mean what `for` ranges do,
+`0..24` stops before 24 and `1..=64` includes 64.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 `Int64` →
-`Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
-range) and the message prints `lo..hi` for `lo..=hi`; a session command inside a block
+`Float64` rounds unchecked. Found 2026-10-17: a session command inside a block
 is not recognized (use `shell.run`). From D195: no normalization.
 From D202: only a bare name puns (not `options.deadline`). From D206: a heap field passed `mut` is copied on the callee's
 first write (it is shared with the receiver until the write-back).

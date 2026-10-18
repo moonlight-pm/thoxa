@@ -1,0 +1,7 @@
+## D222: `0..24` stops before 24, so 24 is not an Hour.
+type Hour = Int64 where 0..24
+
+fn main() -> Int64 {
+    let late: Hour = 24
+    late
+}

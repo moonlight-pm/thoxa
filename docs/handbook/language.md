@@ -621,14 +621,14 @@ distinct type:
 ```thx
 type Qty = Int64 where >= 1
 type Dozen = Qty where <= 12
-type Slug = String where 1..64
+type Slug = String where 1..=64
 type Order(slug: String, qty: Int64 where >= 1)
 ```
 
 | Piece | Meaning |
 |-------|---------|
 | Comparisons | `>= 1`, `< 10`, `== 0`, `!= 0` |
-| Ranges | `1..64` includes both ends (`1..=64` means the same); `..64` is at most 64, `1..` at least 1. On `Int64` / `Float64` they test the value; on `String` / `Array` they test `.count` (scalars for a `String`) |
+| Ranges | As in a `for` loop: `0..24` is 0 to 23, `1..=64` is 1 to 64; `..4` is below 4, `..=4` at most 4, `1..` at least 1. On `Int64` / `Float64` they test the value; on `String` / `Array` they test `.count` (scalars for a `String`) |
 | Literals | `String where "a" \| "b"` (prefer a literal union) |
 | Combination | `&` (and), `\|` (or), parentheses. Outside a `where`, `\|` is still a union |
 | Messages | A string after a predicate replaces its error message; it may use `{value}`, `{expected}`, `{path}` |

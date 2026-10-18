@@ -17430,8 +17430,9 @@ fn inhabit_literal(
     };
     if !crate::refine::lit_inhabits(base_name, &info.clause.expr, &lit) {
         let got = crate::refine::lit_show(&lit);
+        let expected = crate::refine::expected_clause(&info.clause.expr, base_name);
         return Err(Error::at(
-            crate::refine::generated_message("", "this refinement", &got),
+            format!("{got} does not fit in {}: expected {expected}", display_ty(exp)),
             span,
         ));
     }

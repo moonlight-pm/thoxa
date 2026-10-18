@@ -72,10 +72,15 @@ pub fn expected_desc(pred: &WherePred, base: &str) -> String {
         WherePred::Lt(l) => format!("{noun} < {}", lit_show(l)),
         WherePred::Eq(l) => format!("{noun} == {}", lit_show(l)),
         WherePred::Ne(l) => format!("{noun} != {}", lit_show(l)),
-        WherePred::Range { lo, hi } => match (lo, hi) {
-            (Some(a), Some(b)) => format!("{noun} {}..{}", lit_show(a), lit_show(b)),
+        // As written: `1..64` or `1..=64` (D222).
+        WherePred::Range { lo, hi, inclusive } => match (lo, hi) {
+            (Some(a), Some(b)) => {
+                let dots = if *inclusive { "..=" } else { ".." };
+                format!("{noun} {}{dots}{}", lit_show(a), lit_show(b))
+            }
             (Some(a), None) => format!("{noun} >= {}", lit_show(a)),
-            (None, Some(b)) => format!("{noun} <= {}", lit_show(b)),
+            (None, Some(b)) if *inclusive => format!("{noun} <= {}", lit_show(b)),
+            (None, Some(b)) => format!("{noun} < {}", lit_show(b)),
             (None, None) => noun.into(),
         },
         WherePred::Lit(l) => lit_show(l),
@@ -85,7 +90,8 @@ pub fn expected_desc(pred: &WherePred, base: &str) -> String {
 pub fn lit_show(l: &WhereLit) -> String {
     match l {
         WhereLit::Int(n) => n.to_string(),
-        WhereLit::Float(n) => format!("{n}"),
+        // `1.0`, not `1`: the bound reads as the Float64 it is.
+        WhereLit::Float(n) => format!("{n:?}"),
         WhereLit::String(s) => format!("\"{s}\""),
     }
 }
@@ -120,26 +126,16 @@ fn pred_holds(base: &str, pred: &WherePred, lit: &WhereLit) -> bool {
         (WherePred::Le(WhereLit::Float(b)), WhereLit::Float(v)) => v <= b,
         (WherePred::Gt(WhereLit::Float(b)), WhereLit::Float(v)) => v > b,
         (WherePred::Lt(WhereLit::Float(b)), WhereLit::Float(v)) => v < b,
-        (
-            WherePred::Range { lo, hi },
-            WhereLit::Int(v),
-        ) => {
-            let n = if length_mode {
-                // String literal length is not this Int; treat Int as the count.
-                *v
-            } else {
-                *v
-            };
-            range_int(lo.as_ref(), hi.as_ref(), n)
+        (WherePred::Range { lo, hi, inclusive }, WhereLit::Int(v)) => {
+            range_int(lo.as_ref(), hi.as_ref(), *inclusive, *v)
         }
         (WherePred::Lit(WhereLit::Int(b)), WhereLit::Int(v)) => v == b,
         (WherePred::Eq(WhereLit::String(b)), WhereLit::String(v)) => v == b,
         (WherePred::Ne(WhereLit::String(b)), WhereLit::String(v)) => v != b,
         (WherePred::Lit(WhereLit::String(b)), WhereLit::String(v)) => v == b,
-        (
-            WherePred::Range { lo, hi },
-            WhereLit::String(s),
-        ) => range_int(lo.as_ref(), hi.as_ref(), s.chars().count() as i64),
+        (WherePred::Range { lo, hi, inclusive }, WhereLit::String(s)) => {
+            range_int(lo.as_ref(), hi.as_ref(), *inclusive, s.chars().count() as i64)
+        }
         (WherePred::Ge(WhereLit::Int(b)), WhereLit::String(s)) => (s.chars().count() as i64) >= *b,
         (WherePred::Le(WhereLit::Int(b)), WhereLit::String(s)) => (s.chars().count() as i64) <= *b,
         _ => false,
@@ -150,14 +146,15 @@ fn cmp_num(v: i64, b: i64, _length_mode: bool) -> i64 {
     v.cmp(&b) as i64
 }
 
-fn range_int(lo: Option<&WhereLit>, hi: Option<&WhereLit>, n: i64) -> bool {
+fn range_int(lo: Option<&WhereLit>, hi: Option<&WhereLit>, inclusive: bool, n: i64) -> bool {
     let ok_lo = match lo {
         Some(WhereLit::Int(a)) => n >= *a,
         None => true,
         _ => false,
     };
     let ok_hi = match hi {
-        Some(WhereLit::Int(b)) => n <= *b,
+        Some(WhereLit::Int(b)) if inclusive => n <= *b,
+        Some(WhereLit::Int(b)) => n < *b,
         None => true,
         _ => false,
     };
@@ -223,14 +220,19 @@ fn pred_intervals(pred: &WherePred) -> Vec<Iv> {
             vec![Iv { lo: *n, hi: *n }]
         }
         WherePred::Ne(WhereLit::Int(_)) => vec![Iv { lo: min, hi: max }],
-        WherePred::Range { lo, hi } => {
+        WherePred::Range { lo, hi, inclusive } => {
             let a = match lo {
                 Some(WhereLit::Int(n)) => *n,
                 None => min,
                 _ => return vec![],
             };
             let b = match hi {
-                Some(WhereLit::Int(n)) => *n,
+                Some(WhereLit::Int(n)) if *inclusive => *n,
+                // `a..b` stops before `b` (D222).
+                Some(WhereLit::Int(n)) => match n.checked_sub(1) {
+                    Some(last) => last,
+                    None => return vec![],
+                },
                 None => max,
                 _ => return vec![],
             };

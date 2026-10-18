@@ -1,0 +1,51 @@
+## D222: a range in `where` means what it means in `for`: `lo..hi` stops
+## before `hi`, `lo..=hi` includes it, `..hi` is below `hi`, `..=hi` at most
+## `hi`. A failed check names the range as written.
+import { Pass, Fail, Trial } from "std/fallible"
+import { Issue, messages } from "std/json"
+import logging, { info } from "std/logging"
+
+type Hour = Int64 where 0..24
+type Percent = Int64 where 0..=100
+type Short = String where ..4
+type Small = Int64 where ..=9
+type Ratio = Float64 where 0.0..1.0
+
+fn check(value!: Int64) -> String {
+    let hour = match value as Hour {
+        Pass(h) => "hour {h}"
+        Fail(issues) => messages(issues)
+    }
+    let percent = match value as Percent {
+        Pass(p) => "percent {p}"
+        Fail(issues) => messages(issues)
+    }
+    let small = match value as Small {
+        Pass(s) => "small {s}"
+        Fail(issues) => messages(issues)
+    }
+    "{hour}; {percent}; {small}"
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    for value in [0, 9, 10, 23, 24, 100, 101] {
+        info(check(value))
+    }
+    for text in ["abc", "abcd"] {
+        match text as Short {
+            Pass(s) => info("short {s}")
+            Fail(issues) => info(messages(issues))
+        }
+    }
+    for value in [0.5, 1.0] {
+        match value as Ratio {
+            Pass(r) => info("ratio {r}")
+            Fail(issues) => info(messages(issues))
+        }
+    }
+    let literal: Hour = 23
+    info("{literal}")
+    0
+}
