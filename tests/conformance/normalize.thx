@@ -1,0 +1,21 @@
+## D226: std/normalize gives the four Unicode normalization forms, written in
+## Thoxa over generated tables (checked against the whole of Unicode 17's
+## NormalizationTest.txt). Two spellings of one text normalize alike.
+import { nfc, nfd, nfkc, nfkd } from "std/normalize"
+import logging, { info } from "std/logging"
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let composed = "caf\u{e9}"
+    let decomposed = "cafe\u{301}"
+    info("{composed == decomposed} {nfc(decomposed) == composed} {nfd(composed) == decomposed}")
+    info("{composed.count} {nfd(composed).count} {nfc(decomposed).count}")
+    ## Marks are put in canonical order, then composed where they can be.
+    info("{nfd("\u{1EAD}") == "a\u{323}\u{302}"} {nfc("a\u{302}\u{323}") == "\u{1EAD}"}")
+    ## Compatibility forms fold ligatures, circled digits, full-width letters.
+    info("{nfkc("\u{FB01}le")} {nfkd("\u{2460}")} {nfkc("\u{FF21}\u{FF22}")} {nfc("\u{FB01}") == "\u{FB01}"}")
+    ## Hangul syllables compose and decompose by formula.
+    info("{nfc("\u{1100}\u{1161}\u{11A8}") == "\u{AC01}"} {nfd("\u{AC01}").count}")
+    info("{nfc("plain ascii")} {nfd("").count}")
+}

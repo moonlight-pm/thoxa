@@ -402,7 +402,7 @@ word (`"ΟΔΟΣ".toLower()` is `"οδος"`) and to `σ` elsewhere. There are n
 language-specific rules (Turkish `i`). White space is
 Unicode white space: space, tab, line ends, the no-break space, the
 ideographic space, and the other `White_Space` characters. Neither case
-folding nor `==` normalizes: a precomposed `é` is not `e` followed by a
+folding nor `==` normalizes (use [`std/normalize`](std.md#utility-modules)): a precomposed `é` is not `e` followed by a
 combining accent.
 
 ```thx

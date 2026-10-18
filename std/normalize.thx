@@ -1,0 +1,262 @@
+## std/normalize — Unicode normalization (UAX #15), written in Thoxa (D226).
+##
+## `nfc` and `nfd` give the canonical forms, `nfkc` and `nfkd` the
+## compatibility forms. Two strings that look the same but are spelled with
+## different code points (`é` as one scalar, or `e` and a combining acute)
+## normalize to the same text, so `nfc(a) == nfc(b)` compares them as a
+## reader would. The tables are std/normalize-data, generated from the
+## Unicode Character Database; Hangul syllables decompose and compose by
+## formula. Import this module only where it is needed: its tables go into
+## the program that does.
+
+import { combiningClasses, canonicalIndex, canonicalPool, compatibilityIndex, compatibilityPool, compositions } from "std/normalize-data"
+import { Has, Not, May } from "std/fallible"
+
+## Canonical composition of the canonical decomposition.
+export fn nfc(text!: String) -> String {
+    if text.isAscii() {
+        return text
+    }
+    encode(compose(decompose(text, false)))
+}
+
+## Canonical decomposition, combining marks in canonical order.
+export fn nfd(text!: String) -> String {
+    if text.isAscii() {
+        return text
+    }
+    encode(decompose(text, false))
+}
+
+## Canonical composition of the compatibility decomposition: `ﬁ` becomes
+## `fi`, `①` becomes `1`.
+export fn nfkc(text!: String) -> String {
+    if text.isAscii() {
+        return text
+    }
+    encode(compose(decompose(text, true)))
+}
+
+## Compatibility decomposition, combining marks in canonical order.
+export fn nfkd(text!: String) -> String {
+    if text.isAscii() {
+        return text
+    }
+    encode(decompose(text, true))
+}
+
+## --- Decomposition ------------------------------------------------------
+
+## The text's scalars, each fully decomposed, then put in canonical order.
+fn decompose(text!: String, compatibility!: Bool) -> Array<Int64> {
+    mut codes: Array<Int64> = []
+    mut at = 0
+    while at < text.byteCount {
+        let scalar = decode(text, at)
+        appendDecomposed(mut codes, scalar.code, compatibility)
+        at = at + scalar.length
+    }
+    reorder(mut codes)
+    codes
+}
+
+fn appendDecomposed(mut codes!: Array<Int64>, code!: Int64, compatibility!: Bool) {
+    if code >= hangulFirst and code <= hangulLast {
+        let index = code - hangulFirst
+        codes.append(leadFirst + index / (vowelCount * trailCount))
+        codes.append(vowelFirst + (index % (vowelCount * trailCount)) / trailCount)
+        let trail = index % trailCount
+        if trail != 0 {
+            codes.append(trailBase + trail)
+        }
+        return
+    }
+    if compatibility {
+        match entry(code, compatibilityIndex) {
+            Has(at) {
+                appendSlice(mut codes, compatibilityPool, compatibilityIndex[at + 1], compatibilityIndex[at + 2])
+                return
+            }
+            Not => {}
+        }
+    }
+    match entry(code, canonicalIndex) {
+        Has(at) => appendSlice(mut codes, canonicalPool, canonicalIndex[at + 1], canonicalIndex[at + 2])
+        Not => codes.append(code)
+    }
+}
+
+fn appendSlice(mut codes!: Array<Int64>, pool!: Array<Int64>, start!: Int64, count!: Int64) {
+    for offset in 0..count {
+        codes.append(pool[start + offset])
+    }
+}
+
+## The index of `code`'s entry in a table of `code, start, count` triples.
+fn entry(code!: Int64, index!: Array<Int64>) -> May<Int64> {
+    mut low = 0
+    mut high = index.count / 3
+    while low < high {
+        let middle = (low + high) / 2
+        let found = index[middle * 3]
+        if found == code {
+            return Has(middle * 3)
+        }
+        if found < code {
+            low = middle + 1
+        } else {
+            high = middle
+        }
+    }
+    Not()
+}
+
+## Canonical ordering: each run of combining marks sorted by class, stably.
+fn reorder(mut codes!: Array<Int64>) {
+    for index in 1..codes.count {
+        let class = combiningClass(codes[index])
+        if class != 0 {
+            mut back = index
+            while back > 0 and combiningClass(codes[back - 1]) > class {
+                let moved = codes[back - 1]
+                codes[back - 1] = codes[back]
+                codes[back] = moved
+                back = back - 1
+            }
+        }
+    }
+}
+
+## The canonical combining class: 0 for a starter.
+fn combiningClass(code!: Int64) -> Int64 {
+    if code < 0x300 {
+        return 0
+    }
+    mut low = 0
+    mut high = combiningClasses.count / 3
+    while low < high {
+        let middle = (low + high) / 2
+        if combiningClasses[middle * 3 + 1] < code {
+            low = middle + 1
+        } else if combiningClasses[middle * 3] > code {
+            high = middle
+        } else {
+            return combiningClasses[middle * 3 + 2]
+        }
+    }
+    0
+}
+
+## --- Composition ----------------------------------------------------------
+
+## Canonical composition: each mark joins the last starter when a composite
+## exists and no mark of the same or a higher class stands between them.
+fn compose(codes!: Array<Int64>) -> Array<Int64> {
+    if codes.count == 0 {
+        return codes
+    }
+    mut out: Array<Int64> = [codes[0]]
+    mut starter = 0
+    mut lastClass = combiningClass(codes[0])
+    if lastClass != 0 {
+        ## A string that starts with a mark has no starter to join.
+        lastClass = 256
+    }
+    for index in 1..codes.count {
+        let code = codes[index]
+        let class = combiningClass(code)
+        let joined = composite(out[starter], code)
+        if joined >= 0 and (lastClass < class or lastClass == 0) {
+            out[starter] = joined
+        } else {
+            if class == 0 {
+                starter = out.count
+            }
+            lastClass = class
+            out.append(code)
+        }
+    }
+    out
+}
+
+## The primary composite of `first` and `second`, or -1.
+fn composite(first!: Int64, second!: Int64) -> Int64 {
+    if first >= leadFirst and first < leadFirst + leadCount and second >= vowelFirst and second < vowelFirst + vowelCount {
+        return hangulFirst + ((first - leadFirst) * vowelCount + (second - vowelFirst)) * trailCount
+    }
+    if first >= hangulFirst and first <= hangulLast and (first - hangulFirst) % trailCount == 0 and second > trailBase and second < trailBase + trailCount {
+        return first + (second - trailBase)
+    }
+    mut low = 0
+    mut high = compositions.count / 3
+    while low < high {
+        let middle = (low + high) / 2
+        let at = middle * 3
+        let before = compositions[at] < first or (compositions[at] == first and compositions[at + 1] < second)
+        if before {
+            low = middle + 1
+        } else if compositions[at] == first and compositions[at + 1] == second {
+            return compositions[at + 2]
+        } else {
+            high = middle
+        }
+    }
+    -1
+}
+
+## --- Hangul (Unicode §3.12) ----------------------------------------------
+
+let hangulFirst = 0xAC00
+let hangulLast = 0xD7A3
+let leadFirst = 0x1100
+let leadCount = 19
+let vowelFirst = 0x1161
+let vowelCount = 21
+let trailBase = 0x11A7
+let trailCount = 28
+
+## --- UTF-8 ----------------------------------------------------------------
+
+## A scalar value and the bytes its UTF-8 encoding takes.
+type Scalar(code: Int64, length: Int64)
+
+## The scalar whose encoding starts at byte `at` (Strings are valid UTF-8).
+fn decode(text!: String, at!: Int64) -> Scalar {
+    let lead = text.byteAt(at)
+    if lead < 0x80 {
+        Scalar(code: lead, length: 1)
+    } else if lead < 0xE0 {
+        Scalar(code: ((lead & 0x1F) << 6) | tail(text, at + 1), length: 2)
+    } else if lead < 0xF0 {
+        Scalar(code: ((lead & 0x0F) << 12) | (tail(text, at + 1) << 6) | tail(text, at + 2), length: 3)
+    } else {
+        let high = ((lead & 0x07) << 18) | (tail(text, at + 1) << 12)
+        Scalar(code: high | (tail(text, at + 2) << 6) | tail(text, at + 3), length: 4)
+    }
+}
+
+fn tail(text!: String, at!: Int64) -> Int64 {
+    text.byteAt(at) & 0x3F
+}
+
+fn encode(codes!: Array<Int64>) -> String {
+    mut out = Buffer()
+    for code in codes {
+        if code < 0x80 {
+            out.append(code)
+        } else if code < 0x800 {
+            out.append(0xC0 | (code >> 6))
+            out.append(0x80 | (code & 0x3F))
+        } else if code < 0x10000 {
+            out.append(0xE0 | (code >> 12))
+            out.append(0x80 | ((code >> 6) & 0x3F))
+            out.append(0x80 | (code & 0x3F))
+        } else {
+            out.append(0xF0 | (code >> 18))
+            out.append(0x80 | ((code >> 12) & 0x3F))
+            out.append(0x80 | ((code >> 6) & 0x3F))
+            out.append(0x80 | (code & 0x3F))
+        }
+    }
+    out.freeze().toString()
+}

@@ -5,7 +5,7 @@
 **Implementation:** shipped (§1–§3 slice 1, §4 slice 2); since D196 the methods are Thoxa in `std/string.thx`, not C; final sigma since D216, `\u{…}` since D215
 **Decision:** D195 (needs D194, positional-then-named calls)
 **Gates:** `string_methods`, `string_scalars`, `string_escapes`, `stdlib`, `call_mixed_args`, `fail/call_positional_after_named`, `fail/call_named_twice`
-**Gaps:** no normalization; a C string that is not UTF-8 (a Latin-1 file name) is repaired, so it cannot round-trip; positions in a long non-ASCII string are O(n)
+**Gaps:** normalization is a separate module, `std/normalize` (D226); a C string that is not UTF-8 (a Latin-1 file name) is repaired, so it cannot round-trip; positions in a long non-ASCII string are O(n)
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D195 in
 [`decisions.md`](../decisions.md)

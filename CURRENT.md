@@ -162,17 +162,20 @@ rounds); **D222** (Joshua's call) `where` ranges mean what `for` ranges do,
 **D224** (Joshua's call) an implicit `Int64` → `Float64` must be exact (it
 panics past 2^53 when it would round), `x as Float64` is a `Trial`, and
 `Float64(rounding: x)` rounds; **D225** an LSP rename that would turn a
-positional argument into a pun is refused.
+positional argument into a pun is refused; **D226** `std/normalize`
+(`nfc`, `nfd`, `nfkc`, `nfkd`), opt-in, passes all of Unicode 17's
+NormalizationTest.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 found 2026-10-17: a session command inside a block
-is not recognized (use `shell.run`). From D195: no normalization.
+is not recognized (use `shell.run`; parked with the session residual).
 From D206: a heap field passed `mut` is copied on the callee's
-first write (it is shared with the receiver until the write-back). Found in
+first write (it is shared with the receiver until the write-back; Joshua
+2026-10-18: leave it). Found in
 the 2026-10-18 pass: a generic constructor does not infer its type arguments
 from its arguments (`Shelf(items: [1, 2])` needs `let s: Shelf<Int64>`;
 instances are made before bodies are lowered, so this needs lazy
-instantiation); multi-clause parameters cannot join `Int64` and `Float64`
+instantiation; Joshua 2026-10-18: later, as its own piece); multi-clause parameters cannot join `Int64` and `Float64`
 (no union of built-in scalars); a `UInt64` above `Int64` max cannot be
 written to JSON.
 

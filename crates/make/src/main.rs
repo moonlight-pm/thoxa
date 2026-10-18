@@ -80,12 +80,20 @@ fn cmd_unicode(args: &[String]) -> i32 {
     let [ucd] = args else {
         eprintln!(
             "usage: cargo make unicode <ucd-dir>  (UnicodeData.txt, SpecialCasing.txt, \
-             CaseFolding.txt from https://www.unicode.org/Public/<version>/ucd/)"
+             CaseFolding.txt, DerivedCoreProperties.txt, DerivedNormalizationProps.txt \
+             from https://www.unicode.org/Public/<version>/ucd/)"
         );
         return 2;
     };
     let out = workspace_root().join("std/unicode.thx");
-    match unicode::generate(Path::new(ucd), &out) {
+    if let Err(error) = unicode::generate(Path::new(ucd), &out).map(|summary| {
+        eprintln!("wrote {} ({summary})", out.display());
+    }) {
+        eprintln!("cargo make unicode: {error}");
+        return 1;
+    }
+    let out = workspace_root().join("std/normalize-data.thx");
+    match unicode::generate_normalization(Path::new(ucd), &out) {
         Ok(summary) => {
             eprintln!("wrote {} ({summary})", out.display());
             0
