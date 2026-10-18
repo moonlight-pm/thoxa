@@ -1,0 +1,2 @@
+week!! ["first", "second", "third"] 3 3 3 9
+week!!!! ["first", "second", "third", "first", "second", "third"] 9 3 3 6 9 18

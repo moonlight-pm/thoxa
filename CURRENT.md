@@ -118,8 +118,8 @@ kids:)`), so they pun too; `Text("hi")`, `Fragment([…])`.
 **Joshua, "Hit all three proposals" (2026-10-18):** **D204** `Element`'s
 fields are `attributes` / `children` and default to empty
 (`Element(tag: "br")`); **D205** `items.insert(item, at: index)` replaces
-`insertAt(index, item)` on Array and Bytes; next, a method's field passed
-`mut`.
+`insertAt(index, item)` on Array and Bytes; **D206** a method passes its own
+field to a `mut` parameter (`addLine(mut lines, …)`).
 
 **Typed codecs (D182) shipped**, freeze
 [`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md):

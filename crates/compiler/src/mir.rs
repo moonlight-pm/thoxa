@@ -1206,6 +1206,10 @@ struct LowerCtx {
     generics: HashMap<String, GenericDef>,
     /// Experiment: body of a desugared route clause (`__Type_route_N`).
     route_clause: bool,
+    /// Method fields the call being lowered takes `mut` (D206), set by
+    /// `resolve_call_args_full`: `emit_call_result` stores each back through
+    /// `_self` after the call.
+    mut_field_args: Vec<Binding>,
 }
 
 #[derive(Clone, Default)]
@@ -1264,6 +1268,7 @@ impl LowerCtx {
             infer_successes: Vec::new(),
             generics: HashMap::new(),
             route_clause: false,
+            mut_field_args: Vec::new(),
         }
     }
 
@@ -11875,6 +11880,9 @@ fn emit_call_result(
     for (place, ty) in cleared {
         clear_moved_place(ctx, &place, &ty);
     }
+    for field in std::mem::take(&mut ctx.mut_field_args) {
+        write_back_field(ctx, &field);
+    }
     Ok(result)
 }
 
@@ -11991,13 +11999,15 @@ fn resolve_call_args_full(
             }
         }
         let mut places = Vec::new();
+        let mut fields = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             let expr = match arg {
                 Arg::Pos(e) => e,
                 Arg::Named { .. } | Arg::Spread { .. } => unreachable!(),
             };
-            let p = lower_call_arg(ctx, expr, &formal[i].1, &formal[i].0, i, is_mut(i))?;
+            let (p, field) = lower_call_arg(ctx, expr, &formal[i].1, &formal[i].0, i, is_mut(i))?;
             places.push(p);
+            fields.extend(field);
         }
         for i in args.len()..formal.len() {
             let expr = default_at(i).expect("checked above");
@@ -12006,6 +12016,7 @@ fn resolve_call_args_full(
             })?;
             places.push(p);
         }
+        ctx.mut_field_args = fields;
         return Ok(places);
     }
 
@@ -12052,12 +12063,15 @@ fn resolve_call_args_full(
         }
     }
     let mut places = Vec::new();
+    let mut fields = Vec::new();
     for (i, (fname, fty)) in formal.iter().enumerate() {
         if i < positional {
             let Arg::Pos(expr) = &args[i] else {
                 unreachable!()
             };
-            places.push(lower_call_arg(ctx, expr, fty, fname, i, is_mut(i))?);
+            let (p, field) = lower_call_arg(ctx, expr, fty, fname, i, is_mut(i))?;
+            places.push(p);
+            fields.extend(field);
             continue;
         }
         let (expr, is_default) = if let Some(e) = by_name.remove(fname) {
@@ -12078,13 +12092,16 @@ fn resolve_call_args_full(
                 lower_arg_for_formal(ctx, expr, fty, fname, i)
             })?
         } else {
-            lower_call_arg(ctx, expr, fty, fname, i, is_mut(i))?
+            let (p, field) = lower_call_arg(ctx, expr, fty, fname, i, is_mut(i))?;
+            fields.extend(field);
+            p
         };
         places.push(p);
     }
     if let Some((extra, _)) = by_name.iter().next() {
         return Err(Error::at(format!("unknown argument `{extra}`"), span));
     }
+    ctx.mut_field_args = fields;
     Ok(places)
 }
 
@@ -12260,7 +12277,9 @@ fn check_argument_labels(
 }
 
 /// An argument for parameter `name`. A `mut` parameter takes `mut binding`:
-/// a `mut` binding of exactly its type, passed by address (D199).
+/// a `mut` binding of exactly its type, passed by address (D199). A method's
+/// field passes its local, and comes back as the binding to store through
+/// `_self` after the call (D206).
 fn lower_call_arg(
     ctx: &mut LowerCtx,
     expr: &Expr,
@@ -12268,7 +12287,7 @@ fn lower_call_arg(
     name: &str,
     index: usize,
     mutable: bool,
-) -> Result<Place> {
+) -> Result<(Place, Option<Binding>)> {
     match (&expr.kind, mutable) {
         (ExprKind::MutArg(binding), true) => {
             let found = ctx
@@ -12281,13 +12300,6 @@ fn lower_call_arg(
                 )
                 .with_help(format!("declare it `mut {binding} = …`")));
             }
-            if found.writeback.is_some() {
-                return Err(Error::at(
-                    format!("field `{binding}` cannot be passed `mut`"),
-                    expr.span,
-                )
-                .with_help("copy it into a `mut` binding, pass that, and assign it back"));
-            }
             if found.ty != *ty {
                 return Err(Error::at(
                     format!(
@@ -12298,9 +12310,11 @@ fn lower_call_arg(
                     expr.span,
                 ));
             }
-            Ok(Place {
+            let place = Place {
                 name: format!("&{}", found.place.name),
-            })
+            };
+            let field = found.writeback.is_some().then_some(found);
+            Ok((place, field))
         }
         (ExprKind::MutArg(binding), false) => Err(Error::at(
             format!("parameter `{name}` is not `mut`; pass `{binding}` without `mut`"),
@@ -12314,7 +12328,7 @@ fn lower_call_arg(
             format!("parameter `{name}` is `mut`: pass a `mut` binding, as `mut total`"),
             expr.span,
         )),
-        (_, false) => lower_arg_for_formal(ctx, expr, ty, name, index),
+        (_, false) => Ok((lower_arg_for_formal(ctx, expr, ty, name, index)?, None)),
     }
 }
 
@@ -17309,6 +17323,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         infer_successes: Vec::new(),
         generics: ctx.generics.clone(),
         route_clause: ctx.route_clause,
+        mut_field_args: Vec::new(),
     };
     if block.tail.is_none() {
         return Ok(Ty::Void);

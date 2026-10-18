@@ -1,0 +1,54 @@
+## A method passes one of its fields to a `mut` parameter (D206): the call
+## writes the field, and it is stored back through the receiver.
+import logging, { info } from "std/logging"
+
+fn appendWord(mut out!: String, word!: String) {
+    out = "{out}{word} "
+}
+
+fn bump(mut count!: Int64, by: Int64 = 1) {
+    count = count + by
+}
+
+fn rename(mut name!: String) {
+    name = "{name}!"
+}
+
+fn addLine(mut lines!: Array<String>, line!: String) -> Int64 {
+    lines.append(line)
+    lines.count
+}
+
+fn tally(item!: Int64, mut total: Int64) {
+    total = total + item
+}
+
+type Report(title: String, lines: Array<String>, count: Int64, out: String, total: Int64) {
+    export fn collect() {
+        addLine(mut lines, "first")
+        addLine(mut lines, "second")
+        bump(mut count, by: addLine(mut lines, "third"))
+        appendWord(mut out, "{lines.count}")
+        appendWord(mut out, "{count}")
+        rename(mut title)
+        rename(mut title)
+        tally(4, mut total)
+        tally(5, mut total)
+    }
+
+    export fn summary() -> String {
+        "{title} {lines} {count} {out}{total}"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    mut report = Report(title: "week", lines: [], count: 0, out: "", total: 0)
+    report.collect()
+    info(report.summary())
+    report.collect()
+    info(report.summary())
+    0
+}

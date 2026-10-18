@@ -1082,9 +1082,13 @@ mut total = 0
 bump(mut total, by: 5)       ## total is 5
 ```
 
-A `mut` parameter has no default. Passing a binding that is not `mut`,
-passing a field (copy it into a `mut` binding first), or leaving off `mut`
-at the call is a compile error. A function with a `mut` parameter cannot be
+Inside a method, the type's fields are `mut` bindings too, so a method may
+pass one: `addLine(mut lines, "total")` writes the field `lines`, which is
+stored back into the value the method was called on. Outside its methods a
+field is not a binding (`mut report.lines` is not an argument).
+
+A `mut` parameter has no default. Passing a binding that is not `mut`, or
+leaving off `mut` at the call, is a compile error. A function with a `mut` parameter cannot be
 started with `-->` or taken as a function value, and constructor, `extern`,
 and `from` parameters cannot be `mut`.
 
