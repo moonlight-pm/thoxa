@@ -1182,6 +1182,7 @@ fn page(path!: "admin") -> String {
 - Duplicate domains, unreachable clauses, and `export` on only some clauses
   are compile errors.
 - Return types join like match arms.
+- A multi-clause method sees and writes its type's fields as any method does.
 
 Multi-clause and `extern` functions cannot be used as values.
 

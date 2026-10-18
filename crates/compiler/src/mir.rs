@@ -4810,7 +4810,7 @@ fn probe_multi_clause_return(
         ctx.generics = generics.clone();
         // A method's clauses see the fields, as `lower_multi_method` binds them.
         if let Some(type_mangled) = method_type {
-            bind_multi_method_fields(&mut ctx, type_mangled);
+            bind_method_fields(&mut ctx, type_mangled);
         }
 
         for (name, ty) in clause.param_names.iter().zip(clause.param_tys.iter()) {
@@ -6557,7 +6557,7 @@ fn lower_multi_method(
         Rc::clone(synthetics),
     );
 
-    bind_multi_method_fields(&mut ctx, mangled_type);
+    bind_method_fields(&mut ctx, mangled_type);
 
     let mut domain_places: Vec<(String, Place, Ty)> = Vec::new();
     for (name, ty) in &domain_params {
@@ -7300,6 +7300,19 @@ fn subst_arg(a: &Arg, subst: &HashMap<String, Ty>) -> Arg {
 /// D107 write-back: ctor-param fields and C-layout `mut` fields are mutable
 /// locals; reassignment also stores through `_self`.
 fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Result<()> {
+    bind_method_fields(ctx, mangled_type);
+    // Heap params owned (D154). `_self` stays borrowed (pointer, D107).
+    for p in &m.params {
+        let ty = resolve_ty(&p.ty, &ctx.types, &ctx.name_to_type)?;
+        bind_param(ctx, &p.name, ty, p.mutable);
+    }
+    Ok(())
+}
+
+/// A method's fields (single or multi-clause, D220): each a local read from
+/// the receiver, writable with write-back through `_self` (D107). Its
+/// sibling calls resolve as calls on the receiver (D208).
+fn bind_method_fields(ctx: &mut LowerCtx, mangled_type: &str) {
     let info = ctx.types.get(mangled_type).unwrap().clone();
     ctx.method_type = Some(mangled_type.to_string());
     let recv = Place {
@@ -7319,26 +7332,6 @@ fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Re
             None
         };
         ctx.define_full(&f.name, f.ty.clone(), writable, p, writeback);
-    }
-    // Heap params owned (D154). `_self` stays borrowed (pointer, D107).
-    for p in &m.params {
-        let ty = resolve_ty(&p.ty, &ctx.types, &ctx.name_to_type)?;
-        bind_param(ctx, &p.name, ty, p.mutable);
-    }
-    Ok(())
-}
-
-/// A multi-clause method's fields: read from the receiver, writable only
-/// when declared `mut` (C layout). Its sibling calls resolve as a method's.
-fn bind_multi_method_fields(ctx: &mut LowerCtx, mangled_type: &str) {
-    let info = ctx.types.get(mangled_type).unwrap().clone();
-    ctx.method_type = Some(mangled_type.to_string());
-    for field in &info.fields {
-        if matches!(field.ty, Ty::FixedArray { .. }) {
-            continue;
-        }
-        let place = load_method_field(ctx, field);
-        ctx.define(&field.name, field.ty.clone(), field.mutable, place);
     }
 }
 

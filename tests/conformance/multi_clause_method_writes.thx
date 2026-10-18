@@ -1,0 +1,29 @@
+## D220: a multi-clause method writes its fields as a single method does
+## (D107): the write reaches the receiver, the method is mutating (D163),
+## and it may call its siblings (D208).
+import logging, { info } from "std/logging"
+
+type Counter(count: Int64, log: Array<String>) {
+    export fn bump(by!: 1) {
+        count = count + 1
+        note("one")
+    }
+    export fn bump(by!: 10) {
+        count = count + 10
+        note("ten")
+    }
+    fn note(event!: String) {
+        log.append(event)
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut counter = Counter(count: 0, log: [])
+    counter.bump(1)
+    counter.bump(10)
+    counter.bump(1)
+    info("{counter.count} {counter.log.count} {counter.log[1]}")
+    0
+}
