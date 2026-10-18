@@ -1,0 +1,1 @@
+`total` is not `mut`, so it cannot be passed to `mut count`

@@ -2410,6 +2410,7 @@ fn casts_in_expr(expr: &Expr, visit: &mut dyn FnMut(&TypeExpr)) {
         | ExprKind::Bool(_)
         | ExprKind::String(_)
         | ExprKind::Name(_)
+        | ExprKind::MutArg(_)
         | ExprKind::Break
         | ExprKind::Continue => {}
         ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {

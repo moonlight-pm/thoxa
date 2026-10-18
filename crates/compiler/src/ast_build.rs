@@ -117,6 +117,7 @@ pub(crate) fn param(name: &str, ty: TypeExpr) -> Param {
         name: name.into(),
         name_span: dummy(),
         positional: false,
+        mutable: false,
         ty,
         default: None,
     }
@@ -127,6 +128,7 @@ pub(crate) fn param_default(name: &str, ty: TypeExpr, default: Expr) -> Param {
         name: name.into(),
         name_span: dummy(),
         positional: false,
+        mutable: false,
         ty,
         default: Some(default),
     }

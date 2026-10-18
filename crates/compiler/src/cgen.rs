@@ -624,12 +624,14 @@ fn emit_params(out: &mut String, f: &Function, types: &[TypeLayout]) {
         out.push_str("void");
         return;
     }
-    for (name, ty) in &f.params {
+    for (index, (name, ty)) in f.params.iter().enumerate() {
         if !first {
             out.push_str(", ");
         }
         first = false;
-        let _ = write!(out, "{} {}", c_val_ty(ty, types), name);
+        // A `mut` parameter is the caller's binding, by address (D199).
+        let pointer = if f.mut_params.get(index) == Some(&true) { "*" } else { "" };
+        let _ = write!(out, "{} {pointer}{}", c_val_ty(ty, types), name);
     }
 }
 
@@ -664,8 +666,12 @@ fn emit_function(
     if let Some((name, _)) = &f.receiver {
         seen.insert(name.clone());
     }
-    for (name, _) in &f.params {
+    for (index, (name, _)) in f.params.iter().enumerate() {
         seen.insert(name.clone());
+        // A `mut` parameter's place is `(*name)`, the caller's slot (D199).
+        if f.mut_params.get(index) == Some(&true) {
+            seen.insert(format!("(*{name})"));
+        }
     }
     // Module-level statics are already declared; never redeclare as locals.
     for g in global_names {
@@ -691,9 +697,12 @@ fn emit_function(
             boxed.insert(name.clone());
         }
     }
-    for (name, ty) in &f.params {
+    for (index, (name, ty)) in f.params.iter().enumerate() {
         if is_boxed_user(ty, types) {
             boxed.insert(name.clone());
+            if f.mut_params.get(index) == Some(&true) {
+                boxed.insert(format!("(*{name})"));
+            }
         }
     }
     for (name, ty) in &locals {

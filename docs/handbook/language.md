@@ -1026,6 +1026,36 @@ The body is a block; its value is the return value. Parameters are described
 in [Calls and arguments](#calls-and-arguments). Functions are declared at the
 top level of a module (or as methods); there are no nested functions.
 
+### mut parameters
+
+A parameter written `mut name: T` is one of the caller's bindings, not a
+copy. The caller passes a `mut` binding of exactly that type and marks it
+`mut` at the call; the function reads and writes it in place, and the caller
+sees the writes. A `Buffer` or `Array` passed this way grows without being
+copied.
+
+```thx
+fn appendWord(mut out: Buffer, word!: String) {
+    out.appendBytes(Bytes.fromString(word))
+    out.append(32)
+}
+
+fn bump(mut count: Int64, by: Int64 = 1) {
+    count = count + by
+}
+
+mut buffer = Buffer()
+appendWord(mut buffer, "hello")
+mut total = 0
+bump(mut total, by: 5)       ## total is 5
+```
+
+A `mut` parameter has no default. Passing a binding that is not `mut`,
+passing a field (copy it into a `mut` binding first), or leaving off `mut`
+at the call is a compile error. A function with a `mut` parameter cannot be
+started with `-->` or taken as a function value, and constructor, `extern`,
+and `from` parameters cannot be `mut`.
+
 ### Return types
 
 An explicit `-> T` is the contract: the body must produce a `T`. A free

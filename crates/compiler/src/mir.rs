@@ -205,6 +205,9 @@ pub struct Function {
     /// Optional implicit receiver for methods: (c_param_name, type).
     pub receiver: Option<(String, Ty)>,
     pub params: Vec<(String, Ty)>,
+    /// Parallel to `params`: passed by address (`mut` parameter, D199).
+    /// Empty when none is.
+    pub mut_params: Vec<bool>,
     pub body: Vec<Stmt>,
     pub ret: Option<Place>,
     pub ret_ty: Ty,
@@ -996,6 +999,9 @@ struct FnSig {
     def_mod: String,
     /// D131 multi-clause merge — cannot take as a value (D132).
     multi_clause: bool,
+    /// Parallel to `params`: a `mut` parameter, passed by address (D199).
+    /// Empty when none is.
+    mutable: Vec<bool>,
 }
 
 #[derive(Clone)]
@@ -1010,6 +1016,8 @@ struct MethodSig {
     def_mod: String,
     /// D131 multi-clause merge — cannot take as a value (D132).
     multi_clause: bool,
+    /// Parallel to `params`: a `mut` parameter, passed by address (D199).
+    mutable: Vec<bool>,
 }
 
 /// One clause of a multi-clause function/method (D131).
@@ -1424,6 +1432,10 @@ impl LowerCtx {
             return;
         }
         if self.is_global_place(place) {
+            return;
+        }
+        // A `mut` parameter's slot belongs to the caller (D199).
+        if place.name.starts_with("(*") {
             return;
         }
         self.drop_places.push((place.name.clone(), ty.clone()));
@@ -2145,6 +2157,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
                                 mangled: mangled.clone(),
                                 def_mod: m.id.clone(),
                                 multi_clause: false,
+                                mutable: Vec::new(),
                             },
                         )
                         .is_some()
@@ -3243,9 +3256,11 @@ fn merge_free_clauses(
         let ret = resolve_return_ty(f, is_entry, types, name_map)?;
         let mut params = Vec::new();
         let mut defaults = Vec::new();
+        let mut mutable = Vec::new();
         for p in &f.params {
             params.push((p.name.clone(), resolve_ty(&p.ty, types, name_map)?));
             defaults.push(p.default.clone());
+            mutable.push(p.mutable);
         }
         let mut seen_default = false;
         for (i, d) in defaults.iter().enumerate() {
@@ -3270,11 +3285,18 @@ fn merge_free_clauses(
                 mangled: String::new(), // filled by caller insert key
                 def_mod: mod_id.to_string(),
                 multi_clause: false,
+                mutable,
             },
             None,
         ));
     }
 
+    if let Some(param) = clauses.iter().flat_map(|c| &c.params).find(|p| p.mutable) {
+        return Err(Error::at(
+            "a multi-clause function cannot take a `mut` parameter",
+            param.name_span,
+        ));
+    }
     // Multi-clause: no defaults; equal arity; export consistency; any-type dispatch.
     if is_entry && clauses[0].name == "main" {
         return Err(Error::at(
@@ -3428,6 +3450,7 @@ fn merge_free_clauses(
             mangled: String::new(),
             def_mod: mod_id.to_string(),
             multi_clause: true,
+            mutable: Vec::new(),
         },
         Some(resolved),
     ))
@@ -3449,9 +3472,11 @@ fn merge_method_clauses(
         };
         let mut params = Vec::new();
         let mut defaults = Vec::new();
+        let mut mutable = Vec::new();
         for p in &m.params {
             params.push((p.name.clone(), resolve_ty(&p.ty, types, name_map)?));
             defaults.push(p.default.clone());
+            mutable.push(p.mutable);
         }
         let mut seen_default = false;
         for (i, d) in defaults.iter().enumerate() {
@@ -3486,11 +3511,18 @@ fn merge_method_clauses(
                 exported: m.exported,
                 def_mod: mod_id.to_string(),
                 multi_clause: false,
+                mutable,
             },
             None,
         ));
     }
 
+    if let Some(param) = clauses.iter().flat_map(|c| &c.params).find(|p| p.mutable) {
+        return Err(Error::at(
+            "a multi-clause function cannot take a `mut` parameter",
+            param.name_span,
+        ));
+    }
     if clauses[0].name == "drop" {
         return Err(Error::at(
             "`drop` cannot be multi-clause",
@@ -3642,6 +3674,7 @@ fn merge_method_clauses(
             exported: export_any,
             def_mod: mod_id.to_string(),
             multi_clause: true,
+            mutable: Vec::new(),
         },
         Some(resolved),
     ))
@@ -4208,6 +4241,7 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut CallNames) {
         | ExprKind::Bool(_)
         | ExprKind::String(_)
         | ExprKind::Name(_)
+        | ExprKind::MutArg(_)
         | ExprKind::Break
         | ExprKind::Continue => {}
     }
@@ -4683,10 +4717,7 @@ fn probe_function_return(
     let mut ctx = probe_ctx(env, types);
     for p in &f.params {
         let ty = resolve_ty(&p.ty, &ctx.types, &ctx.name_to_type)?;
-        let place = Place {
-            name: sanitize_name(&p.name),
-        };
-        ctx.define(&p.name, ty, false, place);
+        bind_param(&mut ctx, &p.name, ty, p.mutable);
     }
     probe_body_return(ctx, &f.body, f.name_span, env.generics, types, layouts)
 }
@@ -5721,6 +5752,7 @@ fn instantiate_product_mono(
                 exported: m.exported,
                 def_mod: gdef.def_mod.clone(),
                 multi_clause: false,
+                mutable: m.params.iter().map(|p| p.mutable).collect(),
             },
         );
         mono_methods.push(MonoMethodJob {
@@ -6119,12 +6151,7 @@ fn lower_function(
     );
     for p in &f.params {
         let ty = resolve_ty(&p.ty, types, name_to_type)?;
-        let place = Place {
-            name: sanitize_name(&p.name),
-        };
-        // Heap params are owned (D154): caller moved the Dup'd copy in.
-        ctx.note_drop_place(&place, &ty);
-        ctx.define(&p.name, ty, false, place);
+        bind_param(&mut ctx, &p.name, ty, p.mutable);
     }
     ctx.route_clause = is_generated_route_handler(&f.name);
 
@@ -6137,6 +6164,7 @@ fn lower_function(
         is_main,
         receiver: None,
         params,
+        mut_params: f.params.iter().map(|p| p.mutable).collect(),
         body: ctx.stmts,
         ret,
         ret_ty,
@@ -6210,6 +6238,7 @@ fn lower_multi_free(
         is_main,
         receiver: None,
         params,
+        mut_params: Vec::new(),
         body: ctx.stmts,
         ret,
         ret_ty,
@@ -6316,6 +6345,7 @@ fn lower_multi_method(
         is_main: false,
         receiver: Some((recv_place, recv_ty)),
         params,
+        mut_params: Vec::new(),
         body: ctx.stmts,
         ret,
         ret_ty,
@@ -6764,6 +6794,7 @@ fn subst_method(m: &Method, subst: &HashMap<String, Ty>) -> Method {
                 name: p.name.clone(),
                 name_span: p.name_span,
                 positional: p.positional,
+                mutable: p.mutable,
                 ty: subst_type_expr(&p.ty, subst),
                 default: p.default.as_ref().map(|e| subst_expr(e, subst)),
             })
@@ -6876,6 +6907,7 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
                 .collect(),
         },
         ExprKind::Name(n) => ExprKind::Name(n.clone()),
+        ExprKind::MutArg(n) => ExprKind::MutArg(n.clone()),
         ExprKind::Unary { op, expr } => ExprKind::Unary {
             op: *op,
             expr: Box::new(subst_expr(expr, subst)),
@@ -7065,16 +7097,30 @@ fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Re
         };
         ctx.define_full(&f.name, f.ty.clone(), writable, p, writeback);
     }
+    // Heap params owned (D154). `_self` stays borrowed (pointer, D107).
     for p in &m.params {
         let ty = resolve_ty(&p.ty, &ctx.types, &ctx.name_to_type)?;
-        let place = Place {
-            name: sanitize_name(&p.name),
-        };
-        // Heap params owned (D154). `_self` stays borrowed (pointer, D107).
-        ctx.note_drop_place(&place, &ty);
-        ctx.define(&p.name, ty, false, place);
+        bind_param(ctx, &p.name, ty, p.mutable);
     }
     Ok(())
+}
+
+/// Bind a parameter in a body. A heap parameter is owned: the caller moved a
+/// copy in (D154), and it drops at the end. A `mut` parameter is the
+/// caller's binding, passed by address (D199): writes reach the caller, and
+/// the callee does not drop it.
+fn bind_param(ctx: &mut LowerCtx, name: &str, ty: Ty, mutable: bool) {
+    let c_name = sanitize_name(name);
+    if mutable {
+        let place = Place {
+            name: format!("(*{c_name})"),
+        };
+        ctx.define(name, ty, true, place);
+    } else {
+        let place = Place { name: c_name };
+        ctx.note_drop_place(&place, &ty);
+        ctx.define(name, ty, false, place);
+    }
 }
 
 fn lower_method(
@@ -7135,6 +7181,7 @@ fn lower_method(
         is_main: false,
         receiver: Some((recv_place, recv_ty)),
         params,
+        mut_params: m.params.iter().map(|p| p.mutable).collect(),
         body: ctx.stmts,
         ret,
         ret_ty,
@@ -7912,6 +7959,10 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         }
         ExprKind::Interpolate(parts) => lower_interpolate(ctx, parts, expr.span),
         ExprKind::TaggedInterp { tag, parts } => lower_tagged_interp(ctx, tag, parts, expr.span),
+        ExprKind::MutArg(name) => Err(Error::at(
+            format!("`mut {name}` passes a binding to a `mut` parameter; it is only an argument"),
+            expr.span,
+        )),
         ExprKind::Name(name) => {
             // Unit value `Void` (type name used as value).
             if name == "Void" && ctx.lookup(name).is_none() {
@@ -8367,6 +8418,7 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
         }
         ExprKind::Continue
         | ExprKind::Name(_)
+        | ExprKind::MutArg(_)
         | ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
@@ -9614,6 +9666,7 @@ fn lower_field(
                 refuse_fn_value(
                     sig.multi_clause,
                     sig.extern_symbol.is_some(),
+                    sig.mutable.contains(&true),
                     name,
                     name_span,
                 )?;
@@ -10171,10 +10224,11 @@ fn lower_method_call(
             // Free function
             if let Some(mangled_fn) = exp.fns.get(method) {
                 let sig = ctx.fns.get(mangled_fn).unwrap().clone();
-                let arg_places = resolve_call_args_with_defaults(
+                let arg_places = resolve_call_args_full(
                     ctx,
                     &sig.params,
                     &sig.defaults,
+                    &sig.mutable,
                     args,
                     method_span,
                     &sig.def_mod,
@@ -10485,10 +10539,11 @@ fn lower_method_call(
                     method_span,
                 ));
             }
-            let arg_places = resolve_call_args_with_defaults(
+            let arg_places = resolve_call_args_full(
                 ctx,
                 &sig.params,
                 &sig.defaults,
+                &sig.mutable,
                 args,
                 method_span,
                 &sig.def_mod,
@@ -11331,10 +11386,12 @@ fn lower_extension_call(
         0,
     )?];
     let defaults = sig.defaults.get(1..).unwrap_or(&[]);
-    places.extend(resolve_call_args_with_defaults(
+    let mutable = sig.mutable.get(1..).unwrap_or(&[]);
+    places.extend(resolve_call_args_full(
         ctx,
         &sig.params[1..],
         defaults,
+        mutable,
         args,
         span,
         &sig.def_mod,
@@ -11816,6 +11873,21 @@ fn resolve_call_args_with_defaults(
     span: Span,
     def_mod: &str,
 ) -> Result<Vec<Place>> {
+    resolve_call_args_full(ctx, formal, defaults, &[], args, span, def_mod)
+}
+
+/// Like [`resolve_call_args_with_defaults`]; `mutable[i]` marks a `mut`
+/// parameter (D199), whose argument is `mut binding`, passed by address.
+fn resolve_call_args_full(
+    ctx: &mut LowerCtx,
+    formal: &[(String, Ty)],
+    defaults: &[Option<Expr>],
+    mutable: &[bool],
+    args: &[Arg],
+    span: Span,
+    def_mod: &str,
+) -> Result<Vec<Place>> {
+    let is_mut = |i: usize| mutable.get(i).copied().unwrap_or(false);
     if args.is_empty() && formal.is_empty() {
         return Ok(Vec::new());
     }
@@ -11868,7 +11940,7 @@ fn resolve_call_args_with_defaults(
                 Arg::Pos(e) => e,
                 Arg::Named { .. } | Arg::Spread { .. } => unreachable!(),
             };
-            let p = lower_arg_for_formal(ctx, expr, &formal[i].1, &formal[i].0, i)?;
+            let p = lower_call_arg(ctx, expr, &formal[i].1, &formal[i].0, i, is_mut(i))?;
             places.push(p);
         }
         for i in args.len()..formal.len() {
@@ -11924,7 +11996,7 @@ fn resolve_call_args_with_defaults(
             let Arg::Pos(expr) = &args[i] else {
                 unreachable!()
             };
-            places.push(lower_arg_for_formal(ctx, expr, fty, fname, i)?);
+            places.push(lower_call_arg(ctx, expr, fty, fname, i, is_mut(i))?);
             continue;
         }
         let (expr, is_default) = if let Some(e) = by_name.remove(fname) {
@@ -11939,7 +12011,7 @@ fn resolve_call_args_with_defaults(
                 lower_arg_for_formal(ctx, expr, fty, fname, i)
             })?
         } else {
-            lower_arg_for_formal(ctx, expr, fty, fname, i)?
+            lower_call_arg(ctx, expr, fty, fname, i, is_mut(i))?
         };
         places.push(p);
     }
@@ -12060,6 +12132,65 @@ fn resolve_call_args_with_spreads(
         return Err(Error::at(format!("missing argument `{fname}`"), span));
     }
     Ok(places)
+}
+
+/// An argument for parameter `name`. A `mut` parameter takes `mut binding`:
+/// a `mut` binding of exactly its type, passed by address (D199).
+fn lower_call_arg(
+    ctx: &mut LowerCtx,
+    expr: &Expr,
+    ty: &Ty,
+    name: &str,
+    index: usize,
+    mutable: bool,
+) -> Result<Place> {
+    match (&expr.kind, mutable) {
+        (ExprKind::MutArg(binding), true) => {
+            let found = ctx
+                .lookup(binding)
+                .ok_or_else(|| Error::at(format!("undefined name `{binding}`"), expr.span))?;
+            if !found.mutable {
+                return Err(Error::at(
+                    format!("`{binding}` is not `mut`, so it cannot be passed to `mut {name}`"),
+                    expr.span,
+                )
+                .with_help(format!("declare it `mut {binding} = …`")));
+            }
+            if found.writeback.is_some() {
+                return Err(Error::at(
+                    format!("field `{binding}` cannot be passed `mut`"),
+                    expr.span,
+                )
+                .with_help("copy it into a `mut` binding, pass that, and assign it back"));
+            }
+            if found.ty != *ty {
+                return Err(Error::at(
+                    format!(
+                        "`mut {name}` is {}, but `{binding}` is {}",
+                        display_ty(ty),
+                        display_ty(&found.ty)
+                    ),
+                    expr.span,
+                ));
+            }
+            Ok(Place {
+                name: format!("&{}", found.place.name),
+            })
+        }
+        (ExprKind::MutArg(binding), false) => Err(Error::at(
+            format!("parameter `{name}` is not `mut`; pass `{binding}` without `mut`"),
+            expr.span,
+        )),
+        (ExprKind::Name(binding), true) => Err(Error::at(
+            format!("parameter `{name}` is `mut`: write `mut {binding}`"),
+            expr.span,
+        )),
+        (_, true) => Err(Error::at(
+            format!("parameter `{name}` is `mut`: pass a `mut` binding, as `mut total`"),
+            expr.span,
+        )),
+        (_, false) => lower_arg_for_formal(ctx, expr, ty, name, index),
+    }
 }
 
 /// Lower one call argument against a formal type (int coerce, Address implicit, sum inject).
@@ -12820,6 +12951,7 @@ fn materialize_expr_typespace(
         | ExprKind::Bool(_)
         | ExprKind::String(_)
         | ExprKind::Name(_)
+        | ExprKind::MutArg(_)
         | ExprKind::Break
         | ExprKind::Continue => {}
         ExprKind::Interpolate(parts) | ExprKind::TaggedInterp { parts, .. } => {
@@ -15931,7 +16063,19 @@ fn fn_ty_of_sig(params: &[(String, Ty)], ret: &Ty) -> Ty {
     }
 }
 
-fn refuse_fn_value(sig_multi: bool, is_extern: bool, name: &str, span: Span) -> Result<()> {
+fn refuse_fn_value(
+    sig_multi: bool,
+    is_extern: bool,
+    has_mut: bool,
+    name: &str,
+    span: Span,
+) -> Result<()> {
+    if has_mut {
+        return Err(Error::at(
+            format!("cannot take `{name}` as a value: it has a `mut` parameter"),
+            span,
+        ));
+    }
     if is_extern {
         return Err(Error::at(
             format!("cannot take a pointer to extern function `{name}`"),
@@ -15978,7 +16122,13 @@ fn form_free_fn(ctx: &mut LowerCtx, name: &str, span: Span) -> Result<(Place, Ty
         .get(&mangled)
         .ok_or_else(|| Error::at(format!("undefined name `{name}`"), span))?
         .clone();
-    refuse_fn_value(sig.multi_clause, sig.extern_symbol.is_some(), name, span)?;
+    refuse_fn_value(
+        sig.multi_clause,
+        sig.extern_symbol.is_some(),
+        sig.mutable.contains(&true),
+        name,
+        span,
+    )?;
     let ty = fn_ty_of_sig(&sig.params, &sig.ret);
     Ok(make_fn_value(
         ctx,
@@ -16005,7 +16155,7 @@ fn form_unbound_method(
     if matches!(method, "read" | "readForm" | "fromForm") {
         if let Some(mangled_fn) = lookup_generated_read_fn(ctx, &info, type_name, method) {
             let sig = ctx.fns.get(&mangled_fn).unwrap().clone();
-            refuse_fn_value(sig.multi_clause, false, method, span)?;
+            refuse_fn_value(sig.multi_clause, false, sig.mutable.contains(&true), method, span)?;
             let ty = fn_ty_of_sig(&sig.params, &sig.ret);
             return Ok(make_fn_value(
                 ctx,
@@ -16026,7 +16176,7 @@ fn form_unbound_method(
     if !sig.exported && ctx.module_id != info.def_mod {
         return Err(Error::at(format!("method `{method}` is private"), span));
     }
-    refuse_fn_value(sig.multi_clause, false, method, span)?;
+    refuse_fn_value(sig.multi_clause, false, sig.mutable.contains(&true), method, span)?;
     let mut params = vec![Ty::User(type_name.to_string())];
     params.extend(sig.params.iter().map(|(_, t)| t.clone()));
     let ty = Ty::Fn {
@@ -16075,7 +16225,7 @@ fn form_bound_method(
     if !sig.exported && ctx.module_id != info.def_mod {
         return Err(Error::at(format!("method `{method}` is private"), span));
     }
-    refuse_fn_value(sig.multi_clause, false, method, span)?;
+    refuse_fn_value(sig.multi_clause, false, sig.mutable.contains(&true), method, span)?;
     let ty = fn_ty_of_sig(&sig.params, &sig.ret);
     Ok(make_fn_value(
         ctx,
@@ -16245,10 +16395,11 @@ fn lower_call(
                 .get(&mangled)
                 .ok_or_else(|| Error::at(format!("unknown function `{other}`"), span))?
                 .clone();
-            let arg_places = resolve_call_args_with_defaults(
+            let arg_places = resolve_call_args_full(
                 ctx,
                 &sig.params,
                 &sig.defaults,
+                &sig.mutable,
                 args,
                 span,
                 &sig.def_mod,
@@ -16296,6 +16447,12 @@ fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Re
     if sig.extern_symbol.is_some() {
         return Err(Error::at(
             format!("`-->` requires a Thoxa function (not extern `{callee}`)"),
+            span,
+        ));
+    }
+    if sig.mutable.contains(&true) {
+        return Err(Error::at(
+            format!("`-->` cannot start `{callee}`: it takes a `mut` parameter, and the task outlives the call"),
             span,
         ));
     }

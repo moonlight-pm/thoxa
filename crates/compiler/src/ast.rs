@@ -179,6 +179,9 @@ pub struct Param {
     pub name_span: Span,
     /// Positional marker `!` (accepted; call sites may still use order or names).
     pub positional: bool,
+    /// `mut name: T` (D199): the caller passes one of its `mut` bindings
+    /// (`f(mut total)`), and the function's writes to it reach the caller.
+    pub mutable: bool,
     pub ty: TypeExpr,
     /// Default value (`name: T = expr`). Positional (`!`) params cannot have defaults.
     /// Omitted arguments are filled at the call site (SPEC §4.1 / M3).
@@ -357,6 +360,9 @@ pub enum ExprKind {
         parts: Vec<InterpPart>,
     },
     Name(String),
+    /// `mut name` as a call argument: the binding goes to a `mut` parameter
+    /// (D199). Not an expression anywhere else.
+    MutArg(String),
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,

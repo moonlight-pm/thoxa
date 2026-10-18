@@ -958,7 +958,7 @@ impl<'a> Resolver<'a> {
                     }
                 }
             }
-            ExprKind::Name(name) => {
+            ExprKind::Name(name) | ExprKind::MutArg(name) => {
                 self.add_ref(expr.span, self.lookup(scope, name), RefCtx::Value);
             }
             ExprKind::Unary { expr: inner, .. } => self.walk_expr(inner, scope),

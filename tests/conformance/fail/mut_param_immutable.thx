@@ -1,0 +1,10 @@
+## Only a `mut` binding can be passed to a `mut` parameter (D199).
+fn bump(mut count: Int64) {
+    count = count + 1
+}
+
+fn main() -> Int64 {
+    let total = 0
+    bump(mut total)
+    total
+}

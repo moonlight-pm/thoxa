@@ -1046,6 +1046,7 @@ fn param(name: &str, ty: TypeExpr) -> Param {
         name: name.into(),
         name_span: dummy(),
         positional: false,
+        mutable: false,
         ty,
         default: None,
     }

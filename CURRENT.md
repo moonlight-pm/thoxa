@@ -102,8 +102,7 @@ non-ASCII text are O(n); the freeze §4 lists what is left to try.
 **In progress (Joshua, "Hit all 5 in order"):** ~~emit only reachable
 functions~~ (**D197** shipped: hello world 2,824 lines of C, 0.19 s);
 ~~keywords as argument labels~~ (**D198** shipped: declaration keywords are
-names wherever a name goes); `mut` parameters, so a helper can append to a caller's
-`Buffer` without a copy; enforce `!` (positional) and labels at calls; an
+names wherever a name goes); ~~`mut` parameters~~ (**D199** shipped: `f(mut binding)`); enforce `!` (positional) and labels at calls; an
 assignment as a `=>` match arm (`Has(at) => total = total + at` needs a block).
 
 **Typed codecs (D182) shipped**, freeze

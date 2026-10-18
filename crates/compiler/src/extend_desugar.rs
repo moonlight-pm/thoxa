@@ -63,6 +63,7 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
                 name: extension.receiver.clone(),
                 name_span: extension.receiver_span,
                 positional: true,
+                mutable: false,
                 ty: extension.ty.clone(),
                 default: None,
             };

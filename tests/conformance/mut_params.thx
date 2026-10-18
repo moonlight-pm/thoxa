@@ -1,0 +1,65 @@
+## `mut` parameters (D199): the caller passes one of its `mut` bindings as
+## `mut name`, and the function's writes reach it. Passed by address, so a
+## Buffer or Array grows in place.
+
+import logging, { info } from "std/logging"
+
+fn appendWord(mut out: Buffer, word!: String) {
+    out.appendBytes(Bytes.fromString(word))
+    out.append(32)
+}
+
+fn bump(mut count: Int64, by: Int64 = 1) {
+    count = count + by
+}
+
+fn rename(mut name: String) {
+    name = "{name}!"
+}
+
+type Point(x: Int64, y: Int64)
+
+fn shift(mut point: Point) {
+    point = Point(x: point.x + 1, y: point.y)
+}
+
+fn addAll(mut items: Array<String>, more!: Array<String>) {
+    for item in more {
+        items.append(item)
+    }
+}
+
+type Tally(name: String) {
+    export fn countInto(mut total: Int64) {
+        total = total + name.count
+    }
+}
+
+fn twice(mut count: Int64) {
+    bump(mut count)
+    bump(mut count)
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    mut buffer = Buffer()
+    appendWord(mut buffer, "hello")
+    appendWord(mut buffer, "café")
+    mut total = 0
+    bump(mut total)
+    bump(mut total, by: 5)
+    twice(mut total)
+    mut label = "latte"
+    rename(mut label)
+    rename(mut label)
+    mut point = Point(x: 1, y: 2)
+    shift(mut point)
+    mut items: Array<String> = []
+    addAll(mut items, ["a", "b"])
+    addAll(mut items, ["c"])
+    Tally(name: "mocha").countInto(mut total)
+    info("{buffer.freeze().toString()}|{total}|{label}|{point.x}|{items}")
+    0
+}

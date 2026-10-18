@@ -363,6 +363,9 @@ impl Parser {
                         p.name_span,
                     ));
                 }
+                if p.mutable {
+                    return Err(Error::at("an `extern fn` parameter cannot be `mut`", p.name_span));
+                }
                 params.push(p);
                 if self.at(TokenKind::Comma) {
                     self.bump();
@@ -456,7 +459,14 @@ impl Parser {
             self.bump();
             if !self.at(TokenKind::RParen) {
                 loop {
-                    params.push(self.parse_param()?);
+                    let param = self.parse_param()?;
+                    if param.mutable {
+                        return Err(Error::at(
+                            "a constructor parameter cannot be `mut`",
+                            param.name_span,
+                        ));
+                    }
+                    params.push(param);
                     if self.at(TokenKind::Comma) {
                         self.bump();
                         continue;
@@ -588,6 +598,9 @@ impl Parser {
             ));
         }
         let param = self.parse_param()?;
+        if param.mutable {
+            return Err(Error::at("a `from` clause's parameter cannot be `mut`", param.name_span));
+        }
         if self.at(TokenKind::Comma) {
             return Err(Error::at(
                 "a `from` clause takes one parameter, the value it converts from",
@@ -836,6 +849,13 @@ impl Parser {
     }
 
     fn parse_param(&mut self) -> Result<Param> {
+        // `mut name: T` (D199): the caller's binding, written in place.
+        let mutable = if self.at(TokenKind::Mut) {
+            self.bump();
+            true
+        } else {
+            false
+        };
         let (name, name_span) = self.expect_ident()?;
         let positional = if self.at(TokenKind::Bang) {
             self.bump();
@@ -853,10 +873,14 @@ impl Parser {
         } else {
             None
         };
+        if mutable && default.is_some() {
+            return Err(Error::at("a `mut` parameter cannot have a default", name_span));
+        }
         Ok(Param {
             name,
             name_span,
             positional,
+            mutable,
             ty,
             default,
         })
@@ -2530,15 +2554,30 @@ impl Parser {
         if is_name_token(&self.current().kind) && self.peek_kind_is(1, TokenKind::Colon) {
             let (name, name_span) = self.expect_ident()?;
             self.expect_kind(&TokenKind::Colon)?;
-            let value = self.parse_expr()?;
+            let value = self.parse_arg_value()?;
             Ok(Arg::Named {
                 name,
                 name_span,
                 value,
             })
         } else {
-            Ok(Arg::Pos(self.parse_expr()?))
+            Ok(Arg::Pos(self.parse_arg_value()?))
         }
+    }
+
+    /// An argument's value: an expression, or `mut name` for a `mut`
+    /// parameter (D199).
+    fn parse_arg_value(&mut self) -> Result<Expr> {
+        if !self.at(TokenKind::Mut) {
+            return self.parse_expr();
+        }
+        let start = self.peek_span();
+        self.bump();
+        let (name, name_span) = self.expect_ident()?;
+        Ok(Expr {
+            kind: ExprKind::MutArg(name),
+            span: Span::new(start.start, name_span.end),
+        })
     }
 
     fn parse_if(&mut self) -> Result<Expr> {

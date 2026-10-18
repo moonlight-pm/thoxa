@@ -1,0 +1,10 @@
+## A `mut` parameter takes `mut binding` (D199).
+fn bump(mut count: Int64) {
+    count = count + 1
+}
+
+fn main() -> Int64 {
+    mut total = 0
+    bump(total)
+    total
+}
