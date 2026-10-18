@@ -134,6 +134,15 @@ pub struct Pun {
     pub mutable: bool,
 }
 
+/// A bare argument passed by position (not a pun), and the labelled
+/// parameters the call leaves unlabelled: renaming it to one of those would
+/// make it a pun (D225).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BareArg {
+    pub name_span: Span,
+    pub open_labels: Vec<String>,
+}
+
 /// Result of resolving a module.
 #[derive(Debug, Clone, Default)]
 pub struct Resolution {
@@ -141,6 +150,8 @@ pub struct Resolution {
     pub references: Vec<Reference>,
     /// Punned arguments of calls whose callee is known.
     pub puns: Vec<Pun>,
+    /// Bare positional arguments of calls whose callee is known.
+    pub bare_args: Vec<BareArg>,
     /// Module-level binding ids in declaration order (outline).
     pub module_binding_ids: Vec<u32>,
     /// `(type_name, member_name)` → binding id.
@@ -1179,13 +1190,27 @@ impl<'a> Resolver<'a> {
                 self.add_ref(*name_span, Some(pid), RefCtx::Label);
             }
         }
+        let open_labels: Vec<String> = param_map
+            .iter()
+            .filter(|(label, (_, positional))| {
+                !positional && !call.labels.iter().any(|(given, _)| given == *label)
+            })
+            .map(|(label, _)| label.clone())
+            .collect();
         for (name, span, mutable) in &call.bare {
-            let Some(&(param, positional)) = param_map.get(name.as_str()) else {
-                continue;
-            };
-            if positional || call.labels.iter().any(|(label, _)| label == name) {
+            let punned = param_map.get(name.as_str()).is_some_and(|&(_, positional)| {
+                !positional && !call.labels.iter().any(|(label, _)| label == name)
+            });
+            if !punned {
+                self.res.bare_args.push(BareArg {
+                    name_span: Span::new(span.end - name.len(), span.end),
+                    open_labels: open_labels.clone(),
+                });
                 continue;
             }
+            let Some(&(param, _)) = param_map.get(name.as_str()) else {
+                continue;
+            };
             self.res.puns.push(Pun {
                 span: *span,
                 name_span: Span::new(span.end - name.len(), span.end),

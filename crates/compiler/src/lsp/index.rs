@@ -443,6 +443,25 @@ pub fn rename_spans(idx: &DocumentIndex, binding: &Binding) -> Vec<Span> {
     spans
 }
 
+/// Why renaming `binding` to `new_name` would change a call, or `None`: a
+/// bare argument passed by position whose new name is a labelled parameter
+/// of the callee would fill that parameter instead (D202, D225).
+pub fn rename_makes_pun(idx: &DocumentIndex, binding: &Binding, new_name: &str) -> Option<String> {
+    let spans = rename_spans(idx, binding);
+    idx.resolution
+        .bare_args
+        .iter()
+        .find(|bare| {
+            spans.contains(&bare.name_span) && bare.open_labels.iter().any(|label| label == new_name)
+        })
+        .map(|_| {
+            format!(
+                "`{new_name}` names a labelled parameter of a call that passes `{}` by position, so the call would change; pick another name or label the argument",
+                binding.name
+            )
+        })
+}
+
 /// The edits renaming `binding` to `new_name`. Where a bare argument fills
 /// the labelled parameter it names (D202), renaming one side writes the
 /// label out, so the call keeps compiling: renaming the local `deadline` in
@@ -541,6 +560,32 @@ fn main() -> Int64 {
         let out = renamed(src, "Point(x: Int64", 6, "left");
         assert!(out.contains("Point(left: x, y: 2)"), "{out}");
         assert!(out.contains("point.left"), "{out}");
+    }
+
+    #[test]
+    fn rename_refuses_making_a_pun() {
+        // D225: `host` is passed by position; renamed `deadline`, it would
+        // fill the labelled `deadline` instead. Unless the call labels it.
+        let src = "\
+fn connect(host!: Int64, deadline: Int64 = 0) -> Int64 { host + deadline }
+fn main() -> Int64 {
+    let host = 1
+    connect(host) + connect(host, deadline: 2)
+}
+";
+        let idx = build_index(src, "<input>");
+        let byte = src.find("let host").unwrap() + 4;
+        let p = byte_to_position(src, byte);
+        let binding = idx.binding_at(p.line, p.character).expect("host").clone();
+        let refusal = rename_makes_pun(&idx, &binding, "deadline").expect("refused");
+        assert!(refusal.contains("labelled parameter"), "{refusal}");
+        assert!(rename_makes_pun(&idx, &binding, "server").is_none());
+        let labelled = src.replace("connect(host) + ", "");
+        let idx = build_index(&labelled, "<input>");
+        let byte = labelled.find("let host").unwrap() + 4;
+        let p = byte_to_position(&labelled, byte);
+        let binding = idx.binding_at(p.line, p.character).expect("host").clone();
+        assert!(rename_makes_pun(&idx, &binding, "deadline").is_none());
     }
 
     #[test]

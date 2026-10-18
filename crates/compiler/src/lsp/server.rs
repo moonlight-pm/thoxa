@@ -514,6 +514,10 @@ impl Server {
             eprintln!("thoxa-lsp: rename rejected: {msg}");
             return Value::Null;
         }
+        if let Some(msg) = index::rename_makes_pun(&idx, binding, new_name) {
+            eprintln!("thoxa-lsp: rename rejected: {msg}");
+            return Value::Null;
+        }
         let edits = index::rename_edits(&idx, binding, new_name);
         let mut changes: Vec<(String, Vec<Value>)> = Vec::new();
         let local_edits: Vec<Value> = edits

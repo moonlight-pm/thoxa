@@ -161,13 +161,18 @@ rounds); **D222** (Joshua's call) `where` ranges mean what `for` ranges do,
 `main` without `->` that returns nothing exits 0 (`fn main() { info("hi") }`);
 **D224** (Joshua's call) an implicit `Int64` → `Float64` must be exact (it
 panics past 2^53 when it would round), `x as Float64` is a `Trial`, and
-`Float64(rounding: x)` rounds.
+`Float64(rounding: x)` rounds; **D225** an LSP rename that would turn a
+positional argument into a pun is refused.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 found 2026-10-17: a session command inside a block
 is not recognized (use `shell.run`). From D195: no normalization.
-From D202: only a bare name puns (not `options.deadline`). From D206: a heap field passed `mut` is copied on the callee's
+From D206: a heap field passed `mut` is copied on the callee's
 first write (it is shared with the receiver until the write-back).
+
+**To discuss (Joshua, 2026-10-18):** TypeScript-style destructuring as
+arguments. Field access does not pun (`options.deadline` stays positional;
+only a bare name fills the parameter it names, D202).
 
 Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);
 release REPL ~**8 ms**/line. **D155** resource `drop` shipped. D153 simple-RC
