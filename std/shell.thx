@@ -284,7 +284,7 @@ type Shell(status: Int64) {
 
     export fn showStatus() -> Shell {
         shellOut("{status}")
-        Shell(status: status)
+        Shell(status)
     }
 
     export fn help() -> Shell {

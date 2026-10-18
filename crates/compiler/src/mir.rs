@@ -11928,6 +11928,27 @@ fn resolve_call_args_full(
 
     let default_at = |i: usize| -> Option<&Expr> { defaults.get(i).and_then(|d| d.as_ref()) };
 
+    let punned = punned_arguments(formal, marked, args);
+    let labelled;
+    let args: &[Arg] = if punned.iter().any(|pun| pun.is_some()) {
+        labelled = args
+            .iter()
+            .zip(&punned)
+            .map(|(arg, pun)| match (arg, pun) {
+                (Arg::Pos(value), Some(name)) => Arg::Named {
+                    name: name.clone(),
+                    name_span: value.span,
+                    value: value.clone(),
+                },
+                _ => arg.clone(),
+            })
+            .collect::<Vec<_>>();
+        &labelled
+    } else {
+        args
+    };
+    let first_pun = punned.iter().flatten().next();
+
     let has_spread = args.iter().any(|a| matches!(a, Arg::Spread { .. }));
     if has_spread {
         return resolve_call_args_with_spreads(ctx, formal, defaults, args, span, def_mod);
@@ -11936,6 +11957,12 @@ fn resolve_call_args_full(
     // Positional first, then named (D194): `format("hi", width: 40)`.
     let positional = args.iter().take_while(|a| matches!(a, Arg::Pos(_))).count();
     if args[positional..].iter().any(|a| matches!(a, Arg::Pos(_))) {
+        if let (Some(name), Arg::Named { name_span, .. }) = (&punned[positional], &args[positional]) {
+            return Err(Error::at(
+                format!("`{name}` fills the labelled parameter `{name}`, so it goes after the positional arguments"),
+                *name_span,
+            ));
+        }
         return Err(Error::at(
             "a positional argument cannot follow a named one",
             span,
@@ -12039,7 +12066,13 @@ fn resolve_call_args_full(
         } else if let Some(d) = default_at(i) {
             (d, true)
         } else {
-            return Err(Error::at(format!("missing argument `{fname}`"), span));
+            let error = Error::at(format!("missing argument `{fname}`"), span);
+            return Err(match first_pun {
+                Some(name) => error.with_help(format!(
+                    "a bare `{name}` fills the labelled parameter `{name}`; to pass it by position, label `{name}: …` too"
+                )),
+                None => error,
+            });
         };
         let p = if is_default {
             ctx.with_def_mod_maps(def_mod, |ctx| {
@@ -12167,6 +12200,31 @@ fn resolve_call_args_with_spreads(
         return Err(Error::at(format!("missing argument `{fname}`"), span));
     }
     Ok(places)
+}
+
+/// The labelled parameter each argument fills by its name (D202): a bare
+/// `deadline` (or `mut deadline`) where the callee has a labelled
+/// `deadline` is `deadline: deadline`, so `connect(host, deadline)` needs no
+/// `deadline: deadline`. A call that also labels `deadline:` keeps the bare
+/// one positional. Built-in formals (empty `marked`) are not punned.
+fn punned_arguments(formal: &[(String, Ty)], marked: &[bool], args: &[Arg]) -> Vec<Option<String>> {
+    let labelled_in_call = |name: &str| {
+        args.iter()
+            .any(|arg| matches!(arg, Arg::Named { name: label, .. } if label == name))
+    };
+    args.iter()
+        .map(|arg| {
+            let Arg::Pos(value) = arg else {
+                return None;
+            };
+            let (ExprKind::Name(name) | ExprKind::MutArg(name)) = &value.kind else {
+                return None;
+            };
+            let index = formal.iter().position(|(formal_name, _)| formal_name == name)?;
+            let is_labelled = !marked.get(index).copied().unwrap_or(true);
+            (is_labelled && !labelled_in_call(name)).then(|| name.clone())
+        })
+        .collect()
 }
 
 /// `!` parameters are passed by position and the rest by label (D200):
@@ -16540,8 +16598,16 @@ fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Re
             span,
         ));
     }
-    let arg_places =
-        resolve_call_args_with_defaults(ctx, &sig.params, &sig.defaults, args, span, &sig.def_mod)?;
+    let arg_places = resolve_call_args_full(
+        ctx,
+        &sig.params,
+        &sig.defaults,
+        &[],
+        &sig.positional,
+        args,
+        span,
+        &sig.def_mod,
+    )?;
     let arg_tys: Vec<Ty> = sig.params.iter().map(|(_, t)| t.clone()).collect();
     ctx.stmts.push(Stmt::Start {
         callee: Callee::User(sig.mangled.clone()),

@@ -1163,6 +1163,11 @@ pub fn hover_call_argument(
     let formal = match &hit.slot {
         ArgSlot::Positional(i) => formals.get(*i)?,
         ArgSlot::Named(name) => formals.iter().find(|p| p.name == *name)?,
+        // A bare name fills the labelled parameter it names (D202).
+        ArgSlot::Bare { index, name } => formals
+            .iter()
+            .find(|p| p.name == *name && !p.positional)
+            .or_else(|| formals.get(*index))?,
     };
     let ty = format_type_expr(&formal.ty);
     let md = format!("```thoxa\n{}: {}\n```", formal.name, ty);
@@ -1173,6 +1178,9 @@ pub fn hover_call_argument(
 enum ArgSlot {
     Positional(usize),
     Named(String),
+    /// A bare name or `mut name` at a position: a labelled parameter of that
+    /// name if there is one, else the positional slot.
+    Bare { index: usize, name: String },
 }
 
 #[derive(Debug, Clone)]
@@ -1192,6 +1200,7 @@ struct CallArgHit {
 struct FormalParam {
     name: String,
     ty: TypeExpr,
+    positional: bool,
 }
 
 fn find_call_arg_at(module: &Module, byte: usize) -> Option<CallArgHit> {
@@ -1387,16 +1396,31 @@ fn walk_arg_expr(arg: &ast::Arg, byte: usize, best: &mut Option<CallArgHit>) {
 }
 
 fn collect_args(args: &[ast::Arg], call: CallShape, byte: usize, best: &mut Option<CallArgHit>) {
+    let labelled_in_call = |name: &str| {
+        args.iter()
+            .any(|arg| matches!(arg, ast::Arg::Named { name: label, .. } if label == name))
+    };
     let mut pos_i = 0usize;
     for arg in args {
         match arg {
             ast::Arg::Pos(e) => {
                 if span_contains_byte(e.span, byte) {
+                    let slot = match &e.kind {
+                        ExprKind::Name(name) | ExprKind::MutArg(name)
+                            if !labelled_in_call(name) =>
+                        {
+                            ArgSlot::Bare {
+                                index: pos_i,
+                                name: name.clone(),
+                            }
+                        }
+                        _ => ArgSlot::Positional(pos_i),
+                    };
                     consider_hit(
                         best,
                         CallArgHit {
                             span: e.span,
-                            slot: ArgSlot::Positional(pos_i),
+                            slot,
                             call: call.clone(),
                         },
                     );
@@ -1511,6 +1535,7 @@ fn formal_from_param(p: &ast::Param) -> FormalParam {
     FormalParam {
         name: p.name.clone(),
         ty: p.ty.clone(),
+        positional: p.positional,
     }
 }
 
@@ -1829,6 +1854,27 @@ fn main() -> Int64 { listen(16) }
         let (md, _) = hover_call_argument(&idx, p.line, p.character, &HashMap::new())
             .expect("local arg hover");
         assert!(md.contains("backlog: Int64"), "{md}");
+    }
+
+    #[test]
+    fn hover_arg_punned_name() {
+        let src = "\
+fn connect(host!: String, port: Int64 = 80, deadline: Int64 = 30) -> Int64 { deadline }
+fn main() -> Int64 {
+  let host = \"example.org\"
+  let deadline = 5
+  connect(host, deadline)
+}
+";
+        let idx = build_index(src, "main.thx");
+        let hover_at = |needle: &str| {
+            let p = byte_to_position(src, src.find(needle).unwrap());
+            hover_call_argument(&idx, p.line, p.character, &HashMap::new())
+                .expect("punned arg hover")
+                .0
+        };
+        assert!(hover_at("host, ").contains("host: String"));
+        assert!(hover_at("deadline)").contains("deadline: Int64"));
     }
 
     #[test]

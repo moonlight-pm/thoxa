@@ -55,9 +55,9 @@ fn load() -> Array<Loaded> {
             Fail(error) => warn("manual: {name}.md: {error}")
             Pass(bytes) {
                 number = number + 1
-                let chapter = Chapter(name: name, chapters: names, directory: "docs/handbook", page: "")
+                let chapter = Chapter(name, chapters: names, directory: "docs/handbook", page: "")
                 let text = bytes.toString()
-                loaded.append(Loaded(chapter: chapter, text: text, headings: markdown.headings(text, chapter, number)))
+                loaded.append(Loaded(chapter, text, headings: markdown.headings(text, chapter, number)))
             }
         }
     }

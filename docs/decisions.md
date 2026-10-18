@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-18 — Label punning (Joshua: "do label punning next"): D202
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D202 | A bare name fills the labelled parameter it names | An unlabelled argument that is a bare name (or `mut name`) where the callee declares a labelled (non-`!`) parameter of that name is that labelled argument: `connect(host, deadline)` is `connect(host, deadline: deadline)`, `Point(x, y)` is `Point(x: x, y: y)`, `tally(3, mut total)` fills a labelled `mut total`. It counts as labelled for D194's order, so it goes after the positional arguments. A call that also labels the name keeps the bare one positional (`scale(factor, factor: 3)` passes `factor` as `value!`). Only calls checked under D200 pun: user functions, methods, constructors, std's `extend` methods, `-->` starts; not built-in methods or calls through function values. | **Shipped.** Gates: `call_label_pun`, `fail/call_pun_needs_positional`, `fail/call_pun_before_positional`, `lsp::crossmodule::tests::hover_arg_punned_name`. Proposed after D200 left many `deadline: deadline` calls; 93 of them in std, examples, the sites, and the shell now pun (tests keep the long form they test). Considered: an explicit marker (Gleam's `f(deadline:)`, OCaml's `~deadline`), which never needs the declaration to read; rejected because D200 already requires the declaration to read a call, and the name match is the signal (Rust's `Point { x, y }`). The ambiguous case (a binding named like a labelled parameter, meant for a positional one) is an error, not a silent choice, unless the positional parameter has a default and the types agree. Also found: `-->` starts never checked D200's labels; they do now. |
+
 ## 2026-10-17 — Language follow-ups (Joshua: "Hit all 5 in order"): D197–D201
 
 | ID | Decision | Choice | Notes |

@@ -145,7 +145,7 @@ fn stringAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
     if stop > run {
         nodes.append(span("st", slice(source, run, stop)))
     }
-    Scanned(nodes: nodes, end: stop)
+    Scanned(nodes, end: stop)
 }
 
 ## Index just past the string that opens at `at`.
@@ -245,13 +245,13 @@ fn elementAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
     let headEnd = if index > end { end } else { index }
     nodes.append(Text(s: slice(source, run, headEnd)))
     if selfClosing {
-        Scanned(nodes: nodes, end: headEnd)
+        Scanned(nodes, end: headEnd)
     } else {
         let children = childrenAt(source, headEnd, end)
         for node in children.nodes {
             nodes.append(node)
         }
-        Scanned(nodes: nodes, end: children.end)
+        Scanned(nodes, end: children.end)
     }
 }
 
@@ -281,7 +281,7 @@ fn childrenAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
             let close = findByte(source, greater, nameEnd, end)
             let stop = if close < end { close + 1 } else { end }
             nodes.append(Text(s: slice(source, nameEnd, stop)))
-            return Scanned(nodes: nodes, end: stop)
+            return Scanned(nodes, end: stop)
         } else if byte == less and (isLetter(next) or next == greater) {
             nodes.append(Text(s: slice(source, run, index)))
             let inner = elementAt(source, index, end)
@@ -301,7 +301,7 @@ fn childrenAt(source!: Bytes, at!: Int64, end!: Int64) -> Scanned {
         }
     }
     nodes.append(Text(s: slice(source, run, end)))
-    Scanned(nodes: nodes, end: end)
+    Scanned(nodes, end)
 }
 
 ## Shell: a `#` at the start of a word runs to the end of the line.

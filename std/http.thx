@@ -86,7 +86,7 @@ export fn response(
         Header(name: "Content-Length", value: "{body.count}"),
         Header(name: "Connection", value: "close"),
     ]
-    Response(status: status, reason: reason, headers: headers, body: body)
+    Response(status, reason, headers, body)
 }
 
 ## Like `response`, but keeps a declared Content-Length while sending an empty body
@@ -102,7 +102,7 @@ export fn responseHead(
         Header(name: "Content-Length", value: "{contentLength}"),
         Header(name: "Connection", value: "close"),
     ]
-    Response(status: status, reason: reason, headers: headers, body: Bytes(0))
+    Response(status, reason, headers, body: Bytes(0))
 }
 
 ## Parse a raw request buffer into a Request. Fails on incomplete or malformed input.
@@ -221,12 +221,12 @@ fn parseRequestBody(
     }
     let body = Bytes(0)
     Pass(Request(
-        method: method,
-        path: path,
-        query: query,
-        version: version,
-        headers: headers,
-        body: body,
+        method,
+        path,
+        query,
+        version,
+        headers,
+        body,
         peerFd: 0
     ))
 }
@@ -301,7 +301,7 @@ fn parseHeaderLine(line!: Bytes, colon!: Bytes) -> Trial<Header, String> {
                 let valStart = skipOws(line, colonAt + 1)
                 let valEnd = trimOwsEnd(line, valStart, line.count)
                 let value = line.slice(valStart, valEnd).toString()
-                Pass(Header(name: name, value: value))
+                Pass(Header(name, value))
             }
         }
     }
@@ -357,7 +357,7 @@ export fn methodNotAllowed(allow!: String) -> Response {
         Header(name: "Allow", value: allow),
         Header(name: "Connection", value: "close"),
     ]
-    Response(status: 405, reason: "Method Not Allowed", headers: headers, body: body)
+    Response(status: 405, reason: "Method Not Allowed", headers, body)
 }
 
 ## A header name or value with CR / LF dropped, so a value built from
@@ -744,11 +744,11 @@ export fn seeOther(location!: String) -> Response {
 
 export fn withHeader(res!: Response, name!: String, value!: String) -> Response {
     mut headers = res.headers
-    headers.append(Header(name: name, value: value))
+    headers.append(Header(name, value))
     Response(
         status: res.status,
         reason: res.reason,
-        headers: headers,
+        headers,
         body: res.body
     )
 }
@@ -761,7 +761,7 @@ export fn withCookie(res!: Response, cookie!: Cookie) -> Response {
 ## Expire a cookie (`Max-Age=0`, empty value). `path` / `domain` must match
 ## the cookie being cleared.
 export fn clearCookie(name!: String, path: String = "/", domain: String = "") -> Cookie {
-    Cookie(name: name, value: "", path: path, domain: domain, maxAge: Has(0))
+    Cookie(name, value: "", path, domain, maxAge: Has(0))
 }
 
 fn hasConnToken(header!: String, token!: String) -> Bool {
@@ -817,8 +817,8 @@ export fn finalize(method!: String, res!: Response, keepAlive!: Bool) -> Respons
     Response(
         status: res.status,
         reason: res.reason,
-        headers: headers,
-        body: body
+        headers,
+        body
     )
 }
 

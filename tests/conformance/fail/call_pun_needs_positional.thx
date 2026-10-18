@@ -1,0 +1,10 @@
+## A bare name fills the labelled parameter it names (D202), so `scale(factor)`
+## gives `factor:` and leaves `value` missing.
+fn scale(value!: Int64, factor: Int64 = 2) -> Int64 {
+    value * factor
+}
+
+fn main() -> Int64 {
+    let factor = 7
+    scale(factor)
+}

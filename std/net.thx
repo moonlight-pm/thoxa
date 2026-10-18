@@ -275,6 +275,6 @@ export fn createSocket() -> Trial<Socket, String> {
     if fd < 0 {
         Fail(netErr("socket"))
     } else {
-        Pass(Socket(fd: fd))
+        Pass(Socket(fd))
     }
 }

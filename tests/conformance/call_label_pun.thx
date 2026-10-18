@@ -1,0 +1,64 @@
+## A bare name fills the labelled parameter it names (D202):
+## `connect(host, port)` is `connect(host, port: port)`. Constructors,
+## methods, std's String methods, `mut` arguments, and `-->` tasks pun too.
+import logging, { info } from "std/logging"
+
+fn connect(host!: String, port: Int64, deadline: Int64 = 30) -> String {
+    "{host}:{port} within {deadline}s"
+}
+
+type Point(x: Int64, y: Int64) {
+    export fn moved(dx: Int64, dy: Int64 = 0) -> Point {
+        Point(x: x + dx, y: y + dy)
+    }
+}
+
+fn scale(value!: Int64, factor: Int64 = 2) -> Int64 {
+    value * factor
+}
+
+fn tally(item!: Int64, mut total: Int64) {
+    total = total + item
+}
+
+fn report(label!: String, times: Int64) {
+    info("{label} x{times}")
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let host = "example.org"
+    let port = 443
+    let deadline = 5
+    info(connect(host, port))
+    info(connect(host, port, deadline))
+    info(connect(host, deadline, port))
+    info(connect(host, port: 80, deadline))
+
+    let x = 3
+    let y = 4
+    let point = Point(x, y)
+    let flipped = Point(y, x)
+    info("{point.x},{point.y} {flipped.x},{flipped.y}")
+    let dx = 10
+    let moved = point.moved(dx)
+    info("{moved.x},{moved.y}")
+
+    ## Labelling `factor:` too keeps the bare `factor` positional.
+    let factor = 7
+    info("{scale(factor, factor: 3)}")
+
+    let ignoreCase = true
+    info("{"Hello".contains("hello", ignoreCase)}")
+
+    mut total = 0
+    tally(5, mut total)
+    tally(6, mut total)
+    info("total {total}")
+
+    let times = 2
+    --> report("task", times)
+    0
+}

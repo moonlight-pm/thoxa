@@ -727,6 +727,29 @@ and label the options, especially `Bool` flags, so call sites say what they
 set. A constructor follows the same rule: `type Point(x: Int64, y: Int64)` is
 built `Point(x: 1, y: 2)`, and `type Has<T>(value!: T)` is built `Has(3)`.
 
+A bare name fills the labelled parameter it names, so a value already in a
+binding of the right name needs no label:
+
+```thx
+let port = 9000
+let tls = true
+connect("localhost", port, tls)       ## connect("localhost", port: port, tls: tls)
+
+let x = 1
+let y = 2
+let point = Point(x, y)               ## Point(x: x, y: y)
+```
+
+It is still a labelled argument, so it goes after the positional ones, and
+`mut total` fills a labelled `mut total` parameter the same way. A call that
+also labels the name keeps the bare one positional: with
+`fn scale(value!: Int64, factor: Int64 = 2)`, `scale(factor)` is
+`scale(factor: factor)` and is missing `value`, while
+`scale(factor, factor: 3)` passes `factor` as `value`. Methods built into the
+runtime (on `Array`, `Map`, and `Bytes`), the `Element` constructor, and calls
+through a function value take no labels from a declaration, so they do not
+pun.
+
 A parameter with a default may be omitted. Default expressions are evaluated
 at the call site, and free names in them resolve in the module that defines
 the function, so callers need not import them. A parameter without a default

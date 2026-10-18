@@ -48,7 +48,7 @@ export fn headings(text!: String, chapter!: Chapter, number!: Int64) -> Array<He
             let level = headingLevel(line)
             let title = line.substring(level + 1, line.count).trim()
             if level == 1 {
-                found.append(Heading(level: 1, id: chapter.name, number: "{number}", title: title))
+                found.append(Heading(level: 1, id: chapter.name, number: "{number}", title))
             } else {
                 let base = slug(title)
                 let seen = match used[base] {
@@ -60,12 +60,12 @@ export fn headings(text!: String, chapter!: Chapter, number!: Int64) -> Array<He
                 if level == 2 {
                     section = section + 1
                     subsection = 0
-                    found.append(Heading(level: 2, id: id, number: "{number}.{section}", title: title))
+                    found.append(Heading(level: 2, id, number: "{number}.{section}", title))
                 } else if level == 3 {
                     subsection = subsection + 1
-                    found.append(Heading(level: 3, id: id, number: "{number}.{section}.{subsection}", title: title))
+                    found.append(Heading(level: 3, id, number: "{number}.{section}.{subsection}", title))
                 } else {
-                    found.append(Heading(level: level, id: id, number: "", title: title))
+                    found.append(Heading(level, id, number: "", title))
                 }
             }
         }
@@ -172,7 +172,7 @@ fn table(source!: Array<String>, at!: Int64, chapter!: Chapter) -> Parsed {
             <tbody>{rows}</tbody>
         </table>
     </div>
-    Parsed(node: node, next: index)
+    Parsed(node, next: index)
 }
 
 ## A row's cells: split on `|` not written `\|`, then `\|` → `|`.
@@ -262,7 +262,7 @@ fn list(source!: Array<String>, at!: Int64, chapter!: Chapter) -> Parsed {
         }
     }
     let node = if ordered { <ol>{items}</ol> } else { <ul>{items}</ul> }
-    Parsed(node: node, next: index)
+    Parsed(node, next: index)
 }
 
 ## An item's first lines are its text (no `<p>`); what follows is blocks.

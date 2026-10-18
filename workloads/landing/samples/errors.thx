@@ -17,7 +17,7 @@ fn parseLine(line!: String) -> Trial<Setting, String> {
         Has(number) => number
         Not => return Fail("`{parts.after.trim()}` is not a number")
     }
-    Pass(Setting(name: parts.before.trim(), value: value))
+    Pass(Setting(name: parts.before.trim(), value))
 }
 
 fn parseAll(lines!: Array<String>) -> Trial<Array<Setting>, String> {

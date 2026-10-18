@@ -161,7 +161,7 @@ fn readRow(stmt!: Int64) -> Row {
         }
         i = i + 1
     }
-    Row(cells: cells)
+    Row(cells)
 }
 
 export fn open(path!: String) -> Trial<Db, String> {
@@ -169,6 +169,6 @@ export fn open(path!: String) -> Trial<Db, String> {
     if handle == 0 {
         Fail(sysSqlErrmsg())
     } else {
-        Pass(Db(handle: handle))
+        Pass(Db(handle))
     }
 }

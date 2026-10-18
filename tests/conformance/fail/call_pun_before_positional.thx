@@ -1,0 +1,11 @@
+## A punned name is a labelled argument, so it goes after the positional
+## ones (D194, D202).
+fn connect(host!: String, deadline: Int64 = 30) -> String {
+    "{host} {deadline}"
+}
+
+fn main() -> Int64 {
+    let deadline = 5
+    let text = connect(deadline, "example.org")
+    0
+}

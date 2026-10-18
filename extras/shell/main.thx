@@ -121,7 +121,7 @@ type Shell(status: Int64) {
     ## Print last status without changing it (smoke / inspection).
     export fn showStatus() -> Shell {
         info("{status}")
-        Shell(status: status)
+        Shell(status)
     }
 
     export fn help() -> Shell {

@@ -69,7 +69,7 @@ fn withCookieHeader(request!: Request, id!: String) -> Request {
         path: request.path,
         query: request.query,
         version: request.version,
-        headers: headers,
+        headers,
         body: request.body,
         peerFd: request.peerFd
     )
@@ -149,7 +149,7 @@ export fn setName(request!: Request, name!: String) {
     match bagOf(request) {
         Not { }
         Has(bag) {
-            put(Bag(id: bag.id, name: name, flash: bag.flash, csrf: bag.csrf))
+            put(Bag(id: bag.id, name, flash: bag.flash, csrf: bag.csrf))
         }
     }
 }

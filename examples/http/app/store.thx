@@ -132,7 +132,7 @@ export type MenuView(needle: String, drinks: Array<Drink>, total: Int64)
 export fn menuView(needle!: String) -> Trial<MenuView, String> {
     let drinks = searchDrinks(needle)?
     let total = drinkCount()?
-    Pass(MenuView(needle: needle, drinks: drinks, total: total))
+    Pass(MenuView(needle, drinks, total))
 }
 
 export fn insertOrder(
@@ -193,11 +193,11 @@ fn drinkFromRow(row!: Row) -> Trial<Drink, String> {
     let priceCents = intCell(row, "price_cents")?
     let roast = models.roastFromKey(textCell(row, "roast")?)?
     Pass(Drink(
-        slug: slug,
-        name: name,
-        notes: notes,
-        priceCents: priceCents,
-        roast: roast
+        slug,
+        name,
+        notes,
+        priceCents,
+        roast
     ))
 }
 

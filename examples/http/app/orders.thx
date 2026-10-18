@@ -31,12 +31,12 @@ export fn place(order!: CreateOrder) -> Trial<Ticket, Issue> {
                         Fail(error) => Fail(issueRejected("store", error))
                         Pass(id) {
                             Pass(Ticket(
-                                id: id,
+                                id,
                                 slug: drink.slug,
                                 name: drink.name,
-                                qty: qty,
-                                unitCents: unitCents,
-                                totalCents: totalCents
+                                qty,
+                                unitCents,
+                                totalCents
                             ))
                         }
                     }

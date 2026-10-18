@@ -108,15 +108,15 @@ export fn message(e!: Issue) -> String {
 }
 
 export fn issueMissing(path!: String) -> Issue {
-    Missing(path: path)
+    Missing(path)
 }
 
 export fn issueMismatch(path!: String, expected!: String, got!: String) -> Issue {
-    Mismatch(path: path, expected: expected, got: got)
+    Mismatch(path, expected, got)
 }
 
 export fn issueRejected(path!: String, reason!: String) -> Issue {
-    Rejected(path: path, reason: reason)
+    Rejected(path, reason)
 }
 
 ## Every issue's message, joined with "; " (D182 §2).
@@ -399,7 +399,7 @@ fn parseLit(b!: Bytes, pos!: Int64, lit!: String, value!: Json) -> Trial<Parsed,
         Fail("unexpected end")
     } else {
         if b.slice(pos, pos + want.count).toString() == lit {
-            Pass(Parsed(value: value, pos: pos + want.count))
+            Pass(Parsed(value, pos: pos + want.count))
         } else {
             Fail("invalid literal")
         }

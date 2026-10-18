@@ -104,7 +104,7 @@ export fn windowSize() -> Trial<WindowSize, String> {
         if cols == 0 {
             Fail("ioctl TIOCGWINSZ: zero columns")
         } else {
-            Pass(WindowSize(rows: rows, cols: cols))
+            Pass(WindowSize(rows, cols))
         }
     }
 }

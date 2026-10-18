@@ -114,7 +114,7 @@ export fn parseRgba(hex!: String) -> May<Rgba> {
         if b < 0 {
             return Not()
         }
-        Has(Rgba(r: r, g: g, b: b, a: 255))
+        Has(Rgba(r, g, b, a: 255))
     } else {
         if n == 8 {
             let r = hexByte(bytes.get(i), bytes.get(i + 1))
@@ -133,7 +133,7 @@ export fn parseRgba(hex!: String) -> May<Rgba> {
             if a < 0 {
                 return Not()
             }
-            Has(Rgba(r: r, g: g, b: b, a: a))
+            Has(Rgba(r, g, b, a))
         } else {
             Not()
         }

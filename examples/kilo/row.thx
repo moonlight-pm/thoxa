@@ -35,7 +35,7 @@ fn expandTabs(chars!: Bytes) -> Bytes {
 
 ## Construct a row; always rebuilds render from chars.
 export fn make(chars!: Bytes) -> Row {
-    Row(chars: chars, render: expandTabs(chars))
+    Row(chars, render: expandTabs(chars))
 }
 
 export type Row(chars: Bytes, render: Bytes) {

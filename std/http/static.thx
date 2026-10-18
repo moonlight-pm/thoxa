@@ -183,7 +183,7 @@ fn servePath(root!: String, urlPath!: String, headOnly: Bool) -> Response {
     let candidate = joinPath(root, segs)
     match readFile(candidate) {
         Pass(body) {
-            fileResponse(body, candidate, headOnly: headOnly)
+            fileResponse(body, candidate, headOnly)
         }
         Fail(err1) {
             if isForbiddenish(err1) {
@@ -193,7 +193,7 @@ fn servePath(root!: String, urlPath!: String, headOnly: Bool) -> Response {
                 let indexPath = "{candidate}/index.html"
                 match readFile(indexPath) {
                     Pass(body) {
-                        fileResponse(body, indexPath, headOnly: headOnly)
+                        fileResponse(body, indexPath, headOnly)
                     }
                     Fail(err2) {
                         failResponse(indexPath, err2)

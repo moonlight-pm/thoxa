@@ -64,7 +64,7 @@ fn readUntil(peer!: Socket, start!: Bytes, need!: Int64, deadline!: Int64) -> Tr
         if acc.count >= need {
             return Pass(acc)
         }
-        let chunk = peer.receive(deadline: deadline)
+        let chunk = peer.receive(deadline)
         if chunk.count == 0 {
             return Fail("incomplete request body")
         }
@@ -170,7 +170,7 @@ fn skipBlankLines(buffered!: Bytes) -> Bytes {
 ## `readRequest` on a connection where `buffered` was already read (the
 ## bytes after the previous request).
 fn readNext(peer!: Socket, buffered!: Bytes, deadline!: Int64) -> Trial<Incoming, String> {
-    let raw = peer.receiveRequest(deadline: deadline, buffered: skipBlankLines(buffered))?
+    let raw = peer.receiveRequest(deadline, buffered: skipBlankLines(buffered))?
     if raw.count == 0 {
         mut headers: Array<Header> = []
         return Pass(Incoming(
@@ -179,7 +179,7 @@ fn readNext(peer!: Socket, buffered!: Bytes, deadline!: Int64) -> Trial<Incoming
                 path: "",
                 query: "",
                 version: "",
-                headers: headers,
+                headers,
                 body: Bytes(0),
                 peerFd: peer.fd
             ),
@@ -212,7 +212,7 @@ fn requestForHandle(req!: Request) -> Request {
         req.method
     }
     Request(
-        method: method,
+        method,
         path: req.path,
         query: req.query,
         version: req.version,
@@ -232,7 +232,7 @@ export fn writeResponse(
 ) -> Trial<Void, String> {
     let final = http.finalize(method, res, keepAlive)
     let wireBytes = http.writeResponse(final)
-    match peer.sendAll(wireBytes, deadline: deadline) {
+    match peer.sendAll(wireBytes, deadline) {
         Pass(_) {
             Pass(Void)
         }

@@ -55,5 +55,5 @@ fn parse(name!: String, text!: String, output!: String) -> Sample {
         description.append(header[line])
         line = line + 1
     }
-    Sample(name: name, title: title, description: description.join(" "), code: body.join("\n").trimEnd(), output: output)
+    Sample(name, title, description: description.join(" "), code: body.join("\n").trimEnd(), output)
 }
