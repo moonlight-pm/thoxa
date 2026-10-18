@@ -974,7 +974,8 @@ match found {
 
 `match value { arms }` compares a value against patterns in order and
 evaluates the first arm that matches. Arms are not separated by commas. An arm
-body is a block, `Pattern { … }`, or a single expression, `Pattern => expr`.
+body is a block, `Pattern { … }`, a single expression, `Pattern => expr`, or a
+single assignment, `Pattern => total = total + 1`.
 
 **Union members.** `Member(a, b)` matches a member and binds its fields in
 declaration order; `_` discards a field. A bare `Member` matches the member

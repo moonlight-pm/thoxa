@@ -1,0 +1,25 @@
+## A match arm may be one assignment after `=>` (D201): `Has(at) => total = total + at`.
+
+import { Has, Not } from "std/fallible"
+import logging, { info } from "std/logging"
+type Tally(count: Int64)
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    mut total = 0
+    mut tally = Tally(count: 0)
+    mut seen: Array<Int64> = [0, 0]
+    for word in ["café", "x", "latte"] {
+        match word.indexOf("a") {
+            Has(at) => total = total + at
+            Not => total = total - 1
+        }
+        match word.count {
+            1 => seen[0] = seen[0] + 1
+            else => tally = Tally(count: tally.count + word.count)
+        }
+    }
+    info("{total} {tally.count} {seen}")
+    0
+}

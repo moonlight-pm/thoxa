@@ -1422,10 +1422,15 @@ impl Parser {
     /// Statement starts with an assignable place:
     /// `name =`, `name[i] =`, `name.field =`, or `name.field[i] =`.
     fn at_assign_stmt(&self) -> bool {
-        if !is_name_token(&self.current().kind) {
+        self.assign_stmt_at(self.pos)
+    }
+
+    /// An assignment statement starts at token `start`.
+    fn assign_stmt_at(&self, start: usize) -> bool {
+        if !self.tokens.get(start).is_some_and(|t| is_name_token(&t.kind)) {
             return false;
         }
-        let mut i = self.pos + 1;
+        let mut i = start + 1;
         // Optional `.field`
         if self.tokens.get(i).map(|t| &t.kind) == Some(&TokenKind::Dot) {
             i += 1;
@@ -2720,8 +2725,22 @@ impl Parser {
         } else {
             None
         };
-        // `Pat => expr` is sugar for a one-expression block (D130). Multi-stmt arms use `{ }`.
-        let body = if self.at(TokenKind::FatArrow) {
+        // `Pat => expr` is sugar for a one-expression block (D130), and
+        // `Pat => name = value` for a one-assignment block (D201). Multi-stmt
+        // arms use `{ }`.
+        let body = if self.at(TokenKind::FatArrow) && self.assign_stmt_at(self.pos + 1) {
+            let start = self.peek_span();
+            self.bump();
+            let assign = self.parse_assign()?;
+            Block {
+                items: vec![BlockItem::Assign {
+                    target: assign.target,
+                    value: assign.value,
+                }],
+                tail: None,
+                span: Span::new(start.start, self.prev_span().end),
+            }
+        } else if self.at(TokenKind::FatArrow) {
             self.bump();
             let expr = self.parse_expr()?;
             let span = expr.span;

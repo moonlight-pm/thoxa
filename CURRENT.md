@@ -99,11 +99,17 @@ methods on String written in Thoxa, Unicode case and white space, scalar
 counts and positions, always-valid UTF-8. Revisit (Joshua): positions in long
 non-ASCII text are O(n); the freeze §4 lists what is left to try.
 
-**In progress (Joshua, "Hit all 5 in order"):** ~~emit only reachable
-functions~~ (**D197** shipped: hello world 2,824 lines of C, 0.19 s);
-~~keywords as argument labels~~ (**D198** shipped: declaration keywords are
-names wherever a name goes); ~~`mut` parameters~~ (**D199** shipped: `f(mut binding)`); ~~enforce `!` and labels at calls~~ (**D200** shipped; label punning, `f(deadline)` for `f(deadline: deadline)`, is the next proposal); an
-assignment as a `=>` match arm (`Has(at) => total = total + at` needs a block).
+**Language follow-ups shipped (Joshua, "Hit all 5 in order", 2026-10-17):**
+**D197** only reachable functions are emitted (hello world 2,824 lines of C,
+0.19 s); **D198** declaration keywords (`type`, `from`, `in`, …) are names
+wherever a name goes; **D199** `mut` parameters (`f(mut binding)`); **D200**
+calls follow declarations (`!` by position, the rest by label); **D201** a
+match arm may be one assignment.
+
+**Proposed, awaiting Joshua** (standing order): label punning, so
+`f(deadline)` passes a same-named labelled parameter (D200 left many
+`deadline: deadline` calls); check built-in methods' labels too; let a
+method's field be passed `mut`.
 
 **Typed codecs (D182) shipped**, freeze
 [`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md):
@@ -151,12 +157,12 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D196 (String's methods in Thoxa via `extend`), D195
+**Shipped recently:** D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 153 programs, 39 rejections, 9 site samples, 280 unit tests;
-`cargo make test-asan` 143 clean, 10 excepted (2026-10-17). Before them: the
+`cargo make test` 156 programs, 42 rejections, 9 site samples, 281 unit tests;
+`cargo make test-asan` 146 clean, 10 excepted (2026-10-17). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 session step compile cache (D105 §3.5): no per-line
 scratch `.thx`; reuse prelude MIR; libtcc base image (in memory since **D169**) + ~500-line step C.
@@ -171,7 +177,7 @@ process libc via `/proc/self/maps` so NixOS/Oath session steps work
 without `/usr/lib/libc.so`. **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
 (`http_net_err`); bounded ASan pass (88 non-fiber clean on 2026-09-03, 109 on
-2026-10-15, 143 on 2026-10-17; 10 task programs excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
+2026-10-15, 146 on 2026-10-17; 10 task programs excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
 early-return drops from the final `drop_places` set; extra-retain `jsx` /
 `multi_clause` / `sqlite`; **D154** callee-owned heap params; nested Array/Map
 lits; overwrite-drop; **D152** match/init RC.
