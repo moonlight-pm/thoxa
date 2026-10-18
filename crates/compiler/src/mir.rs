@@ -25,6 +25,10 @@ struct SyntheticRegistry {
     /// error only if the method writes its receiver, which is known once
     /// every body in the package is lowered.
     receiver_checks: Vec<ReceiverCheck>,
+    /// Types whose `==` is a generated function `__eq_{type}`, because they
+    /// contain themselves (through an Array, a Map, or a union arm), so
+    /// expanding their comparison inline would not end (D212).
+    eq_functions: Vec<String>,
 }
 
 /// A user method called on an immutable binding, a field, or a temporary.
@@ -1213,6 +1217,9 @@ struct LowerCtx {
     /// The type whose method body is being lowered: a bare call to one of its
     /// methods is a call on the receiver, and its private methods are callable.
     method_type: Option<String>,
+    /// Types whose `==` is being expanded inline; one met again calls its
+    /// generated function instead (D212).
+    eq_expanding: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -1273,6 +1280,7 @@ impl LowerCtx {
             route_clause: false,
             mut_field_args: Vec::new(),
             method_type: None,
+            eq_expanding: Vec::new(),
         }
     }
 
@@ -1648,6 +1656,7 @@ pub fn relower_session_step(cache: &SessionMirCache, package: &Package) -> Resul
         .get(&cache.env.entry_mod_id)
         .ok_or_else(|| Error::new("session step: missing entry name maps"))?;
     let checks_before = cache.env.synthetics.borrow().receiver_checks.len();
+    let eq_before = cache.env.synthetics.borrow().eq_functions.len();
     let fun = lower_method(
         &cache.env.shell_mangled,
         step,
@@ -1663,6 +1672,15 @@ pub fn relower_session_step(cache: &SessionMirCache, package: &Package) -> Resul
         true,
         &cache.env.synthetics,
     )?;
+    // A step that needs a new `==` function rebuilds the base image, where
+    // the function is lowered with the others (D212).
+    {
+        let mut synthetics = cache.env.synthetics.borrow_mut();
+        if synthetics.eq_functions.len() > eq_before {
+            synthetics.eq_functions.truncate(eq_before);
+            return Err(Error::new("session step: needs a new `==` function"));
+        }
+    }
     let mut program = cache.program.clone();
     if let Some(slot) = program
         .functions
@@ -2517,6 +2535,26 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
         }
     }
 
+    // The `==` functions of types that contain themselves (D212).
+    let entry_mod_id = package
+        .modules
+        .iter()
+        .find(|module| module.is_entry)
+        .map(|module| module.id.clone())
+        .unwrap_or_else(|| "Main".into());
+    match lower_eq_functions(
+        &fns,
+        &types_info,
+        &package_maps,
+        &module_exports,
+        &entry_mod_id,
+        &synthetics,
+        &mut HashSet::new(),
+    ) {
+        Ok(generated) => functions.extend(generated),
+        Err(e) => body_errors.push(e),
+    }
+
     if std::env::var_os("THOXA_REPL_PROFILE").is_some() {
         eprintln!(
             "thoxa profile: mir-bodies {} fns {:?}",
@@ -2548,12 +2586,6 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
     if std::env::var_os("THOXA_REPL_PROFILE").is_some() {
         eprintln!("thoxa profile: mir-total {:?}", lower_started.elapsed());
     }
-    let entry_mod_id = package
-        .modules
-        .iter()
-        .find(|module| module.is_entry)
-        .map(|module| module.id.clone())
-        .unwrap_or_else(|| "Main".into());
     let env = SessionLowerEnv {
         fns,
         types: types_info,
@@ -15404,7 +15436,8 @@ fn lower_binary(
                     span,
                 ));
             }
-            let comparable = matches!(&lt, Ty::Bytes | Ty::User(_) | Ty::Array { .. });
+            let comparable =
+                matches!(&lt, Ty::Bytes | Ty::User(_) | Ty::Array { .. } | Ty::Map { .. });
             if comparable && !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
                 return Err(Error::at(
                     format!("{shown} only supports `==` and `!=`"),
@@ -15423,11 +15456,22 @@ fn lower_binary(
                         span,
                     )
                 })?,
+                Ty::Map { key, val } => {
+                    lower_map_eq(ctx, l, r, key, val, span)?.ok_or_else(|| {
+                        Error::at(
+                            format!(
+                                "cannot compare {shown} values: {} has no `==`",
+                                display_ty(val)
+                            ),
+                            span,
+                        )
+                    })?
+                }
                 _ => {
                     return Err(Error::at(format!("cannot compare {shown} values"), span)
                         .with_help(
                             "`==` is defined for numbers, Bool, String, Bytes, and products, \
-                             unions, and arrays of those (D175, D177, D178)",
+                             unions, arrays, and maps of those (D175, D177, D178, D212)",
                         ));
                 }
             };
@@ -15539,6 +15583,127 @@ fn lower_bytes_eq(ctx: &mut LowerCtx, left: Place, right: Place) -> Place {
 /// which ends because a type cannot contain itself. A union compares its
 /// arms (D177).
 fn lower_user_eq(
+    ctx: &mut LowerCtx,
+    left: Place,
+    right: Place,
+    type_name: &str,
+    span: Span,
+) -> Result<Place> {
+    if ctx.eq_expanding.iter().any(|expanding| expanding == type_name) {
+        return Ok(call_eq_function(ctx, left, right, type_name));
+    }
+    ctx.eq_expanding.push(type_name.to_string());
+    let result = lower_user_eq_inline(ctx, left, right, type_name, span);
+    ctx.eq_expanding.pop();
+    result
+}
+
+/// `__eq_{type}(&left, &right)`: both sides are borrowed, passed as `mut`
+/// parameters (by address, D199), so the call moves nothing.
+fn call_eq_function(ctx: &mut LowerCtx, left: Place, right: Place, type_name: &str) -> Place {
+    {
+        let mut synthetics = ctx.synthetics.borrow_mut();
+        if !synthetics.eq_functions.iter().any(|name| name == type_name) {
+            synthetics.eq_functions.push(type_name.to_string());
+        }
+    }
+    let p = ctx.fresh("eqcall");
+    ctx.assign(
+        p.clone(),
+        Ty::Bool,
+        RValue::Call {
+            callee: Callee::User(eq_function_name(type_name)),
+            args: vec![
+                Place {
+                    name: format!("&{}", left.name),
+                },
+                Place {
+                    name: format!("&{}", right.name),
+                },
+            ],
+        },
+    );
+    p
+}
+
+fn eq_function_name(type_name: &str) -> String {
+    format!("__eq_{type_name}")
+}
+
+/// Lower each requested `__eq_{type}` (D212); lowering one may request more.
+fn lower_eq_functions(
+    fns: &HashMap<String, FnSig>,
+    types: &HashMap<String, TypeInfo>,
+    package_maps: &HashMap<String, ModuleNameMaps>,
+    module_exports: &HashMap<String, ModuleExports>,
+    entry_mod_id: &str,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
+    done: &mut HashSet<String>,
+) -> Result<Vec<Function>> {
+    let mut functions = Vec::new();
+    loop {
+        let pending: Vec<String> = synthetics
+            .borrow()
+            .eq_functions
+            .iter()
+            .filter(|name| !done.contains(*name))
+            .cloned()
+            .collect();
+        if pending.is_empty() {
+            return Ok(functions);
+        }
+        for type_name in pending {
+            done.insert(type_name.clone());
+            let module_id = types
+                .get(&type_name)
+                .map(|info| info.def_mod.clone())
+                .filter(|module| package_maps.contains_key(module))
+                .unwrap_or_else(|| entry_mod_id.to_string());
+            let maps = package_maps.get(&module_id).unwrap();
+            let mut ctx = LowerCtx::new(
+                fns.clone(),
+                types.clone(),
+                maps.name_to_type.clone(),
+                maps.name_to_fn.clone(),
+                maps.name_to_global.clone(),
+                maps.namespaces.clone(),
+                module_exports.clone(),
+                package_maps.clone(),
+                Ty::Bool,
+                module_id,
+                false,
+                Rc::clone(synthetics),
+            );
+            let ty = Ty::User(type_name.clone());
+            let sides = ["left", "right"].map(|name| Place {
+                name: format!("(*{name})"),
+            });
+            ctx.eq_expanding.push(type_name.clone());
+            let result = lower_user_eq_inline(
+                &mut ctx,
+                sides[0].clone(),
+                sides[1].clone(),
+                &type_name,
+                Span::new(0, 0),
+            )?;
+            let mut body = ctx.stmts;
+            let ret = Some(result);
+            insert_function_drops(&mut body, &ret, &Ty::Bool, &ctx.drop_places);
+            functions.push(Function {
+                name: eq_function_name(&type_name),
+                is_main: false,
+                receiver: None,
+                params: vec![("left".into(), ty.clone()), ("right".into(), ty)],
+                mut_params: vec![true, true],
+                body,
+                ret,
+                ret_ty: Ty::Bool,
+            });
+        }
+    }
+}
+
+fn lower_user_eq_inline(
     ctx: &mut LowerCtx,
     left: Place,
     right: Place,
@@ -15801,6 +15966,153 @@ fn lower_array_eq(
     Ok(Some(result))
 }
 
+/// D212: two maps are equal when they hold the same keys with equal values;
+/// insertion order does not matter. Each key of `left` is looked up in both
+/// maps; the values are borrowed (`MapGet` copies no reference), and the loop
+/// stops at the first key `right` lacks or the first unequal value. `None`
+/// when the value type has no `==`.
+fn lower_map_eq(
+    ctx: &mut LowerCtx,
+    left: Place,
+    right: Place,
+    key_ty: &Ty,
+    val_ty: &Ty,
+    span: Span,
+) -> Result<Option<Place>> {
+    let mut counts = Vec::new();
+    for place in [&left, &right] {
+        let count = ctx.fresh("meqcnt");
+        ctx.assign(
+            count.clone(),
+            Ty::Int64,
+            RValue::Call {
+                callee: Callee::Builtin("map_count".into()),
+                args: vec![place.clone()],
+            },
+        );
+        counts.push(count);
+    }
+    let result = ctx.fresh("meq");
+    ctx.assign(
+        result.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Eq,
+            left: counts[0].clone(),
+            right: counts[1].clone(),
+        },
+    );
+    let index = ctx.fresh("meqi");
+    ctx.assign(index.clone(), Ty::Int64, RValue::Int(0));
+    let key = ctx.fresh("meqk");
+    declare_borrow(ctx, &key, key_ty)?;
+    let mut values = Vec::new();
+    for _ in 0..2 {
+        let value = ctx.fresh("meqv");
+        declare_borrow(ctx, &value, val_ty)?;
+        values.push(value);
+    }
+
+    let outside = std::mem::take(&mut ctx.stmts);
+    ctx.assign_no_drop(
+        key.clone(),
+        key_ty.clone(),
+        RValue::MapKeyAt {
+            map: left.clone(),
+            index: index.clone(),
+        },
+    );
+    let lookup_key = coerce_map_key(ctx, key, key_ty);
+    let mut found = Vec::new();
+    for (map, value) in [(&left, &values[0]), (&right, &values[1])] {
+        let hit = ctx.fresh("meqhit");
+        ctx.assign_no_drop(
+            hit.clone(),
+            Ty::Int64,
+            RValue::MapGet {
+                map: map.clone(),
+                key: lookup_key.clone(),
+                out: value.clone(),
+                val_ty: val_ty.clone(),
+            },
+        );
+        found.push(hit);
+    }
+    let zero = ctx.fresh("meqz");
+    ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
+    let missing = ctx.fresh("meqmiss");
+    ctx.assign(
+        missing.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Eq,
+            left: found[1].clone(),
+            right: zero,
+        },
+    );
+    let stop = vec![
+        Stmt::Assign {
+            place: result.clone(),
+            ty: Ty::Bool,
+            value: RValue::Bool(false),
+        },
+        Stmt::Break,
+    ];
+    ctx.stmts.push(Stmt::If {
+        cond: missing,
+        then_body: stop.clone(),
+        else_body: Vec::new(),
+    });
+    let Some(equal) = lower_field_eq(ctx, values[0].clone(), values[1].clone(), val_ty, span)?
+    else {
+        ctx.stmts = outside;
+        return Ok(None);
+    };
+    let differs = ctx.fresh("meqne");
+    ctx.assign(
+        differs.clone(),
+        Ty::Bool,
+        RValue::Unary {
+            op: UnaryOp::Not,
+            arg: equal,
+        },
+    );
+    ctx.stmts.push(Stmt::If {
+        cond: differs,
+        then_body: stop,
+        else_body: Vec::new(),
+    });
+    let body = std::mem::replace(&mut ctx.stmts, outside);
+    // Only walk the keys when the counts agree.
+    ctx.stmts.push(Stmt::If {
+        cond: result.clone(),
+        then_body: vec![Stmt::ForRange {
+            index,
+            end: counts[0].clone(),
+            inclusive: false,
+            body,
+        }],
+        else_body: Vec::new(),
+    });
+    Ok(Some(result))
+}
+
+/// Declare a local that only ever borrows (a map slot read by `MapGet`): it
+/// is zeroed like any local, but never dropped, not even when a comparison
+/// nested in a loop declares it again.
+fn declare_borrow(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
+    let start = ctx.stmts.len();
+    init_place(ctx, place, ty)?;
+    let declared = ctx.stmts.split_off(start);
+    ctx.stmts.extend(
+        declared
+            .into_iter()
+            .filter(|stmt| !matches!(stmt, Stmt::Drop { place: dropped, .. } if dropped == place)),
+    );
+    ctx.drop_places.retain(|(name, _)| *name != place.name);
+    Ok(())
+}
+
 /// Whether values of `ty` hold anything to compare: a product with a field
 /// other than Void, or any other type.
 fn has_storage(types: &HashMap<String, TypeInfo>, ty: &Ty) -> bool {
@@ -15831,8 +16143,8 @@ fn borrow_field(ctx: &mut LowerCtx, base: &Place, name: &str, ty: &Ty) -> Place 
     p
 }
 
-/// One field's `==` (D175), or `None` when its type has none (Array, Map,
-/// Node, a union with payloads).
+/// One field's `==` (D175), or `None` when its type has none (Node, a
+/// function, an element or value without one).
 fn lower_field_eq(
     ctx: &mut LowerCtx,
     left: Place,
@@ -15868,6 +16180,7 @@ fn lower_field_eq(
         }
         Ty::Bytes => Ok(Some(lower_bytes_eq(ctx, left, right))),
         Ty::Array { elem } => lower_array_eq(ctx, left, right, elem, span),
+        Ty::Map { key, val } => lower_map_eq(ctx, left, right, key, val, span),
         Ty::User(name) => {
             // `type Qty = Int64 where …` compares its base value.
             if let Some(base) = refined_info(&ctx.types, ty).map(|info| info.base.clone()) {
@@ -17511,6 +17824,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         route_clause: ctx.route_clause,
         mut_field_args: Vec::new(),
         method_type: ctx.method_type.clone(),
+        eq_expanding: ctx.eq_expanding.clone(),
     };
     if block.tail.is_none() {
         return Ok(Ty::Void);

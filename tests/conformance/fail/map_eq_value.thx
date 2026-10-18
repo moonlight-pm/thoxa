@@ -1,0 +1,6 @@
+## D212: a map compares when its values do; `Node` has no `==`.
+fn main() -> Int64 {
+    let left = {"a": <p>hi</p>}
+    let right = {"a": <p>hi</p>}
+    if left == right { 0 } else { 1 }
+}

@@ -1,0 +1,47 @@
+## D212: `==` on maps: the same keys with equal values, in any order. A
+## type that contains itself (a tree, `Json`) compares through a generated
+## function, so products, unions, and arrays holding maps compare too.
+import logging, { info } from "std/logging"
+import { Json } from "std/json"
+
+type Point(x: Int64, y: Int64)
+type Sheet(title: String, cells: Map<String, Array<Int64>>)
+type Tree(label: String, children: Array<Tree>)
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let prices = {"tea": 4, "milk": 2}
+    let reordered = {"milk": 2, "tea": 4}
+    let changed = {"tea": 4, "milk": 3}
+    let fewer = {"tea": 4}
+    info("{prices == reordered} {prices == changed} {prices == fewer} {prices != changed}")
+    let empty: Map<String, Int64> = Map()
+    let alsoEmpty: Map<String, Int64> = Map()
+    info("{empty == alsoEmpty} {empty == fewer}")
+
+    let marks = {Point(x: 1, y: 2): "start", Point(x: 3, y: 4): "end"}
+    let sameMarks = {Point(x: 3, y: 4): "end", Point(x: 1, y: 2): "start"}
+    info("{marks == sameMarks}")
+
+    let nested = {"a": {"x": true}, "b": {"y": false}}
+    let sameNested = {"b": {"y": false}, "a": {"x": true}}
+    let otherNested = {"a": {"x": true}, "b": {"y": true}}
+    info("{nested == sameNested} {nested == otherNested}")
+
+    let sheet = Sheet(title: "menu", cells: {"a": [1, 2], "b": [3]})
+    let sameSheet = Sheet(title: "menu", cells: {"b": [3], "a": [1, 2]})
+    let otherSheet = Sheet(title: "menu", cells: {"a": [1, 2], "b": [4]})
+    info("{sheet == sameSheet} {sheet == otherSheet}")
+
+    let order: Json = {name: "tea", tags: ["hot", "green"], price: 4}
+    let sameOrder: Json = {tags: ["hot", "green"], price: 4, name: "tea"}
+    let otherOrder: Json = {name: "tea", tags: ["hot"], price: 4}
+    info("{order == sameOrder} {order == otherOrder}")
+
+    let tree = Tree(label: "root", children: [Tree(label: "leaf", children: [])])
+    let sameTree = Tree(label: "root", children: [Tree(label: "leaf", children: [])])
+    let otherTree = Tree(label: "root", children: [Tree(label: "bud", children: [])])
+    info("{tree == sameTree} {tree == otherTree}")
+    0
+}

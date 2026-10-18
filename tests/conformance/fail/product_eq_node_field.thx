@@ -1,0 +1,12 @@
+## D175: `==` on a product compares its fields, so every field needs `==`.
+## Node has none.
+type Card(label: String, body: Node)
+
+fn main() -> Int64 {
+    let left = Card(label: "a", body: <p>hi</p>)
+    let right = Card(label: "a", body: <p>hi</p>)
+    if left == right {
+        return 1
+    }
+    0
+}

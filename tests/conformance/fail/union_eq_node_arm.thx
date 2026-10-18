@@ -1,11 +1,12 @@
 ## D177: `==` on a union compares the arm's payload, so every field of
-## every arm needs `==`. Map has none yet.
-type Bag(counts: Map<String, Int64>)
+## every arm needs `==`. Node has none.
+type Card(body: Node)
+type Boxed(card: Card)
 type Nothing()
-type Holder = Bag | Nothing
+type Holder = Boxed | Nothing
 
 fn main() -> Int64 {
-    let left: Holder = Bag(counts: {apples: 1})
+    let left: Holder = Boxed(card: Card(body: <p>hi</p>))
     let right: Holder = Nothing()
     if left == right {
         return 1

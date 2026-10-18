@@ -786,7 +786,12 @@ without a receiver is an unbound method (see
 - unions: equal when they are the same member with equal payloads, so `May`
   and `Trial` values compare. A union and one of its members compare as if the
   member were in the union;
-- arrays: the same count and equal elements, in order.
+- arrays: the same count and equal elements, in order;
+- maps: the same keys, each with an equal value. Order does not matter:
+  `{"a": 1, "b": 2} == {"b": 2, "a": 1}` is `true`.
+
+A type that contains itself, such as a tree with an `Array<Tree>` field or
+`Json`, compares the same way, to any depth.
 
 ```thx
 type Point(x: Int64, y: Int64)
@@ -801,9 +806,9 @@ let two = found == Has(2)                  ## true
 ```
 
 It is a compile error to compare values of different types, to use `<` or `>`
-on a product, union, array, or string, or to compare types where some field or
-member has no `==` (a `Map` or `Node` field). Types with `drop` and C-layout
-types have no `==`. There is no `==` on maps or function values.
+on a product, union, array, map, or string, or to compare types where some
+field, member, element, or map value has no `==` (a `Node`). Types with `drop`
+and C-layout types have no `==`. There is no `==` on function values.
 
 ## Conversions
 

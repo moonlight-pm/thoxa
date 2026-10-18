@@ -145,10 +145,11 @@ conformance and docs. Shipped so far: **D207** a field indexes as a local
 first line ran nothing); **D210** an LSP rename writes a pun's label out
 (`connect(host, deadline: limit)`), and renames method and constructor labels;
 **D211** multi-clause methods and generic types' methods infer their return
-types.
+types; **D212** `==` on maps (any order) and on types that contain
+themselves (`Json`, trees).
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
-no `==` on Map; keys cannot hold Array fields (no array hash yet,
+keys cannot hold Array fields (no array hash yet,
 D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
 `Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
 range) and the message prints `lo..hi` for `lo..=hi`; a session command inside a block
@@ -273,7 +274,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |
 | Nowait | Token **`--> name(args)`** starts a named free Thoxa function (**D148**). `Void`; return dropped. Colorless: Net parks; `main` drains. No Future / `async` / `--> { }` / pointer `-->`. |
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. An element of a `mut` Array is a place (`grid[0].append(x)`); a field from outside its type and a temporary are not, and a write on them is an error (**D180**). |
-| Equality | Structural, no traits: `==` / `!=` compare products field by field, unions by arm and payload, arrays by count and elements (**D175**, **D177**, **D178**); never by RC pointer. No ordering on them; no `==` on Map. |
+| Equality | Structural, no traits: `==` / `!=` compare products field by field, unions by arm and payload, arrays by count and elements, maps by keys and values in any order (**D175**, **D177**, **D178**, **D212**); never by RC pointer. A type that contains itself compares through a generated function. No ordering on them. |
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Bool; values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User products / unions are keys too (**D175** `==` + a generated hash, **D179**; not traits). `remove` keeps insertion order (**D181**). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); `htmlFragment` / `etagOf` / `cached` (**D145**). **`peerFd` + `streamed()`** (**D146**) for SSE takeover; the handler gets

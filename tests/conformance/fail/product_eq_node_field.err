@@ -1,0 +1,1 @@
+cannot compare Card values: field `body` is Node, which has no `==`
