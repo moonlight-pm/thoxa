@@ -1,0 +1,7 @@
+## D219: a UInt64 and a signed integer have no common type; convert one.
+fn main() -> Int64 {
+    let count: UInt64 = 3
+    let offset = 2
+    let total = count + offset
+    0
+}

@@ -8318,6 +8318,10 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
                             expr.span,
                         ));
                     }
+                    if arg_ty == Ty::UInt64 {
+                        return Err(Error::at("a UInt64 cannot be negated", expr.span)
+                            .with_help("`0 - x` wraps around, as UInt64 arithmetic does (D219)"));
+                    }
                     let arg = if arg_ty == Ty::Int64 {
                         arg
                     } else {
@@ -8345,6 +8349,19 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
                 UnaryOp::BitNot => {
                     if !is_int(&arg_ty) {
                         return Err(Error::at("bitwise `~` expects an integer", expr.span));
+                    }
+                    // A UInt64 keeps its 64 bits (D219).
+                    if arg_ty == Ty::UInt64 {
+                        let p = ctx.fresh("bnot");
+                        ctx.assign(
+                            p.clone(),
+                            Ty::UInt64,
+                            RValue::Unary {
+                                op: UnaryOp::BitNot,
+                                arg,
+                            },
+                        );
+                        return Ok((p, Ty::UInt64));
                     }
                     // Compute in Int64 so width truncation happens on field store.
                     let arg = if arg_ty == Ty::Int64 {
@@ -15435,6 +15452,27 @@ fn lower_binary(
                     span,
                 ));
             }
+            if lt == Ty::UInt64 || rt == Ty::UInt64 {
+                let left = unsigned_operand(ctx, l, &lt, left, span)?;
+                let right = unsigned_operand(ctx, r, &rt, right, span)?;
+                let p = ctx.fresh("ubin");
+                let value = match op {
+                    BinaryOp::Div | BinaryOp::Rem => RValue::Call {
+                        callee: Callee::Builtin(
+                            if matches!(op, BinaryOp::Div) {
+                                "uint_div"
+                            } else {
+                                "uint_rem"
+                            }
+                            .into(),
+                        ),
+                        args: vec![left, right],
+                    },
+                    _ => RValue::Binary { op, left, right },
+                };
+                ctx.assign(p.clone(), Ty::UInt64, value);
+                return Ok((p, Ty::UInt64));
+            }
             let left = if lt == Ty::Int64 {
                 l
             } else {
@@ -15470,6 +15508,38 @@ fn lower_binary(
                     format!("bitwise operator {op:?} expects integer operands"),
                     span,
                 ));
+            }
+            // A UInt64 keeps its 64 bits: `&` `|` `^` with another unsigned
+            // operand, and a shift of a UInt64 by any count (D219).
+            let shift = matches!(op, BinaryOp::Shl | BinaryOp::Shr);
+            if lt == Ty::UInt64 || (!shift && rt == Ty::UInt64) {
+                let left = unsigned_operand(ctx, l, &lt, left, span)?;
+                let right = if shift {
+                    if rt == Ty::Int64 {
+                        r
+                    } else {
+                        coerce_place(ctx, r, &rt, &Ty::Int64, span)?
+                    }
+                } else {
+                    unsigned_operand(ctx, r, &rt, right, span)?
+                };
+                let p = ctx.fresh("ubit");
+                let value = match op {
+                    BinaryOp::Shl | BinaryOp::Shr => RValue::Call {
+                        callee: Callee::Builtin(
+                            if matches!(op, BinaryOp::Shl) {
+                                "uint_shl"
+                            } else {
+                                "uint_shr"
+                            }
+                            .into(),
+                        ),
+                        args: vec![left, right],
+                    },
+                    _ => RValue::Binary { op, left, right },
+                };
+                ctx.assign(p.clone(), Ty::UInt64, value);
+                return Ok((p, Ty::UInt64));
             }
             // Bitwise in Int64; field stores truncate to declared width.
             let left = if lt == Ty::Int64 {
@@ -15560,6 +15630,14 @@ fn lower_binary(
                     coerce_place(ctx, r, &rt, &Ty::Float64, span)?
                 };
                 let p = ctx.fresh("fcmp");
+                ctx.assign(p.clone(), Ty::Bool, RValue::Binary { op, left, right });
+                return Ok((p, Ty::Bool));
+            }
+            // A UInt64 compares unsigned (D219).
+            if is_int(&lt) && is_int(&rt) && (lt == Ty::UInt64 || rt == Ty::UInt64) {
+                let left = unsigned_operand(ctx, l, &lt, left, span)?;
+                let right = unsigned_operand(ctx, r, &rt, right, span)?;
+                let p = ctx.fresh("ucmp");
                 ctx.assign(p.clone(), Ty::Bool, RValue::Binary { op, left, right });
                 return Ok((p, Ty::Bool));
             }
@@ -15672,6 +15750,32 @@ fn lower_binary(
             );
             Ok((p, Ty::Bool))
         }
+    }
+}
+
+/// D219: an operand of a `UInt64` operation, as a `UInt64`: a `UInt64`, a
+/// `UInt32` or `Byte` (widened), or a non-negative integer literal. A signed
+/// value has no type in common with a `UInt64`, so mixing them is an error.
+fn unsigned_operand(
+    ctx: &mut LowerCtx,
+    place: Place,
+    ty: &Ty,
+    expr: &Expr,
+    span: Span,
+) -> Result<Place> {
+    match ty {
+        Ty::UInt64 => Ok(place),
+        Ty::UInt32 | Ty::Byte => coerce_place(ctx, place, ty, &Ty::UInt64, span),
+        _ if int_constant(expr).is_some_and(|value| value >= 0) => {
+            coerce_place(ctx, place, ty, &Ty::UInt64, span)
+        }
+        _ => Err(Error::at(
+            format!("cannot mix UInt64 and {} in one operation", display_ty(ty)),
+            span,
+        )
+        .with_help(
+            "convert one side: `UInt64(truncating: x)` keeps the bits, `x as? UInt64` checks the value",
+        )),
     }
 }
 

@@ -152,10 +152,12 @@ arrays and Float64, and be Float64 (SameValueZero: NaN finds NaN); **D215**
 `\u{…}` string escape (`"caf\u{e9}"`); **D216** `toLower` applies final sigma
 (`"ΟΔΟΣ"` → `"οδος"`); **D217** generic types declare `from` clauses
 (`[1, 2] as Pair<Int64>`); **D218** a route body parameter may be an
-`Array<T>`, read from a JSON array.
+`Array<T>`, read from a JSON array; **D219** `UInt64` arithmetic over its
+whole range (wrapping, unsigned `/ % < >>`; mixing with a signed value is an
+error).
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
-`UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
+`Int64` →
 `Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
 range) and the message prints `lo..hi` for `lo..=hi`; a session command inside a block
 is not recognized (use `shell.run`). From D195: no normalization.

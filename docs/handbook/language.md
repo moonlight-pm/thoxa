@@ -265,7 +265,7 @@ There is no `import` or `type` inside a function.
 | `UInt64` | 0 to 2^64-1 |
 | `Byte` | 0 to 255 |
 
-Arithmetic happens in `Int64`.
+Arithmetic happens in `Int64`, except on a `UInt64` (below).
 
 - **Overflow wraps** (two's complement); it is never undefined behaviour.
 - **Division** `/` truncates toward zero and `%` takes the sign of the
@@ -277,12 +277,27 @@ Arithmetic happens in `Int64`.
 - **Ranges.** `a..=b` includes `b` and stops there, even at the largest
   `Int64`.
 
+**UInt64.** An operation with a `UInt64` operand happens in `UInt64`, over its
+whole range, when the other operand is a `UInt64`, a `UInt32` or `Byte`, or a
+non-negative literal. `+`, `-`, and `*` wrap modulo 2^64, `/` and `%` divide
+unsigned (by zero panics), comparisons are unsigned, `>>` shifts in zeros,
+and `~` keeps all 64 bits. A `UInt64` cannot be negated, and mixing one with
+a signed value (`count + offset` where `offset` is an `Int64`) is a compile
+error: convert one side with `truncating:` or `as?`.
+
+```thx
+let max = UInt64(truncating: -1)       ## 18446744073709551615
+let half = max / 2                     ## 9223372036854775807
+let more = half + 1                    ## 9223372036854775808
+let wrapped = max + 1                  ## 0
+let bigger = max > half                ## true
+```
+
 **Narrowing.** A value passed, returned, or stored where `Int32`, `UInt32`,
 `UInt64`, or `Byte` is expected converts when it fits. When it does not, the
 program panics (`thoxa panic: 256 does not fit in Byte`). A literal that
 cannot fit is a compile error. Widening (`Byte` to `Int64`) is never checked.
-A `UInt64` above the `Int64` maximum panics when it meets `Int64` arithmetic
-or a comparison.
+A `UInt64` above the `Int64` maximum panics where an `Int64` is expected.
 
 To keep the low bits instead (a bit pattern, or `-1` for an unsigned C
 parameter), say so with `truncating:`. `Int64`, `Int32`, `UInt64`, `UInt32`,

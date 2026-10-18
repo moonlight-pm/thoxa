@@ -112,6 +112,36 @@ static inline int64_t thoxa_int_shr(int64_t left, int64_t count) {
     return left >> count;
 }
 
+/* UInt64 `/`, `%`, `<<`, `>>` (D219): division by zero panics; a count of
+ * 64 or more shifts every bit out; a negative count panics. */
+static inline uint64_t thoxa_uint_div(uint64_t left, uint64_t right) {
+    if (right == 0) {
+        thoxa_panic("division by zero");
+    }
+    return left / right;
+}
+
+static inline uint64_t thoxa_uint_rem(uint64_t left, uint64_t right) {
+    if (right == 0) {
+        thoxa_panic("division by zero");
+    }
+    return left % right;
+}
+
+static inline uint64_t thoxa_uint_shl(uint64_t left, int64_t count) {
+    if (count < 0) {
+        thoxa_panic("negative shift count");
+    }
+    return count >= 64 ? 0 : left << count;
+}
+
+static inline uint64_t thoxa_uint_shr(uint64_t left, int64_t count) {
+    if (count < 0) {
+        thoxa_panic("negative shift count");
+    }
+    return count >= 64 ? 0 : left >> count;
+}
+
 /* Thread-local errno after a failed libc call (no named `ffi` root — D80). */
 int32_t thoxa_errno(void);
 
