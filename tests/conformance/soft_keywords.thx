@@ -1,0 +1,33 @@
+## Keywords that only introduce a declaration or a clause (`type`, `from`,
+## `in`, `as`, `where`, `import`, `export`, `extern`, `extend`) are names
+## wherever a name goes: labels, parameters, fields, bindings (D198).
+
+import { Has, Not } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Token(type: String, in: Int64 = 0)
+
+fn find(needle!: String, from: Int64 = 0) -> Int64 {
+    from + needle.count
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let token = Token(type: "word", in: 3)
+    mut type = token.type
+    type = "{type}!"
+    let where = find("abc", from: 2)
+    let as = where as Float64
+    let pairs = { type: "latte", from: "cart" }
+    for in in 0..2 {
+        info("loop {in}")
+    }
+    match "naïve café".byteIndexOf("café", from: 3) {
+        Has(at) => info("café at byte {at}")
+        Not => info("missing")
+    }
+    info("{type} {token.in} {where} {as} {pairs}")
+    0
+}

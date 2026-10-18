@@ -11348,7 +11348,7 @@ fn lower_extension_call(
 const STRING_PRIMITIVES: &[(&str, &str, &[(&str, StringParam)], StringResult)] = &[
     ("byteAt", "string_byte_at", &[("index", StringParam::Int)], StringResult::Int),
     ("byteSlice", "string_byte_slice", &[("start", StringParam::Int), ("end", StringParam::Int)], StringResult::Text),
-    ("byteIndexOf", "string_byte_index_of", &[("needle", StringParam::Text), ("start", StringParam::Start)], StringResult::Index),
+    ("byteIndexOf", "string_byte_index_of", &[("needle", StringParam::Text), ("from", StringParam::From)], StringResult::Index),
 ];
 
 #[derive(Clone, Copy)]
@@ -11356,7 +11356,7 @@ enum StringParam {
     Text,
     Int,
     /// `Int64 = 0`
-    Start,
+    From,
 }
 
 #[derive(Clone, Copy)]
@@ -11405,7 +11405,7 @@ fn lower_string_method(
         let (ty, default) = match param {
             StringParam::Text => (Ty::String, None),
             StringParam::Int => (Ty::Int64, None),
-            StringParam::Start => (Ty::Int64, Some(crate::ast_build::int_lit(0))),
+            StringParam::From => (Ty::Int64, Some(crate::ast_build::int_lit(0))),
         };
         formal.push((name.to_string(), ty));
         defaults.push(default);

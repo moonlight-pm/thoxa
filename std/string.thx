@@ -7,7 +7,7 @@
 ## A String is valid UTF-8 and knows its scalar count (`.count`) and byte
 ## count (`.byteCount`). These methods are built on three runtime primitives
 ## that work in byte offsets: `byteAt(offset)`, `byteSlice(start, end)`, and
-## `byteIndexOf(needle, start = 0)`.
+## `byteIndexOf(needle, from: 0)`.
 ## Positions the methods take or return count Unicode scalars (D195).
 
 import { Has, Not, May } from "std/fallible"

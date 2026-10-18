@@ -82,7 +82,7 @@ D123): `Split` and `parseUInt` are still imported by name.
 | `.count`, `.byteCount` | Unicode scalars (cached when the String is made), bytes |
 | `byteAt(offset)` | the byte at `offset`; out of range panics |
 | `byteSlice(start, end)` | the bytes from `start` up to `end`, clamped; a cut inside a character becomes U+FFFD |
-| `byteIndexOf(needle, start = 0)` | `May<Int64>`, the byte offset of the first `needle` at or after `start` |
+| `byteIndexOf(needle, from: 0)` | `May<Int64>`, the byte offset of the first `needle` at or after `from` |
 
 They are public: they are also the fast path for code that works in bytes.
 The rest of D195's methods are Thoxa: search and split over `byteIndexOf`,

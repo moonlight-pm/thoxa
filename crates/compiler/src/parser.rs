@@ -6,6 +6,30 @@ use crate::error::{Error, Result};
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::Span;
 
+/// Keywords that only introduce a declaration or a clause: `type`, `extend`,
+/// `import … from`, `export`, `extern`, `x as T`, `for x in`, `T where …`.
+/// Wherever a name goes they are names: argument labels, parameters, fields,
+/// bindings, and references to them (D198).
+fn soft_keyword(kind: &TokenKind) -> Option<&'static str> {
+    match kind {
+        TokenKind::Type => Some("type"),
+        TokenKind::Extend => Some("extend"),
+        TokenKind::Import => Some("import"),
+        TokenKind::From => Some("from"),
+        TokenKind::Export => Some("export"),
+        TokenKind::Extern => Some("extern"),
+        TokenKind::As => Some("as"),
+        TokenKind::In => Some("in"),
+        TokenKind::Where => Some("where"),
+        _ => None,
+    }
+}
+
+/// An identifier, or a soft keyword in a name's place.
+fn is_name_token(kind: &TokenKind) -> bool {
+    matches!(kind, TokenKind::Ident(_)) || soft_keyword(kind).is_some()
+}
+
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
@@ -1038,7 +1062,7 @@ impl Parser {
         }
         match &self.tokens[i].kind {
             TokenKind::RParen => true,
-            TokenKind::Ident(_) => {
+            kind if is_name_token(kind) => {
                 let j = i + 1;
                 j < self.tokens.len() && matches!(self.tokens[j].kind, TokenKind::Colon)
             }
@@ -1374,17 +1398,14 @@ impl Parser {
     /// Statement starts with an assignable place:
     /// `name =`, `name[i] =`, `name.field =`, or `name.field[i] =`.
     fn at_assign_stmt(&self) -> bool {
-        if !matches!(self.current().kind, TokenKind::Ident(_)) {
+        if !is_name_token(&self.current().kind) {
             return false;
         }
         let mut i = self.pos + 1;
         // Optional `.field`
         if self.tokens.get(i).map(|t| &t.kind) == Some(&TokenKind::Dot) {
             i += 1;
-            if !matches!(
-                self.tokens.get(i).map(|t| &t.kind),
-                Some(TokenKind::Ident(_))
-            ) {
+            if !self.tokens.get(i).is_some_and(|t| is_name_token(&t.kind)) {
                 return false;
             }
             i += 1;
@@ -1929,6 +1950,10 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr> {
+        // Where an expression starts, a soft keyword is a name (D198).
+        if let Some(word) = soft_keyword(&self.current().kind) {
+            self.tokens[self.pos].kind = TokenKind::Ident(word.to_string());
+        }
         let start = self.peek_span();
         match &self.current().kind {
             TokenKind::Int(n) => {
@@ -2154,14 +2179,11 @@ impl Parser {
         if i >= self.tokens.len() {
             return false;
         }
-        matches!(
-            self.tokens[i].kind,
-            TokenKind::Ident(_)
-                | TokenKind::String(_)
-                | TokenKind::Int(_)
-                | TokenKind::True
-                | TokenKind::False
-        )
+        is_name_token(&self.tokens[i].kind)
+            || matches!(
+                self.tokens[i].kind,
+                TokenKind::String(_) | TokenKind::Int(_) | TokenKind::True | TokenKind::False
+            )
     }
 
     fn parse_map_lit(&mut self) -> Result<Expr> {
@@ -2200,6 +2222,13 @@ impl Parser {
         let span = self.peek_span();
         if self.call_key_end(0).is_some() {
             return self.parse_expr();
+        }
+        if let Some(word) = soft_keyword(&self.current().kind) {
+            self.bump();
+            return Ok(Expr {
+                kind: ExprKind::String(word.to_string()),
+                span,
+            });
         }
         match &self.current().kind {
             TokenKind::Ident(s) => {
@@ -2498,9 +2527,7 @@ impl Parser {
 
     /// Named `name: expr` if `Ident` followed by `:`, else positional expression.
     fn parse_arg(&mut self) -> Result<Arg> {
-        if matches!(self.current().kind, TokenKind::Ident(_))
-            && self.peek_kind_is(1, TokenKind::Colon)
-        {
+        if is_name_token(&self.current().kind) && self.peek_kind_is(1, TokenKind::Colon) {
             let (name, name_span) = self.expect_ident()?;
             self.expect_kind(&TokenKind::Colon)?;
             let value = self.parse_expr()?;
@@ -2834,7 +2861,8 @@ impl Parser {
 
     /// Whether the current token can begin an expression (for optional `return` value).
     fn at_expr_start(&self) -> bool {
-        matches!(
+        is_name_token(&self.current().kind)
+            || matches!(
             self.current().kind,
             TokenKind::Int(_)
                 | TokenKind::Float(_)
@@ -2888,32 +2916,22 @@ impl Parser {
     }
 
     fn expect_member_name(&mut self) -> Result<(String, Span)> {
-        match &self.current().kind {
-            TokenKind::Ident(s) => {
-                let s = s.clone();
-                let span = self.current().span;
-                self.bump();
-                Ok((s, span))
-            }
-            TokenKind::From => {
-                let span = self.current().span;
-                self.bump();
-                Ok(("from".into(), span))
-            }
-            _ => Err(Error::at(
-                format!("expected identifier, found {:?}", self.current().kind),
-                self.peek_span(),
-            )),
-        }
+        self.expect_ident()
     }
 
+    /// A name: an identifier, or a soft keyword in a name's place (D198).
     fn expect_ident(&mut self) -> Result<(String, Span)> {
+        let span = self.current().span;
         match &self.current().kind {
             TokenKind::Ident(s) => {
                 let s = s.clone();
-                let span = self.current().span;
                 self.bump();
                 Ok((s, span))
+            }
+            kind if soft_keyword(kind).is_some() => {
+                let word = soft_keyword(kind).unwrap_or_default().to_string();
+                self.bump();
+                Ok((word, span))
             }
             _ => Err(Error::at(
                 format!("expected identifier, found {:?}", self.current().kind),

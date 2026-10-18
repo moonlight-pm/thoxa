@@ -42,19 +42,38 @@ component.
 
 ### Keywords
 
-These words are reserved:
+These words are reserved everywhere:
 
 ```text
-and       as        break     continue  else      export    extern
-false     fn        for       from      if        import    in
-let       loop      match     mut       not       or        return
-true      type      where     while
+and       break     continue  else      false     fn        for
+if        let       loop      match     mut       not       or
+return    true      while
 ```
 
-Some words have a meaning only in one position and are otherwise ordinary
-names: `sql` directly before a string literal (`sql"…"`), and the HTTP verbs
-`GET` `POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS` at the start of an entry
-in a type body (see [Route clauses](#route-clauses)).
+These words introduce a declaration or a clause, and are keywords only
+there; anywhere a name goes they are names, so they can be argument labels,
+parameters, fields, and variables:
+
+```text
+as        export    extend    extern    from      import    in
+type      where
+```
+
+```thx
+type Token(type: String, in: Int64 = 0)
+
+fn find(needle!: String, from: Int64 = 0) -> Int64 {
+    from + needle.count
+}
+
+let token = Token(type: "word")
+let at = find("abc", from: 2)
+```
+
+Some other words have a meaning only in one position: `sql` directly before
+a string literal (`sql"…"`), and the HTTP verbs `GET` `POST` `PUT` `PATCH`
+`DELETE` `HEAD` `OPTIONS` at the start of an entry in a type body (see
+[Route clauses](#route-clauses)).
 
 ### Literals
 
@@ -326,7 +345,7 @@ comparison); `<` and `>` on strings are a compile error.
 | `.reverse()` | the scalars in reverse order |
 | `.byteAt(offset)` | the byte at a byte offset, as `Int64`; out of range panics |
 | `.byteSlice(start, end)` | the bytes from `start` up to `end`, clamped; a cut inside a character becomes U+FFFD |
-| `.byteIndexOf(needle, start)` | `May<Int64>`, the byte offset of the first `needle` at or after `start` (default `0`) |
+| `.byteIndexOf(needle, from: 0)` | `May<Int64>`, the byte offset of the first `needle` at or after `from` |
 
 `.join(separator)` on an `Array<String>` puts the separator between the
 elements. A [refined](#refinements) String has the same methods. They are
