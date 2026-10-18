@@ -4,7 +4,8 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-18 (D202 label punning, D203 built-in labels; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
+**As of:** 2026-10-18 (D202–D206: label punning, built-in labels, `Element`
+field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
 handbook rendered as one page. The handbook was rewritten as a reference
@@ -106,20 +107,14 @@ wherever a name goes; **D199** `mut` parameters (`f(mut binding)`); **D200**
 calls follow declarations (`!` by position, the rest by label); **D201** a
 match arm may be one assignment.
 
-**D202** (2026-10-18, Joshua: "do label punning next"): a bare name fills the
-labelled parameter it names, `connect(host, deadline)`, `Point(x, y)`; std,
-the examples, and the sites use it.
-
-**D203** (2026-10-18, Joshua: "do the builtin label checks next"): built-in
-methods and constructors follow D200, positional except their options
-(`find(needle, from: 3)`, `Buffer(capacity:)`, `Element(tag:, attrs:,
-kids:)`), so they pun too; `Text("hi")`, `Fragment([…])`.
-
-**Joshua, "Hit all three proposals" (2026-10-18):** **D204** `Element`'s
-fields are `attributes` / `children` and default to empty
-(`Element(tag: "br")`); **D205** `items.insert(item, at: index)` replaces
-`insertAt(index, item)` on Array and Bytes; **D206** a method passes its own
-field to a `mut` parameter (`addLine(mut lines, …)`).
+**Calls and built-ins shipped (D202–D206, Joshua, 2026-10-18):** a bare name
+fills the labelled parameter it names, `connect(host, deadline)` (**D202**);
+built-in methods and constructors follow D200, positional except their
+options (`find(needle, from: 3)`, `Buffer(capacity:)`, `Element(tag:,
+attributes:, children:)`), so they pun too (**D203**); `Element`'s lists
+default to empty, `Element(tag: "br")` (**D204**); `items.insert(item, at:
+index)` replaces `insertAt` (**D205**); a method passes its own field to a
+`mut` parameter, `addLine(mut lines, …)` (**D206**).
 
 **Typed codecs (D182) shipped**, freeze
 [`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md):
@@ -152,6 +147,10 @@ cannot call a sibling method by bare name; a session command inside a block
 is not recognized (use `shell.run`); `thoxa -c` with an `import` line runs
 nothing. From D191: generic types cannot declare `from` clauses; route body
 parameters take named types only. From D195: final sigma (`Σ` → `ς`), no `\u{…}` string escape, no normalization.
+From D202: only a bare name puns (not `options.deadline`), and an LSP rename
+of a punned binding or parameter does not expand the pun, so the call stops
+compiling. From D206: a heap field passed `mut` is copied on the callee's
+first write (it is shared with the receiver until the write-back).
 
 Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);
 release REPL ~**8 ms**/line. **D155** resource `drop` shipped. D153 simple-RC
@@ -167,12 +166,12 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
+**Shipped recently:** D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 156 programs, 42 rejections, 9 site samples, 281 unit tests;
-`cargo make test-asan` 146 clean, 10 excepted (2026-10-17). Before them: the
+`cargo make test` 159 programs, 49 rejections, 9 site samples, 283 unit tests;
+`cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 session step compile cache (D105 §3.5): no per-line
 scratch `.thx`; reuse prelude MIR; libtcc base image (in memory since **D169**) + ~500-line step C.

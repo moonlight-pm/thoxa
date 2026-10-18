@@ -3,11 +3,12 @@
 **Status:** shipped (v0); user keys and structural `==` shipped later  
 **Decisions:** D133 (collection mutation), D134 (`Map<K, V>`); follow-ups
 D175 / D177 / D178 (`==`), D179 (user keys), D180 (collection writes reach a
-place), D181 (`remove` keeps insertion order)  
+place), D181 (`remove` keeps insertion order), D203 (method parameters are
+positional), D205 (`insert(item, at:)` replaces `insertAt`)  
 **Gates:** `maps` (Map); `arrays` / `array_user` / `array_heap_elems` / `splice`
 (Array surface after D133); `map_user_keys`, `map_user_keys_more`,
 `map_remove_order`, `array_eq`, `collection_element_writes`  
-**As of:** 2026-10-16  
+**As of:** 2026-10-18  
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D133/D134 in
 [`decisions.md`](../decisions.md)
 
@@ -70,11 +71,13 @@ edit.append(4)         # frozen unchanged
 ```
 
 **Array methods after D133:** `append`, `dropLast`, `insertAt`, `removeAt` are
-write-back `Void` (same bounds panics as D55). Index get `a[i]` is unchanged
+write-back `Void` (same bounds panics as D55). Since **D205** (2026-10-18)
+`insertAt(index, item)` is `insert(item, at: index)`. Index get `a[i]` is unchanged
 (element, OOB panic). Index set `a[i] = x` write-back / in-place per the table
 above — **not** a store into a shared `ThoxaArray*` that aliases would see.
 
-**Bytes** `insertAt` / `removeAt` stay as D55 (functional). Out of this freeze.
+**Bytes** `insertAt` / `removeAt` stay as D55 (functional; `insert(byte, at:)`
+since D205). Out of this freeze.
 
 **Fixed `Array<T, N>`** (D27 / D117) is inline storage, not a heap collection.
 Element set is unchanged.
