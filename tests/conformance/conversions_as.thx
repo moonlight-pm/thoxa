@@ -29,7 +29,7 @@ fn main() -> Int64 {
     let empty = [] as Array<Int64>
     info("{three} {ratio} {empty.count} {three as Int64 + 1}")
     let small: Byte = 7
-    let count = 4
+    let count: Int32 = 4
     info("{small as Int64} {count as Float64}")
     let size: Size = "large"
     info("{size as String}")
@@ -53,6 +53,13 @@ fn main() -> Int64 {
         match value as Byte {
             Pass(found) => info("byte {found}")
             Fail(issues) => info("byte: {messages(issues)}")
+        }
+    }
+    ## An Int64 is a Float64 only when exact (D224).
+    for value in [4, 9007199254740993] {
+        match value as Float64 {
+            Pass(found) => info("float {found}")
+            Fail(issues) => info("float: {messages(issues)}")
         }
     }
 

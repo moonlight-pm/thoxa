@@ -92,11 +92,12 @@ names both types.
 | a union member | its union | `T` | today's implicit injection |
 | a literal union | `String` | `T` | today's implicit subtyping |
 | a refined type | its base | `T` | today's implicit coercion |
-| `Byte`, `Int32`, `UInt32` | `Int64`; any integer → `Float64` | `T` | widening |
+| `Byte`, `Int32`, `UInt32` | `Int64`; any integer → `Float64` | `T` | widening (D224: an `Int64` / `UInt64` into `Float64` is checked, below) |
 | any encodable type (D182 §1) | `Json` | `T` | calls `toJson` (the type's own when it has one) |
 | the base | a refined type | `Trial<T, Array<Issue>>` | the `where` check; replaces `T.from` |
 | `String` | a literal union | `Trial<T, Array<Issue>>` | membership check |
 | `Int64` | `Int32`, `UInt32`, `UInt64`, `Byte` | `Trial<T, Array<Issue>>` | checked narrowing; `Rejected("", "300 does not fit in Byte")` |
+| `Int64`, `UInt64` | `Float64` | `Trial<T, Array<Issue>>` | since D224: fails when the value would round (past 2^53); a literal is checked at compile time and gives `T` |
 | `Json` | any readable type | `Trial<T, Array<Issue>>` | the generated reader (D182 §2, §5); replaces `T.fromJson` |
 | `A` | `B` with `from(a: A)` | what the clause returns | §3 |
 

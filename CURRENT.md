@@ -158,11 +158,13 @@ error); **D220** multi-clause methods write their fields; **D221** a
 multi-clause body may call unannotated functions (it is inferred in the same
 rounds); **D222** (Joshua's call) `where` ranges mean what `for` ranges do,
 `0..24` stops before 24 and `1..=64` includes 64; **D223** (Joshua's call) a
-`main` without `->` that returns nothing exits 0 (`fn main() { info("hi") }`).
+`main` without `->` that returns nothing exits 0 (`fn main() { info("hi") }`);
+**D224** (Joshua's call) an implicit `Int64` → `Float64` must be exact (it
+panics past 2^53 when it would round), `x as Float64` is a `Trial`, and
+`Float64(rounding: x)` rounds.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
-`Int64` →
-`Float64` rounds unchecked. Found 2026-10-17: a session command inside a block
+found 2026-10-17: a session command inside a block
 is not recognized (use `shell.run`). From D195: no normalization.
 From D202: only a bare name puns (not `options.deadline`). From D206: a heap field passed `mut` is copied on the callee's
 first write (it is shared with the receiver until the write-back).
@@ -293,7 +295,7 @@ its Socket from `server.peerOf(request)` (**D168**). Cookie and `Cache-Control` 
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
 | Node / tag literals | Builtin **`Node`** (`Element \| Text \| Fragment`) + JSX tags (**D147**). No import. PascalCase is `Type(…).view(children:)`. `{e}` children/attrs stringify String / Int64 / Float64 / Bool; `{for}` collects `Array<Node>`. `.html()` is the markup codec — not generic `toString`. Comparison `<` needs a space (`a < b`). |
 | Refinements / `Type.read` | `where` refinements are real types (**D149**). `n as Qty` checks a base value and `json as T` reads a `Json`, both `Trial<T, Array<Issue>>`; `T.read` / `T.readForm` parse text into the same, every issue reported (**D182** §2, **D191**; `Issue` in `std/json`). `T.from` / `T.fromJson` are removed (**D191** §6). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No cross-field `where`; write `May<Qty>`. |
-| Conversions | `x as T` converts and its type says whether it can fail; `x as? T` is `(x as T)?` (**D191**). At most one conversion per pair of types: built in, or a `from` clause on the target (the target alone declares conversions into itself; `toJson` is the source's way into `Json`). Only infallible conversions are implicit, and encoding to `Json` where a `Json` is expected is the only one D191 added; decoding always needs `as`. Text is parsed, not converted (`T.read`). `return` and `=` convert to the expected type (**D192**). No traits. |
+| Conversions | `x as T` converts and its type says whether it can fail; `x as? T` is `(x as T)?` (**D191**). At most one conversion per pair of types: built in, or a `from` clause on the target (the target alone declares conversions into itself; `toJson` is the source's way into `Json`). Only infallible conversions are implicit, and encoding to `Json` where a `Json` is expected is the only one D191 added; decoding always needs `as`. Like integer narrowing (D167), an implicit `Int64` / `UInt64` → `Float64` is checked and panics when inexact, and its `as` is a `Trial` (**D224**). Text is parsed, not converted (`T.read`). `return` and `=` convert to the expected type (**D192**). No traits. |
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. A parameter that is neither a capture nor the `Request` binds the body (query for GET/HEAD, JSON or form by `Content-Type`, else 415); a failed read is a 400 unless the parameter is `Trial<T, Array<Issue>>` (**D191** §5). The module imports only what its clauses write (**D193**). No fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Resource `drop` | Product `fn drop()` on last RC (**D155**). Heap box; copies share. `File` / `Socket` / `Db` close in `drop`. Explicit `close` stays inert. Only the defining module calls the constructor (**D168**). No unions / C-layout / multi-clause `drop`. Not Perceus. |

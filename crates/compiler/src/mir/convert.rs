@@ -168,6 +168,15 @@ fn convert(
     if let Some(place) = try_sum_coerce(ctx, place.clone(), from, to, None, span)? {
         return Ok((place, to.clone(), false));
     }
+    // An Int64 / UInt64 is a Float64 only when exact (D224). A literal is
+    // checked now, so it cannot fail: `1 as Float64` is a Float64.
+    let literal = super::literal_int_value(ctx, &place).is_some();
+    if *to == Ty::Float64 && *from == Ty::Int64 && !literal {
+        return checked(ctx, "asFloat", place, from, to, target, span);
+    }
+    if *to == Ty::Float64 && *from == Ty::UInt64 && !literal {
+        return checked(ctx, "asFloatUnsigned", place, from, to, target, span);
+    }
     if widens(from, to) {
         return Ok((coerce_place(ctx, place, from, to, span)?, to.clone(), false));
     }
@@ -187,8 +196,9 @@ fn convert(
     Err(no_conversion(ctx, from, to, span))
 }
 
-/// Integer widening and integer → `Float64`: every value of `from` is a value
-/// of `to`.
+/// Integer widening and a narrower integer → `Float64`: every value of
+/// `from` is a value of `to` (an Int64 / UInt64 into Float64 is checked,
+/// D224).
 fn widens(from: &Ty, to: &Ty) -> bool {
     if *to == Ty::Float64 {
         return int_range(from).is_some();

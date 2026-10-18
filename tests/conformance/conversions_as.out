@@ -8,6 +8,8 @@ quantity: expected integer <= 12, got 40
 size: expected "small" | "large", got medium
 byte 200
 byte: 300 does not fit in Byte
+float 4.0
+float: 9007199254740993 does not fit in Float64 exactly
 ok mocha large 3
 rejected: drink: expected string, got integer; size: expected "small" | "large", got huge
 2 lines, last b

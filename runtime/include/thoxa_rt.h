@@ -66,6 +66,34 @@ static inline uint64_t thoxa_narrow_unsigned(uint64_t value, uint64_t max, const
     return value;
 }
 
+/* An Int64 / UInt64 that becomes a Float64 implicitly must be exact (D224):
+ * past 2^53 not every integer has a Float64, and the conversion would round.
+ * `Float64(rounding: x)` is a plain cast. 2^63 (and 2^64) themselves are
+ * Float64 values but no Int64 (UInt64), so they also mean "rounded". */
+static inline int64_t thoxa_f64_exact_i64(int64_t value) {
+    double d = (double)value;
+    return d < 9223372036854775808.0 && (int64_t)d == value;
+}
+
+static inline int64_t thoxa_f64_exact_u64(uint64_t value) {
+    double d = (double)value;
+    return d < 18446744073709551616.0 && (uint64_t)d == value;
+}
+
+static inline double thoxa_f64_from_i64(int64_t value) {
+    if (!thoxa_f64_exact_i64(value)) {
+        thoxa_narrow_fail_signed(value, "Float64 exactly");
+    }
+    return (double)value;
+}
+
+static inline double thoxa_f64_from_u64(uint64_t value) {
+    if (!thoxa_f64_exact_u64(value)) {
+        thoxa_narrow_fail_unsigned(value, "Float64 exactly");
+    }
+    return (double)value;
+}
+
 /* What `main` returns is the process exit status, 0 to 255 (D173). The kernel
  * keeps only the low 8 bits, so 256 would read as success: anything outside
  * the range panics instead. */

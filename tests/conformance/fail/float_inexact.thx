@@ -1,0 +1,10 @@
+## D224: an Int64 that would round is not passed as a Float64.
+fn half(value!: Float64) -> Float64 {
+    value / 2.0
+}
+
+fn main() -> Int64 {
+    let odd = 9007199254740993
+    let result = half(odd)
+    0
+}

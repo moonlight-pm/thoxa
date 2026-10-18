@@ -18,7 +18,7 @@ fn main() -> Int64 {
     let token = Token(type: "word", in: 3)
     mut type = token.type
     type = "{type}!"
-    let where = find("abc", from: 2)
+    let where: Int32 = find("abc", from: 2)
     let as = where as Float64
     let pairs = { type: "latte", from: "cart" }
     for in in 0..2 {

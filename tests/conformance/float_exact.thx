@@ -1,0 +1,27 @@
+## D224: an Int64 becomes a Float64 implicitly only when it is exact (past
+## 2^53 not every integer has one). `Float64(rounding: x)` rounds on
+## purpose; `x as Float64` is a Trial that fails when it would round. A
+## narrower integer, or a literal checked at compile time, always converts.
+import { Pass, Fail, Trial } from "std/fallible"
+import { Issue, messages } from "std/json"
+import logging, { info } from "std/logging"
+
+fn half(value!: Float64) -> Float64 { value / 2.0 }
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let exact = 9007199254740992
+    let odd = 9007199254740993
+    info("{half(exact)} {exact * 1.0}")
+    info("{Float64(rounding: odd)}")
+    for value in [3, exact, odd] {
+        match value as Float64 {
+            Pass(number) => info("ok {number}")
+            Fail(issues) => info(messages(issues))
+        }
+    }
+    let small: Int32 = 7
+    info("{small as Float64} {1 as Float64}")
+    0
+}

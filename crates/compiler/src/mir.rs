@@ -17180,6 +17180,9 @@ fn lower_call(
         "Int64" | "Int32" | "UInt64" | "UInt32" | "Byte" => {
             lower_truncating(ctx, callee, args, span)
         }
+        "Float64" => lower_float_rounding(ctx, args, span),
+        // The exactness test of a generated `as Float64` reader (D224).
+        "__float64Exact" => lower_float_exact(ctx, args, span),
         "Map" => lower_map_new(ctx, args, span, expect),
         "__jsx_el" => lower_html_el(ctx, args, span),
         "__jsx_child" => lower_html_child(ctx, args, span),
@@ -17513,6 +17516,32 @@ fn coerce_place(ctx: &mut LowerCtx, place: Place, from: &Ty, to: &Ty, span: Span
     if !can_numeric_cast(from, to) {
         return Err(Error::at(format!("cannot coerce {from:?} to {to:?}"), span));
     }
+    // D224: an Int64 or UInt64 becomes a Float64 only when it is exact (past
+    // 2^53 it would round): a literal is checked here, anything else at run
+    // time. Narrower integers always are.
+    if *to == Ty::Float64 && matches!(from, Ty::Int64 | Ty::UInt64) {
+        if let Some(value) = literal_int_value(ctx, &place) {
+            if (value as f64) as i128 != value {
+                return Err(Error::at(
+                    format!("{value} does not fit in Float64 exactly (it would round)"),
+                    span,
+                )
+                .with_help(format!("write `Float64(rounding: {value})` to round it")));
+            }
+        } else {
+            let p = ctx.fresh("fexact");
+            let builtin = if *from == Ty::Int64 { "f64_from_i64" } else { "f64_from_u64" };
+            ctx.assign(
+                p.clone(),
+                Ty::Float64,
+                RValue::Call {
+                    callee: Callee::Builtin(builtin.into()),
+                    args: vec![place],
+                },
+            );
+            return Ok(p);
+        }
+    }
     let checked = match (int_range(from), int_range(to)) {
         // Narrowing (D167): a literal is checked here, anything else at run time.
         (Some((from_min, from_max)), Some((to_min, to_max)))
@@ -17602,6 +17631,70 @@ fn literal_int_value(ctx: &LowerCtx, place: &Place) -> Option<i128> {
 
 /// `Int32(truncating: value)` and the other integer types keep the low bits
 /// of `value` (two's complement), with no range check (D167).
+/// `Float64(rounding: x)`: an integer as the nearest Float64, unchecked
+/// (D224), as `T(truncating: x)` keeps an integer's low bits.
+fn lower_float_rounding(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    let value = match args {
+        [Arg::Named { name, value, .. }] if name == "rounding" => value,
+        _ => {
+            return Err(Error::at("`Float64(…)` takes one argument, `rounding:`", span).with_help(
+                "an integer passed where Float64 is expected converts on its own, and panics if it would round; `Float64(rounding: value)` rounds instead",
+            ));
+        }
+    };
+    let (place, from) = lower_expr(ctx, value)?;
+    if !is_int(&from) {
+        return Err(Error::at(
+            format!("`rounding:` expects an integer, found {}", display_ty(&from)),
+            value.span,
+        ));
+    }
+    let p = ctx.fresh("round");
+    ctx.assign(
+        p.clone(),
+        Ty::Float64,
+        RValue::Cast {
+            value: place,
+            from,
+            to: Ty::Float64,
+        },
+    );
+    Ok((p, Ty::Float64))
+}
+
+/// `__float64Exact(value)`: whether an Int64 / UInt64 is exactly a Float64.
+fn lower_float_exact(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    let [Arg::Pos(value)] = args else {
+        return Err(Error::at("internal: `__float64Exact` takes one value", span));
+    };
+    let (place, from) = lower_expr(ctx, value)?;
+    let builtin = match from {
+        Ty::Int64 => "f64_exact_i64",
+        Ty::UInt64 => "f64_exact_u64",
+        _ => return Err(Error::at("internal: `__float64Exact` takes an Int64 or UInt64", span)),
+    };
+    let raw = ctx.fresh("fexact");
+    ctx.assign(
+        raw.clone(),
+        Ty::Int64,
+        RValue::Call {
+            callee: Callee::Builtin(builtin.into()),
+            args: vec![place],
+        },
+    );
+    let p = ctx.fresh("fexactb");
+    ctx.assign(
+        p.clone(),
+        Ty::Bool,
+        RValue::Cast {
+            value: raw,
+            from: Ty::Int64,
+            to: Ty::Bool,
+        },
+    );
+    Ok((p, Ty::Bool))
+}
+
 fn lower_truncating(
     ctx: &mut LowerCtx,
     type_name: &str,

@@ -318,8 +318,18 @@ let back = Int64(truncating: allOnes)  ## -1
 `Float64` is an IEEE-754 binary64 value (C `double`). It has `+ - * /` and
 the comparisons; it has no `%` and no bitwise operators. Integers convert to
 `Float64` where a `Float64` is expected (assignment, argument, field, return,
-or a mixed arithmetic expression); `Float64` never converts to an integer
-implicitly. There is no `Float32`. A NaN is not equal to itself.
+or a mixed arithmetic expression). Beyond 2^53 not every `Int64` or `UInt64`
+has a `Float64`, so that conversion checks that the value is exact and panics
+otherwise (`thoxa panic: 9007199254740993 does not fit in Float64 exactly`); a
+literal that would round is a compile error. `Float64(rounding: x)` rounds on
+purpose. `Byte`, `Int32`, and `UInt32` always convert exactly. `Float64` never
+converts to an integer implicitly. There is no `Float32`. A NaN is not equal
+to itself.
+
+```thx
+let exact: Float64 = 9007199254740992        ## 2^53, exact
+let rounded = Float64(rounding: 9007199254740993)   ## 9007199254740992.0
+```
 
 Interpolation, tag-literal text, and JSON print the shortest decimal that
 reads back as the same value. Between 1e-7 and 1e21 it is written out in full,
@@ -854,11 +864,13 @@ function type needs a named alias.
 | a union member | its union | `T` |
 | a literal union | its base (`String`, `Int64`, `Bool`) | `T` |
 | a refined type | its base | `T` |
-| an integer type | a wider integer type, or `Float64` | `T` |
+| an integer type | a wider integer type | `T` |
+| `Byte`, `Int32`, `UInt32` | `Float64` | `T` |
 | any type with a JSON encoding | `Json` | `T` (`toJson`) |
 | the base | a refined type | `Trial<T, Array<Issue>>` (the `where` check) |
 | `String` | a literal union | `Trial<T, Array<Issue>>` |
 | `Int64` | `Int32`, `UInt32`, `UInt64`, `Byte` | `Trial<T, Array<Issue>>` |
+| `Int64`, `UInt64` | `Float64` | `Trial<T, Array<Issue>>` (fails when it would round) |
 | `Json` | any type with a reader | `Trial<T, Array<Issue>>` |
 
 A literal takes `T` as its expected type first, as it would in an annotated

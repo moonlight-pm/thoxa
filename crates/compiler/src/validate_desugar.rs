@@ -2536,8 +2536,64 @@ fn gen_cast_readers(
         if let Some((min, max)) = narrow_range(&target.name) {
             readers.push(gen_as_narrow(&key, target, min, max));
         }
+        if target.name == "Float64" {
+            readers.push(gen_as_float(&key, target, "asFloat", "Int64"));
+            readers.push(gen_as_float(&key, target, "asFloatUnsigned", "UInt64"));
+        }
     }
     readers
+}
+
+/// `__asFloat_K(value: Int64) -> Trial<Float64, Array<Issue>>` (and
+/// `__asFloatUnsigned_K` for a UInt64): the value when it is exactly a
+/// Float64, else `Rejected("", "9007199254740993 does not fit in Float64
+/// exactly")` (D224).
+fn gen_as_float(key: &str, target: &TypeExpr, kind: &str, source: &str) -> Function {
+    let trial = ty_trial_issues(target.clone());
+    let rounded = call(
+        "Float64",
+        vec![Arg::Named {
+            name: "rounding".into(),
+            name_span: dummy(),
+            value: name("value"),
+        }],
+    );
+    let reason = Expr {
+        kind: ExprKind::Interpolate(vec![
+            InterpPart::Expr(name("value")),
+            InterpPart::Lit(" does not fit in Float64 exactly".into()),
+        ]),
+        span: dummy(),
+    };
+    let rejected = json_call("issueRejected", vec![Arg::Pos(str_lit("")), Arg::Pos(reason)]);
+    Function {
+        exported: false,
+        name: format!("__{kind}_{key}"),
+        name_span: dummy(),
+        params: vec![param("value", ty_named(source))],
+        return_type: Some(trial.clone()),
+        body: Block {
+            items: vec![],
+            tail: Some(Box::new(if_expr(
+                call("__float64Exact", vec![Arg::Pos(name("value"))]),
+                Block {
+                    items: vec![],
+                    tail: Some(Box::new(typed(
+                        "__out",
+                        trial.clone(),
+                        call("Pass", vec![Arg::Pos(rounded)]),
+                    ))),
+                    span: dummy(),
+                },
+                Some(Block {
+                    items: vec![],
+                    tail: Some(Box::new(typed("__out", trial, fail_with(rejected)))),
+                    span: dummy(),
+                }),
+            ))),
+            span: dummy(),
+        },
+    }
 }
 
 /// A type that names a `std/` type other than `Json`: those have no
