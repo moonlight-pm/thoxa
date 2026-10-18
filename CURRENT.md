@@ -143,11 +143,12 @@ conformance and docs. Shipped so far: **D207** a field indexes as a local
 (`double()`), private methods are callable inside their type; **D209**
 `thoxa -c` splits its chunk into declarations and statements (an `import`
 first line ran nothing); **D210** an LSP rename writes a pun's label out
-(`connect(host, deadline: limit)`), and renames method and constructor labels.
+(`connect(host, deadline: limit)`), and renames method and constructor labels;
+**D211** multi-clause methods and generic types' methods infer their return
+types.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
-unannotated multi-clause methods and methods of generic types are still Void
-(D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
+no `==` on Map; keys cannot hold Array fields (no array hash yet,
 D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
 `Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
 range) and the message prints `lo..hi` for `lo..=hi`; a session command inside a block
@@ -266,7 +267,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); **`std/json`** (**D141**); **`std/sqlite`** (**D143**); fragments + ETag (**D145**); SSE takeover (**D146**); `ffi` deferred |
 | Logging / print | **`std/logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
-| Return inference | Unannotated free fns and methods: returns inferred from exits (**D129**, **D174**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; `x?` then `Pass(value)` refines the success type; `drop` is Void; multi-clause and generic-type methods still annotate or default Void; hover uses inferred types |
+| Return inference | Unannotated free fns and methods: returns inferred from exits (**D129**, **D174**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; `x?` then `Pass(value)` refines the success type; `drop` is Void; multi-clause methods join their clauses and generic types' methods infer per instance (**D211**); hover uses inferred types |
 | Match arms | Bare ctor = tag-only; `=>` single-expr body or `{ }` multi-stmt (**D130**); `->` types only |
 | Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **shipped**). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |

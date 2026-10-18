@@ -2376,6 +2376,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
         &multi_free,
         &type_defs,
         &multi_methods,
+        &mono_method_jobs,
         &package_maps,
         &module_exports,
         &synthetics,
@@ -4286,11 +4287,18 @@ fn infer_unannotated_returns(
     multi_free: &HashMap<String, Vec<MultiClause>>,
     type_defs: &[(String, String, &TypeDef)],
     multi_methods: &HashMap<(String, String), Vec<MultiClause>>,
+    mono_method_jobs: &[MonoMethodJob],
     package_maps: &HashMap<String, ModuleNameMaps>,
     module_exports: &HashMap<String, ModuleExports>,
     synthetics: &Rc<RefCell<SyntheticRegistry>>,
     package: &Package,
 ) -> Result<()> {
+    let module_is_entry = |mod_id: &str| {
+        package
+            .modules
+            .iter()
+            .any(|module| module.id == mod_id && module.is_entry)
+    };
     // D131 multi-clause: join clause body exits when overall ret still Void placeholder.
     for (mod_id, mangled, f, is_entry) in free_fns {
         let Some(clauses) = multi_free.get(mangled) else {
@@ -4307,6 +4315,7 @@ fn infer_unannotated_returns(
         match probe_multi_clause_return(
             clauses,
             mangled,
+            None,
             *is_entry,
             fns,
             types,
@@ -4326,6 +4335,51 @@ fn infer_unannotated_returns(
             Err(e) => return Err(in_module_id(e, package, mod_id)),
         }
     }
+    // Multi-clause methods the same way, with the type's fields in scope.
+    for ((type_mangled, method_name), clauses) in multi_methods {
+        if clauses.iter().all(|c| c.return_type.is_some()) || method_name == "drop" {
+            continue;
+        }
+        let Some((mod_id, _, _)) = type_defs.iter().find(|(_, name, _)| name == type_mangled)
+        else {
+            continue;
+        };
+        let maps = package_maps.get(mod_id).unwrap();
+        let key = format!("{type_mangled}__{method_name}");
+        match probe_multi_clause_return(
+            clauses,
+            &key,
+            Some(type_mangled),
+            module_is_entry(mod_id),
+            fns,
+            types,
+            layouts,
+            generics,
+            maps,
+            module_exports,
+            package_maps,
+            mod_id,
+            synthetics,
+        ) {
+            Ok(ret) => {
+                if let Some(sig) = types
+                    .get_mut(type_mangled)
+                    .and_then(|info| info.methods.get_mut(method_name))
+                {
+                    sig.ret = ret;
+                }
+            }
+            Err(e) => return Err(in_module_id(e, package, mod_id)),
+        }
+    }
+
+    // A generic type's methods are probed per instance, on bodies with the
+    // type arguments substituted (as `lower_method` lowers them).
+    let mono_methods: Vec<(&MonoMethodJob, Method)> = mono_method_jobs
+        .iter()
+        .filter(|job| job.method.return_type.is_none() && job.method.name != "drop")
+        .map(|job| (job, subst_method(&job.method, &job.subst)))
+        .collect();
 
     // Candidates: unannotated non-main free functions and, since D174,
     // unannotated methods (single-clause; `drop` is always Void).
@@ -4347,11 +4401,22 @@ fn infer_unannotated_returns(
             target: InferTarget::Free(f),
         });
     }
+    for (job, method) in &mono_methods {
+        candidates.push(InferCandidate {
+            module_id: job.def_mod.clone(),
+            is_entry: module_is_entry(&job.def_mod),
+            key: format!("{}__{}", job.mono_type, method.name),
+            shown: format!("{}.{}", display_ty(&Ty::User(job.mono_type.clone())), method.name),
+            name_span: method.name_span,
+            body: &method.body,
+            target: InferTarget::Method {
+                type_mangled: job.mono_type.clone(),
+                method,
+            },
+        });
+    }
     for (mod_id, type_mangled, td) in type_defs {
-        let is_entry = package
-            .modules
-            .iter()
-            .any(|module| module.id == *mod_id && module.is_entry);
+        let is_entry = module_is_entry(mod_id);
         for method in &td.methods {
             if method.return_type.is_some() || method.name == "drop" {
                 continue;
@@ -4408,6 +4473,12 @@ fn infer_unannotated_returns(
                 .collect();
             for name in &names.methods {
                 found.extend(methods_named.get(name).into_iter().flatten().copied());
+            }
+            // Inside a method a bare call may be a sibling (D208).
+            if let InferTarget::Method { type_mangled, .. } = &candidate.target {
+                for name in &names.functions {
+                    found.extend(index_of.get(&format!("{type_mangled}__{name}")).copied());
+                }
             }
             found.sort_unstable();
             found.dedup();
@@ -4591,6 +4662,7 @@ struct ProbeEnv<'a> {
 fn probe_multi_clause_return(
     clauses: &[MultiClause],
     mangled: &str,
+    method_type: Option<&str>,
     is_entry: bool,
     fns: &HashMap<String, FnSig>,
     types: &mut HashMap<String, TypeInfo>,
@@ -4621,6 +4693,10 @@ fn probe_multi_clause_return(
         ctx.inferring = true;
         ctx.infer_self = Some(mangled.to_string());
         ctx.generics = generics.clone();
+        // A method's clauses see the fields, as `lower_multi_method` binds them.
+        if let Some(type_mangled) = method_type {
+            bind_multi_method_fields(&mut ctx, type_mangled);
+        }
 
         for (name, ty) in clause.param_names.iter().zip(clause.param_tys.iter()) {
             let place = Place {
@@ -6324,34 +6400,7 @@ fn lower_multi_method(
         Rc::clone(synthetics),
     );
 
-    // Bind fields from receiver (same as lower_method).
-    let recv = Place {
-        name: recv_place.clone(),
-    };
-    for f in &info.fields {
-        if matches!(f.ty, Ty::FixedArray { .. }) {
-            continue;
-        }
-        let p = Place {
-            name: sanitize_name(&f.name),
-        };
-        ctx.assign(
-            p.clone(),
-            f.ty.clone(),
-            RValue::Field {
-                base: recv.clone(),
-                field: sanitize_field(&f.name),
-            },
-        );
-        if needs_drop(&f.ty) {
-            ctx.stmts.push(Stmt::Dup {
-                place: p.clone(),
-                ty: f.ty.clone(),
-            });
-        }
-        let mutable = f.mutable;
-        ctx.define(&f.name, f.ty.clone(), mutable, p);
-    }
+    bind_multi_method_fields(&mut ctx, mangled_type);
 
     let mut domain_places: Vec<(String, Place, Ty)> = Vec::new();
     for (name, ty) in &domain_params {
@@ -7120,6 +7169,20 @@ fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Re
         bind_param(ctx, &p.name, ty, p.mutable);
     }
     Ok(())
+}
+
+/// A multi-clause method's fields: read from the receiver, writable only
+/// when declared `mut` (C layout). Its sibling calls resolve as a method's.
+fn bind_multi_method_fields(ctx: &mut LowerCtx, mangled_type: &str) {
+    let info = ctx.types.get(mangled_type).unwrap().clone();
+    ctx.method_type = Some(mangled_type.to_string());
+    for field in &info.fields {
+        if matches!(field.ty, Ty::FixedArray { .. }) {
+            continue;
+        }
+        let place = load_method_field(ctx, field);
+        ctx.define(&field.name, field.ty.clone(), field.mutable, place);
+    }
 }
 
 /// Load a field from `_self` into its local in a method body (a heap field

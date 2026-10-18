@@ -1108,8 +1108,10 @@ function or method without `->` infers its return type from its exits:
 - a recursive or mutually recursive function must be annotated; the error
   names each function on the cycle.
 
-An unannotated `main` returns `Int64` and `drop` always returns `Void`.
-Unannotated multi-clause methods and methods of generic types return `Void`.
+An unannotated `main` returns `Int64` and `drop` always returns `Void`. A
+multi-clause function or method without `->` joins its clauses' types. A
+generic type's method is inferred for each instance, so `first()` on a
+`Shelf<String>` is a `String`.
 
 ### Multi-clause functions
 

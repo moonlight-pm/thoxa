@@ -518,18 +518,27 @@ fn run_site_samples() -> i32 {
 
 fn run_unit_tests() -> i32 {
     eprintln!("unit tests (cargo test -p thoxa --lib)");
-    let status = Command::new("cargo")
-        .args(["test", "-q", "-p", "thoxa", "--lib"])
-        .current_dir(workspace_root())
-        .status();
-    match status {
-        Ok(s) if s.success() => 0,
-        Ok(s) => s.code().unwrap_or(1),
-        Err(e) => {
-            eprintln!("failed to run unit tests: {e}");
-            1
+    // The session tests capture fd 1, where the test runner also prints its
+    // progress: they run one at a time, after the rest.
+    let runs: [&[&str]; 2] = [
+        &["test", "-q", "-p", "thoxa", "--lib", "--", "--skip", "repl::tests::"],
+        &["test", "-q", "-p", "thoxa", "--lib", "repl::tests::", "--", "--test-threads=1"],
+    ];
+    for args in runs {
+        let status = Command::new("cargo")
+            .args(args)
+            .current_dir(workspace_root())
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => return s.code().unwrap_or(1),
+            Err(e) => {
+                eprintln!("failed to run unit tests: {e}");
+                return 1;
+            }
         }
     }
+    0
 }
 
 fn cmd_test_asan() -> i32 {

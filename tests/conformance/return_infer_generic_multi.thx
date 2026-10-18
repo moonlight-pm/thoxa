@@ -1,0 +1,32 @@
+## D211: methods of generic types and multi-clause methods infer their
+## return types too (D174 left both Void). A generic type's methods are
+## inferred per instance, so `first` is a String on Shelf<String>.
+import logging, { info } from "std/logging"
+
+type Shelf<T>(items: Array<T>, label: String) {
+    export fn size() { items.count }
+    ## Calls a sibling, itself unannotated.
+    export fn describe() { "{label}: {size()}" }
+    export fn first() { items[0] }
+    export fn isEmpty() { size() == 0 }
+}
+
+type Shape(width: Int64) {
+    export fn scale(by!: 2) { width * 2 }
+    export fn scale(by!: 3) { width * 3 }
+    export fn name(kind!: "square") { "square {width}" }
+    ## One clause annotated, one not: they join.
+    export fn name(kind!: "line") -> String { "line" }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let words: Shelf<String> = Shelf(items: ["tea", "milk"], label: "words")
+    let numbers: Shelf<Int64> = Shelf(items: [7], label: "numbers")
+    info(words.describe())
+    info("{words.size() + 1} {numbers.isEmpty()} {words.first().toUpper()} {numbers.first() * 6}")
+    let shape = Shape(width: 4)
+    info("{shape.scale(3) + 1} {shape.name("square")} {shape.name("line")}")
+    0
+}
