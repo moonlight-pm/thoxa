@@ -1008,7 +1008,7 @@ impl<'a> Resolver<'a> {
             }
             // `mut name`: the reference is the name, so a rename edits it.
             ExprKind::MutArg(name) => {
-                let name_span = Span::new(expr.span.end - name.len(), expr.span.end);
+                let name_span = Span::new(expr.span.end.saturating_sub(name.len()), expr.span.end);
                 self.add_ref(name_span, self.lookup(scope, name), RefCtx::Value);
             }
             ExprKind::Unary { expr: inner, .. } => self.walk_expr(inner, scope),
@@ -1198,6 +1198,10 @@ impl<'a> Resolver<'a> {
             .map(|(label, _)| label.clone())
             .collect();
         for (name, span, mutable) in &call.bare {
+            // Generated calls (route desugar) have no source span to edit.
+            if span.end < span.start + name.len() {
+                continue;
+            }
             let punned = param_map.get(name.as_str()).is_some_and(|&(_, positional)| {
                 !positional && !call.labels.iter().any(|(label, _)| label == name)
             });
@@ -1559,6 +1563,21 @@ fn main() -> Int64 {
         let b = res.binding_of(Some(r)).expect("field");
         assert_eq!(b.kind, BindingKind::Field);
         assert_eq!(b.owner.as_deref(), Some("Point"));
+    }
+
+    #[test]
+    fn generated_route_calls_do_not_underflow_spans() {
+        // Route desugar's calls carry no source spans (D225 regression).
+        let src = "\
+import { Request, Response, ok } from \"std/http\"
+type Routes {
+    GET \"/items/:id\" (id: Int64, request: Request) -> String {
+        \"item {id}\"
+    }
+}
+";
+        let res = resolve_ok(src);
+        assert!(res.bare_args.iter().all(|bare| bare.name_span.end >= bare.name_span.start));
     }
 
     #[test]
