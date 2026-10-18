@@ -2,7 +2,7 @@
 
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use thoxa::diagnostic;
 use thoxa::driver::{self, BuildOptions};
@@ -188,9 +188,14 @@ fn run_check(path: PathBuf, json: bool) -> Result<i32, Error> {
         .map_err(|e| Error::new(format!("cannot read {}: {e}", entry.display())))?;
     let filename = entry.to_string_lossy();
     let diags = lsp::check_source(&filename, &text);
+    // A span is an offset into its own module, which may be one the entry imports.
+    let source = |path: Option<&Path>| match path {
+        Some(path) if path != entry => fs::read_to_string(path).ok(),
+        _ => Some(text.clone()),
+    };
     if json {
         let structured: Vec<_> = diags.iter().map(|d| d.to_diagnostic()).collect();
-        let report = diagnostic::format_json_report(&structured, Some(&text));
+        let report = diagnostic::format_json_report(&structured, &source);
         println!(
             "{}",
             serde_json::to_string_pretty(&report).unwrap_or_else(|e| {
@@ -203,7 +208,8 @@ fn run_check(path: PathBuf, json: bool) -> Result<i32, Error> {
                 eprintln!();
             }
             let structured = d.to_diagnostic();
-            eprint!("{}", diagnostic::format_pretty(&structured, Some(&text)));
+            let text = source(structured.path.as_deref());
+            eprint!("{}", diagnostic::format_pretty(&structured, text.as_deref()));
         }
     }
     // Errors fail the check; warnings alone still exit 0 (D124).

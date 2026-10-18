@@ -563,7 +563,12 @@ fn snippet_lines(src: &str, span: Span) -> Option<String> {
 // ── JSON report ─────────────────────────────────────────────────────────────
 
 /// Full `thoxa check --json` document.
-pub fn format_json_report(diags: &[Diagnostic], source: Option<&str>) -> Value {
+/// `source(path)` is the text a span in `path` indexes: a diagnostic's span is
+/// an offset into its own module, which need not be the file checked.
+pub fn format_json_report(
+    diags: &[Diagnostic],
+    source: &dyn Fn(Option<&Path>) -> Option<String>,
+) -> Value {
     let has_error = diags.iter().any(|d| d.severity == Severity::Error);
     let path_disp = |p: &Option<PathBuf>| {
         p.as_ref()
@@ -589,17 +594,21 @@ pub fn format_json_report(diags: &[Diagnostic], source: Option<&str>) -> Value {
     })
 }
 
-fn diag_to_json(d: &Diagnostic, source: Option<&str>, path_fallback: &str) -> Value {
+fn diag_to_json(
+    d: &Diagnostic,
+    source: &dyn Fn(Option<&Path>) -> Option<String>,
+    path_fallback: &str,
+) -> Value {
     let path = d
         .path
         .as_ref()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| path_fallback.to_string());
 
+    let text = source(d.path.as_deref()).unwrap_or_default();
     let (line, column, end_line, end_column, byte_start, byte_end) = match d.span {
         Some(span) => {
-            let src = source.unwrap_or("");
-            let r = span::span_to_range(src, span);
+            let r = span::span_to_range(&text, span);
             (
                 json!(r.start.line + 1),
                 json!(r.start.character + 1),
@@ -628,8 +637,12 @@ fn diag_to_json(d: &Diagnostic, source: Option<&str>, path_fallback: &str) -> Va
                 .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| path.clone());
-            let src = source.unwrap_or("");
-            let r = span::span_to_range(src, lab.span);
+            let r = match &lab.path {
+                Some(label_path) if Some(label_path) != d.path.as_ref() => {
+                    span::span_to_range(&source(Some(label_path)).unwrap_or_default(), lab.span)
+                }
+                _ => span::span_to_range(&text, lab.span),
+            };
             json!({
                 "path": lab_path,
                 "line": r.start.line + 1,
@@ -753,7 +766,7 @@ mod tests {
             .enrich();
         let mut d = d;
         d.span = Some(Span::new(0, 1));
-        let report = format_json_report(&[d], Some(src));
+        let report = format_json_report(&[d], &|_| Some(src.to_string()));
         assert_eq!(report["ok"], false);
         assert!(report["compiler"]["version"]
             .as_str()
@@ -762,6 +775,21 @@ mod tests {
         assert_eq!(report["diagnostics"][0]["code"], CODE_UNDEFINED);
         assert_eq!(report["diagnostics"][0]["severity"], "error");
         assert!(report["diagnostics"][0]["line"].as_u64().unwrap() >= 1);
+    }
+
+    #[test]
+    fn json_report_reads_each_diagnostics_module() {
+        let entry = "import { helper } from \"./helper\"\nfn main() -> Int64 { 0 }\n";
+        let helper = "\n\n\nfn helper() -> Int64 { oops }\n";
+        let mut d = Diagnostic::error("undefined name `oops`").with_path("helper.thx");
+        let start = helper.find("oops").unwrap();
+        d.span = Some(Span::new(start, start + 4));
+        let source = |path: Option<&Path>| {
+            Some(if path == Some(Path::new("helper.thx")) { helper } else { entry }.to_string())
+        };
+        let report = format_json_report(&[d], &source);
+        assert_eq!(report["diagnostics"][0]["line"], 4);
+        assert_eq!(report["diagnostics"][0]["column"], 24);
     }
 
     #[test]
