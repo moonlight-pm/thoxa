@@ -118,11 +118,29 @@ pub struct Reference {
     pub ctx: RefCtx,
 }
 
+/// A bare argument that fills the labelled parameter it names (D202):
+/// `connect(host, deadline)`. Renaming either name writes the label out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pun {
+    /// The whole argument: `deadline`, or `mut deadline`.
+    pub span: Span,
+    /// The name inside it (the reference to the argument's binding).
+    pub name_span: Span,
+    /// The parameter's name, which the argument's name is.
+    pub label: String,
+    /// The parameter (or constructor field) binding.
+    pub param: u32,
+    /// Passed `mut` (D199): the labelled form is `label: mut name`.
+    pub mutable: bool,
+}
+
 /// Result of resolving a module.
 #[derive(Debug, Clone, Default)]
 pub struct Resolution {
     pub bindings: HashMap<u32, Binding>,
     pub references: Vec<Reference>,
+    /// Punned arguments of calls whose callee is known.
+    pub puns: Vec<Pun>,
     /// Module-level binding ids in declaration order (outline).
     pub module_binding_ids: Vec<u32>,
     /// `(type_name, member_name)` → binding id.
@@ -219,6 +237,18 @@ struct Resolver<'a> {
     res: Resolution,
     next_id: u32,
     scopes: Vec<Scope>,
+    /// Calls whose labels and puns link to parameters once every body is
+    /// walked (a callee's parameters are bound when its body is).
+    calls: Vec<CallArgs>,
+}
+
+/// What linking needs from a call's arguments.
+struct CallArgs {
+    callee: u32,
+    /// `name: value` labels and their spans.
+    labels: Vec<(String, Span)>,
+    /// Bare `name` / `mut name` arguments: name, argument span, `mut`.
+    bare: Vec<(String, Span, bool)>,
 }
 
 /// `Trial<T, E>?` / `May<T>?` → success head `T` (first type-arg head).
@@ -278,6 +308,7 @@ pub fn resolve_module(module: &Module) -> Resolution {
         res: Resolution::default(),
         next_id: 0,
         scopes: Vec::new(),
+        calls: Vec::new(),
     };
     r.run();
     r.res
@@ -299,6 +330,9 @@ impl<'a> Resolver<'a> {
         // Walk bodies (definitions already seeded).
         for item in &self.module.items {
             self.walk_item(item);
+        }
+        for call in std::mem::take(&mut self.calls) {
+            self.link_call_args(&call);
         }
     }
 
@@ -958,8 +992,13 @@ impl<'a> Resolver<'a> {
                     }
                 }
             }
-            ExprKind::Name(name) | ExprKind::MutArg(name) => {
+            ExprKind::Name(name) => {
                 self.add_ref(expr.span, self.lookup(scope, name), RefCtx::Value);
+            }
+            // `mut name`: the reference is the name, so a rename edits it.
+            ExprKind::MutArg(name) => {
+                let name_span = Span::new(expr.span.end - name.len(), expr.span.end);
+                self.add_ref(name_span, self.lookup(scope, name), RefCtx::Value);
             }
             ExprKind::Unary { expr: inner, .. } => self.walk_expr(inner, scope),
             ExprKind::Binary { left, right, .. } => {
@@ -1008,7 +1047,7 @@ impl<'a> Resolver<'a> {
                     .receiver_ty_hint(receiver, scope)
                     .and_then(|ty| self.member_id(&ty, method));
                 self.add_ref(*method_span, mid, RefCtx::Member);
-                self.walk_args(args, scope, None);
+                self.walk_args(args, scope, mid);
             }
             ExprKind::Index { base, index } => {
                 self.walk_expr(base, scope);
@@ -1094,25 +1133,72 @@ impl<'a> Resolver<'a> {
     }
 
     fn walk_args(&mut self, args: &[Arg], scope: usize, callee_bid: Option<u32>) {
-        let param_map = self.params_of(callee_bid);
         for a in args {
             match a {
                 Arg::Pos(e) | Arg::Spread { value: e, .. } => self.walk_expr(e, scope),
-                Arg::Named {
-                    name,
-                    name_span,
-                    value,
-                } => {
-                    if let Some(&pid) = param_map.get(name.as_str()) {
-                        self.add_ref(*name_span, Some(pid), RefCtx::Label);
-                    }
-                    self.walk_expr(value, scope);
-                }
+                Arg::Named { value, .. } => self.walk_expr(value, scope),
             }
+        }
+        let Some(callee) = callee_bid else {
+            return;
+        };
+        let mut call = CallArgs {
+            callee,
+            labels: Vec::new(),
+            bare: Vec::new(),
+        };
+        for a in args {
+            match a {
+                Arg::Named {
+                    name, name_span, ..
+                } => call.labels.push((name.clone(), *name_span)),
+                Arg::Pos(Expr {
+                    kind: ExprKind::Name(name),
+                    span,
+                }) => call.bare.push((name.clone(), *span, false)),
+                Arg::Pos(Expr {
+                    kind: ExprKind::MutArg(name),
+                    span,
+                }) => call.bare.push((name.clone(), *span, true)),
+                Arg::Pos(_) | Arg::Spread { .. } => {}
+            }
+        }
+        self.calls.push(call);
+    }
+
+    /// Link a call's labels to the callee's parameters, and note its puns:
+    /// a bare `name` / `mut name` fills the labelled parameter of that name,
+    /// unless the call also labels it (D202).
+    fn link_call_args(&mut self, call: &CallArgs) {
+        let param_map = self.params_of(Some(call.callee));
+        if param_map.is_empty() {
+            return;
+        }
+        for (name, name_span) in &call.labels {
+            if let Some(&(pid, _)) = param_map.get(name.as_str()) {
+                self.add_ref(*name_span, Some(pid), RefCtx::Label);
+            }
+        }
+        for (name, span, mutable) in &call.bare {
+            let Some(&(param, positional)) = param_map.get(name.as_str()) else {
+                continue;
+            };
+            if positional || call.labels.iter().any(|(label, _)| label == name) {
+                continue;
+            }
+            self.res.puns.push(Pun {
+                span: *span,
+                name_span: Span::new(span.end - name.len(), span.end),
+                label: name.clone(),
+                param,
+                mutable: *mutable,
+            });
         }
     }
 
-    fn params_of(&self, callee_bid: Option<u32>) -> HashMap<String, u32> {
+    /// The callee's parameters by name: (binding id, marked `!`). A
+    /// constructor's are its fields.
+    fn params_of(&self, callee_bid: Option<u32>) -> HashMap<String, (u32, bool)> {
         let mut out = HashMap::new();
         let Some(cid) = callee_bid else {
             return out;
@@ -1120,8 +1206,38 @@ impl<'a> Resolver<'a> {
         let Some(callee) = self.res.bindings.get(&cid) else {
             return out;
         };
-        if !matches!(callee.kind, BindingKind::Fn | BindingKind::Extern) {
-            return out;
+        match callee.kind {
+            BindingKind::Fn | BindingKind::Extern => {}
+            BindingKind::Method => {
+                let owner = callee.owner.clone().unwrap_or_default();
+                for item in &self.module.items {
+                    let Item::Type(td) = item else { continue };
+                    if td.name != owner {
+                        continue;
+                    }
+                    if let Some(method) = td.methods.iter().find(|m| m.name == callee.name) {
+                        self.collect_param_ids(&method.params, &mut out);
+                    }
+                }
+                return out;
+            }
+            BindingKind::Type => {
+                for item in &self.module.items {
+                    let Item::Type(td) = item else { continue };
+                    if td.name != callee.name {
+                        continue;
+                    }
+                    for p in &td.params {
+                        if let Some(&id) =
+                            self.res.member_index.get(&(td.name.clone(), p.name.clone()))
+                        {
+                            out.insert(p.name.clone(), (id, p.positional));
+                        }
+                    }
+                }
+                return out;
+            }
+            _ => return out,
         }
         // Params are already created when we walked the function — but call sites
         // may appear before the callee body walk finishes (we walk items in order,
@@ -1138,21 +1254,25 @@ impl<'a> Resolver<'a> {
             if name != callee.name {
                 continue;
             }
-            for p in params {
-                // Find binding with this param's def span.
-                for b in self.res.bindings.values() {
-                    if b.kind == BindingKind::Param
-                        && b.name == p.name
-                        && b.def_span == Some(p.name_span)
-                    {
-                        out.insert(p.name.clone(), b.id);
-                        break;
-                    }
-                }
-            }
+            self.collect_param_ids(params, &mut out);
             break;
         }
         out
+    }
+
+    /// Param bindings by their definition spans.
+    fn collect_param_ids(&self, params: &[ast::Param], out: &mut HashMap<String, (u32, bool)>) {
+        for p in params {
+            for b in self.res.bindings.values() {
+                if b.kind == BindingKind::Param
+                    && b.name == p.name
+                    && b.def_span == Some(p.name_span)
+                {
+                    out.insert(p.name.clone(), (b.id, p.positional));
+                    break;
+                }
+            }
+        }
     }
 
     fn walk_match_arm(&mut self, arm: &MatchArm, scope: usize) {
@@ -1413,6 +1533,25 @@ fn main() -> Int64 {
         let r = res.ref_at(src, p.line, p.character).expect("x in method");
         let b = res.binding_of(Some(r)).expect("field");
         assert_eq!(b.kind, BindingKind::Field);
+        assert_eq!(b.owner.as_deref(), Some("Point"));
+    }
+
+    #[test]
+    fn sibling_method_call_binds_to_method() {
+        // D208: a bare call inside a method is its sibling, over a free fn.
+        let src = "\
+fn double() -> Int64 { 0 }
+type Point(x: Int64) {
+  fn double() -> Int64 { x * 2 }
+  export fn quad() -> Int64 { double() * 2 }
+}
+";
+        let res = resolve_ok(src);
+        let call = src.find("double() * 2").unwrap();
+        let p = byte_to_position(src, call);
+        let r = res.ref_at(src, p.line, p.character).expect("double ref");
+        let b = res.binding_of(Some(r)).expect("sibling linked");
+        assert_eq!(b.kind, BindingKind::Method);
         assert_eq!(b.owner.as_deref(), Some("Point"));
     }
 

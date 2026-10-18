@@ -139,21 +139,21 @@ itself). thoxa.dev runs `2e59a4c` (manual and feature list include D191).
 **Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
 order"):** working down the list below one slice at a time, each with
 conformance and docs. Shipped so far: **D207** a field indexes as a local
-(`row.cells["name"]`).
+(`row.cells["name"]`); **D208** a method calls a sibling by bare name
+(`double()`), private methods are callable inside their type; **D209**
+`thoxa -c` splits its chunk into declarations and statements (an `import`
+first line ran nothing); **D210** an LSP rename writes a pun's label out
+(`connect(host, deadline: limit)`), and renames method and constructor labels.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 unannotated multi-clause methods and methods of generic types are still Void
 (D174); no `==` on Map; keys cannot hold Array fields (no array hash yet,
 D179); `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
 `Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
-range) and the message prints `lo..hi` for `lo..=hi`; a method
-cannot call a sibling method by bare name; a session command inside a block
-is not recognized (use `shell.run`); `thoxa -c` with an `import` line runs
-nothing. From D191: generic types cannot declare `from` clauses; route body
+range) and the message prints `lo..hi` for `lo..=hi`; a session command inside a block
+is not recognized (use `shell.run`). From D191: generic types cannot declare `from` clauses; route body
 parameters take named types only. From D195: final sigma (`Σ` → `ς`), no `\u{…}` string escape, no normalization.
-From D202: only a bare name puns (not `options.deadline`), and an LSP rename
-of a punned binding or parameter does not expand the pun, so the call stops
-compiling. From D206: a heap field passed `mut` is copied on the callee's
+From D202: only a bare name puns (not `options.deadline`). From D206: a heap field passed `mut` is copied on the callee's
 first write (it is shared with the receiver until the write-back).
 
 Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);

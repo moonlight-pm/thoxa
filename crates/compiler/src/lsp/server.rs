@@ -514,11 +514,11 @@ impl Server {
             eprintln!("thoxa-lsp: rename rejected: {msg}");
             return Value::Null;
         }
-        let spans = index::rename_spans(&idx, binding);
+        let edits = index::rename_edits(&idx, binding, new_name);
         let mut changes: Vec<(String, Vec<Value>)> = Vec::new();
-        let local_edits: Vec<Value> = spans
+        let local_edits: Vec<Value> = edits
             .into_iter()
-            .map(|s| convert::text_edit(span::span_to_range(&idx.text, s), new_name))
+            .map(|(s, text)| convert::text_edit(span::span_to_range(&idx.text, s), &text))
             .collect();
         if !local_edits.is_empty() {
             changes.push((uri.to_string(), local_edits));

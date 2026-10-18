@@ -1,0 +1,52 @@
+## A method calls another method of its type by bare name, on the same
+## receiver. A field the callee writes is seen by the caller afterwards, a
+## method that calls a writing sibling writes too, a sibling wins over a free
+## function of the same name, and private methods are callable on any value
+## of the type from inside it.
+import logging, { info } from "std/logging"
+
+fn label(count!: Int64) -> String { "free {count}" }
+
+type Tally(count: Int64, events: Array<String>) {
+    fn double() -> Int64 { count * 2 }
+    export fn quad() -> Int64 { double() * 2 }
+    ## Unannotated: the type comes from the sibling calls.
+    export fn area() { quad() * quad() }
+
+    fn record(event!: String) {
+        events.append(event)
+        count = count + 1
+    }
+    export fn bump(times!: Int64) -> String {
+        for step in 0..times {
+            record("step {step}")
+        }
+        "{events.count} events, count {count}"
+    }
+
+    fn label() -> String { "tally {count}" }
+    export fn describe() -> String { label() }
+
+    export fn sameDouble(other!: Tally) -> Bool { other.double() == double() }
+}
+
+type Shelf<T>(items: Array<T>) {
+    fn size() -> Int64 { items.count }
+    export fn isEmpty() -> Bool { size() == 0 }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut tally = Tally(count: 3, events: [])
+    info("{tally.quad()} {tally.area()}")
+    info(tally.bump(3))
+    info("{tally.count} {tally.events.count} {tally.events[2]}")
+    info(tally.describe())
+    info(label(1))
+    info("{tally.sameDouble(Tally(count: 6, events: []))}")
+    let empty: Shelf<String> = Shelf(items: [])
+    let full: Shelf<Int64> = Shelf(items: [1, 2])
+    info("{empty.isEmpty()} {full.isEmpty()}")
+    0
+}

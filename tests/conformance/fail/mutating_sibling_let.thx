@@ -1,0 +1,16 @@
+## D208: a method that calls a sibling which writes the receiver writes it
+## too, so it needs a `mut` binding.
+type Counter(count: Int64) {
+    fn record() {
+        count = count + 1
+    }
+    export fn bump() -> Int64 {
+        record()
+        count
+    }
+}
+
+fn main() -> Int64 {
+    let counter = Counter(count: 0)
+    counter.bump()
+}

@@ -443,11 +443,118 @@ pub fn rename_spans(idx: &DocumentIndex, binding: &Binding) -> Vec<Span> {
     spans
 }
 
+/// The edits renaming `binding` to `new_name`. Where a bare argument fills
+/// the labelled parameter it names (D202), renaming one side writes the
+/// label out, so the call keeps compiling: renaming the local `deadline` in
+/// `connect(host, deadline)` gives `deadline: limit`, renaming the
+/// parameter gives `timeout: deadline`.
+pub fn rename_edits(idx: &DocumentIndex, binding: &Binding, new_name: &str) -> Vec<(Span, String)> {
+    let puns = &idx.resolution.puns;
+    let spans = rename_spans(idx, binding);
+    let mut edits = Vec::new();
+    for span in &spans {
+        // A recursive call passing the parameter itself stays a pun.
+        match puns
+            .iter()
+            .find(|pun| pun.name_span == *span && pun.param != binding.id)
+        {
+            Some(pun) => {
+                let mutable = if pun.mutable { "mut " } else { "" };
+                edits.push((pun.span, format!("{}: {mutable}{new_name}", pun.label)));
+            }
+            None => edits.push((*span, new_name.to_string())),
+        }
+    }
+    for pun in puns.iter().filter(|pun| pun.param == binding.id) {
+        if spans.contains(&pun.name_span) {
+            continue;
+        }
+        let mutable = if pun.mutable { "mut " } else { "" };
+        edits.push((pun.span, format!("{new_name}: {mutable}{}", pun.label)));
+    }
+    edits.sort_by_key(|(span, _)| (span.start, span.end));
+    edits.dedup();
+    edits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::resolver::BindingKind;
     use crate::span::byte_to_position;
+
+    /// Rename the binding at the first `needle` (offset `at` into it) and
+    /// return the edited text.
+    fn renamed(src: &str, needle: &str, at: usize, new_name: &str) -> String {
+        let idx = build_index(src, "<input>");
+        assert!(idx.ok);
+        let byte = src.find(needle).expect("needle") + at;
+        let p = byte_to_position(src, byte);
+        let binding = idx.binding_at(p.line, p.character).expect("binding").clone();
+        let mut out = src.to_string();
+        for (span, text) in rename_edits(&idx, &binding, new_name).into_iter().rev() {
+            out.replace_range(span.start..span.end, &text);
+        }
+        let diags = crate::lsp::analysis::check_source("<input>", &out);
+        assert!(diags.is_empty(), "renamed text must compile:\n{out}\n{diags:?}");
+        out
+    }
+
+    #[test]
+    fn rename_punned_local_writes_the_label() {
+        // D210: `connect("h", deadline)` fills the labelled `deadline`.
+        let src = "\
+fn main() -> Int64 {
+    let deadline = 5
+    connect(\"h\", deadline)
+}
+fn connect(host!: String, deadline: Int64) -> Int64 { deadline }
+";
+        let out = renamed(src, "let deadline", 4, "limit");
+        assert!(out.contains("let limit = 5"), "{out}");
+        assert!(out.contains("connect(\"h\", deadline: limit)"), "{out}");
+        let out = renamed(src, "deadline: Int64", 0, "timeout");
+        assert!(out.contains("connect(\"h\", timeout: deadline)"), "{out}");
+        assert!(out.contains("timeout: Int64) -> Int64 { timeout }"), "{out}");
+    }
+
+    #[test]
+    fn rename_punned_mut_and_field() {
+        let src = "\
+fn tally(by!: Int64, mut total: Int64) {
+    total = total + by
+}
+type Point(x: Int64, y: Int64)
+fn main() -> Int64 {
+    mut total = 0
+    tally(3, mut total)
+    let x = 1
+    let point = Point(x, y: 2)
+    total + point.x
+}
+";
+        let out = renamed(src, "mut total = 0", 4, "sum");
+        assert!(out.contains("tally(3, total: mut sum)"), "{out}");
+        assert!(out.contains("    sum + point.x"), "{out}");
+        let out = renamed(src, "mut total: Int64", 4, "count");
+        assert!(out.contains("tally(3, count: mut total)"), "{out}");
+        let out = renamed(src, "Point(x: Int64", 6, "left");
+        assert!(out.contains("Point(left: x, y: 2)"), "{out}");
+        assert!(out.contains("point.left"), "{out}");
+    }
+
+    #[test]
+    fn rename_recursive_pun_stays_a_pun() {
+        let src = "\
+fn count(down!: Int64, step: Int64) -> Int64 {
+    if down <= 0 { 0 } else { count(down - step, step) }
+}
+fn main() -> Int64 { count(3, step: 1) }
+";
+        let out = renamed(src, "step: Int64", 0, "stride");
+        assert!(out.contains("count(down - stride, stride)"), "{out}");
+        assert!(out.contains("count(3, stride: 1)"), "{out}");
+    }
 
     #[test]
     fn index_good_file() {

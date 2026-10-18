@@ -10,7 +10,7 @@ calls on a `Shell` value, and everything else is ordinary Thoxa compiled to C.
 | Invocation | Mode |
 |------------|------|
 | `thoxa`, `thoxa repl`, `thoxa -l` / `--login` | Interactive shell (a login shell passes `-l`, or argv0 `-thoxa`) |
-| `thoxa -c '<chunk>'` | Runs one chunk and exits (what `ssh host cmd` runs) |
+| `thoxa -c '<chunk>'` | Runs one chunk and exits (what `ssh host cmd` runs); its `import`, `fn`, `type`, and `let` forms are declarations, and the rest runs in order |
 | `thoxa file.thx`, no `fn main` | Session script, run once |
 | `thoxa file.thx`, with `fn main` | A program; top-level statements are a compile error |
 | `thoxa dir/` | Runs `dir/main.thx` as a program |

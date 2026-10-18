@@ -52,10 +52,8 @@ pub fn run_one_shot(src: &str) -> Result<i32> {
     let mut decls: Vec<String> = Vec::new();
     let mut cache = SessionBuildCache::default();
     let mut loaded: Option<SessionStepLib> = None;
-    match run_chunk(src, &mut decls, 0, &mut cache, &mut loaded) {
-        Ok(o) => Ok(o.status),
-        Err(e) => Err(e),
-    }
+    // A script: `import` / `fn` forms are declarations, the rest runs.
+    apply_session_source(src, &mut decls, &mut cache, &mut loaded)
 }
 
 /// Run the interactive (or piped) session REPL. Returns final status.
@@ -232,6 +230,10 @@ fn with_captured_stdout<T, F>(f: F) -> Result<(T, String)>
 where
     F: FnOnce() -> Result<T>,
 {
+    // One capture at a time: a second one would save (and hold open) the
+    // first one's pipe as "stdout", so the first would never see EOF.
+    static CAPTURE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _capture = CAPTURE.lock().unwrap_or_else(|error| error.into_inner());
     // Flush Rust and C stdout before swapping FDs.
     let _ = io::stdout().flush();
     unsafe {
@@ -362,12 +364,13 @@ fn load_shell_rc(
     }
     let src =
         fs::read_to_string(&path).map_err(|e| Error::new(format!("{}: {e}", path.display())))?;
-    apply_rc_source(&src, decls, cache, loaded)
+    apply_session_source(&src, decls, cache, loaded)
 }
 
-/// Split desugared rc into decl forms vs statement forms; accumulate decls;
-/// execute statements once with those decls in scope.
-fn apply_rc_source(
+/// Split desugared source (the rc file, a `-c` chunk) into decl forms vs
+/// statement forms; accumulate decls; execute statements once with those
+/// decls in scope.
+fn apply_session_source(
     src: &str,
     decls: &mut Vec<String>,
     cache: &mut SessionBuildCache,
@@ -920,7 +923,7 @@ fn prompt() -> String {
         let mut decls = Vec::new();
         let mut cache = SessionBuildCache::default();
         let mut loaded = None;
-        let status = apply_rc_source(src, &mut decls, &mut cache, &mut loaded)
+        let status = apply_session_source(src, &mut decls, &mut cache, &mut loaded)
             .expect("decl-only rc must not compile as a program");
         assert_eq!(status, 0);
         assert!(decls_define_prompt(&decls), "decls={decls:?}");
@@ -947,7 +950,7 @@ logging.info("from-rc-apostrophe")
         let mut cache = SessionBuildCache::default();
         let mut loaded = None;
         let (status, out) =
-            with_captured_stdout(|| apply_rc_source(src, &mut acc, &mut cache, &mut loaded))
+            with_captured_stdout(|| apply_session_source(src, &mut acc, &mut cache, &mut loaded))
                 .expect("capture");
         assert_eq!(status, 0);
         assert!(
@@ -958,6 +961,25 @@ logging.info("from-rc-apostrophe")
             out.contains("from-rc-apostrophe"),
             "stmt must run, stdout={out:?}"
         );
+    }
+
+    #[test]
+    fn one_shot_import_then_statement_runs() {
+        // `thoxa -c` with an `import` first line used to run nothing: the
+        // whole chunk was taken for one declaration (D209). The statement
+        // writes a file (stdout capture races the test runner's output).
+        let marker = std::env::temp_dir().join(format!("thoxa-dash-c-{}", std::process::id()));
+        let _ = fs::remove_file(&marker);
+        let src = format!(
+            "import {{ writeFile }} from \"std/io\"\n\
+             writeFile(\"{}\", Bytes.fromString(\"ran\"))\n",
+            marker.display()
+        );
+        let status = run_one_shot(&src).expect("run");
+        assert_eq!(status, 0);
+        let text = fs::read_to_string(&marker).expect("the statement ran");
+        let _ = fs::remove_file(&marker);
+        assert_eq!(text, "ran");
     }
 
     #[test]
@@ -1228,9 +1250,9 @@ logging.info("from-rc")
         let mut decls = Vec::new();
         let mut cache = SessionBuildCache::default();
         let mut loaded = None;
-        // Point THOXA_SHELL_RC via apply_rc_source directly (no env races).
+        // Point THOXA_SHELL_RC via apply_session_source directly (no env races).
         let src = fs::read_to_string(&rc).unwrap();
-        let st = apply_rc_source(&src, &mut decls, &mut cache, &mut loaded).expect("rc");
+        let st = apply_session_source(&src, &mut decls, &mut cache, &mut loaded).expect("rc");
         assert_eq!(st, 0);
         assert!(decls_define_prompt(&decls), "decls={decls:?}");
 

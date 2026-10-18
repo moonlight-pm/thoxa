@@ -1167,8 +1167,25 @@ receiver.
 Methods are declared in a product type's body. A method sees the type's fields
 by their bare names; there is no `self`. A method marked `export` can be
 called from outside the type; one without `export` is private, and calling it
-from outside is a compile error. A method cannot call another method of the
-same type by bare name; put shared code in a module-level function.
+from outside is a compile error.
+
+A method calls another method of its type by bare name, on the same receiver.
+Inside a method, such a name wins over a module-level function of the same
+name. A field the callee changes is seen by the caller after the call. A
+private method can also be called on any other value of the type, from the
+type's own methods:
+
+```thx
+type Tally(count: Int64) {
+    fn double() -> Int64 { count * 2 }
+    export fn quad() -> Int64 { double() * 2 }
+    export fn sameAs(other!: Tally) -> Bool { other.double() == double() }
+}
+
+let tally = Tally(count: 3)
+let four = tally.quad()                    ## 12
+let same = tally.sameAs(Tally(count: 3))   ## true
+```
 
 ### Field write-back
 
@@ -1194,7 +1211,8 @@ mutating methods on a field.
 
 ### Mutating methods
 
-A method that writes a field needs a writable receiver: a `mut` binding, or
+A method that writes a field, or calls a sibling method that does, needs a
+writable receiver: a `mut` binding, or
 `items[i]` on a `mut` array (the element is stored back). Calling it on a
 `let`, a parameter, a `for` or match binding, or a temporary is a compile
 error. From outside its type a field is read-only, so `pair.left.add(by: 1)`

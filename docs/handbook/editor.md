@@ -45,7 +45,7 @@ restart it again.
 | Hover | The signature and the contiguous `##` comments above it. Functions and methods without `->` show their inferred return type; `extern` shows `-> Void` unless annotated; `main` shows `-> Int64`. `let` / `mut` show their type when it is known (`let a: Response`). A call argument shows its parameter (`backlog: Int64` on `listen(16)`) when the callee can be resolved. The built-in `Node`, `Element`, `Text`, `Fragment`, and `Attr` have hovers; built-in members such as `.html()` and `String.count` do not |
 | Go to definition | Local, `./`, `~/`, and `std/…` modules; an open buffer is preferred to the file on disk. Namespace functions (`net.createSocket`) and methods on a value whose type is known: from an annotation, a constructor, a function or method return (including generic types), a copy, a match payload, `if` / `match` / block results, a module `let`, or `?` on a `Trial` / `May` |
 | References | The file, open buffers, and `.thx` files in the package tree that import the name |
-| Rename | The same scope as references |
+| Rename | The same scope as references. Renaming a parameter or a constructor field also renames the labels that pass it (`deadline:`). Where a bare name fills the parameter it names, renaming either one writes the label out, so `connect(host, deadline)` becomes `connect(host, deadline: limit)` or `connect(host, timeout: deadline)` |
 | Document symbols | The outline of the file |
 | Workspace symbols | A substring search over open buffers and the package tree, up to 100 results |
 | Open buffers | An unsaved buffer is what the server checks, not the file on disk |

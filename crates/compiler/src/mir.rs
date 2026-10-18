@@ -1210,6 +1210,9 @@ struct LowerCtx {
     /// `resolve_call_args_full`: `emit_call_result` stores each back through
     /// `_self` after the call.
     mut_field_args: Vec<Binding>,
+    /// The type whose method body is being lowered: a bare call to one of its
+    /// methods is a call on the receiver, and its private methods are callable.
+    method_type: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -1269,6 +1272,7 @@ impl LowerCtx {
             generics: HashMap::new(),
             route_clause: false,
             mut_field_args: Vec::new(),
+            method_type: None,
         }
     }
 
@@ -7091,6 +7095,7 @@ fn subst_arg(a: &Arg, subst: &HashMap<String, Ty>) -> Arg {
 /// locals; reassignment also stores through `_self`.
 fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Result<()> {
     let info = ctx.types.get(mangled_type).unwrap().clone();
+    ctx.method_type = Some(mangled_type.to_string());
     let recv = Place {
         name: "_self".to_string(),
     };
@@ -7098,23 +7103,7 @@ fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Re
         if matches!(f.ty, Ty::FixedArray { .. }) {
             continue;
         }
-        let p = Place {
-            name: sanitize_name(&f.name),
-        };
-        ctx.assign(
-            p.clone(),
-            f.ty.clone(),
-            RValue::Field {
-                base: recv.clone(),
-                field: sanitize_field(&f.name),
-            },
-        );
-        if needs_drop(&f.ty) {
-            ctx.stmts.push(Stmt::Dup {
-                place: p.clone(),
-                ty: f.ty.clone(),
-            });
-        }
+        let p = load_method_field(ctx, f);
         // Ctor-param types (!zero_init): fields are writable in methods.
         // C-layout (zero_init): only `mut` body fields.
         let writable = if info.zero_init { f.mutable } else { true };
@@ -7131,6 +7120,75 @@ fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Re
         bind_param(ctx, &p.name, ty, p.mutable);
     }
     Ok(())
+}
+
+/// Load a field from `_self` into its local in a method body (a heap field
+/// takes its own reference: the local drops at method end, `_self` does not).
+fn load_method_field(ctx: &mut LowerCtx, field: &FieldInfo) -> Place {
+    let place = Place {
+        name: sanitize_name(&field.name),
+    };
+    ctx.assign(
+        place.clone(),
+        field.ty.clone(),
+        RValue::Field {
+            base: Place {
+                name: "_self".to_string(),
+            },
+            field: sanitize_field(&field.name),
+        },
+    );
+    if needs_drop(&field.ty) {
+        ctx.stmts.push(Stmt::Dup {
+            place: place.clone(),
+            ty: field.ty.clone(),
+        });
+    }
+    place
+}
+
+/// A bare call to a sibling method, `double()` inside `quad()`: a call on
+/// the receiver. The callee may write fields through `_self`, so the
+/// caller's field locals are loaded again after it.
+fn lower_sibling_call(
+    ctx: &mut LowerCtx,
+    type_name: &str,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    let info = ctx.types.get(type_name).unwrap().clone();
+    let sig = info.methods.get(method).unwrap().clone();
+    ctx.infer_check_callee(&format!("{type_name}__{method}"), method, span)?;
+    let arg_places = resolve_call_args_full(
+        ctx,
+        &sig.params,
+        &sig.defaults,
+        &sig.mutable,
+        &sig.positional,
+        args,
+        span,
+        &sig.def_mod,
+    )?;
+    let mut all_args = vec![Place {
+        name: "_self".to_string(),
+    }];
+    all_args.extend(arg_places);
+    let result = emit_call_result(
+        ctx,
+        Callee::Method {
+            type_name: type_name.to_string(),
+            method: method.to_string(),
+        },
+        all_args,
+        sig.ret.clone(),
+    )?;
+    for field in &info.fields {
+        if !matches!(field.ty, Ty::FixedArray { .. }) {
+            load_method_field(ctx, field);
+        }
+    }
+    Ok(result)
 }
 
 /// Bind a parameter in a body. A heap parameter is owned: the caller moved a
@@ -10570,7 +10628,7 @@ fn lower_method_call(
                 )
             })?;
             ctx.infer_check_callee(&format!("{type_name}__{method}"), method, method_span)?;
-            if !sig.exported {
+            if !sig.exported && ctx.method_type.as_deref() != Some(type_name.as_str()) {
                 return Err(Error::at(
                     format!("method `{method}` is private"),
                     method_span,
@@ -10634,15 +10692,65 @@ fn lower_method_call(
     }
 }
 
-/// Methods that write their receiver: a store through `_self`. (A method
-/// cannot call a sibling on `_self`, so there is no transitive case; a
-/// field's method call writes the field back through `_self` directly.)
+/// Methods that write their receiver: a store through `_self`, or a call
+/// on `_self` to a sibling that does. (A field's method call writes the
+/// field back through `_self` directly.)
 fn mutating_methods(functions: &[Function]) -> HashSet<String> {
-    functions
+    let mut mutating: HashSet<String> = functions
         .iter()
         .filter(|function| function.receiver.is_some() && stmts_write_self(&function.body))
         .map(|function| function.name.clone())
-        .collect()
+        .collect();
+    let calls: Vec<(String, Vec<String>)> = functions
+        .iter()
+        .filter(|function| function.receiver.is_some())
+        .map(|function| {
+            let mut siblings = Vec::new();
+            stmts_self_calls(&function.body, &mut siblings);
+            (function.name.clone(), siblings)
+        })
+        .filter(|(_, siblings)| !siblings.is_empty())
+        .collect();
+    loop {
+        let before = mutating.len();
+        for (name, siblings) in &calls {
+            if siblings.iter().any(|sibling| mutating.contains(sibling)) {
+                mutating.insert(name.clone());
+            }
+        }
+        if mutating.len() == before {
+            return mutating;
+        }
+    }
+}
+
+/// The C names of the methods called on `_self` (sibling calls).
+fn stmts_self_calls(stmts: &[Stmt], out: &mut Vec<String>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::Assign {
+                value: RValue::Call { callee, args },
+                ..
+            }
+            | Stmt::Eval(RValue::Call { callee, args }) => {
+                if let Callee::Method { type_name, method } = callee {
+                    if args.first().is_some_and(|recv| recv.name == "_self") {
+                        out.push(format!("{type_name}__{method}"));
+                    }
+                }
+            }
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                stmts_self_calls(then_body, out);
+                stmts_self_calls(else_body, out);
+            }
+            Stmt::Loop { body } | Stmt::ForRange { body, .. } => stmts_self_calls(body, out),
+            _ => {}
+        }
+    }
 }
 
 fn stmts_write_self(stmts: &[Stmt]) -> bool {
@@ -16445,6 +16553,16 @@ fn lower_call(
             return lower_indirect_call(ctx, b.place, b.ty, args, span);
         }
     }
+    // Inside a method, a sibling method wins over a free function.
+    if let Some(type_name) = ctx.method_type.clone() {
+        if ctx
+            .types
+            .get(&type_name)
+            .is_some_and(|info| info.methods.contains_key(callee))
+        {
+            return lower_sibling_call(ctx, &type_name, callee, args, span);
+        }
+    }
     match callee {
         "Pass" | "Fail" => lower_pass_fail(ctx, callee, args, span, expect),
         "Has" => lower_has(ctx, args, span, expect),
@@ -17329,6 +17447,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         generics: ctx.generics.clone(),
         route_clause: ctx.route_clause,
         mut_field_args: Vec::new(),
+        method_type: ctx.method_type.clone(),
     };
     if block.tail.is_none() {
         return Ok(Ty::Void);

@@ -1749,9 +1749,10 @@ fn emit_rvalue(
                         out.push_str(", ");
                     }
                     // First arg is the User receiver — pass address (D107).
-                    // Drop types are already boxes (D155).
+                    // Drop types are already boxes (D155); a sibling call
+                    // passes the caller's own receiver pointer.
                     if i == 0 {
-                        if is_boxed_user_name(type_name, types) {
+                        if is_boxed_user_name(type_name, types) || a.name == "_self" {
                             out.push_str(&a.name);
                         } else {
                             let _ = write!(out, "&{}", a.name);
