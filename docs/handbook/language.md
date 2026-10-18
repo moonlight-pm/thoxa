@@ -398,7 +398,7 @@ visible through `alias`.
 | `.set(index, byte)` | writes in place |
 | `.slice(start, end)` | a new `Bytes` from `start` up to `end` |
 | `.find(needle, from: 0)` | `May<Int64>`, the first index of `needle` at or after `from` |
-| `.insertAt(at, byte)` | a new `Bytes` with `byte` inserted |
+| `.insert(byte, at: index)` | a new `Bytes` with `byte` inserted before `index` |
 | `.removeAt(at)` | a new `Bytes` without the byte at `at` |
 | `.equals(other)` | `Bool`; `==` does the same |
 | `.toString()` | a `String` with the same bytes; each ill-formed UTF-8 sequence becomes U+FFFD |
@@ -445,7 +445,7 @@ mut names: Array<String> = []
 | `.count` | length |
 | `.append(item)` | adds at the end |
 | `.dropLast()` | removes the last element; panics on an empty array |
-| `.insertAt(at, item)` | inserts before index `at` |
+| `.insert(item, at: index)` | inserts before `index` (`at: items.count` appends) |
 | `.removeAt(at)` | removes index `at` |
 
 The writing members return `Void` and need a writable place: write
@@ -749,8 +749,9 @@ also labels the name keeps the bare one positional: with
 
 Built-in methods and constructors follow the same rule. Their parameters are
 positional (`items.append(item)`, `ages.set("ada", 36)`, `Text("hi")`) except
-the options: `from:` on `byteIndexOf` and `Bytes.find`, `Buffer(capacity:)`,
-and `Element(tag:, attributes:, children:)`. The tables below show each one's labels.
+the options: `from:` on `byteIndexOf` and `Bytes.find`, `at:` on `insert`,
+`Buffer(capacity:)`, and `Element(tag:, attributes:, children:)`. The tables
+below show each one's labels.
 
 A parameter with a default may be omitted. Default expressions are evaluated
 at the call site, and free names in them resolve in the module that defines
@@ -1299,8 +1300,8 @@ program can hit:
 | `array index out of bounds` | `a[i]` outside the array |
 | `fixed array index out of bounds` | `a[i]` outside an `Array<T, N>` |
 | `Array.dropLast on empty array` | `dropLast()` on `[]` |
-| `Array.insertAt out of range`, `Array.removeAt out of range` | index outside the array |
-| `Bytes index out of range`, `Bytes.slice out of range`, `Bytes.insertAt out of range`, `Bytes.removeAt out of range` | index outside the `Bytes` |
+| `Array.insert out of range`, `Array.removeAt out of range` | index outside the array |
+| `Bytes index out of range`, `Bytes.slice out of range`, `Bytes.insert out of range`, `Bytes.removeAt out of range` | index outside the `Bytes` |
 | `Bytes length must be non-negative`, `Buffer capacity must be non-negative` | `Bytes(-1)`, `Buffer(-1)` |
 | `main returned N; an exit status is 0 to 255` | `main` returned a value outside `0..255` |
 | `stack overflow in task` | a task overflowed its 512 KiB stack |

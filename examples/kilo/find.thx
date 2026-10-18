@@ -155,7 +155,7 @@ export fn run() -> Void {
                                 rescan = true
                             }
                         } else if isPrintable(b) {
-                            query = query.insertAt(query.count, b)
+                            query = query.insert(b, at: query.count)
                             lastMatch = none
                             direction = 1
                             rescan = true

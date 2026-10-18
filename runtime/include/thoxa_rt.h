@@ -401,7 +401,7 @@ ThoxaBytes *thoxa_buffer_freeze(const ThoxaBuffer *b);
  * User structs store inline (elem_size = sizeof(C struct)); cgen supplies
  * ThoxaArrayElemFn for field-level RC on copy/get/set/drop.
  *
- * Writes (append / dropLast / insertAt / removeAt / index set) copy-on-write
+ * Writes (append / dropLast / insert / removeAt / index set) copy-on-write
  * when refcount > 1 and return the (possibly new) unique array — assign the
  * result back to the place (D133).
  */
@@ -481,7 +481,7 @@ ThoxaArray *thoxa_array_drop_last_ex(
     ThoxaArrayElemFn elem_dup,
     ThoxaArrayElemFn elem_drop
 );
-/* COW insertAt: 0 ≤ at ≤ count (at == count appends). */
+/* COW insert: 0 ≤ at ≤ count (at == count appends). */
 ThoxaArray *thoxa_array_insert_at_i64(ThoxaArray *a, int64_t at, int64_t v);
 ThoxaArray *thoxa_array_insert_at_ptr(ThoxaArray *a, int64_t at, void *p);
 ThoxaArray *thoxa_array_insert_at_elem(

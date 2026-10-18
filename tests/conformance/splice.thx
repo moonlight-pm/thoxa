@@ -1,4 +1,4 @@
-## insertAt / removeAt — Bytes stay functional (D55). Array is write-back (D133).
+## insert / removeAt — Bytes stay functional (D55). Array is write-back (D133).
 import logging from "std/logging"
 fn main() -> Int64 {
     logging.toStdout()
@@ -6,31 +6,31 @@ fn main() -> Int64 {
 
     ## Bytes: insert mid, remove one, append at end (at == count).
     let b = Bytes.fromString("helo")
-    let ins = b.insertAt(2, 108)           ## h e [l] l o  (108 = 'l')
+    let ins = b.insert(108, at: 2)         ## h e [l] l o  (108 = 'l')
     let del = b.removeAt(1)                ## h l o
-    let app = b.insertAt(b.count, 33)      ## helo!  (33 = '!')
+    let app = b.insert(33, at: b.count)    ## helo!  (33 = '!')
     logging.info("bytes ins={ins.toString()} del={del.toString()} app={app.toString()}")
     logging.info("bytes src count={b.count} text={b.toString()}")
 
     ## Array Int64: insert mid, remove first, source intact via COW.
     let xs = [10, 20, 30]
     mut ays = xs
-    ays.insertAt(1, 99)                    ## [10, 99, 20, 30]
+    ays.insert(99, at: 1)                  ## [10, 99, 20, 30]
     mut azs = xs
     azs.removeAt(0)                        ## [20, 30]
     logging.info("array ins count={ays.count} at1={ays[1]}")
     logging.info("array del count={azs.count} at0={azs[0]}")
     logging.info("array src count={xs.count} at1={xs[1]}")
 
-    ## Array append-at-end via insertAt(count, …)
+    ## Array append-at-end via insert(…, at: count)
     mut tail = xs
-    tail.insertAt(xs.count, 40)
+    tail.insert(40, at: xs.count)
     logging.info("array tail={tail}")
 
     ## String array heap elems
     let ss = ["a", "c"]
     mut mid = ss
-    mid.insertAt(1, "b")
+    mid.insert("b", at: 1)
     mut cut = ss
     cut.removeAt(0)
     logging.info("str mid={mid[0]}{mid[1]}{mid[2]} cut0={cut[0]} src0={ss[0]}")

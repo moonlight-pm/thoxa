@@ -21,7 +21,7 @@ fn kernel(name!: SystemName) -> String {
     mut text = Bytes(0)
     mut index = 0
     while index < 65 and name.sysname[index] != 0 {
-        text = text.insertAt(text.count, name.sysname[index])
+        text = text.insert(name.sysname[index], at: text.count)
         index = index + 1
     }
     text.toString()

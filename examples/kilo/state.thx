@@ -230,7 +230,7 @@ fn emptyRow() -> Row {
 
 export fn insertChar(byte!: Int64) -> Void {
     if cy == numRows() {
-        textRows.insertAt(numRows(), emptyRow())
+        textRows.insert(emptyRow(), at: numRows())
     }
     textRows[cy] = row(cy).insertChar(cx, byte)
     cx = cx + 1
@@ -240,10 +240,10 @@ export fn insertChar(byte!: Int64) -> Void {
 
 export fn insertNewline() -> Void {
     if cx == 0 {
-        textRows.insertAt(cy, emptyRow())
+        textRows.insert(emptyRow(), at: cy)
     } else {
         let line = row(cy)
-        textRows.insertAt(cy + 1, line.skip(cx))
+        textRows.insert(line.skip(cx), at: cy + 1)
         textRows[cy] = line.take(cx)
     }
     cy = cy + 1

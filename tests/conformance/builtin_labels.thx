@@ -38,7 +38,7 @@ fn main() -> Int64 {
 
     mut items: Array<String> = []
     items.append("b")
-    items.insertAt(0, "a")
+    items.insert("a", at: 0)
     items.append("c")
     items.removeAt(2)
     info("{items.count} {items[0]}{items[1]}")

@@ -397,7 +397,7 @@ pub enum RValue {
         arr: Place,
         elem_ty: Ty,
     },
-    /// Functional insertAt for User elements (blob + field-dup).
+    /// Functional `insert` for User elements (blob + field-dup).
     ArrayInsertAt {
         arr: Place,
         at: Place,
@@ -9800,7 +9800,7 @@ fn lower_field(
             if name != "count" {
                 return Err(Error::at(
                     format!(
-                        "no field `{name}` on Array (use .count, .append, .dropLast, .insertAt, .removeAt, [i])"
+                        "no field `{name}` on Array (use .count, .append, .dropLast, .insert, .removeAt, [i])"
                     ),
                     name_span,
                 ));
@@ -10304,7 +10304,7 @@ fn lower_method_call(
             | "appendBytes"
             | "freeze"
             | "dropLast"
-            | "insertAt"
+            | "insert"
             | "removeAt"
             | "set"
             | "remove"
@@ -10442,7 +10442,7 @@ fn lower_method_call(
     };
     let collection_write = matches!(
         method,
-        "append" | "appendBytes" | "dropLast" | "insertAt" | "removeAt" | "set" | "remove"
+        "append" | "appendBytes" | "dropLast" | "insert" | "removeAt" | "set" | "remove"
     ) && matches!(&recv_ty, Ty::Array { .. } | Ty::Map { .. } | Ty::Buffer);
     if collection_write {
         if let Some(target) = unwritable_receiver(ctx, receiver) {
@@ -11288,12 +11288,14 @@ fn lower_array_method(
             );
             Ok(void_place(ctx))
         }
-        "insertAt" => {
-            let formal = vec![("at".into(), Ty::Int64), ("item".into(), elem.clone())];
-            let places = resolve_call_args(ctx, &formal, args, span)?;
+        "insert" => {
+            // `insert(item, at: index)` (D205): the item is the subject.
+            let formal = vec![("item".into(), elem.clone()), ("at".into(), Ty::Int64)];
+            let places =
+                resolve_call_args_full(ctx, &formal, &[], &[], &[true, false], args, span, "")?;
             let mut it = places.into_iter();
-            let at = it.next().unwrap();
             let item = it.next().unwrap();
+            let at = it.next().unwrap();
             if array_elem_is_user(elem) {
                 ctx.assign(
                     recv.clone(),
@@ -11355,7 +11357,7 @@ fn lower_array_method(
             span,
         )),
         other => Err(Error::at(
-            format!("no method `{other}` on Array (use .append, .dropLast, .insertAt, .removeAt)"),
+            format!("no method `{other}` on Array (use .append, .dropLast, .insert(item, at:), .removeAt)"),
             span,
         )),
     }
@@ -11701,11 +11703,15 @@ fn lower_bytes_method(
             );
             Ok((p, Ty::Bool))
         }
-        "insertAt" => {
-            let formal = vec![("at".into(), Ty::Int64), ("byte".into(), Ty::Int64)];
-            let places = resolve_call_args(ctx, &formal, args, span)?;
-            let mut all = vec![recv];
-            all.extend(places);
+        "insert" => {
+            // `insert(byte, at: index)` (D205), a new Bytes.
+            let formal = vec![("byte".into(), Ty::Int64), ("at".into(), Ty::Int64)];
+            let places =
+                resolve_call_args_full(ctx, &formal, &[], &[], &[true, false], args, span, "")?;
+            let mut it = places.into_iter();
+            let byte = it.next().unwrap();
+            let at = it.next().unwrap();
+            let all = vec![recv, at, byte];
             emit_call_result(
                 ctx,
                 Callee::Builtin("bytes_insert_at".into()),
@@ -11727,7 +11733,7 @@ fn lower_bytes_method(
         }
         other => Err(Error::at(
             format!(
-                "no method `{other}` on Bytes (use .get, .set, .slice, .find, .toString, .equals, .insertAt, .removeAt)"
+                "no method `{other}` on Bytes (use .get, .set, .slice, .find, .toString, .equals, .insert(byte, at:), .removeAt)"
             ),
             span,
         )),

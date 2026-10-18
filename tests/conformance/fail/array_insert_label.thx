@@ -1,0 +1,7 @@
+## `insert(item, at: index)` (D205): the item is the subject, the index an
+## option.
+fn main() -> Int64 {
+    mut items: Array<Int64> = [1, 3]
+    items.insert(2, 1)
+    0
+}

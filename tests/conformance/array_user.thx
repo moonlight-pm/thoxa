@@ -44,9 +44,9 @@ fn main() -> Int64 {
     logging.info("lit_count={zs.count}")
     logging.info("lit0={zs[0].name}")
 
-    ## insertAt / removeAt write-back; source intact via COW
+    ## insert / removeAt write-back; source intact via COW
     mut mid = zs
-    mid.insertAt(1, Header(name: "M", value: "x"))
+    mid.insert(Header(name: "M", value: "x"), at: 1)
     logging.info("ins_count={mid.count} mid={mid[1].name}")
     mut cut = zs
     cut.removeAt(0)

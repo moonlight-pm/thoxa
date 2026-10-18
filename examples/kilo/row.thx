@@ -78,7 +78,7 @@ export type Row(chars: Bytes, render: Bytes) {
     }
 
     export fn insertChar(at!: Int64, byte!: Int64) -> Row {
-        make(chars.insertAt(at, byte))
+        make(chars.insert(byte, at))
     }
 
     export fn deleteChar(at!: Int64) -> Row {

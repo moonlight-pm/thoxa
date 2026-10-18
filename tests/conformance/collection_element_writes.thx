@@ -8,7 +8,7 @@ fn main() -> Int64 {
     let before = grid
     grid[0].append(5)
     grid[1].dropLast()
-    grid[1].insertAt(0, 9)
+    grid[1].insert(9, at: 0)
     info("grid {grid[0].count} {grid[0][1]} {grid[1][0]} {grid[1].count} before {before[0].count}")
     mut tables = [{x: 0}, {y: 0}]
     tables[1].set("a", 1)

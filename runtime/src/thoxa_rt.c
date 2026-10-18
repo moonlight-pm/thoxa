@@ -841,7 +841,7 @@ int thoxa_bytes_equals(const ThoxaBytes *a, const ThoxaBytes *b) {
 ThoxaBytes *thoxa_bytes_insert_at(const ThoxaBytes *b, int64_t at, int64_t byte) {
     size_t old_len = b ? b->len : 0;
     if (at < 0 || (size_t)at > old_len) {
-        thoxa_panic("Bytes.insertAt out of range");
+        thoxa_panic("Bytes.insert out of range");
     }
     size_t pos = (size_t)at;
     size_t n = size_add(old_len, 1);
@@ -1425,7 +1425,7 @@ ThoxaArray *thoxa_array_drop_last_ex(
 ThoxaArray *thoxa_array_insert_at_i64(ThoxaArray *a, int64_t at, int64_t v) {
     size_t old_len = a ? a->len : 0;
     if (at < 0 || (size_t)at > old_len) {
-        thoxa_panic("Array.insertAt out of range");
+        thoxa_panic("Array.insert out of range");
     }
     size_t pos = (size_t)at;
     uint32_t flags = a ? a->flags : 0;
@@ -1448,7 +1448,7 @@ ThoxaArray *thoxa_array_insert_at_i64(ThoxaArray *a, int64_t at, int64_t v) {
 ThoxaArray *thoxa_array_insert_at_ptr(ThoxaArray *a, int64_t at, void *p) {
     size_t old_len = a ? a->len : 0;
     if (at < 0 || (size_t)at > old_len) {
-        thoxa_panic("Array.insertAt out of range");
+        thoxa_panic("Array.insert out of range");
     }
     size_t pos = (size_t)at;
     size_t new_len = size_add(old_len, 1);
@@ -1490,7 +1490,7 @@ ThoxaArray *thoxa_array_insert_at_elem(
 ) {
     size_t old_len = a ? a->len : 0;
     if (at < 0 || (size_t)at > old_len) {
-        thoxa_panic("Array.insertAt out of range");
+        thoxa_panic("Array.insert out of range");
     }
     if (a) {
         elem_size = a->elem_size;

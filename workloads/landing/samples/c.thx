@@ -32,7 +32,7 @@ fn main() -> Int64 {
     mut kernel = Bytes(0)
     mut index = 0
     while index < 65 and name.sysname[index] != 0 {
-        kernel = kernel.insertAt(kernel.count, name.sysname[index])
+        kernel = kernel.insert(name.sysname[index], at: kernel.count)
         index = index + 1
     }
     print("kernel: {kernel.toString()}")
