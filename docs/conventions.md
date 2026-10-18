@@ -20,8 +20,7 @@
    `.out` under `cargo make test`).
 9. Prefer prose + D-ids over premature knowledge graphs or memory servers.
 10. **Doc truth:** do not document aspirational surface as fact; fix dogfood
-    READMEs when they contradict the product face (e.g. product REPL is bare
-    `thoxa`, not `extras/shell`).
+    READMEs when they contradict the product face.
 
 ## Agent sessions (Grok)
 
@@ -50,7 +49,5 @@
 
 | Prefer | Avoid as product face |
 |--------|------------------------|
-| bare `thoxa` session / REPL | “run extras/shell” as the shell |
-| `status` field on `Shell` | bash `$?` as the core model |
 | `std/module` imports (incl. `std/fallible`) | inventing a second ambient prelude language |
 | conformance fixture names | informal “it works on my machine” |

@@ -9,7 +9,7 @@ import { Pass, Fail } from "std/fallible"
 import { warn } from "std/logging"
 
 ## Chapter files, in page order.
-export let names = ["introduction", "language", "std", "session", "cli", "editor"]
+export let names = ["introduction", "language", "std", "cli", "editor"]
 
 type Loaded(chapter: Chapter, text: String, headings: Array<Heading>)
 

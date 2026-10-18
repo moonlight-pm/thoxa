@@ -18,8 +18,8 @@ pub const CODE_TYPE_MISMATCH: &str = "THX002";
 pub const CODE_UNKNOWN_TYPE: &str = "THX003";
 /// Fallible / `std/fallible` import required.
 pub const CODE_FALLIBLE_IMPORT: &str = "THX004";
-/// Top-level statement in a program that defines `fn main`.
-pub const CODE_TOP_LEVEL_WITH_MAIN: &str = "THX005";
+/// A statement outside any function.
+pub const CODE_TOP_LEVEL_STMT: &str = "THX005";
 /// Program requires `fn main`.
 pub const CODE_REQUIRES_MAIN: &str = "THX006";
 /// Lex / unexpected character.
@@ -267,8 +267,8 @@ fn classify_code(msg: &str) -> Option<&'static str> {
     if msg.contains("unknown type") {
         return Some(CODE_UNKNOWN_TYPE);
     }
-    if msg.contains("top-level statement") && msg.contains("fn main") {
-        return Some(CODE_TOP_LEVEL_WITH_MAIN);
+    if msg.contains("cannot be at the top level") {
+        return Some(CODE_TOP_LEVEL_STMT);
     }
     if msg.contains("program requires") && msg.contains("main") {
         return Some(CODE_REQUIRES_MAIN);
@@ -399,11 +399,9 @@ fn default_help(code: Option<&str>, msg: &str) -> Option<Vec<String>> {
              (or a selective subset)"
                 .into(),
         ]),
-        Some(CODE_TOP_LEVEL_WITH_MAIN) => Some(vec![
-            "move the statement into `fn main` or remove `fn main` for a session script".into(),
-        ]),
+        Some(CODE_TOP_LEVEL_STMT) => Some(vec!["move the statement into `fn main`".into()]),
         Some(CODE_REQUIRES_MAIN) => Some(vec![
-            "add `fn main() -> Int64 { … }` or check as a library (no entry required)".into(),
+            "add `fn main() { … }`; a file without one can only be imported".into(),
         ]),
         Some(CODE_LEX) => Some(vec!["remove or replace the unexpected character".into()]),
         Some(CODE_PARSE) => Some(vec!["fix the syntax near this location".into()]),
@@ -727,13 +725,9 @@ mod tests {
     }
 
     #[test]
-    fn classify_top_level_with_main() {
-        let d = Diagnostic::error(
-            "unexpected top-level statement in a program with `fn main` \
-             (move it into main or use a session script without main)",
-        )
-        .enrich();
-        assert_eq!(d.code.as_deref(), Some(CODE_TOP_LEVEL_WITH_MAIN));
+    fn classify_top_level_statement() {
+        let d = Diagnostic::error(crate::parser::TOP_LEVEL_STMT_MSG).enrich();
+        assert_eq!(d.code.as_deref(), Some(CODE_TOP_LEVEL_STMT));
     }
 
     #[test]

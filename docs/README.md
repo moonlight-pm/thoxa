@@ -39,7 +39,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`architecture.md`](architecture.md) | Pipeline, crates, runtime, build products | **As-built** map |
 | [`roadmap.md`](roadmap.md) | Phases: done, remaining, unplanned | **Horizon** |
 | [`decisions.md`](decisions.md) | Locked D-ids | Decisions |
-| [`handbook/`](handbook/) | The manual (introduction, language, std, session, cli, editor); rendered at thoxa.dev/manual | **Product** |
+| [`handbook/`](handbook/) | The manual (introduction, language, std, cli, editor); rendered at thoxa.dev/manual | **Product** |
 | [`specs/`](specs/) | Design freezes — **target** architecture | **Target** |
 | [`ideas/`](ideas/) | Parked design thoughts (not active until promoted) | Idea |
 | [`conventions.md`](conventions.md) | How we write docs and commit meta | Process |
@@ -51,8 +51,6 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`specs/2026-07-18-thoxa-native-kernel-design.md`](specs/2026-07-18-thoxa-native-kernel-design.md) | Kernel, value model, ladder | shipped (ladder through R9+) |
 | [`specs/2026-07-19-post-r9-http-completion-plan.md`](specs/2026-07-19-post-r9-http-completion-plan.md) | Bounded HTTP server path | shipped (historical plan) |
 | [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md) | Zed + `thoxa lsp` | partial (phase 1–2 done) |
-| [`specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md) | Session / REPL / Shell | partial (core + line editor **D156** shipped; redir/import polish remains) |
-| [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md) | REPL step backend (libtcc memory) | shipped (D105, libtcc-only; compile cache + no scratch `.thx`; process-RT in §11) |
 | [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Sum types, `?`/`!`, May/Trial via `std/Fallible` | shipped (D118–D120, D123) |
 | [`specs/2026-08-09-structured-diagnostics.md`](specs/2026-08-09-structured-diagnostics.md) | Diagnostic IR, pretty check, `--json`, rich LSP | shipped (D124) |
 | [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | `std/Logging` + remove ambient `println`/`print` | shipped (D125) |
@@ -75,7 +73,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 |------|------|
 | `std/` | Product standard library modules (`std/…` import root) |
 | `tests/conformance/` | Definition of done for language features |
-| `extras/` | Non-product DX (tree-sitter, Zed, dogfood shell) |
+| `extras/` | Non-product DX (tree-sitter, Zed) |
 | `apocrypha/` | Historical docs + Python oracle (not active product) |
 | `.grok/skills/` | Project agent skills (session start + progress docs) |
 

@@ -2368,7 +2368,6 @@ fn cast_targets(module: &Module) -> Vec<TypeExpr> {
                 }
             }
             Item::Global(global) => casts_in_expr(&global.init, &mut visit),
-            Item::SessionStmt(stmt) => casts_in_item(stmt, &mut visit),
             Item::Extern(_) | Item::Import(_) | Item::Extend(_) => {}
         }
     }

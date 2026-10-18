@@ -27,7 +27,6 @@ fn main() {
         "test" => cmd_test(),
         "test-asan" => cmd_test_asan(),
         "run" => cmd_run(&args),
-        "shell" => cmd_shell(&args),
         "build" => cmd_build(&args),
         "emit-c" => cmd_emit_c(&args),
         "clean" => cmd_clean(&args),
@@ -56,8 +55,6 @@ Commands:
     cargo make test                 Run conformance suite (LeakSanitizer), site samples, unit tests
     cargo make test-asan            Conformance under ASan (non-fiber; not default)
     cargo make run <file.thx|dir>   Compile and run a program
-    cargo make shell                Product session REPL (release `thoxa`)
-    cargo make shell --login        Same, clean login-like env (test default-shell readiness)
     cargo make build <file.thx|dir> Compile to target/thoxa/bin/
     cargo make emit-c <file.thx|dir> Write generated C under target/thoxa/c/
     cargo make clean                Remove target/c and target/thoxa
@@ -120,25 +117,6 @@ fn thoxa_bin_path() -> PathBuf {
     workspace_root().join("target/rust/debug/thoxa")
 }
 
-fn thoxa_release_bin_path() -> PathBuf {
-    workspace_root().join("target/rust/release/thoxa")
-}
-
-fn ensure_thoxa_release_built() -> i32 {
-    let status = Command::new("cargo")
-        .args(["build", "--release", "-p", "thoxa"])
-        .current_dir(workspace_root())
-        .status();
-    match status {
-        Ok(s) if s.success() => 0,
-        Ok(s) => s.code().unwrap_or(1),
-        Err(e) => {
-            eprintln!("failed to build release thoxa: {e}");
-            1
-        }
-    }
-}
-
 fn ensure_thoxa_built() -> i32 {
     let status = Command::new("cargo")
         .args(["build", "-p", "thoxa"])
@@ -186,186 +164,6 @@ fn cmd_run(args: &[String]) -> i32 {
     thoxa_args.extend(args.iter().cloned());
     let refs: Vec<&str> = thoxa_args.iter().map(|s| s.as_str()).collect();
     run_thoxa(&refs)
-}
-
-/// Run the product session REPL (`thoxa` with no args).
-/// Dogfood thoxash remains: `cargo make run extras/shell`.
-///
-/// `cargo make shell --login` / `-l`: scrub the process environment to a
-/// minimal login-like set, `cd` to `$HOME`, and only pass what a default
-/// login shell + workspace-built `thoxa` need. Use this to discover gaps
-/// before setting thoxa as the real login shell.
-fn cmd_shell(args: &[String]) -> i32 {
-    let mut login = false;
-    for a in args {
-        match a.as_str() {
-            "--login" | "-l" => login = true,
-            "-h" | "--help" | "help" => {
-                eprintln!(
-                    "\
-usage: cargo make shell [--login | -l]
-
-  (default)   Run product session REPL with inherited env + THOXA_ROOT
-  --login     Clean login-like env; cwd=$HOME; test default-shell readiness
-
-Dogfood prototype: cargo make run extras/shell
-"
-                );
-                return 0;
-            }
-            other => {
-                eprintln!("unknown shell flag `{other}` (try `cargo make shell --help`)");
-                return 2;
-            }
-        }
-    }
-    if login {
-        run_thoxa_login()
-    } else {
-        run_thoxa_release(&[])
-    }
-}
-
-fn run_thoxa_release(args: &[&str]) -> i32 {
-    if ensure_thoxa_release_built() != 0 {
-        return 1;
-    }
-    let bin = thoxa_release_bin_path();
-    let status = Command::new(&bin)
-        .args(args)
-        .current_dir(workspace_root())
-        .env("THOXA_ROOT", workspace_root())
-        .status();
-    match status {
-        Ok(s) => s.code().unwrap_or(1),
-        Err(e) => {
-            eprintln!("failed to run thoxa: {e}");
-            1
-        }
-    }
-}
-
-/// Spawn `thoxa` as if from a fresh login: `env_clear`, minimal vars, cwd=HOME.
-fn run_thoxa_login() -> i32 {
-    if ensure_thoxa_release_built() != 0 {
-        return 1;
-    }
-    let bin = thoxa_release_bin_path();
-    let root = workspace_root();
-    let home = match env::var("HOME") {
-        Ok(h) if !h.is_empty() => PathBuf::from(h),
-        _ => {
-            eprintln!("login mode requires HOME");
-            return 1;
-        }
-    };
-    if !home.is_dir() {
-        eprintln!("login mode: HOME is not a directory: {}", home.display());
-        return 1;
-    }
-
-    let bin_dir = bin
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| root.join("target/rust/release"));
-    let path = login_path(&bin_dir, &home);
-    let kept = login_passthrough_vars();
-
-    eprintln!("==> login mode (clean env, as if fresh login)");
-    eprintln!("    cwd:  {}", home.display());
-    eprintln!("    PATH: {path}");
-    eprintln!("    THOXA_ROOT: {}", root.display());
-    if kept.is_empty() {
-        eprintln!("    kept: (none beyond HOME / PATH / THOXA_ROOT)");
-    } else {
-        let names: Vec<&str> = kept.iter().map(|(k, _)| k.as_str()).collect();
-        eprintln!("    kept: {}", names.join(" "));
-    }
-    eprintln!("    (no cargo/rust/nix-dev vars, no parent THOXA_*)");
-    eprintln!();
-
-    let mut cmd = Command::new(&bin);
-    cmd.env_clear()
-        .current_dir(&home)
-        .env("HOME", &home)
-        .env("PATH", &path)
-        .env("THOXA_ROOT", &root);
-    for (k, v) in &kept {
-        cmd.env(k, v);
-    }
-
-    let status = cmd.status();
-    match status {
-        Ok(s) => s.code().unwrap_or(1),
-        Err(e) => {
-            eprintln!("failed to run thoxa (login): {e}");
-            1
-        }
-    }
-}
-
-/// System + user login PATH segments, with the workspace `thoxa` bin dir first.
-/// Intentionally omits cargo/rustup and other parent-shell developer paths.
-fn login_path(thoxa_bin_dir: &Path, home: &Path) -> String {
-    let user = env::var("USER").unwrap_or_default();
-    let mut parts: Vec<String> = Vec::new();
-    let push = |parts: &mut Vec<String>, p: String| {
-        if !p.is_empty() && !parts.iter().any(|x| x == &p) {
-            parts.push(p);
-        }
-    };
-    push(&mut parts, thoxa_bin_dir.display().to_string());
-    push(&mut parts, home.join(".local/bin").display().to_string());
-    push(
-        &mut parts,
-        home.join(".nix-profile/bin").display().to_string(),
-    );
-    push(&mut parts, "/run/wrappers/bin".into());
-    if !user.is_empty() {
-        push(&mut parts, format!("/etc/profiles/per-user/{user}/bin"));
-    }
-    push(&mut parts, "/nix/var/nix/profiles/default/bin".into());
-    push(&mut parts, "/run/current-system/sw/bin".into());
-    push(&mut parts, "/usr/local/bin".into());
-    push(&mut parts, "/usr/bin".into());
-    push(&mut parts, "/bin".into());
-    parts.join(":")
-}
-
-/// Vars a real graphical/TTY login would still provide, copied from parent.
-/// Identity + terminal + locale + session bus — nothing compiler/dev related.
-fn login_passthrough_vars() -> Vec<(String, String)> {
-    const KEYS: &[&str] = &[
-        "USER",
-        "LOGNAME",
-        "SHELL",
-        "TERM",
-        "COLORTERM",
-        "LANG",
-        "LC_ALL",
-        "LC_CTYPE",
-        "LC_MESSAGES",
-        "TZ",
-        "DISPLAY",
-        "WAYLAND_DISPLAY",
-        "XDG_RUNTIME_DIR",
-        "XDG_SESSION_TYPE",
-        "XDG_SESSION_CLASS",
-        "XDG_SESSION_ID",
-        "XDG_VTNR",
-        "XDG_SEAT",
-        "DBUS_SESSION_BUS_ADDRESS",
-        "SSH_AUTH_SOCK",
-    ];
-    let mut out = Vec::new();
-    for &k in KEYS {
-        if let Ok(v) = env::var(k) {
-            if !v.is_empty() {
-                out.push((k.to_string(), v));
-            }
-        }
-    }
-    out
 }
 
 fn cmd_build(args: &[String]) -> i32 {
@@ -440,8 +238,8 @@ enum ConformanceGate {
 fn cmd_test() -> i32 {
     let conformance = run_conformance(ConformanceGate::Leak);
     let samples = run_site_samples();
-    // The compiler's own unit tests are the only coverage for the REPL,
-    // libtcc steps, the LSP and diagnostics: run them in the same gate.
+    // The compiler's own unit tests are the only coverage for the LSP and
+    // diagnostics: run them in the same gate.
     let unit = run_unit_tests();
     if conformance != 0 {
         conformance
@@ -526,27 +324,18 @@ fn run_site_samples() -> i32 {
 
 fn run_unit_tests() -> i32 {
     eprintln!("unit tests (cargo test -p thoxa --lib)");
-    // The session tests capture fd 1, where the test runner also prints its
-    // progress: they run one at a time, after the rest.
-    let runs: [&[&str]; 2] = [
-        &["test", "-q", "-p", "thoxa", "--lib", "--", "--skip", "repl::tests::"],
-        &["test", "-q", "-p", "thoxa", "--lib", "repl::tests::", "--", "--test-threads=1"],
-    ];
-    for args in runs {
-        let status = Command::new("cargo")
-            .args(args)
-            .current_dir(workspace_root())
-            .status();
-        match status {
-            Ok(s) if s.success() => {}
-            Ok(s) => return s.code().unwrap_or(1),
-            Err(e) => {
-                eprintln!("failed to run unit tests: {e}");
-                return 1;
-            }
+    let status = Command::new("cargo")
+        .args(["test", "-q", "-p", "thoxa", "--lib"])
+        .current_dir(workspace_root())
+        .status();
+    match status {
+        Ok(s) if s.success() => 0,
+        Ok(s) => s.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("failed to run unit tests: {e}");
+            1
         }
     }
-    0
 }
 
 fn cmd_test_asan() -> i32 {

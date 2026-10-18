@@ -2,10 +2,10 @@
 
 **Purpose:** What exists in the product tree today — pipeline, crates, runtime,
 and build layout. Target design lives in freezes under [`specs/`](specs/).
-Session priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
+Priority lives in root [`CURRENT.md`](../CURRENT.md). Capability
 maturity lives in [`capabilities.md`](capabilities.md).
 
-**As of:** 2026-10-18 (`cargo make unicode` writes `std/normalize-data.thx` too, read by the opt-in `std/normalize` (D226); `coerce_place` turns an `Int64` / `UInt64` → `Float64` into `thoxa_f64_from_i64` / `_u64` (checked exact), and `as Float64` goes through generated `__asFloat_*` readers (D224); an unannotated `main` is a return-inference candidate, and the C `main` returns 0 for a Void one (D223); `lower_binary` lowers UInt64 operations as UInt64 places (`unsigned_operand`), with `thoxa_uint_div` / `_rem` / `_shl` / `_shr` in the runtime header (D219); a generic instance's `from` clauses are conversion `MonoMethodJob`s, registered and lowered as `__conversion_{instance}_N` free functions (D217); `cargo make unicode` also reads DerivedCoreProperties.txt and writes `casedRanges` / `caseIgnorableRanges` into `std/unicode.thx`, which `mapCase` reads for final sigma (D216); map key ops cover arrays (`thoxa_key_hash_arr_*` / `thoxa_key_eq_arr_*`) and Float64 parts (`thoxa_hash_f64_key` / `thoxa_f64_key_eq`); a `Map<Float64, V>` key travels as `thoxa_f64_key_bits` (D214); `lower_map_lit` takes the expected key / value types (D213); `==` on maps is `lower_map_eq` (borrowed `MapGet` slots), and a type met again during its own inline comparison calls a generated `__eq_{type}` (both sides `mut`, by address), lowered after the other bodies by `lower_eq_functions`; a session step needing a new one falls back to a fresh base image (D212); return inference also probes multi-clause methods (`probe_multi_clause_return` with the type's fields) and each generic instance's methods (from `subst_method` bodies of the mono jobs) (D211); `cargo make test` runs the `repl::tests` unit tests one at a time after the rest, since they capture fd 1 (and captures are serialized); the resolver links call labels and puns after every body is walked (`Resolution.puns`), and `lsp::index::rename_edits` writes a pun's label out (D210); `thoxa -c` goes through `apply_session_source` (D209); `LowerCtx.method_type` makes a bare call to a sibling method `lower_sibling_call` on `_self`, which reloads the field locals after it, and `mutating_methods` is a fixpoint over calls on `_self` (D208); a field indexes through `lower_index_value` (D207); a field passed `mut` is recorded in `LowerCtx::mut_field_args` and stored back through `_self` by `emit_call_result` (D206); every call resolves through `resolve_call_args_full` with marks: built-ins pass all-positional marks via `resolve_call_args`, or explicit ones for their options (D203); `resolve_call_args_full` first turns a bare-name argument that names a labelled parameter into a labelled one (`punned_arguments`, D202) and checks `-->` starts too. 2026-10-17: `resolve_call_args_full` checks `!` / label use against `FnSig.positional`, `MethodSig.positional`, and `FieldInfo.positional`; generated parameters are `!` (D200); a `mut` parameter is a C pointer and its MIR place is `(*name)`, never in the drop set; the caller passes `&slot` (D199); `compile_to_c` runs `mir::retain_reachable` before cgen, so a program's C holds only functions reachable from `main`, module initializers, and destructors (D197); `extend_desugar` (first desugar pass) turns std's `extend` blocks into `__extend_{Type}_{method}` functions that method calls on built-in receivers find; the loader adds core module `std/string` to every package; all-constant integer array literals lower to `RValue::IntArray` (D196); `ThoxaString` carries its scalar count; `thoxa_string_new` validates UTF-8 and repairs with U+FFFD, so every String is valid (D195 §4); String's methods are Thoxa in `std/string` over runtime byte primitives `thoxa_string_byte_*`; case tables are `std/unicode.thx` from `cargo make unicode` (D195, D196); call arguments resolve positional then named (D194); `conversion_desugar` turns `from` clauses into `__conversion_T_N` functions before the route and codec passes; the codec pass also generates a checked reader per `as` target and fills route body readers; `mir/convert.rs` lowers `as` / `as?` and encodes where a `Json` is expected; `return` and `=` lower against the expected type; route desugar names `std/http` items by local name or mangled name (D191–D193); cgen emits an asm-labelled prototype per `extern fn` and calls it by that private name (D190); `and` / `or` lower as `if`; array literals lower against the expected element type; `unwrap_refined` dups a heap base; a Void `let` binds the unit place; runtime `Float64` text found in scientific form, written in full between 1e-7 and 1e21; session desugar keeps keyword and block-opening lines as Thoxa; `cargo make test` adds the site samples step; thoxa.dev's image carries `docs/handbook` and the samples. 2026-10-16: structural `==` expanded in MIR; generated Map key ops and in-order compaction after `remove`; `main` exit status checked; the lexer follows interpolation holes. 2026-10-15: deadline-aware fd waits; checked shifts; `tests/conformance/fail/`. 2026-10-14: batch CLI on a large-stack thread; session steps run through `thoxa_session_call`; guarded task stacks; no `_Thread_local` in the runtime; 2026-09-04: session compile cache: re-lower `Shell.step` + libtcc base `.o`; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
+**As of:** 2026-10-18 (**D227**: the session host, libtcc, vendored TinyCC, the command layer, and the line editor are gone; recoverable from `eefdac4`. Before it: `cargo make unicode` writes `std/normalize-data.thx` too, read by the opt-in `std/normalize` (D226); `coerce_place` turns an `Int64` / `UInt64` → `Float64` into `thoxa_f64_from_i64` / `_u64` (checked exact), and `as Float64` goes through generated `__asFloat_*` readers (D224); an unannotated `main` is a return-inference candidate, and the C `main` returns 0 for a Void one (D223); `lower_binary` lowers UInt64 operations as UInt64 places (`unsigned_operand`), with `thoxa_uint_div` / `_rem` / `_shl` / `_shr` in the runtime header (D219); a generic instance's `from` clauses are conversion `MonoMethodJob`s, registered and lowered as `__conversion_{instance}_N` free functions (D217); `cargo make unicode` also reads DerivedCoreProperties.txt and writes `casedRanges` / `caseIgnorableRanges` into `std/unicode.thx`, which `mapCase` reads for final sigma (D216); map key ops cover arrays (`thoxa_key_hash_arr_*` / `thoxa_key_eq_arr_*`) and Float64 parts (`thoxa_hash_f64_key` / `thoxa_f64_key_eq`); a `Map<Float64, V>` key travels as `thoxa_f64_key_bits` (D214); `lower_map_lit` takes the expected key / value types (D213); `==` on maps is `lower_map_eq` (borrowed `MapGet` slots), and a type met again during its own inline comparison calls a generated `__eq_{type}` (both sides `mut`, by address), lowered after the other bodies by `lower_eq_functions`; a session step needing a new one falls back to a fresh base image (D212); return inference also probes multi-clause methods (`probe_multi_clause_return` with the type's fields) and each generic instance's methods (from `subst_method` bodies of the mono jobs) (D211); `cargo make test` runs the `repl::tests` unit tests one at a time after the rest, since they capture fd 1 (and captures are serialized); the resolver links call labels and puns after every body is walked (`Resolution.puns`), and `lsp::index::rename_edits` writes a pun's label out (D210); `thoxa -c` goes through `apply_session_source` (D209); `LowerCtx.method_type` makes a bare call to a sibling method `lower_sibling_call` on `_self`, which reloads the field locals after it, and `mutating_methods` is a fixpoint over calls on `_self` (D208); a field indexes through `lower_index_value` (D207); a field passed `mut` is recorded in `LowerCtx::mut_field_args` and stored back through `_self` by `emit_call_result` (D206); every call resolves through `resolve_call_args_full` with marks: built-ins pass all-positional marks via `resolve_call_args`, or explicit ones for their options (D203); `resolve_call_args_full` first turns a bare-name argument that names a labelled parameter into a labelled one (`punned_arguments`, D202) and checks `-->` starts too. 2026-10-17: `resolve_call_args_full` checks `!` / label use against `FnSig.positional`, `MethodSig.positional`, and `FieldInfo.positional`; generated parameters are `!` (D200); a `mut` parameter is a C pointer and its MIR place is `(*name)`, never in the drop set; the caller passes `&slot` (D199); `compile_to_c` runs `mir::retain_reachable` before cgen, so a program's C holds only functions reachable from `main`, module initializers, and destructors (D197); `extend_desugar` (first desugar pass) turns std's `extend` blocks into `__extend_{Type}_{method}` functions that method calls on built-in receivers find; the loader adds core module `std/string` to every package; all-constant integer array literals lower to `RValue::IntArray` (D196); `ThoxaString` carries its scalar count; `thoxa_string_new` validates UTF-8 and repairs with U+FFFD, so every String is valid (D195 §4); String's methods are Thoxa in `std/string` over runtime byte primitives `thoxa_string_byte_*`; case tables are `std/unicode.thx` from `cargo make unicode` (D195, D196); call arguments resolve positional then named (D194); `conversion_desugar` turns `from` clauses into `__conversion_T_N` functions before the route and codec passes; the codec pass also generates a checked reader per `as` target and fills route body readers; `mir/convert.rs` lowers `as` / `as?` and encodes where a `Json` is expected; `return` and `=` lower against the expected type; route desugar names `std/http` items by local name or mangled name (D191–D193); cgen emits an asm-labelled prototype per `extern fn` and calls it by that private name (D190); `and` / `or` lower as `if`; array literals lower against the expected element type; `unwrap_refined` dups a heap base; a Void `let` binds the unit place; runtime `Float64` text found in scientific form, written in full between 1e-7 and 1e21; session desugar keeps keyword and block-opening lines as Thoxa; `cargo make test` adds the site samples step; thoxa.dev's image carries `docs/handbook` and the samples. 2026-10-16: structural `==` expanded in MIR; generated Map key ops and in-order compaction after `remove`; `main` exit status checked; the lexer follows interpolation holes. 2026-10-15: deadline-aware fd waits; checked shifts; `tests/conformance/fail/`. 2026-10-14: batch CLI on a large-stack thread; session steps run through `thoxa_session_call`; guarded task stacks; no `_Thread_local` in the runtime; 2026-09-04: session compile cache: re-lower `Shell.step` + libtcc base `.o`; **D156** session emacs line editor; **D155** resource `drop()`; **D153** gate done: empty `lsan-skip` + bounded ASan; **D152** match/init RC; **D151** LeakSanitizer gate; **D150** route clauses shipped; **D149** `where` / `Type.read` shipped; **D148** `-->` nowait shipped; **D147** JSX/`Node` shipped;
 `workloads/landing` thoxa.dev live; `workloads/sola` sola.computer live;
 `workloads/oath` oath.wicket.cloud live; static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
@@ -25,98 +25,54 @@ D133/D134 Map; D132 fn pointers; program `run`/`build` reuse stamped binaries)
 ## One sentence
 
 Native Thoxa is a **Rust compiler that emits C**, linked with a **C runtime**
-(`thoxa_rt`). Programs use system `cc`; interactive session steps compile via
-**vendored libtcc** in-process (D105) and call `thoxa_session_step` without a
-step `.so` on the happy path.
+(`thoxa_rt`). Every program has `fn main` and is built by the system `cc`.
 
 ## Pipeline
 
 ```text
 .thx → lexer → parser → AST → MIR (+ simple RC) → cgen
-  → programs: cc + libthoxa_rt  (reuse bin when inputs unchanged)
-  → session steps: libtcc (memory) + libthoxa_rt.a  (D105)
+  → cc + libthoxa_rt  (reuse bin when inputs unchanged)
 ```
 
 | Stage | Location | Notes |
 |-------|----------|--------|
-| CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `lsp` / `version` / bare REPL / `-c` / `-l`. Program `run`/`build` stamp package+std+runtime+compiler and skip `cc` when fresh. `THOXA_SANITIZE=leak` / `address` (**D151**) |
+| CLI / driver | `crates/compiler/src/main.rs`, `driver.rs` | `run` / `build` / `check` (`--json`) / `emit-c` / `runtime` / `lsp` / `version`; bare `thoxa` prints usage (**D227**). Program `run`/`build` stamp package+std+runtime+compiler and skip `cc` when fresh. `THOXA_SANITIZE=leak` / `address` (**D151**) |
 | Frontend | `lexer`, `parser`, `ast`, `resolver`, `conversion_desugar`, `route_desugar`, `validate_desugar`, `refine` | Shared resolver used by LSP; parse soft-recover + `Error.recovered_module` for check multi-diag. Tag literals desugar in the parser to `__jsx_el` / `__jsx_child` / `{...}` spreads (**D147**). The parser reads `x as T` / `x as? T` into `ExprKind::Cast` (**D191**). A type body's `from` clauses become free functions `__conversion_T_N`, exported when the clause is, before the route and codec passes (`conversion_desugar.rs`, **D191** §3). **`Type.read` / `where`** generate `__read_T` / `__fromJson_T` / `__from_T` (`validate_desugar.rs` + `refine.rs`, **D149**); user code reaches the last two only through `as`, and generated code calls them as `T.__fromJson` / `T.__from` (**D191** §6). Each `as` target in a module gets a checked reader there, `__asJson_K` / `__asBase_K` / `__asNarrow_K`, keyed by the written type (**D191** §1); a `from(json: Json)` clause becomes the type's `__fromJson_T`, its issues moved under the field path; every encodable product, union, refined, and literal type in a non-`std/` module gets `__toJson_T` / `__encode_T` once `std/json` is in the package, naming `std/json` items by their mangled names (**D182**). A generated reader reads each field into a `Trial<Field, Array<Issue>>`, gathers the issues, and builds the value only when there are none (arrays the same per element; **D182** §2). With `std/http` in the package a form-readable product also gets `__readForm_T` / `__fromForm_T` over `std/http`'s `FormPair`s, sharing the field walk and `__check_T_field` (**D182** §3). A union of readable products gets a `__fromJson_U` that picks the member by `"type"` and calls its reader; `Map<String, T>` / `Json` fields and constructor defaults are read in the same walk (**D182** §5). Synthesized AST is built with `ast_build.rs`. Type-body `GET "/…"` desugars in resolve + package lower (`route_desugar.rs`, **D150**); a body parameter reads through a `__routeBody_K` stub that the codec pass fills (**D191** §5), and generated code names `std/http` items by the module's own names when it has them, else by their mangled names (**D193**). The lexer follows interpolation holes, so a `"` in a hole starts a nested string, kept as source for the hole's own parse (**D176**) |
 | Diagnostics | `diagnostic.rs`, `error.rs` | Structured IR (D124): codes/help/labels → pretty CLI, JSON, LSP |
 | MIR | `mir.rs` | RC (**D155** product `drop()` boxes; **D154** callee-owned heap params; **D153** overwrite-drop + if/match result overwrite-drop + early-return drops from the final `drop_places` set; **D152** match-bind one Dup; union/Node match result dropped); generic monomorphs (type applications gathered from every `let` annotation, nested blocks included); `std/fallible` via import (D118/D123); multi-error block lower; module globals not end-of-fn dropped (D122); **Never** for break-free `loop` (D128); **return-type inference** probe before body lower, free fns and methods in one callee-first worklist (**D129**, **D174**); tag-only bare union patterns (**D130**); structural `==` expanded inline over fields, union arms, and array elements, reading fields as borrows (**D175**, **D177**, **D178**); a user Map key passed by address (**D179**); a collection write on a field or temporary refused, on an array element written back (**D180**); route-clause bodies after desugar; `toJson` / `encode` on scalars, `Array`, `Map`, `May`, and `Json` lowered from synthesized AST with `std/json`'s names in scope (`mir/codec.rs`, **D182**); a map / array literal where a `Json` is expected lowered as a `Json` object / array, its values first, then built from them (`MapEntry::Spread` for `...`; **D182** §4); `x as T` lowered in `mir/convert.rs`: a matching `from` clause first, then the built-in table, a checked pair calling the module's `__as*_K` reader, `as?` through the `?` path (**D191**); a value with an encoding encoded where a `Json` is expected (`encode_where_json_expected`, **D191** §4); `return`, `=`, and `match` arms lowered against the expected type (**D192**); call arguments resolved by `resolve_call_args_full` for every callee, built-ins included: bare names punned to labels (`punned_arguments`, **D202**), positional then labelled (**D194**), checked against `!` marks (**D200**, **D203**), `mut` arguments passed by address with a method field stored back through `_self` after the call (**D199**, **D206**); builtin **`Ty::Node`** (`Element` / `Text` / `Fragment` / `Attr`; `html_el` / `html_text` / `html_frag` / `html_render`); **`Ty::Fn`** unboxed pair (**D132**) |
-| Cgen | `cgen.rs` | Per user Map key type: a hash, an equality, and a `ThoxaMapKeyOps` table, generated from the layouts (**D179**); topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body; D132 thunks + `ThoxaFn`; **D148** start thunks + `thoxa_sched_drain` after `main` / session step; module heap/User globals `__attribute__((used))` (**D152**); pointer locals NULL after Drop (**D153**); **D155** boxed `drop` types + `thoxa_set_dtor` |
-| Session | `session.rs`, `command.rs`, `std/shell.thx` | Splice + command sugar + product Shell prelude (D104); Shell inject loads `std/fallible` + `std/logging` (+ deps) |
-| Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast`; `load_package_virtual` (REPL); inject deps |
-| libtcc | `tcc.rs` + `build.rs` + `vendor/tinycc` | Vendored TinyCC; memory compile + object output for session base; `THOXA_TCCDIR` / `THOXA_C_INCLUDE` / `THOXA_TCC_LIBPATHS`; `-lc` via `/proc/self/maps` libc dir (NixOS/Oath have `libc.so.6`, not `/usr/lib/libc.so`). Build stamps `THOXA_GIT_HASH` / dirty |
-| REPL host | `repl.rs`, `line_edit.rs` | Decl accumulate; libtcc step image only (D105); TTY emacs editor + Tab complete (**D156**) |
+| Cgen | `cgen.rs` | Per user Map key type: a hash, an equality, and a `ThoxaMapKeyOps` table, generated from the layouts (**D179**); topo typedef order for nested union monomorphs; pure-lit scalars; no dummy `return 0` after diverging body; D132 thunks + `ThoxaFn`; **D148** start thunks + `thoxa_sched_drain` after `main`; module heap/User globals `__attribute__((used))` (**D152**); pointer locals NULL after Drop (**D153**); **D155** boxed `drop` types + `thoxa_set_dtor` |
+| Loader | `loader.rs` | `./` `~/` `std/…`; combined import maps (D127); `load_package_with_entry_ast` |
+| Build script | `build.rs` | Stamps `THOXA_GIT_HASH` / dirty for `thoxa version` and the LSP's identity |
 | LSP | `lsp/` | stdio server; multi-diag + D124; nav; hover shows D129 inferred return types (cached on publish); call-arg formals; identity log |
 
 ## Crates and trees
 
 | Path | Role |
 |------|------|
-| `crates/compiler` | `thoxa` binary + compiler library (+ libtcc link) |
+| `crates/compiler` | `thoxa` binary + compiler library |
 | `crates/make` | xtask (`cargo make …`); `unicode.rs` generates `std/unicode.thx`, the case tables, from the Unicode Character Database |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` (incl. `ThoxaHtml` / `THOXA_TAG_HTML`; **`ThoxaFn`** D132; `thoxa_sql_*` D143; String byte primitives `thoxa_string_byte_*` D196; `ThoxaString { len, count, data }`, always valid UTF-8) |
-| `vendor/tinycc` | Vendored TinyCC sources (session steps only) |
 | `vendor/sqlite` | Vendored SQLite amalgamation (D143; compiled into `libthoxa_rt`) |
-| `std/` | Product std (`Shell`, `Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, `Json`, `Sqlite`, Path/Env/…; `string`, the core module with String's methods, in every package, and `unicode`, its case tables, D196) |
+| `std/` | Product std (`Fallible`, `Logging`, `Io`/`Net`/`Http` + `http/server`/`http/static`, `Json`, `Sqlite`, Path/Env/…; `string`, the core module with String's methods, in every package, and `unicode`, its case tables, D196) |
 | `tests/conformance/` | `.thx` + `.out` gate; `fail/` holds programs that must be rejected or panic (`.err` lines must appear in stderr) |
 | `examples/` | Runnable demos (`http` Crema-lite, `kilo` terminal editor); not the gate |
 | `workloads/` | Deployed Thoxa programs (`landing` = thoxa.dev, `sola` = sola.computer, `oath` = oath.wicket.cloud). `landing` renders `docs/handbook` at `/manual` (Markdown renderer + highlighter in Thoxa, per request) and shows `landing/samples` on `/`; those samples run in `cargo make test` (D189), the sites themselves are not the gate. Each image builds `thoxa` and emits the site's C in a digest-pinned `rust` stage, then runs it as UID 65534 from a digest-pinned `debian:bookworm-slim` |
-| `extras/` | Non-product: tree-sitter, Zed extension, dogfood shell |
+| `extras/` | Non-product: tree-sitter, Zed extension |
 | `apocrypha/` | Historical + Python oracle |
 
 **Fallible (`std/fallible`):** `Has` / `Not` / `May` / `Pass` / `Fail` /
 `Trial` are ordinary exported generic unions. Programs **import** them (no
-ambient inject for compiled modules). Session Shell inject still pulls
-`std/fallible` into the package when the product Shell prelude is spliced
-(Shell itself imports May/Has/Not). They lower as `Ty::User` monomorphs.
+ambient inject). They lower as `Ty::User` monomorphs.
 Builtin `Ty::May` / `Ty::Trial` variants and their cgen paths are gone.
 
-## Session execution (as-built)
+## CLI execution (as-built)
 
-```text
-┌─────────────────────────────────────────┐
-│  thoxa (Rust host)                      │
-│  - host-held status / Shell state       │
-│  - TTY emacs editor (D156) / cooked pipe│
-│  - read chunk, desugar, splice module   │
-│  - cgen → libtcc memory → call step     │
-│  - thoxa_session_step(ThoxaShellState*) │
-│  - pure step only for commands (D103)   │
-└─────────────────────────────────────────┘
-```
-
-- **Scripts (no `main`):** splice + synthetic `main` → system `cc` executable
-  (unchanged).
-- **Programs:** `fn main` or directory `main.thx` — batch path unchanged.
-- **Shell prelude:** product `std/shell.thx` preferred at inject time;
-  compile-time `include_str` fallback when std is not discoverable (D104).
-  Shell imports May/Has/Not; inject also ensures `std/fallible` is in the
-  package (D123). Fallible has its own embed fallback for the same case.
-- **REPL steps:** vendored **libtcc only** (`TCC_OUTPUT_MEMORY`). Decl-stable
-  cache: virtual `repl.thx` load; reuse prepared package + MIR maps; re-lower
-  only `Shell.step`. `emit_session_base` + `libthoxa_rt.a` → one in-memory
-  **base image** per decl set (**D169**); the host binds it to its slot table
-  (`thoxa_session_bind`). Each chunk's `emit_session_step` compiles alone and
-  links against the base image's symbols (`tcc_add_symbol`); module globals
-  are host slots (`thoxa_session_slot` / `_ready` / `_mark_ready`, held by
-  `SessionSlots`), reached in the base through `thoxa_slot_*` pointers and in
-  the step through slot addresses baked into its C (tcc truncates a constant
-  address used as an lvalue, so through a static pointer). Each initializer
-  runs once per session. A base image that ran a step is kept for the session
-  (values may point into it); one only compiled is dropped. No step `.so` /
-  no session `cc` spawn. Optional debug C: `THOXA_REPL_KEEP_C=1`. Freeze:
-  [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
-  (D105). Soft perf (release, after first line): ~**8 ms/step** (freeze §8.2, 2026-10-16).
-  The cache key is decls plus module file mtimes. Each step runs through the
-  base image's runtime `thoxa_session_call` (sigsetjmp; panic → 134, fault →
-  128 + signal; handlers and alt stack restored after the step, **D160**). The REPL and `-c` stay on
-  the process main thread: libtcc-compiled code resolves thread-local storage
-  as the main thread's, so the runtime keeps no `_Thread_local` data.
-- **Batch CLI** (`run` / `build` / `check` / `emit-c` / `lsp`) runs on a worker
-  thread with a 256 MiB stack, so deep but legal ASTs do not overflow; the
-  parser caps expression nesting at 1000 levels.
+- **Programs:** `fn main` (or a directory's `main.thx`) is the entry. A
+  top-level statement is a parse error (`THX005`); an entry without `main`
+  reports that the program requires `fn main` (`THX006`). There is no session or
+  REPL (**D227**; the libtcc session host is at `eefdac4`).
+- The CLI runs on a worker thread with a 256 MiB stack, so deep but legal
+  ASTs do not overflow; the parser caps expression nesting at 1000 levels.
 
 ## Build products
 
@@ -126,16 +82,10 @@ Everything generated lives under one tree:
 |------|------|
 | `target/rust/` | Cargo (compiler + xtask binaries, deps) |
 | `target/c/` | C runtime objects + `libthoxa_rt.a` |
-| `target/c/tinycc/` | Installed libtcc + libtcc1 (from `build.rs`) |
 | `target/thoxa/c/` | Generated C from Thoxa sources |
 | `target/thoxa/bin/` | Linked Thoxa program binaries + sidecar `*.stamp` |
 | `target/thoxa/bin-leak/` | LSan-linked programs (`THOXA_SANITIZE=leak`; **D151**) |
 | `target/thoxa/bin-address/` | ASan-linked programs (`THOXA_SANITIZE=address`) |
-| `target/thoxa/repl/` | Optional session keep-C dumps; no step `.so` on libtcc path |
-
-Session may write `$XDG_CACHE_HOME/thoxa/repl/session_base_{id}.o` (process
-lifetime; dropped with the cache) and keep-C `.c` when `THOXA_REPL_KEEP_C=1`.
-No per-chunk `.thx`.
 
 Prefer `cargo make …` over ad-hoc scripts. `cargo make clean` removes `target/c`
 and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
@@ -198,12 +148,6 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
   It returns `thoxa_exit_status(main())` after the tasks drain: a status
   outside 0 to 255 panics instead of being cut to its low 8 bits (**D173**).
 - Extern from `"c"` (+ optional C symbol); cgen pulls headers when needed.
-- Spawn helper `thoxa_spawn_wait` used by session Shell / dogfood shell.
-  Children reset SIGPIPE / SIGINT / SIGQUIT to default; the parent ignores
-  SIGINT / SIGQUIT while it waits (**D160**).
-- Spawn+IO `thoxa_spawn_wait_io` for session `>` / `>>` / `<` (`Shell.runIo`).
-- Pipeline helper `thoxa_pipeline` (multi-stage pipe/fork/execvp; last-stage
-  status) used by `Shell.pipeline` / command sugar `a | b`.
 - Phase A: **no** product tree-walk interpreter; **no** QBE backend.
 
 ## Related freezes
@@ -213,7 +157,6 @@ and `target/thoxa`; `cargo make clean --all` also removes `target/rust`.
 | Kernel / value model | [`specs/2026-07-18-thoxa-native-kernel-design.md`](specs/2026-07-18-thoxa-native-kernel-design.md) |
 | HTTP path | [`specs/2026-07-19-post-r9-http-completion-plan.md`](specs/2026-07-19-post-r9-http-completion-plan.md) |
 | Editor / LSP | [`specs/2026-07-20-native-editor-lsp-plan.md`](specs/2026-07-20-native-editor-lsp-plan.md) |
-| Session / REPL | [`specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md) |
 | Map / value collections | [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) |
 | Node / tag literals | [`specs/2026-08-22-jsx-node.md`](specs/2026-08-22-jsx-node.md) (**D147**) |
 | Nowait `-->` | [`specs/2026-08-22-start-tasks.md`](specs/2026-08-22-start-tasks.md) (**D148**) |

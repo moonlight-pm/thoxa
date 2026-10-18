@@ -1,0 +1,8 @@
+## D227: a statement belongs in a function. At the top level it is an error;
+## there are no session scripts.
+let greeting = "hello"
+
+greeting.count
+
+fn main() {
+}

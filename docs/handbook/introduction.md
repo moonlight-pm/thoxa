@@ -3,8 +3,7 @@
 Thoxa is a statically typed, expression-oriented programming language. The
 compiler is written in Rust and translates a Thoxa program to C. A C compiler
 then links that C with the Thoxa runtime (`thoxa_rt`, also C) into a native
-executable. The same compiler backs an interactive shell (bare `thoxa`) whose
-input is Thoxa.
+executable.
 
 This manual describes the language and tools as they are implemented today.
 It does not describe plans. If a feature is not in this manual, assume it does
@@ -14,9 +13,8 @@ not exist.
 
 - **Pre-alpha.** The syntax and semantics still change. There are no releases
   and no compatibility promises.
-- **Linux x86-64 only.** The runtime, the standard library's file and socket
-  code, and the interactive shell assume Linux. Other systems are out of scope
-  for now.
+- **Linux x86-64 only.** The runtime and the standard library's file and
+  socket code assume Linux. Other systems are out of scope for now.
 - **Memory** is managed by simple, single-threaded reference counting. See
   [Memory](language.md#memory).
 - A feature counts as implemented when a test program in
@@ -27,9 +25,7 @@ not exist.
 Requirements:
 
 - a Rust toolchain (Cargo),
-- a C compiler on `PATH` as `cc` (GCC or Clang),
-- `make` and a POSIX shell (the build compiles the vendored TinyCC, which the
-  interactive shell uses).
+- a C compiler on `PATH` as `cc` (GCC or Clang).
 
 ```bash
 git clone https://github.com/moonlight-pm/thoxa
@@ -90,8 +86,9 @@ fn main(arguments: Array<String>) -> Int64 {
 `thoxa run greet.thx ada` prints `hello, ada`. `arguments[0]` is the program
 path.
 
-Run `thoxa` with no arguments for the interactive shell; see
-[Session](session.md).
+Every program has a `main`. Statements go inside functions; the top level of a
+file holds only declarations (see
+[Top level](language.md#top-level)).
 
 ## Notation
 
@@ -109,7 +106,6 @@ Run `thoxa` with no arguments for the interactive shell; see
 |---------|----------|
 | [Language](language.md) | Syntax, types, expressions, functions, modules, concurrency, C interop |
 | [Standard library](std.md) | The `std/…` modules |
-| [Session](session.md) | The interactive shell and session scripts |
 | [Command line](cli.md) | `thoxa` commands, diagnostics, exit status, environment |
 | [Editor](editor.md) | Zed support and `thoxa lsp` |
 

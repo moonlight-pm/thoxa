@@ -9,7 +9,6 @@ ASan pass on non-fiber programs (`cargo make test-asan`)
 **Gaps:**
 - LSan does not catch use-after-free or most double-frees
 - ASan is optional (`cargo make test-asan` / `THOXA_SANITIZE=address`), not the default (ucontext fibers)
-- Session / libtcc steps are unsanitized
 - Language `drop()` is **D155** (File / Socket / Db); explicit `.close` still valid and inert
 - No cycle collector
 - Perceus precision is **not** this freeze
@@ -54,7 +53,7 @@ an empty `lsan-skip` “memory safe.”
 
 **What the gate actually is:** GCC/Clang LeakSanitizer on batch `cc`
 (`THOXA_SANITIZE=leak`, `target/thoxa/bin-leak/`, **D151**). Product
-`thoxa run` is unsanitized. Session/libtcc cannot link liblsan. Valgrind is
+`thoxa run` is unsanitized. Valgrind is
 not a host dep. ASan exists (`THOXA_SANITIZE=address`) and is **not** CI.
 
 LSan-clean ≠ no UAF. Historical double-frees that *did* fire: D122 (module

@@ -167,19 +167,14 @@ fn check_source_inner(
     text: &str,
     overlays: &HashMap<PathBuf, String>,
 ) -> (Option<Error>, Option<Module>, Option<mir::Program>) {
-    // Session command sugar (same as loader entry path).
-    let text = match crate::command::desugar_session_source(text) {
-        Ok(t) => t,
-        Err(e) => return (Some(e), None, None),
-    };
-    let tokens = match Lexer::new(&text).tokenize() {
+    let tokens = match Lexer::new(text).tokenize() {
         Ok(t) => t,
         Err(e) => return (Some(e), None, None),
     };
     // Soft parse: recover partial AST so we can still report undefined names
     // after a mid-file syntax error (e.g. keyword `as`).
-    let (mut module, mut pre_errors) =
-        match Parser::new(tokens).with_source(text.clone()).parse_module() {
+    let (module, mut pre_errors) =
+        match Parser::new(tokens).with_source(text).parse_module() {
             Ok(m) => (m, Vec::new()),
             Err(mut e) => match e.recovered_module.take() {
                 Some(recovered) => (*recovered, e.into_diagnostics()),
@@ -187,16 +182,9 @@ fn check_source_inner(
             },
         };
 
-    // Session stmts already diagnosed at parse when `main` exists; drop them so
-    // prepare/lower can analyze the rest of the program.
-    if module_has_main(&module) {
-        module
-            .items
-            .retain(|it| !matches!(it, Item::SessionStmt(_)));
-    }
-
     // Keep a copy for lints (lower may take ownership via package overlay).
     let lint_module = module.clone();
+    let has_main = module_has_main(&module);
 
     let has_imports = module
         .items
@@ -204,7 +192,7 @@ fn check_source_inner(
         .any(|item| matches!(item, Item::Import(_)));
 
     let lower_result: Result<mir::Program> = if !has_imports {
-        // Single-file: session prepare (no-main scripts) then lower.
+        // Single file: a program when it defines `main`, else a library.
         let mut package = Package {
             project_root: PathBuf::from("."),
             modules: vec![SourceModule {
@@ -214,13 +202,7 @@ fn check_source_inner(
                 is_entry: true,
             }],
         };
-        crate::loader::include_core_modules(&mut package)
-            .and_then(|_| crate::session::prepare_package(&mut package))
-            .and_then(|_| {
-            let has_main = package
-                .modules
-                .iter()
-                .any(|m| m.is_entry && module_has_main(&m.ast));
+        crate::loader::include_core_modules(&mut package).and_then(|_| {
             let opts = mir::LowerOptions {
                 require_main: has_main,
             };
@@ -237,7 +219,6 @@ fn check_source_inner(
             return (Some(Error::multi(pre_errors)), Some(lint_module), None);
         }
 
-        let has_main = module_has_main(&module);
         // Prefer the buffer AST so soft-recovered parse errors still lower.
         // Re-parsing the entry from disk would hard-fail on the same soft errors.
         let mut package = if pre_errors.is_empty() {
@@ -258,16 +239,10 @@ fn check_source_inner(
             }
         };
         apply_open_overlays(&mut package, overlays, path);
-        crate::session::prepare_package(&mut package).and_then(|_| {
-            let has_main_after = package
-                .modules
-                .iter()
-                .any(|m| m.is_entry && module_has_main(&m.ast));
-            let opts = mir::LowerOptions {
-                require_main: has_main_after,
-            };
-            mir::lower_package_with(&package, opts)
-        })
+        let opts = mir::LowerOptions {
+            require_main: has_main,
+        };
+        mir::lower_package_with(&package, opts)
     };
 
     let (error, program) = match (pre_errors.is_empty(), lower_result) {

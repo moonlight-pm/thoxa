@@ -49,11 +49,10 @@ pub struct Parser {
 /// Deepest expression nesting the parser accepts (see `Parser::depth`).
 const MAX_EXPR_NESTING: usize = 1000;
 
-/// User-facing message when a program with `fn main` has top-level statements.
-/// (Internally those are session-script statements; the user does not need that term.)
-pub const TOP_LEVEL_STMT_WITH_MAIN_MSG: &str =
-    "unexpected top-level statement in a program with `fn main` \
-     (only import / type / fn / let allowed here; omit `main` for a session script)";
+/// User-facing message for a statement outside any function.
+pub const TOP_LEVEL_STMT_MSG: &str =
+    "a statement cannot be at the top level \
+     (only import, type, extend, extern, fn, let, and mut go here)";
 
 /// HTTP method idents recognized as route clauses inside a type body only
 /// (**D150**). Not reserved keywords elsewhere.
@@ -87,7 +86,8 @@ impl Parser {
         let mut errors: Vec<Error> = Vec::new();
         while !self.at(TokenKind::Eof) {
             match self.parse_top_item() {
-                Ok(item) => items.push(item),
+                Ok(Some(item)) => items.push(item),
+                Ok(None) => {}
                 Err(e) => {
                     // Soft errors from a partial function body may already be recorded;
                     // flatten hard errors too.
@@ -102,29 +102,6 @@ impl Parser {
             }
         }
         errors.append(&mut self.soft_errors);
-        // Programs with `fn main` cannot have top-level session statements
-        // (bare exprs like `FOOBAR`). Flag each with its own span even when
-        // other parse errors also exist (e.g. `as` keyword), so LSP multi-diag
-        // does not hide the stray name behind a later recovery error.
-        let has_main = items
-            .iter()
-            .any(|it| matches!(it, Item::Function(f) if f.name == "main"));
-        if has_main {
-            for it in &items {
-                if let Item::SessionStmt(bi) = it {
-                    errors.push(
-                        Error::coded_at(
-                            diagnostic::CODE_TOP_LEVEL_WITH_MAIN,
-                            TOP_LEVEL_STMT_WITH_MAIN_MSG,
-                            block_item_span(bi),
-                        )
-                        .with_help(
-                            "move the statement into `fn main` or remove `fn main` for a session script",
-                        ),
-                    );
-                }
-            }
-        }
         let module = Module { items };
         if !errors.is_empty() {
             return Err(Error::multi(errors).with_recovered_module(module));
@@ -132,7 +109,9 @@ impl Parser {
         Ok(module)
     }
 
-    fn parse_top_item(&mut self) -> Result<Item> {
+    /// One top-level item. A statement is not one: it is parsed whole and
+    /// reported (soft), so the items after it still parse; `None` then.
+    fn parse_top_item(&mut self) -> Result<Option<Item>> {
         let exported = if self.at(TokenKind::Export) {
             self.bump();
             true
@@ -147,9 +126,9 @@ impl Parser {
                     self.peek_span(),
                 ));
             }
-            Ok(Item::Import(self.parse_import()?))
+            Ok(Some(Item::Import(self.parse_import()?)))
         } else if self.at(TokenKind::Type) {
-            Ok(Item::Type(self.parse_type_def(exported)?))
+            Ok(Some(Item::Type(self.parse_type_def(exported)?)))
         } else if self.at(TokenKind::Extend) {
             if exported {
                 return Err(Error::at(
@@ -157,22 +136,30 @@ impl Parser {
                     self.peek_span(),
                 ));
             }
-            Ok(Item::Extend(self.parse_extension()?))
+            Ok(Some(Item::Extend(self.parse_extension()?)))
         } else if self.at(TokenKind::Extern) {
-            Ok(Item::Extern(self.parse_extern(exported)?))
+            Ok(Some(Item::Extern(self.parse_extern(exported)?)))
         } else if self.at(TokenKind::Fn) {
-            Ok(Item::Function(self.parse_function(exported)?))
+            Ok(Some(Item::Function(self.parse_function(exported)?)))
         } else if self.at(TokenKind::Let) || self.at(TokenKind::Mut) {
-            Ok(Item::Global(self.parse_global(exported)?))
+            Ok(Some(Item::Global(self.parse_global(exported)?)))
         } else {
-            // Session-script top-level statement (assign or expression).
             if exported {
                 return Err(Error::at(
                     "`export` only applies to declarations, not statements",
                     self.peek_span(),
                 ));
             }
-            Ok(Item::SessionStmt(self.parse_session_stmt()?))
+            let stmt = self.parse_top_level_stmt()?;
+            self.soft_errors.push(
+                Error::coded_at(
+                    diagnostic::CODE_TOP_LEVEL_STMT,
+                    TOP_LEVEL_STMT_MSG,
+                    block_item_span(&stmt),
+                )
+                .with_help("move the statement into `fn main`"),
+            );
+            Ok(None)
         }
     }
 
@@ -214,9 +201,8 @@ impl Parser {
         false
     }
 
-    /// Top-level session body item: assignment or expression statement.
-    /// (`let`/`mut` at module level remain `Global` — visible from `step`.)
-    fn parse_session_stmt(&mut self) -> Result<BlockItem> {
+    /// A statement where an item belongs: an assignment or an expression.
+    fn parse_top_level_stmt(&mut self) -> Result<BlockItem> {
         if self.at_assign_stmt() {
             let a = self.parse_assign()?;
             Ok(BlockItem::Assign {

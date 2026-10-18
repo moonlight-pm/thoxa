@@ -67,14 +67,11 @@ diaries. Authority order and rules:
 cargo make test              # conformance + LeakSanitizer + Rust unit tests (preferred day-to-day gate)
 cargo make test-asan         # optional ASan on non-fiber conformance (not default)
 cargo make run path.thx
-cargo make shell             # product session REPL (release thoxa)
-cargo make shell --login     # clean login-like env
 cargo make emit-c path.thx
 cargo make runtime           # libthoxa_rt.a + compile_commands.json
 cargo make zed               # sync extras → local Zed
 cargo test -p thoxa          # Rust unit tests
-cargo run -p thoxa --                 # session REPL
-cargo run -p thoxa -- path.thx        # program or session script
+cargo run -p thoxa -- path.thx        # program (same as run)
 cargo run -p thoxa -- run path.thx
 cargo run -p thoxa -- check path.thx
 cargo run -p thoxa -- check --json path.thx
@@ -88,15 +85,15 @@ over ad-hoc scripts (D10).
 
 | Path | Role |
 |------|------|
-| `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; `diagnostic`/`error`; session/command/repl; lsp/ |
+| `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; `diagnostic`/`error`; lsp/ (no shell or REPL: **D227**, at `eefdac4`) |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `crates/make/` | xtask (`cargo make`) |
 | `std/` | Product standard library (`std/…`; Io/Net/Http/HttpStatic **D126**; `http/server` **D136**/**D139**; `json` **D141**; `sqlite` **D143**/**D144**; fragments/ETag **D145**; SSE **D146**; `string` = String's methods via `extend`, in every program **D196**; `normalize` = opt-in Unicode normalization **D226**) |
 | `tests/conformance/` | `*.thx` + `*.out` |
-| `extras/` | Non-product DX; dogfood shell (product REPL is bare `thoxa`) |
+| `extras/` | Non-product DX (tree-sitter grammar, Zed extension) |
 | `examples/` | Runnable demos (not conformance); `examples/http`, `examples/kilo` |
 | `workloads/` | Deployed Thoxa programs; `landing` = thoxa.dev; `sola` = sola.computer; `oath` = oath.wicket.cloud |
-| `vendor/` | Vendored upstream (TinyCC for libtcc session steps) |
+| `vendor/` | Vendored upstream (the SQLite amalgamation) |
 | `CURRENT.md` | Living focus |
 | `docs/` | Canonical docs (see `docs/README.md`) |
 

@@ -414,7 +414,6 @@ fn find_let_init_in_item(item: &Item, def_span: Span) -> Option<&Expr> {
             None
         }
         Item::Global(g) if g.name_span == def_span => Some(&g.init),
-        Item::SessionStmt(bi) => find_let_init_in_block_item(bi, def_span),
         _ => None,
     }
 }
@@ -747,7 +746,7 @@ fn walk_item_member(item: &Item, span: Span) -> Option<(String, String)> {
             .iter()
             .find_map(|m| walk_block_member(&m.body, span)),
         Item::Global(g) => walk_expr_member(&g.init, span),
-        Item::Extern(_) | Item::Import(_) | Item::SessionStmt(_) => None,
+        Item::Extern(_) | Item::Import(_) => None,
     }
 }
 
@@ -1244,7 +1243,6 @@ fn walk_item_call_args(item: &Item, byte: usize, best: &mut Option<CallArgHit>) 
             }
         }
         Item::Global(g) => walk_expr_call_args(&g.init, byte, best),
-        Item::SessionStmt(bi) => walk_block_item_call_args(bi, byte, best),
         Item::Extern(_) | Item::Import(_) => {}
     }
 }

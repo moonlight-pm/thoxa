@@ -681,9 +681,6 @@ impl<'a> Resolver<'a> {
                     self.define(root, &td.name, id);
                     self.declare_members(td);
                 }
-                Item::SessionStmt(_) => {
-                    // Lifted into Shell.step before MIR; ignore for top-level binds.
-                }
                 Item::Global(g) => {
                     let kind = if g.mutable {
                         BindingKind::Mut
@@ -874,10 +871,6 @@ impl<'a> Resolver<'a> {
             }
             Item::Import(_) | Item::Extend(_) => {
                 // Import path string is not a name reference; locals already seeded.
-            }
-            Item::SessionStmt(bi) => {
-                // Pre-session-prepare only; walk like a block item for LSP.
-                self.walk_block_item(bi, root);
             }
         }
     }

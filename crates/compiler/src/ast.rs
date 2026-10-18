@@ -18,10 +18,6 @@ pub enum Item {
     /// `extend String as text { … }`: methods on a built-in type, in a std
     /// module (D196). `extend_desugar` turns each into a free function.
     Extend(Extension),
-    /// Top-level statement for **session scripts** (no `fn main`).
-    /// Host/session prep lifts these into `Shell.step` body (D90).
-    /// Not valid in ordinary programs after session prepare.
-    SessionStmt(BlockItem),
 }
 
 /// `import { a, b as c } from "…"`, `import ns from "…"`, or

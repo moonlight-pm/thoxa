@@ -13,7 +13,6 @@ import net from "std/net"
 import http from "std/http"
 import server from "std/http/server"
 import { Router } from "std/http/static"
-import { defaultPrompt } from "std/prompt"   ## session shell.thx
 import { startsWith, dropPrefix } from "std/str"
 import { cwdShort, shortPath } from "std/path"
 import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
@@ -25,7 +24,6 @@ import sqlite, { lit } from "std/sqlite"
 
 | Module | Role |
 |--------|------|
-| `Shell` | Session `type Shell` + builtins (`echo`/`cd`/`run`/`runIo`/`pipeline`/…); auto-injected for session scripts |
 | `Fallible` | Exported `May`/`Trial`/`Has`/`Not`/`Pass`/`Fail` — **import required** for programs (D123; not ambient) |
 | `Logging` | Default logger: levels, sinks, formats; prefer `import logging, { info, … }` (**D125**/**D127**); no ambient `println` |
 | `Io` | Files: `readFile`/`writeFile`/`appendFile`, `File`, OpenMode (**D126**) |
@@ -33,7 +31,6 @@ import sqlite, { lit } from "std/sqlite"
 | `Http` | HTTP/1.1 parse/write + query/form/cookie helpers + `htmlResponse` + `Cookie` / `withCookie` (**D126**/**D136**/**D137**/**D142**) |
 | `http/server` | Host loop: `serve` / `serveOne` / `readBody`; header / idle / body / response deadlines, 1024-connection cap, strict framing, pipelined requests in order (**D136**/**D139**/**D165**/**D171**) |
 | `http/static` | Static-file `Router` over `std/io` + `std/http` (**D126**/**D139**) |
-| `Prompt` | `defaultPrompt(signature: …)` — zsh-style prompt; optional `#RRGGBB` signature color |
 | `Str` | search/slice/replace/`split`/`splitOnce`/`parseUInt`/`join`/`lines`/trim/pad/case/`removePrefix`/`truncate`/`reverse`/… |
 | `Path` | dirname/basename/join/`joinAll`/`parts`/slash helpers/extension/`cwd`/`shortPath`/… |
 | `Ansi` | truecolor `fg` / `bg` / `fgHex` / `bgHex`, `sgr0`, 16 colors, `parseRgba` (`#RRGGBB` or `#RRGGBBAA`) |
@@ -50,6 +47,6 @@ This is a **thin** library grown from real samples — not a full prelude.
 **`ffi` remains deferred.**
 
 **Growth rule:** do not schedule “expand std/” as its own todo. When working
-samples, dogfood scripts, or session rc and a helper clearly belongs in
+samples or dogfood programs and a helper clearly belongs in
 product `std/`, add it there (with conformance) in the same change. Speculative
 stdlib bulk is out.

@@ -58,8 +58,7 @@ pub struct Program {
 /// Keep only the functions a program can reach from `main` and its module
 /// initializers (D197). Every loaded module is lowered whole, std/string
 /// included, but a program carries only the code it calls. Destructors
-/// (`Type__drop`) stay: the runtime calls them. Not for session images,
-/// whose later steps may call anything.
+/// (`Type__drop`) stay: the runtime calls them.
 pub fn retain_reachable(program: &mut Program) {
     let mut reached: HashSet<String> = HashSet::new();
     let mut pending: Vec<String> = Vec::new();
@@ -129,37 +128,10 @@ fn referenced_fns(stmts: &[Stmt], out: &mut Vec<String>) {
     }
 }
 
-/// Maps from a session package lower, enough to re-lower only `Shell.step`.
-pub struct SessionMirCache {
-    pub program: Program,
-    env: SessionLowerEnv,
-}
-
-impl std::fmt::Debug for SessionMirCache {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SessionMirCache")
-            .field("program", &self.program)
-            .finish_non_exhaustive()
-    }
-}
-
-struct SessionLowerEnv {
-    fns: HashMap<String, FnSig>,
-    types: HashMap<String, TypeInfo>,
-    module_exports: HashMap<String, ModuleExports>,
-    package_maps: HashMap<String, ModuleNameMaps>,
-    synthetics: Rc<RefCell<SyntheticRegistry>>,
-    shell_mangled: String,
-    entry_mod_id: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct GlobalVar {
     pub name: String,
     pub ty: Ty,
-    /// This global's statements in [`Program::init`], so a session can run
-    /// each initializer once (D169).
-    pub init: std::ops::Range<usize>,
 }
 
 /// A bound C function (library `"c"` only in R6).
@@ -1630,95 +1602,10 @@ pub fn lower_package(package: &Package) -> Result<Program> {
 
 /// Lower a multi-file package with explicit options.
 pub fn lower_package_with(package: &Package, opts: LowerOptions) -> Result<Program> {
-    Ok(lower_package_full(package, opts)?.program)
+    lower_package_full(package, opts)
 }
 
-/// Lower a session package and keep maps so later chunks can re-lower `Shell.step`.
-pub fn lower_session_repl(package: &Package) -> Result<SessionMirCache> {
-    lower_package_full(package, LowerOptions::default())
-}
-
-/// Re-lower only `Shell.step` using maps from a previous session lower.
-pub fn relower_session_step(cache: &SessionMirCache, package: &Package) -> Result<Program> {
-    let entry = package
-        .modules
-        .iter()
-        .find(|module| module.is_entry)
-        .ok_or_else(|| Error::new("session step: package has no entry"))?;
-    let shell = entry
-        .ast
-        .items
-        .iter()
-        .find_map(|item| match item {
-            ast::Item::Type(typedef) if typedef.name == "Shell" => Some(typedef),
-            _ => None,
-        })
-        .ok_or_else(|| Error::new("session step: no type Shell"))?;
-    let step = shell
-        .methods
-        .iter()
-        .find(|method| method.name == "step")
-        .ok_or_else(|| Error::new("session step: no Shell.step"))?;
-    let maps = cache
-        .env
-        .package_maps
-        .get(&cache.env.entry_mod_id)
-        .ok_or_else(|| Error::new("session step: missing entry name maps"))?;
-    let checks_before = cache.env.synthetics.borrow().receiver_checks.len();
-    let eq_before = cache.env.synthetics.borrow().eq_functions.len();
-    let fun = lower_method(
-        &cache.env.shell_mangled,
-        step,
-        &cache.env.fns,
-        &cache.env.types,
-        &maps.name_to_type,
-        &maps.name_to_fn,
-        &maps.name_to_global,
-        &maps.namespaces,
-        &cache.env.module_exports,
-        &cache.env.package_maps,
-        &cache.env.entry_mod_id,
-        true,
-        &cache.env.synthetics,
-    )?;
-    // A step that needs a new `==` function rebuilds the base image, where
-    // the function is lowered with the others (D212).
-    {
-        let mut synthetics = cache.env.synthetics.borrow_mut();
-        if synthetics.eq_functions.len() > eq_before {
-            synthetics.eq_functions.truncate(eq_before);
-            return Err(Error::new("session step: needs a new `==` function"));
-        }
-    }
-    let mut program = cache.program.clone();
-    if let Some(slot) = program
-        .functions
-        .iter_mut()
-        .find(|function| function.name == "Shell__step")
-    {
-        *slot = fun;
-    } else {
-        program.functions.push(fun);
-    }
-    // D163 for this step only; the cached registry must not grow per line.
-    let step_checks: Vec<ReceiverCheck> = cache
-        .env
-        .synthetics
-        .borrow_mut()
-        .receiver_checks
-        .drain(checks_before..)
-        .collect();
-    let errors: Vec<Error> = receiver_errors(&program.functions, &step_checks)
-        .into_iter()
-        .map(|(error, _)| error)
-        .collect();
-    if !errors.is_empty() {
-        return Err(errors_to_multi(errors));
-    }
-    Ok(program)
-}
-
-fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMirCache> {
+fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> {
     let lower_started = std::time::Instant::now();
     // D150: type-body `GET "/…"` → handlers + `route` (names Request/Response/ok).
     let mut package = package.clone();
@@ -2277,7 +2164,11 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
     }
 
     if opts.require_main && !fns.contains_key("main") {
-        return Err(Error::new("program requires `fn main`"));
+        let error = Error::new("program requires `fn main`");
+        return Err(match package.modules.iter().find(|module| module.is_entry) {
+            Some(entry) => error.with_path(&entry.path),
+            None => error,
+        });
     }
 
     // ---------- Phase 3: globals (module-level let/mut) ----------
@@ -2367,9 +2258,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
             ctx.assign(global_place.clone(), ty.clone(), RValue::Use(place));
             // Drop init temps (`_s0` from `"stderr"`) but not the global (D122).
             insert_function_drops(&mut ctx.stmts, &Some(global_place), &ty, &ctx.drop_places);
-            let init_start = init_stmts.len();
             init_stmts.extend(ctx.stmts);
-            let init_range = init_start..init_stmts.len();
 
             let ginfo = GlobalInfo {
                 ty: ty.clone(),
@@ -2389,7 +2278,6 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
             program_globals.push(GlobalVar {
                 name: place_name,
                 ty,
-                init: init_range,
             });
         }
         let (name_to_type, name_to_fn, name_to_global, namespaces) = build_module_name_maps(
@@ -2636,7 +2524,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
         Err(e) => body_errors.push(e),
     }
 
-    if std::env::var_os("THOXA_REPL_PROFILE").is_some() {
+    if std::env::var_os("THOXA_PROFILE").is_some() {
         eprintln!(
             "thoxa profile: mir-bodies {} fns {:?}",
             functions.len(),
@@ -2664,27 +2552,15 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
         type_layouts.push(layout.clone());
     }
 
-    if std::env::var_os("THOXA_REPL_PROFILE").is_some() {
+    if std::env::var_os("THOXA_PROFILE").is_some() {
         eprintln!("thoxa profile: mir-total {:?}", lower_started.elapsed());
     }
-    let env = SessionLowerEnv {
-        fns,
-        types: types_info,
-        module_exports,
-        package_maps,
-        synthetics,
-        shell_mangled: mangle_type(&entry_mod_id, "Shell", true),
-        entry_mod_id,
-    };
-    Ok(SessionMirCache {
-        program: Program {
-            types: type_layouts,
-            externs: extern_decls,
-            globals: program_globals,
-            init: init_stmts,
-            functions,
-        },
-        env,
+    Ok(Program {
+        types: type_layouts,
+        externs: extern_decls,
+        globals: program_globals,
+        init: init_stmts,
+        functions,
     })
 }
 
@@ -3304,9 +3180,6 @@ fn build_module_name_maps(
                 if let Some(info) = all_globals.get(&place) {
                     name_to_global.insert(g.name.clone(), info.clone());
                 }
-            }
-            Item::SessionStmt(_) => {
-                // Must be lifted by session::prepare before lower.
             }
             // `extend` blocks are free functions by now (D196).
             Item::Type(_) | Item::Import(_) | Item::Extend(_) => {}
@@ -5544,7 +5417,7 @@ fn collect_item_type_apps(item: &Item, out: &mut Vec<(TypeExpr, Span)>) {
                 collect_type_apps(t, out);
             }
         }
-        Item::Import(_) | Item::SessionStmt(_) | Item::Extend(_) => {}
+        Item::Import(_) | Item::Extend(_) => {}
     }
 }
 
@@ -13380,9 +13253,6 @@ fn materialize_item_typespace(
                 materialize_type_expr(ann, types, layouts, name_map, def_mod)?;
             }
             materialize_expr_typespace(&g.init, types, layouts, name_map, def_mod)?;
-        }
-        Item::SessionStmt(bi) => {
-            materialize_block_item_typespace(bi, types, layouts, name_map, def_mod)?;
         }
         Item::Import(_) | Item::Extend(_) => {}
     }

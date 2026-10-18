@@ -153,16 +153,6 @@ pub fn load_package_with_entry_ast(entry: &Path, entry_ast: ast::Module) -> Resu
     load_package_from_entry_ast_inner(entry, project_root, entry_ast)
 }
 
-/// Load a package from an entry AST that may not exist on disk (REPL chunk).
-///
-/// `entry` is a virtual path used for module id, `./` / `~/` resolution, and
-/// diagnostics. Dependencies still load from disk.
-pub fn load_package_virtual(entry: &Path, entry_ast: ast::Module) -> Result<Package> {
-    let entry = canonicalize_soft(entry)?;
-    let project_root = package_root_for(&entry);
-    load_package_from_entry_ast_inner(entry, project_root, entry_ast)
-}
-
 fn load_package_from_entry_ast_inner(
     entry: PathBuf,
     project_root: PathBuf,
@@ -244,9 +234,8 @@ pub fn include_core_modules(package: &mut Package) -> Result<()> {
 
 /// Load `path` and its transitive imports into `package` if not already present.
 ///
-/// Used when session inject splices imports (e.g. Shell → Logging) after the
-/// initial package load. New modules are inserted before the entry module so
-/// dependency order is preserved.
+/// Used for the core modules every package includes. New modules are inserted
+/// before the entry module so dependency order is preserved.
 pub fn ensure_module_in_package(package: &mut Package, path: &Path) -> Result<()> {
     let path = canonicalize_soft(path)?;
     if package.modules.iter().any(|m| m.path == path) {
@@ -315,18 +304,10 @@ fn load_one(
         return Ok(());
     }
 
-    let original = fs::read_to_string(&path)
+    let src = fs::read_to_string(&path)
         .map_err(|e| Error::new(format!("cannot read {}: {e}", path.display())))?;
-    // Entry session scripts: command-skin desugar before parse (PR2).
-    let src = if is_entry {
-        crate::command::desugar_session_source(&original)?
-    } else {
-        original.clone()
-    };
-    // Lex/parse spans are offsets into `src`; name the file only when that is
-    // the file's own text (a desugared session script is not).
     let in_file = |error: Error| {
-        if error.path.is_none() && src == original {
+        if error.path.is_none() {
             error.with_path(&path)
         } else {
             error

@@ -74,7 +74,7 @@ args into the pack, and enqueues a thunk.
   returns (ready queue is pumped from `thoxa_task_start`).
 - If the callee **parks** (Net accept / connect / recv / send on EAGAIN, or
   `thoxa_wait_ms` / `thoxa_wait_fd` in the runtime), the starter continues.
-- Generated `main` and session `thoxa_session_step` call **`thoxa_sched_drain`**
+- Generated `main` calls **`thoxa_sched_drain`**
   after the Thoxa entry so the process waits until idle.
 
 RC stays **non-atomic**. Not OS threads. Not a language `spawn`.

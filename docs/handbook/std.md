@@ -17,7 +17,6 @@ import { cwdShort, shortPath } from "std/path"
 import { localHms, userName, hostname } from "std/env"
 import { fg, fgHex, sgr0, cyan, brightWhite } from "std/ansi"
 import { branch } from "std/git"
-import { defaultPrompt } from "std/prompt"
 ```
 
 The library is small and grows when a real program needs something. Failures
@@ -45,8 +44,6 @@ The source is in [`std/`](../../std/).
 | `std/env` | Environment variables, user, host, time of day |
 | `std/ansi` | Terminal colors |
 | `std/git` | Branch and repository facts read from `.git/HEAD` |
-| `std/prompt` | `defaultPrompt` for the interactive shell |
-| `std/shell` | The interactive shell's `Shell` type and process builtins, loaded automatically for session scripts (see [Session](session.md)) |
 
 ## std/fallible
 
@@ -330,7 +327,6 @@ transactions, extension loading, and tags other than `sql`.
 | `std/env` | `getenv`, `hasEnv`, `getenvOr`, `home`, `tmpdir`, `shell`, `pathVar`, `pwd`, `localHms`, `hostname`, `userName` |
 | `std/ansi` | `fg`, `bg`, `fgHex`, `bgHex`, `sgr0`, the 16 named colors, `parseRgba`. Hex colors are `#RRGGBB` or `#RRGGBBAA` (alpha ignored); an invalid one gives black |
 | `std/git` | `branchName`, `branchSuffix`, `branch`, `branchHere`, `isRepo`, `repoRoot`, `isDetached`, `headLine` |
-| `std/prompt` | `defaultPrompt(signature: … = "#3B9DC2")`, the shell's default prompt |
 
 String positions and lengths count Unicode scalars; only the `byte…` methods count bytes.
 

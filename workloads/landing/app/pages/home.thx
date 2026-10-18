@@ -41,8 +41,7 @@ fn intro() -> Node {
         <p class="lede">
             A statically typed, expression-oriented programming language. The
             compiler translates Thoxa to C, and a C compiler builds that into a
-            native executable. The same language is the input of an interactive
-            shell.
+            native executable.
         </p>
         <p class="facts">
             <span>Pre-alpha</span>
@@ -57,14 +56,6 @@ fn intro() -> Node {
 fn design() -> Node {
     <section class="design" id="design">
         <h2>Design</h2>
-        <p>
-            <strong>One language from the prompt to the binary.</strong>
-            <code>thoxa</code> with no arguments is an interactive shell whose input is
-            Thoxa. A line that reads as a command (<code>{"ls -l | head"}</code>) runs as one;
-            everything else is typed and compiled like any other Thoxa code. A file of
-            the same lines is a script, and a file with a <code>main</code> builds into a
-            native program. There is no second language for glue.
-        </p>
         <p>
             <strong>Automatic memory, without a collector or a borrow checker.</strong>
             Values are reference counted. Integers, floats, and small records are stored
@@ -120,7 +111,7 @@ fn featureList() -> Array<Feature> {
         Feature(name: "Conversions", detail: "`x as T` converts, and its type says whether it can fail; `x as? T` converts or returns the failure. A type adds conversions into itself with `from` clauses."),
         Feature(name: "Web", detail: "Tag literals (`Node`), route clauses, an HTTP/1.1 server with static files and server-sent events, and `sql\"…\"` with SQLite."),
         Feature(name: "C", detail: "`extern fn`, C-layout types, `Address<T>`, and fixed-size arrays."),
-        Feature(name: "Tools", detail: "`thoxa run`, `build`, `check` (with `--json`), and `lsp`; a Zed extension; the interactive shell."),
+        Feature(name: "Tools", detail: "`thoxa run`, `build`, `check` (with `--json`), and `lsp`; a Zed extension."),
     ]
 }
 
@@ -207,15 +198,14 @@ fn building() -> Node {
 cd thoxa
 cargo build -p thoxa                  # the compiler: target/rust/debug/thoxa
 cargo make test                       # conformance suite, samples, unit tests
-target/rust/debug/thoxa run workloads/landing/samples/types.thx
-target/rust/debug/thoxa               # the shell"
+target/rust/debug/thoxa run workloads/landing/samples/types.thx"
     <section class="building" id="building">
         <h2>Building</h2>
-        <p>You need a Rust toolchain, a C compiler (GCC or Clang), and <code>make</code>.</p>
+        <p>You need a Rust toolchain and a C compiler (GCC or Clang).</p>
         <pre class="code lang-bash"><code>{highlight.code("bash", commands)}</code></pre>
         <p>
-            The <a href="/manual">manual</a> covers the language, the standard library, the
-            shell, and the tools. Problems and questions go to the
+            The <a href="/manual">manual</a> covers the language, the standard library, and
+            the tools. Problems and questions go to the
             <a href={"{repository}/issues"}>issue tracker</a>.
         </p>
     </section>

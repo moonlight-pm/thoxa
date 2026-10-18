@@ -35,7 +35,7 @@ ThoxaString *thoxa_sql_quote(const ThoxaString *s) {
     return out;
 }
 
-/* Not thread-local: see thoxa_local_hms in thoxa_rt.c (libtcc TLS). */
+/* Plain static: the runtime is single-threaded. */
 static char last_err[512];
 
 static void set_err(const char *msg) {

@@ -1,6 +1,0 @@
-## Thoxa-side OS pipelines (session polish): `a | b` desugars to Shell.pipeline.
-echo hello | cat
-true | false
-status
-false | true
-status

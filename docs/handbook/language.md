@@ -200,17 +200,14 @@ keep only the low 8 bits, so `256` would read as success.)
 After `main` returns, the program keeps running until every task it started
 has finished, then exits.
 
-### Programs and session scripts
+### Top level
 
-| Shape | Top level allows |
-|-------|------------------|
-| Program (`fn main` present) | Declarations only: `import`, `type`, `fn`, `let` / `mut`, `extern`, `export` |
-| Session script (no `main`) | Declarations and bare statements (`info("hi")`, assignments, commands) |
-
-A bare name such as `FOOBAR` at file scope is a statement, not a declaration.
-In a program it is a compile error, reported at that span. In a session
-script it is part of the script body (and fails later if the name is
-undefined). Session scripts are described in [Session](session.md).
+The top level of a file holds declarations only: `import`, `type`, `fn`,
+`let` / `mut`, `extern`, and `export`. A statement there (a call, an
+assignment, or a bare name such as `FOOBAR`) is a compile error, reported at
+its span; move it into `fn main`. The file a program starts from must define
+`main`, or the compiler reports that the program requires `fn main`; a file
+without one is a module that other files import.
 
 ### Packages
 
@@ -252,8 +249,6 @@ mut subscribers: Map<Int64, Socket> = Map()
 A module binding is initialized before `main` runs and lives for the rest of
 the process. Assigning to a module `mut` releases the previous value and keeps
 the new one; the value is not released when the assigning function returns.
-In the interactive shell, top-level bindings keep their values across lines;
-see [Session](session.md#repl-behavior).
 
 There is no `import` or `type` inside a function.
 
@@ -1809,4 +1804,4 @@ have no `==`, cannot be map keys, and have no JSON encoding.
 So that nobody looks for them: closures, generic functions, traits or
 interfaces, exceptions, threads, macros, operator overloading, tuples, nested
 patterns, compound assignment, algebraic effects,
-a package manager, a named `ffi` import root, and shell control flow (`if` / `for` in command syntax).
+a package manager, a named `ffi` import root, and a REPL or interactive shell.

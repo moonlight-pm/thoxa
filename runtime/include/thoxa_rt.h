@@ -173,82 +173,6 @@ static inline uint64_t thoxa_uint_shr(uint64_t left, int64_t count) {
 /* Thread-local errno after a failed libc call (no named `ffi` root — D80). */
 int32_t thoxa_errno(void);
 
-/*
- * fork + execv + waitpid for dogfood shells (thoxash).
- * `argv_blob` is consecutive NUL-terminated strings (total `argv_len` bytes,
- * each string including its trailing NUL). Used because Array is not yet
- * FFI-marshalable. Returns:
- *   0..255     — child exit status (WEXITSTATUS)
- *   128+sig    — child killed by signal
- *   -1         — fork failed (errno set; readable via thoxa_errno)
- * Exec failure in the child exits 127 (shell convention).
- */
-int64_t thoxa_spawn_wait(const char *path, const void *argv_blob, int64_t argv_len);
-
-/*
- * Session (REPL) only: run one compiled step. A panic or a fault (bad memory
- * access, stack overflow, arithmetic trap) inside `step` returns here instead
- * of ending the shell: `*crashed` is set and the result is 134 for a panic or
- * 128 + signal for a fault. Memory held by the abandoned step is leaked.
- */
-int64_t thoxa_session_call(int64_t (*step)(void *), void *state, int32_t *crashed);
-
-/*
- * Like thoxa_spawn_wait with optional file redirections (session `>` / `>>` / `<`).
- * stdin_path / stdout_path: NULL or empty string → inherit that fd.
- * stdout_append: 0 = O_TRUNC ( `>` ), non-zero = O_APPEND ( `>>` ).
- * Open failures in the child yield exit 127 (same as exec failure).
- */
-int64_t thoxa_spawn_wait_io(
-    const char *path,
-    const void *argv_blob,
-    int64_t argv_len,
-    const char *stdin_path,
-    const char *stdout_path,
-    int64_t stdout_append
-);
-
-/*
- * OS pipeline: stages separated by an empty NUL-terminated field (double NUL).
- * Within a stage, consecutive NUL-terminated words form argv (like spawn_wait).
- * Example for `echo hi | wc -c`:
- *   "echo\0hi\0\0wc\0-c\0"
- * First word of each stage is the executable (PATH search via execvp).
- * First stage inherits stdin; last inherits stdout; intermediate stages are
- * connected with pipe(2). stderr inherits for all. Returns last stage status
- * (shell convention), or -1 on setup failure (errno set).
- */
-int64_t thoxa_pipeline(const void *stages_blob, int64_t stages_len);
-
-/*
- * Session / REPL helpers (plan PR3+, D93 v2).
- *
- * Host-held shell state for in-process `step` shared objects.
- * Layout is fixed: one Int64 status (matches `type Shell(status: Int64)` field
- * packing for the status slot). Generated session libs export:
- *
- *   int64_t thoxa_session_step(ThoxaShellState *state);
- *
- * which reads `state->status`, runs `Shell.step`, writes back status, and
- * returns it. Optional `void thoxa_session_init(void)` runs module-level inits
- * (idempotent per loaded image).
- */
-typedef struct ThoxaShellState {
-    int64_t status;
-} ThoxaShellState;
-
-/*
- * Session hosts only (D169): module state lives in slots the host owns, so a
- * value outlives the compiled image that made it and each initializer runs
- * once per session. `host` is the context `thoxa_session_bind` received.
- */
-void *thoxa_session_slot(void *host, const char *name, size_t size);
-int thoxa_session_slot_ready(void *host, const char *name);
-void thoxa_session_slot_mark_ready(void *host, const char *name);
-
-/* pipe(2) wrapper — low-level; prefer thoxa_pipeline for session pipelines. */
-int32_t thoxa_pipe(int32_t fds_out[2]);
-
 /* Generated batch `main` calls this first. As PID 1 (a container's init),
  * SIGTERM and SIGINT end the program instead of being dropped (D170). */
 void thoxa_program_start(void);
@@ -377,7 +301,7 @@ int64_t thoxa_string_byte_index_of(const ThoxaString *s, const ThoxaString *need
  * Takes const char* so Thoxa `extern … from "c"` String args marshal cleanly. */
 int32_t thoxa_write_line_fd(int32_t fd, const char *s);
 
-/* Session prompt helpers (D96): return cstr; Thoxa extern -> String
+/* Clock and host name for std/env: return cstr; Thoxa extern -> String
  * copies via thoxa_string_from_cstr. Buffers are static (single-threaded runtime). */
 const char *thoxa_local_hms(void); /* local "HH:MM:SS" */
 const char *thoxa_hostname(void);  /* gethostname(2), or "localhost" */

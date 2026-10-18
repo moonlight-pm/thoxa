@@ -8,7 +8,6 @@ in this order, as one page at [thoxa.dev/manual](https://thoxa.dev/manual).
 | [Introduction](introduction.md) | What Thoxa is, status, building from source, a first program |
 | [Language](language.md) | Syntax, types, expressions, functions, modules, concurrency, typed data, C interop |
 | [Standard library](std.md) | The `std/…` modules |
-| [Session](session.md) | The interactive shell and session scripts |
 | [Command line](cli.md) | `thoxa` commands, diagnostics, exit status, environment |
 | [Editor](editor.md) | Zed support and `thoxa lsp` |
 

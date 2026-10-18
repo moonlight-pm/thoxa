@@ -19,7 +19,6 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY .cargo .cargo
 COPY crates crates
-COPY vendor/tinycc vendor/tinycc
 COPY runtime runtime
 COPY std std
 RUN cargo build --release --locked -p thoxa

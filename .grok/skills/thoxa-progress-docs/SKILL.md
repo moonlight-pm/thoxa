@@ -23,7 +23,7 @@ Full model: [`docs/progress-model.md`](../../../docs/progress-model.md).
 
 **Always** after any change that affects:
 
-- Product behavior (language, runtime, CLI, session, std, LSP)
+- Product behavior (language, runtime, CLI, std, LSP)
 - Capability maturity (shipped / partial / gaps)
 - Priority or “what next”
 - System map (pipeline, crates, build products)
@@ -64,7 +64,7 @@ Run through every item. Mark N/A only with a reason.
    - Never document aspirational roadmap as fact.
 
 4. **[`docs/architecture.md`](../../../docs/architecture.md)**  
-   - If as-built system map changed (pipeline, crates, session host, targets).
+   - If as-built system map changed (pipeline, crates, targets).
 
 5. **Active freeze under `docs/specs/`**  
    - Refresh Implementation / Gaps header if the freeze’s implementation

@@ -1,0 +1,5 @@
+## D227: the entry file of a program defines `fn main`; a file without one is
+## not a script.
+fn greeting() -> String {
+    "hello"
+}

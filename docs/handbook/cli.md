@@ -8,10 +8,8 @@ The product binary is `thoxa`. In a checkout, run it as
 
 | Command | Behaviour |
 |---------|-----------|
-| `thoxa` | Interactive shell (see [Session](session.md)) |
-| `thoxa -l`, `thoxa --login`, `thoxa repl` | The same shell |
-| `thoxa -c '<chunk>'` | Runs one session chunk, like `sh -c` |
-| `thoxa path.thx` | Runs a program if the file has `fn main`, otherwise a session script |
+| `thoxa` | Prints usage to standard error and exits 2 (`thoxa help` prints it and exits 0) |
+| `thoxa path.thx` | Same as `thoxa run path.thx` |
 | `thoxa dir/` | Runs `dir/main.thx` |
 | `thoxa run path [args…]` | Compiles and runs; the remaining arguments go to `main(arguments: Array<String>)` |
 | `thoxa build path -o out` | Compiles to an executable |
@@ -48,7 +46,8 @@ error[THX001]: undefined name `x`
 | `THX002` | type mismatch |
 | `THX003` | unknown type |
 | `THX004` | `May` / `Trial` used without importing `std/fallible` |
-| `THX005` | a top-level statement in a program with `fn main` |
+| `THX005` | a statement at the top level of a file (statements go in `fn main`) |
+| `THX006` | the program has no `fn main` |
 | `THX008` | syntax error |
 | `THX010` | unused import (a warning) |
 
@@ -85,8 +84,6 @@ cargo make test-asan         # conformance under AddressSanitizer (programs with
 cargo make run path.thx      # compile and run
 cargo make run examples/http # the example HTTP server (port 9091)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt   # the kilo editor (needs a terminal; Ctrl-Q quits, three times if unsaved)
-cargo make shell             # the interactive shell (release build)
-cargo make shell --login     # the same with a clean, login-like environment
 cargo make emit-c path.thx   # generated C only
 cargo make runtime           # libthoxa_rt.a and compile_commands.json
 cargo make zed               # install the Zed extension and the language server
@@ -111,11 +108,8 @@ cargo make clean             # remove target/c and target/thoxa (--all also remo
 | `THOXA_STD` | The `std/` directory to use |
 | `THOXA_ROOT` | The root to find `std/` under |
 | `THOXA_FORCE_BUILD` | `1` ignores the binary stamp and rebuilds |
-| `THOXA_SANITIZE` | `leak` or `address` links programs with that sanitizer (batch `cc` builds only; the interactive shell ignores it). Unset by default |
-| `THOXA_SHELL_RC` | The shell's rc file |
-| `THOXA_NORC` | Set to skip the rc file |
-| `THOXA_HISTFILE` | The shell's history file; empty disables history |
-| `THOXA_STATUS` | Set by the shell while `prompt()` runs |
+| `THOXA_SANITIZE` | `leak` or `address` links programs with that sanitizer. Unset by default |
+| `THOXA_PROFILE` | Set to print the time MIR lowering takes on standard error |
 | `THOXA_LOG_LEVEL`, `THOXA_LOG_SINK` | Initial logger level and sink (see [std/logging](std.md#stdlogging)) |
 
 `cargo make test` always sets `THOXA_SANITIZE=leak`. `cargo make test-asan`

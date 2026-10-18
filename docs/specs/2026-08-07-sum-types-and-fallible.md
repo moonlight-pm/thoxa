@@ -249,8 +249,7 @@ If a single success arm is marked for payload extract (`Pass<P!>`), unwrap to
 ### 3.5 May / Trial
 
 - **Not compiler builtins** — **`std/Fallible`** unions using this surface
-  (**import required**, D123; session Shell inject still loads Fallible for
-  the product Shell API).
+  (**import required**, D123).
 - Special only as std + marks; same IR as user unions.
 - **Full cutover** of conformance and samples landed with D118 then D123.
 - **Effects (D2)** may later subsume or replace parts of this; freeze does not

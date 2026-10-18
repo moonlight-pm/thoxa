@@ -2,9 +2,7 @@
 
 Thoxa is a statically typed, expression-oriented programming language. The
 compiler, written in Rust, translates Thoxa to C; a C compiler links that with
-a small C runtime into a native executable. The same language is the input of
-an interactive shell: run `thoxa` with no arguments and a line that reads as a
-command runs as one, while everything else is Thoxa.
+a small C runtime into a native executable.
 
 **Site:** [thoxa.dev](https://thoxa.dev) · **Manual:**
 [thoxa.dev/manual](https://thoxa.dev/manual) (the same text as
@@ -58,8 +56,7 @@ exactly what works.
 
 ## Building
 
-You need a Rust toolchain, a C compiler (`cc`: GCC or Clang), and `make` (the
-build compiles the vendored TinyCC that the shell uses).
+You need a Rust toolchain and a C compiler (`cc`: GCC or Clang).
 
 ```bash
 git clone https://github.com/moonlight-pm/thoxa
@@ -77,7 +74,6 @@ cargo make test                 # conformance suite, site samples, unit tests
 thoxa run path.thx [args…]      # compile and run (a directory runs its main.thx)
 thoxa build path.thx -o out     # compile to a binary
 thoxa check path.thx            # typecheck; --json for machine-readable diagnostics
-thoxa                           # the interactive shell
 thoxa lsp                       # language server (stdio)
 ```
 
@@ -89,21 +85,20 @@ cargo make run tests/conformance/hello.thx
 cargo make run examples/http                  # a small web app with SQLite (port 9091)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt   # a terminal text editor
 cargo make run workloads/landing              # thoxa.dev itself (port 8088)
-cargo make shell                              # the shell, release build
 ```
 
 ## Repository
 
 ```text
-crates/compiler   the thoxa binary: compiler, shell, language server
+crates/compiler   the thoxa binary: compiler and language server
 crates/make       task runner (cargo make …)
 runtime/          the C runtime (thoxa_rt)
 std/              the standard library (std/… imports)
 tests/conformance programs with expected output; the definition of done
 examples/         runnable programs: examples/http (web app), examples/kilo (editor)
 workloads/        deployed Thoxa programs: landing = thoxa.dev, sola, oath
-extras/           editor support (Tree-sitter grammar, Zed) and a dogfood shell
-vendor/           TinyCC (for the shell) and the SQLite amalgamation
+extras/           editor support (Tree-sitter grammar, Zed)
+vendor/           the SQLite amalgamation
 docs/             manual (docs/handbook) and engineering docs
 apocrypha/        earlier attempts and the Python prototype; history only
 ```

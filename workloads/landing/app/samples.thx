@@ -9,7 +9,7 @@ import { Pass, Fail } from "std/fallible"
 import { warn } from "std/logging"
 
 ## In page order.
-let names = ["types", "errors", "data", "html", "server", "sql", "tasks", "c", "shell"]
+let names = ["types", "errors", "data", "html", "server", "sql", "tasks", "c"]
 
 export type Sample(name: String, title: String, description: String, code: String, output: String)
 

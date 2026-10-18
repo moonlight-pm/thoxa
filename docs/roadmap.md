@@ -2,7 +2,7 @@
 
 **This file is the program horizon** — coarse phase status over months.  
 Day-to-day maturity of product surfaces lives in
-[`capabilities.md`](capabilities.md). Session priority lives in root
+[`capabilities.md`](capabilities.md). Priority lives in root
 [`CURRENT.md`](../CURRENT.md). How the layers fit:
 [`progress-model.md`](progress-model.md).
 
@@ -16,6 +16,7 @@ Status legend (phases):
 | **next** | Queued after active |
 | **planned** | Intended; not started |
 | **unplanned** | Not scheduled; capture only |
+| **removed** | Shipped, then taken out; the phase names the decision and the revision to recover it from |
 
 Update phase status when a **phase-level** flip happens. Prefer updating
 capability rows for feature-level progress.
@@ -73,28 +74,19 @@ Freezes:
 
 ## Phase C — Session language (shell / REPL)
 
-**Status: partial** (core shipped; **polish parked**)
+**Status: removed** (**D227**, 2026-10-18: "drop the shell feature entirely. This is scope creep.")
 
-- No-main scripts, command sugar, bare `thoxa` REPL, **libtcc** session steps
-  (D105), rc/prompt/path, pipes/redirs, pure-step builtins, `std/Shell.thx`.
-- Thin `std/` sample-driven: prompts/helpers plus **Io/Net/Http/HttpStatic**
+- What shipped here (no-main scripts, command sugar, the bare `thoxa` REPL,
+  libtcc session steps, rc / prompt / path hooks, pipes and redirections,
+  `std/shell.thx`, the line editor) is gone; recover it from `eefdac4`,
+  along with its freezes (`docs/specs/2026-07-24-thoxa-session-repl.md`,
+  `docs/specs/2026-08-05-session-libtcc.md`). A future shell would be a
+  Thoxa program, not a compiler feature.
+- The `std/` that grew alongside it stays: **Io/Net/Http/HttpStatic**
   (**D126**), **HttpServer** (**D136**; path **`std/http/server`** **D139**),
   Logging (**D125**), **Json** (**D141**), **Cookie** (**D142**),
-  **Sqlite** (**D143**), and **`sql"…"`** (**D144**).
-
-**Parked residual:** redir polish (`2>`, redir-on-pipe); Shell import-first.
-Line editor shipped (**D156**). Compile cache + scratch `.thx` drop shipped.
-Resume remaining residual only when CURRENT says so.
-
-**Later polish (not active):** resolve `thoxa_rt` from the host process;
-TinyCC license packaging notice; embed `std/` / headers — libtcc freeze §11.
-
-Freezes:
-
-- [`specs/2026-07-24-thoxa-session-repl.md`](specs/2026-07-24-thoxa-session-repl.md)
-  (session product)
-- [`specs/2026-08-05-session-libtcc.md`](specs/2026-08-05-session-libtcc.md)
-  (step C backend — shipped)
+  **Sqlite** (**D143**), **`sql"…"`** (**D144**), and the path / env / ansi /
+  git helpers.
 
 ---
 

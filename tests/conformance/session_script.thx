@@ -1,6 +1,0 @@
-## Session script (no fn main): top-level statements → Shell.step + synthetic main.
-logging.toStdout()
-logging.setFormat(logging.formatPlain)
-logging.info("hello session")
-let n = 1 + 2
-logging.info("n={n}")

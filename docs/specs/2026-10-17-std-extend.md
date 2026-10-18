@@ -70,8 +70,8 @@ extend Array<String> as parts {
 ## §2 Core modules
 
 `std/string` is in every package, imported or not: the loader adds it
-(`include_core_modules`), including for the packages `thoxa check`, the
-language server, and the session build by hand. It brings `std/fallible` and
+(`include_core_modules`), including for the packages `thoxa check` and the
+language server build by hand. It brings `std/fallible` and
 `std/unicode` with it. Loading it adds no names to a program (consistent with
 D123): `Split` and `parseUInt` are still imported by name.
 

@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-18 (gap pass D207–D226, below; thoxa.dev redeployed; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-18 (**D227**: the shell and the session are removed, below; gap pass D207–D226, below; thoxa.dev redeployed; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -81,8 +81,7 @@ if/match result overwrite-drop. Language harvest **D147–D150** shipped.
 **D151** LeakSanitizer is the default leak gate; **D152** match/init RC.
 `workloads/landing` = thoxa.dev; `workloads/sola` = sola.computer;
 `workloads/oath` = oath.wicket.cloud.
-Crema Phase **E** through **E5**; **E6** WebSockets parked. Session compile
-cache shipped. **`having`/`else` parked indefinitely.**
+Crema Phase **E** through **E5**; **E6** WebSockets parked. **`having`/`else` parked indefinitely.**
 
 ---
 
@@ -92,6 +91,14 @@ cache shipped. **`having`/`else` parked indefinitely.**
 codegen, runtime semantics. Site and hosting work is paused (see holds); the
 2026-10-17 thoxa.dev rewrite was an explicit request, not a change of focus.
 One language slice at a time, each with conformance.
+
+**Shell and session removed (D227, Joshua 2026-10-18: "drop the shell feature
+entirely. This is scope creep.")** `thoxa` is a compiler CLI; every program
+has `fn main`, a top-level statement is `THX005`, and bare `thoxa` prints
+usage. Gone: the REPL, `-c` / `-l`, session scripts, command sugar, libtcc
+and vendored TinyCC, the line editor, `std/shell`, `std/prompt`,
+`extras/shell`. Recover from `eefdac4`. A future shell would be a Thoxa
+program.
 
 **Strings (D195, D196) shipped**, freezes
 [`docs/specs/2026-10-17-string-methods.md`](docs/specs/2026-10-17-string-methods.md),
@@ -167,8 +174,6 @@ positional argument into a pun is refused; **D226** `std/normalize`
 NormalizationTest.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
-found 2026-10-17: a session command inside a block
-is not recognized (use `shell.run`; parked with the session residual).
 From D206: a heap field passed `mut` is copied on the callee's
 first write (it is shared with the receiver until the write-back; Joshua
 2026-10-18: leave it). Found in
@@ -183,15 +188,12 @@ written to JSON.
 arguments. Field access does not pun (`options.deadline` stays positional;
 only a bare name fills the parameter it names, D202).
 
-Session step compile cache shipped (D105 §3.5 / §11.1; base image **D169**);
-release REPL ~**8 ms**/line. **D155** resource `drop` shipped. D153 simple-RC
+**D155** resource `drop` shipped. D153 simple-RC
 gate is done. **Not Perceus.** Editor only when DX forces it. Crema Phase
 **E** through **E5**; **E6 WebSockets stay parked.** Do **not** vendor HTMX.
 Crema leftovers (product migrate, file-based routing) stay parked.
 
 Freezes:
-[`docs/specs/2026-08-05-session-libtcc.md`](docs/specs/2026-08-05-session-libtcc.md)
-(compile cache);
 [`docs/specs/2026-09-03-resource-drop.md`](docs/specs/2026-09-03-resource-drop.md)
 (**D155**);
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
@@ -201,20 +203,10 @@ Freezes:
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 159 programs, 49 rejections, 9 site samples, 283 unit tests;
-`cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 170 programs, 59 rejections, 8 site samples, 215 unit tests
+after D227 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
-session step compile cache (D105 §3.5): no per-line
-scratch `.thx`; reuse prelude MIR; libtcc base image (in memory since **D169**) + ~500-line step C.
-`cargo make shell` runs **release** `thoxa`. Session rc form split skips
-`#` / `##` comments, so an apostrophe in `## not Thoxa's default` no longer
-glues later `import` / `fn` into one statement (would fail `program requires
-fn main`). Interactive TTY REPL is an emacs line editor with Tab complete
-and history (**D156**). Interactive REPL starts with `§ ` (no banner).
-POSIX login-shell face: `thoxa -c '<chunk>'` and
-`thoxa -l` / `--login` (same REPL as bare `thoxa`); libtcc finds the
-process libc via `/proc/self/maps` so NixOS/Oath session steps work
-without `/usr/lib/libc.so`. **D155** `fn drop()` last-RC boxes (`file_drop`; File /
+**D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
 (`http_net_err`); bounded ASan pass (88 non-fiber clean on 2026-09-03, 109 on
 2026-10-15, 146 on 2026-10-17; 10 task programs excepted in `asan-skip`); if/match result overwrite-drop (`lsan-skip` empty);
@@ -224,9 +216,9 @@ lits; overwrite-drop; **D152** match/init RC.
 
 **On master, not product:** none.
 
-**Review follow-ups (open, from 2026-10-14):** Ctrl-C in a pure-Thoxa loop;
-command-or-Thoxa guess (`x + 1`, `sleep 1`, `other.count`); redefining a
-session `fn` is an error, not a replacement; no CI (R8, deferred). Paused with
+**Review follow-ups (open, from 2026-10-14):** no CI (R8, deferred); the
+session items (Ctrl-C in a loop, the command-or-Thoxa guess, redefining a
+session `fn`) went with D227. Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
 14) and the copied site templates (finding 38). thoxa.dev runs `aa6da2c` (D207–D226; redeployed 2026-10-18); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
 
@@ -237,15 +229,10 @@ the site work: the event loop's wake scan and blocking log writes (finding
    (recovery/nav residual);
    [`docs/specs/2026-08-09-structured-diagnostics.md`](docs/specs/2026-08-09-structured-diagnostics.md)
    (**D124** shipped — polish codes opportunistically).
-2. **Deferred: remaining session / shell residual** — redir polish,
-   Shell import-first, libtcc process-RT / license. Line editor shipped
-   (**D156**). Compile cache + scratch `.thx` drop shipped. Freeze parked:
-   [`docs/specs/2026-07-24-thoxa-session-repl.md`](docs/specs/2026-07-24-thoxa-session-repl.md).
-3. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, cycle
+2. **Deferred megawork** — M4, Perceus, effects, named `ffi` root, cycle
    collector. Multi-logger (`initLog`) is trajectory under D125, not a
    CURRENT line until samples force it. Perceus is **not unparked**.
-   Session/libtcc sanitizer stays parked with session (task stack guard
-   pages shipped 2026-10-14). `drop` on unions / C-layout is out of D155 v0.
+   `drop` on unions / C-layout is out of D155 v0.
 
 **Always allowed:** pure safety/doc fixes; tests; progress-doc maintenance;
 conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
@@ -261,11 +248,9 @@ Public sites are **`workloads/landing`** (thoxa.dev),
   is the core language): `workloads/`, `std/http/server` tuning, deploys
 - **`having` / `else` May sugar** (parked indefinitely — `match` is enough)
 - **Crema domain in `std/`** (pages/models/layout — example-only)
-- **Remaining session / shell residual** (redir polish, Shell import-first, libtcc process-RT / license — parked; line editor **D156** and compile cache shipped)
-- Inventing shell dialect (`if`/`for`/full `$` forest)
+- **A shell** (removed by **D227**; one would be a Thoxa program, not a compiler feature)
 - Tree-walk product interpreter or QBE path (phase A)
 - Claiming full oracle SPEC coverage
-- Windows / non-Linux session backends
 - Treating “expand std/” as its own priority line
 - **`"…" as Bytes`** or cast-as-encode for String→Bytes (use `Bytes.fromString`;
   D15 **rejected**)
@@ -283,13 +268,9 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Backend (phase A) | **Compile-to-C** + `thoxa_rt`; no QBE product path |
 | Value model | Hybrid A; simple single-threaded RC; Perceus later |
 | Errors | `May` / `Trial` from `std/fallible` (import) + `?` / `match`; no May↔Trial mix via `?` |
-| Session product face | Bare `thoxa` / `thoxa repl`; no-`main` = session script |
-| Session value | `type Shell(status: Int64)` + methods; real Thoxa; `std/shell.thx` |
-| REPL step backend | **libtcc in-process only** (`TCC_OUTPUT_MEMORY`) → call `thoxa_session_step` (D105); no step `.so`. Decl-stable cache: re-lower `Shell.step` + link against the cached base image; module state in host slots, initialized once (**D169**). |
+| Programs | Every program has `fn main`; no REPL, no session scripts, no shell (**D227**) |
 | Batch / RT C | System **`cc`** (+ `ar` for runtime) unchanged |
-| Host platforms | **Linux** product track (x86_64 libtcc); Windows out of scope |
-| Command sugar | Thoxa-first; flags like `ls -al` desugar; pure `1 - 2` stays Thoxa |
-| `extras/shell` | Dogfood only; product face is bare `thoxa` |
+| Host platforms | **Linux** x86_64 product track; Windows out of scope |
 | `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); **`std/json`** (**D141**); **`std/sqlite`** (**D143**); fragments + ETag (**D145**); SSE takeover (**D146**); `ffi` deferred |
 | Logging / print | **`std/logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |

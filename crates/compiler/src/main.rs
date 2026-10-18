@@ -15,16 +15,6 @@ use thoxa::lsp;
 const CLI_STACK_BYTES: usize = 256 * 1024 * 1024;
 
 fn main() -> ExitCode {
-    // Session steps (REPL, `-c`) run libtcc-compiled code in this process, and
-    // that code addresses thread-local storage as the main thread's: run them
-    // on the main thread or they corrupt the worker's TLS.
-    let session = matches!(
-        env::args().nth(1).as_deref(),
-        None | Some("-l" | "--login" | "-" | "-c" | "repl")
-    );
-    if session {
-        return run_cli();
-    }
     let worker = std::thread::Builder::new()
         .name("thoxa".into())
         .stack_size(CLI_STACK_BYTES)
@@ -66,23 +56,12 @@ fn run_cli() -> ExitCode {
 
 fn try_main() -> Result<i32, Error> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
-    // Bare `thoxa` → session REPL (plan D88). Login shells pass `-l` / `--login`.
-    if args.is_empty()
-        || matches!(
-            args.first().map(String::as_str),
-            Some("-l" | "--login" | "-")
-        )
-    {
-        return thoxa::repl::run_repl();
+    if args.is_empty() {
+        print_usage();
+        return Ok(2);
     }
     let cmd = args.remove(0);
     match cmd.as_str() {
-        "-c" => {
-            let src = args.first().cloned().ok_or_else(|| {
-                Error::new("thoxa -c requires a session chunk (try `thoxa -c 'echo hi'`)")
-            })?;
-            run_dash_c(&src)
-        }
         "build" => {
             let opts = parse_build_args(&args)?;
             let art = driver::build(&opts)?;
@@ -124,12 +103,11 @@ fn try_main() -> Result<i32, Error> {
             println!("{}", thoxa::version::identity_line());
             Ok(0)
         }
-        "repl" => thoxa::repl::run_repl(),
         "-h" | "--help" | "help" => {
             print_usage();
             Ok(0)
         }
-        // `thoxa path.thx` / `thoxa dir/` — run as program or session script.
+        // `thoxa path.thx` / `thoxa dir/` — run as a program.
         other if looks_like_source_path(other) => {
             let opts = BuildOptions {
                 source: PathBuf::from(other),
@@ -143,11 +121,6 @@ fn try_main() -> Result<i32, Error> {
             "unknown command `{other}` (try `thoxa help`)"
         ))),
     }
-}
-
-/// POSIX `sh -c` equivalent: one session chunk (command sugar or Thoxa).
-fn run_dash_c(src: &str) -> Result<i32, Error> {
-    thoxa::repl::run_one_shot(src)
 }
 
 fn looks_like_source_path(s: &str) -> bool {
@@ -263,13 +236,10 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, Error> {
 fn print_usage() {
     eprintln!(
         "\
-thoxa — native Thoxa compiler + session REPL (compile-to-C)
+thoxa — native Thoxa compiler (compile-to-C)
 
 USAGE:
-    thoxa                        Session REPL (commands desugar to Shell)
-    thoxa -c '<chunk>'           One-shot session (POSIX login-shell -c)
-    thoxa repl                   Same as bare thoxa
-    thoxa <file.thx|dir>         Run program (main) or session script (no main)
+    thoxa <file.thx|dir>         Run a program (same as thoxa run)
     thoxa run    <file.thx|dir>
     thoxa build  <file.thx|dir> [-o name]
     thoxa emit-c <file.thx|dir>
@@ -281,11 +251,8 @@ USAGE:
 A directory argument resolves to <dir>/main.thx (project root for ~/ is that dir).
 Build products land under target/ (rust/, c/, thoxa/).
 
-Session scripts omit `fn main`; top-level statements become Shell.step.
-Interactive REPL loads ~/.config/thoxa/shell.thx (THOXA_SHELL_RC / THOXA_NORC).
-Optional fn prompt() -> String customizes the primary prompt (THOXA_STATUS env).
-Optional fn path(parent: Array<String>) -> Array<String> replaces process PATH.
-import from \"std/…\" (Str Path Ansi Env Git Fallible); THOXA_STD overrides the tree.
+A program's entry file defines `fn main`; arguments after the source path are
+passed to it. import from \"std/…\" reads the product std tree; THOXA_STD overrides it.
 `thoxa lsp` speaks Language Server Protocol over stdio (for editors).
 `thoxa check` type-checks without codegen; pretty diagnostics by default (codes,
 caret, help). Pass `--json` for a machine-readable report (D124).
