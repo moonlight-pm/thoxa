@@ -546,7 +546,8 @@ let found = grid.has(Point(x: 2, y: 3))         ## true
 let named = {Point(x: 0, y: 0): "origin"}
 ```
 
-There is no `==` on maps.
+Two maps are `==` when they hold the same keys with equal values, in any
+order (see [Equality](#equality)).
 
 ### Products
 

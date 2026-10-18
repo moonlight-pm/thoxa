@@ -56,7 +56,7 @@ line in [`CURRENT.md`](../CURRENT.md) (one slice), not redesign the world.
 | [`specs/2026-08-07-sum-types-and-fallible.md`](specs/2026-08-07-sum-types-and-fallible.md) | Sum types, `?`/`!`, May/Trial via `std/Fallible` | shipped (D118–D120, D123) |
 | [`specs/2026-08-09-structured-diagnostics.md`](specs/2026-08-09-structured-diagnostics.md) | Diagnostic IR, pretty check, `--json`, rich LSP | shipped (D124) |
 | [`specs/2026-08-10-std-log-and-println-removal.md`](specs/2026-08-10-std-log-and-println-removal.md) | `std/Logging` + remove ambient `println`/`print` | shipped (D125) |
-| [`specs/2026-08-10-return-type-inference.md`](specs/2026-08-10-return-type-inference.md) | Free-fn return-type inference | shipped (D129; methods still Void default) |
+| [`specs/2026-08-10-return-type-inference.md`](specs/2026-08-10-return-type-inference.md) | Free-fn return-type inference | shipped (D129; methods D174 / D211; `main` D223) |
 | [`specs/2026-08-11-multi-clause-functions.md`](specs/2026-08-11-multi-clause-functions.md) | Multi-clause fn/method = type-driven match sugar | **shipped** (D131) |
 | [`specs/2026-08-13-function-pointers.md`](specs/2026-08-13-function-pointers.md) | Function types + free/unbound/bound methods | **shipped** (D132; no closures) |
 | [`specs/2026-08-14-map-and-value-collections.md`](specs/2026-08-14-map-and-value-collections.md) | Swift/Buffer COW + builtin `Map<K, V>` | **shipped** (D133/D134) |

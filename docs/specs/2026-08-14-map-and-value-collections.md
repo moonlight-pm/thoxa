@@ -1,13 +1,16 @@
 # Freeze: Map and value collections (D133, D134)
 
-**Status:** shipped (v0); user keys and structural `==` shipped later  
+**Status:** shipped (v0); user keys, structural `==` (Map's too), and wider keys shipped later  
 **Decisions:** D133 (collection mutation), D134 (`Map<K, V>`); follow-ups
 D175 / D177 / D178 (`==`), D179 (user keys), D180 (collection writes reach a
 place), D181 (`remove` keeps insertion order), D203 (method parameters are
-positional), D205 (`insert(item, at:)` replaces `insertAt`)  
+positional), D205 (`insert(item, at:)` replaces `insertAt`), D207 (a field
+indexes as a local), D212 (`==` on maps), D213 (map literals take the
+expected type), D214 (arrays and Float64 in keys)  
 **Gates:** `maps` (Map); `arrays` / `array_user` / `array_heap_elems` / `splice`
 (Array surface after D133); `map_user_keys`, `map_user_keys_more`,
-`map_remove_order`, `array_eq`, `collection_element_writes`  
+`map_keys_arrays_floats`, `map_remove_order`, `map_eq`, `map_literal_expect`,
+`field_index`, `array_eq`, `collection_element_writes`  
 **As of:** 2026-10-18  
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D133/D134 in
 [`decisions.md`](../decisions.md)

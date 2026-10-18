@@ -1,9 +1,9 @@
 # Freeze: Function return-type inference (D129)
 
-**Status:** shipped (free functions; methods since **D174**)  
-**Decision:** D129, D174  
-**Gate:** `return_infer`, `return_infer_methods`, `fail/method_return_recursive`  
-**As of:** 2026-10-16
+**Status:** shipped (free functions; methods since **D174**; multi-clause and generic types' methods since **D211**, in the same rounds since **D221**; `main` since **D223**)  
+**Decision:** D129, D174, D211, D221, D223  
+**Gate:** `return_infer`, `return_infer_methods`, `return_infer_generic_multi`, `return_infer_multi_calls`, `main_void`, `fail/method_return_recursive`, `fail/main_returns_text`  
+**As of:** 2026-10-18
 
 ## Intent
 
@@ -12,8 +12,9 @@ inference succeeds. An explicit `-> T` remains the authoritative contract and
 is checked against the body (lint / type error when the body does not match).
 This replaces the old default “missing `->` ⇒ `Void`” for free fns (except
 `main` ⇒ `Int64`). Since **D174** unannotated methods infer the same way
-(`drop` stays `Void`; multi-clause methods and methods of generic types are
-still `Void` when unannotated).
+(`drop` stays `Void`). Superseded parts of v0 below: multi-clause methods and
+methods of generic types infer too (D211); an unannotated `main` is inferred,
+`Int64` as the exit status or nothing, exiting 0 (D223).
 
 ## Rules (v0)
 
@@ -22,7 +23,7 @@ still `Void` when unannotated).
 | Source | Behavior |
 |--------|----------|
 | `fn f() -> T { … }` | Use `T`; body must match |
-| `fn main()` unannotated | Still **`Int64`** (process status) |
+| `fn main()` unannotated | Inferred: `Int64` (process status) or nothing, exit 0 (**D223**; v0 said always `Int64`) |
 | `fn f()` unannotated | Infer, or error if intractable |
 
 ### 2. Exit set
@@ -106,7 +107,7 @@ that only wait on them.
 - Explicit `-> T` → show `T`.
 - Inferred → show the inferred type (compiler + LSP: last successful lower
   on open/change caches free-fn and `Type.method` returns for hover).
-- `main` unannotated → `Int64`.
+- `main` unannotated → its inferred type (D223).
 - If lower fails, hover falls back to `Void` / `main`→`Int64`.
 
 ## Non-goals (v0)
