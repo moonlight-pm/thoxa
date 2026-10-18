@@ -1,0 +1,23 @@
+## D221: an unannotated multi-clause function or method is inferred in the
+## same rounds as the rest, so its clauses may call functions and methods
+## that are themselves unannotated, defined before or after it.
+import logging, { info } from "std/logging"
+
+fn label(n!: 0) { "zero {twice(0)}" }
+fn label(n!: 1) { "one {twice(1)}" }
+
+fn twice(n!: Int64) { n * 2 }
+
+type Shape(width: Int64) {
+    export fn scale(by!: 2) { area() * 2 }
+    export fn scale(by!: 3) { area() * 3 }
+    fn area() { width * width }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info(label(1))
+    info("{Shape(width: 3).scale(2) + 1}")
+    0
+}

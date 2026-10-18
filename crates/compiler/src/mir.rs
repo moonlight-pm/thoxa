@@ -4412,80 +4412,6 @@ fn infer_unannotated_returns(
             .iter()
             .any(|module| module.id == mod_id && module.is_entry)
     };
-    // D131 multi-clause: join clause body exits when overall ret still Void placeholder.
-    for (mod_id, mangled, f, is_entry) in free_fns {
-        let Some(clauses) = multi_free.get(mangled) else {
-            continue;
-        };
-        if *is_entry && f.name == "main" {
-            continue;
-        }
-        // Skip if all clauses annotated (merge already joined).
-        if clauses.iter().all(|c| c.return_type.is_some()) {
-            continue;
-        }
-        let maps = package_maps.get(mod_id).unwrap();
-        match probe_multi_clause_return(
-            clauses,
-            mangled,
-            None,
-            *is_entry,
-            fns,
-            types,
-            layouts,
-            generics,
-            maps,
-            module_exports,
-            package_maps,
-            mod_id,
-            synthetics,
-        ) {
-            Ok(ret) => {
-                if let Some(sig) = fns.get_mut(mangled) {
-                    sig.ret = ret;
-                }
-            }
-            Err(e) => return Err(in_module_id(e, package, mod_id)),
-        }
-    }
-    // Multi-clause methods the same way, with the type's fields in scope.
-    for ((type_mangled, method_name), clauses) in multi_methods {
-        if clauses.iter().all(|c| c.return_type.is_some()) || method_name == "drop" {
-            continue;
-        }
-        let Some((mod_id, _, _)) = type_defs.iter().find(|(_, name, _)| name == type_mangled)
-        else {
-            continue;
-        };
-        let maps = package_maps.get(mod_id).unwrap();
-        let key = format!("{type_mangled}__{method_name}");
-        match probe_multi_clause_return(
-            clauses,
-            &key,
-            Some(type_mangled),
-            module_is_entry(mod_id),
-            fns,
-            types,
-            layouts,
-            generics,
-            maps,
-            module_exports,
-            package_maps,
-            mod_id,
-            synthetics,
-        ) {
-            Ok(ret) => {
-                if let Some(sig) = types
-                    .get_mut(type_mangled)
-                    .and_then(|info| info.methods.get_mut(method_name))
-                {
-                    sig.ret = ret;
-                }
-            }
-            Err(e) => return Err(in_module_id(e, package, mod_id)),
-        }
-    }
-
     // A generic type's methods are probed per instance, on bodies with the
     // type arguments substituted (as `lower_method` lowers them).
     let mono_methods: Vec<(&MonoMethodJob, Method)> = mono_method_jobs
@@ -4500,10 +4426,30 @@ fn infer_unannotated_returns(
     // unannotated methods (single-clause; `drop` is always Void).
     let mut candidates: Vec<InferCandidate> = Vec::new();
     for (mod_id, mangled, f, is_entry) in free_fns {
-        if multi_free.contains_key(mangled) || f.return_type.is_some() {
+        if *is_entry && f.name == "main" {
             continue;
         }
-        if *is_entry && f.name == "main" {
+        // D131: a multi-clause function joins its clauses' types; one whose
+        // clauses all annotate was joined when it was merged.
+        if let Some(clauses) = multi_free.get(mangled) {
+            if clauses.iter().all(|c| c.return_type.is_some()) {
+                continue;
+            }
+            candidates.push(InferCandidate {
+                module_id: mod_id.clone(),
+                is_entry: *is_entry,
+                key: mangled.clone(),
+                shown: f.name.clone(),
+                name_span: f.name_span,
+                bodies: clauses.iter().map(|clause| &clause.body).collect(),
+                target: InferTarget::Multi {
+                    clauses,
+                    method: None,
+                },
+            });
+            continue;
+        }
+        if f.return_type.is_some() {
             continue;
         }
         candidates.push(InferCandidate {
@@ -4512,7 +4458,7 @@ fn infer_unannotated_returns(
             key: mangled.clone(),
             shown: f.name.clone(),
             name_span: f.name_span,
-            body: &f.body,
+            bodies: vec![&f.body],
             target: InferTarget::Free(f),
         });
     }
@@ -4523,7 +4469,7 @@ fn infer_unannotated_returns(
             key: format!("{}__{}", job.mono_type, method.name),
             shown: format!("{}.{}", display_ty(&Ty::User(job.mono_type.clone())), method.name),
             name_span: method.name_span,
-            body: &method.body,
+            bodies: vec![&method.body],
             target: InferTarget::Method {
                 type_mangled: job.mono_type.clone(),
                 method,
@@ -4532,20 +4478,42 @@ fn infer_unannotated_returns(
     }
     for (mod_id, type_mangled, td) in type_defs {
         let is_entry = module_is_entry(mod_id);
+        let mut seen: HashSet<&str> = HashSet::new();
         for method in &td.methods {
-            if method.return_type.is_some() || method.name == "drop" {
+            if method.name == "drop" || !seen.insert(method.name.as_str()) {
                 continue;
             }
-            if multi_methods.contains_key(&(type_mangled.clone(), method.name.clone())) {
+            let key = format!("{type_mangled}__{}", method.name);
+            let shown = format!("{}.{}", td.name, method.name);
+            // A multi-clause method joins its clauses, as a function does (D211).
+            if let Some(clauses) = multi_methods.get(&(type_mangled.clone(), method.name.clone())) {
+                if clauses.iter().all(|c| c.return_type.is_some()) {
+                    continue;
+                }
+                candidates.push(InferCandidate {
+                    module_id: mod_id.clone(),
+                    is_entry,
+                    key,
+                    shown,
+                    name_span: method.name_span,
+                    bodies: clauses.iter().map(|clause| &clause.body).collect(),
+                    target: InferTarget::Multi {
+                        clauses,
+                        method: Some(type_mangled.clone()),
+                    },
+                });
+                continue;
+            }
+            if method.return_type.is_some() {
                 continue;
             }
             candidates.push(InferCandidate {
                 module_id: mod_id.clone(),
                 is_entry,
-                key: format!("{type_mangled}__{}", method.name),
-                shown: format!("{}.{}", td.name, method.name),
+                key,
+                shown,
                 name_span: method.name_span,
-                body: &method.body,
+                bodies: vec![&method.body],
                 target: InferTarget::Method {
                     type_mangled: type_mangled.clone(),
                     method,
@@ -4567,11 +4535,19 @@ fn infer_unannotated_returns(
         .collect();
     let mut methods_named: HashMap<String, Vec<usize>> = HashMap::new();
     for (index, candidate) in candidates.iter().enumerate() {
-        if let InferTarget::Method { method, .. } = &candidate.target {
-            methods_named
-                .entry(method.name.clone())
-                .or_default()
-                .push(index);
+        let name = match &candidate.target {
+            InferTarget::Method { method, .. } => Some(method.name.clone()),
+            InferTarget::Multi {
+                method: Some(type_mangled),
+                ..
+            } => candidate
+                .key
+                .strip_prefix(&format!("{type_mangled}__"))
+                .map(str::to_string),
+            _ => None,
+        };
+        if let Some(name) = name {
+            methods_named.entry(name).or_default().push(index);
         }
     }
     let callees: Vec<Vec<usize>> = candidates
@@ -4579,7 +4555,9 @@ fn infer_unannotated_returns(
         .map(|candidate| {
             let maps = package_maps.get(&candidate.module_id).unwrap();
             let mut names = CallNames::default();
-            collect_local_fn_calls(candidate.body, &mut names);
+            for body in &candidate.bodies {
+                collect_local_fn_calls(body, &mut names);
+            }
             let mut found: Vec<usize> = names
                 .functions
                 .iter()
@@ -4590,7 +4568,12 @@ fn infer_unannotated_returns(
                 found.extend(methods_named.get(name).into_iter().flatten().copied());
             }
             // Inside a method a bare call may be a sibling (D208).
-            if let InferTarget::Method { type_mangled, .. } = &candidate.target {
+            let owner = match &candidate.target {
+                InferTarget::Method { type_mangled, .. } => Some(type_mangled),
+                InferTarget::Multi { method, .. } => method.as_ref(),
+                InferTarget::Free(_) => None,
+            };
+            if let Some(type_mangled) = owner {
                 for name in &names.functions {
                     found.extend(index_of.get(&format!("{type_mangled}__{name}")).copied());
                 }
@@ -4657,6 +4640,9 @@ fn infer_unannotated_returns(
                     type_mangled,
                     method,
                 } => probe_method_return(type_mangled, method, &probe, types, layouts),
+                InferTarget::Multi { clauses, method } => {
+                    probe_multi_return(clauses, method.as_deref(), &probe, types, layouts)
+                }
             };
             let waited_on = waited.borrow().clone();
             if let Some(callee) = waited_on {
@@ -4668,8 +4654,20 @@ fn infer_unannotated_returns(
             unresolved.remove(&candidate.key);
             match outcome {
                 Ok(ret) => match &candidate.target {
-                    InferTarget::Free(_) => {
+                    InferTarget::Free(_) | InferTarget::Multi { method: None, .. } => {
                         if let Some(sig) = fns.get_mut(&candidate.key) {
+                            sig.ret = ret;
+                        }
+                    }
+                    InferTarget::Multi {
+                        method: Some(type_mangled),
+                        ..
+                    } => {
+                        let name = &candidate.key[type_mangled.len() + 2..];
+                        if let Some(sig) = types
+                            .get_mut(type_mangled)
+                            .and_then(|info| info.methods.get_mut(name))
+                        {
                             sig.ret = ret;
                         }
                     }
@@ -4743,7 +4741,9 @@ struct InferCandidate<'a> {
     /// The name diagnostics show: `area`, or `Box.area`.
     shown: String,
     name_span: Span,
-    body: &'a Block,
+    /// Every body it has (a multi-clause one has one per clause), for the
+    /// call order.
+    bodies: Vec<&'a Block>,
     target: InferTarget<'a>,
 }
 
@@ -4752,6 +4752,11 @@ enum InferTarget<'a> {
     Method {
         type_mangled: String,
         method: &'a Method,
+    },
+    /// A multi-clause function, or method of `method` (D131, D211).
+    Multi {
+        clauses: &'a [MultiClause],
+        method: Option<String>,
     },
 }
 
@@ -4773,87 +4778,34 @@ struct ProbeEnv<'a> {
     waited: &'a Rc<RefCell<Option<String>>>,
 }
 
-/// Probe each multi-clause body and join exit types (D131 + D129).
-fn probe_multi_clause_return(
+/// Probe each multi-clause body and join exit types (D131 + D129). A clause
+/// with `-> T` contributes `T`; a method's clauses see its fields. Probed in
+/// the rounds, so a clause that calls a candidate not inferred yet waits.
+fn probe_multi_return(
     clauses: &[MultiClause],
-    mangled: &str,
     method_type: Option<&str>,
-    is_entry: bool,
-    fns: &HashMap<String, FnSig>,
+    env: &ProbeEnv,
     types: &mut HashMap<String, TypeInfo>,
     layouts: &mut Vec<TypeLayout>,
-    generics: &HashMap<String, GenericDef>,
-    maps: &ModuleNameMaps,
-    module_exports: &HashMap<String, ModuleExports>,
-    package_maps: &HashMap<String, ModuleNameMaps>,
-    module_id: &str,
-    synthetics: &Rc<RefCell<SyntheticRegistry>>,
 ) -> Result<Ty> {
     let mut joined: Option<Ty> = None;
     for clause in clauses {
-        let mut ctx = LowerCtx::new(
-            fns.clone(),
-            types.clone(),
-            maps.name_to_type.clone(),
-            maps.name_to_fn.clone(),
-            maps.name_to_global.clone(),
-            maps.namespaces.clone(),
-            module_exports.clone(),
-            package_maps.clone(),
-            Ty::Void,
-            module_id.to_string(),
-            is_entry,
-            Rc::clone(synthetics),
-        );
-        ctx.inferring = true;
-        ctx.infer_self = Some(mangled.to_string());
-        ctx.generics = generics.clone();
-        // A method's clauses see the fields, as `lower_multi_method` binds them.
-        if let Some(type_mangled) = method_type {
-            bind_method_fields(&mut ctx, type_mangled);
-        }
-
-        for (name, ty) in clause.param_names.iter().zip(clause.param_tys.iter()) {
-            let place = Place {
-                name: sanitize_name(name),
-            };
-            ctx.define(name, ty.clone(), false, place);
-        }
-
-        let local_expect = if let Some(rt) = &clause.return_type {
-            resolve_ty(rt, &ctx.types, &ctx.name_to_type)?
-        } else {
-            Ty::Void
-        };
-        let _ = lower_block_value(&mut ctx, &clause.body, &local_expect)?;
-
-        // Merge monomorphs / synthetics back.
-        for (name, info) in ctx.types.iter() {
-            if !types.contains_key(name) {
-                types.insert(name.clone(), info.clone());
+        let clause_ret = match &clause.return_type {
+            Some(rt) => resolve_ty(rt, types, &env.maps.name_to_type)?,
+            None => {
+                let mut ctx = probe_ctx(env, types);
+                if let Some(type_mangled) = method_type {
+                    bind_method_fields(&mut ctx, type_mangled);
+                }
+                for (name, ty) in clause.param_names.iter().zip(clause.param_tys.iter()) {
+                    let place = Place {
+                        name: sanitize_name(name),
+                    };
+                    ctx.define(name, ty.clone(), false, place);
+                }
+                probe_body_return(ctx, &clause.body, clause.name_span, env.generics, types, layouts)?
             }
-        }
-        for (name, (info, layout)) in ctx.synthetics.borrow().entries.iter() {
-            if !types.contains_key(name) {
-                types.insert(name.clone(), info.clone());
-                layouts.push(layout.clone());
-            }
-        }
-
-        let clause_ret = if let Some(rt) = &clause.return_type {
-            resolve_ty(rt, types, &maps.name_to_type)?
-        } else {
-            combine_inferred_return(
-                types,
-                layouts,
-                generics,
-                &ctx.infer_residuals,
-                &ctx.infer_values,
-                &ctx.infer_successes,
-                clause.name_span,
-            )?
         };
-
         joined = Some(match joined {
             None => clause_ret,
             Some(prev) => join_return_tys(
@@ -4862,7 +4814,7 @@ fn probe_multi_clause_return(
                 &prev,
                 &clause_ret,
                 clause.name_span,
-                module_id,
+                env.module_id,
             )?,
         });
     }

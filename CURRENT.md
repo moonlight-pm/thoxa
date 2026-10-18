@@ -154,7 +154,9 @@ arrays and Float64, and be Float64 (SameValueZero: NaN finds NaN); **D215**
 (`[1, 2] as Pair<Int64>`); **D218** a route body parameter may be an
 `Array<T>`, read from a JSON array; **D219** `UInt64` arithmetic over its
 whole range (wrapping, unsigned `/ % < >>`; mixing with a signed value is an
-error); **D220** multi-clause methods write their fields.
+error); **D220** multi-clause methods write their fields; **D221** a
+multi-clause body may call unannotated functions (it is inferred in the same
+rounds).
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 `Int64` →
