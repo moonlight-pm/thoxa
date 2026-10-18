@@ -464,7 +464,10 @@ outside `0..N-1` panics with `fixed array index out of bounds`.
 identifier key is the string of that name (`{ Host: "x" }` has the key
 `"Host"`), any other key is an expression (`{ 1: "one", "content type": "x" }`).
 An empty `{}` is a block, not a map. A key repeated in one literal is a compile
-error. A map may be a field of a product.
+error. A map may be a field of a product. Where a `Map<K, V>` is expected (an
+annotation, a parameter, a field), the literal's keys and values take its
+types: `{"tea": 4, "milk": 2.5}` passed as a `Map<String, Float64>` widens the
+`4`, and an `[]` value takes the element type.
 
 ```thx
 mut ages: Map<String, Int64> = Map()

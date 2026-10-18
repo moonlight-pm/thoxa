@@ -1,0 +1,40 @@
+## D213: an expected `Map<K, V>` types a map literal's keys and values, as
+## an expected element type does an array's (D184): a member widens to its
+## union, an integer to Float64, and `[]`, `Map()`, or a nested `{…}` takes
+## the type.
+import logging, { info } from "std/logging"
+
+type Circle(radius: Int64)
+type Square(side: Int64)
+type Shape = Circle | Square
+type Sheet(cells: Map<String, Array<Int64>>)
+
+fn total(prices!: Map<String, Float64>) -> Float64 {
+    mut sum = 0.0
+    for name, price in prices {
+        sum = sum + price
+    }
+    sum
+}
+
+fn area(shape!: Shape) -> Int64 {
+    match shape {
+        Circle(radius) => 3 * radius * radius
+        Square(side) => side * side
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let sheet = Sheet(cells: {"a": [1, 2], "b": []})
+    info("cells {sheet.cells.count}")
+    let shapes: Map<String, Shape> = {"c": Circle(radius: 1), "s": Square(side: 2)}
+    for name, shape in shapes {
+        info("{name} {area(shape)}")
+    }
+    info("total {total({"tea": 4, "milk": 2.5})}")
+    let groups: Map<String, Map<String, Int64>> = {"empty": Map(), "one": {"x": 1}}
+    info("groups {groups.count}")
+    0
+}

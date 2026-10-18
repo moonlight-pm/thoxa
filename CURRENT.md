@@ -146,7 +146,8 @@ first line ran nothing); **D210** an LSP rename writes a pun's label out
 (`connect(host, deadline: limit)`), and renames method and constructor labels;
 **D211** multi-clause methods and generic types' methods infer their return
 types; **D212** `==` on maps (any order) and on types that contain
-themselves (`Json`, trees).
+themselves (`Json`, trees); **D213** an expected `Map<K, V>` types a map
+literal (`Sheet(cells: {"a": [1], "b": []})`).
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 keys cannot hold Array fields (no array hash yet,

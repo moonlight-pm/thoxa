@@ -8090,6 +8090,10 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
     if let Some(json) = expect.filter(|_| codec::is_json_literal(ctx, expr, expect)) {
         return codec::lower_json_literal(ctx, expr, json);
     }
+    // A map literal takes an expected key and value type (D213).
+    if let (ExprKind::MapLit(entries), Some(Ty::Map { key, val })) = (&expr.kind, expect) {
+        return lower_map_lit(ctx, entries, expr.span, Some((key.as_ref(), val.as_ref())));
+    }
     // Fixed Array<T,N> from array literal when expected type is known (let/assign).
     if let Some(Ty::FixedArray { elem, len }) = expect {
         if let ExprKind::ArrayLit(elems) = &expr.kind {
@@ -8250,7 +8254,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
         } => lower_field(ctx, base, name, *name_span),
         ExprKind::Index { base, index } => lower_index(ctx, base, index, expr.span),
         ExprKind::ArrayLit(elems) => lower_array_lit(ctx, elems, expr.span, expect),
-        ExprKind::MapLit(entries) => lower_map_lit(ctx, entries, expr.span),
+        ExprKind::MapLit(entries) => lower_map_lit(ctx, entries, expr.span, None),
         ExprKind::MethodCall {
             receiver,
             method,
@@ -9123,7 +9127,16 @@ fn lower_map_new(
     Ok((p, ty))
 }
 
-fn lower_map_lit(ctx: &mut LowerCtx, entries: &[MapEntry], span: Span) -> Result<(Place, Ty)> {
+/// `{k: v, …}`. An expected `Map<K, V>` (an annotation, a parameter, a field)
+/// types every key and value, as an expected element type does an array's
+/// (D184): a member widens to its union, an integer to Float64, and `[]` or
+/// a nested `{…}` takes the type (D213).
+fn lower_map_lit(
+    ctx: &mut LowerCtx,
+    entries: &[MapEntry],
+    span: Span,
+    expect: Option<(&Ty, &Ty)>,
+) -> Result<(Place, Ty)> {
     if entries.is_empty() {
         return Err(Error::at(
             "empty `{}` is a block; use `Map()` for an empty map",
@@ -9147,7 +9160,13 @@ fn lower_map_lit(ctx: &mut LowerCtx, entries: &[MapEntry], span: Span) -> Result
     let mut seen_keys: Vec<(Ty, String)> = Vec::new();
     let mut pairs: Vec<(Place, Place)> = Vec::new();
     for (k, v) in pairs_in {
-        let (kp, kt) = lower_expr(ctx, k)?;
+        let (kp, kt) = match expect {
+            Some((want, _)) => {
+                let (kp, kt) = lower_expr_expect(ctx, k, Some(want))?;
+                coerce_element(ctx, kp, &kt, want, k)?
+            }
+            None => lower_expr(ctx, k)?,
+        };
         if !is_map_key_ty(&kt) {
             return Err(Error::at(
                 format!("Map key type not supported: {kt:?}"),
@@ -9176,7 +9195,13 @@ fn lower_map_lit(ctx: &mut LowerCtx, entries: &[MapEntry], span: Span) -> Result
             }
             seen_keys.push((kt.clone(), key_id));
         }
-        let (vp, vt) = lower_expr(ctx, v)?;
+        let (vp, vt) = match expect {
+            Some((_, want)) => {
+                let (vp, vt) = lower_expr_expect(ctx, v, Some(want))?;
+                coerce_element(ctx, vp, &vt, want, v)?
+            }
+            None => lower_expr(ctx, v)?,
+        };
         if !is_map_val_ty(&vt) {
             return Err(Error::at(
                 format!("Map value type not supported: {vt:?}"),
