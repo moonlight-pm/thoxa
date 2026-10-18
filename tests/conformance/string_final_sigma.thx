@@ -1,0 +1,19 @@
+## D216: `toLower` maps a capital sigma that ends a word to the final form
+## `ς` (Unicode's Final_Sigma: a cased letter before it and none after it,
+## skipping case-ignorable ones such as an apostrophe or a combining accent).
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info("ΟΔΟΣ".toLower())
+    info("ΟΔΟΣ ΟΔΟΣ.".toLower())
+    info("Σ".toLower())
+    info("ΣΑ".toLower())
+    info("ΑΣ'Β".toLower())
+    info("ΑΣ\u{301}".toLower())
+    let final = "ΟΔΟΣ".toLower()
+    info("{final == "οδος"} {final == "οδοσ"} {final.count}")
+    info("{"ΟΔΟΣ".equals("οδοσ", ignoreCase: true)} {"οδος".toUpper()}")
+    0
+}

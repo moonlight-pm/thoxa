@@ -11,7 +11,7 @@
 ## Positions the methods take or return count Unicode scalars (D195).
 
 import { Has, Not, May } from "std/fallible"
-import { lowerRanges, lowerExpansions, upperRanges, upperExpansions, foldRanges, foldExpansions } from "std/unicode"
+import { lowerRanges, lowerExpansions, upperRanges, upperExpansions, foldRanges, foldExpansions, casedRanges, caseIgnorableRanges } from "std/unicode"
 
 ## The text before and after a separator (`splitOnce`).
 export type Split(before: String, after: String)
@@ -64,14 +64,15 @@ extend String as text {
         }
     }
 
-    ## Unicode's default lowercase mapping.
+    ## Unicode's default lowercase mapping. A capital sigma that ends a word
+    ## becomes the final form: `ΟΔΟΣ` → `οδος`.
     export fn toLower() -> String {
-        mapCase(text, lowerRanges, lowerExpansions)
+        mapCase(text, lowerRanges, lowerExpansions, true)
     }
 
     ## Unicode's default uppercase mapping; one scalar may become several (`ß` → `SS`).
     export fn toUpper() -> String {
-        mapCase(text, upperRanges, upperExpansions)
+        mapCase(text, upperRanges, upperExpansions, false)
     }
 
     ## Without leading and trailing Unicode white space.
@@ -441,7 +442,9 @@ fn trailingSpace(text!: String) -> Int64 {
 ## --- Case -----------------------------------------------------------------
 
 ## The text with every scalar mapped through a case table from std/unicode.
-fn mapCase(text!: String, ranges!: Array<Int64>, expansions!: Array<Int64>) -> String {
+## `finalSigma`: a capital sigma (U+03A3) that ends a word maps to `ς`
+## (U+03C2), SpecialCasing's Final_Sigma condition (D216).
+fn mapCase(text!: String, ranges!: Array<Int64>, expansions!: Array<Int64>, finalSigma!: Bool) -> String {
     mut out = Buffer()
     mut at = 0
     while at < text.byteCount {
@@ -456,7 +459,11 @@ fn mapCase(text!: String, ranges!: Array<Int64>, expansions!: Array<Int64>) -> S
                 }
             }
             Not {
-                appendScalar(mut out, rangeMapped(scalar.code, ranges))
+                if finalSigma and scalar.code == 0x03A3 and endsWord(text, at, scalar.length) {
+                    appendScalar(mut out, 0x03C2)
+                } else {
+                    appendScalar(mut out, rangeMapped(scalar.code, ranges))
+                }
             }
         }
         at = at + scalar.length
@@ -464,9 +471,50 @@ fn mapCase(text!: String, ranges!: Array<Int64>, expansions!: Array<Int64>) -> S
     out.freeze().toString()
 }
 
+## Final_Sigma: the scalar at byte `at` follows a cased letter, skipping
+## case-ignorable ones, and no cased letter follows it the same way.
+fn endsWord(text!: String, at!: Int64, length!: Int64) -> Bool {
+    mut offset = at
+    mut before = false
+    while offset > 0 {
+        offset = scalarStart(text, offset - 1)
+        let code = decode(text, offset).code
+        if not inRanges(code, caseIgnorableRanges) {
+            before = inRanges(code, casedRanges)
+            break
+        }
+    }
+    offset = at + length
+    while before and offset < text.byteCount {
+        let scalar = decode(text, offset)
+        if not inRanges(scalar.code, caseIgnorableRanges) {
+            return not inRanges(scalar.code, casedRanges)
+        }
+        offset = offset + scalar.length
+    }
+    before
+}
+
+## `code` is in one of the sorted `first, last` pairs, by binary search.
+fn inRanges(code!: Int64, ranges!: Array<Int64>) -> Bool {
+    mut low = 0
+    mut high = ranges.count / 2
+    while low < high {
+        let middle = (low + high) / 2
+        if ranges[middle * 2 + 1] < code {
+            low = middle + 1
+        } else if ranges[middle * 2] > code {
+            high = middle
+        } else {
+            return true
+        }
+    }
+    false
+}
+
 ## Full Unicode case folding: what `ignoreCase` compares.
 fn caseFold(text!: String) -> String {
-    mapCase(text, foldRanges, foldExpansions)
+    mapCase(text, foldRanges, foldExpansions, false)
 }
 
 ## The index of `code`'s entry in an expansion table, by binary search.

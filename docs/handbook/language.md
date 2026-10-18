@@ -368,8 +368,9 @@ which compares Unicode case folds:
 
 Without `ignoreCase` the comparison is exact, byte for byte. `toLower` and
 `toUpper` use Unicode's default case mappings, so one character may become
-two (`ß` becomes `SS`); `Σ` always lowercases to `σ`, also at the end of a
-word, and there are no language-specific rules (Turkish `i`). White space is
+two (`ß` becomes `SS`). `Σ` lowercases to the final form `ς` at the end of a
+word (`"ΟΔΟΣ".toLower()` is `"οδος"`) and to `σ` elsewhere. There are no
+language-specific rules (Turkish `i`). White space is
 Unicode white space: space, tab, line ends, the no-break space, the
 ideographic space, and the other `White_Space` characters. Neither case
 folding nor `==` normalizes: a precomposed `é` is not `e` followed by a

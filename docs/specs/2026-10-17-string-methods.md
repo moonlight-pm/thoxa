@@ -2,10 +2,10 @@
 
 **Date:** 2026-10-17
 **Status:** target (freeze)
-**Implementation:** shipped (§1–§3 slice 1, §4 slice 2); since D196 the methods are Thoxa in `std/string.thx`, not C
+**Implementation:** shipped (§1–§3 slice 1, §4 slice 2); since D196 the methods are Thoxa in `std/string.thx`, not C; final sigma since D216, `\u{…}` since D215
 **Decision:** D195 (needs D194, positional-then-named calls)
 **Gates:** `string_methods`, `string_scalars`, `string_escapes`, `stdlib`, `call_mixed_args`, `fail/call_positional_after_named`, `fail/call_named_twice`
-**Gaps:** final sigma (`Σ` lowercases to `σ` everywhere); no normalization; no `\u{…}` escape; a C string that is not UTF-8 (a Latin-1 file name) is repaired, so it cannot round-trip; positions in a long non-ASCII string are O(n)
+**Gaps:** no normalization; a C string that is not UTF-8 (a Latin-1 file name) is repaired, so it cannot round-trip; positions in a long non-ASCII string are O(n)
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D195 in
 [`decisions.md`](../decisions.md)
@@ -87,8 +87,10 @@ arguments first, then named (D194, the oracle SPEC's call rule).
   true)` is true).
 - **`toLower` / `toUpper` use the full default mappings** (`UnicodeData.txt`
   plus the unconditional entries of `SpecialCasing.txt`): `ß` → `SS`,
-  `İ` → `i̇`, `ǅ` → `Ǆ` / `ǆ`. Conditional mappings are left out: final sigma,
-  and the Turkish, Azeri, and Lithuanian rules.
+  `İ` → `i̇`, `ǅ` → `Ǆ` / `ǆ`. Conditional mappings are left out: the
+  Turkish, Azeri, and Lithuanian rules. Final sigma is applied (D216): `Σ`
+  after a cased letter, with no cased letter after it (case-ignorable ones
+  skipped), lowercases to `ς`.
 - **`trim` removes Unicode White_Space**: ASCII space, tab, and line ends,
   plus U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F,
   U+3000.
