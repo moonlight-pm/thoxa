@@ -115,8 +115,10 @@ methods and constructors follow D200, positional except their options
 (`find(needle, from: 3)`, `Buffer(capacity:)`, `Element(tag:, attrs:,
 kids:)`), so they pun too; `Text("hi")`, `Fragment([…])`.
 
-**Proposed, awaiting Joshua** (standing order): let a method's field be
-passed `mut`.
+**Joshua, "Hit all three proposals" (2026-10-18):** **D204** `Element`'s
+fields are `attributes` / `children` and default to empty
+(`Element(tag: "br")`); next `insert(item, at:)` for Array and Bytes, then a
+method's field passed `mut`.
 
 **Typed codecs (D182) shipped**, freeze
 [`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md):

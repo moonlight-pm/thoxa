@@ -3195,8 +3195,8 @@ fn desugar_jsx(
                 callee: "__jsx_el".into(),
                 args: vec![
                     jsx_named("tag", tag_span, jsx_string_lit(tag, tag_span)),
-                    jsx_named("attrs", tag_span, attrs_expr),
-                    jsx_named("kids", tag_span, jsx_array_lit(kids, span)),
+                    jsx_named("attributes", tag_span, attrs_expr),
+                    jsx_named("children", tag_span, jsx_array_lit(kids, span)),
                 ],
             },
             span,

@@ -48,10 +48,10 @@ fn main() -> Int64 {
     info("{ages.has("ada")} {ages.count}")
 
     let tag = "p"
-    let attrs = [Attr(name: "class", value: "note")]
-    let kids = [Text("hi "), Fragment([Text("there")])]
-    let paragraph = Element(tag, attrs, kids)
-    let heading = Element(tag: "h1", attrs: [], kids: [Text("title")])
+    let attributes = [Attr(name: "class", value: "note")]
+    let children = [Text("hi "), Fragment([Text("there")])]
+    let paragraph = Element(tag, attributes, children)
+    let heading = Element(tag: "h1", children: [Text("title")])
     info(paragraph.html())
     info(heading.html())
     0

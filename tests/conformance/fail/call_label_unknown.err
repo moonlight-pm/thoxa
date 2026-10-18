@@ -1,2 +1,2 @@
-unknown argument `attributes`
-the parameters are tag, attrs, kids
+unknown argument `attrs`
+the parameters are tag, attributes, children

@@ -750,7 +750,7 @@ also labels the name keeps the bare one positional: with
 Built-in methods and constructors follow the same rule. Their parameters are
 positional (`items.append(item)`, `ages.set("ada", 36)`, `Text("hi")`) except
 the options: `from:` on `byteIndexOf` and `Bytes.find`, `Buffer(capacity:)`,
-and `Element(tag:, attrs:, kids:)`. The tables below show each one's labels.
+and `Element(tag:, attributes:, children:)`. The tables below show each one's labels.
 
 A parameter with a default may be omitted. Default expressions are evaluated
 at the call site, and free names in them resolve in the module that defines
@@ -1042,8 +1042,8 @@ block's last value does, so arms may be different members of an expected
 union, or values that encode into an expected `Json`. Without an expected
 type, the arms must have the same type.
 
-**`Node` values** match with `Element(tag, attrs, kids)`, `Text(text)`, and
-`Fragment(kids)`.
+**`Node` values** match with `Element(tag, attributes, children)`,
+`Text(text)`, and `Fragment(children)`.
 
 ## Functions
 
@@ -1544,8 +1544,8 @@ info(page.html())
 | Spreads | `{...attrs}` on an element takes an `Array<Attr>` (later attributes append); on a component it copies a product's fields |
 | Text | Whitespace-only gaps between tags are dropped. `#` starts a comment; `\#` is a literal `#` |
 | Void elements | `br` `hr` `img` `input` `meta` `link` render with no closing tag |
-| Matching | `Element(tag, attrs, kids)` / `Text(text)` / `Fragment(kids)` |
-| Constructors | Built in: `Element(tag: "p", attrs: [], kids: [])`, `Text("hi")`, `Fragment([…])`, `Attr(name: "id", value: "x")` |
+| Matching | `Element(tag, attributes, children)` / `Text(text)` / `Fragment(children)` |
+| Constructors | Built in: `Element(tag: "p", attributes: […], children: […])` (both lists default to empty, so `Element(tag: "br")`), `Text("hi")`, `Fragment([…])`, `Attr(name: "id", value: "x")` |
 
 `<` starts a tag only when a name or `>` follows it directly; see
 [Line breaks](#line-breaks). `http.htmlResponse(root)` sends a page with a

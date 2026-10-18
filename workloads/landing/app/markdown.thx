@@ -129,16 +129,16 @@ fn blocks(source!: Array<String>, chapter!: Chapter, headings!: Array<Heading>) 
 
 ## Chapter titles are `h2` on the page (the page's own title is the `h1`).
 fn heading(entry!: Heading, chapter!: Chapter) -> Node {
-    mut kids: Array<Node> = []
+    mut children: Array<Node> = []
     if not entry.number.isEmpty() {
-        kids.append(<span class="number">{entry.number}</span>)
+        children.append(<span class="number">{entry.number}</span>)
     }
     for node in inline(entry.title, chapter) {
-        kids.append(node)
+        children.append(node)
     }
-    kids.append(<a class="anchor" href={"#{entry.id}"} aria-label="Link to this section">§</a>)
+    children.append(<a class="anchor" href={"#{entry.id}"} aria-label="Link to this section">§</a>)
     let level = if entry.level >= 5 { 6 } else { entry.level + 1 }
-    Element(tag: "h{level}", attrs: [Attr(name: "id", value: entry.id)], kids)
+    Element(tag: "h{level}", attributes: [Attr(name: "id", value: entry.id)], children)
 }
 
 fn fence(source!: Array<String>, at!: Int64) -> Parsed {

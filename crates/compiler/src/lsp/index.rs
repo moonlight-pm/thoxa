@@ -158,10 +158,10 @@ fn builtin_help(name: &str) -> &'static str {
         "Node" => {
             "Built-in HTML tree (JSX). `Element | Text | Fragment`; render with `.html() -> String`."
         }
-        "Element" => "HTML element node: `Element(tag, attrs, kids)`. A `Node`.",
-        "Text" => "HTML text node: `Text(s)`. A `Node`.",
-        "Fragment" => "HTML fragment: `Fragment(kids)`. A `Node`.",
-        "Attr" => "HTML attribute: `Attr(name, value)`.",
+        "Element" => "HTML element node: `Element(tag: \"p\", attributes: [], children: [])` (the lists default to empty). A `Node`.",
+        "Text" => "HTML text node: `Text(\"hi\")`. A `Node`.",
+        "Fragment" => "HTML fragment: `Fragment(children)`. A `Node`.",
+        "Attr" => "HTML attribute: `Attr(name: \"id\", value: \"x\")`.",
         "String" => "Built-in UTF-8 string.",
         "Bytes" => "Built-in byte buffer.",
         "Buffer" => "Built-in growable buffer.",

@@ -3076,8 +3076,8 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
         TypeInfo {
             fields: vec![
                 field_info("tag", Ty::String),
-                field_info("attrs", attr_array_ty()),
-                field_info("kids", node_array_ty()),
+                field_info("attributes", attr_array_ty()),
+                field_info("children", node_array_ty()),
             ],
             methods: HashMap::new(),
             zero_init: false,
@@ -3089,7 +3089,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
     types_info.insert(
         "Text".into(),
         TypeInfo {
-            fields: vec![field_info("s", Ty::String)],
+            fields: vec![field_info("text", Ty::String)],
             methods: HashMap::new(),
             zero_init: false,
             def_mod: String::new(),
@@ -3100,7 +3100,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
     types_info.insert(
         "Fragment".into(),
         TypeInfo {
-            fields: vec![field_info("kids", node_array_ty())],
+            fields: vec![field_info("children", node_array_ty())],
             methods: HashMap::new(),
             zero_init: false,
             def_mod: String::new(),
@@ -10862,13 +10862,18 @@ fn lower_html_attr(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Plac
     }
 }
 
+/// `Element(tag: "p", attributes: [], children: [])`; the lists default to
+/// empty, so `Element(tag: "br")` is an element with neither.
 fn lower_html_el(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
     let formal = vec![
         ("tag".into(), Ty::String),
-        ("attrs".into(), attr_array_ty()),
-        ("kids".into(), node_array_ty()),
+        ("attributes".into(), attr_array_ty()),
+        ("children".into(), node_array_ty()),
     ];
-    let places = resolve_call_args_full(ctx, &formal, &[], &[], &[false; 3], args, span, "")?;
+    let empty = Some(crate::ast_build::empty_array());
+    let defaults = vec![None, empty.clone(), empty];
+    let places =
+        resolve_call_args_full(ctx, &formal, &defaults, &[], &[false; 3], args, span, "")?;
     emit_call_result(ctx, Callee::Builtin("html_el".into()), places, Ty::Node)
 }
 
@@ -10883,7 +10888,7 @@ fn lower_html_text_ctor(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<
 }
 
 fn lower_html_frag_ctor(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
-    let formal = vec![("kids".into(), node_array_ty())];
+    let formal = vec![("children".into(), node_array_ty())];
     let places = resolve_call_args(ctx, &formal, args, span)?;
     emit_call_result(ctx, Callee::Builtin("html_frag".into()), places, Ty::Node)
 }
@@ -13772,10 +13777,10 @@ fn finish_match_arm_ty(
 fn node_field_builtin(variant: &str, field: &str) -> Option<&'static str> {
     match (variant, field) {
         ("Element", "tag") => Some("html_tag"),
-        ("Element", "attrs") => Some("html_attrs"),
-        ("Element", "kids") => Some("html_kids"),
-        ("Text", "s") => Some("html_get_text"),
-        ("Fragment", "kids") => Some("html_kids"),
+        ("Element", "attributes") => Some("html_attrs"),
+        ("Element", "children") => Some("html_kids"),
+        ("Text", "text") => Some("html_get_text"),
+        ("Fragment", "children") => Some("html_kids"),
         _ => None,
     }
 }
