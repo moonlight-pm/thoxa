@@ -204,10 +204,11 @@ fn desugar_module_with(
             extra.push(gen_read_form(td));
         }
     }
+    // Body readers first: an `Array<T>` one is an `as` the scan below finds.
+    let filled = fill_body_readers(module, module_id, world, resolve, forms);
     for target in cast_targets(module) {
         extra.extend(gen_cast_readers(&target, module_id, world, resolve));
     }
-    let filled = fill_body_readers(module, module_id, world, resolve, forms);
     if extra.is_empty() && !filled {
         return Ok(());
     }
@@ -2747,7 +2748,9 @@ fn gen_custom_from_json(td: &TypeDef, index: usize, fallible: bool) -> Function 
 
 /// Give each `__routeBody_K(request)` stub the route desugar added its body
 /// (D191 §5): the query or a form body through `T.readForm` when `T` reads
-/// from a form, a JSON body through `T.read`. Returns whether any was filled.
+/// from a form, a JSON body through `T.read`; an `Array<T>` body reads JSON
+/// as a top-level array, `readJson(body)? as Array<T>` (D218). Returns
+/// whether any was filled.
 fn fill_body_readers(
     module: &mut Module,
     module_id: &str,
@@ -2771,7 +2774,13 @@ fn fill_body_readers(
         };
         let target = target.clone();
         let trial = ty_trial_issues(target.clone());
-        let form_ok = forms
+        let array = target.name == "Array";
+        let shown = match target.args.first() {
+            Some(TypeArg::Type(element)) if array => format!("Array<{}>", element.name),
+            _ => target.name.clone(),
+        };
+        let form_ok = !array
+            && forms
             && resolve
                 .get(module_id)
                 .and_then(|names| names.get(&target.name))
@@ -2793,11 +2802,26 @@ fn fill_body_readers(
                         "issueRejected",
                         vec![
                             Arg::Pos(str_lit("")),
-                            Arg::Pos(str_lit(&format!("{} is read from JSON only", target.name))),
+                            Arg::Pos(str_lit(&format!("{shown} is read from JSON only"))),
                         ],
                     )),
                 )
             }
+        };
+        let read_json = if array {
+            Expr {
+                kind: ExprKind::Cast {
+                    expr: Box::new(try_expr(json_call(
+                        "readJson",
+                        vec![Arg::Pos(body_text.clone())],
+                    ))),
+                    ty: target.clone(),
+                    propagate: false,
+                },
+                span: dummy(),
+            }
+        } else {
+            method_call(name(&target.name), "read", vec![Arg::Pos(body_text.clone())])
         };
         let when = |kind: &str, value: Expr| {
             BlockItem::Expr(if_expr(
@@ -2810,13 +2834,9 @@ fn fill_body_readers(
             items: vec![
                 let_bind("__kind", false, http_call("bodyKind", vec![Arg::Pos(name("request"))])),
                 when("query", form_read(field(name("request"), "query"))),
-                when("form", form_read(body_text.clone())),
+                when("form", form_read(body_text)),
             ],
-            tail: Some(Box::new(method_call(
-                name(&target.name),
-                "read",
-                vec![Arg::Pos(body_text)],
-            ))),
+            tail: Some(Box::new(read_json)),
             span: dummy(),
         };
         filled = true;

@@ -151,13 +151,14 @@ literal (`Sheet(cells: {"a": [1], "b": []})`); **D214** Map keys may hold
 arrays and Float64, and be Float64 (SameValueZero: NaN finds NaN); **D215**
 `\u{…}` string escape (`"caf\u{e9}"`); **D216** `toLower` applies final sigma
 (`"ΟΔΟΣ"` → `"οδος"`); **D217** generic types declare `from` clauses
-(`[1, 2] as Pair<Int64>`).
+(`[1, 2] as Pair<Int64>`); **D218** a route body parameter may be an
+`Array<T>`, read from a JSON array.
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
 `Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
 range) and the message prints `lo..hi` for `lo..=hi`; a session command inside a block
-is not recognized (use `shell.run`). From D191: route body parameters take named types only. From D195: no normalization.
+is not recognized (use `shell.run`). From D195: no normalization.
 From D202: only a bare name puns (not `options.deadline`). From D206: a heap field passed `mut` is copied on the callee's
 first write (it is shared with the receiver until the write-back).
 

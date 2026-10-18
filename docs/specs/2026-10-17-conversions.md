@@ -5,7 +5,7 @@
 **Implementation:** shipped (§1–§6)
 **Decision:** D191 (builds on D182; replaced `T.from` and `T.fromJson` in §6)
 **Gates:** per section below
-**Gaps:** see Non-goals; route body parameters take named types only (generic types' `from` clauses since D217)
+**Gaps:** see Non-goals (generic types' `from` clauses since D217; `Array<T>` route body parameters since D218)
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D191 in
 [`decisions.md`](../decisions.md)

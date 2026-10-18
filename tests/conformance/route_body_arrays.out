@@ -1,0 +1,8 @@
+200 2 orders, 3 cups
+200 0 orders, 0 cups
+400 {"ok":false,"errors":[{"path":"0.quantity","error":"0.quantity: expected integer <= 12, got 40","expected":"integer <= 12","got":"40"}]}
+400 {"ok":false,"errors":[{"path":"","error":"expected array, got object","expected":"array","got":"object"}]}
+400 Array<CreateOrder> is read from JSON only
+200 tags 2
+200 no tags: 0: expected string, got integer
+200 no tags: bad json: invalid literal

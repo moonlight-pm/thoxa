@@ -1664,9 +1664,10 @@ When the parameter's type is `T` and the read fails, the clause does not run:
 a JSON request gets `400` with `errorsObject(issues)`, a form or query `400`
 with `messages(issues)` as text. When the type is `Trial<T, Array<Issue>>`,
 the clause always runs and handles the failure itself (a form page, a
-redirect). A type that a form cannot hold (a `Map` field, a union) answers a
-form or query with one issue, `T is read from JSON only`. Body parameters need
-`std/json` in the program.
+redirect). The type may also be an `Array<T>`, read from a top-level JSON
+array (`[{…}, {…}]`). A type that a form cannot hold (an array, a `Map` field,
+a union) answers a form or query with one issue, `T is read from JSON only`.
+Body parameters need `std/json` in the program.
 
 ```thx
 type Routes {

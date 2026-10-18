@@ -462,7 +462,7 @@ fn validate_formals(r: &RouteClause, pat: &PathPattern) -> Result<Vec<CallSlot>>
 }
 
 /// A parameter that is neither a path capture nor the `Request` reads the
-/// body: `T` (a named type) or `Trial<T, Array<Issue>>`.
+/// body: `T` (a named type or an `Array<T>`, D218) or `Trial<T, Array<Issue>>`.
 fn body_target(p: &Param, cap_names: &HashSet<&str>) -> Option<(TypeExpr, bool)> {
     if cap_names.contains(p.name.as_str()) || p.ty.name == "Request" {
         return None;
@@ -472,8 +472,9 @@ fn body_target(p: &Param, cap_names: &HashSet<&str>) -> Option<(TypeExpr, bool)>
             return Some((inner.clone(), true));
         }
     }
-    (p.ty.args.is_empty() && p.ty.union_members.is_none() && p.ty.lit.is_none())
-        .then(|| (p.ty.clone(), false))
+    let plain = p.ty.union_members.is_none() && p.ty.lit.is_none();
+    let array = p.ty.name == "Array" && p.ty.args.len() == 1;
+    (plain && (p.ty.args.is_empty() || array)).then(|| (p.ty.clone(), false))
 }
 
 /// `fn __routeBody_K(request: Request) -> Trial<T, Array<Issue>> {}`

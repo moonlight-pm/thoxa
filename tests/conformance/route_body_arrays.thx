@@ -1,0 +1,59 @@
+## D218: a route body parameter may be an `Array<T>`, read from a JSON
+## array; a form or query cannot hold one. A failed read answers 400, unless
+## the parameter is a Trial.
+import http, { Request, Response, Header, ok, notFound, badRequest } from "std/http"
+import { Pass, Fail, Trial } from "std/fallible"
+import { Issue, messages } from "std/json"
+import logging, { info } from "std/logging"
+
+type Quantity = Int64 where >= 1 & <= 12
+type CreateOrder(drink: String, quantity: Quantity = 1)
+
+type Routes {
+    POST "/batch" (orders: Array<CreateOrder>) -> String {
+        mut cups = 0
+        for order in orders {
+            cups = cups + order.quantity
+        }
+        "{orders.count} orders, {cups} cups"
+    }
+
+    POST "/tags" (tags: Trial<Array<String>, Array<Issue>>) -> String {
+        match tags {
+            Pass(found) => "tags {found.count}"
+            Fail(issues) => "no tags: {messages(issues)}"
+        }
+    }
+}
+
+fn send(path!: String, contentType!: String, body!: String) -> Request {
+    Request(
+        method: "POST",
+        path: path,
+        query: "",
+        version: "HTTP/1.1",
+        headers: [Header(name: "Content-Type", value: contentType)],
+        body: Bytes.fromString(body)
+    )
+}
+
+fn show(response!: Response) -> String {
+    "{response.status} {response.body.toString().trim()}"
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let routes = Routes()
+    let json = "application/json"
+    let form = "application/x-www-form-urlencoded"
+    info(show(routes.route(send("/batch", json, "[{{\"drink\": \"mocha\", \"quantity\": 2}}, {{\"drink\": \"tea\"}}]"))))
+    info(show(routes.route(send("/batch", json, "[]"))))
+    info(show(routes.route(send("/batch", json, "[{{\"drink\": \"mocha\", \"quantity\": 40}}]"))))
+    info(show(routes.route(send("/batch", json, "{{\"drink\": \"mocha\"}}"))))
+    info(show(routes.route(send("/batch", form, "drink=tea"))))
+    info(show(routes.route(send("/tags", json, "[\"hot\", \"green\"]"))))
+    info(show(routes.route(send("/tags", json, "[1]"))))
+    info(show(routes.route(send("/tags", json, "not json"))))
+    0
+}
