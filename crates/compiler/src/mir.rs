@@ -1119,6 +1119,8 @@ enum GenericKind {
     Product {
         params: Vec<ast::Param>,
         methods: Vec<Method>,
+        /// `from` clauses, instantiated per instance (D217).
+        conversions: Vec<ast::Conversion>,
     },
     Union {
         members: Vec<TypeExpr>,
@@ -1132,6 +1134,9 @@ struct MonoMethodJob {
     method: Method,
     subst: HashMap<String, Ty>,
     def_mod: String,
+    /// A `from` clause of the instance (D217): `method` is the free function
+    /// `__conversion_{instance}_N`, not a method.
+    conversion: bool,
 }
 
 #[derive(Clone)]
@@ -1774,6 +1779,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
                     GenericKind::Product {
                         params: td.params.clone(),
                         methods: td.methods.clone(),
+                        conversions: td.conversions.clone(),
                     }
                 };
                 generics.insert(
@@ -2229,6 +2235,47 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
         }
     }
 
+    // A generic instance's `from` clauses are free functions of its module,
+    // with the type arguments substituted (D217).
+    let mut mono_conversions: Vec<(String, String, ast::Function, bool)> = Vec::new();
+    for job in mono_method_jobs.iter().filter(|job| job.conversion) {
+        let module = package
+            .modules
+            .iter()
+            .find(|module| module.id == job.def_mod)
+            .unwrap();
+        let name_map = per_mod_types.get(&job.def_mod).cloned().unwrap_or_default();
+        let method = subst_method(&job.method, &job.subst);
+        let function = ast::Function {
+            exported: method.exported,
+            name: method.name,
+            name_span: method.name_span,
+            params: method.params,
+            return_type: method.return_type,
+            body: method.body,
+        };
+        let mangled = mangle_fn(&job.def_mod, &function.name, module.is_entry);
+        let (mut sig, _) = merge_free_clauses(
+            &[&function],
+            module.is_entry,
+            &job.def_mod,
+            &mut types_info,
+            &mut type_layouts,
+            &name_map,
+        )
+        .map_err(|error| in_module_file(error, &module.path))?;
+        sig.mangled = mangled.clone();
+        fns.insert(mangled.clone(), sig);
+        if function.exported {
+            module_exports
+                .get_mut(&job.def_mod)
+                .unwrap()
+                .fns
+                .insert(function.name.clone(), mangled.clone());
+        }
+        mono_conversions.push((job.def_mod.clone(), mangled, function, module.is_entry));
+    }
+
     if opts.require_main && !fns.contains_key("main") {
         return Err(Error::new("program requires `fn main`"));
     }
@@ -2461,7 +2508,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
     }
 
     // Monomorphized methods on generic products (no multi-clause on generic templates in v0).
-    for job in &mono_method_jobs {
+    for job in mono_method_jobs.iter().filter(|job| !job.conversion) {
         let m = package
             .modules
             .iter()
@@ -2531,6 +2578,36 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
             )
         };
         match result {
+            Ok(fun) => functions.push(fun),
+            Err(e) => body_errors.push(match &module_path {
+                Some(path) => in_module_file(e, path),
+                None => e,
+            }),
+        }
+    }
+
+    for (mod_id, mangled, function, is_entry) in &mono_conversions {
+        let maps = package_maps.get(mod_id).unwrap();
+        let module_path = package
+            .modules
+            .iter()
+            .find(|module| module.id == *mod_id)
+            .map(|module| module.path.clone());
+        match lower_function(
+            function,
+            mangled,
+            *is_entry,
+            &fns,
+            &types_info,
+            &maps.name_to_type,
+            &maps.name_to_fn,
+            &maps.name_to_global,
+            &maps.namespaces,
+            &module_exports,
+            &package_maps,
+            mod_id,
+            &synthetics,
+        ) {
             Ok(fun) => functions.push(fun),
             Err(e) => body_errors.push(match &module_path {
                 Some(path) => in_module_file(e, path),
@@ -4413,7 +4490,9 @@ fn infer_unannotated_returns(
     // type arguments substituted (as `lower_method` lowers them).
     let mono_methods: Vec<(&MonoMethodJob, Method)> = mono_method_jobs
         .iter()
-        .filter(|job| job.method.return_type.is_none() && job.method.name != "drop")
+        .filter(|job| {
+            !job.conversion && job.method.return_type.is_none() && job.method.name != "drop"
+        })
         .map(|job| (job, subst_method(&job.method, &job.subst)))
         .collect();
 
@@ -5302,12 +5381,17 @@ fn monomorphize_pending(
             subst.insert(p.clone(), ty.clone());
         }
         match &gdef.kind {
-            GenericKind::Product { params, methods } => {
+            GenericKind::Product {
+                params,
+                methods,
+                conversions,
+            } => {
                 instantiate_product_mono(
                     mono,
                     gdef,
                     params,
                     methods,
+                    conversions,
                     &subst,
                     types,
                     layouts,
@@ -5572,6 +5656,11 @@ fn collect_expr_type_apps(expr: &Expr, out: &mut Vec<(TypeExpr, Span)>) {
         }
         ExprKind::Field { base, .. } | ExprKind::Try(base) => collect_expr_type_apps(base, out),
         ExprKind::Unary { expr: inner, .. } => collect_expr_type_apps(inner, out),
+        // `x as Pair<Int64>` names an instance (D217).
+        ExprKind::Cast { expr: inner, ty, .. } => {
+            collect_expr_type_apps(inner, out);
+            collect_type_apps(ty, out);
+        }
         ExprKind::Index { base, index } => {
             collect_expr_type_apps(base, out);
             collect_expr_type_apps(index, out);
@@ -5754,6 +5843,7 @@ fn instantiate_product_mono(
     gdef: &GenericDef,
     params: &[ast::Param],
     methods: &[Method],
+    conversions: &[ast::Conversion],
     subst: &HashMap<String, Ty>,
     types: &mut HashMap<String, TypeInfo>,
     layouts: &mut Vec<TypeLayout>,
@@ -5849,9 +5939,16 @@ fn instantiate_product_mono(
     );
     layouts.push(layout);
 
-    // Enqueue monomorphs referenced by method signatures (after type-param subst).
+    // Enqueue monomorphs referenced by method and `from` clause signatures
+    // (after type-param subst).
     for m in methods {
         for te in method_sig_type_exprs(m) {
+            let te = subst_type_expr(te, subst);
+            enqueue_type_app_mono(&te, types, name_map, generics, pending, span);
+        }
+    }
+    for clause in conversions {
+        for te in [&clause.param.ty, &clause.return_type] {
             let te = subst_type_expr(te, subst);
             enqueue_type_app_mono(&te, types, name_map, generics, pending, span);
         }
@@ -5904,10 +6001,34 @@ fn instantiate_product_mono(
             method: m.clone(),
             subst: subst.clone(),
             def_mod: gdef.def_mod.clone(),
+            conversion: false,
         });
     }
 
     types.get_mut(&mono).unwrap().methods = method_sigs;
+    // Each `from` clause is a free function of this instance, named as `as`
+    // looks it up, `__conversion_{instance}_N` (D217).
+    let instance = type_source_name(types.get(&mono).unwrap(), &mono);
+    for (index, clause) in conversions.iter().enumerate() {
+        mono_methods.push(MonoMethodJob {
+            mono_type: mono.clone(),
+            method: Method {
+                exported: clause.exported,
+                name: crate::conversion_desugar::conversion_fn_name(&instance, index),
+                name_span: clause.span,
+                // `as` calls it by position (D200).
+                params: vec![ast::Param {
+                    positional: true,
+                    ..clause.param.clone()
+                }],
+                return_type: Some(clause.return_type.clone()),
+                body: clause.body.clone(),
+            },
+            subst: subst.clone(),
+            def_mod: gdef.def_mod.clone(),
+            conversion: true,
+        });
+    }
     Ok(())
 }
 

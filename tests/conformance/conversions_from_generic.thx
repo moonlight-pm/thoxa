@@ -1,0 +1,37 @@
+## D217: a generic type declares `from` clauses too. Each instance gets its
+## own conversion, with the type arguments substituted: `[1, 2] as
+## Pair<Int64>` and `["a"] as Pair<String>` are two functions.
+import { Pass, Fail, Trial } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Pair<T>(left: T, right: T) {
+    export from(items: Array<T>) -> Trial<Pair<T>, String> {
+        if items.count == 2 {
+            Pass(Pair(left: items[0], right: items[1]))
+        } else {
+            Fail("a pair needs 2 items, got {items.count}")
+        }
+    }
+    export fn swapped() -> Pair<T> { Pair(left: right, right: left) }
+}
+
+type Boxed<T>(value: T) {
+    export from(value: T) -> Boxed<T> { Boxed(value: value) }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match [1, 2] as Pair<Int64> {
+        Pass(pair) => info("{pair.left} {pair.right} {pair.swapped().left}")
+        Fail(reason) => info(reason)
+    }
+    match ["a", "b", "c"] as Pair<String> {
+        Pass(pair) => info(pair.left)
+        Fail(reason) => info(reason)
+    }
+    let boxed = 5 as Boxed<Int64>
+    let named = "tea" as Boxed<String>
+    info("{boxed.value} {named.value}")
+    0
+}

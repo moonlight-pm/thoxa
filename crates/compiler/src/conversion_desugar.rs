@@ -4,7 +4,8 @@
 //! `T`. Each clause becomes a free function `__conversion_T_N` in the type's
 //! module, exported when the clause is; `x as T` finds it there by name. The
 //! clauses stay on the type so the codec pass can tell that a type reads
-//! itself (a `from(json: Json)` clause).
+//! itself (a `from(json: Json)` clause). A generic type's clauses become one
+//! function per instance, made in MIR with the instance's types (D217).
 
 use crate::ast::*;
 use crate::ast_build::cast_reader_key;
@@ -34,15 +35,12 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
         if td.conversions.is_empty() {
             continue;
         }
-        if !td.type_params.is_empty() {
-            return Err(Error::at(
-                format!("generic type `{}` cannot declare `from` clauses", td.name),
-                td.conversions[0].span,
-            ));
-        }
         let mut sources = HashSet::new();
         for (index, clause) in td.conversions.iter().enumerate() {
             check_clause(td, clause, &mut sources)?;
+            if !td.type_params.is_empty() {
+                continue;
+            }
             functions.push(Function {
                 exported: clause.exported,
                 name: conversion_fn_name(&td.name, index),
@@ -61,6 +59,15 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
     Ok(())
 }
 
+/// `Box<T>` for `type Box<T>`, `Point` for `type Point`.
+fn self_name(td: &TypeDef) -> String {
+    if td.type_params.is_empty() {
+        td.name.clone()
+    } else {
+        format!("{}<{}>", td.name, td.type_params.join(", "))
+    }
+}
+
 /// The function a type's `index`-th `from` clause becomes.
 pub fn conversion_fn_name(type_name: &str, index: usize) -> String {
     format!("__conversion_{type_name}_{index}")
@@ -74,7 +81,15 @@ fn check_clause(td: &TypeDef, clause: &Conversion, sources: &mut HashSet<String>
         ));
     }
     let source = &clause.param.ty;
-    if source.name == td.name && source.args.is_empty() {
+    // `Box<T>` inside `type Box<T>`: the type's own name and parameters.
+    let names_self = |ty: &TypeExpr| {
+        ty.name == td.name
+            && ty.args.len() == td.type_params.len()
+            && ty.args.iter().zip(&td.type_params).all(|(arg, param)| {
+                matches!(arg, TypeArg::Type(inner) if inner.name == *param && inner.args.is_empty())
+            })
+    };
+    if names_self(source) {
         return Err(Error::at(
             format!("`{}` already converts to itself; a `from` clause converts from another type", td.name),
             clause.span,
@@ -87,7 +102,6 @@ fn check_clause(td: &TypeDef, clause: &Conversion, sources: &mut HashSet<String>
         ));
     }
     let returns = &clause.return_type;
-    let names_self = |ty: &TypeExpr| ty.name == td.name && ty.args.is_empty();
     let trial_of_self = returns.name == "Trial"
         && returns.args.len() == 2
         && matches!(&returns.args[0], TypeArg::Type(ok) if names_self(ok));
@@ -95,7 +109,7 @@ fn check_clause(td: &TypeDef, clause: &Conversion, sources: &mut HashSet<String>
         return Err(Error::at(
             format!(
                 "a `from` clause in `{0}` returns `{0}`, or `Trial<{0}, E>` when the conversion can fail",
-                td.name
+                self_name(td)
             ),
             returns.span,
         ));

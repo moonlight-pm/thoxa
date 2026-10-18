@@ -642,8 +642,9 @@ A field of a generic type may be any integer type, `Float64`, `Bool`,
 `String`, `Bytes`, an `Array`, a `Map`, a user type, or `Void`.
 
 There are no generic functions, no constraints on type parameters, and no
-traits or interfaces. Methods of a generic type must annotate a non-`Void`
-return type.
+traits or interfaces. A generic type's methods and `from` clauses are
+compiled for each instance the program uses, so a method without `->` infers
+its return type per instance (see [Return types](#return-types)).
 
 ### Function types
 
@@ -921,8 +922,24 @@ let email = "ada@example.com" as Email              ## Trial<Email, String>
 - A clause has no receiver: the type's fields are not in scope. It is a
   constructor, not a method.
 - A type may have several clauses for different source types; two for the
-  same source, or one from the type itself, are compile errors. Generic types
-  cannot declare clauses.
+  same source, or one from the type itself, are compile errors.
+- A generic type's clause returns the type with its own parameters
+  (`Pair<T>`, or `Trial<Pair<T>, E>`), and each instance converts with the
+  type arguments substituted:
+
+```thx
+type Pair<T>(left: T, right: T) {
+    export from(items: Array<T>) -> Trial<Pair<T>, String> {
+        if items.count == 2 {
+            Pass(Pair(left: items[0], right: items[1]))
+        } else {
+            Fail("a pair needs 2 items")
+        }
+    }
+}
+
+let numbers = [1, 2] as Pair<Int64>                 ## Trial<Pair<Int64>, String>
+```
 - `export` makes a conversion usable outside the type's module, as for
   methods.
 - A clause replaces any built-in conversion for its pair, and `as?` on a

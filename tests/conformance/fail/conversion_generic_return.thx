@@ -1,0 +1,11 @@
+## D217: a generic type's `from` clause returns the type with its own
+## parameters, `Boxed<T>`, or a `Trial` of it.
+type Boxed<T>(value: T) {
+    export from(value: T) -> Boxed<Int64> {
+        Boxed(value: 1)
+    }
+}
+
+fn main() -> Int64 {
+    0
+}

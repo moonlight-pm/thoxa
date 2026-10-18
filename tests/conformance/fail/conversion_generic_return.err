@@ -1,0 +1,1 @@
+a `from` clause in `Boxed<T>` returns `Boxed<T>`, or `Trial<Boxed<T>, E>` when the conversion can fail
