@@ -1,0 +1,14 @@
+## D215: `\u{H…}` writes the Unicode scalar with that hex value (one to six
+## digits). A brace written this way is text, not an interpolation hole.
+import logging, { info } from "std/logging"
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let word = "caf\u{e9}"
+    info("{word} {word.count} {word.byteCount} {word == "café"}")
+    info("\u{1F600} \u{41}\u{0042}\u{000043}")
+    info("\u{7B}name\u{7D} is literal; {word} is a hole")
+    info("tab[\u{9}] quote[\u{22}] slash[\u{5C}]")
+    0
+}

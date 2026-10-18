@@ -92,8 +92,8 @@ fraction only when a digit follows, so `1..5` is a range. There is no
 **Strings** are written in double quotes. A string may span lines; newlines
 are kept, and there is no indentation stripping.
 
-| Escape | Byte |
-|--------|------|
+| Escape | Writes |
+|--------|--------|
 | `\n` | line feed |
 | `\t` | tab |
 | `\r` | carriage return |
@@ -101,10 +101,14 @@ are kept, and there is no indentation stripping.
 | `\"` | double quote |
 | `\0` | NUL (kept inside the string; the rest of the string follows it) |
 | `\xHH` | one ASCII byte, `\x00` to `\x7F` |
+| `\u{H…}` | the Unicode scalar with that hex value, one to six digits: `\u{e9}` is `é`, `\u{1F600}` is `😀` |
 
 `\xHH` above `\x7F` is a compile error: strings are UTF-8, and one high byte
-is not a character. Write the character itself, or build `Bytes`. Any other
-escape is a compile error.
+is not a character. Write the character itself, use `\u{…}`, or build
+`Bytes`. A `\u{…}` that is not one to six hex digits, or that names a
+surrogate (`D800` to `DFFF`) or a value above `10FFFF`, is a compile error,
+and so is any other escape. A brace written as `\u{7B}` is text, not the start
+of a hole.
 
 `{expr}` inside a string is an interpolation hole: the expression's value is
 formatted into the string. A hole may contain strings of its own

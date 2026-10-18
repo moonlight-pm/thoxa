@@ -120,6 +120,24 @@ let s = "# not a comment\t\x41"
     (escape_sequence)))
 
 ==================
+Unicode escape is one escape, not a hole
+==================
+
+let s = "caf\u{e9}{name}"
+
+---
+
+(source_file
+  (keyword)
+  (identifier)
+  (operator)
+  (string
+    (string_content)
+    (escape_sequence)
+    (interpolation
+      (identifier))))
+
+==================
 discard and where
 ==================
 

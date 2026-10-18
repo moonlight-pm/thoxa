@@ -177,7 +177,7 @@ module.exports = grammar({
     // `prec` so a `#` in the text is not read as a comment.
     string_content: _ => token.immediate(prec(1, /([^"\\{]|\{\{)+/)),
 
-    escape_sequence: _ => token.immediate(prec(1, /\\(x[0-9a-fA-F]{2}|.)/)),
+    escape_sequence: _ => token.immediate(prec(1, /\\(x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)/)),
 
     // `"{f(\"host\")}"`: a string in a hole may also escape its quotes.
     escaped_string: _ => token(seq('\\"', /([^"\\]|\\[^"])*/, '\\"')),

@@ -374,6 +374,38 @@ impl<'a> Lexer<'a> {
                     }
                     continue;
                 }
+                // `\u{H…}`: one to six hex digits naming a Unicode scalar (D215).
+                if esc == b'u' {
+                    let escape_start = self.pos - 1;
+                    self.pos += 1;
+                    match unicode_escape(&self.bytes[self.pos..]) {
+                        Some((ch, used)) => {
+                            // A brace stays literal text, as `{{` / `}}` do.
+                            match ch {
+                                '{' => out.push_str("{{"),
+                                '}' => out.push_str("}}"),
+                                _ => out.push(ch),
+                            }
+                            self.pos += used;
+                        }
+                        None => {
+                            // Underline through the closing `}`, or up to the quote.
+                            let end = match self.bytes[self.pos..]
+                                .iter()
+                                .position(|&b| b == b'}' || b == b'"')
+                            {
+                                Some(at) if self.bytes[self.pos + at] == b'}' => self.pos + at + 1,
+                                Some(at) => self.pos + at,
+                                None => self.pos,
+                            };
+                            bad_escape.get_or_insert(Error::at(
+                                "invalid \\u{…} escape: write one to six hex digits naming a Unicode scalar, as `\\u{e9}` or `\\u{1F600}`",
+                                Span::new(escape_start, end.max(self.pos)),
+                            ));
+                        }
+                    }
+                    continue;
+                }
                 // Step over the whole escaped character, even a multibyte one.
                 let width = self.src[self.pos..].chars().next().map_or(1, char::len_utf8);
                 out.push(match esc {
@@ -583,6 +615,22 @@ fn unclosed_hole(at: usize) -> Error {
     Error::at("unclosed interpolation `{`", Span::new(at, at + 1)).with_help(
         "a hole runs to its matching `}`, and a `\"` inside it starts a string of its own",
     )
+}
+
+/// `{H…}` after `\u`: the scalar and the bytes used, or `None` when it is
+/// not one to six hex digits in braces naming a Unicode scalar (no
+/// surrogates, at most U+10FFFF).
+fn unicode_escape(bytes: &[u8]) -> Option<(char, usize)> {
+    if bytes.first() != Some(&b'{') {
+        return None;
+    }
+    let digits = bytes[1..].iter().take_while(|b| b.is_ascii_hexdigit()).count();
+    if digits == 0 || digits > 6 || bytes.get(1 + digits) != Some(&b'}') {
+        return None;
+    }
+    let text = std::str::from_utf8(&bytes[1..1 + digits]).ok()?;
+    let value = u32::from_str_radix(text, 16).ok()?;
+    Some((char::from_u32(value)?, digits + 2))
 }
 
 fn hex_nibble(b: u8) -> u8 {

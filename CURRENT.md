@@ -148,14 +148,15 @@ first line ran nothing); **D210** an LSP rename writes a pun's label out
 types; **D212** `==` on maps (any order) and on types that contain
 themselves (`Json`, trees); **D213** an expected `Map<K, V>` types a map
 literal (`Sheet(cells: {"a": [1], "b": []})`); **D214** Map keys may hold
-arrays and Float64, and be Float64 (SameValueZero: NaN finds NaN).
+arrays and Float64, and be Float64 (SameValueZero: NaN finds NaN); **D215**
+`\u{…}` string escape (`"caf\u{e9}"`).
 
 **Language gaps to pick from** (as built; see `docs/capabilities.md`):
 `UInt64` arithmetic above `Int64` max panics (D21 / D167); `Int64` →
 `Float64` rounds unchecked. Found 2026-10-17: in `where`, `lo..hi` includes `hi` (unlike a `for`
 range) and the message prints `lo..hi` for `lo..=hi`; a session command inside a block
 is not recognized (use `shell.run`). From D191: generic types cannot declare `from` clauses; route body
-parameters take named types only. From D195: final sigma (`Σ` → `ς`), no `\u{…}` string escape, no normalization.
+parameters take named types only. From D195: final sigma (`Σ` → `ς`), no normalization.
 From D202: only a bare name puns (not `options.deadline`). From D206: a heap field passed `mut` is copied on the callee's
 first write (it is shared with the receiver until the write-back).
 

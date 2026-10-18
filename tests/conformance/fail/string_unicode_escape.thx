@@ -1,0 +1,5 @@
+## D215: `\u{…}` names a Unicode scalar: a surrogate is not one.
+fn main() -> Int64 {
+    let half = "\u{D800}"
+    half.count
+}
