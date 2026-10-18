@@ -1,0 +1,566 @@
+## std/string — String's methods, written in Thoxa (D196).
+##
+## Every program has this module, imported or not: its `extend` blocks add
+## methods to String and Array<String>, and a method call finds them. Import
+## `Split` or `parseUInt` by name to use them directly.
+##
+## A String is valid UTF-8 and knows its scalar count (`.count`) and byte
+## count (`.byteCount`). These methods are built on three runtime primitives
+## that work in byte offsets: `byteAt(offset)`, `byteSlice(start, end)`, and
+## `byteIndexOf(needle, start = 0)`.
+## Positions the methods take or return count Unicode scalars (D195).
+
+import { Has, Not, May } from "std/fallible"
+import { lowerRanges, lowerExpansions, upperRanges, upperExpansions, foldRanges, foldExpansions } from "std/unicode"
+
+## The text before and after a separator (`splitOnce`).
+export type Split(before: String, after: String)
+
+extend String as text {
+    export fn isEmpty() -> Bool {
+        text.byteCount == 0
+    }
+
+    ## Every scalar is ASCII (one byte each).
+    export fn isAscii() -> Bool {
+        text.count == text.byteCount
+    }
+
+    ## `needle` occurs in the text. `ignoreCase` compares Unicode case folds.
+    export fn contains(needle!: String, ignoreCase: Bool = false) -> Bool {
+        if ignoreCase {
+            caseFold(text).contains(caseFold(needle))
+        } else {
+            match text.byteIndexOf(needle) {
+                Has(_) => true
+                Not => false
+            }
+        }
+    }
+
+    export fn startsWith(prefix!: String, ignoreCase: Bool = false) -> Bool {
+        if ignoreCase {
+            caseFold(text).startsWith(caseFold(prefix))
+        } else {
+            prefix.byteCount <= text.byteCount and text.byteSlice(0, prefix.byteCount) == prefix
+        }
+    }
+
+    export fn endsWith(suffix!: String, ignoreCase: Bool = false) -> Bool {
+        if ignoreCase {
+            caseFold(text).endsWith(caseFold(suffix))
+        } else {
+            let start = text.byteCount - suffix.byteCount
+            start >= 0 and text.byteSlice(start, text.byteCount) == suffix
+        }
+    }
+
+    ## `==`, or with `ignoreCase` equal Unicode case folds (`Straße` and `STRASSE`).
+    export fn equals(other!: String, ignoreCase: Bool = false) -> Bool {
+        if ignoreCase {
+            caseFold(text) == caseFold(other)
+        } else {
+            text == other
+        }
+    }
+
+    ## Unicode's default lowercase mapping.
+    export fn toLower() -> String {
+        mapCase(text, lowerRanges, lowerExpansions)
+    }
+
+    ## Unicode's default uppercase mapping; one scalar may become several (`ß` → `SS`).
+    export fn toUpper() -> String {
+        mapCase(text, upperRanges, upperExpansions)
+    }
+
+    ## Without leading and trailing Unicode white space.
+    export fn trim() -> String {
+        text.trimStart().trimEnd()
+    }
+
+    export fn trimStart() -> String {
+        text.byteSlice(leadingSpace(text), text.byteCount)
+    }
+
+    export fn trimEnd() -> String {
+        text.byteSlice(0, text.byteCount - trailingSpace(text))
+    }
+
+    ## Without `prefix`; unchanged when the text does not start with it.
+    export fn removePrefix(prefix!: String) -> String {
+        if text.startsWith(prefix) {
+            text.byteSlice(prefix.byteCount, text.byteCount)
+        } else {
+            text
+        }
+    }
+
+    ## Without `suffix`; unchanged when the text does not end with it.
+    export fn removeSuffix(suffix!: String) -> String {
+        if text.endsWith(suffix) {
+            text.byteSlice(0, text.byteCount - suffix.byteCount)
+        } else {
+            text
+        }
+    }
+
+    ## Every non-overlapping `old` replaced by `new`; an empty `old` changes nothing.
+    export fn replace(old!: String, new!: String) -> String {
+        replaceIn(text, old, new, false)
+    }
+
+    ## The first `old` replaced by `new`.
+    export fn replaceFirst(old!: String, new!: String) -> String {
+        replaceIn(text, old, new, true)
+    }
+
+    ## The text `count` times; `""` when `count <= 0`.
+    export fn repeat(count!: Int64) -> String {
+        let bytes = Bytes.fromString(text)
+        mut out = Buffer()
+        for _ in 0..count {
+            out.appendBytes(bytes)
+        }
+        out.freeze().toString()
+    }
+
+    ## The pieces between `separator`s, empty ones kept; an empty separator
+    ## gives the whole text.
+    export fn split(separator!: String) -> Array<String> {
+        if separator.isEmpty() {
+            [text]
+        } else {
+            mut parts: Array<String> = []
+            mut start = 0
+            loop {
+                match text.byteIndexOf(separator, start) {
+                    Has(at) {
+                        parts.append(text.byteSlice(start, at))
+                        start = at + separator.byteCount
+                    }
+                    Not {
+                        parts.append(text.byteSlice(start, text.byteCount))
+                        break
+                    }
+                }
+            }
+            parts
+        }
+    }
+
+    ## Split on `\n`, each line without a trailing `\r`.
+    export fn lines() -> Array<String> {
+        mut out: Array<String> = []
+        for line in text.split("\n") {
+            out.append(line.removeSuffix("\r"))
+        }
+        out
+    }
+
+    ## The text before and after the first `separator`; `Not` when it is
+    ## missing or empty.
+    export fn splitOnce(separator!: String) -> May<Split> {
+        if separator.isEmpty() {
+            Not()
+        } else {
+            match text.byteIndexOf(separator) {
+                Has(at) => Has(Split(before: text.byteSlice(0, at), after: text.byteSlice(at + separator.byteCount, text.byteCount)))
+                Not => Not()
+            }
+        }
+    }
+
+    ## The position of the first `needle`; an empty needle is at 0.
+    export fn indexOf(needle!: String) -> May<Int64> {
+        match text.byteIndexOf(needle) {
+            Has(at) => Has(scalarIndex(text, at))
+            Not => Not()
+        }
+    }
+
+    ## The position of the last `needle`; an empty needle is at `count`.
+    export fn lastIndexOf(needle!: String) -> May<Int64> {
+        mut found = -1
+        mut next = 0
+        loop {
+            match text.byteIndexOf(needle, next) {
+                Has(at) {
+                    found = at
+                    next = at + 1
+                }
+                Not => break
+            }
+        }
+        if found < 0 {
+            Not()
+        } else {
+            Has(scalarIndex(text, found))
+        }
+    }
+
+    ## The scalars from `start` up to `end`; positions outside the text are clamped.
+    export fn substring(start!: Int64, end!: Int64) -> String {
+        let first = clamp(start, text.count)
+        let last = clamp(end, text.count)
+        if first >= last {
+            ""
+        } else {
+            text.byteSlice(byteOffset(text, first), byteOffset(text, last))
+        }
+    }
+
+    ## The first `max` scalars.
+    export fn truncate(max!: Int64) -> String {
+        text.substring(0, max)
+    }
+
+    ## Padded on the left with `pad`, repeated and cut, to `width` scalars.
+    export fn padLeft(width!: Int64, pad: String = " ") -> String {
+        "{padding(text, width, pad)}{text}"
+    }
+
+    ## Padded on the right with `pad`, repeated and cut, to `width` scalars.
+    export fn padRight(width!: Int64, pad: String = " ") -> String {
+        "{text}{padding(text, width, pad)}"
+    }
+
+    ## The scalars in reverse order (a combining mark moves before its base).
+    export fn reverse() -> String {
+        mut out = Buffer()
+        mut end = text.byteCount
+        while end > 0 {
+            let start = scalarStart(text, end - 1)
+            out.appendBytes(Bytes.fromString(text.byteSlice(start, end)))
+            end = start
+        }
+        out.freeze().toString()
+    }
+}
+
+extend Array<String> as parts {
+    ## The parts with `separator` between them.
+    export fn join(separator!: String) -> String {
+        let between = Bytes.fromString(separator)
+        mut out = Buffer()
+        mut first = true
+        for part in parts {
+            if not first {
+                out.appendBytes(between)
+            }
+            out.appendBytes(Bytes.fromString(part))
+            first = false
+        }
+        out.freeze().toString()
+    }
+}
+
+## Unsigned decimal digits only. Empty or any non-digit → `Not`.
+export fn parseUInt(s!: String) -> May<Int64> {
+    let digits = Bytes.fromString(s)
+    let n = digits.count
+    if n == 0 {
+        Not()
+    } else {
+        mut val = 0
+        mut i = 0
+        mut ok = true
+        loop {
+            if i >= n {
+                break
+            }
+            let c = digits.get(i)
+            if c < 48 {
+                ok = false
+                break
+            }
+            if c > 57 {
+                ok = false
+                break
+            }
+            let digit = c - 48
+            ## Above Int64 max is Not, never a wrapped negative.
+            if val > (9223372036854775807 - digit) / 10 {
+                ok = false
+                break
+            }
+            val = val * 10 + digit
+            i = i + 1
+        }
+        if ok {
+            Has(val)
+        } else {
+            Not()
+        }
+    }
+}
+
+## --- Positions ------------------------------------------------------------
+
+## A UTF-8 continuation byte (`10xxxxxx`) does not start a scalar.
+fn isContinuation(byte!: Int64) -> Bool {
+    (byte & 0xC0) == 0x80
+}
+
+## The start of the scalar that holds byte `offset`.
+fn scalarStart(text!: String, offset!: Int64) -> Int64 {
+    mut start = offset
+    while start > 0 and isContinuation(text.byteAt(start)) {
+        start = start - 1
+    }
+    start
+}
+
+fn clamp(position!: Int64, count!: Int64) -> Int64 {
+    if position < 0 {
+        0
+    } else if position > count {
+        count
+    } else {
+        position
+    }
+}
+
+## The byte offset of scalar `position` (0 to `count`). In ASCII text they
+## are the same; otherwise walk from the start.
+fn byteOffset(text!: String, position!: Int64) -> Int64 {
+    if text.isAscii() {
+        position
+    } else {
+        mut offset = 0
+        mut seen = 0
+        while seen < position {
+            offset = offset + 1
+            while offset < text.byteCount and isContinuation(text.byteAt(offset)) {
+                offset = offset + 1
+            }
+            seen = seen + 1
+        }
+        offset
+    }
+}
+
+## The scalar position of byte `offset`, which starts a scalar.
+fn scalarIndex(text!: String, offset!: Int64) -> Int64 {
+    if text.isAscii() {
+        offset
+    } else {
+        mut scalars = 0
+        for at in 0..offset {
+            if not isContinuation(text.byteAt(at)) {
+                scalars = scalars + 1
+            }
+        }
+        scalars
+    }
+}
+
+## --- Scalars --------------------------------------------------------------
+
+## A scalar value and the bytes its UTF-8 encoding takes.
+type Scalar(code: Int64, length: Int64)
+
+## The scalar whose encoding starts at byte `at` (Strings are valid UTF-8).
+fn decode(text!: String, at!: Int64) -> Scalar {
+    let lead = text.byteAt(at)
+    if lead < 0x80 {
+        Scalar(code: lead, length: 1)
+    } else if lead < 0xE0 {
+        Scalar(code: ((lead & 0x1F) << 6) | tail(text, at + 1), length: 2)
+    } else if lead < 0xF0 {
+        Scalar(code: ((lead & 0x0F) << 12) | (tail(text, at + 1) << 6) | tail(text, at + 2), length: 3)
+    } else {
+        let high = ((lead & 0x07) << 18) | (tail(text, at + 1) << 12)
+        Scalar(code: high | (tail(text, at + 2) << 6) | tail(text, at + 3), length: 4)
+    }
+}
+
+## The six payload bits of a continuation byte.
+fn tail(text!: String, at!: Int64) -> Int64 {
+    text.byteAt(at) & 0x3F
+}
+
+## The UTF-8 encoding of scalar `code`.
+fn encode(code!: Int64) -> Bytes {
+    if code < 0x80 {
+        mut out = Bytes(1)
+        out.set(0, code)
+        out
+    } else if code < 0x800 {
+        mut out = Bytes(2)
+        out.set(0, 0xC0 | (code >> 6))
+        out.set(1, 0x80 | (code & 0x3F))
+        out
+    } else if code < 0x10000 {
+        mut out = Bytes(3)
+        out.set(0, 0xE0 | (code >> 12))
+        out.set(1, 0x80 | ((code >> 6) & 0x3F))
+        out.set(2, 0x80 | (code & 0x3F))
+        out
+    } else {
+        mut out = Bytes(4)
+        out.set(0, 0xF0 | (code >> 18))
+        out.set(1, 0x80 | ((code >> 12) & 0x3F))
+        out.set(2, 0x80 | ((code >> 6) & 0x3F))
+        out.set(3, 0x80 | (code & 0x3F))
+        out
+    }
+}
+
+## Unicode White_Space (PropList.txt).
+fn isWhiteSpace(code!: Int64) -> Bool {
+    (code >= 0x09 and code <= 0x0D) or code == 0x20 or code == 0x85 or code == 0xA0 or
+        code == 0x1680 or (code >= 0x2000 and code <= 0x200A) or code == 0x2028 or
+        code == 0x2029 or code == 0x202F or code == 0x205F or code == 0x3000
+}
+
+## Bytes of white space at the start of the text.
+fn leadingSpace(text!: String) -> Int64 {
+    mut at = 0
+    loop {
+        if at >= text.byteCount {
+            break
+        }
+        let scalar = decode(text, at)
+        if not isWhiteSpace(scalar.code) {
+            break
+        }
+        at = at + scalar.length
+    }
+    at
+}
+
+## Bytes of white space at the end of the text.
+fn trailingSpace(text!: String) -> Int64 {
+    mut end = text.byteCount
+    loop {
+        if end == 0 {
+            break
+        }
+        let start = scalarStart(text, end - 1)
+        if not isWhiteSpace(decode(text, start).code) {
+            break
+        }
+        end = start
+    }
+    text.byteCount - end
+}
+
+## --- Case -----------------------------------------------------------------
+
+## The text with every scalar mapped through a case table from std/unicode.
+fn mapCase(text!: String, ranges!: Array<Int64>, expansions!: Array<Int64>) -> String {
+    mut out = Buffer()
+    mut at = 0
+    while at < text.byteCount {
+        let scalar = decode(text, at)
+        match expansion(scalar.code, expansions) {
+            Has(entry) {
+                for slot in 1..4 {
+                    let code = expansions[entry + slot]
+                    if code != 0 {
+                        out.appendBytes(encode(code))
+                    }
+                }
+            }
+            Not {
+                out.appendBytes(encode(rangeMapped(scalar.code, ranges)))
+            }
+        }
+        at = at + scalar.length
+    }
+    out.freeze().toString()
+}
+
+## Full Unicode case folding: what `ignoreCase` compares.
+fn caseFold(text!: String) -> String {
+    mapCase(text, foldRanges, foldExpansions)
+}
+
+## The index of `code`'s entry in an expansion table, by binary search.
+fn expansion(code!: Int64, expansions!: Array<Int64>) -> May<Int64> {
+    mut low = 0
+    mut high = expansions.count / 4
+    while low < high {
+        let middle = (low + high) / 2
+        let entry = expansions[middle * 4]
+        if entry == code {
+            return Has(middle * 4)
+        }
+        if entry < code {
+            low = middle + 1
+        } else {
+            high = middle
+        }
+    }
+    Not()
+}
+
+## `code` mapped by the range that holds it, or unchanged.
+fn rangeMapped(code!: Int64, ranges!: Array<Int64>) -> Int64 {
+    ## The last range whose first code point is at or below `code`.
+    mut low = 0
+    mut high = ranges.count / 4
+    while low < high {
+        let middle = (low + high) / 2
+        if ranges[middle * 4] <= code {
+            low = middle + 1
+        } else {
+            high = middle
+        }
+    }
+    if low == 0 {
+        code
+    } else {
+        let at = (low - 1) * 4
+        if code <= ranges[at + 1] and (code - ranges[at]) % ranges[at + 3] == 0 {
+            code + ranges[at + 2]
+        } else {
+            code
+        }
+    }
+}
+
+## --- Building -------------------------------------------------------------
+
+fn replaceIn(text!: String, old!: String, new!: String, firstOnly!: Bool) -> String {
+    if old.isEmpty() {
+        text
+    } else {
+        let replacement = Bytes.fromString(new)
+        mut out = Buffer()
+        mut start = 0
+        loop {
+            match text.byteIndexOf(old, start) {
+                Has(at) {
+                    out.appendBytes(Bytes.fromString(text.byteSlice(start, at)))
+                    out.appendBytes(replacement)
+                    start = at + old.byteCount
+                    if firstOnly {
+                        break
+                    }
+                }
+                Not => break
+            }
+        }
+        out.appendBytes(Bytes.fromString(text.byteSlice(start, text.byteCount)))
+        out.freeze().toString()
+    }
+}
+
+## What `padLeft` / `padRight` add: `pad` (a space when empty) repeated and
+## cut to the scalars `text` is short of `width`.
+fn padding(text!: String, width!: Int64, pad!: String) -> String {
+    let unit = if pad.isEmpty() {
+        " "
+    } else {
+        pad
+    }
+    let need = width - text.count
+    if need <= 0 {
+        ""
+    } else {
+        let whole = need / unit.count
+        "{unit.repeat(whole)}{unit.substring(0, need - whole * unit.count)}"
+    }
+}

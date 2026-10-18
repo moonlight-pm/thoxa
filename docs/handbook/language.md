@@ -318,14 +318,20 @@ comparison); `<` and `>` on strings are a compile error.
 | `.repeat(count)` | the string `count` times; `""` when `count <= 0` |
 | `.split(separator)` | `Array<String>`, empty pieces kept; an empty separator gives `[s]` |
 | `.lines()` | `Array<String>`, split on `\n`, each without a trailing `\r` |
+| `.splitOnce(separator)` | `May<Split>`: `Has(Split(before:, after:))` around the first separator; `Not` when it is missing or empty |
 | `.indexOf(needle)`, `.lastIndexOf(needle)` | `May<Int64>`, the position of the first / last `needle` |
 | `.substring(start, end)` | the scalars from `start` up to `end`; positions outside the string are clamped |
 | `.truncate(max)` | the first `max` scalars |
 | `.padLeft(width, pad: " ")`, `.padRight(width, pad: " ")` | padded with `pad`, repeated, to `width` scalars |
 | `.reverse()` | the scalars in reverse order |
+| `.byteAt(offset)` | the byte at a byte offset, as `Int64`; out of range panics |
+| `.byteSlice(start, end)` | the bytes from `start` up to `end`, clamped; a cut inside a character becomes U+FFFD |
+| `.byteIndexOf(needle, start)` | `May<Int64>`, the byte offset of the first `needle` at or after `start` (default `0`) |
 
 `.join(separator)` on an `Array<String>` puts the separator between the
-elements. A [refined](#refinements) String has the same methods.
+elements. A [refined](#refinements) String has the same methods. They are
+ordinary Thoxa, in [`std/string`](std.md#utility-modules), which every
+program has without importing it; import `Split` from there to name the type.
 
 `contains`, `startsWith`, `endsWith`, and `equals` take `ignoreCase: true`,
 which compares Unicode case folds:
@@ -355,8 +361,9 @@ phrase.substring(6, 10)       ## "café"
 ```
 
 `.count` takes constant time. A position takes constant time in an all-ASCII
-string and otherwise is found by walking from the nearer end, so code that
-indexes a long non-ASCII string in a loop is better written over `Bytes`.
+string and otherwise is found by walking the string from the start, so code
+that indexes a long non-ASCII string in a loop is better written with the
+byte methods (`byteAt`, `byteSlice`, `byteIndexOf`).
 
 ### Bytes
 

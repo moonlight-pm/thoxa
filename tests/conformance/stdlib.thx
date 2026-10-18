@@ -1,5 +1,5 @@
 ## std/ named root (D97) — Str + Path + Ansi smoke.
-import { splitOnce, parseUInt } from "std/str"
+import { parseUInt } from "std/string"
 import { dirname, parent, basename, fileName, join, joinAll, isAbsolute, isRelative, normalize, extension, hasExtension, stem, withExtension, withFileName, parts, stripTrailingSlash, ensureTrailingSlash, shortPath } from "std/path"
 import { hasEnv, getenvOr, home, tmpdir, shell, pathVar, pwd } from "std/env"
 import { branchName, branchSuffix, isRepo, repoRoot, isDetached, headLine } from "std/git"
@@ -59,11 +59,11 @@ fn main() -> Int64 {
     }
     let parts = "a,b,c".split(",")
     logging.info("split={parts.count}:{parts[0]}:{parts[2]}")
-    match splitOnce("a=b=c", "=") {
+    match "a=b=c".splitOnce("=") {
         Not => logging.info("once-miss")
         Has(cut) { logging.info("once={cut.before}|{cut.after}") }
     }
-    match splitOnce("abc", "=") {
+    match "abc".splitOnce("=") {
         Not => logging.info("once-none")
         Has(_) { logging.info("once-hit") }
     }

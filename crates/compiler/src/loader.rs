@@ -127,11 +127,12 @@ pub fn load_package(entry: &Path) -> Result<Package> {
         .map(|p| by_path.remove(&p).expect("loaded module"))
         .collect();
 
-    let package = Package {
+    let mut package = Package {
         project_root,
         modules,
     };
     check_unique_module_ids(&package)?;
+    include_core_modules(&mut package)?;
     Ok(package)
 }
 
@@ -214,12 +215,31 @@ fn load_package_from_entry_ast_inner(
         .map(|p| by_path.remove(&p).expect("loaded module"))
         .collect();
 
-    let package = Package {
+    let mut package = Package {
         project_root,
         modules,
     };
     check_unique_module_ids(&package)?;
+    include_core_modules(&mut package)?;
     Ok(package)
+}
+
+/// std modules in every package, imported or not: they hold the methods of
+/// built-in types, written with `extend` (D196). Loading one adds no names to
+/// a program; a method call finds it.
+const CORE_MODULES: &[&str] = &["string"];
+
+pub fn include_core_modules(package: &mut Package) -> Result<()> {
+    let Ok(root) = std_lib_root() else {
+        return Ok(());
+    };
+    for name in CORE_MODULES {
+        let path = root.join(format_thx(name));
+        if path.is_file() {
+            ensure_module_in_package(package, &path)?;
+        }
+    }
+    Ok(())
 }
 
 /// Load `path` and its transitive imports into `package` if not already present.

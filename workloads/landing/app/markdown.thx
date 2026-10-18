@@ -8,7 +8,7 @@
 
 import highlight from "./highlight"
 import { Has, Not, May } from "std/fallible"
-import { Split, splitOnce } from "std/str"
+import { Split } from "std/string"
 
 let repository = "https://github.com/moonlight-pm/thoxa/"
 
@@ -423,7 +423,7 @@ fn href(target!: String, chapter!: Chapter) -> String {
     if target.startsWith("#") {
         return "{chapter.page}#{chapter.name}-{target.removePrefix("#")}"
     }
-    let parts = match splitOnce(target, "#") {
+    let parts = match target.splitOnce("#") {
         Has(found) => found
         Not => Split(before: target, after: "")
     }

@@ -126,6 +126,14 @@ impl Parser {
             Ok(Item::Import(self.parse_import()?))
         } else if self.at(TokenKind::Type) {
             Ok(Item::Type(self.parse_type_def(exported)?))
+        } else if self.at(TokenKind::Extend) {
+            if exported {
+                return Err(Error::at(
+                    "an `extend` block is not exported; mark its methods `export`",
+                    self.peek_span(),
+                ));
+            }
+            Ok(Item::Extend(self.parse_extension()?))
         } else if self.at(TokenKind::Extern) {
             Ok(Item::Extern(self.parse_extern(exported)?))
         } else if self.at(TokenKind::Fn) {
@@ -164,6 +172,7 @@ impl Parser {
                 }
                 TokenKind::Fn
                 | TokenKind::Type
+                | TokenKind::Extend
                 | TokenKind::Extern
                 | TokenKind::Import
                 | TokenKind::Export
@@ -699,6 +708,34 @@ impl Parser {
             name,
             name_span,
             ty,
+        })
+    }
+
+    /// `extend Type as receiver { [export] fn … }` (D196).
+    fn parse_extension(&mut self) -> Result<Extension> {
+        let span = self.peek_span();
+        self.expect_kind(&TokenKind::Extend)?;
+        let ty = self.parse_type()?;
+        self.expect_kind(&TokenKind::As)?;
+        let (receiver, receiver_span) = self.expect_ident()?;
+        self.expect_kind(&TokenKind::LBrace)?;
+        let mut methods = Vec::new();
+        while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
+            if !(self.at(TokenKind::Fn) || self.at(TokenKind::Export)) {
+                return Err(Error::at(
+                    "an `extend` block holds methods (`fn` / `export fn`)",
+                    self.peek_span(),
+                ));
+            }
+            methods.push(self.parse_method()?);
+        }
+        self.expect_kind(&TokenKind::RBrace)?;
+        Ok(Extension {
+            span,
+            ty,
+            receiver,
+            receiver_span,
+            methods,
         })
     }
 

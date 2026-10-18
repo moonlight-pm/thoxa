@@ -1,0 +1,11 @@
+## Only a std module can extend a built-in type (D196): a program's String
+## methods do not depend on what it imports.
+extend String as text {
+    export fn shout() -> String {
+        "{text}!"
+    }
+}
+
+fn main() -> Int64 {
+    0
+}

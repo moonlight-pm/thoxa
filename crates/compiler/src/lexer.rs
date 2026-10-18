@@ -31,6 +31,7 @@ pub enum TokenKind {
     In,
     Return,
     Where,
+    Extend,
     // Identifiers & literals
     Ident(String),
     Int(i64),
@@ -553,6 +554,7 @@ impl<'a> Lexer<'a> {
             "in" => TokenKind::In,
             "return" => TokenKind::Return,
             "where" => TokenKind::Where,
+            "extend" => TokenKind::Extend,
             _ => TokenKind::Ident(text.to_string()),
         };
         Ok(Token {

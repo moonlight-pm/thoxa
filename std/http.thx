@@ -3,7 +3,7 @@
 ## Hosts complete the body via `std/http/server.readBody`. Fail payloads are String.
 
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { splitOnce, parseUInt } from "std/str"
+import { parseUInt } from "std/string"
 import { JInt, JFloat, decode, encode, errorsObject, messages, Issue, issueMismatch } from "std/json"
 
 ## One header field: name and value as Strings (ASCII for this demo).
@@ -430,7 +430,7 @@ export fn formPairs(text!: String) -> Array<FormPair> {
     mut pairs: Array<FormPair> = []
     for part in text.split("&") {
         if not part.isEmpty() {
-            match splitOnce(part, "=") {
+            match part.splitOnce("=") {
                 Not {
                     pairs.append(FormPair(name: urlDecode(part), value: ""))
                 }
@@ -503,7 +503,7 @@ export fn parseCookies(header!: String) -> Map<String, String> {
     let parts = header.split(";")
     for part in parts {
         let p = part.trim()
-        match splitOnce(p, "=") {
+        match p.splitOnce("=") {
             Not { }
             Has(cut) {
                 let key = cut.before.trim()
@@ -524,7 +524,7 @@ fn parsePairs(raw!: String, sep!: String) -> Map<String, String> {
     let pairs = raw.split(sep)
     for pair in pairs {
         if not pair.isEmpty() {
-            match splitOnce(pair, "=") {
+            match pair.splitOnce("=") {
                 Not {
                     m.set(urlDecode(pair), "")
                 }
@@ -831,7 +831,7 @@ export fn bodyKind(request!: Request) -> String {
     match headerGet(request, "Content-Type") {
         Not => "other"
         Has(value) {
-            let media = match splitOnce(value, ";") {
+            let media = match value.splitOnce(";") {
                 Has(parts) => parts.before
                 Not => value
             }

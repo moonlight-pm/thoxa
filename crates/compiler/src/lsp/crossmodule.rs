@@ -742,6 +742,10 @@ fn walk_item_member(item: &Item, span: Span) -> Option<(String, String)> {
             }
             None
         }
+        Item::Extend(extension) => extension
+            .methods
+            .iter()
+            .find_map(|m| walk_block_member(&m.body, span)),
         Item::Global(g) => walk_expr_member(&g.init, span),
         Item::Extern(_) | Item::Import(_) | Item::SessionStmt(_) => None,
     }
@@ -1221,6 +1225,11 @@ fn walk_item_call_args(item: &Item, byte: usize, best: &mut Option<CallArgHit>) 
         Item::Function(f) => walk_block_call_args(&f.body, byte, best),
         Item::Type(td) => {
             for m in &td.methods {
+                walk_block_call_args(&m.body, byte, best);
+            }
+        }
+        Item::Extend(extension) => {
+            for m in &extension.methods {
                 walk_block_call_args(&m.body, byte, best);
             }
         }

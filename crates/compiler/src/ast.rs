@@ -15,6 +15,9 @@ pub enum Item {
     Import(Import),
     /// Top-level `let` / `mut` (module-level value; `mut` is never exported).
     Global(Global),
+    /// `extend String as text { … }`: methods on a built-in type, in a std
+    /// module (D196). `extend_desugar` turns each into a free function.
+    Extend(Extension),
     /// Top-level statement for **session scripts** (no `fn main`).
     /// Host/session prep lifts these into `Shell.step` body (D90).
     /// Not valid in ordinary programs after session prepare.
@@ -137,6 +140,17 @@ pub struct FieldDecl {
     pub name: String,
     pub name_span: Span,
     pub ty: TypeExpr,
+}
+
+/// `extend Type as receiver { [export] fn … }` (D196). There is no `self`, so
+/// the header names the receiver the methods see.
+#[derive(Debug, Clone)]
+pub struct Extension {
+    pub span: Span,
+    pub ty: TypeExpr,
+    pub receiver: String,
+    pub receiver_span: Span,
+    pub methods: Vec<Method>,
 }
 
 #[derive(Debug, Clone)]

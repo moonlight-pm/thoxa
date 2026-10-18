@@ -1638,32 +1638,9 @@ fn emit_rvalue(
                     "int_shr" => "thoxa_int_shr",
                     "string_len" => "(int64_t)thoxa_string_len",
                     "string_count" => "(int64_t)thoxa_string_count",
-                    "string_index_of" => "thoxa_string_index_of",
-                    "string_last_index_of" => "thoxa_string_last_index_of",
-                    "string_substring" => "thoxa_string_substring",
-                    "string_truncate" => "thoxa_string_truncate",
-                    "string_pad_left" => "thoxa_string_pad_left",
-                    "string_pad_right" => "thoxa_string_pad_right",
-                    "string_reverse" => "thoxa_string_reverse",
-                    "string_contains" => "thoxa_string_contains",
-                    "string_starts_with" => "thoxa_string_starts_with",
-                    "string_ends_with" => "thoxa_string_ends_with",
-                    "string_equals" => "thoxa_string_equals",
-                    "string_is_empty" => "thoxa_string_is_empty",
-                    "string_is_ascii" => "thoxa_string_is_ascii",
-                    "string_to_lower" => "thoxa_string_to_lower",
-                    "string_to_upper" => "thoxa_string_to_upper",
-                    "string_trim" => "thoxa_string_trim",
-                    "string_trim_start" => "thoxa_string_trim_start",
-                    "string_trim_end" => "thoxa_string_trim_end",
-                    "string_remove_prefix" => "thoxa_string_remove_prefix",
-                    "string_remove_suffix" => "thoxa_string_remove_suffix",
-                    "string_replace" => "thoxa_string_replace",
-                    "string_replace_first" => "thoxa_string_replace_first",
-                    "string_repeat" => "thoxa_string_repeat",
-                    "string_split" => "thoxa_string_split",
-                    "string_lines" => "thoxa_string_lines",
-                    "array_string_join" => "thoxa_array_string_join",
+                    "string_byte_at" => "thoxa_string_byte_at",
+                    "string_byte_slice" => "thoxa_string_byte_slice",
+                    "string_byte_index_of" => "thoxa_string_byte_index_of",
                     "bytes_from_string" => "thoxa_bytes_from_string",
                     "bytes_new" => "thoxa_bytes_new",
                     "bytes_count" => "(int64_t)thoxa_bytes_count",
@@ -1903,6 +1880,16 @@ fn emit_rvalue(
         }
         RValue::ArrayLit { elems, elem_ty } => {
             emit_array_lit(out, elems, elem_ty, types);
+        }
+        RValue::IntArray(values) => {
+            out.push_str("thoxa_array_from_i64((const int64_t[]){");
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(if index % 16 == 0 { ",\n    " } else { ", " });
+                }
+                let _ = write!(out, "INT64_C({value})");
+            }
+            let _ = write!(out, "}}, {})", values.len());
         }
         RValue::ArrayGet { .. } => {
             // Handled specially in Stmt::Assign (out-param).

@@ -172,7 +172,6 @@ fn runtime_inputs(root: &Path) -> Vec<PathBuf> {
     vec![
         root.join("runtime/src/thoxa_rt.c"),
         root.join("runtime/src/thoxa_sql.c"),
-        root.join("runtime/src/thoxa_unicode.h"),
         root.join("runtime/include/thoxa_rt.h"),
         root.join("vendor/sqlite/sqlite3.c"),
         root.join("vendor/sqlite/sqlite3.h"),

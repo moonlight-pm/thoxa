@@ -11,7 +11,7 @@
 
 import env, { getenvOr } from "std/env"
 import { Has, Not, May } from "std/fallible"
-import { parseUInt } from "std/str"
+import { parseUInt } from "std/string"
 
 export fn listenPort() -> Int64 {
     match portFromEnv("PORT") {

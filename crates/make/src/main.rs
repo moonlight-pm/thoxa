@@ -65,8 +65,8 @@ Commands:
     cargo make zed                  Sync editor into local Zed (LSP + grammar + lang)
     cargo make zed --grammar        Only rebuild/install tree-sitter grammar WASM
     cargo make zed --all            Also rebuild extension.wasm (rare)
-    cargo make unicode <ucd-dir>    Regenerate runtime/src/thoxa_unicode.h from the
-                                    Unicode Character Database (case tables, D195)
+    cargo make unicode <ucd-dir>    Regenerate std/unicode.thx from the Unicode
+                                    Character Database (case tables, D195)
 
 A directory argument resolves to <dir>/main.thx (same as `thoxa run <dir>`).
 
@@ -84,7 +84,7 @@ fn cmd_unicode(args: &[String]) -> i32 {
         );
         return 2;
     };
-    let out = workspace_root().join("runtime/src/thoxa_unicode.h");
+    let out = workspace_root().join("std/unicode.thx");
     match unicode::generate(Path::new(ucd), &out) {
         Ok(summary) => {
             eprintln!("wrote {} ({summary})", out.display());

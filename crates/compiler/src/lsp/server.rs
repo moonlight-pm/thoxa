@@ -1688,7 +1688,7 @@ fn main() -> Int64 {
             .expect("workspace root");
         let main = workspace.join("tests/conformance/_lsp_std_nav.thx");
         // Ephemeral file under workspace so relative paths / std resolve.
-        let text = "import { parseUInt } from \"std/str\"\nfn main() -> Int64 {\n    let parsed = parseUInt(\"7\")\n    0\n}\n";
+        let text = "import { parseUInt } from \"std/string\"\nfn main() -> Int64 {\n    let parsed = parseUInt(\"7\")\n    0\n}\n";
         fs::write(&main, text).unwrap();
         let main_uri = convert::path_to_uri(&main.to_string_lossy());
         let call = text.rfind("parseUInt").unwrap();
@@ -1726,8 +1726,8 @@ fn main() -> Int64 {
             .unwrap();
         let def_uri = def["result"]["uri"].as_str().unwrap_or("");
         assert!(
-            def_uri.ends_with("str.thx") || def_uri.contains("/std/str"),
-            "expected jump into std/str, got {def_uri} full={def}"
+            def_uri.ends_with("std/string.thx"),
+            "expected jump into std/string, got {def_uri} full={def}"
         );
     }
 

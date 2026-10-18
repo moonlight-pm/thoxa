@@ -254,6 +254,11 @@ pub fn unwrap_fallible_nav_ty(t: NavTy) -> NavTy {
 pub fn resolve_module(module: &Module) -> Resolution {
     // Experiment: expand type-body route clauses so LSP sees `route` + handlers.
     let mut desugared = module.clone();
+    let module = match crate::extend_desugar::desugar_module(&mut desugared) {
+        Ok(()) => &desugared,
+        Err(_) => module,
+    };
+    let mut desugared = module.clone();
     let module = match crate::conversion_desugar::desugar_module(&mut desugared) {
         Ok(()) => &desugared,
         Err(_) => module,
@@ -644,6 +649,8 @@ impl<'a> Resolver<'a> {
                         self.new_binding(&g.name, kind, Some(g.name_span), g.exported, None, true);
                     self.define(root, &g.name, id);
                 }
+                // Desugared into functions before resolving (D196).
+                Item::Extend(_) => {}
                 Item::Import(imp) => match &imp.kind {
                     ImportKind::Selective(names) => {
                         self.declare_selective_imports(root, &imp.path, names);
@@ -820,7 +827,7 @@ impl<'a> Resolver<'a> {
                     self.set_nav_ty(id, nav);
                 }
             }
-            Item::Import(_) => {
+            Item::Import(_) | Item::Extend(_) => {
                 // Import path string is not a name reference; locals already seeded.
             }
             Item::SessionStmt(bi) => {

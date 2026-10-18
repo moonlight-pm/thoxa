@@ -300,6 +300,9 @@ pub enum RValue {
         elems: Vec<Place>,
         elem_ty: Ty,
     },
+    /// `Array<Int64>` literal of integer constants: one C array, not a
+    /// temporary per element (the Unicode tables in std).
+    IntArray(Vec<i64>),
     /// Typed dynamic-array element load (User: memcpy + field-dup into place).
     ArrayGet {
         arr: Place,
@@ -705,6 +708,7 @@ fn rvalue_uses_place(value: &RValue, place: &Place) -> bool {
         RValue::StructLit { fields, .. }
         | RValue::FixedArrayLit { elems: fields, .. }
         | RValue::ArrayLit { elems: fields, .. } => fields.iter().any(uses),
+        RValue::IntArray(_) => false,
         RValue::Field { base, .. }
         | RValue::SumTag { place: base, .. }
         | RValue::SumPayload { base, .. } => uses(base),
@@ -1487,7 +1491,7 @@ pub fn lower_module(module: &ast::Module) -> Result<Program> {
 /// Lower a single-file module with explicit options (e.g. library check, no main).
 pub fn lower_module_with(module: &ast::Module, opts: LowerOptions) -> Result<Program> {
     let is_entry = opts.require_main;
-    let pkg = Package {
+    let mut pkg = Package {
         project_root: PathBuf::from("."),
         modules: vec![SourceModule {
             id: "Main".into(),
@@ -1496,6 +1500,7 @@ pub fn lower_module_with(module: &ast::Module, opts: LowerOptions) -> Result<Pro
             is_entry,
         }],
     };
+    crate::loader::include_core_modules(&mut pkg)?;
     lower_package_with(&pkg, opts)
 }
 
@@ -1588,6 +1593,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
     let lower_started = std::time::Instant::now();
     // D150: type-body `GET "/…"` → handlers + `route` (names Request/Response/ok).
     let mut package = package.clone();
+    crate::extend_desugar::desugar_package(&mut package)?;
     crate::conversion_desugar::desugar_package(&mut package)?;
     crate::route_desugar::desugar_package(&mut package)?;
     crate::validate_desugar::desugar_package(&mut package)?;
@@ -3079,7 +3085,8 @@ fn build_module_name_maps(
             Item::SessionStmt(_) => {
                 // Must be lifted by session::prepare before lower.
             }
-            Item::Type(_) | Item::Import(_) => {}
+            // `extend` blocks are free functions by now (D196).
+            Item::Type(_) | Item::Import(_) | Item::Extend(_) => {}
         }
     }
 
@@ -5238,7 +5245,7 @@ fn collect_item_type_apps(item: &Item, out: &mut Vec<(TypeExpr, Span)>) {
                 collect_type_apps(t, out);
             }
         }
-        Item::Import(_) | Item::SessionStmt(_) => {}
+        Item::Import(_) | Item::SessionStmt(_) | Item::Extend(_) => {}
     }
 }
 
@@ -8635,6 +8642,21 @@ fn lower_array_lit(
         Some(Ty::Array { elem }) if **elem != Ty::Void => Some(elem.as_ref().clone()),
         _ => None,
     };
+    let constants = match expect {
+        None => true,
+        Some(Ty::Array { elem }) => matches!(**elem, Ty::Int64 | Ty::Void),
+        Some(_) => false,
+    };
+    if constants {
+        if let Some(values) = elems.iter().map(int_constant).collect::<Option<Vec<i64>>>() {
+            let ty = Ty::Array {
+                elem: Box::new(Ty::Int64),
+            };
+            let p = ctx.fresh("alit");
+            ctx.assign(p.clone(), ty.clone(), RValue::IntArray(values));
+            return Ok((p, ty));
+        }
+    }
     let mut places = Vec::new();
     let mut elem_ty: Option<Ty> = None;
     for e in elems {
@@ -8688,6 +8710,21 @@ fn lower_array_lit(
     );
     let _ = span;
     Ok((p, arr_ty))
+}
+
+/// An integer literal, negated or not.
+fn int_constant(expr: &Expr) -> Option<i64> {
+    match &expr.kind {
+        ExprKind::Int(value) => Some(*value),
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            expr,
+        } => match expr.kind {
+            ExprKind::Int(value) => value.checked_neg(),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// An array element as the expected element type when it converts (as an
@@ -9546,7 +9583,7 @@ fn lower_field(
                 "count" => "string_count",
                 "byteCount" => "string_len",
                 _ => {
-                    if STRING_METHODS.iter().any(|(method, ..)| *method == name) {
+                    if string_method_names(ctx).iter().any(|method| method == name) {
                         return Err(Error::at(
                             format!("`{name}` on a String is a method: write `.{name}()`"),
                             name_span,
@@ -10282,8 +10319,16 @@ fn lower_method_call(
         }
         _ => false,
     };
+    let (recv_p, recv_ty) = if string_receiver {
+        unwrap_refined(ctx, recv_p, &recv_ty)?
+    } else {
+        (recv_p, recv_ty)
+    };
+    // Methods std writes in Thoxa with `extend` (D196), then the runtime's.
+    if let Some(sig) = extension_method(ctx, &recv_ty, method, method_span)? {
+        return lower_extension_call(ctx, recv_p, &recv_ty, sig, method, args, method_span);
+    }
     if string_receiver {
-        let (recv_p, _) = unwrap_refined(ctx, recv_p, &recv_ty)?;
         return lower_string_method(ctx, recv_p, method, args, method_span);
     }
     match &recv_ty {
@@ -11136,13 +11181,6 @@ fn lower_array_method(
             );
             Ok(void_place(ctx))
         }
-        "join" if *elem == Ty::String => {
-            let formal = vec![("separator".into(), Ty::String)];
-            let places = resolve_call_args(ctx, &formal, args, span)?;
-            let mut all = vec![recv];
-            all.extend(places);
-            emit_call_result(ctx, Callee::Builtin("array_string_join".into()), all, Ty::String)
-        }
         "count" => Err(Error::at(
             "`count` on an Array is a property, not a method: write `.count`",
             span,
@@ -11154,57 +11192,118 @@ fn lower_array_method(
     }
 }
 
-/// String's methods (D195): `name → (runtime builtin, parameters, result)`.
-/// Every parameter after the first is labelled; `ignoreCase` defaults to false.
-const STRING_METHODS: &[(&str, &str, &[(&str, StringParam)], StringResult)] = &[
-    ("contains", "string_contains", &[("needle", StringParam::Text), IGNORE_CASE], StringResult::Bool),
-    ("startsWith", "string_starts_with", &[("prefix", StringParam::Text), IGNORE_CASE], StringResult::Bool),
-    ("endsWith", "string_ends_with", &[("suffix", StringParam::Text), IGNORE_CASE], StringResult::Bool),
-    ("equals", "string_equals", &[("other", StringParam::Text), IGNORE_CASE], StringResult::Bool),
-    ("isEmpty", "string_is_empty", &[], StringResult::Bool),
-    ("isAscii", "string_is_ascii", &[], StringResult::Bool),
-    ("toLower", "string_to_lower", &[], StringResult::Text),
-    ("toUpper", "string_to_upper", &[], StringResult::Text),
-    ("trim", "string_trim", &[], StringResult::Text),
-    ("trimStart", "string_trim_start", &[], StringResult::Text),
-    ("trimEnd", "string_trim_end", &[], StringResult::Text),
-    ("removePrefix", "string_remove_prefix", &[("prefix", StringParam::Text)], StringResult::Text),
-    ("removeSuffix", "string_remove_suffix", &[("suffix", StringParam::Text)], StringResult::Text),
-    ("replace", "string_replace", &[("old", StringParam::Text), ("new", StringParam::Text)], StringResult::Text),
-    ("replaceFirst", "string_replace_first", &[("old", StringParam::Text), ("new", StringParam::Text)], StringResult::Text),
-    ("repeat", "string_repeat", &[("count", StringParam::Int)], StringResult::Text),
-    ("split", "string_split", &[("separator", StringParam::Text)], StringResult::Lines),
-    ("lines", "string_lines", &[], StringResult::Lines),
-    // Positions and widths count Unicode scalars (D195 §4).
-    ("indexOf", "string_index_of", &[("needle", StringParam::Text)], StringResult::Index),
-    ("lastIndexOf", "string_last_index_of", &[("needle", StringParam::Text)], StringResult::Index),
-    ("substring", "string_substring", &[("start", StringParam::Int), ("end", StringParam::Int)], StringResult::Text),
-    ("truncate", "string_truncate", &[("max", StringParam::Int)], StringResult::Text),
-    ("padLeft", "string_pad_left", &[("width", StringParam::Int), ("pad", StringParam::Pad)], StringResult::Text),
-    ("padRight", "string_pad_right", &[("width", StringParam::Int), ("pad", StringParam::Pad)], StringResult::Text),
-    ("reverse", "string_reverse", &[], StringResult::Text),
-];
+/// The name the `extend` methods of a built-in type carry (D196): `String`,
+/// `Array_String`, `Map_String_Int64`. None for a declared type, whose
+/// methods are in its body.
+fn extension_key(ty: &Ty) -> Option<String> {
+    match ty {
+        Ty::String => Some("String".into()),
+        Ty::Bytes => Some("Bytes".into()),
+        Ty::Buffer => Some("Buffer".into()),
+        Ty::Int64 => Some("Int64".into()),
+        Ty::Float64 => Some("Float64".into()),
+        Ty::Bool => Some("Bool".into()),
+        Ty::Array { elem } => Some(format!("Array_{}", extension_key(elem)?)),
+        Ty::Map { key, val } => Some(format!(
+            "Map_{}_{}",
+            extension_key(key)?,
+            extension_key(val)?
+        )),
+        _ => None,
+    }
+}
 
-const IGNORE_CASE: (&str, StringParam) = ("ignoreCase", StringParam::IgnoreCase);
+/// The function an `extend` block in a std module declares for `method` on
+/// `ty` (D196), if any.
+fn extension_method(ctx: &LowerCtx, ty: &Ty, method: &str, span: Span) -> Result<Option<FnSig>> {
+    let Some(key) = extension_key(ty) else {
+        return Ok(None);
+    };
+    let short = crate::extend_desugar::extension_fn_name(&key, method);
+    for (module, exports) in &ctx.module_exports {
+        let Some(sig) = ctx.fns.get(&format!("{module}_{short}")) else {
+            continue;
+        };
+        if *module != ctx.module_id && !exports.fns.contains_key(&short) {
+            return Err(Error::at(
+                format!("method `{method}` on {} is private", display_ty(ty)),
+                span,
+            ));
+        }
+        return Ok(Some(sig.clone()));
+    }
+    Ok(None)
+}
+
+/// `value.method(args)` for an `extend` method: the receiver is the
+/// function's first argument.
+fn lower_extension_call(
+    ctx: &mut LowerCtx,
+    recv: Place,
+    recv_ty: &Ty,
+    sig: FnSig,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<(Place, Ty)> {
+    ctx.infer_check_callee(&sig.mangled, method, span)?;
+    let receiver = codec::bind_fresh(ctx, "__receiver", recv_ty, recv);
+    let (receiver_name, receiver_ty) = sig.params[0].clone();
+    let mut places = vec![lower_arg_for_formal(
+        ctx,
+        &crate::ast_build::name(&receiver),
+        &receiver_ty,
+        &receiver_name,
+        0,
+    )?];
+    let defaults = sig.defaults.get(1..).unwrap_or(&[]);
+    places.extend(resolve_call_args_with_defaults(
+        ctx,
+        &sig.params[1..],
+        defaults,
+        args,
+        span,
+        &sig.def_mod,
+    )?);
+    emit_call_result(ctx, Callee::User(sig.mangled.clone()), places, sig.ret)
+}
+
+/// String's primitives (D196): `name → (runtime builtin, parameters, result)`.
+/// Offsets are bytes. Every other String method is written in Thoxa in
+/// std/string, on top of these.
+const STRING_PRIMITIVES: &[(&str, &str, &[(&str, StringParam)], StringResult)] = &[
+    ("byteAt", "string_byte_at", &[("index", StringParam::Int)], StringResult::Int),
+    ("byteSlice", "string_byte_slice", &[("start", StringParam::Int), ("end", StringParam::Int)], StringResult::Text),
+    ("byteIndexOf", "string_byte_index_of", &[("needle", StringParam::Text), ("start", StringParam::Start)], StringResult::Index),
+];
 
 #[derive(Clone, Copy)]
 enum StringParam {
     Text,
     Int,
-    /// `Bool = false`
-    IgnoreCase,
-    /// `String = " "`
-    Pad,
+    /// `Int64 = 0`
+    Start,
 }
 
 #[derive(Clone, Copy)]
 enum StringResult {
-    Bool,
+    Int,
     Text,
-    /// `Array<String>`
-    Lines,
     /// `May<Int64>` from a runtime index, `-1` when missing
     Index,
+}
+
+/// The names of String's methods: the primitives and std's `extend` methods.
+fn string_method_names(ctx: &LowerCtx) -> Vec<String> {
+    let prefix = crate::extend_desugar::extension_fn_name("String", "");
+    let mut names: Vec<String> = STRING_PRIMITIVES.iter().map(|(name, ..)| name.to_string()).collect();
+    for module in ctx.module_exports.keys() {
+        let long = format!("{module}_{prefix}");
+        names.extend(ctx.fns.keys().filter_map(|key| key.strip_prefix(&long).map(str::to_string)));
+    }
+    names.sort();
+    names.dedup();
+    names
 }
 
 fn lower_string_method(
@@ -11215,17 +11314,16 @@ fn lower_string_method(
     span: Span,
 ) -> Result<(Place, Ty)> {
     let Some((_, builtin, params, result)) =
-        STRING_METHODS.iter().find(|(name, ..)| *name == method)
+        STRING_PRIMITIVES.iter().find(|(name, ..)| *name == method)
     else {
-        if method == "count" {
+        if method == "count" || method == "byteCount" {
             return Err(Error::at(
-                "`count` on a String is a property, not a method: write `.count`",
+                format!("`{method}` on a String is a property, not a method: write `.{method}`"),
                 span,
             ));
         }
-        let names: Vec<&str> = STRING_METHODS.iter().map(|(name, ..)| *name).collect();
         return Err(Error::at(format!("no method `{method}` on String"), span)
-            .with_help(format!("String's methods: {}", names.join(", "))));
+            .with_help(format!("String's methods: {}", string_method_names(ctx).join(", "))));
     };
     let mut formal = Vec::new();
     let mut defaults = Vec::new();
@@ -11233,20 +11331,15 @@ fn lower_string_method(
         let (ty, default) = match param {
             StringParam::Text => (Ty::String, None),
             StringParam::Int => (Ty::Int64, None),
-            StringParam::IgnoreCase => (Ty::Bool, Some(crate::ast_build::bool_lit(false))),
-            StringParam::Pad => (Ty::String, Some(crate::ast_build::str_lit(" "))),
+            StringParam::Start => (Ty::Int64, Some(crate::ast_build::int_lit(0))),
         };
         formal.push((name.to_string(), ty));
         defaults.push(default);
     }
     let places = resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, "")?;
     let ret = match result {
-        StringResult::Bool => Ty::Bool,
+        StringResult::Int | StringResult::Index => Ty::Int64,
         StringResult::Text => Ty::String,
-        StringResult::Lines => Ty::Array {
-            elem: Box::new(Ty::String),
-        },
-        StringResult::Index => Ty::Int64,
     };
     let mut all = vec![recv];
     all.extend(places);
@@ -12597,7 +12690,7 @@ fn materialize_item_typespace(
         Item::SessionStmt(bi) => {
             materialize_block_item_typespace(bi, types, layouts, name_map, def_mod)?;
         }
-        Item::Import(_) => {}
+        Item::Import(_) | Item::Extend(_) => {}
     }
     Ok(())
 }

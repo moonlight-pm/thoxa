@@ -27,7 +27,14 @@ arguments then named ones in one call (the oracle SPEC's rule). Then **D195
 slice 2**: `.count` and positions count Unicode scalars (`.byteCount` for
 bytes; the count is cached, so `.count` stays O(1)), every String is valid
 UTF-8 (U+FFFD repair), and `indexOf` / `substring` / `truncate` / `padLeft` /
-`reverse` are methods; `std/str` keeps `splitOnce` and `parseUInt`.
+`reverse` are methods. Then **D196** (Joshua: Thoxa should self-host, so
+write std in Thoxa): String's methods are Thoxa in `std/string`, attached with
+`extend String as text { … }` (std modules only) over three runtime byte
+primitives (`byteAt`, `byteSlice`, `byteIndexOf`); `std/string` is in every
+package; `std/str` is gone (`splitOnce` is a method). AGENTS.md now carries
+Joshua's standing orders: write std in Thoxa, API before performance, the
+oracle is a light reference, and raise language improvements even against
+freezes.
 2026-10-16: **Language pass (D173–D181):** `main`'s return is
 the exit status, 0–255 (D173); unannotated methods infer their return type,
 and `x?` then `Pass(value)` infers `Trial<T, E>` (D174); structural `==` on
@@ -85,11 +92,20 @@ codegen, runtime semantics. Site and hosting work is paused (see holds); the
 2026-10-17 thoxa.dev rewrite was an explicit request, not a change of focus.
 One language slice at a time, each with conformance.
 
-**Strings (D195) shipped**, freeze
-[`docs/specs/2026-10-17-string-methods.md`](docs/specs/2026-10-17-string-methods.md):
-methods on String, Unicode case and white space, scalar counts and positions,
-always-valid UTF-8. Revisit (Joshua): positions in long non-ASCII text are
-O(n); the freeze §4 lists what is left to try if programs show it.
+**Strings (D195, D196) shipped**, freezes
+[`docs/specs/2026-10-17-string-methods.md`](docs/specs/2026-10-17-string-methods.md),
+[`docs/specs/2026-10-17-std-extend.md`](docs/specs/2026-10-17-std-extend.md):
+methods on String written in Thoxa, Unicode case and white space, scalar
+counts and positions, always-valid UTF-8. Revisit (Joshua): positions in long
+non-ASCII text are O(n); the freeze §4 lists what is left to try.
+
+**Proposed, awaiting Joshua** (standing order: raise improvements):
+emit only reachable functions (every loaded module is emitted whole; hello
+world is 9,912 lines of C, 0.60 s of `cc -O2`, since std/string loads
+everywhere); keywords as argument labels (`byteIndexOf(needle, from: 3)` is a
+syntax error); `mut` parameters, so a helper can append to a caller's
+`Buffer` without a copy; enforce `!` (positional) and labels at calls; an
+assignment as a `=>` match arm (`Has(at) => total = total + at` needs a block).
 
 **Typed codecs (D182) shipped**, freeze
 [`docs/specs/2026-10-16-typed-codecs.md`](docs/specs/2026-10-16-typed-codecs.md):
@@ -137,10 +153,11 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D195 (String methods, Unicode case, scalar counts and
-positions, valid UTF-8; two slices) and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
+**Shipped recently:** D196 (String's methods in Thoxa via `extend`), D195
+(String methods, Unicode case, scalar counts and positions, valid UTF-8; two
+slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 153 programs, 38 rejections, 9 site samples, 279 unit tests;
+`cargo make test` 153 programs, 39 rejections, 9 site samples, 280 unit tests;
 `cargo make test-asan` 143 clean, 10 excepted (2026-10-17). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 session step compile cache (D105 §3.5): no per-line

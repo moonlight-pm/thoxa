@@ -192,6 +192,7 @@ pub fn parse_session_chunk_stmts(chunk: &str) -> Result<Vec<BlockItem>> {
             | Item::Type(_)
             | Item::Extern(_)
             | Item::Import(_)
+            | Item::Extend(_)
             | Item::Global(_) => {
                 return Err(Error::new(
                     "session step: executable chunk contained a declaration (internal)",

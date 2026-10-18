@@ -724,6 +724,10 @@
     "named": false
   },
   {
+    "type": "extend",
+    "named": false
+  },
+  {
     "type": "extern",
     "named": false
   },

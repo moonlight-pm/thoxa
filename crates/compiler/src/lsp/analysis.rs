@@ -214,7 +214,9 @@ fn check_source_inner(
                 is_entry: true,
             }],
         };
-        crate::session::prepare_package(&mut package).and_then(|_| {
+        crate::loader::include_core_modules(&mut package)
+            .and_then(|_| crate::session::prepare_package(&mut package))
+            .and_then(|_| {
             let has_main = package
                 .modules
                 .iter()
@@ -686,6 +688,14 @@ mod tests {
     #[test]
     fn good_snippet_no_diagnostics() {
         let diags = check_source("<input>", "fn main() -> Int64 { 0 }\n");
+        assert!(diags.is_empty(), "unexpected: {diags:?}");
+    }
+
+    /// A file with no imports still has String's std methods (D196).
+    #[test]
+    fn string_methods_without_imports() {
+        let text = "fn main() -> Int64 {\n    if \"Straße\".equals(\"STRASSE\", ignoreCase: true) {\n        0\n    } else {\n        1\n    }\n}\n";
+        let diags = check_source("<input>", text);
         assert!(diags.is_empty(), "unexpected: {diags:?}");
     }
 

@@ -13,8 +13,8 @@ How docs work: **[docs/progress-model.md](docs/progress-model.md)**
 ## What this is
 
 Native Thoxa: **Rust compiler → C** + **C runtime** (`thoxa_rt`). Python oracle
-lives at **`apocrypha/old/ThoxaPython`** (SPEC + conformance) — reference only,
-not the product. A feature is done only when a checked-in `.thx` compiles, runs,
+lives at **`apocrypha/old/ThoxaPython`** (SPEC + conformance) — outdated; consult
+it lightly, never as the authority on the surface. A feature is done only when a checked-in `.thx` compiles, runs,
 and matches `.out` (plus unit tests where noted).
 
 ## Session bootstrap
@@ -91,7 +91,7 @@ over ad-hoc scripts (D10).
 | `crates/compiler/src/` | Lexer → parser → AST → MIR → cgen; `diagnostic`/`error`; session/command/repl; lsp/ |
 | `runtime/` | `thoxa_rt` C sources + `include/thoxa_rt.h` |
 | `crates/make/` | xtask (`cargo make`) |
-| `std/` | Product standard library (`std/…`; Io/Net/Http/HttpStatic **D126**; `http/server` **D136**/**D139**; `json` **D141**; `sqlite` **D143**/**D144**; fragments/ETag **D145**; SSE **D146**) |
+| `std/` | Product standard library (`std/…`; Io/Net/Http/HttpStatic **D126**; `http/server` **D136**/**D139**; `json` **D141**; `sqlite` **D143**/**D144**; fragments/ETag **D145**; SSE **D146**; `string` = String's methods via `extend`, in every program **D196**) |
 | `tests/conformance/` | `*.thx` + `*.out` |
 | `extras/` | Non-product DX; dogfood shell (product REPL is bare `thoxa`) |
 | `examples/` | Runnable demos (not conformance); `examples/http`, `examples/kilo` |
@@ -105,8 +105,16 @@ Compiler pipeline: `.thx` → lexer → parser → AST → MIR (+ simple RC) →
 
 ## Working rules
 
-- **One slice at a time.** Match oracle surface; don’t invent syntax without
-  checking SPEC / decisions.
+- **One slice at a time.** Check `docs/decisions.md` before inventing syntax.
+- **Raise language improvements (standing order, Joshua 2026-10-17).** When
+  something in the language could be better, propose it, even if it
+  contradicts a freeze, a decision, or the oracle. Propose; don't change a
+  locked surface unilaterally.
+- **Write std in Thoxa.** Thoxa aims to self-host: library behaviour lives in
+  `std/*.thx`; C in `thoxa_rt` is only for primitives (allocation, RC,
+  syscalls, representation invariants). If Thoxa can't express something yet,
+  propose the missing feature. Build the API first; tune performance later,
+  except in fundamental decisions.
 - **Conformance is the definition of done** for a feature.
 - **No QBE / no tree-walk product interpreter** in phase A.
 - **Heap today:** simple single-threaded RC; Perceus later.
