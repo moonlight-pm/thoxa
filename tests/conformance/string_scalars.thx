@@ -47,7 +47,7 @@ fn main() -> Int64 {
     info("{"café au lait".truncate(4)}|{"thé".truncate(9)}|{"x".truncate(0)}")
 
     ## Widths.
-    info("[{"é".padLeft(3)}] [{"42".padLeft(6, "·-")}] [{"ab".padRight(4, pad: "xyz")}]")
+    info("[{"é".padLeft(3)}] [{"42".padLeft(6, pad: "·-")}] [{"ab".padRight(4, pad: "xyz")}]")
     info("café".reverse())
 
     ## Ill-formed input becomes U+FFFD, one per maximal ill-formed part.

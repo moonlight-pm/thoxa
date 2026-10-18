@@ -19,11 +19,11 @@ fn main() -> Int64 {
 
     logging.info(format("hi", width: 40))
     logging.info(format("hi", fill: "-"))
-    logging.info(format("hi", 12, fill: "*"))
+    logging.info(format("hi", width: 12, fill: "*"))
     logging.info(format("hi"))
     let moved = Point(x: 1).moved(2, dy: 5)
     logging.info("{moved.x},{moved.y}")
-    let point = Point(3, y: 4)
+    let point = Point(x: 3, y: 4)
     logging.info("{point.x},{point.y}")
     0
 }

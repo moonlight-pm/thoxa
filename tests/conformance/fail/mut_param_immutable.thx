@@ -1,5 +1,5 @@
 ## Only a `mut` binding can be passed to a `mut` parameter (D199).
-fn bump(mut count: Int64) {
+fn bump(mut count!: Int64) {
     count = count + 1
 }
 

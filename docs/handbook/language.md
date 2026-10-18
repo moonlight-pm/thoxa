@@ -20,7 +20,7 @@ contiguous `##` lines above a declaration when you hover its name.
 
 ```thx
 ## Price in cents, tax included.
-fn total(cents: Int64) -> Int64 {
+fn total(cents!: Int64) -> Int64 {
     cents + cents / 10   # flat 10% tax
 }
 ```
@@ -157,7 +157,7 @@ ambiguous:
    space on either side is a compile error.
 
 ```thx
-fn sign(n: Int64) -> Int64 {
+fn sign(n!: Int64) -> Int64 {
     if n < 0 {
         -1           ## a new expression, the value of this branch
     } else {
@@ -376,7 +376,7 @@ phrase.count                  ## 10
 phrase.byteCount              ## 12
 phrase.indexOf("café")        ## Has(6)
 phrase.substring(6, 10)       ## "café"
-"42".padLeft(5, "0")          ## "00042"
+"42".padLeft(5, pad: "0")     ## "00042"
 ```
 
 `.count` takes constant time. A position takes constant time in an all-ASCII
@@ -543,7 +543,7 @@ type Circle(radius: Float64)
 type Rect(width: Float64, height: Float64)
 type Shape = Circle | Rect
 
-fn area(shape: Shape) -> Float64 {
+fn area(shape!: Shape) -> Float64 {
     match shape {
         Circle(radius) => 3.14159 * radius * radius
         Rect(width, height) => width * height
@@ -705,30 +705,34 @@ let total = {
 
 ### Calls and arguments
 
-A call passes its positional arguments first, then its named ones. Positional
-arguments fill the first parameters in order; named arguments fill the rest,
-in any order. A positional argument after a named one, or a named argument
-for a parameter already given by position, is a compile error.
+A parameter written `name!: T` is positional: a call passes it by position,
+without its name. Any other parameter is labelled: a call passes it as
+`name: value`. A call passes its positional arguments first, then its
+labelled ones, in any order.
 
 ```thx
-fn connect(host: String, port: Int64 = 8080, tls: Bool = false) -> String {
+fn connect(host!: String, port: Int64 = 8080, tls: Bool = false) -> String {
     "{host}:{port} tls={tls}"
 }
 
-connect("localhost", 9000)            ## positional
-connect(port: 1, host: "a")           ## named, any order
-connect("a", tls: true)               ## positional, then named
+connect("localhost", port: 9000)      ## positional, then labelled
+connect("a", tls: true, port: 1)      ## labelled ones in any order
+## connect("localhost", 9000)         ## compile error: `port` is passed by label
+## connect(host: "a")                 ## compile error: `host` is positional
 ## connect(tls: true, "a")            ## compile error: positional after named
 ```
 
-A parameter with a default may be omitted: by name anywhere, by position at
-the end. Default expressions are evaluated at the call site, and free names in
-them resolve in the module that defines the function, so callers need not
-import them. A parameter without a default may not follow one with a default.
+Mark the subject of a function positional (`half(x!: Int64)`, `user.rename(name!: String)`)
+and label the options, especially `Bool` flags, so call sites say what they
+set. A constructor follows the same rule: `type Point(x: Int64, y: Int64)` is
+built `Point(x: 1, y: 2)`, and `type Has<T>(value!: T)` is built `Has(3)`.
 
-A parameter written `name!: T` is marked positional. The mark is required on
-every parameter of an `extern` function and must match across the clauses of a
-multi-clause function; calls are not checked against it.
+A parameter with a default may be omitted. Default expressions are evaluated
+at the call site, and free names in them resolve in the module that defines
+the function, so callers need not import them. A parameter without a default
+may not follow one with a default. The mark is required on every parameter of
+an `extern` function and must match across the clauses of a multi-clause
+function. Calls through a function value are positional.
 
 There is no spread or variadic argument syntax in calls; a component's
 `{...value}` in a tag literal is the one spread (see
@@ -824,7 +828,7 @@ returned from the enclosing function, under the rules of
 and on a conversion that cannot fail it is a compile error (write `as`).
 
 ```thx
-fn total(json: Json) -> Trial<Int64, Array<Issue>> {
+fn total(json!: Json) -> Trial<Int64, Array<Issue>> {
     let lines = json as? Array<Line>
     mut sum = 0
     for line in lines {
@@ -989,7 +993,7 @@ match result {
 name, which binds the value.
 
 ```thx
-fn describe(count: Int64) -> String {
+fn describe(count!: Int64) -> String {
     match count {
         0 => "none"
         1 | 2 => "a few"
@@ -1017,7 +1021,7 @@ type, the arms must have the same type.
 ## Functions
 
 ```thx
-fn add(a: Int64, b: Int64 = 0) -> Int64 {
+fn add(a!: Int64, b!: Int64 = 0) -> Int64 {
     a + b
 }
 ```
@@ -1035,12 +1039,12 @@ sees the writes. A `Buffer` or `Array` passed this way grows without being
 copied.
 
 ```thx
-fn appendWord(mut out: Buffer, word!: String) {
+fn appendWord(mut out!: Buffer, word!: String) {
     out.appendBytes(Bytes.fromString(word))
     out.append(32)
 }
 
-fn bump(mut count: Int64, by: Int64 = 1) {
+fn bump(mut count!: Int64, by: Int64 = 1) {
     count = count + by
 }
 
@@ -1080,10 +1084,10 @@ Several functions with the same name in one scope (the module, or one type's
 methods) are one function: an ordered match on the types of the parameters.
 
 ```thx
-fn page(path: "home") -> String {
+fn page(path!: "home") -> String {
     "home page"
 }
-fn page(path: "admin") -> String {
+fn page(path!: "admin") -> String {
     "admin page"
 }
 ```
@@ -1109,9 +1113,9 @@ that type is one of:
 - an unbound method, `Type.method`: the receiver becomes the first argument.
 
 ```thx
-fn double(x: Int64) -> Int64 { x * 2 }
+fn double(x!: Int64) -> Int64 { x * 2 }
 
-fn apply(f: (x: Int64) -> Int64, v: Int64) -> Int64 {
+fn apply(f!: (x: Int64) -> Int64, v!: Int64) -> Int64 {
     f(v)
 }
 
@@ -1227,7 +1231,7 @@ failure `F`. They are not built in: import them.
 ```thx
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 
-fn half(x: Int64) -> Trial<Int64, String> {
+fn half(x!: Int64) -> Trial<Int64, String> {
     if x % 2 == 0 { Pass(x / 2) } else { Fail("{x} is odd") }
 }
 ```
@@ -1243,7 +1247,7 @@ built-in that produces one (`Bytes.find`, `String.indexOf`, `map[key]`) needs
 `?` member from the enclosing function:
 
 ```thx
-fn quarter(x: Int64) -> Trial<Int64, String> {
+fn quarter(x!: Int64) -> Trial<Int64, String> {
     let h = half(x)?        ## returns Fail early if half failed
     half(h)
 }
@@ -1464,7 +1468,7 @@ spreads a product's fields or a `Map<String, T>`'s entries; a later key
 replaces an earlier one.
 
 ```thx
-fn ticketJson(ticket: Ticket) -> Json {
+fn ticketJson(ticket!: Ticket) -> Json {
     { ...ticket, ok: true }
 }
 

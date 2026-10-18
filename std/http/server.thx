@@ -64,7 +64,7 @@ fn readUntil(peer!: Socket, start!: Bytes, need!: Int64, deadline!: Int64) -> Tr
         if acc.count >= need {
             return Pass(acc)
         }
-        let chunk = peer.receive(deadline)
+        let chunk = peer.receive(deadline: deadline)
         if chunk.count == 0 {
             return Fail("incomplete request body")
         }
@@ -170,7 +170,7 @@ fn skipBlankLines(buffered!: Bytes) -> Bytes {
 ## `readRequest` on a connection where `buffered` was already read (the
 ## bytes after the previous request).
 fn readNext(peer!: Socket, buffered!: Bytes, deadline!: Int64) -> Trial<Incoming, String> {
-    let raw = peer.receiveRequest(deadline, skipBlankLines(buffered))?
+    let raw = peer.receiveRequest(deadline: deadline, buffered: skipBlankLines(buffered))?
     if raw.count == 0 {
         mut headers: Array<Header> = []
         return Pass(Incoming(
@@ -232,7 +232,7 @@ export fn writeResponse(
 ) -> Trial<Void, String> {
     let final = http.finalize(method, res, keepAlive)
     let wireBytes = http.writeResponse(final)
-    match peer.sendAll(wireBytes, deadline) {
+    match peer.sendAll(wireBytes, deadline: deadline) {
         Pass(_) {
             Pass(Void)
         }
@@ -270,7 +270,7 @@ export fn sendEvent(peer!: Socket, data!: String) -> Trial<Void, String> {
 }
 
 fn writeBadRequest(peer!: Socket, msg!: String) -> Trial<Void, String> {
-    writeResponse(peer, "GET", http.badRequest(msg), false, net.nowMs() + writeTimeoutMs)
+    writeResponse(peer, "GET", http.badRequest(msg), false, deadline: net.nowMs() + writeTimeoutMs)
 }
 
 ## One keep-alive connection: read / handle / write until close. Each
@@ -311,7 +311,7 @@ export fn serveOne(peer!: Socket, handle!: (req: Request) -> Response) {
                     break
                 }
                 info("{req.method} {req.path} -> {res.status} {res.reason}")
-                match writeResponse(peer, req.method, res, keep, net.nowMs() + writeTimeoutMs) {
+                match writeResponse(peer, req.method, res, keep, deadline: net.nowMs() + writeTimeoutMs) {
                     Fail(se) {
                         warn("send: {se}")
                         break

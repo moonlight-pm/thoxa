@@ -46,7 +46,7 @@ export type Row(chars: Bytes, render: Bytes) {
         render.count
     }
 
-    export fn cxToRx(cx: Int64) -> Int64 {
+    export fn cxToRx(cx!: Int64) -> Int64 {
         mut rx = 0
         mut i = 0
         loop {
@@ -62,7 +62,7 @@ export type Row(chars: Bytes, render: Bytes) {
         rx
     }
 
-    export fn window(coloff: Int64, width: Int64) -> Bytes {
+    export fn window(coloff!: Int64, width!: Int64) -> Bytes {
         let count = render.count
         let begin = if coloff > count {
             count
@@ -77,19 +77,19 @@ export type Row(chars: Bytes, render: Bytes) {
         render.slice(begin, stop)
     }
 
-    export fn insertChar(at: Int64, byte: Int64) -> Row {
+    export fn insertChar(at!: Int64, byte!: Int64) -> Row {
         make(chars.insertAt(at, byte))
     }
 
-    export fn deleteChar(at: Int64) -> Row {
+    export fn deleteChar(at!: Int64) -> Row {
         make(chars.removeAt(at))
     }
 
-    export fn take(count: Int64) -> Row {
+    export fn take(count!: Int64) -> Row {
         make(chars.slice(0, count))
     }
 
-    export fn skip(count: Int64) -> Row {
+    export fn skip(count!: Int64) -> Row {
         make(chars.slice(count, chars.count))
     }
 

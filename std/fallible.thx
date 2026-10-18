@@ -1,10 +1,10 @@
 ## Fallibility types (D118): May / Trial as ordinary generic unions.
 ## Import what you need: `import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"`
 
-export type Has<T>(value: T)
+export type Has<T>(value!: T)
 export type Not
 export type May<T> = Has<T!> | Not?
 
-export type Pass<T>(value: T)
-export type Fail<E>(error: E)
+export type Pass<T>(value!: T)
+export type Fail<E>(error!: E)
 export type Trial<P, F> = Pass<P!> | Fail<F?>

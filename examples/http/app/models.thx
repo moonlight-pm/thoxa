@@ -15,7 +15,7 @@ export type Drink(
     roast: Roast
 )
 
-export fn roastLabel(roast: Roast) -> String {
+export fn roastLabel(roast!: Roast) -> String {
     match roast {
         Dark => "Dark roast"
         Medium => "Medium roast"
@@ -33,7 +33,7 @@ export fn formatPrice(cents!: Int64) -> String {
     }
 }
 
-export fn roastKey(roast: Roast) -> String {
+export fn roastKey(roast!: Roast) -> String {
     match roast {
         Dark => "dark"
         Medium => "medium"

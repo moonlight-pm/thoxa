@@ -23,7 +23,7 @@ fn main() -> Int64 {
     let p = Point(x: 5)
     let q = p.moved()
     logging.info("{q.x},{q.y}")
-    let r = p.moved(dx: 2, dy: 3)
+    let r = p.moved(2, 3)
     logging.info("{r.x},{r.y}")
     ## extern still gets all args after defaults expand (no default on this call).
     logging.info("{sysAbs(-7)}")

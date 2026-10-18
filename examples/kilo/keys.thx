@@ -23,7 +23,7 @@ export type Delete
 export type Key = Press | Up | Down | Left | Right | Home | End | PageUp | PageDown | Delete
 
 ## CTRL_KEY(k) = k & 0x1f
-export fn ctrlKey(k: Int64) -> Int64 {
+export fn ctrlKey(k!: Int64) -> Int64 {
     k & 31
 }
 

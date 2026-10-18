@@ -3,7 +3,7 @@ import { Json } from "std/json"
 
 type Line(drink: String)
 
-fn place(order: Line) -> String {
+fn place(order!: Line) -> String {
     order.drink
 }
 

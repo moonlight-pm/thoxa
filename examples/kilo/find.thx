@@ -15,7 +15,7 @@ let none = 0 - 1
 
 export type Match(r: Int64, c: Int64)
 
-fn isPrintable(b: Int64) -> Bool {
+fn isPrintable(b!: Int64) -> Bool {
     if b < 32 {
         false
     } else {
@@ -31,8 +31,8 @@ fn emptyMayMatch() -> May<Match> {
 export fn searchFrom(
     rows!: Array<Row>,
     query!: Bytes,
-    lastMatchRow: Int64,
-    direction: Int64
+    lastMatchRow!: Int64,
+    direction!: Int64
 ) -> May<Match> {
     if rows.count == 0 {
         return emptyMayMatch()
@@ -73,13 +73,13 @@ export fn searchFrom(
     result
 }
 
-fn onHit(rr: Int64, cc: Int64, len: Int64) -> Int64 {
+fn onHit(rr!: Int64, cc!: Int64, len!: Int64) -> Int64 {
     state.jumpTo(cc, rr)
     state.setMatch(rr, cc, len)
     rr
 }
 
-fn applySearch(query!: Bytes, lastMatch: Int64, direction: Int64) -> Int64 {
+fn applySearch(query!: Bytes, lastMatch!: Int64, direction!: Int64) -> Int64 {
     if query.count == 0 {
         state.clearMatch()
         return none

@@ -3,11 +3,11 @@
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging from "std/logging"
 
-fn half(x: Int64) -> Trial<Int64, Int64> {
+fn half(x!: Int64) -> Trial<Int64, Int64> {
     if x % 2 == 0 { Pass(x / 2) } else { Fail(x) }
 }
 
-fn quarter(x: Int64) -> Trial<Int64, Int64> {
+fn quarter(x!: Int64) -> Trial<Int64, Int64> {
     let a = half(x)?
     let b = half(a)?
     Pass(b)

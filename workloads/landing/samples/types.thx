@@ -9,7 +9,7 @@ type Rect(width: Float64, height: Float64)
 type Triangle(base: Float64, height: Float64)
 type Shape = Circle | Rect | Triangle
 
-fn area(shape: Shape) -> Float64 {
+fn area(shape!: Shape) -> Float64 {
     match shape {
         Circle(radius) => 3.14159 * radius * radius
         Rect(width, height) => width * height
@@ -17,7 +17,7 @@ fn area(shape: Shape) -> Float64 {
     }
 }
 
-fn describe(shape: Shape) -> String {
+fn describe(shape!: Shape) -> String {
     match shape {
         Rect(width, height) if width == height => "a square"
         Rect => "a rectangle"

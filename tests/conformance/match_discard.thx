@@ -7,7 +7,7 @@ import logging from "std/logging"
 
 type Box(n: Int64)
 
-fn half(x: Int64) -> Trial<Int64, String> {
+fn half(x!: Int64) -> Trial<Int64, String> {
     if x % 2 == 0 {
         Pass(x / 2)
     } else {

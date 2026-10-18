@@ -11,7 +11,7 @@ type Circle(radius: Float64)
 type Square(side: Float64)
 type Shape = Circle | Square
 
-fn describe(result: Trial<Line, Array<Issue>>) -> String {
+fn describe(result!: Trial<Line, Array<Issue>>) -> String {
     match result {
         Pass(line) => "ok {line.drink} {line.size} {line.quantity}"
         Fail(issues) => "rejected: {messages(issues)}"

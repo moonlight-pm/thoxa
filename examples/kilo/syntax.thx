@@ -84,7 +84,7 @@ fn cSyntax() -> Syntax {
     )
 }
 
-fn matchesAt(hay!: Bytes, at: Int64, needle!: Bytes) -> Bool {
+fn matchesAt(hay!: Bytes, at!: Int64, needle!: Bytes) -> Bool {
     if at + needle.count > hay.count {
         return false
     }
@@ -112,7 +112,7 @@ export fn selectSyntax(filename!: String) -> May<Syntax> {
     Not()
 }
 
-fn isSeparator(c: Int64) -> Bool {
+fn isSeparator(c!: Int64) -> Bool {
     if c == 32 { return true }
     if c == 9 { return true }
     if c == 10 { return true }
@@ -137,7 +137,7 @@ fn isSeparator(c: Int64) -> Bool {
     false
 }
 
-fn separatorAt(render!: Bytes, at: Int64) -> Bool {
+fn separatorAt(render!: Bytes, at!: Int64) -> Bool {
     if at >= render.count {
         true
     } else {
@@ -145,7 +145,7 @@ fn separatorAt(render!: Bytes, at: Int64) -> Bool {
     }
 }
 
-fn isDigit(c: Int64) -> Bool {
+fn isDigit(c!: Int64) -> Bool {
     if c < 48 {
         false
     } else {
@@ -160,7 +160,7 @@ fn isNumberHl(h!: Hl) -> Bool {
     }
 }
 
-fn firstMatch(render!: Bytes, i: Int64, list!: Array<Bytes>) -> May<Int64> {
+fn firstMatch(render!: Bytes, i!: Int64, list!: Array<Bytes>) -> May<Int64> {
     mut k = 0
     loop {
         if k >= list.count {
@@ -177,7 +177,7 @@ fn firstMatch(render!: Bytes, i: Int64, list!: Array<Bytes>) -> May<Int64> {
     Not()
 }
 
-fn keywordAt(render!: Bytes, i: Int64, s!: Syntax) -> May<KeywordHit> {
+fn keywordAt(render!: Bytes, i!: Int64, s!: Syntax) -> May<KeywordHit> {
     match firstMatch(render, i, s.keywords1) {
         Has(w) {
             Has(KeywordHit(len: w, isKw2: false))
@@ -208,7 +208,7 @@ export fn plainRow(render!: Bytes) -> RowHl {
     RowHl(cells: cells, openComment: false)
 }
 
-export fn highlightRow(render!: Bytes, prevOpen: Bool, s!: Syntax) -> RowHl {
+export fn highlightRow(render!: Bytes, prevOpen!: Bool, s!: Syntax) -> RowHl {
     let n = render.count
     mut cells = emptyHl()
     mut prevSep = true

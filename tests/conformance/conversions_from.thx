@@ -27,7 +27,7 @@ type Email(address: String) {
     }
 }
 
-fn contact(text: String) -> Trial<String, String> {
+fn contact(text!: String) -> Trial<String, String> {
     let email = text as? Email
     Pass("mail to {email.address}")
 }

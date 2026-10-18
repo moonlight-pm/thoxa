@@ -15,7 +15,7 @@ fn readFrom(listener!: Socket, port!: Int64, raw!: String, waitMs!: Int64) -> Tr
     if raw != "" {
         client.sendAll(Bytes.fromString(raw))?
     }
-    let outcome = match server.readRequest(peer, net.nowMs() + waitMs) {
+    let outcome = match server.readRequest(peer, deadline: net.nowMs() + waitMs) {
         Fail(error) => "refused: {error}"
         Pass(request) {
             if request.method == "" {
@@ -37,7 +37,7 @@ fn bodyDeadline(listener!: Socket, port!: Int64) -> Trial<String, String> {
     client.sendAll(Bytes.fromString("POST /form HTTP/1.1\r\nContent-Length: 10\r\n\r\nabc"))?
     let raw = peer.receiveRequest()?
     let request = http.parseRequest(raw)?
-    let outcome = match server.readBody(peer, raw, request, net.nowMs() + 50) {
+    let outcome = match server.readBody(peer, raw, request, deadline: net.nowMs() + 50) {
         Fail(error) => "refused: {error}"
         Pass(body) => "read {body.count} bytes"
     }
@@ -54,7 +54,7 @@ fn readInTask(listener!: Socket) {
             info("task: accept failed: {error}")
         }
         Pass(peer) {
-            match server.readRequest(peer, net.nowMs() + 50) {
+            match server.readRequest(peer, deadline: net.nowMs() + 50) {
                 Fail(error) {
                     info("task: refused: {error}")
                 }

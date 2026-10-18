@@ -30,7 +30,7 @@ fn termErr(what!: String) -> String {
     "{what}: {sysStrerror(sysErrno())}"
 }
 
-fn getU32(b!: Bytes, at: Int64) -> Int64 {
+fn getU32(b!: Bytes, at!: Int64) -> Int64 {
     let b0 = b.get(at)
     let b1 = b.get(at + 1)
     let b2 = b.get(at + 2)
@@ -38,7 +38,7 @@ fn getU32(b!: Bytes, at: Int64) -> Int64 {
     b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
 }
 
-fn putU32(b!: Bytes, at: Int64, v: Int64) -> Void {
+fn putU32(b!: Bytes, at!: Int64, v!: Int64) -> Void {
     b.set(at, v % 256)
     b.set(at + 1, (v / 256) % 256)
     b.set(at + 2, (v / 65536) % 256)
@@ -46,7 +46,7 @@ fn putU32(b!: Bytes, at: Int64, v: Int64) -> Void {
     Void
 }
 
-fn getU16(b!: Bytes, at: Int64) -> Int64 {
+fn getU16(b!: Bytes, at!: Int64) -> Int64 {
     b.get(at) + b.get(at + 1) * 256
 }
 

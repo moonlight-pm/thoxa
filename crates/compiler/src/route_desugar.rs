@@ -240,7 +240,15 @@ fn desugar_type(td: &mut TypeDef, names: &HttpNames) -> Result<(Vec<Function>, D
             exported: false,
             name: handler_name,
             name_span: r.method_span,
-            params: r.params,
+            // Only the generated `route` calls a handler, by position (D200).
+            params: r
+                .params
+                .into_iter()
+                .map(|p| Param {
+                    positional: true,
+                    ..p
+                })
+                .collect(),
             return_type: Some(ret_ty),
             body: r.body,
         });
@@ -745,7 +753,7 @@ fn parse_int_type() -> TypeDef {
         name: PARSE_INT_TY.into(),
         name_span: dummy(),
         type_params: vec![],
-        params: vec![param("ok", ty_bool()), param("value", ty_int64())],
+        params: vec![labelled(param("ok", ty_bool())), labelled(param("value", ty_int64()))],
         fields: vec![],
         methods: vec![],
         routes: vec![],
@@ -1041,11 +1049,19 @@ fn call(callee: &str, args: Vec<Arg>) -> Expr {
     }
 }
 
+/// A generated constructor field, passed by label (D200).
+fn labelled(param: Param) -> Param {
+    Param {
+        positional: false,
+        ..param
+    }
+}
+
 fn param(name: &str, ty: TypeExpr) -> Param {
     Param {
         name: name.into(),
         name_span: dummy(),
-        positional: false,
+        positional: true,
         mutable: false,
         ty,
         default: None,

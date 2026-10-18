@@ -1,9 +1,9 @@
-## A named argument cannot repeat one given by position (D194).
+## A parameter without `!` goes by label (D200).
 fn format(template!: String, width: Int64 = 80) -> String {
     "{template}:{width}"
 }
 
 fn main() -> Int64 {
-    let text = format("hi", template: "again")
+    let text = format("hi", 40)
     0
 }

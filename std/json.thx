@@ -9,12 +9,12 @@ extern fn cParseF64(s!: String) -> Float64 from "c" "thoxa_f64_from_string"
 extern fn cF64IsFinite(v!: Float64) -> Int32 from "c" "thoxa_f64_is_finite"
 
 export type JNull
-export type JBool(value: Bool)
-export type JInt(value: Int64)
-export type JFloat(value: Float64)
-export type JStr(value: String)
-export type JArr(value: Array<Json>)
-export type JObj(value: Map<String, Json>)
+export type JBool(value!: Bool)
+export type JInt(value!: Int64)
+export type JFloat(value!: Float64)
+export type JStr(value!: String)
+export type JArr(value!: Array<Json>)
+export type JObj(value!: Map<String, Json>)
 export type Json = JNull | JBool | JInt | JFloat | JStr | JArr | JObj
 
 ## Shape / refinement failures for Type.read (D149).
@@ -108,15 +108,15 @@ export fn message(e!: Issue) -> String {
 }
 
 export fn issueMissing(path!: String) -> Issue {
-    Missing(path)
+    Missing(path: path)
 }
 
 export fn issueMismatch(path!: String, expected!: String, got!: String) -> Issue {
-    Mismatch(path, expected, got)
+    Mismatch(path: path, expected: expected, got: got)
 }
 
 export fn issueRejected(path!: String, reason!: String) -> Issue {
-    Rejected(path, reason)
+    Rejected(path: path, reason: reason)
 }
 
 ## Every issue's message, joined with "; " (D182 §2).

@@ -156,10 +156,10 @@ export type Router(root: String) {
         let isGet = req.method == "GET"
         let headOnly = req.method == "HEAD"
         if isGet {
-            servePath(root, req.path, false)
+            servePath(root, req.path, headOnly: false)
         } else {
             if headOnly {
-                servePath(root, req.path, true)
+                servePath(root, req.path, headOnly: true)
             } else {
                 methodNotAllowed("GET, HEAD")
             }
@@ -183,7 +183,7 @@ fn servePath(root!: String, urlPath!: String, headOnly: Bool) -> Response {
     let candidate = joinPath(root, segs)
     match readFile(candidate) {
         Pass(body) {
-            fileResponse(body, candidate, headOnly)
+            fileResponse(body, candidate, headOnly: headOnly)
         }
         Fail(err1) {
             if isForbiddenish(err1) {
@@ -193,7 +193,7 @@ fn servePath(root!: String, urlPath!: String, headOnly: Bool) -> Response {
                 let indexPath = "{candidate}/index.html"
                 match readFile(indexPath) {
                     Pass(body) {
-                        fileResponse(body, indexPath, headOnly)
+                        fileResponse(body, indexPath, headOnly: headOnly)
                     }
                     Fail(err2) {
                         failResponse(indexPath, err2)

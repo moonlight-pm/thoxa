@@ -109,7 +109,7 @@ export type File(fd: Int64) {
 
     ## Write all of `data` from the current offset (does not close).
     ## Returns bytes written on success.
-    export fn write(data: Bytes) -> Trial<Int64, String> {
+    export fn write(data!: Bytes) -> Trial<Int64, String> {
         if fd < 0 {
             Fail("write: file is closed")
         } else {
@@ -124,7 +124,7 @@ export type File(fd: Int64) {
 
     ## Reposition the file offset (lseek). Returns the resulting offset.
     ## `whence` is `seekSet` / `seekCur` / `seekEnd` (default `seekSet`).
-    export fn seek(offset: Int64, whence: Int32 = seekSet) -> Trial<Int64, String> {
+    export fn seek(offset!: Int64, whence!: Int32 = seekSet) -> Trial<Int64, String> {
         if fd < 0 {
             Fail("seek: file is closed")
         } else {
@@ -158,7 +158,7 @@ export type File(fd: Int64) {
 ## Prefer `OpenMode` + `openModeBits` when you only need an access mode.
 export fn openFile(
     path!: String,
-    flags: Int32 = oRdonly,
+    flags!: Int32 = oRdonly,
     mode: Int32 = oMode644
 ) -> Trial<File, String> {
     if flagsNeedMode(flags) {

@@ -1,7 +1,7 @@
 ## D162: a line that starts with `-1` / `-x` starts a new expression; `- x` continues.
 import logging, { info } from "std/logging"
 
-fn sign(value: Int64) -> Int64 {
+fn sign(value!: Int64) -> Int64 {
     if value > 0 {
         return 1
     }
@@ -11,7 +11,7 @@ fn sign(value: Int64) -> Int64 {
     -1
 }
 
-fn name(value: Int64) -> String {
+fn name(value!: Int64) -> String {
     match value {
         0 => "zero"
         -1 => "minus one"

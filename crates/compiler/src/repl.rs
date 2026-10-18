@@ -672,10 +672,11 @@ fn parse_path_hook_stdout(s: &str) -> Vec<String> {
 /// `sessionEmptyStrings()` (typed empty Array<String>). The `for` stays one
 /// line so `{` is not command-desugared.
 fn path_hook_chunk(parent: &[String]) -> String {
+    // The hook's parameter is labelled `parent` (D200).
     let call = if parent.is_empty() {
-        "path(sessionEmptyStrings())".to_string()
+        "path(parent: sessionEmptyStrings())".to_string()
     } else {
-        format!("path({})", thoxa_string_array_lit(parent))
+        format!("path(parent: {})", thoxa_string_array_lit(parent))
     };
     format!(
         "logging.toStdout()\nlogging.setFormat(logging.formatPlain)\nfor p in {call} {{ logging.info(p) }}\n"

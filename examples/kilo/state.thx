@@ -37,7 +37,7 @@ mut matchRow = 0 - 1
 mut matchCol = 0 - 1
 mut matchLen = 0
 
-export fn setScreenSize(r: Int64, c: Int64) -> Void {
+export fn setScreenSize(r!: Int64, c!: Int64) -> Void {
     rows = r
     cols = c
     Void
@@ -67,7 +67,7 @@ export fn setRows(newRows!: Array<Row>, name!: String) -> Void {
 export fn numRows() -> Int64 {
     textRows.count
 }
-export fn row(index: Int64) -> Row {
+export fn row(index!: Int64) -> Row {
     textRows[index]
 }
 export fn allRows() -> Array<Row> {
@@ -90,13 +90,13 @@ export fn colOff() -> Int64 {
     coloff
 }
 
-export fn jumpTo(col: Int64, row: Int64) -> Void {
+export fn jumpTo(col!: Int64, row!: Int64) -> Void {
     cx = col
     cy = row
     Void
 }
 
-export fn restoreView(cxv: Int64, cyv: Int64, coloffv: Int64, rowoffv: Int64) -> Void {
+export fn restoreView(cxv!: Int64, cyv!: Int64, coloffv!: Int64, rowoffv!: Int64) -> Void {
     cx = cxv
     cy = cyv
     coloff = coloffv
@@ -228,7 +228,7 @@ fn emptyRow() -> Row {
     make(Bytes(0))
 }
 
-export fn insertChar(byte: Int64) -> Void {
+export fn insertChar(byte!: Int64) -> Void {
     if cy == numRows() {
         textRows.insertAt(numRows(), emptyRow())
     }
@@ -280,7 +280,7 @@ export fn deleteForward() -> Void {
 }
 
 ## Fold multi-line comment state from row 0 through `filerow`, return that row's cells.
-fn cellsFor(filerow: Int64) -> Array<Hl> {
+fn cellsFor(filerow!: Int64) -> Array<Hl> {
     mut open = false
     mut i = 0
     mut last = plainRow(Bytes(0))
@@ -303,7 +303,7 @@ fn cellsFor(filerow: Int64) -> Array<Hl> {
     last.cells
 }
 
-export fn rowCells(filerow: Int64) -> Array<Hl> {
+export fn rowCells(filerow!: Int64) -> Array<Hl> {
     let base = cellsFor(filerow)
     if filerow == matchRow {
         overlayMatch(base, row(filerow))
@@ -335,7 +335,7 @@ fn overlayMatch(base!: Array<Hl>, r!: Row) -> Array<Hl> {
     out
 }
 
-export fn setMatch(row: Int64, col: Int64, length: Int64) -> Void {
+export fn setMatch(row!: Int64, col!: Int64, length!: Int64) -> Void {
     matchRow = row
     matchCol = col
     matchLen = length
@@ -349,13 +349,13 @@ export fn clearMatch() -> Void {
     Void
 }
 
-export fn setStatusMessageAt(msg!: String, when: Int64) -> Void {
+export fn setStatusMessageAt(msg!: String, when!: Int64) -> Void {
     statusMessage = msg
     statusTime = when
     Void
 }
 
-export fn messageFor(clock: Int64) -> String {
+export fn messageFor(clock!: Int64) -> String {
     if clock - statusTime < 5 {
         statusMessage
     } else {

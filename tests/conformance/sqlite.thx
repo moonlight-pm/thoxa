@@ -3,7 +3,7 @@ import sqlite, { lit, ident, null, SqlNull, SqlInt, SqlFloat, SqlText, SqlValue,
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
 
-fn showCell(row: Row, key: String) -> String {
+fn showCell(row!: Row, key!: String) -> String {
     let cells = row.cells
     let cell: May<SqlValue> = cells[key]
     match cell {

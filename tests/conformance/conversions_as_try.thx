@@ -7,7 +7,7 @@ import logging, { info } from "std/logging"
 type Quantity = Int64 where >= 1 & <= 12
 type Line(drink: String, quantity: Quantity = 1)
 
-fn total(json: Json, extra: Int64) -> Trial<Int64, Array<Issue>> {
+fn total(json!: Json, extra!: Int64) -> Trial<Int64, Array<Issue>> {
     let lines = json as? Array<Line>
     let added = extra as? Quantity
     mut sum = added as Int64
@@ -17,7 +17,7 @@ fn total(json: Json, extra: Int64) -> Trial<Int64, Array<Issue>> {
     Pass(sum)
 }
 
-fn report(json: Json, extra: Int64) {
+fn report(json!: Json, extra!: Int64) {
     match total(json, extra) {
         Pass(sum) => info("total {sum}")
         Fail(issues) => info("rejected: {messages(issues)}")

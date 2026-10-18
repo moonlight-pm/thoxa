@@ -1,6 +1,6 @@
 ## if/else-if as an expression, inclusive ranges, and a for loop: FizzBuzz 1..=15.
 import logging from "std/logging"
-fn label(n: Int64) -> String {
+fn label(n!: Int64) -> String {
     if n % 15 == 0 { "FizzBuzz" }
     else if n % 3 == 0 { "Fizz" }
     else if n % 5 == 0 { "Buzz" }

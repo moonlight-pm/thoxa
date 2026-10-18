@@ -7,7 +7,7 @@ import logging, { info } from "std/logging"
 
 type Visitor(name: String, visits: Int64)
 
-fn show(cell: May<SqlValue>) -> String {
+fn show(cell!: May<SqlValue>) -> String {
     match cell {
         Not => "null"
         Has(value) {

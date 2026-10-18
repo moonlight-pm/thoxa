@@ -5,19 +5,19 @@
 import logging, { info } from "std/logging"
 
 type Bag(items: Array<String>, tags: Map<String, Int64>) {
-    export fn add(item: String) {
+    export fn add(item!: String) {
         items.append(item)
     }
-    export fn setFirst(item: String) {
+    export fn setFirst(item!: String) {
         items[0] = item
     }
-    export fn tag(key: String) {
+    export fn tag(key!: String) {
         tags[key] = tags.count + 1
     }
-    export fn untag(key: String) {
+    export fn untag(key!: String) {
         tags.remove(key)
     }
-    export fn addTwice(item: String) {
+    export fn addTwice(item!: String) {
         items.append(item)
         items.append(item)
     }

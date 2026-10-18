@@ -67,18 +67,18 @@ fn summarize(wire!: Bytes) -> String {
 ## Send `first` on a new connection; with `second`, wait 100 ms for the
 ## server to read `first`, then send it. Collect the replies until the
 ## server closes.
-fn exchange(listener!: Socket, port!: Int64, first!: String, second: String = "") -> Trial<String, String> {
+fn exchange(listener!: Socket, port!: Int64, first!: String, second!: String = "") -> Trial<String, String> {
     --> acceptOne(listener)
     let client = createSocket()?
     client.connect(port)?
     mut wire = Buffer()
     client.sendAll(Bytes.fromString(first))?
     if second != "" {
-        wire.appendBytes(client.receive(net.nowMs() + 100))
+        wire.appendBytes(client.receive(deadline: net.nowMs() + 100))
         client.sendAll(Bytes.fromString(second))?
     }
     loop {
-        let chunk = client.receive(net.nowMs() + 2000)
+        let chunk = client.receive(deadline: net.nowMs() + 2000)
         if chunk.count == 0 {
             break
         }

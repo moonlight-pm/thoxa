@@ -43,7 +43,7 @@ let qsSingle = 2
 
 type Shell(status: Int64) {
     ## Print args joined by spaces (no args → blank line). Always status 0.
-    export fn echo(args: Array<String>) -> Shell {
+    export fn echo(args!: Array<String>) -> Shell {
         info(joinSpace(args))
         Shell(status: 0)
     }
@@ -62,7 +62,7 @@ type Shell(status: Int64) {
     }
 
     ## Change directory. No arg → $HOME. Fail → status 1.
-    export fn cd(args: Array<String>) -> Shell {
+    export fn cd(args!: Array<String>) -> Shell {
         if args.count > 1 {
             info("cd: too many arguments")
             Shell(status: 1)
@@ -94,7 +94,7 @@ type Shell(status: Int64) {
 
     ## Run argv[0] via PATH (or path with /). Updates status from wait.
     ## not found → 127; fork/exec infrastructure fail → 1; else child status.
-    export fn run(argv: Array<String>) -> Shell {
+    export fn run(argv!: Array<String>) -> Shell {
         if argv.count == 0 {
             Shell(status: 0)
         } else {

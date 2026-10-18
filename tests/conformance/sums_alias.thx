@@ -6,7 +6,7 @@ type Outcome = Done | Quit
 type Result = Done | Quit
 ## Result ≡ Outcome ≡ Done | Quit (member-set equality)
 
-fn step(ok: Bool) -> Outcome {
+fn step(ok!: Bool) -> Outcome {
     ## Branches inject into return expect type
     if ok { Done(n: 3) } else { Quit() }
 }

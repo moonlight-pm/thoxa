@@ -28,9 +28,9 @@ let colFloat = 2
 let colNull = 5
 
 export type SqlNull
-export type SqlInt(value: Int64)
-export type SqlFloat(value: Float64)
-export type SqlText(value: String)
+export type SqlInt(value!: Int64)
+export type SqlFloat(value!: Float64)
+export type SqlText(value!: String)
 export type SqlValue = SqlNull | SqlInt | SqlFloat | SqlText
 export type Row(cells: Map<String, SqlValue>)
 
@@ -41,13 +41,13 @@ export type Sql(text: String)
 export let null = Sql(text: "NULL")
 
 ## Quote a value as a SQL literal fragment (rarely needed; prefer `sql"…"`).
-export fn lit(value: String) -> Sql {
+export fn lit(value!: String) -> Sql {
     let q = "'"
     let doubled = "{q}{q}"
     Sql(text: "{q}{value.replace(q, doubled)}{q}")
 }
 
-export fn lit(value: Bool) -> Sql {
+export fn lit(value!: Bool) -> Sql {
     if value {
         Sql(text: "1")
     } else {
@@ -150,12 +150,12 @@ fn readRow(stmt!: Int64) -> Row {
             cells.set(name, SqlNull())
         } else {
             if col == colInt {
-                cells.set(name, SqlInt(value: sysSqlColumnI64(stmt, i)))
+                cells.set(name, SqlInt(sysSqlColumnI64(stmt, i)))
             } else {
                 if col == colFloat {
-                    cells.set(name, SqlFloat(value: sysSqlColumnF64(stmt, i)))
+                    cells.set(name, SqlFloat(sysSqlColumnF64(stmt, i)))
                 } else {
-                    cells.set(name, SqlText(value: sysSqlColumnText(stmt, i)))
+                    cells.set(name, SqlText(sysSqlColumnText(stmt, i)))
                 }
             }
         }

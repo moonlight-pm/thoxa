@@ -109,7 +109,7 @@ export type Socket(fd: Int64) {
     }
 
     ## Bind to 0.0.0.0:port (0 = ephemeral).
-    export fn bind(port: Int64) -> Trial<Void, String> {
+    export fn bind(port!: Int64) -> Trial<Void, String> {
         if sysBind(fd, sockaddrAny(port), sockaddrLen) < 0 {
             Fail(netErr("bind"))
         } else {
@@ -117,7 +117,7 @@ export type Socket(fd: Int64) {
         }
     }
 
-    export fn listen(backlog: Int64) -> Trial<Void, String> {
+    export fn listen(backlog!: Int64) -> Trial<Void, String> {
         if sysListen(fd, backlog) < 0 {
             Fail(netErr("listen"))
         } else {
@@ -149,7 +149,7 @@ export type Socket(fd: Int64) {
         }
     }
 
-    export fn connect(port: Int64) -> Trial<Void, String> {
+    export fn connect(port!: Int64) -> Trial<Void, String> {
         if sysConnect(fd, sockaddrLoopback(port), sockaddrLen) < 0 {
             Fail(netErr("connect"))
         } else {

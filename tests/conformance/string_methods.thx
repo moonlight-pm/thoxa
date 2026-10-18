@@ -40,8 +40,8 @@ fn main() -> Int64 {
     logging.info("{"/menu/latte".removePrefix("/menu/")} {"latte.thx".removeSuffix(".md")}")
     logging.info("{"".isEmpty()} {"é".isEmpty()} {"plain".isAscii()} {"café".isAscii()}")
 
-    ## Labelled arguments may be named; a refined String takes the methods too.
-    logging.info("{"Hello".startsWith(prefix: "HE", ignoreCase: true)}")
+    ## A refined String takes the methods too.
+    logging.info("{"Hello".startsWith("HE", ignoreCase: true)}")
     let name: Name = "Ada Lovelace"
     logging.info("{name.contains("LOVE", ignoreCase: true)} {name.toUpper()}")
     0

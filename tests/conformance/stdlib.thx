@@ -79,7 +79,7 @@ fn main() -> Int64 {
         Not => logging.info("uint-empty")
         Has(_) { logging.info("uint-empty-hit") }
     }
-    logging.info("7".padLeft(3, "0"))
+    logging.info("7".padLeft(3, pad: "0"))
     logging.info("x".padRight(3, pad: "."))
     logging.info("hello".removePrefix("he"))
     logging.info("hello".removeSuffix("lo"))

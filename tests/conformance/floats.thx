@@ -3,7 +3,7 @@ import logging from "std/logging"
 
 type Point(x: Float64, y: Float64)
 
-fn twice(n: Float64) -> Float64 {
+fn twice(n!: Float64) -> Float64 {
     n * 2.0
 }
 

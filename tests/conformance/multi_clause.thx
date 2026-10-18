@@ -2,47 +2,47 @@
 import logging, { info } from "std/logging"
 
 ## Bare singleton formals + free multi-clause (string lits).
-fn page(path: "home") -> String {
+fn page(path!: "home") -> String {
     "home-page"
 }
-fn page(path: "admin") -> String {
+fn page(path!: "admin") -> String {
     "admin-page"
 }
 
 ## Non-adjacent clauses + int lit dispatch.
-fn digit(n: 0) -> String {
+fn digit(n!: 0) -> String {
     "zero"
 }
 fn otherHelper() -> Int64 {
     1
 }
-fn digit(n: 1) -> String {
+fn digit(n!: 1) -> String {
     "one"
 }
 
 ## Product-type dispatch.
 type Dog(name: String)
 type Cat(name: String)
-fn speak(a: Dog) -> String {
+fn speak(a!: Dog) -> String {
     "woof:{a.name}"
 }
-fn speak(a: Cat) -> String {
+fn speak(a!: Cat) -> String {
     "meow:{a.name}"
 }
 
 ## Methods (export required to call).
 type Request
 type Router {
-    export fn get(path: "home", req: Request) -> String {
+    export fn get(path!: "home", req!: Request) -> String {
         "get-home"
     }
-    export fn get(path: "admin", req: Request) -> String {
+    export fn get(path!: "admin", req!: Request) -> String {
         "get-admin"
     }
 }
 
 ## Inline member-set formal (typespace).
-fn either(path: "a" | "b") -> String {
+fn either(path!: "a" | "b") -> String {
     match path {
         "a" { "A" }
         "b" { "B" }
@@ -51,23 +51,23 @@ fn either(path: "a" | "b") -> String {
 
 ## Singleton alias.
 type Home = "home"
-fn onlyHome(path: Home) -> String {
+fn onlyHome(path!: Home) -> String {
     "alias-home"
 }
 
 ## Bool lit multi-clause.
-fn flag(b: true) -> String {
+fn flag(b!: true) -> String {
     "yes"
 }
-fn flag(b: false) -> String {
+fn flag(b!: false) -> String {
     "no"
 }
 
 ## Varying returns join to member-set (inferred).
-fn pick(n: 0) {
+fn pick(n!: 0) {
     "zero"
 }
-fn pick(n: 1) {
+fn pick(n!: 1) {
     "one"
 }
 

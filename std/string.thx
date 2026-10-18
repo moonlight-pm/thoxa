@@ -381,7 +381,7 @@ fn tail(text!: String, at!: Int64) -> Int64 {
 }
 
 ## Append scalar `code` to `out` as UTF-8.
-fn appendScalar(mut out: Buffer, code!: Int64) {
+fn appendScalar(mut out!: Buffer, code!: Int64) {
     if code < 0x80 {
         out.append(code)
     } else if code < 0x800 {

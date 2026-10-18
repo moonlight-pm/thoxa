@@ -1,0 +1,9 @@
+## A `!` parameter goes by position: naming it is an error (D200).
+fn format(template!: String, width: Int64 = 80) -> String {
+    "{template}:{width}"
+}
+
+fn main() -> Int64 {
+    let text = format(template: "hi", width: 40)
+    0
+}

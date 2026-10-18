@@ -10,7 +10,7 @@ let enter = 13
 let backspace = 127
 let ctrlH = 8
 
-fn isPrintable(b: Int64) -> Bool {
+fn isPrintable(b!: Int64) -> Bool {
     if b < 32 {
         false
     } else {

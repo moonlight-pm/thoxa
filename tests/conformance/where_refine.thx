@@ -11,14 +11,14 @@ type DrinkSlug = "espresso" | "mocha"
 type Drink(slug: DrinkSlug)
 type Closed = String where "a" | "b"
 
-fn showQ(t: Trial<Qty, Array<Issue>>) -> String {
+fn showQ(t!: Trial<Qty, Array<Issue>>) -> String {
     match t {
         Fail(issues) => "ERR:{messages(issues)}"
         Pass(q) => "ok:{q}"
     }
 }
 
-fn showO(t: Trial<Order, Array<Issue>>) -> String {
+fn showO(t!: Trial<Order, Array<Issue>>) -> String {
     match t {
         Fail(issues) => "ERR:{messages(issues)}"
         Pass(o) => "{o.slug}:{o.qty}"

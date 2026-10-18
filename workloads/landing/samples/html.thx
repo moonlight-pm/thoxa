@@ -15,7 +15,7 @@ type Menu(title: String) {
     }
 }
 
-fn price(cents: Int64) -> String {
+fn price(cents!: Int64) -> String {
     let rest = cents % 100
     if rest < 10 { "${cents / 100}.0{rest}" } else { "${cents / 100}.{rest}" }
 }

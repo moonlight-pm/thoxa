@@ -32,7 +32,7 @@ let oAppend = 1024
 let oMode644 = 420
 
 ## Widen open(2) Int32 fd → Int64 (same pattern as File ctor / D21).
-type LogFd(n: Int64)
+type LogFd(n!: Int64)
 
 ## Default logger state (module mut → later Logger fields).
 mut minLevel = 2
@@ -53,7 +53,7 @@ fn closeOwnedFd() -> Void {
 }
 
 fn setSinkFdFromOpen(raw!: Int32) -> Void {
-    let w = LogFd(n: raw)
+    let w = LogFd(raw)
     sinkFd = w.n
 }
 

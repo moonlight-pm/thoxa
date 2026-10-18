@@ -9,11 +9,11 @@ type Regs {
 
 extern fn memset(p!: Address<Regs>, c!: Int32, n!: UInt64) from "c"
 
-fn fill(target: Address<Regs>, byte: Int64) {
+fn fill(target!: Address<Regs>, byte!: Int64) {
     memset(target, byte, 8)
 }
 
-fn clear(target: Address<Regs>) {
+fn clear(target!: Address<Regs>) {
     fill(target, 0)
 }
 

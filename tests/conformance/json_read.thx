@@ -10,28 +10,28 @@ type Wrap(inner: Order)
 type Line(items: Array<Order>)
 type OptNote(text: May<String>, n: Int64)
 
-fn showOrder(t: Trial<Order, Array<Issue>>) -> String {
+fn showOrder(t!: Trial<Order, Array<Issue>>) -> String {
     match t {
         Fail(issues) => "ERR:{messages(issues)}"
         Pass(o) => "{o.slug}:{o.qty}"
     }
 }
 
-fn showWrap(t: Trial<Wrap, Array<Issue>>) -> String {
+fn showWrap(t!: Trial<Wrap, Array<Issue>>) -> String {
     match t {
         Fail(issues) => "ERR:{messages(issues)}"
         Pass(w) => "w:{w.inner.slug}:{w.inner.qty}"
     }
 }
 
-fn showLine(t: Trial<Line, Array<Issue>>) -> String {
+fn showLine(t!: Trial<Line, Array<Issue>>) -> String {
     match t {
         Fail(issues) => "ERR:{messages(issues)}"
         Pass(line) => "n:{line.items.count}"
     }
 }
 
-fn showOpt(t: Trial<OptNote, Array<Issue>>) -> String {
+fn showOpt(t!: Trial<OptNote, Array<Issue>>) -> String {
     match t {
         Fail(issues) => "ERR:{messages(issues)}"
         Pass(note) {

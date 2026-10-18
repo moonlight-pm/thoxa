@@ -32,7 +32,7 @@ fn flush(frame!: Bytes) -> Trial<Void, String> {
     Pass(Void)
 }
 
-fn drawRowBytes(filerow: Int64, coloff: Int64, cols: Int64) -> Bytes {
+fn drawRowBytes(filerow!: Int64, coloff!: Int64, cols!: Int64) -> Bytes {
     let r = state.row(filerow)
     let visible = r.window(coloff, cols)
     let cells = state.rowCells(filerow)
@@ -73,7 +73,7 @@ fn drawRowBytes(filerow: Int64, coloff: Int64, cols: Int64) -> Bytes {
     out.freeze()
 }
 
-fn statusBarBytes(cols: Int64, numRows: Int64) -> Bytes {
+fn statusBarBytes(cols!: Int64, numRows!: Int64) -> Bytes {
     let fname = state.currentFilename()
     let name = if fname.count == 0 {
         "[No Name]"
@@ -114,7 +114,7 @@ fn statusBarBytes(cols: Int64, numRows: Int64) -> Bytes {
     bar.freeze()
 }
 
-fn messageBarBytes(cols: Int64) -> Bytes {
+fn messageBarBytes(cols!: Int64) -> Bytes {
     mut bar = Buffer()
     bar.appendBytes(Bytes.fromString(clearLine))
     let msg = Bytes.fromString(state.currentMessage())

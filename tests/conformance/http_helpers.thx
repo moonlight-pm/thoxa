@@ -14,14 +14,14 @@ fn emptyReq(method!: String, version!: String, headers!: Array<Header>) -> Reque
     )
 }
 
-fn showMay(m: May<String>) -> String {
+fn showMay(m!: May<String>) -> String {
     match m {
         Not => "-"
         Has(v) { v }
     }
 }
 
-fn showInt(m: May<Int64>) -> String {
+fn showInt(m!: May<Int64>) -> String {
     match m {
         Not => "-"
         Has(n) { "{n}" }

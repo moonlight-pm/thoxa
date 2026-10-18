@@ -156,8 +156,8 @@ export fn parseRequest(raw!: Bytes) -> Trial<Request, String> {
 ## Finish parse after a valid request-line layout (method SP target SP version).
 fn parseRequestBody(
     reqLine!: Bytes,
-    sp1: Int64,
-    sp2: Int64,
+    sp1!: Int64,
+    sp2!: Int64,
     headerBlock!: Bytes,
     crlf!: Bytes
 ) -> Trial<Request, String> {

@@ -8,7 +8,7 @@ type Tagged(name: String, tags: Array<String>) {
 }
 
 type Holder(inner: Tagged) {
-    export fn replace(name: String) {
+    export fn replace(name!: String) {
         inner = Tagged(name: name, tags: ["{name}-1", "{name}-2"])
     }
 }

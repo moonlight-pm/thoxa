@@ -1002,6 +1002,9 @@ struct FnSig {
     /// Parallel to `params`: a `mut` parameter, passed by address (D199).
     /// Empty when none is.
     mutable: Vec<bool>,
+    /// Parallel to `params`: marked `!`, so passed by position; the rest
+    /// are passed by label (D200). Empty when unknown (not checked).
+    positional: Vec<bool>,
 }
 
 #[derive(Clone)]
@@ -1018,6 +1021,8 @@ struct MethodSig {
     multi_clause: bool,
     /// Parallel to `params`: a `mut` parameter, passed by address (D199).
     mutable: Vec<bool>,
+    /// Parallel to `params`: marked `!` (D200).
+    positional: Vec<bool>,
 }
 
 /// One clause of a multi-clause function/method (D131).
@@ -1044,6 +1049,8 @@ struct FieldInfo {
     mutable: bool,
     /// Constructor-param default (`type T(x: Int64 = 0)`); ignored for body fields.
     default: Option<Expr>,
+    /// Constructor param marked `!`: passed by position, not by label (D200).
+    positional: bool,
     /// Field-level `where` (validation experiment).
     #[allow(dead_code)]
     where_clause: Option<crate::ast::WhereClause>,
@@ -1866,6 +1873,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
                         ty: refined.base.clone(),
                         mutable: false,
                         default: None,
+                        positional: false,
                         where_clause: None,
                     }];
                     let info = types_info.get_mut(mangled).unwrap();
@@ -2158,6 +2166,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<SessionMi
                                 def_mod: m.id.clone(),
                                 multi_clause: false,
                                 mutable: Vec::new(),
+                                positional: vec![true; e.params.len()],
                             },
                         )
                         .is_some()
@@ -2599,6 +2608,7 @@ fn resolve_type_def_shape(
                 ty: refined.base.clone(),
                 mutable: false,
                 default: None,
+                positional: false,
                 where_clause: None,
             }];
             return Ok((fields, false, None, Some(refined)));
@@ -2804,6 +2814,7 @@ fn resolve_type_def_shape(
                 ty,
                 mutable: f.mutable,
                 default: None,
+                positional: false,
                 where_clause: None,
             });
         }
@@ -2836,6 +2847,7 @@ fn resolve_type_def_shape(
                 ty,
                 mutable: false,
                 default: p.default.clone(),
+                positional: p.positional,
                 where_clause: p.ty.where_clause.clone(),
             });
         }
@@ -3019,6 +3031,7 @@ fn field_info(name: &str, ty: Ty) -> FieldInfo {
         ty,
         mutable: false,
         default: None,
+        positional: false,
         where_clause: None,
     }
 }
@@ -3257,10 +3270,12 @@ fn merge_free_clauses(
         let mut params = Vec::new();
         let mut defaults = Vec::new();
         let mut mutable = Vec::new();
+        let mut positional = Vec::new();
         for p in &f.params {
             params.push((p.name.clone(), resolve_ty(&p.ty, types, name_map)?));
             defaults.push(p.default.clone());
             mutable.push(p.mutable);
+            positional.push(p.positional);
         }
         let mut seen_default = false;
         for (i, d) in defaults.iter().enumerate() {
@@ -3286,6 +3301,7 @@ fn merge_free_clauses(
                 def_mod: mod_id.to_string(),
                 multi_clause: false,
                 mutable,
+                positional,
             },
             None,
         ));
@@ -3451,6 +3467,7 @@ fn merge_free_clauses(
             def_mod: mod_id.to_string(),
             multi_clause: true,
             mutable: Vec::new(),
+            positional: clauses[0].params.iter().map(|p| p.positional).collect(),
         },
         Some(resolved),
     ))
@@ -3473,10 +3490,12 @@ fn merge_method_clauses(
         let mut params = Vec::new();
         let mut defaults = Vec::new();
         let mut mutable = Vec::new();
+        let mut positional = Vec::new();
         for p in &m.params {
             params.push((p.name.clone(), resolve_ty(&p.ty, types, name_map)?));
             defaults.push(p.default.clone());
             mutable.push(p.mutable);
+            positional.push(p.positional);
         }
         let mut seen_default = false;
         for (i, d) in defaults.iter().enumerate() {
@@ -3512,6 +3531,7 @@ fn merge_method_clauses(
                 def_mod: mod_id.to_string(),
                 multi_clause: false,
                 mutable,
+                positional,
             },
             None,
         ));
@@ -3675,6 +3695,7 @@ fn merge_method_clauses(
             def_mod: mod_id.to_string(),
             multi_clause: true,
             mutable: Vec::new(),
+            positional: clauses[0].params.iter().map(|p| p.positional).collect(),
         },
         Some(resolved),
     ))
@@ -5674,6 +5695,7 @@ fn instantiate_product_mono(
             ty,
             mutable: false,
             default: p.default.clone(),
+            positional: p.positional,
             where_clause: p.ty.where_clause.clone(),
         });
     }
@@ -5753,6 +5775,7 @@ fn instantiate_product_mono(
                 def_mod: gdef.def_mod.clone(),
                 multi_clause: false,
                 mutable: m.params.iter().map(|p| p.mutable).collect(),
+                positional: m.params.iter().map(|p| p.positional).collect(),
             },
         );
         mono_methods.push(MonoMethodJob {
@@ -10194,10 +10217,13 @@ fn lower_method_call(
                         .collect();
                     let defaults: Vec<Option<Expr>> =
                         info.fields.iter().map(|f| f.default.clone()).collect();
-                    let field_places = resolve_call_args_with_defaults(
+                    let marked: Vec<bool> = info.fields.iter().map(|f| f.positional).collect();
+                    let field_places = resolve_call_args_full(
                         ctx,
                         &formal,
                         &defaults,
+                        &[],
+                        &marked,
                         args,
                         method_span,
                         &info.def_mod,
@@ -10229,6 +10255,7 @@ fn lower_method_call(
                     &sig.params,
                     &sig.defaults,
                     &sig.mutable,
+                    &sig.positional,
                     args,
                     method_span,
                     &sig.def_mod,
@@ -10544,6 +10571,7 @@ fn lower_method_call(
                 &sig.params,
                 &sig.defaults,
                 &sig.mutable,
+                &sig.positional,
                 args,
                 method_span,
                 &sig.def_mod,
@@ -11387,11 +11415,13 @@ fn lower_extension_call(
     )?];
     let defaults = sig.defaults.get(1..).unwrap_or(&[]);
     let mutable = sig.mutable.get(1..).unwrap_or(&[]);
+    let marked = sig.positional.get(1..).unwrap_or(&[]);
     places.extend(resolve_call_args_full(
         ctx,
         &sig.params[1..],
         defaults,
         mutable,
+        marked,
         args,
         span,
         &sig.def_mod,
@@ -11873,16 +11903,20 @@ fn resolve_call_args_with_defaults(
     span: Span,
     def_mod: &str,
 ) -> Result<Vec<Place>> {
-    resolve_call_args_full(ctx, formal, defaults, &[], args, span, def_mod)
+    resolve_call_args_full(ctx, formal, defaults, &[], &[], args, span, def_mod)
 }
 
 /// Like [`resolve_call_args_with_defaults`]; `mutable[i]` marks a `mut`
-/// parameter (D199), whose argument is `mut binding`, passed by address.
+/// parameter (D199), whose argument is `mut binding`, passed by address, and
+/// `marked[i]` a `!` parameter: those go by position, the rest by label
+/// (D200). An empty `marked` (built-in formals) is not checked.
+#[allow(clippy::too_many_arguments)]
 fn resolve_call_args_full(
     ctx: &mut LowerCtx,
     formal: &[(String, Ty)],
     defaults: &[Option<Expr>],
     mutable: &[bool],
+    marked: &[bool],
     args: &[Arg],
     span: Span,
     def_mod: &str,
@@ -11908,6 +11942,7 @@ fn resolve_call_args_full(
         ));
     }
     let all_pos = positional == args.len();
+    check_argument_labels(formal, marked, args, positional)?;
 
     if all_pos {
         if args.len() > formal.len() {
@@ -12132,6 +12167,42 @@ fn resolve_call_args_with_spreads(
         return Err(Error::at(format!("missing argument `{fname}`"), span));
     }
     Ok(places)
+}
+
+/// `!` parameters are passed by position and the rest by label (D200):
+/// `contains(needle!: String, ignoreCase: Bool = false)` is called
+/// `s.contains(x, ignoreCase: true)`, never `s.contains(x, true)`.
+fn check_argument_labels(
+    formal: &[(String, Ty)],
+    marked: &[bool],
+    args: &[Arg],
+    positional: usize,
+) -> Result<()> {
+    if marked.is_empty() {
+        return Ok(());
+    }
+    for (index, arg) in args[..positional].iter().enumerate() {
+        let (Some((name, _)), Arg::Pos(value)) = (formal.get(index), arg) else {
+            continue;
+        };
+        if !marked.get(index).copied().unwrap_or(true) {
+            return Err(Error::at(format!("`{name}` is passed by label: write `{name}: …`"), value.span)
+                .with_help("parameters marked `!` go by position; the others go by label"));
+        }
+    }
+    for arg in &args[positional..] {
+        let Arg::Named { name, name_span, .. } = arg else {
+            continue;
+        };
+        let index = formal.iter().position(|(formal_name, _)| formal_name == name);
+        if index.is_some_and(|index| marked.get(index).copied().unwrap_or(false)) {
+            return Err(Error::at(
+                format!("`{name}` is positional (`!`): pass it without `{name}:`"),
+                *name_span,
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// An argument for parameter `name`. A `mut` parameter takes `mut binding`:
@@ -15721,10 +15792,19 @@ fn construct_product(
             .map(|f| (f.name.clone(), f.ty.clone()))
             .collect();
         let defaults: Vec<Option<Expr>> = real_fields.iter().map(|f| f.default.clone()).collect();
+        let marked: Vec<bool> = real_fields.iter().map(|f| f.positional).collect();
         // If source fields include Void, formals are only non-Void; call sites use
         // non-Void args only (Pass(box) not Pass(Void, box)).
-        let field_places =
-            resolve_call_args_with_defaults(ctx, &formal, &defaults, args, span, &info.def_mod)?;
+        let field_places = resolve_call_args_full(
+            ctx,
+            &formal,
+            &defaults,
+            &[],
+            &marked,
+            args,
+            span,
+            &info.def_mod,
+        )?;
         // Shallow product; inject_into_union Dups before the sum takes ownership.
         // Use assign_no_drop so end-of-fn drops don't free the product twice.
         ctx.assign_no_drop(
@@ -16355,10 +16435,13 @@ fn lower_call(
                         .collect();
                     let defaults: Vec<Option<Expr>> =
                         info.fields.iter().map(|f| f.default.clone()).collect();
-                    let field_places = resolve_call_args_with_defaults(
+                    let marked: Vec<bool> = info.fields.iter().map(|f| f.positional).collect();
+                    let field_places = resolve_call_args_full(
                         ctx,
                         &formal,
                         &defaults,
+                        &[],
+                        &marked,
                         args,
                         span,
                         &info.def_mod,
@@ -16400,6 +16483,7 @@ fn lower_call(
                 &sig.params,
                 &sig.defaults,
                 &sig.mutable,
+                &sig.positional,
                 args,
                 span,
                 &sig.def_mod,

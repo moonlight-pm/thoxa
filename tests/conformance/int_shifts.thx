@@ -1,11 +1,11 @@
 ## D161: shifts by 64 or more shift every bit out; `<<` wraps like `*`.
 import logging, { info } from "std/logging"
 
-fn shl(value: Int64, count: Int64) -> Int64 {
+fn shl(value!: Int64, count!: Int64) -> Int64 {
     value << count
 }
 
-fn shr(value: Int64, count: Int64) -> Int64 {
+fn shr(value!: Int64, count!: Int64) -> Int64 {
     value >> count
 }
 

@@ -16,7 +16,7 @@ type Card(d: Drink) {
     }
 }
 
-fn roastLabel(r: Roast) -> String {
+fn roastLabel(r!: Roast) -> String {
     match r {
         Dark => "dark"
         Medium => "medium"

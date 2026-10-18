@@ -47,7 +47,11 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
                 exported: clause.exported,
                 name: conversion_fn_name(&td.name, index),
                 name_span: clause.span,
-                params: vec![clause.param.clone()],
+                // `as` calls it by position (D200).
+                params: vec![Param {
+                    positional: true,
+                    ..clause.param.clone()
+                }],
                 return_type: Some(clause.return_type.clone()),
                 body: clause.body.clone(),
             });

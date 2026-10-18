@@ -43,7 +43,7 @@ fn fromLoop() -> Int64 {
     99
 }
 
-fn fromMatch(t: Trial<Int64, Int64>) -> Int64 {
+fn fromMatch(t!: Trial<Int64, Int64>) -> Int64 {
     match t {
         Pass(x) { return x }
         Fail(e) { e }
@@ -79,23 +79,23 @@ fn withHeap() -> Int64 {
 }
 
 ## Param RC: callee must not drop String params (caller retains ownership).
-fn take(s: String) -> Int64 {
+fn take(s!: String) -> Int64 {
     return 0
 }
 
-fn giveBack(s: String) -> String {
+fn giveBack(s!: String) -> String {
     return s
 }
 
 ## Early return with a live local heap + String param (drop local, not param).
-fn retWithLocal(s: String) -> String {
+fn retWithLocal(s!: String) -> String {
     let t = "local"
     logging.info("{t}")
     return s
 }
 
 ## `?` Fail with a live String param — must not double-free the arg.
-fn tryFail(s: String) -> Trial<Int64, String> {
+fn tryFail(s!: String) -> Trial<Int64, String> {
     let t = Fail("boom")
     t?
     Pass(0)

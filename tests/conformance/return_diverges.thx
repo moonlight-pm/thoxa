@@ -2,7 +2,7 @@
 import logging, { info } from "std/logging"
 import { Has, Not, May } from "std/fallible"
 
-fn check(value: Int64) -> May<String> {
+fn check(value!: Int64) -> May<String> {
     match value {
         0 {
             return Has("zero")
@@ -12,7 +12,7 @@ fn check(value: Int64) -> May<String> {
     Not()
 }
 
-fn pick(input: May<Int64>) -> Int64 {
+fn pick(input!: May<Int64>) -> Int64 {
     let got = match input {
         Not {
             return 0 - 1
@@ -22,7 +22,7 @@ fn pick(input: May<Int64>) -> Int64 {
     got + 1
 }
 
-fn label(value: Int64) -> String {
+fn label(value!: Int64) -> String {
     let text = if value > 10 {
         return "big"
     } else {
@@ -46,7 +46,7 @@ fn main() -> Int64 {
     0
 }
 
-fn both(input: May<Int64>) -> Int64 {
+fn both(input!: May<Int64>) -> Int64 {
     match input {
         Not {
             return 0

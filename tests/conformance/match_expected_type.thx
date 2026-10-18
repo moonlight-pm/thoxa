@@ -9,21 +9,21 @@ type Small
 type Large(count: Int64)
 type Size = Small | Large
 
-fn byNumber(choice: Int64) -> Shape {
+fn byNumber(choice!: Int64) -> Shape {
     match choice {
         0 => Circle(radius: 1.0)
         else => Square(side: 2.0)
     }
 }
 
-fn byName(name: String) -> Shape {
+fn byName(name!: String) -> Shape {
     match name {
         "round" => Circle(radius: 3.0)
         other => Square(side: 4.0)
     }
 }
 
-fn grow(size: Size) -> Shape {
+fn grow(size!: Size) -> Shape {
     match size {
         Small => Circle(radius: 0.5)
         Large(count) => Square(side: count * 1.0)

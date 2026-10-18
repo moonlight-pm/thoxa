@@ -9,7 +9,7 @@ type Size = "small" | "large"
 type Line(drink: String, size: Size)
 type Event(name: String, data: Json)
 
-fn show(value: Json) -> String {
+fn show(value!: Json) -> String {
     encode(value)
 }
 
@@ -17,14 +17,14 @@ fn rows() -> Json {
     [Line(drink: "mocha", size: "small"), Line(drink: "tea", size: "large")]
 }
 
-fn summary(empty: Bool, lines: Array<Line>) -> Json {
+fn summary(empty!: Bool, lines!: Array<Line>) -> Json {
     if empty {
         return "nothing yet"
     }
     if lines.count == 1 { lines[0] } else { lines.count }
 }
 
-fn label(choice: Int64) -> Json {
+fn label(choice!: Int64) -> Json {
     match choice {
         0 => "zero"
         1 => 1.5
@@ -32,11 +32,11 @@ fn label(choice: Int64) -> Json {
     }
 }
 
-fn describe(value: Line) -> String {
+fn describe(value!: Line) -> String {
     "a line for {value.drink}"
 }
 
-fn describe(value: Json) -> String {
+fn describe(value!: Json) -> String {
     "json {encode(value)}"
 }
 

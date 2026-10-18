@@ -1,5 +1,5 @@
 ## A `mut` parameter takes `mut binding` (D199).
-fn bump(mut count: Int64) {
+fn bump(mut count!: Int64) {
     count = count + 1
 }
 

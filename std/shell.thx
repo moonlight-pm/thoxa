@@ -202,7 +202,7 @@ fn sessionRunCommand(
 }
 
 type Shell(status: Int64) {
-    export fn echo(args: Array<String>) -> Shell {
+    export fn echo(args!: Array<String>) -> Shell {
         shellOut("{sessionJoinSpace(args)}")
         Shell(status: 0)
     }
@@ -219,7 +219,7 @@ type Shell(status: Int64) {
         }
     }
 
-    export fn cd(args: Array<String>) -> Shell {
+    export fn cd(args!: Array<String>) -> Shell {
         if args.count > 1 {
             shellOut("cd: too many arguments")
             Shell(status: 1)
@@ -249,7 +249,7 @@ type Shell(status: Int64) {
         }
     }
 
-    export fn run(argv: Array<String>) -> Shell {
+    export fn run(argv!: Array<String>) -> Shell {
         Shell(status: sessionRunCommand(argv, "", "", false))
     }
 
@@ -257,10 +257,10 @@ type Shell(status: Int64) {
     ## Empty path strings mean inherit. `append` selects `>>` vs `>`.
     ## Command sugar `cmd > f` / `>>` / `<` desugars here (PATH `echo`, not builtin).
     export fn runIo(
-        argv: Array<String>,
-        stdinPath: String,
-        stdoutPath: String,
-        append: Bool
+        argv!: Array<String>,
+        stdinPath!: String,
+        stdoutPath!: String,
+        append!: Bool
     ) -> Shell {
         Shell(status: sessionRunCommand(argv, stdinPath, stdoutPath, append))
     }
@@ -268,7 +268,7 @@ type Shell(status: Int64) {
     ## OS pipeline from a stage blob (double-NUL between stages; see sessionEncodeArgv
     ## + sessionPipelineBytes). Command sugar `a | b` desugars here. Status is the
     ## last stage (shell convention). PATH search is via execvp in the runtime.
-    export fn pipeline(stagesBlob: Bytes) -> Shell {
+    export fn pipeline(stagesBlob!: Bytes) -> Shell {
         if stagesBlob.count == 0 {
             Shell(status: 0)
         } else {

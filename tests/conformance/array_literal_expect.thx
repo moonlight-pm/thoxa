@@ -9,14 +9,14 @@ type Branch(left: Int64, right: Int64)
 type Tree = Leaf | Branch
 type Qty = Int64 where >= 1
 
-fn size(tree: Tree) -> Int64 {
+fn size(tree!: Tree) -> Int64 {
     match tree {
         Leaf(value) => value
         Branch(left, right) => left + right
     }
 }
 
-fn total(trees: Array<Tree>) -> Int64 {
+fn total(trees!: Array<Tree>) -> Int64 {
     mut sum = 0
     for tree in trees {
         sum = sum + size(tree)
