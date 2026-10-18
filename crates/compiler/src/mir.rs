@@ -843,18 +843,22 @@ fn array_elem_is_heap(ty: &Ty) -> bool {
     )
 }
 
-/// String, Int64, Bool, or a user type (D179; what it holds is checked
-/// where a map is made, see `map_key_problem`).
+/// String, Int64, Float64, Bool, or a user type (D179, D214; what a user
+/// type holds is checked where a map is made, see `map_key_problem`).
 fn is_map_key_ty(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Int64 | Ty::Bool | Ty::User(_))
+    matches!(ty, Ty::String | Ty::Int64 | Ty::Float64 | Ty::Bool | Ty::User(_))
 }
 
 /// D179: why values of `ty` cannot be (part of) a Map key, or `None`. A key
-/// hashes and compares by value, so it may hold integers, Bool, String,
-/// Bytes, and products and unions of those.
+/// hashes and compares by value, so it may hold integers, Float64, Bool,
+/// String, Bytes, and arrays, products, and unions of those (D214).
 fn map_key_problem(types: &HashMap<String, TypeInfo>, ty: &Ty) -> Option<String> {
-    if is_int(ty) || matches!(ty, Ty::Bool | Ty::String | Ty::Bytes | Ty::Void) {
+    if is_int(ty) || matches!(ty, Ty::Bool | Ty::Float64 | Ty::String | Ty::Bytes | Ty::Void) {
         return None;
+    }
+    // An array hashes its count and elements in order (D214).
+    if let Ty::Array { elem } = ty {
+        return map_key_problem(types, elem);
     }
     let Ty::User(name) = ty else {
         return Some(format!("it holds {}", display_ty(ty)));
@@ -890,8 +894,8 @@ fn check_map_key(ctx: &LowerCtx, key_ty: &Ty, span: Span) -> Result<()> {
             span,
         )
         .with_help(
-            "a key hashes and compares by value: integers, Bool, String, Bytes, \
-             and products and unions of those (no Float64, Array, or Map)",
+            "a key hashes and compares by value: integers, Float64, Bool, String, \
+             Bytes, and arrays, products, and unions of those (no Map or Node)",
         )),
     }
 }
@@ -4973,7 +4977,7 @@ fn resolve_ty(
             if !is_map_key_ty(&kt) {
                 return Err(Error::at(
                     format!(
-                        "Map key type not supported: {} (String, Int64, Bool, or a user type)",
+                        "Map key type not supported: {} (String, Int64, Float64, Bool, or a user type)",
                         display_ty(&kt)
                     ),
                     k.span,
@@ -9075,6 +9079,20 @@ fn coerce_map_key(ctx: &mut LowerCtx, key: Place, key_ty: &Ty) -> Place {
             p.clone(),
             Ty::Address(Box::new(key_ty.clone())),
             RValue::AddressOf(key),
+        );
+        return p;
+    }
+    // A Float64 key travels as SameValueZero bits: every NaN alike, -0.0 as
+    // 0.0 (D214).
+    if *key_ty == Ty::Float64 {
+        let p = ctx.fresh("mkey");
+        ctx.assign(
+            p.clone(),
+            Ty::Int64,
+            RValue::Call {
+                callee: Callee::Builtin("f64_key_bits".into()),
+                args: vec![key],
+            },
         );
         return p;
     }

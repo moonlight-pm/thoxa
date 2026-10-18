@@ -303,7 +303,8 @@ reads back as the same value. Between 1e-7 and 1e21 it is written out in full,
 and an integral value keeps `.0`: `2.0`, `100.0`, `0.1`, `0.0000001`. Further
 from 1 it takes an exponent: `1e+21`, `1e-08`, `2.5e-10`.
 
-`Float64` values cannot be literal types, match-arm literals, or map keys.
+`Float64` values cannot be literal types or match-arm literals. As (part of)
+a map key, a `Float64` matches as described under [Maps](#maps).
 
 ### Bool and Void
 
@@ -494,11 +495,13 @@ for name, age in ages {
 Removing a key keeps the other keys in insertion order; a key set again after
 its removal goes to the end. Writes need a writable place.
 
-**Keys** may be `String`, `Int64`, `Bool`, or a user type whose fields hash by
-value: integers, `Bool`, `String`, `Bytes`, refined and literal-union fields,
-and nested such types. Two keys are the same key when they are `==`. A key
-type holding `Float64`, `Array`, or `Map`, a type with `drop`, or a C-layout
-type is a compile error. A call can be a literal key:
+**Keys** may be `String`, `Int64`, `Float64`, `Bool`, or a user type whose
+fields hash by value: integers, `Float64`, `Bool`, `String`, `Bytes`, arrays of
+those, refined and literal-union fields, and nested such types. Two keys are the
+same key when they are `==`, except that a `Float64` matches as JavaScript's
+`Map` does: any NaN matches NaN, and `-0.0` matches `0.0`, so every key can be
+found again. A key type holding a `Map` or a `Node`, a type with `drop`, or a
+C-layout type is a compile error. A call can be a literal key:
 
 ```thx
 type Point(x: Int64, y: Int64)

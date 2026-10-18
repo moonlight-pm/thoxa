@@ -1,0 +1,57 @@
+## D214: a Map key may hold arrays (by count and elements, in order) and
+## Float64 (SameValueZero: NaN finds NaN, -0.0 finds 0.0), as well as the
+## integers, Bool, String, Bytes, products, and unions D179 allowed; and a
+## Float64 may be the key itself.
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Path(steps: Array<String>)
+type Cell(row: Int64, tags: Array<Array<Int64>>)
+type Reading(sensor: String, celsius: Float64)
+type Route(stops: Array<Path>)
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut visits: Map<Path, Int64> = Map()
+    visits[Path(steps: ["home", "menu"])] = 1
+    visits[Path(steps: ["home"])] = 2
+    visits[Path(steps: [])] = 3
+    visits[Path(steps: ["home", "menu"])] = 4
+    info("paths {visits.count}")
+    match visits[Path(steps: ["home", "menu"])] {
+        Has(count) => info("home/menu {count}")
+        Not => info("home/menu missing")
+    }
+    info("{visits.has(Path(steps: ["menu", "home"]))} {visits.has(Path(steps: []))}")
+
+    let cells = {Cell(row: 1, tags: [[1], [2, 3]]): "x"}
+    info("{cells.has(Cell(row: 1, tags: [[1], [2, 3]]))} {cells.has(Cell(row: 1, tags: [[1, 2], [3]]))}")
+
+    mut readings: Map<Reading, String> = Map()
+    readings[Reading(sensor: "a", celsius: 0.0)] = "freezing"
+    readings[Reading(sensor: "a", celsius: 0.0 / 0.0)] = "broken"
+    readings[Reading(sensor: "a", celsius: 0.0 / 0.0)] = "still broken"
+    info("readings {readings.count}")
+    info("{readings.has(Reading(sensor: "a", celsius: -0.0))} {readings.has(Reading(sensor: "a", celsius: 20.5))}")
+    match readings[Reading(sensor: "a", celsius: 0.0 / 0.0)] {
+        Has(state) => info("nan {state}")
+        Not => info("nan missing")
+    }
+
+    let routes = {Route(stops: [Path(steps: ["x"])]): true}
+    info("{routes.has(Route(stops: [Path(steps: ["x"])]))}")
+
+    mut rates: Map<Float64, String> = Map()
+    rates[0.5] = "half"
+    rates[0.0] = "zero"
+    rates[-0.0] = "negative zero"
+    rates[0.0 / 0.0] = "nan"
+    rates.set(0.0 / 0.0, "nan again")
+    for rate, name in rates {
+        info("rate {rate} {name}")
+    }
+    let steps = {1.5: "a", 2.5: "b"}
+    info("{steps.has(1.5)} {steps.has(3.5)} {steps.keys().count}")
+    0
+}

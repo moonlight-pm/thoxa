@@ -1240,6 +1240,12 @@ fn emit_stmts(
                             "{pad}{} = thoxa_map_key_at({}, {}) != 0;",
                             place.name, map.name, index.name
                         );
+                    } else if *ty == Ty::Float64 {
+                        let _ = writeln!(
+                            out,
+                            "{pad}{} = thoxa_f64_from_bits((uint64_t)thoxa_map_key_at({}, {}));",
+                            place.name, map.name, index.name
+                        );
                     } else {
                         let _ = writeln!(
                             out,
@@ -1681,6 +1687,7 @@ fn emit_rvalue(
                     "array_insert_at_ptr" => "thoxa_array_insert_at_ptr",
                     "array_remove_at" => "thoxa_array_remove_at",
                     "map_count" => "thoxa_map_count",
+                    "f64_key_bits" => "thoxa_f64_key_bits",
                     "map_has" => "thoxa_map_has",
                     "html_el" => "thoxa_html_el",
                     "html_text" => "thoxa_html_text",
@@ -2330,6 +2337,8 @@ fn emit_map_key_ops(out: &mut String, keys: &[String], types: &[TypeLayout]) {
         return;
     }
     let mut all: Vec<String> = Vec::new();
+    // Element types of the arrays inside keys (D214).
+    let mut arrays: Vec<Ty> = Vec::new();
     let mut pending: Vec<String> = keys.to_vec();
     while let Some(name) = pending.pop() {
         if all.contains(&name) {
@@ -2343,11 +2352,21 @@ fn emit_map_key_ops(out: &mut String, keys: &[String], types: &[TypeLayout]) {
             None => layout.fields.iter().map(|f| &f.ty).collect(),
         };
         for ty in inner {
-            if let Ty::User(nested) = ty {
-                pending.push(nested.clone());
-            }
+            collect_key_parts(ty, &mut pending, &mut arrays);
         }
         all.push(name);
+    }
+    for elem in &arrays {
+        let _ = writeln!(
+            out,
+            "static uint64_t {}(const ThoxaArray *a);",
+            array_key_fn("hash", elem)
+        );
+        let _ = writeln!(
+            out,
+            "static int {}(const ThoxaArray *a, const ThoxaArray *b);",
+            array_key_fn("eq", elem)
+        );
     }
     for name in &all {
         let _ = writeln!(
@@ -2364,6 +2383,9 @@ fn emit_map_key_ops(out: &mut String, keys: &[String], types: &[TypeLayout]) {
     for name in &all {
         let layout = types.iter().find(|t| t.name == *name).unwrap();
         emit_map_key_hash_eq(out, layout, types);
+    }
+    for elem in &arrays {
+        emit_array_key_hash_eq(out, elem, types);
     }
     for name in keys {
         let _ = writeln!(
@@ -2456,6 +2478,101 @@ fn emit_map_key_hash_eq(out: &mut String, layout: &TypeLayout, types: &[TypeLayo
     }
 }
 
+/// The user types and array element types a key part holds, for their hash
+/// and equality functions (D179, D214).
+fn collect_key_parts(ty: &Ty, users: &mut Vec<String>, arrays: &mut Vec<Ty>) {
+    match ty {
+        Ty::User(name) => users.push(name.clone()),
+        Ty::Array { elem } => {
+            if !arrays.contains(elem) {
+                arrays.push(elem.as_ref().clone());
+            }
+            collect_key_parts(elem, users, arrays);
+        }
+        _ => {}
+    }
+}
+
+/// D214: the hash (`prefix` "hash") or equality ("eq") of an `Array<elem>`
+/// inside a key.
+fn array_key_fn(prefix: &str, elem: &Ty) -> String {
+    let tag: String = format!("{elem:?}")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    format!("thoxa_key_{prefix}_arr_{tag}")
+}
+
+/// Element `index` of the array `array`, as a C lvalue of the element type:
+/// a user value is stored inline, anything else in an int64 slot.
+fn c_array_key_elem(array: &str, index: &str, elem: &Ty) -> String {
+    match elem {
+        Ty::User(name) => format!(
+            "(*(const {} *)(const void *)({array}->data + (size_t)({index}) * {array}->elem_size))",
+            c_type_name(name)
+        ),
+        Ty::Bool => format!("(thoxa_array_get_i64({array}, {index}) != 0)"),
+        Ty::Float64 => format!("thoxa_f64_from_bits((uint64_t)thoxa_array_get_i64({array}, {index}))"),
+        Ty::String | Ty::Bytes | Ty::Array { .. } => format!(
+            "(({})(intptr_t)thoxa_array_get_i64({array}, {index}))",
+            c_ty(elem)
+        ),
+        _ => format!("(({})thoxa_array_get_i64({array}, {index}))", c_ty(elem)),
+    }
+}
+
+/// Hash and equality of an `Array<elem>` key part: the count, then each
+/// element in order.
+fn emit_array_key_hash_eq(out: &mut String, elem: &Ty, types: &[TypeLayout]) {
+    let item = c_array_key_elem("a", "i", elem);
+    let part = c_key_hash(&item, elem, types).unwrap_or_else(|| "0".into());
+    let _ = writeln!(
+        out,
+        "static uint64_t {}(const ThoxaArray *a) {{",
+        array_key_fn("hash", elem)
+    );
+    out.push_str("    int64_t count = thoxa_array_count(a);
+");
+    out.push_str(
+        "    uint64_t hash = thoxa_hash_mix(UINT64_C(0xcbf29ce484222325), (uint64_t)count);
+",
+    );
+    let _ = writeln!(
+        out,
+        "    for (int64_t i = 0; i < count; i++) {{
+        hash = thoxa_hash_mix(hash, {part});
+    }}"
+    );
+    out.push_str("    return hash;
+}
+");
+    let left = c_array_key_elem("a", "i", elem);
+    let right = c_array_key_elem("b", "i", elem);
+    let same = c_key_eq(&left, &right, elem, types).unwrap_or_else(|| "1".into());
+    let _ = writeln!(
+        out,
+        "static int {}(const ThoxaArray *a, const ThoxaArray *b) {{",
+        array_key_fn("eq", elem)
+    );
+    out.push_str("    int64_t count = thoxa_array_count(a);
+");
+    out.push_str("    if (count != thoxa_array_count(b)) {
+        return 0;
+    }
+");
+    let _ = writeln!(
+        out,
+        "    for (int64_t i = 0; i < count; i++) {{
+        if (!({same})) {{
+            return 0;
+        }}
+    }}"
+    );
+    out.push_str("    return 1;
+}
+");
+}
+
 /// One part of a key's hash: `place` (a C lvalue) of type `ty`. `None` for
 /// Void, which has no storage.
 fn c_key_hash(place: &str, ty: &Ty, types: &[TypeLayout]) -> Option<String> {
@@ -2464,6 +2581,10 @@ fn c_key_hash(place: &str, ty: &Ty, types: &[TypeLayout]) -> Option<String> {
         Ty::String => format!("thoxa_hash_string({place})"),
         Ty::Bytes => format!("thoxa_hash_bytes({place})"),
         Ty::Bool => format!("(uint64_t)({place} ? 1 : 0)"),
+        // Keys compare SameValueZero (D214): every NaN hashes alike, and
+        // -0.0 as 0.0.
+        Ty::Float64 => format!("thoxa_hash_f64_key({place})"),
+        Ty::Array { elem } => format!("{}({place})", array_key_fn("hash", elem)),
         Ty::User(name) if is_sum_scalar(types, name) => format!("(uint64_t)({place})"),
         Ty::User(name) => format!("{}(&({place}))", map_key_hash_fn(name)),
         _ => format!("(uint64_t)(int64_t)({place})"),
@@ -2476,6 +2597,8 @@ fn c_key_eq(left: &str, right: &str, ty: &Ty, types: &[TypeLayout]) -> Option<St
         Ty::Void => return None,
         Ty::String => format!("thoxa_string_eq({left}, {right})"),
         Ty::Bytes => format!("thoxa_bytes_equals({left}, {right})"),
+        Ty::Array { elem } => format!("{}({left}, {right})", array_key_fn("eq", elem)),
+        Ty::Float64 => format!("thoxa_f64_key_eq({left}, {right})"),
         Ty::User(name) if is_sum_scalar(types, name) => format!("({left} == {right})"),
         Ty::User(name) => format!("{}(&({left}), &({right}))", map_key_eq_fn(name)),
         _ => format!("({left} == {right})"),

@@ -1,0 +1,12 @@
+paths 3
+home/menu 4
+false true
+true false
+readings 2
+true false
+nan still broken
+true
+rate 0.5 half
+rate 0.0 negative zero
+rate NaN nan again
+true false 2

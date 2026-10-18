@@ -2211,7 +2211,11 @@ impl Parser {
         is_name_token(&self.tokens[i].kind)
             || matches!(
                 self.tokens[i].kind,
-                TokenKind::String(_) | TokenKind::Int(_) | TokenKind::True | TokenKind::False
+                TokenKind::String(_)
+                    | TokenKind::Int(_)
+                    | TokenKind::Float(_)
+                    | TokenKind::True
+                    | TokenKind::False
             )
     }
 
@@ -2281,6 +2285,14 @@ impl Parser {
                 self.bump();
                 Ok(Expr {
                     kind: ExprKind::Int(n),
+                    span,
+                })
+            }
+            TokenKind::Float(value) => {
+                let value = *value;
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Float(value),
                     span,
                 })
             }

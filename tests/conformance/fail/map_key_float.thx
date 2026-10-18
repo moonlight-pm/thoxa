@@ -1,9 +1,0 @@
-## D179: a key hashes and compares by value, and Float64 has no value
-## equality to hash (a NaN is not equal to itself).
-type Reading(sensor: String, celsius: Float64)
-
-fn main() -> Int64 {
-    mut seen: Map<Reading, Int64> = Map()
-    seen.set(Reading(sensor: "a", celsius: 20.5), 1)
-    seen.count
-}

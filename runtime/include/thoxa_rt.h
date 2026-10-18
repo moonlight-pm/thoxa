@@ -551,6 +551,23 @@ static inline uint64_t thoxa_hash_mix(uint64_t hash, uint64_t value) {
     hash ^= value + UINT64_C(0x9e3779b97f4a7c15) + (hash << 6) + (hash >> 2);
     return hash;
 }
+/*
+ * A Float64 inside a Map key compares SameValueZero (D214): NaN matches
+ * NaN, and -0.0 matches 0.0, so a key can always be found again.
+ */
+static inline int thoxa_f64_key_eq(double left, double right) {
+    return left == right || (left != left && right != right);
+}
+static inline uint64_t thoxa_hash_f64_key(double value) {
+    if (value != value) {
+        return UINT64_C(0x7ff8000000000000);
+    }
+    return thoxa_f64_to_bits(value == 0.0 ? 0.0 : value);
+}
+/* A `Map<Float64, V>` key: its SameValueZero bits (D214). */
+static inline int64_t thoxa_f64_key_bits(double value) {
+    return (int64_t)thoxa_hash_f64_key(value);
+}
 uint64_t thoxa_hash_string(const ThoxaString *s);
 uint64_t thoxa_hash_bytes(const ThoxaBytes *b);
 int64_t thoxa_map_count(const ThoxaMap *m);
