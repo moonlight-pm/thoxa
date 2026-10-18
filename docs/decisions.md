@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-17 — Language follow-ups (Joshua: "Hit all 5 in order")
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D197 | A program carries only the functions it reaches | After lowering, `mir::retain_reachable` keeps the functions reachable from `main`, the module initializers, and every `Type__drop` (the runtime calls destructors), following calls, `-->` starts, and function values; `compile_to_c` emits only those. Session images keep everything (a later step may call anything). | **Shipped.** Gate: `driver::tests::unreachable_functions_are_not_emitted`; the suite. Hello world: 9,912 lines of C and 0.60 s for `cc -O2` with D196, 2,824 lines and 0.19 s now (4,673 and 0.33 s before D196). Module globals are all kept and initialized (the Unicode tables among them). |
+
 ## 2026-10-17 — Strings
 
 | ID | Decision | Choice | Notes |

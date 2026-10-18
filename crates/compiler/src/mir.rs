@@ -51,6 +51,80 @@ pub struct Program {
     pub functions: Vec<Function>,
 }
 
+/// Keep only the functions a program can reach from `main` and its module
+/// initializers (D197). Every loaded module is lowered whole, std/string
+/// included, but a program carries only the code it calls. Destructors
+/// (`Type__drop`) stay: the runtime calls them. Not for session images,
+/// whose later steps may call anything.
+pub fn retain_reachable(program: &mut Program) {
+    let mut reached: HashSet<String> = HashSet::new();
+    let mut pending: Vec<String> = Vec::new();
+    for function in &program.functions {
+        if function.is_main || function.name.ends_with("__drop") {
+            pending.push(function.name.clone());
+        }
+    }
+    referenced_fns(&program.init, &mut pending);
+    let bodies: HashMap<&str, &Vec<Stmt>> = program
+        .functions
+        .iter()
+        .map(|function| (function.name.as_str(), &function.body))
+        .collect();
+    while let Some(name) = pending.pop() {
+        if !reached.insert(name.clone()) {
+            continue;
+        }
+        if let Some(body) = bodies.get(name.as_str()) {
+            referenced_fns(body, &mut pending);
+        }
+    }
+    program
+        .functions
+        .retain(|function| reached.contains(&function.name));
+}
+
+/// The functions `stmts` call, start as tasks, or take as values.
+fn referenced_fns(stmts: &[Stmt], out: &mut Vec<String>) {
+    let callee_fn = |callee: &Callee| match callee {
+        Callee::User(name) => Some(name.clone()),
+        Callee::Method { type_name, method } => Some(format!("{type_name}__{method}")),
+        Callee::Builtin(_) | Callee::Extern { .. } | Callee::Indirect { .. } => None,
+    };
+    for stmt in stmts {
+        let value = match stmt {
+            Stmt::Assign { value, .. } | Stmt::Eval(value) => Some(value),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                referenced_fns(then_body, out);
+                referenced_fns(else_body, out);
+                None
+            }
+            Stmt::Loop { body } | Stmt::ForRange { body, .. } => {
+                referenced_fns(body, out);
+                None
+            }
+            Stmt::Start { callee, .. } => {
+                out.extend(callee_fn(callee));
+                None
+            }
+            _ => None,
+        };
+        match value {
+            Some(RValue::Call { callee, .. }) => out.extend(callee_fn(callee)),
+            Some(RValue::MakeFn { target, .. }) => out.push(match target {
+                FnTarget::Free { mangled } => mangled.clone(),
+                FnTarget::Method {
+                    type_name, method, ..
+                } => format!("{type_name}__{method}"),
+            }),
+            _ => {}
+        }
+    }
+}
+
 /// Maps from a session package lower, enough to re-lower only `Shell.step`.
 pub struct SessionMirCache {
     pub program: Program,

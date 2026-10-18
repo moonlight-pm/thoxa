@@ -99,10 +99,9 @@ methods on String written in Thoxa, Unicode case and white space, scalar
 counts and positions, always-valid UTF-8. Revisit (Joshua): positions in long
 non-ASCII text are O(n); the freeze §4 lists what is left to try.
 
-**Proposed, awaiting Joshua** (standing order: raise improvements):
-emit only reachable functions (every loaded module is emitted whole; hello
-world is 9,912 lines of C, 0.60 s of `cc -O2`, since std/string loads
-everywhere); keywords as argument labels (`byteIndexOf(needle, from: 3)` is a
+**In progress (Joshua, "Hit all 5 in order"):** ~~emit only reachable
+functions~~ (**D197** shipped: hello world 2,824 lines of C, 0.19 s);
+keywords as argument labels (`byteIndexOf(needle, from: 3)` is a
 syntax error); `mut` parameters, so a helper can append to a caller's
 `Buffer` without a copy; enforce `!` (positional) and labels at calls; an
 assignment as a `=>` match arm (`Has(at) => total = total + at` needs a block).

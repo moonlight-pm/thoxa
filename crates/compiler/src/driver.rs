@@ -164,7 +164,8 @@ pub fn runtime_lib_path() -> PathBuf {
 pub fn compile_to_c(source: &Path) -> Result<String> {
     let mut package = loader::load_package(source)?;
     crate::session::prepare_package(&mut package)?;
-    let program = mir::lower_package(&package)?;
+    let mut program = mir::lower_package(&package)?;
+    mir::retain_reachable(&mut program);
     Ok(cgen::emit_program(&program))
 }
 
@@ -1322,6 +1323,20 @@ mod tests {
     }
 
     /// D173: what `main` returns is the exit status. 0 to 255 pass through;
+    /// D197: the C holds only what `main` reaches. std/string is in every
+    /// package; a program that calls `contains` carries that method and not
+    /// `toUpper`, and a function nothing calls is gone.
+    #[test]
+    fn unreachable_functions_are_not_emitted() {
+        let dir = temp_prog(
+            "fn unused() -> Int64 {\n    7\n}\n\nfn main() -> Int64 {\n    if \"latte\".contains(\"at\") {\n        0\n    } else {\n        1\n    }\n}\n",
+        );
+        let c = compile_to_c(&dir.join("main.thx")).expect("compile");
+        assert!(!c.contains("thoxa_fn_unused("), "unused function emitted");
+        assert!(c.contains("_extend_String_contains("), "contains missing");
+        assert!(!c.contains("_extend_String_toUpper("), "toUpper emitted");
+    }
+
     /// a value the kernel would cut to its low 8 bits (256 reads as 0)
     /// panics instead.
     #[test]

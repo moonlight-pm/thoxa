@@ -5,7 +5,7 @@
 **Implementation:** shipped
 **Decision:** D196 (reworks how D195's String methods are built)
 **Gates:** `string_methods`, `string_scalars`, `stdlib`, `fail/extend_outside_std`, `lsp::analysis::tests::string_methods_without_imports`
-**Gaps:** every program compiles all of std/string and std/unicode (no unreachable-code removal); no generic `extend` (`Array<T>`); an extension method cannot change its receiver
+**Gaps:** no generic `extend` (`Array<T>`); an extension method cannot change its receiver; every program initializes the std/unicode tables (globals are all kept)
 **As-built:** [`../capabilities.md`](../capabilities.md) · [`../architecture.md`](../architecture.md)
 **Pickup:** root [`CURRENT.md`](../../CURRENT.md) · this freeze · D196 in
 [`decisions.md`](../decisions.md)
@@ -100,9 +100,9 @@ this they would have added a statement each to every program.
 ## Cost
 
 Measured 2026-10-17 on hello world: 4,673 lines of C and 0.33 s for `cc -O2`
-before; 9,912 lines and 0.60 s after, because the compiler emits every
-function of every loaded module and std/string is now always loaded. Emitting
-only reachable functions would remove this, and most of the 4,673 lines too.
+before; 9,912 lines and 0.60 s after, because the compiler emitted every
+function of every loaded module and std/string is now always loaded. **D197**
+emits only reachable functions: 2,824 lines and 0.19 s.
 Runtime speed of the methods is not tuned (API first; Joshua, 2026-10-17).
 
 ## Non-goals
