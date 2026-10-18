@@ -137,8 +137,8 @@ Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 itself). thoxa.dev runs `aa6da2c` (redeployed 2026-10-18 at Joshua's go-ahead; its manual includes D207–D226).
 
 **Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
-order"):** working down the list below one slice at a time, each with
-conformance and docs. Shipped so far: **D207** a field indexes as a local
+order"):** done; each slice with conformance and docs, decisions on the
+design questions from Joshua. Shipped: **D207** a field indexes as a local
 (`row.cells["name"]`); **D208** a method calls a sibling by bare name
 (`double()`), private methods are callable inside their type; **D209**
 `thoxa -c` splits its chunk into declarations and statements (an `import`
