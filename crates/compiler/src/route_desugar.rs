@@ -251,6 +251,8 @@ fn desugar_type(td: &mut TypeDef, names: &HttpNames) -> Result<(Vec<Function>, D
                 .collect(),
             return_type: Some(ret_ty),
             body: r.body,
+            type_params: Vec::new(),
+            generic: Vec::new(),
         });
     }
 
@@ -501,6 +503,8 @@ fn body_reader_stub(target: &TypeExpr, names: &HttpNames) -> Function {
             tail: None,
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -898,6 +902,8 @@ fn parse_int_fn() -> Function {
         params: vec![param("s", ty_string())],
         return_type: Some(ty_named(PARSE_INT_TY)),
         body,
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -996,6 +1002,8 @@ fn segments_fn() -> Function {
         params: vec![param("path", ty_string())],
         return_type: Some(ty_array(ty_string())),
         body,
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 

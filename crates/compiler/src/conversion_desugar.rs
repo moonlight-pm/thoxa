@@ -52,6 +52,8 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
                 }],
                 return_type: Some(clause.return_type.clone()),
                 body: clause.body.clone(),
+                type_params: Vec::new(),
+                generic: Vec::new(),
             });
         }
     }

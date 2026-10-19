@@ -965,6 +965,27 @@ impl Parser {
         Ok((ty, params))
     }
 
+    /// `<T: A & B, U>` after a function's name, or nothing (D228).
+    fn parse_bounded_type_params(&mut self) -> Result<Vec<TypeParamBound>> {
+        let mut params = Vec::new();
+        if !self.at(TokenKind::LAngle) {
+            return Ok(params);
+        }
+        self.bump();
+        loop {
+            let (name, span) = self.expect_ident()?;
+            let traits = self.parse_bounds()?;
+            params.push(TypeParamBound { name, span, traits });
+            if self.at(TokenKind::Comma) {
+                self.bump();
+                continue;
+            }
+            break;
+        }
+        self.expect_kind(&TokenKind::RAngle)?;
+        Ok(params)
+    }
+
     /// `: A & B` after a type parameter, or nothing (D228).
     fn parse_bounds(&mut self) -> Result<Vec<(String, Span)>> {
         let mut traits = Vec::new();
@@ -1115,6 +1136,7 @@ impl Parser {
     fn parse_function(&mut self, exported: bool) -> Result<Function> {
         self.expect_kind(&TokenKind::Fn)?;
         let (name, name_span) = self.expect_ident()?;
+        let type_params = self.parse_bounded_type_params()?;
         self.expect_kind(&TokenKind::LParen)?;
         let mut params = Vec::new();
         if !self.at(TokenKind::RParen) {
@@ -1142,6 +1164,8 @@ impl Parser {
             params,
             return_type,
             body,
+            type_params,
+            generic: Vec::new(),
         })
     }
 

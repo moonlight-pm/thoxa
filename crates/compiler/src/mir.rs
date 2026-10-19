@@ -15,6 +15,7 @@ use std::rc::Rc;
 
 mod codec;
 mod convert;
+mod generic;
 mod order;
 
 /// Synthetic union types inferred for unannotated `if` lub (D119).
@@ -33,6 +34,16 @@ struct SyntheticRegistry {
     /// Conformances that hold per instance (D228): a generic type's, keyed by
     /// its mangled template name, and the built-in types' (`Array`, `Int64`).
     conditional: HashMap<String, Vec<ast::ConditionalConformance>>,
+    /// Generic functions' templates, by mangled name (D228 §5).
+    generic_fns: HashMap<String, generic::GenericFn>,
+    /// The instances made so far, by name, with their signatures.
+    fn_instances: HashMap<String, FnSig>,
+    /// Instances still to lower.
+    instance_jobs: Vec<generic::InstanceJob>,
+    /// Generic types' templates, for instances made while lowering.
+    generics: HashMap<String, GenericDef>,
+    /// Methods of the generic types' instances made while lowering.
+    late_mono_jobs: Vec<MonoMethodJob>,
 }
 
 /// A trait std's core module declares (`Equatable`, `Hashable`, `Ordered`).
@@ -2201,6 +2212,8 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     let mut free_fns: Vec<(String, String, &ast::Function, bool)> = Vec::new();
     // mangled free-fn name → multi-clause bodies (D131)
     let mut multi_free: HashMap<String, Vec<MultiClause>> = HashMap::new();
+    // Generic functions' templates (D228 §5).
+    let mut generic_templates: HashMap<String, generic::GenericFn> = HashMap::new();
 
     for m in &package.modules {
         // Signature errors are spans in this module: attach its path.
@@ -2224,6 +2237,32 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                 } else {
                     mangle_fn(&m.id, &fname, m.is_entry)
                 };
+                // A generic function is a template; its instances are made
+                // at the calls (D228 §5).
+                if !clauses[0].generic.is_empty() {
+                    if clauses.len() > 1 {
+                        return Err(Error::at(
+                            format!("generic function `{fname}` cannot be multi-clause"),
+                            clauses[1].name_span,
+                        ));
+                    }
+                    if clauses[0].exported {
+                        module_exports
+                            .get_mut(&m.id)
+                            .unwrap()
+                            .fns
+                            .insert(fname.clone(), mangled.clone());
+                    }
+                    generic_templates.insert(
+                        mangled,
+                        generic::GenericFn {
+                            function: clauses[0].clone(),
+                            module: m.id.clone(),
+                            is_entry: m.is_entry,
+                        },
+                    );
+                    continue;
+                }
                 match merge_free_clauses(
                     clauses,
                     m.is_entry,
@@ -2372,6 +2411,8 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             params: method.params,
             return_type: method.return_type,
             body: method.body,
+            type_params: Vec::new(),
+            generic: Vec::new(),
         };
         let mangled = mangle_fn(&job.def_mod, &function.name, module.is_entry);
         let (mut sig, _) = merge_free_clauses(
@@ -2438,8 +2479,35 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     // Every global's init lands in one C function: number temps across all of
     // them, or `_obj0` from two modules would share one (mistyped) local.
     let mut init_temps = 0;
+    // Each generic function is checked once, as its instance for its own
+    // archetypes (D228 §5).
+    let checking_jobs: Vec<generic::InstanceJob> = generic_templates
+        .iter()
+        .map(|(mangled, template)| {
+            let subst: HashMap<String, Ty> = template
+                .function
+                .generic
+                .iter()
+                .map(|param| {
+                    (
+                        param.name.clone(),
+                        Ty::User(mangle_type(&template.module, &param.archetype, template.is_entry)),
+                    )
+                })
+                .collect();
+            generic::InstanceJob {
+                template: mangled.clone(),
+                instance: generic::instance_name(mangled, &template.function, &subst),
+                subst,
+                archetypal: true,
+            }
+        })
+        .collect();
     let synthetics = Rc::new(RefCell::new(SyntheticRegistry {
         conditional: std::mem::take(&mut conditional),
+        generic_fns: generic_templates,
+        instance_jobs: checking_jobs,
+        generics: generics.clone(),
         ..SyntheticRegistry::default()
     }));
     // Name maps of the modules whose globals are done, so a default argument
@@ -2748,6 +2816,124 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                 Some(path) => in_module_file(e, path),
                 None => e,
             }),
+        }
+    }
+
+    // Generic functions' instances (D228 §5): each template's checking one
+    // first; a template whose body fails there makes no others. Lowering one
+    // may ask for more, and for the methods of generic types' instances.
+    let mut lowered_instances: HashSet<String> = HashSet::new();
+    let mut failed_templates: HashSet<String> = HashSet::new();
+    loop {
+        let job = {
+            let mut synthetics = synthetics.borrow_mut();
+            let index = synthetics
+                .instance_jobs
+                .iter()
+                .position(|job| job.archetypal)
+                .or(if synthetics.instance_jobs.is_empty() { None } else { Some(0) });
+            match index {
+                Some(index) => Some(synthetics.instance_jobs.remove(index)),
+                None => None,
+            }
+        };
+        let Some(job) = job else {
+            let late = std::mem::take(&mut synthetics.borrow_mut().late_mono_jobs);
+            if late.is_empty() {
+                break;
+            }
+            for job in late.iter().filter(|job| !job.conversion) {
+                let m = package.modules.iter().find(|x| x.id == job.def_mod).unwrap();
+                let maps = package_maps.get(&job.def_mod).unwrap();
+                let method = subst_method(&job.method, &job.subst);
+                match lower_method(
+                    &job.mono_type,
+                    &method,
+                    &fns,
+                    &types_info,
+                    &maps.name_to_type,
+                    &maps.name_to_fn,
+                    &maps.name_to_global,
+                    &maps.namespaces,
+                    &module_exports,
+                    &package_maps,
+                    &job.def_mod,
+                    m.is_entry,
+                    &synthetics,
+                ) {
+                    Ok(f) => functions.push(f),
+                    Err(e) => body_errors.push(in_module_file(e, &m.path)),
+                }
+            }
+            continue;
+        };
+        if !lowered_instances.insert(job.instance.clone()) {
+            continue;
+        }
+        if !job.archetypal && failed_templates.contains(&job.template) {
+            continue;
+        }
+        let template = synthetics.borrow().generic_fns[&job.template].clone();
+        let m = package.modules.iter().find(|x| x.id == template.module).unwrap();
+        let maps = package_maps.get(&template.module).unwrap();
+        let function = subst_function(&template.function, &job.subst);
+        let mut known = fns.clone();
+        known.extend(synthetics.borrow().fn_instances.clone());
+        // Its signature first: it may name generic types' instances nothing
+        // made yet, which then join the synthetic types.
+        if !known.contains_key(&job.instance) {
+            let mut sig_ctx = LowerCtx::new(
+                known.clone(),
+                types_info.clone(),
+                maps.name_to_type.clone(),
+                maps.name_to_fn.clone(),
+                maps.name_to_global.clone(),
+                maps.namespaces.clone(),
+                module_exports.clone(),
+                package_maps.clone(),
+                Ty::Void,
+                template.module.clone(),
+                false,
+                Rc::clone(&synthetics),
+            );
+            match generic::instance_sig(&mut sig_ctx, &template, &job.instance, &job.subst) {
+                Ok(sig) => {
+                    synthetics.borrow_mut().fn_instances.insert(job.instance.clone(), sig.clone());
+                    known.insert(job.instance.clone(), sig);
+                }
+                Err(e) => {
+                    failed_templates.insert(job.template.clone());
+                    body_errors.push(in_module_file(e, &m.path));
+                    continue;
+                }
+            }
+        }
+        let mut types_now = types_info.clone();
+        for (name, (info, _)) in synthetics.borrow().entries.iter() {
+            types_now.entry(name.clone()).or_insert_with(|| info.clone());
+        }
+        match lower_function(
+            &function,
+            &job.instance,
+            false,
+            &known,
+            &types_now,
+            &maps.name_to_type,
+            &maps.name_to_fn,
+            &maps.name_to_global,
+            &maps.namespaces,
+            &module_exports,
+            &package_maps,
+            &template.module,
+            &synthetics,
+        ) {
+            Ok(fun) => functions.push(fun),
+            Err(e) => {
+                if job.archetypal {
+                    failed_templates.insert(job.template.clone());
+                }
+                body_errors.push(in_module_file(e, &m.path));
+            }
         }
     }
 
@@ -3249,6 +3435,8 @@ fn no_member_message(type_mangled: &str, member: &str, kind: &str) -> String {
     let shown = display_ty(&Ty::User(type_mangled.to_string()));
     if type_mangled.starts_with("Self_") || type_mangled.contains("_Self_") {
         format!("`{shown}` has no member `{member}` (a trait's body sees only the trait)")
+    } else if type_mangled.starts_with("Param_") || type_mangled.contains("_Param_") {
+        format!("`{shown}` has no member `{member}` (a generic function sees only its type parameters' bounds)")
     } else {
         format!("no {kind} `{member}` on `{shown}`")
     }
@@ -7211,6 +7399,31 @@ fn subst_method(m: &Method, subst: &HashMap<String, Ty>) -> Method {
         return_type: m.return_type.as_ref().map(|t| subst_type_expr(t, subst)),
         body: subst_block(&m.body, subst),
         provided: m.provided.clone(),
+    }
+}
+
+/// A generic function's body for its type arguments (D228 §5).
+fn subst_function(function: &ast::Function, subst: &HashMap<String, Ty>) -> ast::Function {
+    ast::Function {
+        exported: false,
+        name: function.name.clone(),
+        name_span: function.name_span,
+        type_params: Vec::new(),
+        params: function
+            .params
+            .iter()
+            .map(|p| ast::Param {
+                name: p.name.clone(),
+                name_span: p.name_span,
+                positional: p.positional,
+                mutable: p.mutable,
+                ty: subst_type_expr(&p.ty, subst),
+                default: p.default.as_ref().map(|e| subst_expr(e, subst)),
+            })
+            .collect(),
+        return_type: function.return_type.as_ref().map(|t| subst_type_expr(t, subst)),
+        body: subst_block(&function.body, subst),
+        generic: Vec::new(),
     }
 }
 
@@ -17827,6 +18040,13 @@ fn lower_call(
                 .get(other)
                 .cloned()
                 .unwrap_or_else(|| other.to_string());
+            // A generic function's call names its instance (D228 §5).
+            let generic = ctx.synthetics.borrow().generic_fns.contains_key(&mangled);
+            let mangled = if generic {
+                generic::instantiate_call(ctx, &mangled, other, args, span, expect)?
+            } else {
+                mangled
+            };
             ctx.infer_check_callee(&mangled, other, span)?;
             let sig = ctx
                 .fns

@@ -566,6 +566,8 @@ fn gen_read(td: &TypeDef) -> Function {
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -647,6 +649,8 @@ fn gen_from_json(td: &TypeDef, fields: &[ReadableField]) -> Function {
         ],
         return_type: Some(ty_trial_issues(ty_named(&td.name))),
         body: build_from_fields(td, fields, items),
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -741,6 +745,8 @@ fn gen_read_form(td: &TypeDef) -> Function {
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -770,6 +776,8 @@ fn gen_from_form(td: &TypeDef, fields: &[ReadableField]) -> Function {
         ],
         return_type: Some(ty_trial_issues(ty_named(&td.name))),
         body: build_from_fields(td, fields, items),
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1016,6 +1024,8 @@ fn gen_field_check(td: &TypeDef, field: &str, base: &str, clause: &WhereClause) 
             tail: Some(Box::new(call("Pass", vec![Arg::Pos(name("value"))]))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1539,6 +1549,8 @@ fn gen_from_json_union(td: &TypeDef, members: &[UnionMember]) -> Function {
             )))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1780,6 +1792,8 @@ fn gen_from_lit_union(td: &TypeDef, _base: &str, lits: &[TypeLit]) -> Function {
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1797,6 +1811,8 @@ fn gen_to_json_lit_union(td: &TypeDef, base: &str) -> Function {
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1831,6 +1847,8 @@ fn gen_from_json_scalar(td: &TypeDef, base: &str) -> Function {
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1848,6 +1866,8 @@ fn gen_encode(td: &TypeDef) -> Function {
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1865,6 +1885,8 @@ fn gen_to_json_refined(td: &TypeDef, base: &str) -> Function {
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1885,6 +1907,8 @@ fn gen_to_json(td: &TypeDef) -> Function {
             tail: Some(Box::new(json_object_end())),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1924,6 +1948,8 @@ fn gen_to_json_union(td: &TypeDef, members: &[UnionMember]) -> Function {
             tail: Some(Box::new(json_object_end())),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1994,6 +2020,8 @@ fn gen_from_refined(td: &TypeDef, base: &str, clause: &WhereClause) -> Function 
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -2592,6 +2620,8 @@ fn gen_as_float(key: &str, target: &TypeExpr, kind: &str, source: &str) -> Funct
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -2624,6 +2654,8 @@ fn gen_as_json(key: &str, target: &TypeExpr, shape: &Shape) -> Function {
             tail: Some(Box::new(convert_json(name("value"), shape, target, str_lit(""), 0))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -2645,6 +2677,8 @@ fn gen_as_base(key: &str, target: &TypeExpr, base: &str) -> Function {
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -2696,6 +2730,8 @@ fn gen_as_narrow(key: &str, target: &TypeExpr, min: i64, max: i64) -> Function {
             ))),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -2800,6 +2836,8 @@ fn gen_custom_from_json(td: &TypeDef, index: usize, fallible: bool) -> Function 
             tail: Some(Box::new(tail)),
             span: dummy(),
         },
+        type_params: Vec::new(),
+        generic: Vec::new(),
     }
 }
 

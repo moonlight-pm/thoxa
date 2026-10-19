@@ -265,6 +265,7 @@ pub fn desugar_package(package: &mut Package) -> Result<BuiltInConformances> {
         traits: &traits,
         core_types,
     };
+    generic_functions(package, &scope)?;
     // The type's own members, before any conformance adds to them.
     let mut own_members: HashMap<(String, String), OwnMembers> = HashMap::new();
     let mut generic: HashMap<(String, String), usize> = HashMap::new();
@@ -1024,6 +1025,157 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
         },
         provided: None,
     }
+}
+
+/// Generic functions (D228 §5): a bare trait as a parameter's type becomes a
+/// hidden type parameter bounded by it (`report(shape: Shape)` is
+/// `report<S: Shape>(shape: S)`); each type parameter's bounds are resolved,
+/// and gets an archetype in the function's module (`Param_largest_T`, shown
+/// as `T`) with a stub for every member of its bounds, so the body is checked
+/// once against the bounds alone.
+fn generic_functions(package: &mut Package, scope: &Scope) -> Result<()> {
+    let mut errors = Vec::new();
+    for module in &mut package.modules {
+        let mut archetypes = Vec::new();
+        for item in &mut module.ast.items {
+            let Item::Function(function) = item else { continue };
+            if let Err(error) = resolve_generics(function, &module.id, scope, &mut archetypes) {
+                errors.push(error.with_path(module.path.clone()));
+            }
+        }
+        module.ast.items.extend(archetypes.into_iter().map(Item::Type));
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::multi(errors))
+    }
+}
+
+fn resolve_generics(
+    function: &mut Function,
+    module: &str,
+    scope: &Scope,
+    archetypes: &mut Vec<TypeDef>,
+) -> Result<()> {
+    // A bare trait in a parameter is a hidden type parameter, one per parameter.
+    for param in &mut function.params {
+        let ty = &param.ty;
+        if ty.args.is_empty()
+            && ty.lit.is_none()
+            && ty.union_members.is_none()
+            && ty.fn_type.is_none()
+            && scope.type_named(module, &ty.name).is_none()
+            && !function.type_params.iter().any(|each| each.name == ty.name)
+            && scope.trait_named(module, &ty.name).is_some()
+        {
+            let hidden = format!("{}_{}", ty.name, param.name);
+            function.type_params.push(TypeParamBound {
+                name: hidden.clone(),
+                span: ty.span,
+                traits: vec![(ty.name.clone(), ty.span)],
+            });
+            param.ty.name = hidden;
+        }
+    }
+    if let Some(ret) = &function.return_type {
+        if ret.args.is_empty() && scope.type_named(module, &ret.name).is_none() && scope.trait_named(module, &ret.name).is_some() {
+            return Err(Error::at(
+                format!("`{}` is a trait: a return type is a type or a type parameter", ret.name),
+                ret.span,
+            )
+            .with_help(format!("return a concrete type, or add a type parameter: `fn {}<T: {}>(…) -> T`", function.name, ret.name)));
+        }
+    }
+    if function.type_params.is_empty() {
+        return Ok(());
+    }
+    if function.return_type.is_none() {
+        return Err(Error::at(
+            format!("a generic function declares its return type: `fn {}<…>(…) -> Type`", function.name),
+            function.name_span,
+        ));
+    }
+    let mut seen = HashSet::new();
+    for param in &function.type_params {
+        if !seen.insert(param.name.as_str()) {
+            return Err(Error::at(format!("type parameter `{}` is named twice", param.name), param.span));
+        }
+        if scope.type_named(module, &param.name).is_some() {
+            return Err(Error::at(
+                format!("type parameter `{}` has the name of a type", param.name),
+                param.span,
+            ));
+        }
+        let mut bounds = Vec::new();
+        for (name, span) in &param.traits {
+            let Some(bound) = scope.trait_named(module, name) else {
+                return Err(Error::at(format!("unknown trait `{name}`"), *span));
+            };
+            bounds.push(bound);
+        }
+        let archetype = format!("Param_{}_{}", function.name, param.name);
+        archetypes.push(param_archetype(&archetype, &bounds, scope.traits, param.span)?);
+        function.generic.push(GenericParam {
+            name: param.name.clone(),
+            bounds,
+            archetype,
+        });
+    }
+    Ok(())
+}
+
+/// A type parameter's archetype: no fields, a stub for each member of its
+/// bounds' lineages, conforming to all of them.
+fn param_archetype(
+    name: &str,
+    bounds: &[TraitRef],
+    traits: &HashMap<TraitRef, TraitEntry>,
+    span: Span,
+) -> Result<TypeDef> {
+    let mut lineage_all: Vec<TraitRef> = Vec::new();
+    for bound in bounds {
+        for each in lineage(bound, traits) {
+            if !lineage_all.contains(&each) {
+                lineage_all.push(each);
+            }
+        }
+    }
+    let mut methods: Vec<Method> = Vec::new();
+    let mut owner: HashMap<String, TraitRef> = HashMap::new();
+    for each in &lineage_all {
+        let members = visible_members(each, traits);
+        for member in &traits[each].def.members {
+            if let Some(other) = owner.get(&member.name) {
+                return Err(Error::at(
+                    format!(
+                        "`{}` is a member of both `{}` and `{}`, so a type parameter cannot have both",
+                        member_display(&member.name),
+                        other.name,
+                        each.name
+                    ),
+                    span,
+                ));
+            }
+            owner.insert(member.name.clone(), each.clone());
+            methods.push(provided_method(member, stub_body(span), each, members.clone()));
+        }
+    }
+    Ok(TypeDef {
+        exported: false,
+        name: name.to_string(),
+        name_span: span,
+        type_params: Vec::new(),
+        params: Vec::new(),
+        fields: Vec::new(),
+        methods,
+        routes: Vec::new(),
+        conversions: Vec::new(),
+        union_members: None,
+        traits: lineage_all,
+        conditional: Vec::new(),
+        derived: Vec::new(),
+    })
 }
 
 /// `loop {}`: a body of any return type that never returns.

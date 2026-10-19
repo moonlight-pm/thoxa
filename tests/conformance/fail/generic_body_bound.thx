@@ -1,0 +1,6 @@
+## D228 §5: a generic body sees only its type parameters' bounds.
+fn same<T>(left!: T, right!: T) -> Bool {
+    left == right
+}
+
+fn main() {}

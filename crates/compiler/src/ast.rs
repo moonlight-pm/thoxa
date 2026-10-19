@@ -294,9 +294,24 @@ pub struct Function {
     pub exported: bool,
     pub name: String,
     pub name_span: Span,
+    /// `fn largest<T: Ordered>(…)` (D228): type parameters and their bounds.
+    pub type_params: Vec<TypeParamBound>,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
     pub body: Block,
+    /// The type parameters resolved by `trait_desugar` (bare trait parameters
+    /// among them), each with its bounds and its archetype (D228).
+    pub generic: Vec<GenericParam>,
+}
+
+/// A generic function's type parameter, resolved (D228): its bounds, and the
+/// archetype type its body is checked with, which has only the bounds'
+/// members.
+#[derive(Debug, Clone)]
+pub struct GenericParam {
+    pub name: String,
+    pub bounds: Vec<TraitRef>,
+    pub archetype: String,
 }
 
 #[derive(Debug, Clone)]

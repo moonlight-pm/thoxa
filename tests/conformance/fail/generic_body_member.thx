@@ -1,0 +1,6 @@
+## D228 §5: a type parameter has only its bounds' members.
+fn show<T: Equatable>(value!: T) -> String {
+    value.label()
+}
+
+fn main() {}

@@ -1,0 +1,9 @@
+## D228 §5: a type parameter only the result names comes from the expected
+## type; without one there is nothing to infer it from.
+fn none<T>() -> Array<T> {
+    []
+}
+
+fn main() {
+    let items = none()
+}

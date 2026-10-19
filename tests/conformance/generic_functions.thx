@@ -1,0 +1,101 @@
+## Generic functions (D228 §5): type parameters with bounds, checked once
+## against the bounds and compiled for each type a call infers. A bare trait
+## as a parameter's type is a hidden type parameter.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+import { bigger } from "./genericmod/pick"
+
+fn largest<T: Ordered>(items!: Array<T>) -> May<T> {
+    if items.count == 0 {
+        return Not()
+    }
+    mut best = items[0]
+    for item in items {
+        if item > best {
+            best = item
+        }
+    }
+    Has(best)
+}
+
+fn count<T: Equatable>(items!: Array<T>, of: T) -> Int64 {
+    mut seen = 0
+    for item in items {
+        if item == of {
+            seen = seen + 1
+        }
+    }
+    seen
+}
+
+fn pair<A, B>(first!: A, second!: B) -> String {
+    "two values"
+}
+
+## A type parameter only the result names comes from the expected type.
+fn none<T>() -> Array<T> {
+    []
+}
+
+## A generic function calls another with its own type parameter.
+fn largestOrZero<T: Ordered>(items!: Array<T>, zero: T) -> T {
+    match largest(items) {
+        Has(value) => value
+        Not => zero
+    }
+}
+
+trait Shape {
+    get area: Float64
+    fn name() -> String
+}
+
+type Circle(radius: Float64)
+conform Circle to Shape {
+    get area: Float64 { 3.0 * radius * radius }
+    fn name() -> String { "circle" }
+}
+
+type Square(area: Float64)
+conform Square to Shape {
+    fn name() -> String { "square" }
+}
+
+## `shape: Shape` is `<S: Shape>(shape: S)`: one copy per shape type.
+fn report(shape!: Shape) -> String {
+    "a {shape.name()} of {shape.area}"
+}
+
+type Version(major: Int64, minor: Int64)
+conform Version to Equatable, Ordered
+
+fn show(found!: May<Int64>) -> String {
+    match found {
+        Has(value) => "{value}"
+        Not => "none"
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info(show(largest([3, 9, 4])))
+    let empty: Array<Int64> = []
+    info(show(largest(empty)))
+    match largest(["pear", "apple", "fig"]) {
+        Has(word) => info(word)
+        Not => info("none")
+    }
+    match largest([Version(major: 1, minor: 2), Version(major: 2, minor: 0), Version(major: 1, minor: 9)]) {
+        Has(version) => info("{version.major}.{version.minor}")
+        Not => info("none")
+    }
+    info("count: {count([1, 2, 1, 3], of: 1)} {count([\"a\", \"b\"], of: \"c\")}")
+    info(pair(1, "x"))
+    info(report(Circle(radius: 1.0)))
+    info(report(Square(area: 4.0)))
+    let nothing: Array<String> = none()
+    info("none: {nothing.count}")
+    info("or zero: {largestOrZero([5, 2], zero: 0)} {largestOrZero(empty, zero: -1)}")
+    info("bigger: {bigger(3, 8)} {bigger(\"b\", \"a\")}")
+}

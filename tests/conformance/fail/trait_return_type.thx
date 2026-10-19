@@ -1,0 +1,10 @@
+## D228 §5: a bare trait is a type parameter only as a parameter's type.
+trait Shape {
+    fn name() -> String
+}
+
+fn make() -> Shape {
+    make()
+}
+
+fn main() {}

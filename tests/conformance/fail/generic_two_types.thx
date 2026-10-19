@@ -1,0 +1,8 @@
+## D228 §5: one type parameter is one type.
+fn same<T: Equatable>(left!: T, right!: T) -> Bool {
+    left == right
+}
+
+fn main() {
+    let equal = same(1, "one")
+}

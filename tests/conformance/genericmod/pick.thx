@@ -1,0 +1,10 @@
+## Generic functions exported for generic_functions.thx (D228 §5).
+
+## Private: a generic body resolves its names in its own module.
+fn wins<T: Ordered>(left!: T, right!: T) -> Bool {
+    left > right
+}
+
+export fn bigger<T: Ordered>(left!: T, right!: T) -> T {
+    if wins(left, right) { left } else { right }
+}

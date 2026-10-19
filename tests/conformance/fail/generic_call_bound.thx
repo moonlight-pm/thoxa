@@ -1,0 +1,13 @@
+## D228 §5: a call's type arguments meet the bounds.
+import { Has, Not, May } from "std/fallible"
+
+fn largest<T: Ordered>(items!: Array<T>) -> May<T> {
+    if items.count == 0 {
+        return Not()
+    }
+    Has(items[0])
+}
+
+fn main() {
+    let found = largest([<p>a</p>])
+}

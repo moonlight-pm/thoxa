@@ -105,7 +105,10 @@ drops `as name`) and provided members, checked once at the trait.
 **Slice 3 shipped**: getters, setters, `field`, trait property
 requirements. **Slice 4 shipped**: `Equatable`, `Hashable`, `Ordered`,
 `Order`, declared (`==`, Map keys, `<` need them), conformances with bounds,
-std's conformances. **Slice 5 is next**: generic functions and bounds.
+std's conformances. **Slice 5, part 1 shipped**: generic functions with
+bounds, inferred type arguments, bare trait parameters. **Next**: the rest
+of slice 5 (generic `extend Array<T>`, generic methods, constructor
+inference, a hand-written `hash`).
 Generic functions are slice 5, so the "generic constructor inference" gap
 below waits for it. Joshua: "lean toward long-term correct design rather
 than short term stop gaps."
@@ -221,8 +224,8 @@ Freezes:
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 176 programs, 89 rejections, 8 site samples, 219 unit tests
-after D228 slice 4 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 177 programs, 96 rejections, 8 site samples, 219 unit tests
+after D228 slice 5 part 1 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`

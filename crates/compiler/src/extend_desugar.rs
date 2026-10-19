@@ -78,6 +78,8 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
                 params: std::iter::once(receiver).chain(method.params.iter().cloned()).collect(),
                 return_type: method.return_type.clone(),
                 body: method.body.clone(),
+                type_params: Vec::new(),
+                generic: Vec::new(),
             });
         }
     }

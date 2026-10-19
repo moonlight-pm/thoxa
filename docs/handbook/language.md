@@ -672,10 +672,50 @@ let a: Opt<Int64> = Box(value: 7)
 A field of a generic type may be any integer type, `Float64`, `Bool`,
 `String`, `Bytes`, an `Array`, a `Map`, a user type, or `Void`.
 
-There are no generic functions, no constraints on type parameters, and no
-traits or interfaces. A generic type's methods and `from` clauses are
-compiled for each instance the program uses, so a method without `->` infers
-its return type per instance (see [Return types](#return-types)).
+A generic type's methods and `from` clauses are compiled for each instance
+the program uses, so a method without `->` infers its return type per
+instance (see [Return types](#return-types)). A conformance can hold for some
+instances only (see [Traits](#traits)).
+
+### Generic functions
+
+A function may take type parameters, each with bounds, traits its type
+arguments must conform to:
+
+```thx
+fn largest<T: Ordered>(items!: Array<T>) -> May<T> {
+    if items.count == 0 {
+        return Not()
+    }
+    mut best = items[0]
+    for item in items {
+        if item > best {
+            best = item
+        }
+    }
+    Has(best)
+}
+
+let top = largest([3, 9, 4])            ## Has(9)
+let word = largest(["pear", "fig"])     ## Has("pear")
+```
+
+- `<T: A & B, U>`: bounds are joined with `&`; a parameter without bounds
+  takes any type.
+- The body sees a type parameter only through its bounds: `==` needs
+  `Equatable`, `<` needs `Ordered`, and a method or property needs a bound that
+  declares it. This is checked once, where the function is written.
+- A call infers each type argument from the arguments, or, when only the
+  result names it, from the type the result is expected to have
+  (`let names: Array<String> = none()`). One type parameter is one type:
+  `same(1, "one")` is an error. The arguments must meet the bounds.
+- The function is compiled for each set of type arguments the program uses.
+- A bare trait as a parameter's type is a hidden type parameter, one per
+  parameter: `fn report(shape!: Shape)` is `fn report<S: Shape>(shape!: S)`,
+  so `report(Circle(…))` and `report(Square(…))` are two copies. A trait is not
+  a return type, a field's type, or a type argument.
+- A generic function declares its return type, is not multi-clause, and is
+  not a function value.
 
 ### Function types
 
@@ -2005,7 +2045,7 @@ have no `==`, cannot be map keys, and have no JSON encoding.
 
 ## Not in the language
 
-So that nobody looks for them: closures, generic functions, traits used as
-types or bounds, exceptions, threads, macros, operator overloading, tuples, nested
+So that nobody looks for them: closures, traits used as types (values of
+several types behind one trait), exceptions, threads, macros, operator overloading, tuples, nested
 patterns, compound assignment, algebraic effects,
 a package manager, a named `ffi` import root, and a REPL or interactive shell.

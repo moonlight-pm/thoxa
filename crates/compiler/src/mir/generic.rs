@@ -1,0 +1,338 @@
+//! D228 §5: generic functions.
+//!
+//! `fn largest<T: Ordered>(items: Array<T>) -> May<T>` is a template, not a
+//! function. A call infers `T` from its arguments (and, failing that, from
+//! the type its result is expected to have), checks the bounds, and calls
+//! the instance for those type arguments (`largest__Int64`), made on first
+//! use and lowered after the bodies that asked for it. Every template is also
+//! instantiated once with its archetypes (`Param_largest_T`, which have only
+//! the bounds' members): that instance is never called, but lowering it
+//! checks the body against the bounds alone, before any real instance.
+//!
+//! An instance's signature may name a generic type's instance nothing else
+//! named (`May<Point>`); it is made then, like the ones named in the source.
+
+use std::collections::HashMap;
+
+use super::{
+    display_ty, infer_block_ty, mono_type_name, monomorphize_pending, resolve_ty, subst_expr,
+    subst_type_expr, tail_block, ty_conforms, ty_mono_suffix, FnSig, LowerCtx, Ty,
+};
+use crate::ast::{Arg, Expr, ExprKind, Function, Param, TypeArg, TypeExpr};
+use crate::error::{Error, Result};
+use crate::span::Span;
+
+/// A generic function's template and where it is written.
+#[derive(Clone)]
+pub(super) struct GenericFn {
+    pub(super) function: Function,
+    pub(super) module: String,
+    pub(super) is_entry: bool,
+}
+
+/// An instance to lower: its template, its name, and its type arguments.
+#[derive(Clone)]
+pub(super) struct InstanceJob {
+    pub(super) template: String,
+    pub(super) instance: String,
+    pub(super) subst: HashMap<String, Ty>,
+    /// The checking instance, made with the template's archetypes.
+    pub(super) archetypal: bool,
+}
+
+/// The instance a call to `template` (as `shown`) needs: its name, with its
+/// signature in `ctx.fns`.
+pub(super) fn instantiate_call(
+    ctx: &mut LowerCtx,
+    template_name: &str,
+    shown: &str,
+    args: &[Arg],
+    span: Span,
+    expect: Option<&Ty>,
+) -> Result<String> {
+    let template = ctx.synthetics.borrow().generic_fns[template_name].clone();
+    let function = &template.function;
+    let names: Vec<String> = function.generic.iter().map(|param| param.name.clone()).collect();
+    let mut bindings: HashMap<String, Ty> = HashMap::new();
+    for (param, arg) in function.params.iter().zip(match_args(&function.params, args)) {
+        let Some(arg) = arg else { continue };
+        if !mentions(&param.ty, &names) {
+            continue;
+        }
+        let ty = infer_block_ty(ctx, &tail_block(arg.clone()))?;
+        bind(&param.ty, &ty, &names, &mut bindings, ctx, arg.span, shown)?;
+    }
+    if let (Some(ret), Some(expect)) = (&function.return_type, expect) {
+        if names.iter().any(|name| !bindings.contains_key(name)) && mentions(ret, &names) {
+            let _ = bind(ret, expect, &names, &mut bindings, ctx, span, shown);
+        }
+    }
+    for param in &function.generic {
+        let Some(ty) = bindings.get(&param.name) else {
+            return Err(Error::at(
+                format!("cannot infer `{}` for `{shown}` from its arguments", param.name),
+                span,
+            )
+            .with_help("annotate what the call's result is assigned to, or pass a typed value"));
+        };
+        let conditional = ctx.synthetics.borrow().conditional.clone();
+        for bound in &param.bounds {
+            if !ty_conforms(&ctx.types, &conditional, ty, bound) {
+                return Err(Error::at(
+                    format!(
+                        "`{shown}` needs `{}: {}`, and {} is not `{}`",
+                        param.name,
+                        bound.name,
+                        display_ty(ty),
+                        bound.name
+                    ),
+                    span,
+                ));
+            }
+        }
+    }
+    let instance = instance_name(template_name, function, &bindings);
+    let existing = ctx.synthetics.borrow().fn_instances.get(&instance).cloned();
+    let sig = match existing {
+        Some(sig) => sig,
+        None => {
+            let sig = instance_sig(ctx, &template, &instance, &bindings)?;
+            let mut synthetics = ctx.synthetics.borrow_mut();
+            synthetics.fn_instances.insert(instance.clone(), sig.clone());
+            synthetics.instance_jobs.push(InstanceJob {
+                template: template_name.to_string(),
+                instance: instance.clone(),
+                subst: bindings,
+                archetypal: false,
+            });
+            sig
+        }
+    };
+    ctx.fns.insert(instance.clone(), sig);
+    Ok(instance)
+}
+
+/// `largest__Int64`: the template's name and each type argument.
+pub(super) fn instance_name(template: &str, function: &Function, bindings: &HashMap<String, Ty>) -> String {
+    let args: Vec<Ty> = function
+        .generic
+        .iter()
+        .map(|param| bindings.get(&param.name).cloned().unwrap_or(Ty::Void))
+        .collect();
+    let mut name = template.to_string();
+    for arg in &args {
+        name.push_str("__");
+        name.push_str(&ty_mono_suffix(arg));
+    }
+    name
+}
+
+/// An instance's signature: the template's, with its type arguments, resolved
+/// in the template's module.
+pub(super) fn instance_sig(
+    ctx: &mut LowerCtx,
+    template: &GenericFn,
+    instance: &str,
+    bindings: &HashMap<String, Ty>,
+) -> Result<FnSig> {
+    let function = &template.function;
+    let name_map = ctx
+        .package_maps
+        .get(&template.module)
+        .map(|maps| maps.name_to_type.clone())
+        .unwrap_or_default();
+    let mut params = Vec::new();
+    let mut defaults = Vec::new();
+    for param in &function.params {
+        let ty = subst_type_expr(&param.ty, bindings);
+        ensure_instances(ctx, &ty, &name_map)?;
+        params.push((param.name.clone(), resolve_ty(&ty, &ctx.types, &name_map)?));
+        defaults.push(param.default.as_ref().map(|default| subst_expr(default, bindings)));
+    }
+    let ret = match &function.return_type {
+        Some(ret) => {
+            let ty = subst_type_expr(ret, bindings);
+            ensure_instances(ctx, &ty, &name_map)?;
+            resolve_ty(&ty, &ctx.types, &name_map)?
+        }
+        None => Ty::Void,
+    };
+    Ok(FnSig {
+        params,
+        defaults,
+        ret,
+        extern_symbol: None,
+        mangled: instance.to_string(),
+        def_mod: template.module.clone(),
+        multi_clause: false,
+        mutable: function.params.iter().map(|param| param.mutable).collect(),
+        positional: function.params.iter().map(|param| param.positional).collect(),
+    })
+}
+
+/// Make the instances of generic types `te` names that do not exist yet:
+/// their types and layouts join the package's synthetic types, and their
+/// methods are lowered with the other late bodies.
+pub(super) fn ensure_instances(
+    ctx: &mut LowerCtx,
+    te: &TypeExpr,
+    name_map: &HashMap<String, String>,
+) -> Result<()> {
+    for arg in &te.args {
+        if let TypeArg::Type(inner) = arg {
+            ensure_instances(ctx, inner, name_map)?;
+        }
+    }
+    if te.args.is_empty() {
+        return Ok(());
+    }
+    let base = name_map.get(&te.name).cloned().unwrap_or_else(|| te.name.clone());
+    let generics = ctx.synthetics.borrow().generics.clone();
+    if !generics.contains_key(&base) {
+        return Ok(());
+    }
+    let mut args = Vec::new();
+    for arg in &te.args {
+        match arg {
+            TypeArg::Type(inner) => args.push(resolve_ty(inner, &ctx.types, name_map)?),
+            TypeArg::Int { .. } => return Ok(()),
+        }
+    }
+    if ctx.types.contains_key(&mono_type_name(&base, &args)) {
+        return Ok(());
+    }
+    let mut types = ctx.types.clone();
+    let mut layouts = Vec::new();
+    let mut jobs = Vec::new();
+    monomorphize_pending(
+        vec![(base, args, name_map.clone(), te.span)],
+        &mut types,
+        &mut layouts,
+        &generics,
+        &mut jobs,
+    )?;
+    let mut synthetics = ctx.synthetics.borrow_mut();
+    for layout in layouts {
+        if let Some(info) = types.get(&layout.name) {
+            ctx.types.insert(layout.name.clone(), info.clone());
+            synthetics
+                .entries
+                .insert(layout.name.clone(), (info.clone(), layout));
+        }
+    }
+    synthetics.late_mono_jobs.extend(jobs);
+    Ok(())
+}
+
+/// Whether `te` names one of `params`.
+fn mentions(te: &TypeExpr, params: &[String]) -> bool {
+    (te.args.is_empty() && params.contains(&te.name))
+        || te.args.iter().any(|arg| matches!(arg, TypeArg::Type(inner) if mentions(inner, params)))
+        || te.union_members.iter().flatten().any(|member| mentions(member, params))
+        || te.fn_type.as_ref().is_some_and(|fn_type| {
+            fn_type.params.iter().any(|(_, param)| mentions(param, params)) || mentions(&fn_type.ret, params)
+        })
+}
+
+/// Bind the type parameters `te` names by matching it against `ty`.
+fn bind(
+    te: &TypeExpr,
+    ty: &Ty,
+    params: &[String],
+    bindings: &mut HashMap<String, Ty>,
+    ctx: &LowerCtx,
+    span: Span,
+    shown: &str,
+) -> Result<()> {
+    if te.args.is_empty() && te.lit.is_none() && params.contains(&te.name) {
+        if *ty == Ty::Never {
+            return Ok(());
+        }
+        match bindings.get(&te.name) {
+            Some(bound) if bound != ty => {
+                return Err(Error::at(
+                    format!(
+                        "`{shown}` takes one type for `{}`, and gets {} and {}",
+                        te.name,
+                        display_ty(bound),
+                        display_ty(ty)
+                    ),
+                    span,
+                ))
+            }
+            Some(_) => {}
+            None => {
+                bindings.insert(te.name.clone(), ty.clone());
+            }
+        }
+        return Ok(());
+    }
+    let inner = |index: usize| match te.args.get(index) {
+        Some(TypeArg::Type(inner)) => Some(inner),
+        _ => None,
+    };
+    match (te.name.as_str(), ty) {
+        ("Array", Ty::Array { elem }) => {
+            if let Some(element) = inner(0) {
+                bind(element, elem, params, bindings, ctx, span, shown)?;
+            }
+        }
+        ("Map", Ty::Map { key, val }) => {
+            if let (Some(k), Some(v)) = (inner(0), inner(1)) {
+                bind(k, key, params, bindings, ctx, span, shown)?;
+                bind(v, val, params, bindings, ctx, span, shown)?;
+            }
+        }
+        (_, Ty::User(name)) if !te.args.is_empty() => {
+            if let Some((_, args)) = ctx.types.get(name).and_then(|info| info.instance.clone()) {
+                for (index, arg) in args.iter().enumerate() {
+                    if let Some(expr) = inner(index) {
+                        bind(expr, arg, params, bindings, ctx, span, shown)?;
+                    }
+                }
+            }
+        }
+        (_, Ty::Fn { params: arg_params, ret }) => {
+            if let Some(fn_type) = &te.fn_type {
+                for ((_, param), arg) in fn_type.params.iter().zip(arg_params) {
+                    bind(param, arg, params, bindings, ctx, span, shown)?;
+                }
+                bind(&fn_type.ret, ret, params, bindings, ctx, span, shown)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Each parameter's argument, as a call writes them: `!` parameters by
+/// position, the rest by label, or by a bare name that is the label (D200,
+/// D202). Only for inference; the call itself is checked as any call is.
+fn match_args<'a>(params: &[Param], args: &'a [Arg]) -> Vec<Option<&'a Expr>> {
+    let mut out: Vec<Option<&Expr>> = vec![None; params.len()];
+    let mut positional = params
+        .iter()
+        .enumerate()
+        .filter(|(_, param)| param.positional)
+        .map(|(index, _)| index);
+    for arg in args {
+        match arg {
+            Arg::Named { name, value, .. } => {
+                if let Some(index) = params.iter().position(|param| &param.name == name) {
+                    out[index] = Some(value);
+                }
+            }
+            Arg::Pos(value) => {
+                if let Some(index) = positional.next() {
+                    out[index] = Some(value);
+                } else if let ExprKind::Name(name) = &value.kind {
+                    if let Some(index) = params.iter().position(|param| &param.name == name) {
+                        out[index] = Some(value);
+                    }
+                }
+            }
+            Arg::Spread { .. } => {}
+        }
+    }
+    out
+}
