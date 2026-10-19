@@ -123,7 +123,15 @@ pub struct TypeDef {
     /// The union `trait_desugar` makes for `mixed Trait`, of every type that
     /// conforms (D228 §6): its member calls dispatch on the member.
     pub mixed: Option<TraitRef>,
+    /// Its conformances' associated types (D228 §7): name, the type (its
+    /// declared types named by their mangled names), and the bounds it meets.
+    pub assoc: Vec<(String, TypeExpr, Vec<TraitRef>)>,
 }
+
+/// Starts a type name that is already a MIR type's, put there by a
+/// substitution (a type argument, an associated type): it resolves as is, in
+/// any module, never through the module's names. No source name has it.
+pub const RESOLVED_TYPE: char = '@';
 
 /// A trait by its defining module's id and its name (D228).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -149,6 +157,20 @@ pub struct TraitDef {
     /// `trait Ordered: Equatable`: a conforming type conforms to these too.
     pub parents: Vec<(String, Span)>,
     pub members: Vec<TraitMember>,
+    /// `type Element` (D228 §7): a type each conformance names; the trait's
+    /// members write it by its bare name.
+    pub assoc: Vec<AssocType>,
+}
+
+/// `type Cursor: Iterator` in a trait: an associated type and its bounds; or
+/// `type Item = Cursor.Item`, one the trait fixes as another's, which no
+/// conformance names.
+#[derive(Debug, Clone)]
+pub struct AssocType {
+    pub name: String,
+    pub span: Span,
+    pub bounds: Vec<(String, Span)>,
+    pub alias: Option<TypeExpr>,
 }
 
 /// A trait's method: required without a body, provided with one. `Self` in
@@ -173,6 +195,8 @@ pub struct Conformance {
     pub params: Vec<TypeParamBound>,
     pub traits: Vec<(String, Span)>,
     pub methods: Vec<Method>,
+    /// `type Element = Int64`: the traits' associated types (D228 §7).
+    pub assoc: Vec<(String, Span, TypeExpr)>,
 }
 
 /// `T: Equatable & Hashable`: a type parameter and the traits it must meet
@@ -310,7 +334,9 @@ pub struct Function {
     pub exported: bool,
     pub name: String,
     pub name_span: Span,
-    /// `fn largest<T: Ordered>(…)` (D228): type parameters and their bounds.
+    /// `fn largest<T: Ordered>(…)` (D228): type parameters and their bounds,
+    /// then a `where` clause's bounds on associated types, their names dotted
+    /// (`S.Item: Equatable`, D228 §7).
     pub type_params: Vec<TypeParamBound>,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
@@ -328,6 +354,9 @@ pub struct GenericParam {
     pub name: String,
     pub bounds: Vec<TraitRef>,
     pub archetype: String,
+    /// `S.Item` (D228 §7): not inferred but read off its owner's argument,
+    /// the type `S`'s conformance names: (owner, associated type).
+    pub derived: Option<(String, String)>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,145 @@
+## Associated types and `for` over user types (D228 §7). `Iterator` gives
+## `next()` until `Not`; a `Sequence` makes one with `iterate()`. A
+## conformance names each associated type (`type Item = Int64`), and its
+## members, and the trait's provided ones, write it by name. A generic
+## function reads them off its type parameters: `I.Item`, `S.Item`, bounded
+## with `where`.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Countdown(from: Int64)
+conform Countdown to Iterator {
+    type Item = Int64
+    fn next() -> May<Item> {
+        if from == 0 {
+            return Not()
+        }
+        from = from - 1
+        Has(from + 1)
+    }
+}
+
+type Card(rank: Int64, suit: String)
+conform Card to Equatable, Show
+
+type Deck(cards: Array<Card>)
+conform Deck to Sequence {
+    type Cursor = DeckCursor
+    fn iterate() -> Cursor {
+        DeckCursor(cards: cards, index: 0)
+    }
+}
+
+type DeckCursor(cards: Array<Card>, index: Int64)
+conform DeckCursor to Iterator {
+    type Item = Card
+    fn next() -> May<Card> {
+        if index >= cards.count {
+            return Not()
+        }
+        index = index + 1
+        Has(cards[index - 1])
+    }
+}
+
+## A trait of one's own: its provided members see `Element` and its bound.
+trait Container {
+    type Element: Show
+    fn items() -> Array<Element>
+    fn size() -> Int64 {
+        items().count
+    }
+    fn describe() -> String {
+        mut text = ""
+        for item in items() {
+            text = "{text}[{item}]"
+        }
+        text
+    }
+}
+
+type Shelf(books: Array<String>)
+conform Shelf to Container {
+    type Element = String
+    fn items() -> Array<Element> {
+        books
+    }
+}
+
+fn count<I: Iterator>(cursor!: I) -> Int64 where I.Item: Show {
+    mut total = 0
+    for item in cursor {
+        info("  {item}")
+        total = total + 1
+    }
+    total
+}
+
+fn collect<S: Sequence>(items!: S) -> Array<S.Item> {
+    mut out: Array<S.Item> = []
+    for item in items {
+        out.append(item)
+    }
+    out
+}
+
+## A sequence's items are its cursor's: `S.Item` is `S.Cursor.Item`.
+fn firstOf<S: Sequence>(items!: S) -> May<S.Cursor.Item> {
+    mut cursor = items.iterate()
+    cursor.next()
+}
+
+fn twice<S: Sequence>(items!: S) -> Int64 {
+    collect(items).count * 2
+}
+
+fn summary<C: Container>(container!: C) -> String {
+    "{container.size()}: {container.describe()}"
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## `for` reads a copy: `countdown` does not move.
+    let countdown = Countdown(from: 3)
+    for value in countdown {
+        info("{value}")
+    }
+    info("still {countdown.from}")
+
+    let deck = Deck(cards: [Card(rank: 1, suit: "hearts"), Card(rank: 12, suit: "spades"), Card(rank: 7, suit: "clubs")])
+    for card in deck {
+        if card.rank == 12 {
+            continue
+        }
+        info("{card}")
+    }
+    for card in deck {
+        for again in deck {
+            if again == card {
+                break
+            }
+            info("{again.rank} before {card.rank}")
+        }
+    }
+    mut ticks = 0
+    for _ in Countdown(from: 2) {
+        ticks = ticks + 1
+    }
+    info("ticks {ticks}")
+
+    info("{count(Countdown(from: 2))}")
+    info("{count(deck.iterate())}")
+    let cards = collect(deck)
+    info("{cards.count} {cards[2] == Card(rank: 7, suit: "clubs")}")
+    match firstOf(deck) {
+        Has(card) => info("first {card.suit}")
+        Not => info("empty")
+    }
+    info("{twice(deck)}")
+
+    let shelf = Shelf(books: ["Emma", "Dune"])
+    info(summary(shelf))
+    0
+}

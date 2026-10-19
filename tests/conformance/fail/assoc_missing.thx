@@ -1,0 +1,9 @@
+## D228 §7: a conformance names each associated type its traits declare.
+import { Has, Not, May } from "std/fallible"
+type Range(low: Int64, high: Int64)
+conform Range to Iterator {
+    fn next() -> May<Int64> {
+        Not()
+    }
+}
+fn main() { 0 }

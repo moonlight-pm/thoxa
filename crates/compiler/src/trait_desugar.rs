@@ -48,7 +48,30 @@ struct TraitEntry {
     def: TraitDef,
     path: PathBuf,
     parents: Vec<TraitRef>,
+    assoc: Vec<AssocEntry>,
 }
+
+/// A trait's associated type (D228 §7), its bounds resolved in the trait's
+/// module.
+#[derive(Clone)]
+struct AssocEntry {
+    name: String,
+    bounds: Vec<TraitRef>,
+    /// `type Item = Cursor.Item`: the path the trait fixes it as.
+    alias: Option<Vec<String>>,
+}
+
+/// An associated type a value of some bounds has, nested (`Item`, `Cursor`,
+/// `Cursor.Item`): its bounds, a `where` clause's among them, or the path the
+/// trait fixes it as.
+struct AssocNode {
+    path: String,
+    bounds: Vec<TraitRef>,
+    alias: Option<String>,
+}
+
+/// How deep associated types nest (`S.Cursor.Item` is two).
+const ASSOC_DEPTH: usize = 4;
 
 /// One `conform` item, taken out of its module.
 struct Pending {
@@ -64,6 +87,8 @@ struct Scope<'a> {
     traits: &'a HashMap<TraitRef, TraitEntry>,
     /// std/core's exported types, visible by name everywhere (`Order`).
     core_types: HashSet<String>,
+    /// The entry module's id: its types' C names are bare.
+    entry: String,
 }
 
 impl Scope<'_> {
@@ -114,6 +139,48 @@ impl Scope<'_> {
             .contains(name)
             .then(|| (CORE_MODULE.to_string(), name.to_string()))
     }
+
+    /// A declared type's name in the MIR, which resolves in any module.
+    fn mangle(&self, module: &str, name: &str) -> String {
+        if module == self.entry {
+            name.to_string()
+        } else {
+            format!("{module}_{name}")
+        }
+    }
+
+    /// `ty`, written in `module`, with its declared types (and `Self`, as
+    /// `target`) named by their MIR names, so it means the same anywhere.
+    fn globalize(&self, ty: &TypeExpr, module: &str, target: &(String, String)) -> TypeExpr {
+        let mut out = ty.clone();
+        // A plain name is marked resolved; a generic one is found by its
+        // MIR name, which no source name in another module spells.
+        let mark = |name: String| if ty.args.is_empty() { format!("{RESOLVED_TYPE}{name}") } else { name };
+        if ty.name == "Self" {
+            out.name = mark(self.mangle(&target.0, &target.1));
+        } else if ty.name != MIXED {
+            if let Some((from, original)) = self.type_named(module, &ty.name) {
+                out.name = mark(self.mangle(&from, &original));
+            }
+        }
+        for arg in &mut out.args {
+            if let TypeArg::Type(inner) = arg {
+                *inner = self.globalize(inner, module, target);
+            }
+        }
+        if let Some(members) = &mut out.union_members {
+            for member in members.iter_mut() {
+                *member = self.globalize(member, module, target);
+            }
+        }
+        if let Some(fn_type) = &mut out.fn_type {
+            for (_, param) in &mut fn_type.params {
+                *param = self.globalize(param, module, target);
+            }
+            fn_type.ret = self.globalize(&fn_type.ret, module, target);
+        }
+        out
+    }
 }
 
 /// Conformances of built-in types, by the type's name (`Int64`, `Array`),
@@ -127,6 +194,9 @@ pub struct TraitOutput {
     /// `mixed T` as a module spells it, (module id, trait name), → the mangled
     /// name of the union of `T`'s conforming types (D228 §6).
     pub mixed: HashMap<(String, String), String>,
+    /// Each such union's members whose signatures name an associated type,
+    /// which differs from one conforming type to the next (D228 §7).
+    pub mixed_closed: HashMap<String, HashSet<String>>,
 }
 
 pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
@@ -184,22 +254,76 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
                     def: def.clone(),
                     path: module.path.clone(),
                     parents: Vec::new(),
+                    assoc: Vec::new(),
                 },
             );
         }
     }
 
-    // Parents, resolved in the trait's module.
+    let entry_module = package
+        .modules
+        .iter()
+        .find(|module| module.is_entry)
+        .map(|module| module.id.clone())
+        .unwrap_or_default();
+    // Parents and associated types' bounds, resolved in the trait's module.
     for key in &keys {
         let entry = &traits[key];
         let mut parents = Vec::new();
-        for (name, span) in &entry.def.parents {
-            let scope = Scope {
-                imports: &imports,
-                types: HashSet::new(),
-                traits: &traits,
-                core_types: HashSet::new(),
+        let scope = Scope {
+            imports: &imports,
+            types: HashSet::new(),
+            traits: &traits,
+            core_types: HashSet::new(),
+            entry: entry_module.clone(),
+        };
+        let mut assoc = Vec::new();
+        for declared in &entry.def.assoc {
+            let mut bounds = Vec::new();
+            for (name, span) in &declared.bounds {
+                match scope.trait_named(&key.module, name) {
+                    Some(bound) => bounds.push(bound),
+                    None => errors.push(
+                        Error::at(format!("unknown trait `{name}`"), *span).with_path(entry.path.clone()),
+                    ),
+                }
+            }
+            let alias = match &declared.alias {
+                None => None,
+                Some(ty) if !bounds.is_empty() => {
+                    errors.push(
+                        Error::at(
+                            format!("`{}` is fixed as `{}`, so it takes no bounds of its own", declared.name, ty.name),
+                            declared.span,
+                        )
+                        .with_path(entry.path.clone()),
+                    );
+                    None
+                }
+                Some(ty) if ty.args.is_empty() && ty.lit.is_none() && ty.union_members.is_none() && ty.fn_type.is_none() => {
+                    Some(ty.name.split('.').map(str::to_string).collect())
+                }
+                Some(ty) => {
+                    errors.push(
+                        Error::at(
+                            format!(
+                                "a trait fixes `{}` as one of its associated types (`type {} = Cursor.Item`)",
+                                declared.name, declared.name
+                            ),
+                            ty.span,
+                        )
+                        .with_path(entry.path.clone()),
+                    );
+                    None
+                }
             };
+            assoc.push(AssocEntry {
+                name: declared.name.clone(),
+                bounds,
+                alias,
+            });
+        }
+        for (name, span) in &entry.def.parents {
             match scope.trait_named(&key.module, name) {
                 Some(parent) if parent == *key => errors.push(
                     Error::at(format!("`{name}` cannot be its own parent"), *span)
@@ -212,7 +336,9 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
                 ),
             }
         }
-        traits.get_mut(key).unwrap().parents = parents;
+        let entry = traits.get_mut(key).unwrap();
+        entry.parents = parents;
+        entry.assoc = assoc;
     }
     for key in &keys {
         if let Some(cycle) = parent_cycle(key, &traits) {
@@ -232,11 +358,24 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
 
     // Each trait with provided bodies gets its archetype, in its module.
     for key in &keys {
-        if let Some(def) = archetype(key, &traits) {
-            if let Some(module) = package.modules.iter_mut().find(|module| module.id == key.module) {
-                module.ast.items.push(Item::Type(def));
+        let scope = Scope {
+            imports: &imports,
+            types: HashSet::new(),
+            traits: &traits,
+            core_types: HashSet::new(),
+            entry: entry_module.clone(),
+        };
+        match archetype(key, &scope) {
+            Ok(defs) => {
+                if let Some(module) = package.modules.iter_mut().find(|module| module.id == key.module) {
+                    module.ast.items.extend(defs.into_iter().map(Item::Type));
+                }
             }
+            Err(error) => errors.push(error.with_path(traits[key].path.clone())),
         }
+    }
+    if !errors.is_empty() {
+        return Err(Error::multi(errors));
     }
 
     // Take every conformance out of its module.
@@ -273,6 +412,7 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
         types,
         traits: &traits,
         core_types,
+        entry: entry_module,
     };
     generic_functions(package, &scope)?;
     type_bounds(package, &scope)?;
@@ -316,6 +456,36 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
     let mut built_in: BuiltInConformances = HashMap::new();
     let mut derived: HashMap<(String, String), Vec<String>> = HashMap::new();
 
+    // Associated types, named before any conformance is checked: a member
+    // may write another type's (`Cursor.Item`).
+    let mut named: Named = HashMap::new();
+    let mut listed: Listed = HashMap::new();
+    for item in &pending {
+        let Some(target) = scope.type_named(&item.module, &item.conformance.ty.name) else {
+            continue;
+        };
+        let names = named.entry(target.clone()).or_default();
+        let mut here = HashSet::new();
+        for (name, span, ty) in &item.conformance.assoc {
+            // Twice in one conformance is that conformance's error.
+            if !here.insert(name.as_str()) {
+                continue;
+            }
+            if names.insert(name.clone(), (ty.clone(), item.module.clone())).is_some() {
+                errors.push(
+                    Error::at(format!("`{}` names `type {name}` in two conformances", target.1), *span)
+                        .with_path(item.path.clone()),
+                );
+            }
+        }
+        for (name, _) in &item.conformance.traits {
+            if let Some(trait_ref) = scope.trait_named(&item.module, name) {
+                listed.entry(target.clone()).or_default().push(trait_ref);
+            }
+        }
+    }
+    let mut assoc_types: HashMap<(String, String), Vec<(String, TypeExpr, Vec<TraitRef>)>> = HashMap::new();
+
     for item in &pending {
         let result = check_conformance(
             item,
@@ -325,9 +495,12 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
             &unions,
             &mut conformed,
             &mut trait_members,
+            &named,
+            &listed,
         );
         match result {
-            Ok((target, refs, methods, defaults)) => {
+            Ok((target, refs, methods, defaults, entries)) => {
+                assoc_types.entry(target.clone()).or_default().extend(entries);
                 derived.entry(target.clone()).or_default().extend(defaults);
                 for trait_ref in refs {
                     declared_at.push((
@@ -404,6 +577,9 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
             if let Some(names) = derived.remove(&key) {
                 def.derived = names;
             }
+            if let Some(entries) = assoc_types.remove(&key) {
+                def.assoc = entries;
+            }
             if let Some(done) = conformed.get(&key) {
                 let mut plain: Vec<TraitRef> = Vec::new();
                 for (trait_ref, (_, bounds)) in done {
@@ -422,19 +598,25 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
             }
         }
     }
-    let mixed = mixed_unions(package, &scope, &conformed, &traits)?;
-    Ok(TraitOutput { built_in, mixed })
+    let (mixed, mixed_closed) = mixed_unions(package, &scope, &conformed, &traits)?;
+    Ok(TraitOutput {
+        built_in,
+        mixed,
+        mixed_closed,
+    })
 }
 
 /// `mixed T` (D228 §6): a union, in `T`'s module, of every declared type
 /// that conforms to `T`, known once the whole program is. Its member calls
 /// dispatch on the member; it conforms to `T` and `T`'s ancestors.
+type MixedUnions = (HashMap<(String, String), String>, HashMap<String, HashSet<String>>);
+
 fn mixed_unions(
     package: &mut Package,
     scope: &Scope,
     conformed: &Conformed,
     traits: &HashMap<TraitRef, TraitEntry>,
-) -> Result<HashMap<(String, String), String>> {
+) -> Result<MixedUnions> {
     let mut uses: Vec<(String, String, TraitRef, Span, PathBuf)> = Vec::new();
     for module in &package.modules {
         let mut apps = Vec::new();
@@ -465,6 +647,7 @@ fn mixed_unions(
         }
     };
     let mut made: HashMap<TraitRef, String> = HashMap::new();
+    let mut closed: HashMap<String, HashSet<String>> = HashMap::new();
     let mut unions: Vec<(String, TypeDef)> = Vec::new();
     for (_, _, trait_ref, span, path) in &uses {
         if made.contains_key(trait_ref) {
@@ -519,19 +702,48 @@ fn mixed_unions(
                 param_bounds: Vec::new(),
                 bounds: Vec::new(),
                 mixed: Some(trait_ref.clone()),
+                assoc: Vec::new(),
             },
         ));
         made.insert(trait_ref.clone(), mangle(&trait_ref.module, &name));
+        let mut nodes = Vec::new();
+        assoc_tree(std::slice::from_ref(trait_ref), "", &HashMap::new(), traits, *span, &mut nodes)
+            .map_err(|error| error.with_path(path.clone()))?;
+        let assoc: Vec<&str> = nodes.iter().map(|node| node.path.as_str()).collect();
+        let names_assoc = |ty: &TypeExpr| mentions_name(ty, &assoc);
+        let members: HashSet<String> = lineage(trait_ref, traits)
+            .iter()
+            .flat_map(|each| traits[each].def.members.iter())
+            .filter(|member| {
+                member.params.iter().any(|param| names_assoc(&param.ty))
+                    || member.return_type.as_ref().is_some_and(names_assoc)
+            })
+            .map(|member| member.name.clone())
+            .collect();
+        closed.insert(mangle(&trait_ref.module, &name), members);
     }
     for (module_id, def) in unions {
         if let Some(module) = package.modules.iter_mut().find(|module| module.id == module_id) {
             module.ast.items.push(Item::Type(def));
         }
     }
-    Ok(uses
+    let mixed = uses
         .into_iter()
         .map(|(module, name, trait_ref, _, _)| ((module, name), made[&trait_ref].clone()))
-        .collect())
+        .collect();
+    Ok((mixed, closed))
+}
+
+/// Whether `ty` names one of `names` (or a path under one: `Cursor.Item`).
+fn mentions_name(ty: &TypeExpr, names: &[&str]) -> bool {
+    names
+        .iter()
+        .any(|name| ty.name == *name || ty.name.strip_prefix(name).is_some_and(|rest| rest.starts_with('.')))
+        || ty.args.iter().any(|arg| matches!(arg, TypeArg::Type(inner) if mentions_name(inner, names)))
+        || ty.union_members.iter().flatten().any(|member| mentions_name(member, names))
+        || ty.fn_type.as_ref().is_some_and(|fn_type| {
+            fn_type.params.iter().any(|(_, param)| mentions_name(param, names)) || mentions_name(&fn_type.ret, names)
+        })
 }
 
 /// A target type → each trait it conforms to: where, and the bounds per type
@@ -578,7 +790,198 @@ fn check_trait(def: &TraitDef) -> Result<()> {
             ));
         }
     }
+    let mut seen = HashSet::new();
+    for assoc in &def.assoc {
+        if !seen.insert(assoc.name.as_str()) {
+            return Err(Error::at(
+                format!("`type {}` is declared twice in `{}`", assoc.name, def.name),
+                assoc.span,
+            ));
+        }
+    }
     Ok(())
+}
+
+/// The associated types a value bounded by `bounds` has (D228 §7), nested,
+/// parents before children and the ones a trait fixes after the rest; at
+/// `prefix`, with a `where` clause's bounds (`extra`, by path) added.
+fn assoc_tree(
+    bounds: &[TraitRef],
+    prefix: &str,
+    extra: &HashMap<String, Vec<TraitRef>>,
+    traits: &HashMap<TraitRef, TraitEntry>,
+    span: Span,
+    out: &mut Vec<AssocNode>,
+) -> Result<()> {
+    let mut direct: Vec<AssocEntry> = Vec::new();
+    for bound in bounds {
+        for each in lineage(bound, traits) {
+            for assoc in &traits[&each].assoc {
+                match direct.iter_mut().find(|seen| seen.name == assoc.name) {
+                    Some(seen) if seen.alias != assoc.alias => {
+                        return Err(Error::at(
+                            format!("two of the bounds declare `type {}` differently", assoc.name),
+                            span,
+                        ))
+                    }
+                    Some(seen) => {
+                        for bound in &assoc.bounds {
+                            if !seen.bounds.contains(bound) {
+                                seen.bounds.push(bound.clone());
+                            }
+                        }
+                    }
+                    None => direct.push(assoc.clone()),
+                }
+            }
+        }
+    }
+    if !direct.is_empty() && prefix.split('.').count() >= ASSOC_DEPTH {
+        return Err(Error::at(
+            format!("associated types nest too deep at `{prefix}` (does a bound lead back to its own trait?)"),
+            span,
+        ));
+    }
+    let join = |name: &str| {
+        if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{prefix}.{name}")
+        }
+    };
+    for assoc in direct.iter().filter(|assoc| assoc.alias.is_none()) {
+        let path = join(&assoc.name);
+        let mut bounds = assoc.bounds.clone();
+        for bound in extra.get(&path).into_iter().flatten() {
+            if !bounds.contains(bound) {
+                bounds.push(bound.clone());
+            }
+        }
+        out.push(AssocNode {
+            path: path.clone(),
+            bounds: bounds.clone(),
+            alias: None,
+        });
+        assoc_tree(&bounds, &path, extra, traits, span, out)?;
+    }
+    for assoc in direct.iter().filter(|assoc| assoc.alias.is_some()) {
+        out.push(AssocNode {
+            path: join(&assoc.name),
+            bounds: Vec::new(),
+            alias: Some(join(&assoc.alias.as_ref().unwrap().join("."))),
+        });
+    }
+    Ok(())
+}
+
+/// `path` with every fixed associated type along it followed: `Item` is
+/// `Cursor.Item` in a `Sequence`.
+fn unalias(path: &str, nodes: &[AssocNode]) -> String {
+    let mut path = path.to_string();
+    for _ in 0..=nodes.len() {
+        let segments: Vec<&str> = path.split('.').collect();
+        let found = (1..=segments.len()).find_map(|count| {
+            let prefix = segments[..count].join(".");
+            nodes
+                .iter()
+                .find(|node| node.path == prefix && node.alias.is_some())
+                .map(|node| (count, node.alias.clone().unwrap()))
+        });
+        let Some((count, target)) = found else { break };
+        let rest = &segments[count..];
+        path = if rest.is_empty() {
+            target
+        } else {
+            format!("{target}.{}", rest.join("."))
+        };
+    }
+    path
+}
+
+/// The archetypes for a value of some bounds and its associated types
+/// (`Param_count_I`, `Param_count_I_Item`): each a type with a stub for every
+/// member of its bounds' lineages, its members' associated types named by the
+/// archetypes'.
+struct Archetypes<'a> {
+    base: String,
+    module: String,
+    nodes: Vec<AssocNode>,
+    scope: &'a Scope<'a>,
+}
+
+impl Archetypes<'_> {
+    /// The archetype's name for `path` ("" for the value's own).
+    fn name(&self, path: &str) -> String {
+        let path = unalias(path, &self.nodes);
+        if path.is_empty() {
+            self.base.clone()
+        } else {
+            format!("{}_{}", self.base, path.replace('.', "_"))
+        }
+    }
+
+    fn type_expr(&self, path: &str, span: Span) -> TypeExpr {
+        TypeExpr {
+            name: format!("{RESOLVED_TYPE}{}", self.scope.mangle(&self.module, &self.name(path))),
+            ..void_type(span)
+        }
+    }
+
+    /// What the associated types under `at` are, by their paths from it.
+    fn subst(&self, at: &str, span: Span) -> HashMap<String, TypeExpr> {
+        self.nodes
+            .iter()
+            .filter_map(|node| {
+                let relative = if at.is_empty() {
+                    Some(node.path.as_str())
+                } else {
+                    node.path.strip_prefix(at).and_then(|rest| rest.strip_prefix('.'))
+                }?;
+                Some((relative.to_string(), self.type_expr(&node.path, span)))
+            })
+            .collect()
+    }
+
+    /// The bounds of the associated type at `path`, through what fixes it.
+    fn bounds(&self, path: &str) -> Vec<TraitRef> {
+        let path = unalias(path, &self.nodes);
+        self.nodes
+            .iter()
+            .find(|node| node.path == path)
+            .map(|node| node.bounds.clone())
+            .unwrap_or_default()
+    }
+
+    /// The associated types directly under `at`, for its `TypeDef::assoc`.
+    fn entries(&self, at: &str, span: Span) -> Vec<(String, TypeExpr, Vec<TraitRef>)> {
+        self.nodes
+            .iter()
+            .filter_map(|node| {
+                let name = if at.is_empty() {
+                    node.path.as_str()
+                } else {
+                    node.path.strip_prefix(at)?.strip_prefix('.')?
+                };
+                (!name.contains('.')).then(|| (name.to_string(), self.type_expr(&node.path, span), self.bounds(&node.path)))
+            })
+            .collect()
+    }
+
+    /// The associated types' archetypes, stubs only.
+    fn assoc_defs(&self, span: Span) -> Result<Vec<TypeDef>> {
+        let mut defs = Vec::new();
+        for node in self.nodes.iter().filter(|node| node.alias.is_none()) {
+            defs.push(param_archetype(
+                &self.name(&node.path),
+                &node.bounds,
+                self.scope.traits,
+                span,
+                &self.subst(&node.path, span),
+                self.entries(&node.path, span),
+            )?);
+        }
+        Ok(defs)
+    }
 }
 
 /// The chain that leads a trait back to itself, if one does.
@@ -607,10 +1010,77 @@ fn parent_cycle(start: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Opt
     walk(start, start, traits, &mut seen, &mut path).then(|| path.join(" → "))
 }
 
-/// A checked conformance: its target, its traits, the methods it adds, and
-/// which of them are the compiler's defaults.
-type Checked = ((String, String), Vec<TraitRef>, Vec<Method>, Vec<String>);
+/// A checked conformance: its target, its traits, the methods it adds, which
+/// of them are the compiler's defaults, and the associated types it names.
+type Checked = ((String, String), Vec<TraitRef>, Vec<Method>, Vec<String>, Vec<(String, TypeExpr, Vec<TraitRef>)>);
 
+/// Each type's associated types as its conformances name them, before any
+/// conformance is checked (D228 §7): the type as written and its module.
+type Named = HashMap<(String, String), HashMap<String, (TypeExpr, String)>>;
+
+/// The traits each type's conformances list.
+type Listed = HashMap<(String, String), Vec<TraitRef>>;
+
+/// A conformance's associated types, by their paths (`Item`, `Cursor.Item`):
+/// as the MIR names them, and spelled to compare.
+#[derive(Default)]
+struct ConformedAssoc {
+    types: HashMap<String, TypeExpr>,
+    canonical: HashMap<String, String>,
+    /// As the conformance writes them, for messages.
+    shown: HashMap<String, String>,
+}
+
+/// The type at `path` under `target`'s associated types, as written, its
+/// module, and the type `Self` means there.
+fn assoc_of(
+    target: &(String, String),
+    path: &str,
+    named: &Named,
+    listed: &Listed,
+    scope: &Scope,
+    depth: usize,
+) -> Option<(TypeExpr, String, (String, String))> {
+    if depth > ASSOC_DEPTH * 2 {
+        return None;
+    }
+    let (first, rest) = match path.split_once('.') {
+        Some((first, rest)) => (first, Some(rest)),
+        None => (path, None),
+    };
+    let Some((ty, module)) = named.get(target).and_then(|names| names.get(first)) else {
+        // One a trait fixes as another (`Item` is `Cursor.Item`).
+        let alias = listed
+            .get(target)?
+            .iter()
+            .flat_map(|trait_ref| lineage(trait_ref, scope.traits))
+            .find_map(|each| {
+                scope.traits[&each]
+                    .assoc
+                    .iter()
+                    .find(|assoc| assoc.name == first)
+                    .and_then(|assoc| assoc.alias.clone())
+            })?;
+        let mut full = alias.join(".");
+        if let Some(rest) = rest {
+            full = format!("{full}.{rest}");
+        }
+        return assoc_of(target, &full, named, listed, scope, depth + 1);
+    };
+    let Some(rest) = rest else {
+        return Some((ty.clone(), module.clone(), target.clone()));
+    };
+    let inner = if ty.name == "Self" {
+        target.clone()
+    } else if ty.args.is_empty() {
+        scope.type_named(module, &ty.name)?
+    } else {
+        return None;
+    };
+    assoc_of(&inner, rest, named, listed, scope, depth + 1)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn check_conformance(
     item: &Pending,
     scope: &Scope,
@@ -619,6 +1089,8 @@ fn check_conformance(
     unions: &HashSet<(String, String)>,
     conformed: &mut Conformed,
     trait_members: &mut HashMap<(String, String), HashMap<String, TraitRef>>,
+    named: &Named,
+    listed: &Listed,
 ) -> Result<Checked> {
     let conformance = &item.conformance;
     let ty = &conformance.ty;
@@ -751,6 +1223,8 @@ fn check_conformance(
         ));
     }
 
+    let assoc = conformance_assoc(item, &target, &refs, bounds.is_some(), named, listed, scope)?;
+
     // Each member goes to the listed trait that declares it.
     let mut implemented: HashMap<&str, &Method> = HashMap::new();
     for method in &conformance.methods {
@@ -834,9 +1308,15 @@ fn check_conformance(
             }
             match (implemented.get(member.name.as_str()), &member.body) {
                 (Some(_), _) if own_method.is_some() => return Err(clash()),
-                (Some(method), _) => {
-                    methods.push(implementation(method, member, trait_ref, item, &target, scope)?)
-                }
+                (Some(method), _) => methods.push(implementation(
+                    method,
+                    member,
+                    trait_ref,
+                    item,
+                    &target,
+                    scope,
+                    &assoc,
+                )?),
                 // A required accessor the type's own accessor or field
                 // satisfies: uniform access.
                 (None, None) if property.is_some() && own_method.is_some() => {
@@ -845,7 +1325,7 @@ fn check_conformance(
                         path: item.path.clone(),
                         conformance: item.conformance.clone(),
                     };
-                    implementation(own_method.unwrap(), member, trait_ref, &own_item, &target, scope)?;
+                    implementation(own_method.unwrap(), member, trait_ref, &own_item, &target, scope, &assoc)?;
                 }
                 (None, None) if stored.is_some() => {
                     let (name, field_ty) = stored.unwrap();
@@ -854,8 +1334,8 @@ fn check_conformance(
                         AccessorKind::Set => member.params.first().map(|param| &param.ty),
                     };
                     let matches = declared.is_some_and(|declared| {
-                        canonical(field_ty, &target.0, &target, scope)
-                            == canonical(declared, &trait_ref.module, &target, scope)
+                        canonical(field_ty, &target.0, &target, scope, &HashMap::new())
+                            == canonical(declared, &trait_ref.module, &target, scope, &assoc.canonical)
                     });
                     if !matches {
                         return Err(Error::at(
@@ -891,7 +1371,7 @@ fn check_conformance(
                         format!(
                             "`{}` does not implement `{}` from `{}`",
                             target.1,
-                            signature(member, &target.1),
+                            signature(member, &target.1, &assoc.shown),
                             trait_ref.name
                         ),
                         conformance.span,
@@ -904,12 +1384,136 @@ fn check_conformance(
     for (trait_ref, span) in &refs {
         done.insert(trait_ref.clone(), (*span, bounds.clone()));
     }
+    // A conformance's members and the trait's provided ones see its
+    // associated types by name.
+    let methods = methods
+        .iter()
+        .map(|method| crate::mir::subst_method(method, &assoc.types))
+        .collect();
+    let mut entries = Vec::new();
+    for (trait_ref, _) in &refs {
+        for declared in &scope.traits[trait_ref].assoc {
+            if let Some(ty) = assoc.types.get(&declared.name) {
+                entries.push((declared.name.clone(), ty.clone(), declared.bounds.clone()));
+            }
+        }
+    }
     Ok((
         target,
         refs.into_iter().map(|(trait_ref, _)| trait_ref).collect(),
         methods,
         derived,
+        entries,
     ))
+}
+
+/// A conformance's associated types (D228 §7): each the listed traits
+/// declare, named once, and none they fix; then every one its members can
+/// write, nested ones among them.
+fn conformance_assoc(
+    item: &Pending,
+    target: &(String, String),
+    refs: &[(TraitRef, Span)],
+    per_instance: bool,
+    named: &Named,
+    listed: &Listed,
+    scope: &Scope,
+) -> Result<ConformedAssoc> {
+    let conformance = &item.conformance;
+    let declares = refs.iter().any(|(trait_ref, _)| !scope.traits[trait_ref].assoc.is_empty());
+    if per_instance && (declares || !conformance.assoc.is_empty()) {
+        return Err(Error::at(
+            format!(
+                "a conformance of `{}` with associated types is not supported yet (generic and built-in types conform without them for now)",
+                conformance.ty.name
+            ),
+            conformance.span,
+        ));
+    }
+    let listed_names = || -> String {
+        let names: Vec<String> = refs.iter().map(|(trait_ref, _)| format!("`{}`", trait_ref.name)).collect();
+        names.join(" or ")
+    };
+    let mut supplied: HashSet<&str> = HashSet::new();
+    for (name, span, _) in &conformance.assoc {
+        if !supplied.insert(name.as_str()) {
+            return Err(Error::at(format!("`type {name}` is named twice"), *span));
+        }
+        let declaring = refs.iter().find_map(|(trait_ref, _)| {
+            scope.traits[trait_ref]
+                .assoc
+                .iter()
+                .find(|assoc| assoc.name == *name)
+                .map(|assoc| (trait_ref, assoc))
+        });
+        match declaring {
+            None => {
+                return Err(Error::at(
+                    format!("`{name}` is not an associated type of {}", listed_names()),
+                    *span,
+                ))
+            }
+            Some((trait_ref, assoc)) if assoc.alias.is_some() => {
+                return Err(Error::at(
+                    format!(
+                        "`{}` fixes `{name}` as `{}`, so a conformance does not name it",
+                        trait_ref.name,
+                        assoc.alias.as_ref().unwrap().join(".")
+                    ),
+                    *span,
+                ))
+            }
+            Some(_) => {}
+        }
+    }
+    for (trait_ref, _) in refs {
+        for assoc in scope.traits[trait_ref].assoc.iter().filter(|assoc| assoc.alias.is_none()) {
+            if !supplied.contains(assoc.name.as_str()) {
+                return Err(Error::at(
+                    format!(
+                        "`{}` does not name `{}`'s `type {}`",
+                        target.1, trait_ref.name, assoc.name
+                    ),
+                    conformance.span,
+                )
+                .with_help(format!("add `type {} = …` to the conformance", assoc.name)));
+            }
+        }
+    }
+    let bounds: Vec<TraitRef> = refs.iter().map(|(trait_ref, _)| trait_ref.clone()).collect();
+    let mut nodes = Vec::new();
+    assoc_tree(&bounds, "", &HashMap::new(), scope.traits, conformance.span, &mut nodes)?;
+    let mut out = ConformedAssoc::default();
+    for node in &nodes {
+        let Some((ty, module, owner)) = assoc_of(target, &node.path, named, listed, scope, 0) else {
+            continue;
+        };
+        out.types.insert(node.path.clone(), scope.globalize(&ty, &module, &owner));
+        out.shown.insert(node.path.clone(), render(&ty, &|name: &str| name.to_string()));
+        out.canonical
+            .insert(node.path.clone(), canonical(&ty, &module, &owner, scope, &HashMap::new()));
+    }
+    // A type another conformance gives the name a trait fixes must be the
+    // one it is fixed as.
+    for node in nodes.iter().filter(|node| node.alias.is_some() && !node.path.contains('.')) {
+        let fixed = assoc_of(target, node.alias.as_ref().unwrap(), named, listed, scope, 0)
+            .map(|(ty, module, owner)| canonical(&ty, &module, &owner, scope, &HashMap::new()));
+        if let (Some(fixed), Some(given)) = (fixed, out.canonical.get(&node.path)) {
+            if fixed != *given {
+                return Err(Error::at(
+                    format!(
+                        "`{}`'s `{}` is `{given}`, and {} fixes it as `{}`, which is `{fixed}`",
+                        target.1,
+                        node.path,
+                        listed_names(),
+                        node.alias.as_ref().unwrap()
+                    ),
+                    conformance.span,
+                ));
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// The conformance's method, checked against the trait member it implements:
@@ -922,15 +1526,16 @@ fn implementation(
     item: &Pending,
     target: &(String, String),
     scope: &Scope,
+    assoc: &ConformedAssoc,
 ) -> Result<Method> {
-    let in_trait = |ty: &TypeExpr| canonical(ty, &trait_ref.module, target, scope);
-    let in_conformance = |ty: &TypeExpr| canonical(ty, &item.module, target, scope);
+    let in_trait = |ty: &TypeExpr| canonical(ty, &trait_ref.module, target, scope, &assoc.canonical);
+    let in_conformance = |ty: &TypeExpr| canonical(ty, &item.module, target, scope, &assoc.canonical);
     let mismatch = || {
         Error::at(
             format!(
                 "`{}` must match `{}` in `{}`",
                 method.name,
-                signature(member, &target.1),
+                signature(member, &target.1, &assoc.shown),
                 trait_ref.name
             ),
             method.name_span,
@@ -1033,11 +1638,22 @@ fn visible_members(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>)
 /// trait is declared (D228): no fields, the trait's provided members, and a
 /// stub for every other member of its lineage. Its name has an `_`, which no
 /// source name has, and shows as the trait's (`Self_Named` is `Named`).
-fn archetype(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Option<TypeDef> {
+fn archetype(trait_ref: &TraitRef, scope: &Scope) -> Result<Vec<TypeDef>> {
+    let traits = scope.traits;
     let entry = &traits[trait_ref];
     if entry.def.members.iter().all(|member| member.body.is_none()) {
-        return None;
+        return Ok(Vec::new());
     }
+    let span = entry.def.name_span;
+    let mut nodes = Vec::new();
+    assoc_tree(std::slice::from_ref(trait_ref), "", &HashMap::new(), traits, span, &mut nodes)?;
+    let archetypes = Archetypes {
+        base: format!("Self_{}", trait_ref.name),
+        module: trait_ref.module.clone(),
+        nodes,
+        scope,
+    };
+    let assoc = archetypes.subst("", span);
     let members = visible_members(trait_ref, traits);
     let lineage = lineage(trait_ref, traits);
     let mut methods = Vec::new();
@@ -1047,12 +1663,14 @@ fn archetype(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Op
                 (Some(body), true) => body.clone(),
                 _ => stub_body(member.name_span),
             };
-            methods.push(provided_method(member, body, each, members.clone()));
+            let method = provided_method(member, body, each, members.clone());
+            methods.push(crate::mir::subst_method(&method, &assoc));
         }
     }
-    Some(TypeDef {
+    let mut defs = archetypes.assoc_defs(span)?;
+    defs.push(TypeDef {
         exported: false,
-        name: format!("Self_{}", trait_ref.name),
+        name: archetypes.base.clone(),
         name_span: entry.def.name_span,
         type_params: Vec::new(),
         params: Vec::new(),
@@ -1067,7 +1685,9 @@ fn archetype(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Op
         param_bounds: Vec::new(),
         bounds: Vec::new(),
         mixed: None,
-    })
+        assoc: archetypes.entries("", span),
+    });
+    Ok(defs)
 }
 
 /// The accessor a stored field gives a trait's `get` / `set` requirement: it
@@ -1277,8 +1897,21 @@ fn resolve_generics(
     if function.type_params.is_empty() {
         return Ok(());
     }
+    // `where S.Item: Equatable` (D228 §7): bounds on associated types, by the
+    // parameter and the path under it.
+    let mut extra: HashMap<String, HashMap<String, Vec<TraitRef>>> = HashMap::new();
+    for param in function.type_params.iter().filter(|param| param.name.contains('.')) {
+        let (owner, path) = param.name.split_once('.').unwrap();
+        let list = extra.entry(owner.to_string()).or_default().entry(path.to_string()).or_default();
+        for (name, span) in &param.traits {
+            let Some(bound) = scope.trait_named(module, name) else {
+                return Err(Error::at(format!("unknown trait `{name}`"), *span));
+            };
+            list.push(bound);
+        }
+    }
     let mut seen = HashSet::new();
-    for param in &function.type_params {
+    for param in function.type_params.iter().filter(|param| !param.name.contains('.')) {
         if !seen.insert(param.name.as_str()) {
             return Err(Error::at(format!("type parameter `{}` is named twice", param.name), param.span));
         }
@@ -1297,14 +1930,79 @@ fn resolve_generics(
         }
         // No `__` in a type's name: the C name of its methods splits there.
         let archetype = format!("Param_{}_{}", function.name.replace("__", ""), param.name);
-        archetypes.push(param_archetype(&archetype, &bounds, scope.traits, param.span)?);
+        let nodes = where_nodes(&param.name, &bounds, extra.remove(&param.name).unwrap_or_default(), scope, param.span)?;
+        let types = Archetypes {
+            base: archetype.clone(),
+            module: module.to_string(),
+            nodes,
+            scope,
+        };
+        archetypes.push(param_archetype(
+            &archetype,
+            &bounds,
+            scope.traits,
+            param.span,
+            &types.subst("", param.span),
+            types.entries("", param.span),
+        )?);
+        archetypes.extend(types.assoc_defs(param.span)?);
         function.generic.push(GenericParam {
             name: param.name.clone(),
             bounds,
             archetype,
+            derived: None,
         });
+        // `T.Item`: a parameter read off `T`'s argument, after its owner's.
+        for node in &types.nodes {
+            let (owner, assoc) = match node.path.rsplit_once('.') {
+                Some((owner, assoc)) => (format!("{}.{owner}", param.name), assoc.to_string()),
+                None => (param.name.clone(), node.path.clone()),
+            };
+            function.generic.push(GenericParam {
+                name: format!("{}.{}", param.name, node.path),
+                bounds: types.bounds(&node.path),
+                archetype: types.name(&node.path),
+                derived: Some((owner, assoc)),
+            });
+        }
+    }
+    if let Some((owner, _)) = extra.into_iter().next() {
+        return Err(Error::at(format!("`{owner}` is not a type parameter of `{}`", function.name), function.name_span));
     }
     Ok(())
+}
+
+/// A type parameter's associated types, with a `where` clause's bounds on
+/// them (by path, through what the traits fix them as): each path must name
+/// one.
+fn where_nodes(
+    param: &str,
+    bounds: &[TraitRef],
+    mut extra: HashMap<String, Vec<TraitRef>>,
+    scope: &Scope,
+    span: Span,
+) -> Result<Vec<AssocNode>> {
+    let mut nodes = Vec::new();
+    // A bound on a fixed type is on the one it is fixed as, whose own
+    // associated types the bound may add; settle until nothing moves.
+    for _ in 0..=ASSOC_DEPTH {
+        nodes.clear();
+        assoc_tree(bounds, "", &extra, scope.traits, span, &mut nodes)?;
+        let mut moved: HashMap<String, Vec<TraitRef>> = HashMap::new();
+        for (path, list) in &extra {
+            moved.entry(unalias(path, &nodes)).or_default().extend(list.iter().cloned());
+        }
+        if moved.keys().all(|path| extra.contains_key(path)) && moved.len() == extra.len() {
+            break;
+        }
+        extra = moved;
+    }
+    for path in extra.keys() {
+        if !nodes.iter().any(|node| node.path == *path && node.alias.is_none()) {
+            return Err(Error::at(format!("`{param}` has no associated type `{path}`"), span));
+        }
+    }
+    Ok(nodes)
 }
 
 /// A type parameter's archetype: no fields, a stub for each member of its
@@ -1314,6 +2012,8 @@ fn param_archetype(
     bounds: &[TraitRef],
     traits: &HashMap<TraitRef, TraitEntry>,
     span: Span,
+    assoc_types: &HashMap<String, TypeExpr>,
+    assoc: Vec<(String, TypeExpr, Vec<TraitRef>)>,
 ) -> Result<TypeDef> {
     let mut lineage_all: Vec<TraitRef> = Vec::new();
     for bound in bounds {
@@ -1340,7 +2040,8 @@ fn param_archetype(
                 ));
             }
             owner.insert(member.name.clone(), each.clone());
-            methods.push(provided_method(member, stub_body(span), each, members.clone()));
+            let method = provided_method(member, stub_body(span), each, members.clone());
+            methods.push(crate::mir::subst_method(&method, assoc_types));
         }
     }
     Ok(TypeDef {
@@ -1360,6 +2061,7 @@ fn param_archetype(
         param_bounds: Vec::new(),
         bounds: Vec::new(),
         mixed: None,
+        assoc,
     })
 }
 
@@ -1395,9 +2097,17 @@ fn void_type(span: Span) -> TypeExpr {
 
 /// A type written in `module`, spelled so two modules' spellings compare: a
 /// declared type by its module, `Self` as the conforming type.
-fn canonical(ty: &TypeExpr, module: &str, target: &(String, String), scope: &Scope) -> String {
+fn canonical(
+    ty: &TypeExpr,
+    module: &str,
+    target: &(String, String),
+    scope: &Scope,
+    assoc: &HashMap<String, String>,
+) -> String {
     render(ty, &|name: &str| {
-        if name == "Self" {
+        if let Some(found) = assoc.get(name) {
+            found.clone()
+        } else if name == "Self" {
             format!("{}::{}", target.0, target.1)
         } else if let Some((from, original)) = scope.type_named(module, name) {
             format!("{from}::{original}")
@@ -1408,9 +2118,11 @@ fn canonical(ty: &TypeExpr, module: &str, target: &(String, String), scope: &Sco
 }
 
 /// A trait member's signature as the conforming type sees it.
-fn signature(member: &TraitMember, target: &str) -> String {
+fn signature(member: &TraitMember, target: &str, assoc: &HashMap<String, String>) -> String {
     let name = |name: &str| {
-        if name == "Self" {
+        if let Some(shown) = assoc.get(name) {
+            shown.clone()
+        } else if name == "Self" {
             target.to_string()
         } else {
             name.to_string()

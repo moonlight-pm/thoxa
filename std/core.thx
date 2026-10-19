@@ -6,6 +6,8 @@
 ## `equals` or `compare` gets the compiler's, field by field; every field must
 ## conform too.
 
+import { Has, Not, May } from "std/fallible"
+
 ## A value that owns something outside the program (a file descriptor, a
 ## socket, a database handle). Its values are one shared box: copies share it,
 ## `drop` runs when the last copy goes, and only the module that defines the
@@ -49,6 +51,21 @@ export trait Ordered: Equatable {
 
 ## How two values order.
 export type Order = "less" | "equal" | "greater"
+
+## Values one at a time: `next()` gives each, then `Not`. `for item in
+## cursor` reads a copy of it, so `cursor` itself does not move.
+export trait Iterator {
+    type Item
+    fn next() -> May<Item>
+}
+
+## A value `for item in value` reads: `iterate()` makes an iterator that
+## starts at its beginning. Its `Item` is its cursor's.
+export trait Sequence {
+    type Cursor: Iterator
+    type Item = Cursor.Item
+    fn iterate() -> Cursor
+}
 
 ## A value's text, which `"{value}"` writes. Without its own `show`, a
 ## product shows as `Point(x: 1, y: 2)` (a `String` field in quotes) and a

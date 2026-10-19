@@ -1,0 +1,1 @@
+`Sequence` fixes `Item` as `Cursor.Item`, so a conformance does not name it

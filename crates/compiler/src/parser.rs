@@ -459,6 +459,7 @@ impl Parser {
                 param_bounds: param_bounds.clone(),
                 bounds: Vec::new(),
                 mixed: None,
+                assoc: Vec::new(),
             });
         }
 
@@ -600,6 +601,7 @@ impl Parser {
             param_bounds: param_bounds.clone(),
             bounds: Vec::new(),
             mixed: None,
+            assoc: Vec::new(),
         })
     }
 
@@ -813,12 +815,32 @@ impl Parser {
         }
         self.expect_kind(&TokenKind::LBrace)?;
         let mut members = Vec::new();
+        let mut assoc = Vec::new();
         while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
             if self.at(TokenKind::Export) {
                 return Err(Error::at(
                     "a trait's members are public; drop `export`",
                     self.peek_span(),
                 ));
+            }
+            // `type Element` / `type Cursor: Iterator` (D228 §7).
+            if self.at(TokenKind::Type) {
+                self.bump();
+                let (name, span) = self.expect_ident()?;
+                let bounds = self.parse_bounds()?;
+                let alias = if self.at(TokenKind::Eq) {
+                    self.bump();
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+                assoc.push(AssocType {
+                    name,
+                    span,
+                    bounds,
+                    alias,
+                });
+                continue;
             }
             let (member_name, member_span, params, return_type) = if self.at_accessor() {
                 let (method, _) = self.parse_accessor_head()?;
@@ -860,6 +882,7 @@ impl Parser {
             name_span,
             parents,
             members,
+            assoc,
         })
     }
 
@@ -883,6 +906,7 @@ impl Parser {
             traits.push(self.expect_ident()?);
         }
         let mut methods = Vec::new();
+        let mut assoc = Vec::new();
         if self.at(TokenKind::LBrace) {
             self.bump();
             while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
@@ -891,6 +915,15 @@ impl Parser {
                         "a trait's members are public; drop `export`",
                         self.peek_span(),
                     ));
+                }
+                // `type Element = Int64` (D228 §7).
+                if self.at(TokenKind::Type) {
+                    self.bump();
+                    let (name, span) = self.expect_ident()?;
+                    self.expect_kind(&TokenKind::Eq)?;
+                    let ty = self.parse_type()?;
+                    assoc.push((name, span, ty));
+                    continue;
                 }
                 if self.at_accessor() {
                     methods.push(self.parse_accessor()?);
@@ -914,6 +947,7 @@ impl Parser {
             params,
             traits,
             methods,
+            assoc,
         })
     }
 
@@ -1008,6 +1042,48 @@ impl Parser {
             }
         }
         Ok(traits)
+    }
+
+    /// `where S.Item: Equatable, T: Hashable` after a function's signature
+    /// (D228 §7): a bound on a type parameter joins its list; one on an
+    /// associated type follows the list, its name dotted.
+    fn parse_where_bounds(&mut self, type_params: &mut Vec<TypeParamBound>) -> Result<()> {
+        if !self.at_where_bounds() {
+            return Ok(());
+        }
+        self.bump();
+        loop {
+            let (mut name, span) = self.expect_ident()?;
+            while self.at(TokenKind::Dot) {
+                self.bump();
+                let (assoc, _) = self.expect_ident()?;
+                name = format!("{name}.{assoc}");
+            }
+            if !self.at(TokenKind::Colon) {
+                return Err(Error::at("expected `:` and a trait after the type in `where`", self.peek_span()));
+            }
+            let traits = self.parse_bounds()?;
+            let owner = name.split('.').next().unwrap_or_default();
+            if !type_params.iter().any(|param| param.name == owner) {
+                return Err(Error::at(format!("`{owner}` is not a type parameter of this function"), span));
+            }
+            match type_params.iter_mut().find(|param| param.name == name) {
+                Some(param) => param.traits.extend(traits),
+                None => type_params.push(TypeParamBound { name, span, traits }),
+            }
+            if !self.at(TokenKind::Comma) {
+                break;
+            }
+            self.bump();
+        }
+        Ok(())
+    }
+
+    /// `where` and a type parameter's name: bounds, not a refinement (whose
+    /// predicates start with an operator or a literal).
+    fn at_where_bounds(&self) -> bool {
+        self.at(TokenKind::Where)
+            && matches!(self.tokens.get(self.pos + 1).map(|token| &token.kind), Some(TokenKind::Ident(_)))
     }
 
     /// `get name` / `set name` at a member's start (D228): `get` and `set` are
@@ -1166,6 +1242,8 @@ impl Parser {
         } else {
             None
         };
+        let mut type_params = type_params;
+        self.parse_where_bounds(&mut type_params)?;
         let body = self.parse_block()?;
         Ok(Function {
             exported,
@@ -1244,7 +1322,7 @@ impl Parser {
 
     fn parse_type_with_where(&mut self) -> Result<TypeExpr> {
         let mut ty = self.parse_type_atom()?;
-        if self.at(TokenKind::Where) {
+        if self.at(TokenKind::Where) && !self.at_where_bounds() {
             let start = ty.span.start;
             self.bump();
             let expr = self.parse_where_or()?;
@@ -1357,7 +1435,16 @@ impl Parser {
             return Ok(inner);
         }
 
-        let (name, start_span) = self.expect_ident()?;
+        let (mut name, start_span) = self.expect_ident()?;
+        // `T.Element`: a type parameter's associated type (D228 §7).
+        while self.at(TokenKind::Dot)
+            && name.starts_with(|c: char| c.is_ascii_uppercase())
+            && matches!(self.tokens.get(self.pos + 1).map(|token| &token.kind), Some(TokenKind::Ident(assoc)) if assoc.starts_with(|c: char| c.is_ascii_uppercase()))
+        {
+            self.bump();
+            let (assoc, _) = self.expect_ident()?;
+            name = format!("{name}.{assoc}");
+        }
         let mut args = Vec::new();
         let mut end = if self.at(TokenKind::LAngle) {
             self.bump();

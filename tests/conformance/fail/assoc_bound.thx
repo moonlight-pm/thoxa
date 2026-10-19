@@ -1,0 +1,10 @@
+## D228 §7: an associated type meets its bounds (a Sequence's `Cursor` is an `Iterator`).
+import { Has, Not, May } from "std/fallible"
+type Deck(cards: Array<Int64>)
+conform Deck to Sequence {
+    type Cursor = Int64
+    fn iterate() -> Int64 {
+        0
+    }
+}
+fn main() { 0 }

@@ -44,6 +44,11 @@ struct SyntheticRegistry {
     generics: HashMap<String, GenericDef>,
     /// Methods of the generic types' instances made while lowering.
     late_mono_jobs: Vec<MonoMethodJob>,
+    /// Each type's associated types (D228 §7), by its mangled name: what a
+    /// generic function's `S.Item` is for an `S`.
+    assoc: HashMap<String, HashMap<String, Ty>>,
+    /// `mixed T`'s members that name an associated type, by the union.
+    mixed_closed: HashMap<String, HashSet<String>>,
 }
 
 /// A generic type's instance for `args` meets its parameters' bounds.
@@ -830,6 +835,15 @@ fn display_lit_key(key: &str) -> String {
 }
 
 fn display_type_base(mangled_base: &str) -> String {
+    // A generic function's archetype for an associated type,
+    // `Param_count_I_Item`, is `I.Item` (D228 §7).
+    if let Some((_, rest)) = mangled_base.split_once("Param_") {
+        if let Some((_, path)) = rest.split_once('_') {
+            if path.contains('_') && path.split('_').all(|segment| segment.starts_with(|c: char| c.is_ascii_uppercase())) {
+                return path.replace('_', ".");
+            }
+        }
+    }
     // Entry types are bare names; non-entry are `{mod}_{Name}`. Prefer last
     // PascalCase segment.
     mangled_base
@@ -1309,6 +1323,9 @@ struct GenericDef {
     /// Each type parameter's bounds, which an instance's arguments meet
     /// (D228 §5).
     bounds: Vec<Vec<TraitRef>>,
+    /// Its defining module's type names, which its fields and members are
+    /// written with, wherever an instance is made (`May`'s `Has`).
+    name_map: HashMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -1618,6 +1635,9 @@ impl LowerCtx {
     fn resolve_type_name(&self, name: &str) -> Option<String> {
         if name == "Attr" {
             return Some("Attr".into());
+        }
+        if let Some(mangled) = name.strip_prefix(ast::RESOLVED_TYPE) {
+            return self.types.contains_key(mangled).then(|| mangled.to_string());
         }
         if let Some(mangled) = self.name_to_type.get(name) {
             return Some(mangled.clone());
@@ -1946,6 +1966,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                         bounds: td.bounds.clone(),
                         kind,
                         name_span: td.name_span,
+                        name_map: HashMap::new(),
                     },
                 );
                 if td.exported {
@@ -2033,6 +2054,11 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         per_mod_types.insert(m.id.clone(), map);
     }
 
+    for gdef in generics.values_mut() {
+        if let Some(map) = per_mod_types.get(&gdef.def_mod) {
+            gdef.name_map = map.clone();
+        }
+    }
     // Seed common fallible monomorphs first so nested apps (Trial<May<…>>) resolve.
     seed_fallible_monos(
         &mut types_info,
@@ -2618,6 +2644,43 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             }
         }
     }
+    // Each type's associated types (D228 §7), which meet their bounds.
+    let mut assoc_types: HashMap<String, HashMap<String, Ty>> = HashMap::new();
+    for (mod_id, mangled, td) in &type_defs {
+        if td.assoc.is_empty() {
+            continue;
+        }
+        let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
+        let mut resolved = HashMap::new();
+        for (name, te, bounds) in &td.assoc {
+            let ty = match resolve_ty(te, &types_info, &name_map) {
+                Ok(ty) => ty,
+                Err(error) => {
+                    bound_errors.push(in_module_id(error, package, mod_id));
+                    continue;
+                }
+            };
+            for bound in bounds {
+                if !ty_conforms(&types_info, &conditional, &ty, bound) {
+                    bound_errors.push(in_module_id(
+                        Error::at(
+                            format!(
+                                "`{}`'s `{name}` is {}, which is not `{}`",
+                                td.name,
+                                display_ty(&ty),
+                                bound.name
+                            ),
+                            te.span,
+                        ),
+                        package,
+                        mod_id,
+                    ));
+                }
+            }
+            resolved.insert(name.clone(), ty);
+        }
+        assoc_types.insert(mangled.clone(), resolved);
+    }
     if !bound_errors.is_empty() {
         return Err(errors_to_multi(bound_errors));
     }
@@ -2651,6 +2714,8 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         generic_fns: generic_templates,
         instance_jobs: checking_jobs,
         generics: generics.clone(),
+        assoc: assoc_types,
+        mixed_closed: trait_output.mixed_closed.clone(),
         ..SyntheticRegistry::default()
     }));
     // Name maps of the modules whose globals are done, so a default argument
@@ -3640,6 +3705,18 @@ fn lower_mixed_call(
         .and_then(|info| info.sum.clone())
         .ok_or_else(|| Error::at("internal: `mixed` without members", span))?;
     let shown = display_ty(&Ty::User(mixed.to_string()));
+    if ctx
+        .synthetics
+        .borrow()
+        .mixed_closed
+        .get(mixed)
+        .is_some_and(|members| members.contains(method))
+    {
+        return Err(Error::at(
+            format!("`{method}` names an associated type, which each conforming type names for itself, so it cannot be called through {shown}"),
+            span,
+        ));
+    }
     let mut signature: Option<MethodSig> = None;
     for variant in &sum.variants {
         let Ty::User(member) = &variant.ty else { continue };
@@ -5734,6 +5811,15 @@ fn resolve_ty(
             }
         }
         ("Address", _) => Err(Error::at("Address expects one type argument", t.span)),
+        // A substitution's type is resolved already, wherever it is read.
+        (name, []) if name.starts_with(ast::RESOLVED_TYPE) => {
+            let mangled = &name[ast::RESOLVED_TYPE.len_utf8()..];
+            if types.contains_key(mangled) {
+                Ok(Ty::User(mangled.to_string()))
+            } else {
+                Err(unknown_type_error(mangled, t.span))
+            }
+        }
         (name, []) => {
             let mangled = name_map
                 .get(name)
@@ -5980,6 +6066,7 @@ fn monomorphize_pending(
         let Some(gdef) = generics.get(&base) else {
             continue;
         };
+        let name_map = if gdef.name_map.is_empty() { name_map } else { gdef.name_map.clone() };
         if gdef.type_params.len() != arg_tys.len() {
             return Err(Error::at(
                 format!(
@@ -6052,12 +6139,29 @@ fn monomorphize_package(
     let mut pending: Vec<(String, Vec<Ty>, HashMap<String, String>, Span)> = Vec::new();
 
     for m in &package.modules {
-        let name_map = per_mod_types.get(&m.id).cloned().unwrap_or_default();
         let mut apps = Vec::new();
         for item in &m.ast.items {
             collect_item_type_apps(item, &mut apps);
         }
-        for (te, span) in apps {
+        let mut scoped: Vec<(TypeExpr, Span, &str)> = apps.into_iter().map(|(te, span)| (te, span, m.id.as_str())).collect();
+        // A member a trait provides is written in the trait's module (D228).
+        for item in &m.ast.items {
+            let Item::Type(td) = item else { continue };
+            for method in &td.methods {
+                let Some(provided) = &method.provided else { continue };
+                let mut apps = Vec::new();
+                for param in &method.params {
+                    collect_type_apps(&param.ty, &mut apps);
+                }
+                if let Some(ret) = &method.return_type {
+                    collect_type_apps(ret, &mut apps);
+                }
+                scoped.extend(apps.into_iter().map(|(te, span)| (te, span, provided.module.as_str())));
+            }
+        }
+        let empty = HashMap::new();
+        for (te, span, module) in scoped {
+            let name_map = per_mod_types.get(module).unwrap_or(&empty);
             // `m[k]` / `.get` is `May<V>` (D134). Seed it from every `Map<K, V>`.
             if te.name == "Map" && te.args.len() == 2 {
                 if let Some(may_base) = name_map.get("May") {
@@ -6167,6 +6271,9 @@ pub(crate) fn collect_item_type_apps(item: &Item, out: &mut Vec<(TypeExpr, Span)
                 if let Some(r) = &m.return_type {
                     collect_type_apps(r, out);
                 }
+            }
+            for (_, ty, _) in &td.assoc {
+                collect_type_apps(ty, out);
             }
         }
         Item::Function(f) => {
@@ -6343,7 +6450,7 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
         Ty::Node => ("Node".into(), vec![]),
         Ty::Void => ("Void".into(), vec![]),
         Ty::Never => ("Never".into(), vec![]),
-        Ty::User(n) => (n.clone(), vec![]),
+        Ty::User(n) => (format!("{}{n}", ast::RESOLVED_TYPE), vec![]),
         Ty::Array { elem } => (
             "Array".into(),
             vec![TypeArg::Type(ty_to_type_expr(elem, span))],
@@ -6388,7 +6495,25 @@ fn ty_to_type_expr(ty: &Ty, span: Span) -> TypeExpr {
     }
 }
 
-fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
+/// What a substitution puts in place of a type name: a type parameter's
+/// argument, or a conformance's associated type as written (D228 §7).
+pub(crate) trait TypeSubst {
+    fn lookup(&self, name: &str, span: Span) -> Option<TypeExpr>;
+}
+
+impl TypeSubst for HashMap<String, Ty> {
+    fn lookup(&self, name: &str, span: Span) -> Option<TypeExpr> {
+        self.get(name).map(|ty| ty_to_type_expr(ty, span))
+    }
+}
+
+impl TypeSubst for HashMap<String, TypeExpr> {
+    fn lookup(&self, name: &str, span: Span) -> Option<TypeExpr> {
+        self.get(name).map(|te| TypeExpr { span, ..te.clone() })
+    }
+}
+
+pub(crate) fn subst_type_expr<S: TypeSubst + ?Sized>(te: &TypeExpr, subst: &S) -> TypeExpr {
     if te.lit.is_some() {
         return te.clone();
     }
@@ -6424,8 +6549,7 @@ fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
         };
     }
     if te.args.is_empty() {
-        if let Some(ty) = subst.get(&te.name) {
-            let mut out = ty_to_type_expr(ty, te.span);
+        if let Some(mut out) = subst.lookup(&te.name, te.span) {
             out.mark = te.mark;
             return out;
         }
@@ -7659,7 +7783,7 @@ fn emit_lit_eq_cond(
     }
 }
 
-fn subst_method(m: &Method, subst: &HashMap<String, Ty>) -> Method {
+pub(crate) fn subst_method<S: TypeSubst + ?Sized>(m: &Method, subst: &S) -> Method {
     Method {
         exported: m.exported,
         name: m.name.clone(),
@@ -7684,7 +7808,7 @@ fn subst_method(m: &Method, subst: &HashMap<String, Ty>) -> Method {
 }
 
 /// A generic function's body for its type arguments (D228 §5).
-fn subst_function(function: &ast::Function, subst: &HashMap<String, Ty>) -> ast::Function {
+fn subst_function<S: TypeSubst + ?Sized>(function: &ast::Function, subst: &S) -> ast::Function {
     ast::Function {
         exported: false,
         name: function.name.clone(),
@@ -7708,7 +7832,7 @@ fn subst_function(function: &ast::Function, subst: &HashMap<String, Ty>) -> ast:
     }
 }
 
-fn subst_block(block: &Block, subst: &HashMap<String, Ty>) -> Block {
+fn subst_block<S: TypeSubst + ?Sized>(block: &Block, subst: &S) -> Block {
     Block {
         items: block
             .items
@@ -7720,7 +7844,7 @@ fn subst_block(block: &Block, subst: &HashMap<String, Ty>) -> Block {
     }
 }
 
-fn subst_block_item(it: &BlockItem, subst: &HashMap<String, Ty>) -> BlockItem {
+fn subst_block_item<S: TypeSubst + ?Sized>(it: &BlockItem, subst: &S) -> BlockItem {
     match it {
         BlockItem::Let {
             name,
@@ -7743,7 +7867,7 @@ fn subst_block_item(it: &BlockItem, subst: &HashMap<String, Ty>) -> BlockItem {
     }
 }
 
-fn subst_assign_target(t: &AssignTarget, subst: &HashMap<String, Ty>) -> AssignTarget {
+fn subst_assign_target<S: TypeSubst + ?Sized>(t: &AssignTarget, subst: &S) -> AssignTarget {
     match t {
         AssignTarget::Name { name, name_span } => AssignTarget::Name {
             name: name.clone(),
@@ -7785,7 +7909,7 @@ fn subst_assign_target(t: &AssignTarget, subst: &HashMap<String, Ty>) -> AssignT
     }
 }
 
-fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
+fn subst_expr<S: TypeSubst + ?Sized>(e: &Expr, subst: &S) -> Expr {
     let kind = match &e.kind {
         ExprKind::Int(n) => ExprKind::Int(*n),
         ExprKind::Float(n) => ExprKind::Float(*n),
@@ -7938,7 +8062,7 @@ fn subst_expr(e: &Expr, subst: &HashMap<String, Ty>) -> Expr {
     Expr { kind, span: e.span }
 }
 
-fn subst_arg(a: &Arg, subst: &HashMap<String, Ty>) -> Arg {
+fn subst_arg<S: TypeSubst + ?Sized>(a: &Arg, subst: &S) -> Arg {
     match a {
         Arg::Pos(e) => Arg::Pos(subst_expr(e, subst)),
         Arg::Named {
@@ -9708,6 +9832,9 @@ fn lower_for_array(
     body: &Block,
 ) -> Result<(Place, Ty)> {
     let (arr_p, arr_ty) = lower_expr(ctx, collection)?;
+    if ctx.conforms(&arr_ty, "Iterator") || ctx.conforms(&arr_ty, "Sequence") {
+        return lower_for_cursor(ctx, name, name_span, arr_p, arr_ty, collection.span, body);
+    }
     let elem_ty = match &arr_ty {
         Ty::Array { elem } => elem.as_ref().clone(),
         Ty::Map { .. } => {
@@ -9718,7 +9845,10 @@ fn lower_for_array(
         }
         other => {
             return Err(Error::at(
-                format!("`for … in` collection must be Array, got {other:?}"),
+                format!(
+                    "`for … in` takes an Array, a Map, or a value that conforms to `Iterator` or `Sequence`, and {} does not",
+                    display_ty(other)
+                ),
                 collection.span,
             ));
         }
@@ -9760,6 +9890,103 @@ fn lower_for_array(
         inclusive: false,
         body: body_stmts,
     });
+    Ok(void_place(ctx))
+}
+
+/// `for item in value` over a type that conforms to `Iterator` or `Sequence`
+/// (D228 §7): a copy of the iterator (or the cursor a sequence's `iterate()`
+/// makes) gives `next()` until it is `Not`.
+///
+/// ```text
+/// mut cursor = value            // value.iterate() for a Sequence
+/// loop { match cursor.next() { Has(item) => body  Not => break } }
+/// ```
+fn lower_for_cursor(
+    ctx: &mut LowerCtx,
+    name: &str,
+    name_span: Span,
+    value: Place,
+    value_ty: Ty,
+    span: Span,
+    body: &Block,
+) -> Result<(Place, Ty)> {
+    let iterator = ctx.conforms(&value_ty, "Iterator");
+    ctx.push_scope();
+    ctx.define("__for_value", value_ty, false, value);
+    let named = |text: &str| Expr {
+        kind: ExprKind::Name(text.to_string()),
+        span,
+    };
+    let method = |receiver: Expr, method: &str| Expr {
+        kind: ExprKind::MethodCall {
+            receiver: Box::new(receiver),
+            method: method.to_string(),
+            method_span: span,
+            args: Vec::new(),
+        },
+        span,
+    };
+    let init = if iterator {
+        named("__for_value")
+    } else {
+        method(named("__for_value"), "iterate")
+    };
+    let arms = vec![
+        MatchArm {
+            pattern: Pattern::Variant {
+                name: "Has".into(),
+                binds: vec![(name != "_").then(|| name.to_string())],
+                bind_span: name_span,
+                span: name_span,
+            },
+            guard: None,
+            body: body.clone(),
+        },
+        MatchArm {
+            pattern: Pattern::Variant {
+                name: "Not".into(),
+                binds: Vec::new(),
+                bind_span: span,
+                span,
+            },
+            guard: None,
+            body: tail_block(Expr {
+                kind: ExprKind::Break,
+                span,
+            }),
+        },
+    ];
+    let lowered = Block {
+        items: vec![BlockItem::Let {
+            name: "__for_cursor".into(),
+            name_span: span,
+            mutable: true,
+            ty: None,
+            init,
+        }],
+        tail: Some(Box::new(Expr {
+            kind: ExprKind::Loop {
+                body: tail_block(Expr {
+                    kind: ExprKind::Match {
+                        scrutinee: Box::new(method(named("__for_cursor"), "next")),
+                        arms,
+                    },
+                    span,
+                }),
+            },
+            span,
+        })),
+        span,
+    };
+    let result = lower_expr(
+        ctx,
+        &Expr {
+            kind: ExprKind::Block(lowered),
+            span,
+        },
+    );
+    ctx.pop_scope();
+    result?;
     Ok(void_place(ctx))
 }
 

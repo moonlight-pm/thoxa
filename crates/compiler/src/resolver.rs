@@ -919,6 +919,12 @@ impl<'a> Resolver<'a> {
                 for (name, span) in &def.parents {
                     self.add_ref(*span, self.lookup(root, name), RefCtx::Type);
                 }
+                // `type Cursor: Iterator` (D228 §7).
+                for assoc in &def.assoc {
+                    for (name, span) in &assoc.bounds {
+                        self.add_ref(*span, self.lookup(root, name), RefCtx::Type);
+                    }
+                }
                 let body = self.member_scope(&def.name, root);
                 for member in &def.members {
                     self.walk_type_expr_opt(member.return_type.as_ref(), root);
@@ -933,6 +939,10 @@ impl<'a> Resolver<'a> {
                 self.walk_type_expr(&conformance.ty, root);
                 for (name, span) in &conformance.traits {
                     self.add_ref(*span, self.lookup(root, name), RefCtx::Type);
+                }
+                // `type Item = Card` (D228 §7).
+                for (_, _, ty) in &conformance.assoc {
+                    self.walk_type_expr(ty, root);
                 }
                 let body = self.member_scope(&conformance.ty.name, root);
                 for m in &conformance.methods {
@@ -1718,6 +1728,37 @@ fn main() { let card = Card(rank: 3)
         assert_eq!(label.owner.as_deref(), Some("Card"));
         assert_eq!(at("rank}").kind, BindingKind::Field);
         assert_eq!(at("Named {\n  fn label() -> String {").kind, BindingKind::Trait);
+    }
+
+    #[test]
+    fn associated_types_refer() {
+        // D228 §7: an associated type's bound refers to its trait, and a
+        // conformance's `type Cursor = Step` to the type it names.
+        let src = "\
+trait Walker {
+  fn step() -> Int64
+}
+trait Walkable {
+  type Cursor: Walker
+  fn walk() -> Cursor
+}
+type Step(at: Int64)
+type Path(length: Int64)
+conform Step to Walker {
+  fn step() -> Int64 { at }
+}
+conform Path to Walkable {
+  type Cursor = Step
+  fn walk() -> Step { Step(at: length) }
+}
+";
+        let res = resolve_ok(src);
+        let at = |needle: &str| {
+            let p = byte_to_position(src, src.find(needle).unwrap());
+            res.binding_of(res.ref_at(src, p.line, p.character)).expect(needle)
+        };
+        assert_eq!(at("Walker\n  fn walk").kind, BindingKind::Trait);
+        assert_eq!(at("Step\n  fn walk() -> Step").kind, BindingKind::Type);
     }
 
     #[test]

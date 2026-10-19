@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-18 (**D228**: traits designed, freeze below; slices 1–4 shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison), slice 5 next; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-19 (**D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types); next is Joshua's pick, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -118,10 +118,21 @@ adds `T`s; the freeze rules out arithmetic traits). **Slice 6, parts 1–2
 shipped**: `Component` (tag literals need it), `Show` (`"{x}"` of user
 types). **Part 3 shipped**: `Encodable` / `Decodable`, declared, in
 std/json. **Slice 7 shipped**: `mixed Trait`, values of several types
-together. **Next**: slice 8, associated types and `for` over user types.
-Generic functions are slice 5, so the "generic constructor inference" gap
-below waits for it. Joshua: "lean toward long-term correct design rather
+together. **Slice 8 shipped** (2026-10-19): associated types (`type Item`;
+`type Item = Cursor.Item` fixed by the trait), `Iterator` and `Sequence` in
+std/core, `for item in value` over them (from a copy), `S.Item` and `where`
+in generic functions. Joshua: "lean toward long-term correct design rather
 than short term stop gaps."
+
+**Next: Joshua's pick among D228's gaps** (all in the `traits` row of
+[`docs/capabilities.md`](docs/capabilities.md)). The open question first:
+check a generic type's methods against its bounds (`Counter<T>` adds `T`s,
+and the freeze rules out arithmetic traits). Then, each a slice:
+conformances of generic and built-in types with members and associated
+types (makes `Array` a `Sequence`, so generic code over sequences takes
+arrays); a declared type's methods with type parameters; same-type
+constraints (a sequence's `Item` written without its cursor); `UInt64`
+constructor fields (`Hasher`'s state).
 
 **Shell and session removed (D227, Joshua 2026-10-18: "drop the shell feature
 entirely. This is scope creep.")** `thoxa` is a compiler CLI; every program
@@ -227,12 +238,12 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D228 slices 1–4 (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
+**Shipped recently:** D228 slices 1–8 (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions, declared `Show` / `Component` / codecs, `mixed`, associated types), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 183 programs, 107 rejections, 8 site samples, 219 unit tests
-after D228 slice 7 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 184 programs, 117 rejections, 8 site samples, 220 unit tests
+after D228 slice 8 (2026-10-19); `cargo make test-asan` 174 clean, 10 excepted (2026-10-19). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
@@ -302,6 +313,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | `std/` root | Named `std/…` (D97); **thin**; grow only from sample-driven candidates; Io/Net/Http/HttpStatic shipped (**D126**); Http helpers + **`std/http/server`** (**D136**); hosts under **`std/http/`** (**D139**); Str parse + remaining Http wrappers (**D137**); **`std/json`** (**D141**); **`std/sqlite`** (**D143**); fragments + ETag (**D145**); SSE takeover (**D146**); `ffi` deferred |
 | Logging / print | **`std/logging` only** (**D125**); ambient **`println`/`print` removed**; app face `import logging, { info, … }` (**D127**); no ambient inject; multi-logger later |
 | Diverging loop | Bare `loop` with no exiting `break` is **Never** (**D128**) — valid function tail without dummy value |
+| Iteration | `for item in value` over a range, an Array, a Map (`for k, v`), or a value that conforms to std/core's `Iterator` (`type Item`, `next() -> May<Item>`) or `Sequence` (`iterate() -> Cursor`) (**D228** §7); an iterator is read from a copy, so the value does not move |
 | Return inference | Unannotated free fns and methods: returns inferred from exits (**D129**, **D174**); explicit `->` authoritative; no Trial-by-name; recursion / bare Pass/Fail alone need annotate; `x?` then `Pass(value)` refines the success type; `drop` is Void; multi-clause methods join their clauses and generic types' methods infer per instance (**D211**); hover uses inferred types |
 | Match arms | Bare ctor = tag-only; `=>` single-expr body or `{ }` multi-stmt (**D130**); `->` types only |
 | Multi-clause fns | Same name → one fn (match sugar); `name: Type` formals; any-type dispatch; source order; bare literal types (**D131** — **shipped**). No defaults on multi-clause v0; overlap/export mismatch are **errors**. D16 std factories still separate. |

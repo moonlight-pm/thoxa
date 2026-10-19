@@ -1,0 +1,8 @@
+## D228 §7: `for … in` takes an Array, a Map, an Iterator, or a Sequence.
+import { Has, Not, May } from "std/fallible"
+type Point(x: Int64)
+fn main() {
+    for item in Point(x: 1) {
+    }
+    0
+}

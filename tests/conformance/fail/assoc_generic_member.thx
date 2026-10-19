@@ -1,0 +1,10 @@
+## D228 §7: an associated type in a generic function has only its bounds' members.
+import { Has, Not, May } from "std/fallible"
+fn count<I: Iterator>(cursor!: I) -> Int64 {
+    mut total = 0
+    for item in cursor {
+        total = total + item.size
+    }
+    total
+}
+fn main() { 0 }

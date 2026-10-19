@@ -54,7 +54,13 @@ pub(super) fn instantiate_call(
 ) -> Result<String> {
     let template = ctx.synthetics.borrow().generic_fns[template_name].clone();
     let function = &template.function;
-    let names: Vec<String> = function.generic.iter().map(|param| param.name.clone()).collect();
+    // `S.Item` is not inferred: it is read off `S`'s argument.
+    let names: Vec<String> = function
+        .generic
+        .iter()
+        .filter(|param| param.derived.is_none())
+        .map(|param| param.name.clone())
+        .collect();
     let mut bindings: HashMap<String, Ty> = HashMap::new();
     for (param, arg) in function.params.iter().zip(match_args(&function.params, args)) {
         let Some(arg) = arg else { continue };
@@ -70,6 +76,20 @@ pub(super) fn instantiate_call(
         }
     }
     for param in &function.generic {
+        if let Some((owner, assoc)) = &param.derived {
+            let owner_ty = bindings.get(owner).cloned().unwrap_or(Ty::Void);
+            let found = match &owner_ty {
+                Ty::User(name) => ctx.synthetics.borrow().assoc.get(name).and_then(|types| types.get(assoc)).cloned(),
+                _ => None,
+            };
+            let Some(ty) = found else {
+                return Err(Error::at(
+                    format!("`{shown}` needs `{owner}.{assoc}`, and {} names no `{assoc}`", display_ty(&owner_ty)),
+                    span,
+                ));
+            };
+            bindings.insert(param.name.clone(), ty);
+        }
         let Some(ty) = bindings.get(&param.name) else {
             return Err(Error::at(
                 format!("cannot infer `{}` for `{shown}` from its arguments", param.name),
@@ -119,6 +139,7 @@ pub(super) fn instance_name(template: &str, function: &Function, bindings: &Hash
     let args: Vec<Ty> = function
         .generic
         .iter()
+        .filter(|param| param.derived.is_none())
         .map(|param| bindings.get(&param.name).cloned().unwrap_or(Ty::Void))
         .collect();
     let mut name = template.to_string();

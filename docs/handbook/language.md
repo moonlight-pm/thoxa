@@ -738,6 +738,10 @@ let word = largest(["pear", "fig"])     ## Has("pear")
 - std declares methods for every instance of a built-in generic type whose
   arguments meet bounds, with `extend Array<T: Equatable> { … }`: that is how
   `contains` and `sorted` exist (only std may `extend`).
+- A type parameter's associated types are written under it, `S.Item`, and
+  `where` after the signature bounds them: `fn f<S: Sequence>(items!: S) ->
+  Array<S.Item> where S.Item: Show`. A `where` bound may also name a type
+  parameter, `where T: Hashable`. See [Associated types](#associated-types).
 
 ### Function types
 
@@ -1140,7 +1144,11 @@ for i in 0..3 { }             ## 0, 1, 2
 for i in 1..=3 { }            ## 1, 2, 3
 for name in names { }         ## array elements
 for key, value in table { }   ## map entries, in insertion order
+for card in deck { }          ## an Iterator's or a Sequence's values
 ```
+
+`for … in` takes a range, an Array, a Map, or a value whose type conforms to
+`Iterator` or `Sequence` (see [Associated types](#associated-types)).
 
 `break` leaves the innermost loop and `continue` starts its next iteration.
 The loop variable is a new binding; an outer variable of the same name is
@@ -1518,7 +1526,8 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
 - A trait is private to its module unless marked `export`, and is imported by
   name like a type. The built-in traits, `Equatable`, `Hashable`, `Ordered`
   (see [Equality and order](#equality-and-order)), `Show`, `Component` (see
-  [Tag literals and Node](#tag-literals-and-node)), and `Resource`, need no
+  [Tag literals and Node](#tag-literals-and-node)), `Iterator`, `Sequence`
+  (see [Associated types](#associated-types)), and `Resource`, need no
   import.
 - A generic type conforms for the instances whose arguments meet bounds:
   `conform Box<T: Equatable> to Equatable` makes `Box<Int64>` equatable and
@@ -1547,6 +1556,111 @@ Limits: a trait's members take no parameter defaults, a trait cannot be used
 as a type, and a conformance of a generic type, of a built-in type, or of a
 union cannot have a body.
 
+### Associated types
+
+A trait may declare a type its conforming types choose, `type Item`; each
+conformance names it, and the trait's members, and the conformance's, write
+it by name. The built-in traits `Iterator` and `Sequence` are how `for` reads
+a value of a user type:
+
+```thx
+trait Iterator {                    ## built in
+    type Item
+    fn next() -> May<Item>
+}
+
+trait Sequence {                    ## built in
+    type Cursor: Iterator
+    type Item = Cursor.Item
+    fn iterate() -> Cursor
+}
+
+type Countdown(from: Int64)
+
+conform Countdown to Iterator {
+    type Item = Int64
+
+    fn next() -> May<Item> {
+        if from == 0 {
+            return Not()
+        }
+        from = from - 1
+        Has(from + 1)
+    }
+}
+
+let countdown = Countdown(from: 3)
+for count in countdown {
+    info("{count}")                 ## 3, 2, 1
+}
+info("{countdown.from}")            ## 3: the loop read a copy
+```
+
+- `type Cursor: Iterator` gives the associated type bounds, which every
+  conformance's choice must meet. `type Item = Cursor.Item` fixes one as
+  another of the trait's; a conformance does not name it.
+- A conformance names each associated type of the traits it lists, once:
+  `type Item = Int64`.
+- `for item in value` over an `Iterator` calls `next()` on a copy of `value`
+  until it returns `Not`, so `value` itself does not move. Over a `Sequence`,
+  it reads the iterator `value.iterate()` makes. A collection conforms to
+  `Sequence` and makes a separate cursor:
+
+```thx
+type Deck(cards: Array<Card>)
+
+conform Deck to Sequence {
+    type Cursor = DeckCursor
+
+    fn iterate() -> DeckCursor {
+        DeckCursor(cards: cards, index: 0)
+    }
+}
+
+type DeckCursor(cards: Array<Card>, index: Int64)
+
+conform DeckCursor to Iterator {
+    type Item = Card
+
+    fn next() -> May<Card> {
+        if index >= cards.count {
+            return Not()
+        }
+        index = index + 1
+        Has(cards[index - 1])
+    }
+}
+```
+
+- A generic function writes a type parameter's associated types under it,
+  `S.Item`, `S.Cursor.Item`, and bounds them with `where` after its
+  signature. In the body they have only their bounds' members:
+
+```thx
+fn collect<S: Sequence>(items!: S) -> Array<S.Item> {
+    mut out: Array<S.Item> = []
+    for item in items {
+        out.append(item)
+    }
+    out
+}
+
+fn count<I: Iterator>(cursor!: I) -> Int64 where I.Item: Show {
+    mut total = 0
+    for item in cursor {
+        info("{item}")
+        total = total + 1
+    }
+    total
+}
+```
+
+Limits: a generic type or a built-in type cannot conform to a trait with
+associated types, so an `Array` is not a `Sequence` (`for` reads arrays
+directly) and a generic function over `Sequence` does not take one; `S.Item`
+is written in generic functions, not in generic types; and a member whose
+signature names an associated type cannot be called through `mixed`.
+
 ### Mixed values
 
 `mixed Shape` is a value of any type that conforms to `Shape`, chosen at run
@@ -1572,7 +1686,8 @@ fn kind(shape!: mixed Shape) -> String {
 - A value of a conforming type becomes a `mixed Shape` where one is expected.
 - Calling a member or reading a property through it calls the value's own.
   A member that takes a `Self` cannot be called this way (the other side's
-  type is unknown).
+  type is unknown), nor one whose signature names an associated type (each
+  type names its own).
 - `match` takes it apart by type, and ends in `else`: more types can conform.
 - It is a value: copies are copies.
 - It holds the declared types that conform without bounds; a generic type's

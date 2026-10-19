@@ -1,0 +1,6 @@
+## D228 §7: `where` bounds an associated type the parameter has.
+import { Has, Not, May } from "std/fallible"
+fn count<I: Iterator>(cursor!: I) -> Int64 where I.Element: Show {
+    0
+}
+fn main() { 0 }

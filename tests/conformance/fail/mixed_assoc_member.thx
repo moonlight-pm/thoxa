@@ -1,0 +1,19 @@
+## D228 §7: a member that names an associated type cannot be called through `mixed`.
+import { Has, Not, May } from "std/fallible"
+
+type Range(low: Int64, high: Int64)
+conform Range to Iterator {
+    type Item = Int64
+    fn next() -> May<Int64> {
+        Not()
+    }
+}
+
+fn main() {
+    let cursors: Array<mixed Iterator> = [Range(low: 0, high: 1)]
+    for cursor in cursors {
+        for item in cursor {
+        }
+    }
+    0
+}

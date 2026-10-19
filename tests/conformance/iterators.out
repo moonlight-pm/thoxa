@@ -1,0 +1,21 @@
+3
+2
+1
+still 3
+Card(rank: 1, suit: "hearts")
+Card(rank: 7, suit: "clubs")
+1 before 12
+1 before 7
+12 before 7
+ticks 2
+  2
+  1
+2
+  Card(rank: 1, suit: "hearts")
+  Card(rank: 12, suit: "spades")
+  Card(rank: 7, suit: "clubs")
+3
+3 true
+first hearts
+6
+2: [Emma][Dune]

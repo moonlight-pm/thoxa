@@ -1,0 +1,10 @@
+## D228 §7: a member's signature uses the conformance's associated types.
+import { Has, Not, May } from "std/fallible"
+type Range(low: Int64, high: Int64)
+conform Range to Iterator {
+    type Item = Int64
+    fn next() -> May<String> {
+        Not()
+    }
+}
+fn main() { 0 }
