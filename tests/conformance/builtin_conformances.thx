@@ -1,0 +1,128 @@
+## Conformances of built-in types with members and associated types (D228).
+## A built-in type's members are written like `extend` methods, `self` the
+## value, and may go in the trait's module; a trait's provided members, and
+## bare calls and properties in any of them, reach the value's methods. An
+## `Array` is a `Sequence` (std/core), so generic code over sequences takes
+## one.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+trait Describe {
+    fn describe() -> String
+    fn shout() -> String {
+        "{describe().toUpper()}!"
+    }
+}
+
+conform Int64 to Describe {
+    fn describe() -> String {
+        "number {self}"
+    }
+}
+
+conform Array<T: Show> to Describe {
+    fn describe() -> String {
+        "{self.count} items: {self}"
+    }
+}
+
+trait Sized {
+    get size: Int64
+    fn vacant() -> Bool {
+        size == 0
+    }
+}
+
+conform String to Sized {
+    get size: Int64 {
+        self.count
+    }
+}
+
+trait Container {
+    type Element
+    fn first() -> May<Element>
+}
+
+conform Array<T> to Container {
+    type Element = T
+    fn first() -> May<T> {
+        if self.count == 0 {
+            return Not()
+        }
+        Has(self[0])
+    }
+}
+
+trait Addable {
+    fn plus(other!: Self) -> Self
+}
+
+conform Int64 to Addable {
+    fn plus(other!: Int64) -> Int64 {
+        self + other
+    }
+}
+
+conform Float64 to Addable {
+    fn plus(other!: Float64) -> Float64 {
+        self + other
+    }
+}
+
+fn sum<T: Addable>(items!: Array<T>, zero!: T) -> T {
+    mut total = zero
+    for item in items {
+        total = total.plus(item)
+    }
+    total
+}
+
+fn collect<S: Sequence>(items!: S) -> Array<S.Item> {
+    mut out: Array<S.Item> = []
+    for item in items {
+        out.append(item)
+    }
+    out
+}
+
+fn firstOf<S: Sequence>(items!: S) -> May<S.Cursor.Item> {
+    mut cursor = items.iterate()
+    cursor.next()
+}
+
+fn tell<D: Describe>(value!: D) -> String {
+    value.shout()
+}
+
+fn head<C: Container>(container!: C) -> May<C.Element> {
+    container.first()
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info(5.describe())
+    info(7.shout())
+    info([1, 2].describe())
+    info(tell(["a"]))
+    info("{"".vacant()} {"tea".vacant()} {"tea".size}")
+    match head([4, 5]) {
+        Has(item) => info("head {item}")
+        Not => info("none")
+    }
+    info("{sum([1, 2, 3], 0)} {sum([0.5, 0.25], 0.0)}")
+
+    let numbers = [3, 4, 5]
+    info("{collect(numbers).count}")
+    match firstOf(["tea", "milk"]) {
+        Has(word) => info("first {word}")
+        Not => info("none")
+    }
+    ## `iterate()` reads from the start; `for` over the cursor reads a copy.
+    let cursor = numbers.iterate()
+    for item in cursor {
+        info("{item}")
+    }
+    0
+}

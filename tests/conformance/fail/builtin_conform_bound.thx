@@ -1,0 +1,19 @@
+## D228: a built-in type's conformance with bounds gives its members only to
+## the instances that meet them: `Plain` is not `Show`.
+trait Describe {
+    fn describe() -> String
+}
+
+conform Array<T: Show> to Describe {
+    fn describe() -> String {
+        "{self.count} items: {self}"
+    }
+}
+
+type Plain(count: Int64)
+
+fn main() {
+    let items = [Plain(count: 1)]
+    items.describe()
+    0
+}

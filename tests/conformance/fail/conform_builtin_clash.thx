@@ -1,0 +1,13 @@
+## D228: one name, one member: a built-in type's conformance cannot add a
+## member it already has from std (`String.trim`).
+trait Trimmed {
+    fn trim() -> String
+}
+
+conform String to Trimmed {
+    fn trim() -> String {
+        self
+    }
+}
+
+fn main() { 0 }

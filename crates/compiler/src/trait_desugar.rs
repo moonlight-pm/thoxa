@@ -206,10 +206,16 @@ impl Scope<'_> {
 /// each holding for the instances whose arguments meet its bounds.
 pub type BuiltInConformances = HashMap<String, Vec<ConditionalConformance>>;
 
+/// Built-in types' associated types, by the type's name (`Array`): each with
+/// its conformance's parameters, which it is written with (`type Cursor =
+/// ArrayCursor<T>`), in MIR names, and its bounds (D228 §7).
+pub type BuiltInAssoc = HashMap<String, Vec<(Vec<String>, String, TypeExpr, Vec<TraitRef>)>>;
+
 /// What the trait pass tells the MIR besides the AST it rewrites.
 #[derive(Default)]
 pub struct TraitOutput {
     pub built_in: BuiltInConformances,
+    pub built_in_assoc: BuiltInAssoc,
     /// `mixed T` as a module spells it, (module id, trait name), → the mangled
     /// name of the union of `T`'s conforming types (D228 §6).
     pub mixed: HashMap<(String, String), String>,
@@ -522,6 +528,33 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
         }
     }
 
+    // A built-in type's own methods are std's `extend` methods for it (D196).
+    for module in &package.modules {
+        for item in &module.ast.items {
+            let Item::Function(function) = item else { continue };
+            for (name, _) in CONFORMABLE_BUILT_INS {
+                let prefix = crate::extend_desugar::extension_fn_name(name, "");
+                let Some(member) = function.name.strip_prefix(&prefix) else { continue };
+                let method = Method {
+                    exported: function.exported,
+                    name: member.to_string(),
+                    name_span: function.name_span,
+                    type_params: Vec::new(),
+                    params: function.params.iter().skip(1).cloned().collect(),
+                    return_type: function.return_type.clone(),
+                    body: function.body.clone(),
+                    provided: None,
+                    requires: Vec::new(),
+                };
+                own_members
+                    .entry((BUILT_IN_MODULE.to_string(), name.to_string()))
+                    .or_default()
+                    .methods
+                    .insert(member.to_string(), method);
+            }
+        }
+    }
+
     // (type) → trait → where it was declared, and its bounds when the
     // conformance holds per instance; (type) → member → its trait.
     let mut conformed: Conformed = HashMap::new();
@@ -536,7 +569,13 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
     let mut named: Named = HashMap::new();
     let mut listed: Listed = HashMap::new();
     for item in &pending {
-        let Some(target) = scope.type_named(&item.module, &item.conformance.ty.name) else {
+        let name = &item.conformance.ty.name;
+        let built_in = CONFORMABLE_BUILT_INS.iter().any(|(each, _)| each == name);
+        let Some(target) = (if built_in {
+            Some((BUILT_IN_MODULE.to_string(), name.clone()))
+        } else {
+            scope.type_named(&item.module, name)
+        }) else {
             continue;
         };
         let names = named.entry(target.clone()).or_default();
@@ -560,6 +599,8 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
         }
     }
     let mut assoc_types: HashMap<(String, String), Vec<(String, TypeExpr, Vec<TraitRef>)>> = HashMap::new();
+    let mut extensions: Vec<(String, Function, HashMap<String, Vec<TraitRef>>, PathBuf)> = Vec::new();
+    let mut built_in_assoc: BuiltInAssoc = HashMap::new();
 
     for item in &pending {
         let result = check_conformance(
@@ -574,6 +615,28 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
             &listed,
         );
         match result {
+            Ok((target, refs, methods, defaults, entries)) if target.0 == BUILT_IN_MODULE && !scope.types.contains(&target) => {
+                // A built-in type's members are `extend` functions, each in
+                // the module its body resolves in; its associated types go to
+                // the MIR by the built-in's name.
+                let bounds: HashMap<String, Vec<TraitRef>> = item
+                    .conformance
+                    .params
+                    .iter()
+                    .map(|param| param.name.clone())
+                    .zip(refs.first().and_then(|first| conformed[&target][first].1.clone()).unwrap_or_default())
+                    .collect();
+                for method in &methods {
+                    let (module, function) = extension_function(method, &item.conformance, &item.module);
+                    extensions.push((module, function, bounds.clone(), item.path.clone()));
+                }
+                let params: Vec<String> = item.conformance.params.iter().map(|param| param.name.clone()).collect();
+                built_in_assoc
+                    .entry(target.1.clone())
+                    .or_default()
+                    .extend(entries.into_iter().map(|(name, ty, bounds)| (params.clone(), name, ty, bounds)));
+                let _ = defaults;
+            }
             Ok((target, refs, methods, defaults, entries)) => {
                 assoc_types.entry(target.clone()).or_default().extend(entries);
                 derived.entry(target.clone()).or_default().extend(defaults);
@@ -628,6 +691,20 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
         return Err(Error::multi(errors));
     }
 
+    for (module_id, mut function, bounds, path) in extensions {
+        let Some(module) = package.modules.iter_mut().find(|module| module.id == module_id) else { continue };
+        let mut archetypes = Vec::new();
+        if let Err(error) = resolve_generics(&mut function, &module_id, &scope, &mut archetypes, &bounds) {
+            errors.push(error.with_path(path));
+            continue;
+        }
+        module.ast.items.push(Item::Function(function));
+        module.ast.items.extend(archetypes.into_iter().map(Item::Type));
+    }
+    if !errors.is_empty() {
+        return Err(Error::multi(errors));
+    }
+
     for (target, done) in &conformed {
         if target.0 != BUILT_IN_MODULE || scope.types.contains(target) {
             continue;
@@ -676,6 +753,7 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
     let (mixed, mixed_closed) = mixed_unions(package, &scope, &conformed, &traits)?;
     Ok(TraitOutput {
         built_in,
+        built_in_assoc,
         mixed,
         mixed_closed,
     })
@@ -835,6 +913,16 @@ const CONFORMABLE_BUILT_INS: &[(&str, usize)] = &[
     ("Int64", 0), ("Int32", 0), ("UInt64", 0), ("UInt32", 0), ("Byte", 0), ("Float64", 0),
     ("Bool", 0), ("String", 0), ("Bytes", 0), ("Buffer", 0), ("Void", 0), ("Node", 0),
     ("Array", 1), ("Map", 2),
+];
+
+/// The members the runtime gives a built-in type, which a conformance cannot
+/// add again (`get_count` is the property `count`).
+const BUILT_IN_PRIMITIVES: &[(&str, &[&str])] = &[
+    ("Array", &["append", "dropLast", "insert", "removeAt", "get_count"]),
+    ("Map", &["has", "get", "set", "remove", "keys", "values", "get_count"]),
+    ("String", &["byteAt", "byteSlice", "byteIndexOf", "get_count", "get_byteCount"]),
+    ("Bytes", &["get", "set", "slice", "find", "equals", "insert", "removeAt", "get_count"]),
+    ("Buffer", &["append", "appendBytes", "freeze", "get_count"]),
 ];
 
 /// Traits whose required members the compiler implements for a conformance
@@ -1253,15 +1341,6 @@ fn check_conformance(
             Some(lists)
         }
     };
-    if built_in.is_some() && !conformance.methods.is_empty() {
-        return Err(Error::at(
-            format!(
-                "a conformance of `{}` with members is not supported yet (built-in types conform without a body for now)",
-                ty.name
-            ),
-            conformance.span,
-        ));
-    }
 
     let mut refs: Vec<(TraitRef, Span)> = Vec::new();
     for (name, span) in &conformance.traits {
@@ -1305,7 +1384,9 @@ fn check_conformance(
             conformance.span,
         ));
     }
-    if !conformance.methods.is_empty() && item.module != target.0 {
+    // A built-in type's members are functions of the module they are written
+    // in, so they may be written in the trait's.
+    if !conformance.methods.is_empty() && item.module != target.0 && built_in.is_none() {
         return Err(Error::at(
             format!(
                 "a conformance with members goes in the module that defines `{}` (members in the trait's module are not supported yet)",
@@ -1315,16 +1396,22 @@ fn check_conformance(
         ));
     }
 
-    let mut assoc = conformance_assoc(item, &target, &refs, built_in.is_some(), named, listed, scope)?;
+    let mut assoc = conformance_assoc(item, &target, &refs, named, listed, scope)?;
     // A generic type's `Self` is its instance: `Box<T>`, with the type's own
-    // parameters (the conformance's were renamed to them).
-    let params = generic.get(&target).cloned().unwrap_or_default();
-    if built_in.is_none() && !params.is_empty() {
-        let args = params.join(", ");
-        assoc
-            .canonical
-            .insert("Self".into(), format!("{}::{}<{args}>", target.0, target.1));
-        assoc.shown.insert("Self".into(), format!("{}<{args}>", target.1));
+    // parameters (the conformance's were renamed to them); a built-in's is
+    // the built-in, with the conformance's (`Array<T>`).
+    let params: Vec<String> = match built_in {
+        Some(_) => conformance.params.iter().map(|param| param.name.clone()).collect(),
+        None => generic.get(&target).cloned().unwrap_or_default(),
+    };
+    if built_in.is_some() || !params.is_empty() {
+        let args = if params.is_empty() { String::new() } else { format!("<{}>", params.join(", ")) };
+        let canonical_self = match built_in {
+            Some(_) => format!("{}{args}", target.1),
+            None => format!("{}::{}{args}", target.0, target.1),
+        };
+        assoc.canonical.insert("Self".into(), canonical_self);
+        assoc.shown.insert("Self".into(), format!("{}{args}", target.1));
         for param in &params {
             assoc.canonical.insert(param.clone(), param.clone());
         }
@@ -1411,6 +1498,13 @@ fn check_conformance(
             if property.is_none() && own.fields.contains_key(&member.name) {
                 return Err(clash());
             }
+            let primitive = built_in.is_some()
+                && BUILT_IN_PRIMITIVES
+                    .iter()
+                    .any(|(name, members)| *name == target.1 && members.contains(&member.name.as_str()));
+            if primitive && (implemented.contains_key(member.name.as_str()) || member.body.is_some()) {
+                return Err(clash());
+            }
             match (implemented.get(member.name.as_str()), &member.body) {
                 (Some(_), _) if own_method.is_some() => return Err(clash()),
                 (Some(method), _) => methods.push(implementation(
@@ -1460,6 +1554,15 @@ fn check_conformance(
                     trait_ref,
                     visible_members(trait_ref, scope.traits),
                 )),
+                // std writes a built-in's members with `extend` and conforms
+                // it without a body: its own method is the member, with the
+                // trait's signature (std's own traits' members may add
+                // defaulted options, `String.equals(other, ignoreCase:)`).
+                (None, None) if own_method.is_some() && built_in.is_some() => {
+                    if !has_defaults(trait_ref) {
+                        implementation(own_method.unwrap(), member, trait_ref, item, &target, scope, &assoc)?;
+                    }
+                }
                 (None, None) if own_method.is_some() => return Err(clash()),
                 // The compiler's field-by-field default (D228 §4): a method
                 // of a plain product; a union or an instance compares
@@ -1529,22 +1632,11 @@ fn conformance_assoc(
     item: &Pending,
     target: &(String, String),
     refs: &[(TraitRef, Span)],
-    built_in: bool,
     named: &Named,
     listed: &Listed,
     scope: &Scope,
 ) -> Result<ConformedAssoc> {
     let conformance = &item.conformance;
-    let declares = refs.iter().any(|(trait_ref, _)| !scope.traits[trait_ref].assoc.is_empty());
-    if built_in && (declares || !conformance.assoc.is_empty()) {
-        return Err(Error::at(
-            format!(
-                "a conformance of `{}` with associated types is not supported yet (built-in types conform without them for now)",
-                conformance.ty.name
-            ),
-            conformance.span,
-        ));
-    }
     let listed_names = || -> String {
         let names: Vec<String> = refs.iter().map(|(trait_ref, _)| format!("`{}`", trait_ref.name)).collect();
         names.join(" or ")
@@ -1725,6 +1817,48 @@ fn provided_method(
         }),
         requires: Vec::new(),
     }
+}
+
+/// A built-in type's conformance member as an `extend` method is (D196): a
+/// function `__extend_Array_iterate` whose first parameter is `self`, generic
+/// over the conformance's parameters, in the module its body resolves in
+/// (the trait's, for a member the trait provides).
+fn extension_function(method: &Method, conformance: &Conformance, module: &str) -> (String, Function) {
+    let self_ty = TypeExpr {
+        name: conformance.ty.name.clone(),
+        args: conformance
+            .params
+            .iter()
+            .map(|param| {
+                TypeArg::Type(TypeExpr {
+                    name: param.name.clone(),
+                    ..void_type(param.span)
+                })
+            })
+            .collect(),
+        ..void_type(conformance.ty.span)
+    };
+    let selfed = crate::mir::subst_method(method, &HashMap::from([("Self".to_string(), self_ty.clone())]));
+    let module = method.provided.as_ref().map_or(module, |provided| provided.module.as_str());
+    let receiver = Param {
+        name: "self".into(),
+        name_span: method.name_span,
+        positional: true,
+        mutable: false,
+        ty: self_ty,
+        default: None,
+    };
+    let function = Function {
+        exported: true,
+        name: crate::extend_desugar::extension_fn_name(&conformance.ty.name, &method.name),
+        name_span: method.name_span,
+        type_params: conformance.params.clone(),
+        params: std::iter::once(receiver).chain(selfed.params).collect(),
+        return_type: selfed.return_type,
+        body: selfed.body,
+        generic: Vec::new(),
+    };
+    (module.to_string(), function)
 }
 
 /// A trait and its ancestors, nearest first, each once.
@@ -1922,7 +2056,7 @@ fn generic_functions(package: &mut Package, scope: &Scope) -> Result<()> {
         let mut archetypes = Vec::new();
         for item in &mut module.ast.items {
             let Item::Function(function) = item else { continue };
-            if let Err(error) = resolve_generics(function, &module.id, scope, &mut archetypes) {
+            if let Err(error) = resolve_generics(function, &module.id, scope, &mut archetypes, &HashMap::new()) {
                 errors.push(error.with_path(module.path.clone()));
             }
         }
@@ -1982,6 +2116,7 @@ fn resolve_generics(
     module: &str,
     scope: &Scope,
     archetypes: &mut Vec<TypeDef>,
+    resolved: &HashMap<String, Vec<TraitRef>>,
 ) -> Result<()> {
     // A bare trait in a parameter is a hidden type parameter, one per parameter.
     for param in &mut function.params {
@@ -2039,8 +2174,9 @@ fn resolve_generics(
                 param.span,
             ));
         }
-        let mut bounds = Vec::new();
-        for (name, span) in &param.traits {
+        // Bounds resolved where they were written, when that is elsewhere.
+        let mut bounds = resolved.get(&param.name).cloned().unwrap_or_default();
+        for (name, span) in param.traits.iter().filter(|_| !resolved.contains_key(&param.name)) {
             let Some(bound) = scope.trait_named(module, name) else {
                 return Err(Error::at(format!("unknown trait `{name}`"), *span));
             };

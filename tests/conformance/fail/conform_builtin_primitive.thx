@@ -1,0 +1,11 @@
+## D228: the runtime's members of a built-in type count as its own, so a
+## conformance cannot add `append` to an `Array`.
+trait Grows {
+    fn append(item!: Int64)
+}
+
+conform Array<T> to Grows {
+    fn append(item!: Int64) {}
+}
+
+fn main() { 0 }

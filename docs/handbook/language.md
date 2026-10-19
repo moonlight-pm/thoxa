@@ -1521,8 +1521,8 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
   type's own methods or fields, or with another trait's member on the same
   type.
 - A conformance goes in the module that defines the type or the one that
-  defines the trait; one with methods goes in the type's module. A type
-  conforms to a trait once.
+  defines the trait; one with methods goes in the type's module (a built-in
+  type's may go in the trait's). A type conforms to a trait once.
 - A trait is private to its module unless marked `export`, and is imported by
   name like a type. The built-in traits, `Equatable`, `Hashable`, `Ordered`
   (see [Equality and order](#equality-and-order)), `Show`, `Component` (see
@@ -1534,8 +1534,13 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
   not `Box<Node>`. Its members are the instances' methods, and only those
   instances have them: `Box<Node>` has no `equals`. `Self` is the instance,
   `Box<T>`. A conformance may name the type's parameters its own way
-  (`conform Box<U: Equatable>`); its members use its names. A conformance of
-  a built-in type has no body for now.
+  (`conform Box<U: Equatable>`); its members use its names.
+- A built-in type conforms too, with bounds for `Array` and `Map`
+  (`conform Array<T: Show> to Describe`). Its members are written like the
+  methods std adds to it: `self` is the value (`self.count`), and a bare
+  call or property reaches the value's own (`describe()`). They take the
+  value as it is and cannot change it. A built-in type's own methods (`String`'s
+  `trim`) count as members, so a trait cannot add one of the same name.
 
 ```thx
 type Box<T>(value: T)
@@ -1547,6 +1552,22 @@ conform Box<T: Equatable> to Equatable {
 }
 
 let same = Box(value: 3) == Box(value: 3)   ## true, through this `equals`
+
+trait Describe {
+    fn describe() -> String
+
+    fn shout() -> String {
+        "{describe().toUpper()}!"
+    }
+}
+
+conform Int64 to Describe {
+    fn describe() -> String {
+        "number {self}"
+    }
+}
+
+let loud = 7.shout()                          ## "NUMBER 7!"
 ```
 
 ```thx
@@ -1568,8 +1589,7 @@ let hello = Guest(name: "ada").greet()     ## "hello, ada"
 ```
 
 Limits: a trait's members take no parameter defaults, a trait cannot be used
-as a type, and a conformance of a built-in type or of a union cannot have a
-body.
+as a type, and a conformance of a union cannot have a body.
 
 ### Associated types
 
@@ -1700,11 +1720,13 @@ fn count<I: Iterator>(cursor!: I) -> Int64 where I.Item: Show {
 }
 ```
 
-Limits: a built-in type cannot conform to a trait with associated types, so
-an `Array` is not a `Sequence` (`for` reads arrays directly) and a generic
-function over `Sequence` does not take one; `S.Item` is written in generic
-functions, not in generic types; and a member whose signature names an
-associated type cannot be called through `mixed`.
+- An `Array` is a `Sequence` (its cursor is std's `ArrayCursor<T>`), so
+  `collect([1, 2, 3])` takes one; `for` reads an array directly.
+
+Limits: a `Map` and a `String` are not `Sequence`s (`for` reads them
+directly); `S.Item` is written in generic functions, not in generic types;
+and a member whose signature names an associated type cannot be called
+through `mixed`.
 
 ### Mixed values
 

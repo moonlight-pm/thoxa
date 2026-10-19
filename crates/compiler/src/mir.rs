@@ -49,6 +49,8 @@ struct SyntheticRegistry {
     assoc: HashMap<String, HashMap<String, Ty>>,
     /// `mixed T`'s members that name an associated type, by the union.
     mixed_closed: HashMap<String, HashSet<String>>,
+    /// Built-in types' associated types, by the type's name (D228 §7).
+    built_in_assoc: crate::trait_desugar::BuiltInAssoc,
 }
 
 /// Whether a Map keyed by the type `name` calls its own `hash` and `equals`
@@ -2765,6 +2767,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         generics: generics.clone(),
         assoc: assoc_types,
         mixed_closed: trait_output.mixed_closed.clone(),
+        built_in_assoc: trait_output.built_in_assoc.clone(),
         ..SyntheticRegistry::default()
     }));
     // Name maps of the modules whose globals are done, so a default argument
@@ -6899,7 +6902,7 @@ fn method_requires(gdef: &GenericDef, method: &Method, subst: &HashMap<String, T
 /// its template's with the instance's arguments, worked out on first use.
 fn assoc_type(ctx: &mut LowerCtx, ty: &Ty, name: &str, span: Span) -> Result<Option<Ty>> {
     let Ty::User(mangled) = ty else {
-        return Ok(None);
+        return built_in_assoc_type(ctx, ty, name, span);
     };
     let recorded = ctx
         .synthetics
@@ -6947,6 +6950,56 @@ fn assoc_type(ctx: &mut LowerCtx, ty: &Ty, name: &str, span: Span) -> Result<Opt
         .entry(mangled.clone())
         .or_default()
         .insert(name.to_string(), found.clone());
+    Ok(Some(found))
+}
+
+/// A built-in type's associated type (D228 §7): its conformance's, with the
+/// type's arguments (an `Array<Int64>`'s `Cursor` is `ArrayCursor<Int64>`).
+fn built_in_assoc_type(ctx: &mut LowerCtx, ty: &Ty, name: &str, span: Span) -> Result<Option<Ty>> {
+    let (base, args): (String, Vec<Ty>) = match ty {
+        Ty::Array { elem } => ("Array".into(), vec![elem.as_ref().clone()]),
+        Ty::Map { key, val } => ("Map".into(), vec![key.as_ref().clone(), val.as_ref().clone()]),
+        other => match extension_key(other) {
+            Some(key) => (key, Vec::new()),
+            None => return Ok(None),
+        },
+    };
+    let entry = ctx
+        .synthetics
+        .borrow()
+        .built_in_assoc
+        .get(&base)
+        .and_then(|entries| entries.iter().find(|(_, each, ..)| each == name).cloned());
+    let Some((params, _, written, bounds)) = entry else {
+        return Ok(None);
+    };
+    let subst: HashMap<String, Ty> = params.into_iter().zip(args).collect();
+    let written = TypeExpr {
+        span,
+        ..subst_type_expr(&written, &subst)
+    };
+    // Written in MIR names, so any module's map reads it.
+    let name_map = ctx
+        .package_maps
+        .get("std_core")
+        .map(|maps| maps.name_to_type.clone())
+        .unwrap_or_default();
+    generic::ensure_instances(ctx, &written, &name_map)?;
+    let found = resolve_ty(&written, &ctx.types, &name_map)?;
+    let conditional = ctx.synthetics.borrow().conditional.clone();
+    for bound in &bounds {
+        if !ty_conforms(&ctx.types, &conditional, &found, bound) {
+            return Err(Error::at(
+                format!(
+                    "`{}`'s `{name}` is {}, which is not `{}`",
+                    display_ty(ty),
+                    display_ty(&found),
+                    bound.name
+                ),
+                span,
+            ));
+        }
+    }
     Ok(Some(found))
 }
 
@@ -8427,6 +8480,22 @@ fn self_receiver(ctx: &LowerCtx) -> Option<String> {
     ctx.method_type.clone()
 }
 
+/// Whether `method` is a method of the receiver of the built-in type's method
+/// being lowered (D196, D228): `self` is a parameter there, not a type's
+/// receiver, and its type has the method from an `extend` block or a
+/// conformance.
+fn extension_sibling(ctx: &LowerCtx, method: &str, span: Span) -> bool {
+    if ctx.method_type.is_some() {
+        return false;
+    }
+    let Some(receiver) = ctx.lookup("self") else {
+        return false;
+    };
+    // A private one is still its sibling; the call reports it.
+    !matches!(extension_method(ctx, &receiver.ty, method, span), Ok(None))
+        || !matches!(generic_extension(ctx, &receiver.ty, method, span), Ok(None))
+}
+
 /// A method of `type_name` callable by bare name or through `self` in the body
 /// being lowered: any of its methods, or, in a body a trait provides, only the
 /// trait's members (D208, D228).
@@ -8546,6 +8615,12 @@ fn lower_method(
     synthetics: &Rc<RefCell<SyntheticRegistry>>,
 ) -> Result<Function> {
     let name_to_type = &with_self_type(name_to_type.clone(), mangled_type);
+    // A late instance's signature may name instances made while lowering.
+    let mut seeded = types.clone();
+    for (name, (info, _)) in synthetics.borrow().entries.iter() {
+        seeded.entry(name.clone()).or_insert_with(|| info.clone());
+    }
+    let types = &seeded;
     // Unannotated: the type inference gave the signature (D174), else Void.
     let ret_ty = match m.return_type.as_ref() {
         Some(t) => resolve_ty(t, types, name_to_type)?,
@@ -9432,6 +9507,18 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
                 if let Some(error) = own_accessor_error(ctx, name, expr.span) {
                     return Err(error);
                 }
+                // A property of a built-in type's receiver, in its methods.
+                if extension_sibling(ctx, &getter_name(name), expr.span) {
+                    let property = Expr {
+                        kind: ExprKind::Field {
+                            base: Box::new(crate::ast_build::name("self")),
+                            name: name.clone(),
+                            name_span: expr.span,
+                        },
+                        span: expr.span,
+                    };
+                    return lower_expr(ctx, &property);
+                }
             }
             if let Some(binding) = found {
                 let ty = binding.ty.clone();
@@ -10036,7 +10123,9 @@ fn lower_for_array(
     body: &Block,
 ) -> Result<(Place, Ty)> {
     let (arr_p, arr_ty) = lower_expr(ctx, collection)?;
-    if ctx.conforms(&arr_ty, "Iterator") || ctx.conforms(&arr_ty, "Sequence") {
+    // An Array is a `Sequence` too, but read directly.
+    let built_in = matches!(arr_ty, Ty::Array { .. } | Ty::Map { .. });
+    if !built_in && (ctx.conforms(&arr_ty, "Iterator") || ctx.conforms(&arr_ty, "Sequence")) {
         return lower_for_cursor(ctx, name, name_span, arr_p, arr_ty, collection.span, body);
     }
     let elem_ty = match &arr_ty {
@@ -13234,7 +13323,9 @@ fn extension_method(ctx: &LowerCtx, ty: &Ty, method: &str, span: Span) -> Result
     };
     let short = crate::extend_desugar::extension_fn_name(&key, method);
     for (module, exports) in &ctx.module_exports {
-        let Some(sig) = ctx.fns.get(&format!("{module}_{short}")) else {
+        // A conformance in the entry module adds them there, named bare.
+        let mangled = exports.fns.get(&short).cloned().unwrap_or_else(|| format!("{module}_{short}"));
+        let Some(sig) = ctx.fns.get(&mangled) else {
             continue;
         };
         if *module != ctx.module_id && !exports.fns.contains_key(&short) {
@@ -13258,7 +13349,7 @@ fn generic_extension(ctx: &LowerCtx, ty: &Ty, method: &str, span: Span) -> Resul
     };
     let short = crate::extend_desugar::extension_fn_name(base, method);
     for (module, exports) in &ctx.module_exports {
-        let template = format!("{module}_{short}");
+        let template = exports.fns.get(&short).cloned().unwrap_or_else(|| format!("{module}_{short}"));
         if !ctx.synthetics.borrow().generic_fns.contains_key(&template) {
             continue;
         }
@@ -13343,6 +13434,8 @@ fn string_method_names(ctx: &LowerCtx) -> Vec<String> {
         let long = format!("{module}_{prefix}");
         names.extend(ctx.fns.keys().filter_map(|key| key.strip_prefix(&long).map(str::to_string)));
     }
+    // The entry module's, from a conformance there, are named bare.
+    names.extend(ctx.fns.keys().filter_map(|key| key.strip_prefix(&prefix).map(str::to_string)));
     names.sort();
     names.dedup();
     names
@@ -18787,6 +18880,11 @@ fn lower_call(
         if sibling_visible(ctx, &type_name, callee) {
             return lower_sibling_call(ctx, &type_name, callee, args, span);
         }
+    }
+    // So it does in a built-in type's methods, written with `extend` or in a
+    // conformance: the call is on `self`.
+    if ctx.lookup(callee).is_none() && extension_sibling(ctx, callee, span) {
+        return lower_method_call(ctx, &crate::ast_build::name("self"), callee, span, args);
     }
     match callee {
         "Pass" | "Fail" => lower_pass_fail(ctx, callee, args, span, expect),

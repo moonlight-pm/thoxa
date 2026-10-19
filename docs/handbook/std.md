@@ -63,9 +63,12 @@ Every program has this module, and its names need no import:
 | `Resource` | a shared box whose `drop()` runs with its last copy |
 | `Iterator` | values one at a time: `type Item`, member `next() -> May<Item>` |
 | `Sequence` | what `for` reads: `type Cursor: Iterator`, `type Item = Cursor.Item`, member `iterate() -> Cursor` |
+| `ArrayCursor<T>` | an `Array`'s elements in order, the `Iterator` its `iterate()` makes: `items`, `index` |
 
 It also declares how the built-in types conform, and writes their `equals`
-and `compare` in Thoxa (`String`'s are in `std/string`). See
+and `compare` in Thoxa (`String`'s are in `std/string`). An `Array<T>` is a
+`Sequence` whose `Item` is `T`, so a generic function over sequences takes
+one. See
 [Equality and order](language.md#equality-and-order),
 [Traits](language.md#traits), and
 [Associated types](language.md#associated-types).

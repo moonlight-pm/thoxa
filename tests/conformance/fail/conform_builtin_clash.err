@@ -1,0 +1,1 @@
+`String` already has a member named `trim`, so it cannot take `Trimmed`'s

@@ -105,6 +105,31 @@ conform Array<T: Equatable> to Equatable
 conform Array<T: Hashable> to Hashable
 conform Map<K: Hashable, V: Equatable> to Equatable
 
+## An array is a `Sequence`, so generic code over sequences takes one. `for`
+## reads an array directly; `iterate()` gives its elements in order.
+conform Array<T> to Sequence {
+    type Cursor = ArrayCursor<T>
+
+    fn iterate() -> ArrayCursor<T> {
+        ArrayCursor(items: self, index: 0)
+    }
+}
+
+## An array's elements in order, one at a time.
+export type ArrayCursor<T>(items: Array<T>, index: Int64)
+
+conform ArrayCursor<T> to Iterator {
+    type Item = T
+
+    fn next() -> May<T> {
+        if index >= items.count {
+            return Not()
+        }
+        index = index + 1
+        Has(items[index - 1])
+    }
+}
+
 extend Int64 {
     export fn equals(other!: Int64) -> Bool {
         self == other
