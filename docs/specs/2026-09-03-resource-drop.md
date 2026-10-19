@@ -1,5 +1,7 @@
 # Freeze: Resource `drop` (last RC)
 
+**Amended by D228 (2026-10-18):** a type is a resource by declaring `conform T to Resource { fn drop() { … } }` ([`2026-10-18-traits.md`](2026-10-18-traits.md)); a type's own `fn drop()` is an ordinary method. The rest of this freeze holds.
+
 **Date:** 2026-09-03
 **Status:** target (freeze)
 **Implementation:** shipped (v0)

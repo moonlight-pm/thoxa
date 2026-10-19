@@ -1,0 +1,10 @@
+## D155 / D228: only a product can be a `Resource` (a shared heap box).
+type Red
+type Green
+type Light = Red | Green
+
+conform Light to Resource {
+    fn drop() {}
+}
+
+fn main() {}

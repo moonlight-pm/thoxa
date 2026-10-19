@@ -7,13 +7,16 @@ use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::Span;
 
 /// Keywords that only introduce a declaration or a clause: `type`, `extend`,
-/// `import … from`, `export`, `extern`, `x as T`, `for x in`, `T where …`.
+/// `trait`, `conform`, `import … from`, `export`, `extern`, `x as T`,
+/// `for x in`, `T where …`.
 /// Wherever a name goes they are names: argument labels, parameters, fields,
 /// bindings, and references to them (D198).
 fn soft_keyword(kind: &TokenKind) -> Option<&'static str> {
     match kind {
         TokenKind::Type => Some("type"),
         TokenKind::Extend => Some("extend"),
+        TokenKind::Trait => Some("trait"),
+        TokenKind::Conform => Some("conform"),
         TokenKind::Import => Some("import"),
         TokenKind::From => Some("from"),
         TokenKind::Export => Some("export"),
@@ -52,7 +55,7 @@ const MAX_EXPR_NESTING: usize = 1000;
 /// User-facing message for a statement outside any function.
 pub const TOP_LEVEL_STMT_MSG: &str =
     "a statement cannot be at the top level \
-     (only import, type, extend, extern, fn, let, and mut go here)";
+     (only import, type, trait, conform, extend, extern, fn, let, and mut go here)";
 
 /// HTTP method idents recognized as route clauses inside a type body only
 /// (**D150**). Not reserved keywords elsewhere.
@@ -137,6 +140,16 @@ impl Parser {
                 ));
             }
             Ok(Some(Item::Extend(self.parse_extension()?)))
+        } else if self.at(TokenKind::Trait) {
+            Ok(Some(Item::Trait(self.parse_trait(exported)?)))
+        } else if self.at(TokenKind::Conform) {
+            if exported {
+                return Err(Error::at(
+                    "a conformance is not exported; it holds wherever the type and the trait are visible",
+                    self.peek_span(),
+                ));
+            }
+            Ok(Some(Item::Conform(self.parse_conformance()?)))
         } else if self.at(TokenKind::Extern) {
             Ok(Some(Item::Extern(self.parse_extern(exported)?)))
         } else if self.at(TokenKind::Fn) {
@@ -184,6 +197,8 @@ impl Parser {
                 TokenKind::Fn
                 | TokenKind::Type
                 | TokenKind::Extend
+                | TokenKind::Trait
+                | TokenKind::Conform
                 | TokenKind::Extern
                 | TokenKind::Import
                 | TokenKind::Export
@@ -433,6 +448,7 @@ impl Parser {
                 routes: Vec::new(),
                 conversions: Vec::new(),
                 union_members: Some(members),
+                traits: Vec::new(),
             });
         }
 
@@ -563,6 +579,7 @@ impl Parser {
             routes,
             conversions,
             union_members: None,
+            traits: Vec::new(),
         })
     }
 
@@ -760,6 +777,137 @@ impl Parser {
             receiver_span,
             methods,
         })
+    }
+
+    /// `[export] trait Name [: Parent & Parent] { fn … }` (D228). A member
+    /// without a body is required; one with a body is provided.
+    fn parse_trait(&mut self, exported: bool) -> Result<TraitDef> {
+        self.expect_kind(&TokenKind::Trait)?;
+        let (name, name_span) = self.expect_ident()?;
+        let mut parents = Vec::new();
+        if self.at(TokenKind::Colon) {
+            self.bump();
+            loop {
+                parents.push(self.expect_ident()?);
+                if self.at(TokenKind::Amp) {
+                    self.bump();
+                    continue;
+                }
+                break;
+            }
+        }
+        self.expect_kind(&TokenKind::LBrace)?;
+        let mut members = Vec::new();
+        while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
+            if self.at(TokenKind::Export) {
+                return Err(Error::at(
+                    "a trait's members are public; drop `export`",
+                    self.peek_span(),
+                ));
+            }
+            if !self.at(TokenKind::Fn) {
+                return Err(Error::at(
+                    "a trait holds methods (`fn name(…)`, with a body or without)",
+                    self.peek_span(),
+                ));
+            }
+            self.bump();
+            let (member_name, member_span) = self.expect_ident()?;
+            let params = self.parse_param_list()?;
+            let return_type = if self.at(TokenKind::Arrow) {
+                self.bump();
+                Some(self.parse_type()?)
+            } else {
+                None
+            };
+            let body = if self.at(TokenKind::LBrace) {
+                Some(self.parse_block()?)
+            } else {
+                None
+            };
+            members.push(TraitMember {
+                name: member_name,
+                name_span: member_span,
+                params,
+                return_type,
+                body,
+            });
+        }
+        self.expect_kind(&TokenKind::RBrace)?;
+        Ok(TraitDef {
+            exported,
+            name,
+            name_span,
+            parents,
+            members,
+        })
+    }
+
+    /// `conform Type to Trait, Trait [{ fn … }]` (D228).
+    fn parse_conformance(&mut self) -> Result<Conformance> {
+        let span = self.peek_span();
+        self.expect_kind(&TokenKind::Conform)?;
+        let ty = self.parse_type()?;
+        match &self.current().kind {
+            TokenKind::Ident(word) if word == "to" => self.bump(),
+            _ => {
+                return Err(Error::at(
+                    "expected `to` and the traits: `conform Type to Trait`",
+                    self.peek_span(),
+                ))
+            }
+        }
+        let mut traits = vec![self.expect_ident()?];
+        while self.at(TokenKind::Comma) {
+            self.bump();
+            traits.push(self.expect_ident()?);
+        }
+        let mut methods = Vec::new();
+        if self.at(TokenKind::LBrace) {
+            self.bump();
+            while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
+                if self.at(TokenKind::Export) {
+                    return Err(Error::at(
+                        "a trait's members are public; drop `export`",
+                        self.peek_span(),
+                    ));
+                }
+                if !self.at(TokenKind::Fn) {
+                    return Err(Error::at(
+                        "a conformance holds the traits' methods (`fn name(…) { … }`)",
+                        self.peek_span(),
+                    ));
+                }
+                let mut method = self.parse_method()?;
+                method.exported = true;
+                methods.push(method);
+            }
+            self.expect_kind(&TokenKind::RBrace)?;
+        }
+        Ok(Conformance {
+            span,
+            ty,
+            traits,
+            methods,
+        })
+    }
+
+    /// `(param, …)` after a name.
+    fn parse_param_list(&mut self) -> Result<Vec<Param>> {
+        self.expect_kind(&TokenKind::LParen)?;
+        let mut params = Vec::new();
+        if !self.at(TokenKind::RParen) {
+            loop {
+                params.push(self.parse_param()?);
+                if self.at(TokenKind::Comma) {
+                    self.bump();
+                    continue;
+                }
+                break;
+            }
+        }
+        self.expect_kind(&TokenKind::RParen)?;
+        Ok(params)
     }
 
     fn parse_method(&mut self) -> Result<Method> {
@@ -3432,6 +3580,8 @@ fn jsx_name_from_token(kind: &TokenKind) -> Option<String> {
         TokenKind::Not => Some("not".into()),
         TokenKind::Extern => Some("extern".into()),
         TokenKind::Where => Some("where".into()),
+        TokenKind::Trait => Some("trait".into()),
+        TokenKind::Conform => Some("conform".into()),
         _ => None,
     }
 }

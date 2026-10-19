@@ -1,0 +1,20 @@
+## D228: two traits cannot give one type a member of the same name.
+trait Shape {
+    fn area() -> Float64
+}
+
+trait Region {
+    fn area() -> Float64
+}
+
+type Circle(radius: Float64)
+
+conform Circle to Shape {
+    fn area() -> Float64 {
+        3.0 * radius * radius
+    }
+}
+
+conform Circle to Region
+
+fn main() {}

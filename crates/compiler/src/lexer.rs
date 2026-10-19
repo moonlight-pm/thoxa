@@ -32,6 +32,10 @@ pub enum TokenKind {
     Return,
     Where,
     Extend,
+    /// `trait Name { … }` (D228).
+    Trait,
+    /// `conform Type to Trait` (D228).
+    Conform,
     // Identifiers & literals
     Ident(String),
     Int(i64),
@@ -587,6 +591,8 @@ impl<'a> Lexer<'a> {
             "return" => TokenKind::Return,
             "where" => TokenKind::Where,
             "extend" => TokenKind::Extend,
+            "trait" => TokenKind::Trait,
+            "conform" => TokenKind::Conform,
             _ => TokenKind::Ident(text.to_string()),
         };
         Ok(Token {

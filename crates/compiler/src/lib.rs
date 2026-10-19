@@ -17,6 +17,7 @@ pub mod refine;
 pub mod resolver;
 pub mod route_desugar;
 pub mod span;
+pub mod trait_desugar;
 pub mod validate_desugar;
 pub mod version;
 

@@ -214,10 +214,10 @@ fn load_package_from_entry_ast_inner(
     Ok(package)
 }
 
-/// std modules in every package, imported or not: they hold the methods of
-/// built-in types, written with `extend` (D196). Loading one adds no names to
-/// a program; a method call finds it.
-const CORE_MODULES: &[&str] = &["string"];
+/// std modules in every package, imported or not: `core` holds the built-in
+/// traits, visible by name everywhere (D228); `string` holds String's
+/// methods, written with `extend` (D196), which a method call finds.
+const CORE_MODULES: &[&str] = &["core", "string"];
 
 pub fn include_core_modules(package: &mut Package) -> Result<()> {
     let Ok(root) = std_lib_root() else {
@@ -704,6 +704,9 @@ pub fn build_import_maps(
                 }
                 Item::Global(g) if g.exported => {
                     set.insert(g.name.clone());
+                }
+                Item::Trait(t) if t.exported => {
+                    set.insert(t.name.clone());
                 }
                 _ => {}
             }

@@ -615,6 +615,14 @@
         },
         {
           "type": "STRING",
+          "value": "trait"
+        },
+        {
+          "type": "STRING",
+          "value": "conform"
+        },
+        {
+          "type": "STRING",
           "value": "GET"
         },
         {

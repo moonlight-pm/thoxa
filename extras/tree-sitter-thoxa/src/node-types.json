@@ -704,6 +704,10 @@
     "extra": true
   },
   {
+    "type": "conform",
+    "named": false
+  },
+  {
     "type": "continue",
     "named": false
   },
@@ -818,6 +822,10 @@
   {
     "type": "string_content",
     "named": true
+  },
+  {
+    "type": "trait",
+    "named": false
   },
   {
     "type": "true",

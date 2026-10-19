@@ -1,0 +1,6 @@
+## D228: a trait cannot be its own ancestor.
+trait Named: Ranked {}
+
+trait Ranked: Named {}
+
+fn main() {}

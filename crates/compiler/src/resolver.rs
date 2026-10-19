@@ -28,6 +28,8 @@ pub enum BindingKind {
     Fn,
     Extern,
     Type,
+    /// `trait Name { … }` (D228).
+    Trait,
     Field,
     Method,
     Param,
@@ -45,6 +47,7 @@ impl BindingKind {
             BindingKind::Fn => "fn",
             BindingKind::Extern => "extern",
             BindingKind::Type => "type",
+            BindingKind::Trait => "trait",
             BindingKind::Field => "field",
             BindingKind::Method => "method",
             BindingKind::Param => "param",
@@ -693,6 +696,32 @@ impl<'a> Resolver<'a> {
                 }
                 // Desugared into functions before resolving (D196).
                 Item::Extend(_) => {}
+                Item::Trait(def) => {
+                    let id = self.new_binding(
+                        &def.name,
+                        BindingKind::Trait,
+                        Some(def.name_span),
+                        def.exported,
+                        None,
+                        true,
+                    );
+                    self.define(root, &def.name, id);
+                }
+                // A conformance's methods are members of its type (D228).
+                Item::Conform(conformance) => {
+                    for method in &conformance.methods {
+                        let id = self.member_binding(
+                            &conformance.ty.name,
+                            &method.name,
+                            BindingKind::Method,
+                            method.name_span,
+                            true,
+                        );
+                        if let Some(ret) = &method.return_type {
+                            self.set_nav_ty(id, Self::nav_ty_from_type_expr(ret));
+                        }
+                    }
+                }
                 Item::Import(imp) => match &imp.kind {
                     ImportKind::Selective(names) => {
                         self.declare_selective_imports(root, &imp.path, names);
@@ -836,18 +865,7 @@ impl<'a> Resolver<'a> {
                 self.walk_type_expr_opt(e.return_type.as_ref(), root);
             }
             Item::Type(td) => {
-                let body = self.push_scope(Some(root));
-                // Members are visible in field defaults / method bodies (seeded above).
-                let member_ids: Vec<(String, u32)> = self
-                    .res
-                    .bindings
-                    .values()
-                    .filter(|b| b.owner.as_deref() == Some(td.name.as_str()))
-                    .map(|b| (b.name.clone(), b.id))
-                    .collect();
-                for (name, id) in member_ids {
-                    self.define(body, &name, id);
-                }
+                let body = self.member_scope(&td.name, root);
                 for p in &td.params {
                     self.walk_type_expr(&p.ty, root);
                 }
@@ -869,10 +887,51 @@ impl<'a> Resolver<'a> {
                     self.set_nav_ty(id, nav);
                 }
             }
+            Item::Trait(def) => {
+                for (name, span) in &def.parents {
+                    self.add_ref(*span, self.lookup(root, name), RefCtx::Type);
+                }
+                for member in &def.members {
+                    for p in &member.params {
+                        self.walk_type_expr(&p.ty, root);
+                    }
+                    self.walk_type_expr_opt(member.return_type.as_ref(), root);
+                }
+            }
+            Item::Conform(conformance) => {
+                self.walk_type_expr(&conformance.ty, root);
+                for (name, span) in &conformance.traits {
+                    self.add_ref(*span, self.lookup(root, name), RefCtx::Type);
+                }
+                let body = self.member_scope(&conformance.ty.name, root);
+                for m in &conformance.methods {
+                    self.walk_type_expr_opt(m.return_type.as_ref(), root);
+                    let method_scope = self.push_scope(Some(body));
+                    self.bind_params(&m.params, method_scope, root);
+                    self.walk_block(&m.body, method_scope);
+                }
+            }
             Item::Import(_) | Item::Extend(_) => {
                 // Import path string is not a name reference; locals already seeded.
             }
         }
+    }
+
+    /// A scope where a type's members (fields, methods, conformance methods)
+    /// are visible by bare name, as in its method bodies.
+    fn member_scope(&mut self, type_name: &str, root: usize) -> usize {
+        let body = self.push_scope(Some(root));
+        let member_ids: Vec<(String, u32)> = self
+            .res
+            .bindings
+            .values()
+            .filter(|b| b.owner.as_deref() == Some(type_name))
+            .map(|b| (b.name.clone(), b.id))
+            .collect();
+        for (name, id) in member_ids {
+            self.define(body, &name, id);
+        }
+        body
     }
 
     fn bind_params(&mut self, params: &[ast::Param], scope: usize, type_scope: usize) {
@@ -1590,6 +1649,33 @@ type Point(x: Int64) {
         let b = res.binding_of(Some(r)).expect("sibling linked");
         assert_eq!(b.kind, BindingKind::Method);
         assert_eq!(b.owner.as_deref(), Some("Point"));
+    }
+
+    #[test]
+    fn conformance_members_are_the_types() {
+        // D228: a conformance's methods are members of its type; its body sees
+        // the type's fields; its header refers to the trait.
+        let src = "\
+trait Named {
+  fn label() -> String
+}
+type Card(rank: Int64)
+conform Card to Named {
+  fn label() -> String { \"{rank}\" }
+}
+fn main() { let card = Card(rank: 3)
+  card.label() }
+";
+        let res = resolve_ok(src);
+        let at = |needle: &str| {
+            let p = byte_to_position(src, src.find(needle).unwrap());
+            res.binding_of(res.ref_at(src, p.line, p.character)).expect(needle)
+        };
+        let label = at("label() }");
+        assert_eq!(label.kind, BindingKind::Method);
+        assert_eq!(label.owner.as_deref(), Some("Card"));
+        assert_eq!(at("rank}").kind, BindingKind::Field);
+        assert_eq!(at("Named {\n  fn label() -> String {").kind, BindingKind::Trait);
     }
 
     #[test]

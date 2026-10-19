@@ -1,6 +1,8 @@
-## D179: a type with `drop` is a resource, not a value, so it is not a key.
-type Handle(fd: Int64) {
-    export fn drop() {
+## D179: a `Resource` is not a value, so it is not a key.
+type Handle(fd: Int64)
+
+conform Handle to Resource {
+    fn drop() {
         fd = -1
     }
 }

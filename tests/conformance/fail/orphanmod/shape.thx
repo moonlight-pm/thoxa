@@ -1,0 +1,4 @@
+## A trait for fail/conform_orphan.thx.
+export trait Shape {
+    fn area() -> Float64
+}

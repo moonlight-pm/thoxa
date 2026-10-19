@@ -55,8 +55,8 @@ there; anywhere a name goes they are names, so they can be argument labels,
 parameters, fields, and variables:
 
 ```text
-as        export    extend    extern    from      import    in
-type      where
+as        conform   export    extend    extern    from      import
+in        trait     type      where
 ```
 
 ```thx
@@ -71,9 +71,10 @@ let at = find("abc", from: 2)
 ```
 
 Some other words have a meaning only in one position: `sql` directly before
-a string literal (`sql"…"`), and the HTTP verbs `GET` `POST` `PUT` `PATCH`
-`DELETE` `HEAD` `OPTIONS` at the start of an entry in a type body (see
-[Route clauses](#route-clauses)).
+a string literal (`sql"…"`), `to` after `conform Type`, `Self` as a type in a
+trait or a conformance (see [Traits](#traits)), and the HTTP verbs `GET`
+`POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS` at the start of an entry in a
+type body (see [Route clauses](#route-clauses)).
 
 ### Literals
 
@@ -202,8 +203,8 @@ has finished, then exits.
 
 ### Top level
 
-The top level of a file holds declarations only: `import`, `type`, `fn`,
-`let` / `mut`, `extern`, and `export`. A statement there (a call, an
+The top level of a file holds declarations only: `import`, `type`, `trait`,
+`conform`, `fn`, `let` / `mut`, `extern`, and `export`. A statement there (a call, an
 assignment, or a bare name such as `FOOBAR`) is a compile error, reported at
 its span; move it into `fn main`. The file a program starts from must define
 `main`, or the compiler reports that the program requires `fn main`; a file
@@ -529,7 +530,7 @@ fields hash by value: integers, `Float64`, `Bool`, `String`, `Bytes`, arrays of
 those, refined and literal-union fields, and nested such types. Two keys are the
 same key when they are `==`, except that a `Float64` matches as JavaScript's
 `Map` does: any NaN matches NaN, and `-0.0` matches `0.0`, so every key can be
-found again. A key type holding a `Map` or a `Node`, a type with `drop`, or a
+found again. A key type holding a `Map` or a `Node`, a `Resource`, or a
 C-layout type is a compile error. A call can be a literal key:
 
 ```thx
@@ -844,7 +845,7 @@ let two = found == Has(2)                  ## true
 
 It is a compile error to compare values of different types, to use `<` or `>`
 on a product, union, array, map, or string, or to compare types where some
-field, member, element, or map value has no `==` (a `Node`). Types with `drop`
+field, member, element, or map value has no `==` (a `Node`). A `Resource`
 and C-layout types have no `==`. There is no `==` on function values.
 
 ## Conversions
@@ -1168,7 +1169,7 @@ function or method without `->` infers its return type from its exits:
 - a recursive or mutually recursive function must be annotated; the error
   names each function on the cycle.
 
-An unannotated `main` returns `Int64` or nothing (see [Entry point](#entry-point)), and `drop` always returns `Void`. A
+An unannotated `main` returns `Int64` or nothing (see [Entry point](#entry-point)), and a conformance's method without `->` returns what its trait says (see [Traits](#traits)). A
 multi-clause function or method without `->` joins its clauses' types. A
 generic type's method is inferred for each instance, so `first()` on a
 `Shelf<String>` is a `String`.
@@ -1279,18 +1280,92 @@ writable receiver: a `mut` binding, or
 `items[i]` on a `mut` array (the element is stored back). Calling it on a
 `let`, a parameter, a `for` or match binding, or a temporary is a compile
 error. From outside its type a field is read-only, so `pair.left.add(by: 1)`
-is an error; inside `Pair`'s own methods, `left.add(by: 1)` writes back. Types
-with `drop` are exempt (they are shared boxes).
+is an error; inside `Pair`'s own methods, `left.add(by: 1)` writes back. A
+`Resource` is exempt (its values are shared boxes).
+
+### Traits
+
+A trait names methods that a type supplies. A type conforms to a trait only
+by declaring it with `conform`; having methods of the right names is not
+enough.
+
+```thx
+trait Named {
+    fn label() -> String
+}
+
+trait Ranked: Named {
+    fn beats(other!: Self) -> Bool
+}
+
+type Card(name: String, rank: Int64)
+
+conform Card to Named, Ranked {
+    fn label() -> String {
+        "{name} ({rank})"
+    }
+
+    fn beats(other!: Self) -> Bool {
+        rank > other.rank
+    }
+}
+
+let ace = Card(name: "ace", rank: 14)
+let wins = ace.beats(Card(name: "king", rank: 13))   ## true
+```
+
+- A trait's members are method signatures without bodies. A conforming type
+  supplies every one with the trait's parameters; a member may leave out the
+  return type and takes the trait's.
+- `Self` in a signature is the conforming type: `beats` on a `Card` takes a
+  `Card`.
+- `trait Ranked: Named` makes `Named` a parent (several are joined with `&`).
+  A type that conforms to `Ranked` must also conform to `Named`, in its own
+  `conform`.
+- `conform Type to A, B { … }` may list several traits; each method in the
+  body goes to the trait that declares it. A method that no listed trait
+  declares belongs in the type's body. A trait without members needs no body:
+  `conform Square to Sealed`.
+- A conformance's methods are called like the type's own (`ace.label()`), see
+  its fields by bare name, and are public: there is no `export` in a trait or a
+  conformance.
+- One name, one member: a trait's member cannot share its name with the
+  type's own methods or fields, or with another trait's member on the same
+  type.
+- A conformance goes in the module that defines the type or the one that
+  defines the trait; one with methods goes in the type's module. A type
+  conforms to a trait once.
+- A trait is private to its module unless marked `export`, and is imported by
+  name like a type. The built-in `Resource` needs no import.
+
+Limits: a trait's members cannot have bodies or parameter defaults, a trait
+cannot be used as a type, and generic types, built-in types, and unions with
+methods cannot conform.
 
 ### Resources
 
-A product may define `export fn drop()` with no parameters and no return
-value. Values of such a type are heap boxes shared by every copy; when the
-last reference goes away, `drop` runs and the box is freed. `File`, `Socket`,
-and `Db` in the standard library close themselves this way; an explicit
-`close` before that is allowed, and the later `drop` sees it closed.
+A type that conforms to the built-in trait `Resource` owns something outside
+the program, such as a file descriptor. `Resource` has one member, `fn
+drop()`:
 
-Only the module that defines a type with `drop` may call its constructor:
+```thx
+type Lease(id: Int64)
+
+conform Lease to Resource {
+    fn drop() {
+        info("lease {id} returned")
+    }
+}
+```
+
+Values of such a type are heap boxes shared by every copy; when the last
+reference goes away, `drop` runs and the box is freed. `File`, `Socket`, and
+`Db` in the standard library close themselves this way; an explicit `close`
+before that is allowed, and the later `drop` sees it closed. Only a product
+can be a `Resource`. A method named `drop` on a type that does not conform is
+an ordinary method.
+
+Only the module that defines a `Resource` may call its constructor:
 `Db(handle: 1)` elsewhere is a compile error, so no code can wrap a raw handle
 in a second owner. Copies in a `Map`, an `Array`, or module state share the one
 box, so a `close` through any copy is seen by all.
@@ -1408,7 +1483,7 @@ two heap boxes.
   `return` or `?` leaves the function early.
 - Heap arguments are passed as copies the callee owns.
 - Module bindings live until the process exits.
-- A type with `drop` runs it when its last reference is released.
+- A `Resource` runs its `drop` when its last reference is released.
 
 A value cannot contain itself (recursive fields are a compile error), so
 reference cycles cannot be built from user types. Memory held by a task that
@@ -1566,7 +1641,7 @@ error at the `readForm` call that names the field. An absent `Bool` or
 A type that defines its own exported `fn toJson() -> Json` is encoded by it,
 including inside other types, and gets no generated reader (a
 [`from(json: Json)` clause](#from-clauses) gives it one). `Bytes`, `Buffer`,
-`Node`, functions, `Address`, types with `drop`, C-layout types, maps with
+`Node`, functions, `Address`, a `Resource`, C-layout types, maps with
 non-`String` keys, unions that mix literals and products, generic types, and
 `Trial` have no encoding; using one is a compile error that names the type
 (and the field, when there is one). Types in `std/` get no generated codec.
@@ -1796,12 +1871,12 @@ extern fn uname(name!: Address<SystemName>) -> Int32 from "c"
 mut name = SystemName()
 uname(name)                     ## name.sysname now holds "Linux" and a NUL
 ``` An `Address<T>` parameter passes on
-unchanged. A value of a type with `drop` passes its box pointer. C-layout types
+unchanged. A `Resource` value passes its box pointer. C-layout types
 have no `==`, cannot be map keys, and have no JSON encoding.
 
 ## Not in the language
 
-So that nobody looks for them: closures, generic functions, traits or
-interfaces, exceptions, threads, macros, operator overloading, tuples, nested
+So that nobody looks for them: closures, generic functions, traits used as
+types or bounds, exceptions, threads, macros, operator overloading, tuples, nested
 patterns, compound assignment, algebraic effects,
 a package manager, a named `ffi` import root, and a REPL or interactive shell.

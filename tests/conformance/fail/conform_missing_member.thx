@@ -1,0 +1,10 @@
+## D228: a conformance supplies every member its traits require.
+trait Shape {
+    fn area() -> Float64
+}
+
+type Circle(radius: Float64)
+
+conform Circle to Shape
+
+fn main() {}

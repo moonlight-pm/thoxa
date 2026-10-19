@@ -260,13 +260,12 @@ export type Socket(fd: Int64) {
             fd = -1
         }
     }
+}
 
-    ## Last RC closes if the caller forgot (D155).
-    export fn drop() {
-        if fd >= 0 {
-            sysClose(fd)
-            fd = -1
-        }
+## The last copy closes the socket if the caller did not (D155).
+conform Socket to Resource {
+    fn drop() {
+        close()
     }
 }
 

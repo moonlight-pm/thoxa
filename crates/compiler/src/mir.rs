@@ -57,14 +57,19 @@ pub struct Program {
 
 /// Keep only the functions a program can reach from `main` and its module
 /// initializers (D197). Every loaded module is lowered whole, std/string
-/// included, but a program carries only the code it calls. Destructors
-/// (`Type__drop`) stay: the runtime calls them.
+/// included, but a program carries only the code it calls. A `Resource`'s
+/// `drop` (`Type__drop`) stays: the runtime calls it.
 pub fn retain_reachable(program: &mut Program) {
     let mut reached: HashSet<String> = HashSet::new();
     let mut pending: Vec<String> = Vec::new();
     for function in &program.functions {
-        if function.is_main || function.name.ends_with("__drop") {
+        if function.is_main {
             pending.push(function.name.clone());
+        }
+    }
+    for layout in &program.types {
+        if layout.has_drop {
+            pending.push(format!("{}__drop", layout.name));
         }
     }
     referenced_fns(&program.init, &mut pending);
@@ -714,7 +719,7 @@ fn free_fn_display_key(mangled: &str, is_main: bool) -> String {
 
 fn type_has_drop(types: &HashMap<String, TypeInfo>, ty: &Ty) -> bool {
     match ty {
-        Ty::User(name) => types.get(name).is_some_and(|info| info.methods.contains_key("drop")),
+        Ty::User(name) => types.get(name).is_some_and(|info| info.resource),
         _ => false,
     }
 }
@@ -839,8 +844,8 @@ fn map_key_problem(types: &HashMap<String, TypeInfo>, ty: &Ty) -> Option<String>
     let Some(info) = types.get(name) else {
         return Some(format!("`{shown}` is not a known type"));
     };
-    if info.methods.contains_key("drop") {
-        return Some(format!("`{shown}` is a resource (it has `drop`)"));
+    if info.resource {
+        return Some(format!("`{shown}` is a `Resource`"));
     }
     if info.zero_init {
         return Some(format!("`{shown}` is a C-layout type"));
@@ -1057,6 +1062,9 @@ struct TypeInfo {
     sum: Option<SumInfo>,
     /// `type Qty = Int64 where …` — one-field wrapper (`value`) over `base`.
     refined: Option<RefinedInfo>,
+    /// Conforms to `Resource` (D228): a shared heap box whose `drop` runs
+    /// with its last copy (D155).
+    resource: bool,
 }
 
 #[derive(Clone)]
@@ -1609,6 +1617,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     let lower_started = std::time::Instant::now();
     // D150: type-body `GET "/…"` → handlers + `route` (names Request/Response/ok).
     let mut package = package.clone();
+    crate::trait_desugar::desugar_package(&mut package)?;
     crate::extend_desugar::desugar_package(&mut package)?;
     crate::conversion_desugar::desugar_package(&mut package)?;
     crate::route_desugar::desugar_package(&mut package)?;
@@ -1709,6 +1718,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                     def_mod: m.id.clone(),
                     sum: None,
                     refined: None,
+                    resource: td.traits.iter().any(|r| r.is_resource()),
                 },
             );
             if td.exported {
@@ -1933,25 +1943,25 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         return Err(errors_to_multi(method_reg_errors));
     }
 
-    // D155: products with `fn drop()` are heap-boxed; mark layouts.
+    // D155 / D228: a `Resource` product is heap-boxed; mark layouts.
     let mut drop_errors: Vec<Error> = Vec::new();
     for layout in &mut type_layouts {
         let Some(info) = types_info.get(&layout.name) else {
             continue;
         };
-        if !info.methods.contains_key("drop") {
+        if !info.resource {
             continue;
         }
         if layout.sum.is_some() {
             drop_errors.push(Error::new(format!(
-                "`drop` is not allowed on union type `{}`",
+                "union type `{}` cannot be a `Resource`",
                 layout.name
             )));
             continue;
         }
         if info.zero_init {
             drop_errors.push(Error::new(format!(
-                "`drop` is not allowed on C-layout type `{}`",
+                "C-layout type `{}` cannot be a `Resource`",
                 layout.name
             )));
             continue;
@@ -3050,6 +3060,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             def_mod: String::new(),
             sum: None,
             refined: None,
+            resource: false,
         },
     );
     type_layouts.push(TypeLayout {
@@ -3083,6 +3094,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             def_mod: String::new(),
             sum: None,
             refined: None,
+            resource: false,
         },
     );
     types_info.insert(
@@ -3094,6 +3106,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             def_mod: String::new(),
             sum: None,
             refined: None,
+            resource: false,
         },
     );
     types_info.insert(
@@ -3105,6 +3118,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             def_mod: String::new(),
             sum: None,
             refined: None,
+            resource: false,
         },
     );
 }
@@ -3182,7 +3196,7 @@ fn build_module_name_maps(
                 }
             }
             // `extend` blocks are free functions by now (D196).
-            Item::Type(_) | Item::Import(_) | Item::Extend(_) => {}
+            Item::Type(_) | Item::Import(_) | Item::Extend(_) | Item::Trait(_) | Item::Conform(_) => {}
         }
     }
 
@@ -3507,17 +3521,6 @@ fn merge_method_clauses(
                 ));
             }
         }
-        if m.name == "drop" {
-            if !params.is_empty() {
-                return Err(Error::at(
-                    "`drop` takes no parameters (the value is the receiver)",
-                    m.name_span,
-                ));
-            }
-            if ret != Ty::Void {
-                return Err(Error::at("`drop` must return Void", m.name_span));
-            }
-        }
         return Ok((
             MethodSig {
                 params,
@@ -3539,13 +3542,6 @@ fn merge_method_clauses(
             param.name_span,
         ));
     }
-    if clauses[0].name == "drop" {
-        return Err(Error::at(
-            "`drop` cannot be multi-clause",
-            clauses[0].name_span,
-        ));
-    }
-
     let arity = clauses[0].params.len();
     let mut export_any = false;
     let mut export_all = true;
@@ -4290,7 +4286,7 @@ fn infer_unannotated_returns(
     let mono_methods: Vec<(&MonoMethodJob, Method)> = mono_method_jobs
         .iter()
         .filter(|job| {
-            !job.conversion && job.method.return_type.is_none() && job.method.name != "drop"
+            !job.conversion && job.method.return_type.is_none()
         })
         .map(|job| (job, subst_method(&job.method, &job.subst)))
         .collect();
@@ -4350,7 +4346,7 @@ fn infer_unannotated_returns(
         let is_entry = module_is_entry(mod_id);
         let mut seen: HashSet<&str> = HashSet::new();
         for method in &td.methods {
-            if method.name == "drop" || !seen.insert(method.name.as_str()) {
+            if !seen.insert(method.name.as_str()) {
                 continue;
             }
             let key = format!("{type_mangled}__{}", method.name);
@@ -5417,7 +5413,7 @@ fn collect_item_type_apps(item: &Item, out: &mut Vec<(TypeExpr, Span)>) {
                 collect_type_apps(t, out);
             }
         }
-        Item::Import(_) | Item::Extend(_) => {}
+        Item::Import(_) | Item::Extend(_) | Item::Trait(_) | Item::Conform(_) => {}
     }
 }
 
@@ -5776,6 +5772,7 @@ fn instantiate_product_mono(
             def_mod: gdef.def_mod.clone(),
             sum: None,
             refined: None,
+            resource: false,
         },
     );
     layouts.push(layout);
@@ -6171,6 +6168,7 @@ fn instantiate_union_mono(
         def_mod: gdef.def_mod.clone(),
         sum: Some(sum),
         refined: None,
+        resource: false,
     };
     let layout = TypeLayout {
         name: mono.clone(),
@@ -13029,6 +13027,7 @@ fn ensure_lit_type(
         def_mod: def_mod.to_string(),
         sum: Some(sum),
         refined: None,
+        resource: false,
     };
     let layout = TypeLayout {
         name: name.clone(),
@@ -13168,6 +13167,7 @@ fn ensure_member_set_type(
         def_mod: def_mod.to_string(),
         sum: Some(sum),
         refined: None,
+        resource: false,
     };
     let layout = TypeLayout {
         name: name.clone(),
@@ -13254,7 +13254,7 @@ fn materialize_item_typespace(
             }
             materialize_expr_typespace(&g.init, types, layouts, name_map, def_mod)?;
         }
-        Item::Import(_) | Item::Extend(_) => {}
+        Item::Import(_) | Item::Extend(_) | Item::Trait(_) | Item::Conform(_) => {}
     }
     Ok(())
 }
@@ -15160,7 +15160,7 @@ fn init_place(ctx: &mut LowerCtx, place: &Place, ty: &Ty) -> Result<()> {
             }
             // A `drop` type's placeholder is a NULL box: building a real one
             // would run its `drop()` (closing fd 0) when the placeholder goes.
-            if info.methods.contains_key("drop") {
+            if info.resource {
                 ctx.assign(
                     place.clone(),
                     ty.clone(),
@@ -15818,8 +15818,8 @@ fn lower_user_eq_inline(
     if let Some(sum) = &info.sum {
         return lower_union_eq(ctx, left, right, type_name, sum, span);
     }
-    let refusal = if info.methods.contains_key("drop") {
-        Some("a type with `drop` is a resource, not a value")
+    let refusal = if info.resource {
+        Some("a `Resource` is not a value")
     } else if info.zero_init {
         Some("C-layout types have no `==`")
     } else {
@@ -17079,7 +17079,7 @@ fn lower_call(
                     .clone();
                 // A resource is built only by its own module (D168): a second
                 // box over the same fd or handle would close it twice.
-                if info.methods.contains_key("drop") && info.def_mod != ctx.module_id {
+                if info.resource && info.def_mod != ctx.module_id {
                     return Err(Error::at(
                         format!("`{other}(…)` can only be called in the module that defines `{other}`"),
                         span,
@@ -17912,6 +17912,7 @@ fn ensure_synthetic_sum(
         def_mod: ctx.module_id.clone(),
         sum: Some(sum),
         refined: None,
+        resource: false,
     };
     let layout = TypeLayout {
         name: syn_name.clone(),

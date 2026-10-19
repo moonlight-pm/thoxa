@@ -1,0 +1,9 @@
+## D228: provided members (bodies on the trait) come with `self` in a later
+## slice; for now a trait declares signatures only.
+trait Named {
+    fn label() -> String {
+        "unnamed"
+    }
+}
+
+fn main() {}

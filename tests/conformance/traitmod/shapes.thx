@@ -1,0 +1,5 @@
+## A trait exported for traits.thx to import and conform to (D228).
+export trait Shape {
+    fn area() -> Float64
+    fn name() -> String
+}

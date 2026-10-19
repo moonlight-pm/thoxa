@@ -234,6 +234,7 @@ pub fn symbol_kind(kind: BindingKind) -> i32 {
         BindingKind::Fn | BindingKind::Extern => 12, // Function
         BindingKind::Method => 6,                    // Method
         BindingKind::Type => 23,                     // Struct
+        BindingKind::Trait => 11,                    // Interface
         BindingKind::Field => 8,                     // Field
         BindingKind::Param
         | BindingKind::Let

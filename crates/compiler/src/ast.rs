@@ -18,6 +18,12 @@ pub enum Item {
     /// `extend String as text { … }`: methods on a built-in type, in a std
     /// module (D196). `extend_desugar` turns each into a free function.
     Extend(Extension),
+    /// `trait Name: Parent { … }` (D228). `trait_desugar` checks every
+    /// conformance against it; later passes skip it.
+    Trait(TraitDef),
+    /// `conform Type to Trait, … { … }` (D228). `trait_desugar` moves its
+    /// members into the type and records the conformance on it.
+    Conform(Conformance),
 }
 
 /// `import { a, b as c } from "…"`, `import ns from "…"`, or
@@ -101,6 +107,56 @@ pub struct TypeDef {
     pub conversions: Vec<Conversion>,
     /// `type Name = A | B | …` (D118). When set, params/fields/methods must be empty.
     pub union_members: Option<Vec<TypeExpr>>,
+    /// Traits the type conforms to, filled by `trait_desugar` from
+    /// `conform` items (D228). Empty in the parser's output.
+    pub traits: Vec<TraitRef>,
+}
+
+/// A trait by its defining module's id and its name (D228).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TraitRef {
+    pub module: String,
+    pub name: String,
+}
+
+impl TraitRef {
+    /// `Resource` from std's core module: the type is a shared heap box whose
+    /// `drop` runs with its last copy (D155, D228).
+    pub fn is_resource(&self) -> bool {
+        self.module == "std_core" && self.name == "Resource"
+    }
+}
+
+/// `[export] trait Name: Parent & Parent { member … }` (D228).
+#[derive(Debug, Clone)]
+pub struct TraitDef {
+    pub exported: bool,
+    pub name: String,
+    pub name_span: Span,
+    /// `trait Ordered: Equatable`: a conforming type conforms to these too.
+    pub parents: Vec<(String, Span)>,
+    pub members: Vec<TraitMember>,
+}
+
+/// A trait's method: required without a body, provided with one. `Self` in
+/// its signature is the conforming type.
+#[derive(Debug, Clone)]
+pub struct TraitMember {
+    pub name: String,
+    pub name_span: Span,
+    pub params: Vec<Param>,
+    pub return_type: Option<TypeExpr>,
+    pub body: Option<Block>,
+}
+
+/// `conform Type to Trait, … [{ fn … }]` (D228). The methods implement the
+/// listed traits' members; each goes to the trait that declares it.
+#[derive(Debug, Clone)]
+pub struct Conformance {
+    pub span: Span,
+    pub ty: TypeExpr,
+    pub traits: Vec<(String, Span)>,
+    pub methods: Vec<Method>,
 }
 
 /// `[export] from(source: S) -> T { … }` in `type T`'s body: a conversion into

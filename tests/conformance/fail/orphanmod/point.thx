@@ -1,0 +1,2 @@
+## A type for fail/conform_orphan.thx.
+export type Point(x: Float64, y: Float64)

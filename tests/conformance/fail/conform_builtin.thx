@@ -1,0 +1,12 @@
+## D228: built-in types conform in std, with bounds (a later slice).
+trait Named {
+    fn label() -> String
+}
+
+conform Int64 to Named {
+    fn label() -> String {
+        "a number"
+    }
+}
+
+fn main() {}

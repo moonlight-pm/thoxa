@@ -760,6 +760,7 @@ fn parse_int_type() -> TypeDef {
         routes: vec![],
         conversions: vec![],
         union_members: None,
+        traits: vec![],
     }
 }
 

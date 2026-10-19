@@ -1,0 +1,19 @@
+## D228: one name, one member: a trait's member cannot share a name with the
+## type's own.
+trait Shape {
+    fn area() -> Float64
+}
+
+type Circle(radius: Float64) {
+    export fn area() -> Float64 {
+        3.0 * radius * radius
+    }
+}
+
+conform Circle to Shape {
+    fn area() -> Float64 {
+        3.0 * radius * radius
+    }
+}
+
+fn main() {}

@@ -105,7 +105,7 @@ fn featureList() -> Array<Feature> {
         Feature(name: "Functions", detail: "Positional or named arguments, defaults, and multi-clause functions that dispatch on parameter types, literal types included."),
         Feature(name: "Values", detail: "Structural `==` on products, unions, and arrays. User types as map keys. `Array` and `Map` copy on write; a `Map` keeps insertion order."),
         Feature(name: "Errors", detail: "`May`, `Trial`, and `?`. A panic ends the task it happens in, not the process."),
-        Feature(name: "Memory", detail: "Reference counting. A type with `fn drop()` owns a resource and releases it with its last reference."),
+        Feature(name: "Memory", detail: "Reference counting. A type that conforms to `Resource` owns something outside the program and releases it with its last reference."),
         Feature(name: "Concurrency", detail: "`-->` starts a task. Socket operations park it until they can proceed. One OS thread."),
         Feature(name: "Data", detail: "`T.read` for JSON text and `T.readForm` for forms; `encode` for output; `Json` literals; typed route body parameters."),
         Feature(name: "Conversions", detail: "`x as T` converts, and its type says whether it can fail; `x as? T` converts or returns the failure. A type adds conversions into itself with `from` clauses."),

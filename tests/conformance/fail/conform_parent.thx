@@ -1,0 +1,18 @@
+## D228: conforming to a trait means conforming to its parents too.
+trait Named {
+    fn label() -> String
+}
+
+trait Ranked: Named {
+    fn rank() -> Int64
+}
+
+type Card(value: Int64)
+
+conform Card to Ranked {
+    fn rank() -> Int64 {
+        value
+    }
+}
+
+fn main() {}

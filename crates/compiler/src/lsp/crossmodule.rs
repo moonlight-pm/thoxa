@@ -745,8 +745,12 @@ fn walk_item_member(item: &Item, span: Span) -> Option<(String, String)> {
             .methods
             .iter()
             .find_map(|m| walk_block_member(&m.body, span)),
+        Item::Conform(conformance) => conformance
+            .methods
+            .iter()
+            .find_map(|m| walk_block_member(&m.body, span)),
         Item::Global(g) => walk_expr_member(&g.init, span),
-        Item::Extern(_) | Item::Import(_) => None,
+        Item::Extern(_) | Item::Import(_) | Item::Trait(_) => None,
     }
 }
 
@@ -1242,8 +1246,13 @@ fn walk_item_call_args(item: &Item, byte: usize, best: &mut Option<CallArgHit>) 
                 walk_block_call_args(&m.body, byte, best);
             }
         }
+        Item::Conform(conformance) => {
+            for m in &conformance.methods {
+                walk_block_call_args(&m.body, byte, best);
+            }
+        }
         Item::Global(g) => walk_expr_call_args(&g.init, byte, best),
-        Item::Extern(_) | Item::Import(_) => {}
+        Item::Extern(_) | Item::Import(_) | Item::Trait(_) => {}
     }
 }
 

@@ -1,1 +1,1 @@
-cannot use Handle as a Map key: `Handle` is a resource (it has `drop`)
+cannot use Handle as a Map key: `Handle` is a `Resource`

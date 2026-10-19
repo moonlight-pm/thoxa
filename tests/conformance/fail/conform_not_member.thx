@@ -1,0 +1,19 @@
+## D228: a conformance holds its traits' members; the type's own methods go
+## in its body.
+trait Shape {
+    fn area() -> Float64
+}
+
+type Circle(radius: Float64)
+
+conform Circle to Shape {
+    fn area() -> Float64 {
+        3.0 * radius * radius
+    }
+
+    fn perimeter() -> Float64 {
+        6.0 * radius
+    }
+}
+
+fn main() {}

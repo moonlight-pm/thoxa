@@ -1,0 +1,6 @@
+## D228: a conformance names traits that exist.
+type Circle(radius: Float64)
+
+conform Circle to Shap
+
+fn main() {}

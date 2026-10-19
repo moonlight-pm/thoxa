@@ -1,0 +1,9 @@
+## D228: a type conforms to a trait once.
+trait Sealed {}
+
+type Circle(radius: Float64)
+
+conform Circle to Sealed
+conform Circle to Sealed
+
+fn main() {}

@@ -1,0 +1,13 @@
+## std/core — the built-in traits (D228).
+##
+## Every program has this module, imported or not, and its traits are visible
+## by name everywhere. A type conforms to one only by saying so:
+## `conform File to Resource { fn drop() { … } }`.
+
+## A value that owns something outside the program (a file descriptor, a
+## socket, a database handle). Its values are one shared box: copies share it,
+## `drop` runs when the last copy goes, and only the module that defines the
+## type can call its constructor (D155, D168).
+export trait Resource {
+    fn drop()
+}

@@ -1,0 +1,8 @@
+## D228: a conformance goes in the type's module or the trait's, so which
+## types conform to what is answerable from those two.
+import { Shape } from "./orphanmod/shape"
+import { Point } from "./orphanmod/point"
+
+conform Point to Shape
+
+fn main() {}

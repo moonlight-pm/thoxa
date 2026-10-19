@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-18 (**D228**: traits designed, freeze below, slice 1 next; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-18 (**D228**: traits designed, freeze below; slice 1 shipped (`trait`, `conform`, `Resource`), slice 2 next; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -98,8 +98,10 @@ Declared conformance (`conform Type to Trait`), traits that carry shared
 code, getters and setters, `self`, built-in abilities as declared traits
 (`Equatable`, `Hashable`, `Ordered`, `Show`, `Encodable` / `Decodable`,
 `Component`, `Resource`), generic functions with bounds, `mixed Trait`.
-Eight slices; **slice 1 is next**: `trait` with required methods and
-parents, `Self`, `conform`, and `Resource` replacing bare `fn drop()`.
+Eight slices. **Slice 1 shipped**: `trait` with required methods and
+parents, `Self`, `conform`, and `Resource` (std/core) replacing a `drop`
+method found by name. **Slice 2 is next**: `self` everywhere (`extend`
+drops `as name`) and provided members, checked at the trait.
 Generic functions are slice 5, so the "generic constructor inference" gap
 below waits for it. Joshua: "lean toward long-term correct design rather
 than short term stop gaps."
@@ -211,12 +213,12 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
+**Shipped recently:** D228 slice 1 (`trait`, `conform`, `Resource`), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 170 programs, 59 rejections, 8 site samples, 215 unit tests
-after D227 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 171 programs, 73 rejections, 8 site samples, 216 unit tests
+after D228 slice 1 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
@@ -305,7 +307,7 @@ its Socket from `server.peerOf(request)` (**D168**). Cookie and `Cache-Control` 
 | Conversions | `x as T` converts and its type says whether it can fail; `x as? T` is `(x as T)?` (**D191**). At most one conversion per pair of types: built in, or a `from` clause on the target (the target alone declares conversions into itself; `toJson` is the source's way into `Json`). Only infallible conversions are implicit, and encoding to `Json` where a `Json` is expected is the only one D191 added; decoding always needs `as`. Like integer narrowing (D167), an implicit `Int64` / `UInt64` → `Float64` is checked and panics when inexact, and its `as` is a `Trial` (**D224**). Text is parsed, not converted (`T.read`). `return` and `=` convert to the expected type (**D192**). No traits. |
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. A parameter that is neither a capture nor the `Request` binds the body (query for GET/HEAD, JSON or form by `Content-Type`, else 415); a failed read is a 400 unless the parameter is `Trial<T, Array<Issue>>` (**D191** §5). The module imports only what its clauses write (**D193**). No fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
-| Resource `drop` | Product `fn drop()` on last RC (**D155**). Heap box; copies share. `File` / `Socket` / `Db` close in `drop`. Explicit `close` stays inert. Only the defining module calls the constructor (**D168**). No unions / C-layout / multi-clause `drop`. Not Perceus. |
+| Resource `drop` | `conform T to Resource { fn drop() { … } }` runs `drop` on last RC (**D155**, **D228**); a type's own `fn drop()` is an ordinary method. Heap box; copies share. `File` / `Socket` / `Db` close in `drop`. Explicit `close` stays inert. Only the defining module calls the constructor (**D168**). No unions / C-layout / multi-clause `drop`. Not Perceus. |
 | Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Heap params owned (**D154**). If/match result places overwrite-drop. `tests/conformance/lsan-skip` is empty (ratchet). Bounded ASan (**D153**, 2026-09-03): 88 non-fiber programs clean (140 on 2026-10-17); `cargo make test-asan` is optional, not the default (ucontext fibers in `asan-skip`). `thoxa_alloc` panics on size wrap; `Socket.close` clears `fd`. Resource `drop` **D155**. Not Perceus. Session/libtcc unsanitized. |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |

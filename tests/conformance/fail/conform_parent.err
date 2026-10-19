@@ -1,0 +1,1 @@
+`Card` conforms to `Ranked`, so it must conform to `Named` too

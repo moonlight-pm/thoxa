@@ -1,0 +1,1 @@
+`beats` must match `beats(other!: Card) -> Bool` in `Ranked`

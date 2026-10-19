@@ -103,6 +103,7 @@ impl DocumentIndex {
             BindingKind::Fn
             | BindingKind::Extern
             | BindingKind::Type
+            | BindingKind::Trait
             | BindingKind::Field
             | BindingKind::Method
             | BindingKind::Param
@@ -131,6 +132,11 @@ impl DocumentIndex {
             BindingKind::Type => {
                 if !first.is_ascii_uppercase() {
                     return Err("type names must be PascalCase".into());
+                }
+            }
+            BindingKind::Trait => {
+                if !first.is_ascii_uppercase() {
+                    return Err("trait names must be PascalCase".into());
                 }
             }
             BindingKind::Fn
@@ -213,6 +219,7 @@ pub fn render_signature_with_ret(
             format!("fn {}() -> {ret}", binding.name)
         }
         BindingKind::Type => format!("type {}", binding.name),
+        BindingKind::Trait => format!("trait {}", binding.name),
         BindingKind::Method => {
             let ret = return_display(binding, inferred_ret);
             if let Some(owner) = &binding.owner {

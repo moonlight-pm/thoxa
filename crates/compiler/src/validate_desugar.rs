@@ -297,7 +297,7 @@ fn plain_product(td: &TypeDef) -> bool {
     td.union_members.is_none()
         && td.type_params.is_empty()
         && td.fields.is_empty()
-        && !td.methods.iter().any(|m| m.name == "drop")
+        && !td.traits.iter().any(|r| r.is_resource())
 }
 
 fn encodable_product(
@@ -2368,7 +2368,7 @@ fn cast_targets(module: &Module) -> Vec<TypeExpr> {
                 }
             }
             Item::Global(global) => casts_in_expr(&global.init, &mut visit),
-            Item::Extern(_) | Item::Import(_) | Item::Extend(_) => {}
+            Item::Extern(_) | Item::Import(_) | Item::Extend(_) | Item::Trait(_) | Item::Conform(_) => {}
         }
     }
     found

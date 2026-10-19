@@ -1,0 +1,14 @@
+## D228: a member has its trait's signature.
+trait Shape {
+    fn area() -> Float64
+}
+
+type Circle(radius: Float64)
+
+conform Circle to Shape {
+    fn area() -> Int64 {
+        3
+    }
+}
+
+fn main() {}

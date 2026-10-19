@@ -95,7 +95,7 @@ exist.
 |------|-------------|
 | `readFile(path)` / `writeFile(path, data)` / `appendFile(path, data)` | Whole-file operations; the file is closed on success and on failure |
 | `openFile(path, flags = oRdonly, mode = oMode644)` | Opens a `File` |
-| `File` | `readAll`, `write`, `seek`, `position`, `close`, `isOpen`. The last reference closes it (`drop`) |
+| `File` | `readAll`, `write`, `seek`, `position`, `close`, `isOpen`. A `Resource`: the last reference closes it |
 | `OpenMode` | `Rdonly \| Wronly \| Rdwr`, with `openModeBits` |
 | Flags | `oRdonly`, `oWronly`, `oRdwr`, `oCreat`, `oTrunc`, `oAppend`, `oMode644` (combine with `+`) |
 | Seek origins | `seekSet`, `seekCur`, `seekEnd` |

@@ -1,0 +1,83 @@
+## Traits and conformance (D228): a trait declares what a conforming type
+## supplies, and `conform` is the only way to conform. A trait may be imported,
+## may have parents, and may say `Self` for the conforming type. `Resource` is
+## declared, not found by a method's name.
+import { Shape } from "./traitmod/shapes"
+import logging, { info } from "std/logging"
+
+trait Named {
+    fn label() -> String
+}
+
+trait Ranked: Named {
+    fn beats(other!: Self) -> Bool
+    fn promote(mut by!: Int64)
+}
+
+type Card(name: String, rank: Int64)
+
+conform Card to Named, Ranked {
+    fn label() -> String {
+        "{name} ({rank})"
+    }
+
+    fn beats(other!: Self) -> Bool {
+        rank > other.rank
+    }
+
+    fn promote(mut by!: Int64) {
+        rank = rank + by
+        by = 0
+    }
+}
+
+type Square(side: Float64)
+
+conform Square to Shape {
+    fn area() -> Float64 {
+        side * side
+    }
+
+    ## The trait says `-> String`; a member may leave it out.
+    fn name() {
+        "square"
+    }
+}
+
+## A trait with no members: conforming says something about the type.
+trait Sealed {}
+
+conform Square to Sealed
+
+## Only a `Resource`'s `drop` runs by itself; this is an ordinary method.
+type Pile(count: Int64) {
+    export fn drop() -> Int64 {
+        count - 1
+    }
+}
+
+type Lease(id: Int64)
+
+conform Lease to Resource {
+    fn drop() {
+        info("lease {id} returned")
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut ace = Card(name: "ace", rank: 14)
+    let king = Card(name: "king", rank: 13)
+    info(ace.label())
+    info("ace beats king: {ace.beats(king)}")
+    mut step = 2
+    ace.promote(mut step)
+    info("{ace.label()}, step {step}")
+    let square = Square(side: 3.0)
+    info("{square.name()}: {square.area()}")
+    info("pile: {Pile(count: 3).drop()}")
+    let lease = Lease(id: 7)
+    let copy = lease
+    info("lease {copy.id} out")
+}
