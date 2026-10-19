@@ -254,7 +254,7 @@ Freezes:
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
 `cargo make test` 190 programs, 133 rejections, 8 site samples, 222 unit tests
-after D231 (2026-10-19); `cargo make test-asan` 174 clean, 10 excepted (2026-10-19). Before them: the
+after D231 (2026-10-19); `cargo make test-asan` 180 clean, 10 excepted (2026-10-19, after D231). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
