@@ -139,6 +139,10 @@ charter
 accept loop uses **D128** + **`--> serveOne`** (**D148**) + keep-alive. `examples/kilo`
 shipped and exercised; continue matrix gaps when samples force them.
 
+**Traits (D228, active):** declared conformance, traits with shared code,
+properties, generic functions, `mixed` values; eight slices in
+[`specs/2026-10-18-traits.md`](specs/2026-10-18-traits.md).
+
 **Horizon / deferred until CURRENT says so:**
 
 - Perceus / precise RC (**D153** gate done; still deferred megawork, not unparked)

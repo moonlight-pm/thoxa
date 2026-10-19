@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-18 (**D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-18 (**D228**: traits designed, freeze below, slice 1 next; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -91,6 +91,18 @@ Crema Phase **E** through **E5**; **E6** WebSockets parked. **`having`/`else` pa
 codegen, runtime semantics. Site and hosting work is paused (see holds); the
 2026-10-17 thoxa.dev rewrite was an explicit request, not a change of focus.
 One language slice at a time, each with conformance.
+
+**Next: traits (D228, Joshua 2026-10-18), freeze
+[`docs/specs/2026-10-18-traits.md`](docs/specs/2026-10-18-traits.md).**
+Declared conformance (`conform Type to Trait`), traits that carry shared
+code, getters and setters, `self`, built-in abilities as declared traits
+(`Equatable`, `Hashable`, `Ordered`, `Show`, `Encodable` / `Decodable`,
+`Component`, `Resource`), generic functions with bounds, `mixed Trait`.
+Eight slices; **slice 1 is next**: `trait` with required methods and
+parents, `Self`, `conform`, and `Resource` replacing bare `fn drop()`.
+Generic functions are slice 5, so the "generic constructor inference" gap
+below waits for it. Joshua: "lean toward long-term correct design rather
+than short term stop gaps."
 
 **Shell and session removed (D227, Joshua 2026-10-18: "drop the shell feature
 entirely. This is scope creep.")** `thoxa` is a compiler CLI; every program
