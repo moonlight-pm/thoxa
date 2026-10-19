@@ -149,7 +149,7 @@ design questions from Joshua. Shipped: **D207** a field indexes as a local
 (`row.cells["name"]`); **D208** a method calls a sibling by bare name
 (`double()`), private methods are callable inside their type; **D209**
 `thoxa -c` splits its chunk into declarations and statements (an `import`
-first line ran nothing); **D210** an LSP rename writes a pun's label out
+first line ran nothing; removed with the session by D227); **D210** an LSP rename writes a pun's label out
 (`connect(host, deadline: limit)`), and renames method and constructor labels;
 **D211** multi-clause methods and generic types' methods infer their return
 types; **D212** `==` on maps (any order) and on types that contain

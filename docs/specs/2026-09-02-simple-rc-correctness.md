@@ -215,7 +215,7 @@ No class-D use-after-free / double-free fired. ASan is **not** the default
 8. **Resource `drop` — shipped as D155** (not this freeze). File/Socket/Db.
 9. **Named later (not this wave):** cycle collector; fiber stack guard pages
    (shipped 2026-10-14: mmap'd task stacks with a guard page);
-   session/libtcc sanitizer (parked with session); Perceus; `drop` on unions /
+   session/libtcc sanitizer (moot: the session is removed, D227); Perceus; `drop` on unions /
    C-layout.
 
 ---

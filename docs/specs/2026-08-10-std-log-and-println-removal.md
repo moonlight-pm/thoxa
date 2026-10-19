@@ -13,7 +13,7 @@
 
 **Related:** D97 (`std/…` root); D123 (import-required std surface, no ambient
 prelude for Fallible); file I/O is product `std/Io` (**D126**; was iolib);
-session Shell in `std/Shell.thx` (D104).
+session Shell in `std/Shell.thx` (D104; removed by D227).
 
 ---
 
