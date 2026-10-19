@@ -1,12 +1,14 @@
 ## Map and array literals where a Json is expected (D182 §4).
-import { Json, JInt, decode, encode } from "std/json"
+import { Json, JInt, decode, encode, Encodable } from "std/json"
 import { Has, Not, May, Pass, Fail } from "std/fallible"
 import logging, { info } from "std/logging"
 
 type Ticket(id: Int64, name: String, note: May<String>)
+conform Ticket to Encodable
 type Circle(radius: Int64)
 type Square(side: Int64)
 type Shape = Circle | Square
+conform Shape to Encodable
 
 fn reply(body!: Json) -> String {
     encode(body)

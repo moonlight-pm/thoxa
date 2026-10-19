@@ -17,6 +17,34 @@ export type JArr(value!: Array<Json>)
 export type JObj(value!: Map<String, Json>)
 export type Json = JNull | JBool | JInt | JFloat | JStr | JArr | JObj
 
+## A value with a JSON form (D228): `toJson`, `encode`, and a value where a
+## `Json` is expected. Without its own `toJson`, a product is an object of its
+## fields, a union its member tagged by `"type"`. Import it to declare it:
+## `conform Order to Encodable, Decodable`.
+export trait Encodable {
+    fn toJson() -> Json
+}
+
+## A value read from JSON (`json as T`, `T.read`), from a form (`T.readForm`),
+## and from a route's body. Without its own `from(json: Json)` clause, the
+## reader is generated from its fields, reporting every issue.
+export trait Decodable {}
+
+conform Int64 to Encodable, Decodable
+conform Int32 to Encodable, Decodable
+conform UInt64 to Encodable, Decodable
+conform UInt32 to Encodable, Decodable
+conform Byte to Encodable, Decodable
+conform Float64 to Encodable, Decodable
+conform Bool to Encodable, Decodable
+conform String to Encodable, Decodable
+conform Array<T: Encodable> to Encodable
+conform Array<T: Decodable> to Decodable
+conform Map<K, V: Encodable> to Encodable
+conform Map<K, V: Decodable> to Decodable
+conform May<T: Encodable> to Encodable
+conform May<T: Decodable> to Decodable
+
 ## A Json compares by value: an object's keys in any order (D212, D228).
 conform JNull to Equatable
 conform JBool to Equatable
@@ -26,6 +54,14 @@ conform JStr to Equatable
 conform JArr to Equatable
 conform JObj to Equatable
 conform Json to Equatable
+conform JNull to Encodable, Decodable
+conform JBool to Encodable, Decodable
+conform JInt to Encodable, Decodable
+conform JFloat to Encodable, Decodable
+conform JStr to Encodable, Decodable
+conform JArr to Encodable, Decodable
+conform JObj to Encodable, Decodable
+conform Json to Encodable, Decodable
 
 ## Shape / refinement failures for Type.read (D149).
 export type Missing(path: String)
@@ -37,6 +73,10 @@ conform Missing to Equatable, Hashable
 conform Mismatch to Equatable, Hashable
 conform Rejected to Equatable, Hashable
 conform Issue to Equatable, Hashable
+conform Missing to Encodable
+conform Mismatch to Encodable
+conform Rejected to Encodable
+conform Issue to Encodable
 
 type Parsed(value: Json, pos: Int64)
 type Cut(text: String, pos: Int64)

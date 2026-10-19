@@ -133,11 +133,11 @@ fn desugar_module_with(
         // A `from(json: Json)` clause is the type's reader (D191 §3): the
         // codecs wrap it instead of generating one.
         let custom_reader = json_conversion(td, module_id, resolve)?;
-        if let Some((index, fallible)) = custom_reader {
+        if let (Some((index, fallible)), true) = (custom_reader, declares(td, "Decodable")) {
             extra.push(gen_custom_from_json(td, index, fallible));
             extra.push(gen_read(td));
         }
-        let own_to_json = has_own_method(td, "toJson");
+        let own_to_json = own_to_json(td);
         let own_encode = has_own_method(td, "encode");
         let encoders = |extra: &mut Vec<Function>, to_json: Function| {
             if !own_to_json {
@@ -166,8 +166,10 @@ fn desugar_module_with(
             }
             continue;
         }
-        if let Some(members) = encodable_union(td, module_id, world, resolve, &mut HashSet::new()) {
-            encoders(&mut extra, gen_to_json_union(td, &members));
+        if let Some(members) = union_shape(td, module_id, world, resolve, &mut HashSet::new(), declares(td, "Encodable")) {
+            if declares(td, "Encodable") {
+                encoders(&mut extra, gen_to_json_union(td, &members));
+            }
             if generated_reader
                 && decodable_union(td, module_id, world, resolve, &mut HashSet::new()).is_some()
             {
@@ -275,7 +277,7 @@ fn encodable_ty(
             let Some(td) = world.get(def_mod).and_then(|tys| tys.get(def_name)) else {
                 return false;
             };
-            has_own_method(td, "toJson")
+            own_to_json(td)
                 || refined_alias_of(td, def_mod, world, resolve).is_some()
                 || pure_lit_union_of(td).is_some()
                 || encodable_union(td, def_mod, world, resolve, visiting).is_some()
@@ -285,10 +287,23 @@ fn encodable_ty(
     }
 }
 
-/// An exported method the type defines itself: its own `toJson` replaces the
-/// generated one (D182 §6).
+/// An exported method the type defines itself (D182 §6).
 fn has_own_method(td: &TypeDef, method: &str) -> bool {
     td.methods.iter().any(|m| m.name == method && m.exported)
+}
+
+/// The type declares std/json's `Encodable` or `Decodable` (D228): the codecs
+/// are generated only for the types that say so.
+fn declares(td: &TypeDef, name: &str) -> bool {
+    td.traits
+        .iter()
+        .any(|trait_ref| trait_ref.module == JSON_MODULE_ID && trait_ref.name == name)
+}
+
+/// Its own `toJson`, from its `Encodable` conformance, replaces the
+/// generated one (D182 §6, D228).
+fn own_to_json(td: &TypeDef) -> bool {
+    declares(td, "Encodable") && has_own_method(td, "toJson")
 }
 
 /// A plain product (constructor params, no body fields, not generic, not a
@@ -307,7 +322,7 @@ fn encodable_product(
     resolve: &Resolve,
     visiting: &mut HashSet<String>,
 ) -> bool {
-    if !plain_product(td) || td.params.is_empty() {
+    if !plain_product(td) || td.params.is_empty() || !declares(td, "Encodable") {
         return false;
     }
     let key = format!("{module_id}::{}", td.name);
@@ -339,6 +354,23 @@ fn encodable_union(
     resolve: &Resolve,
     visiting: &mut HashSet<String>,
 ) -> Option<Vec<UnionMember>> {
+    if !declares(td, "Encodable") {
+        return None;
+    }
+    union_shape(td, module_id, world, resolve, visiting, true)
+}
+
+/// A union of plain products: its members, whatever it declares. With
+/// `encoding`, each member's fields must encode; a reader checks its members
+/// itself.
+fn union_shape(
+    td: &TypeDef,
+    module_id: &str,
+    world: &World,
+    resolve: &Resolve,
+    visiting: &mut HashSet<String>,
+    encoding: bool,
+) -> Option<Vec<UnionMember>> {
     let members = td.union_members.as_ref()?;
     if members.len() < 2 || !td.type_params.is_empty() {
         return None;
@@ -347,7 +379,7 @@ fn encodable_union(
     if !visiting.insert(key.clone()) {
         return Some(Vec::new());
     }
-    let result = union_members_of(members, module_id, world, resolve, visiting);
+    let result = union_members_of(members, module_id, world, resolve, visiting, encoding);
     visiting.remove(&key);
     result
 }
@@ -358,6 +390,7 @@ fn union_members_of(
     world: &World,
     resolve: &Resolve,
     visiting: &mut HashSet<String>,
+    encoding: bool,
 ) -> Option<Vec<UnionMember>> {
     let mut out = Vec::new();
     for member in members {
@@ -377,10 +410,11 @@ fn union_members_of(
         if !plain_product(member_td) {
             return None;
         }
-        if !member_td
-            .params
-            .iter()
-            .all(|p| encodable_ty(&p.ty, &def_mod, world, resolve, visiting))
+        if encoding
+            && !member_td
+                .params
+                .iter()
+                .all(|p| encodable_ty(&p.ty, &def_mod, world, resolve, visiting))
         {
             return None;
         }
@@ -408,11 +442,11 @@ fn is_eligible(
     if !td.fields.is_empty() {
         return false;
     }
-    if td.params.is_empty() {
+    if td.params.is_empty() || !declares(td, "Decodable") {
         return false;
     }
     // Its own `toJson` writes a shape a generated reader would not expect.
-    if has_own_method(td, "toJson") {
+    if own_to_json(td) {
         return false;
     }
     let key = format!("{module_id}::{}", td.name);
@@ -487,7 +521,7 @@ fn shape_of(
                 return (def_name == "Json").then_some(Shape::Json);
             }
             let td = world.get(&def_mod)?.get(&def_name)?;
-            if json_conversion(td, &def_mod, resolve).ok().flatten().is_some() {
+            if declares(td, "Decodable") && json_conversion(td, &def_mod, resolve).ok().flatten().is_some() {
                 return Some(Shape::Product(other.to_string()));
             }
             if let Some((base, _)) = refined_alias_of(td, &def_mod, world, resolve) {
@@ -521,14 +555,14 @@ fn decodable_union(
     resolve: &Resolve,
     visiting: &mut HashSet<String>,
 ) -> Option<Vec<UnionMember>> {
-    if has_own_method(td, "toJson") {
+    if own_to_json(td) || !declares(td, "Decodable") {
         return None;
     }
     let key = format!("{module_id}::{}", td.name);
     if visiting.contains(&key) {
         return Some(Vec::new());
     }
-    let members = encodable_union(td, module_id, world, resolve, visiting)?;
+    let members = union_shape(td, module_id, world, resolve, visiting, false)?;
     visiting.insert(key.clone());
     let ok = members.iter().all(|member| {
         member.params.is_empty()
@@ -2290,9 +2324,21 @@ mod tests {
     use crate::lexer::Lexer;
     use crate::parser::Parser;
 
+    /// Parse and desugar `src`, every type declaring `Encodable` and
+    /// `Decodable` as `trait_desugar` would record them (D228).
     fn parse_desugar(src: &str) -> Module {
         let tokens = Lexer::new(src).tokenize().unwrap();
         let mut module = Parser::new(tokens).parse_module().unwrap();
+        for item in &mut module.items {
+            if let Item::Type(td) = item {
+                for name in ["Encodable", "Decodable"] {
+                    td.traits.push(TraitRef {
+                        module: JSON_MODULE_ID.into(),
+                        name: name.into(),
+                    });
+                }
+            }
+        }
         desugar_module(&mut module).unwrap();
         module
     }

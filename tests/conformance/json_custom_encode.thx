@@ -1,14 +1,17 @@
 ## A type's own toJson wins, inside other types' encoders too (D182 §6).
-import { Json, JStr, encode } from "std/json"
+import { Json, JStr, encode, Encodable } from "std/json"
 import logging, { info } from "std/logging"
 
-type Cents(amount: Int64) {
-    export fn toJson() -> Json {
+type Cents(amount: Int64)
+conform Cents to Encodable {
+    fn toJson() -> Json {
         JStr("{amount} cents")
     }
 }
 type Price(item: String, cost: Cents)
+conform Price to Encodable
 type Shelf(prices: Array<Price>, best: Cents)
+conform Shelf to Encodable
 
 fn main() -> Int64 {
     logging.toStdout()

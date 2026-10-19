@@ -4,13 +4,15 @@
 ## problem it finds; `encode` writes any value back out. Nothing is derived
 ## or registered: the compiler reads the type.
 import { Pass, Fail } from "std/fallible"
-import { Json, messages } from "std/json"
+import { Json, messages, Decodable, Encodable } from "std/json"
 import logging, { info } from "std/logging"
 
 type Quantity = Int64 where >= 1 & <= 12
 type Size = "small" | "large"
 type Line(drink: String, size: Size, quantity: Quantity = 1)
+conform Line to Encodable, Decodable
 type Order(table: Int64, lines: Array<Line>)
+conform Order to Encodable, Decodable
 
 fn main() -> Int64 {
     logging.toStdout()

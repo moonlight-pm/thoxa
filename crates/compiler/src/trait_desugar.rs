@@ -435,9 +435,13 @@ const CONFORMABLE_BUILT_INS: &[(&str, usize)] = &[
 /// Traits whose required members the compiler implements for a conformance
 /// without them, field by field (D228 §4).
 fn has_defaults(trait_ref: &TraitRef) -> bool {
-    trait_ref.module == CORE_MODULE
-        && matches!(trait_ref.name.as_str(), "Equatable" | "Hashable" | "Ordered" | "Show")
+    (trait_ref.module == CORE_MODULE
+        && matches!(trait_ref.name.as_str(), "Equatable" | "Hashable" | "Ordered" | "Show"))
+        || (trait_ref.module == JSON_MODULE && trait_ref.name == "Encodable")
 }
+
+/// std/json, whose `Encodable` default is the generated encoder (D182).
+const JSON_MODULE: &str = "std_json";
 
 /// A trait's members have distinct names and no parameter defaults.
 fn check_trait(def: &TraitDef) -> Result<()> {
@@ -758,7 +762,8 @@ fn check_conformance(
                 // of a plain product; a union or an instance compares
                 // structurally without one.
                 (None, None) if has_defaults(trait_ref) => {
-                    if bounds.is_none() && !unions.contains(&target) {
+                    // The codecs generate `toJson` themselves.
+                    if bounds.is_none() && !unions.contains(&target) && trait_ref.module == CORE_MODULE {
                         methods.push(default_member(member, conformance.span));
                         derived.push(member.name.clone());
                     }

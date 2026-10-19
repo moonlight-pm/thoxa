@@ -1,18 +1,19 @@
 ## `x as T` (D191 §1): one conversion per pair of types. It gives `T` when the
 ## conversion cannot fail and `Trial<T, Array<Issue>>` when it can.
 import { Pass, Fail, Trial } from "std/fallible"
-import { Json, Issue, messages } from "std/json"
+import { Json, Issue, messages, Encodable, Decodable } from "std/json"
 import logging, { info } from "std/logging"
 
 type Quantity = Int64 where >= 1 & <= 12
 type Size = "small" | "large"
 type Line(drink: String, size: Size, quantity: Quantity = 1)
+conform Line to Encodable, Decodable
 type Circle(radius: Float64)
-conform Circle to Equatable
+conform Circle to Equatable, Decodable
 type Square(side: Float64)
-conform Square to Equatable
+conform Square to Equatable, Decodable
 type Shape = Circle | Square
-conform Shape to Equatable
+conform Shape to Equatable, Encodable, Decodable
 
 fn describe(result!: Trial<Line, Array<Issue>>) -> String {
     match result {

@@ -1,29 +1,36 @@
 ## Reads cover what encodes: unions by "type", Map and Json fields,
 ## constructor defaults (D182 §5).
-import { Json, Issue, message, encode } from "std/json"
+import { Json, Issue, message, encode, Encodable, Decodable } from "std/json"
 import { Pass, Fail, Trial, Has, Not, May } from "std/fallible"
 import { formPairs } from "std/http"
 import logging, { info } from "std/logging"
 
 type Circle(radius: Int64)
-conform Circle to Equatable
+conform Circle to Equatable, Decodable
 type Square(side: Int64, label: String)
-conform Square to Equatable
+conform Square to Equatable, Decodable
 type Blank
 type Shape = Circle | Square | Blank
-conform Shape to Equatable
+conform Shape to Equatable, Encodable, Decodable
 type Drawing(name: String, shapes: Array<Shape>)
+conform Drawing to Decodable
 
 type Leaf(value: Int64)
+conform Leaf to Decodable
 type Branch(children: Array<Tree>)
+conform Branch to Decodable
 type Tree = Leaf | Branch
+conform Tree to Encodable, Decodable
 
 type Inventory(stock: Map<String, Int64>, prices: Map<String, Float64>)
+conform Inventory to Encodable, Decodable
 type Event(kind: String, payload: Json)
+conform Event to Decodable
 
 type Qty = Int64 where >= 1
 type Size = "small" | "large"
 type Order(slug: String, qty: Qty = 1, size: Size = "small", note: May<String> = Has("none"))
+conform Order to Encodable, Decodable
 
 fn report(label!: String, issues!: Array<Issue>) {
     info("{label}: {issues.count} issue(s)")

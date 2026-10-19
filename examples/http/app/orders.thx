@@ -2,11 +2,12 @@
 
 import store, { DrinkMiss, DrinkHit } from "./store"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
-import { Issue, issueRejected } from "std/json"
+import { Issue, issueRejected, Decodable, Encodable } from "std/json"
 
 export type Qty = Int64 where >= 1
 export type DrinkSlug = "espresso" | "cold-brew" | "cappuccino" | "flat-white" | "pour-over" | "mocha"
 export type CreateOrder(slug: DrinkSlug, qty: Qty)
+conform CreateOrder to Decodable
 
 export type Ticket(
     id: Int64,
@@ -16,6 +17,7 @@ export type Ticket(
     unitCents: Int64,
     totalCents: Int64
 )
+conform Ticket to Encodable
 
 export fn place(order!: CreateOrder) -> Trial<Ticket, Issue> {
     match store.findBySlug(order.slug) {

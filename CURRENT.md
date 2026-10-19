@@ -116,7 +116,8 @@ bounds on generic types' parameters; `Array.map` / `filter`. Open for
 Joshua: check a generic type's methods against its bounds (`Counter<T>`
 adds `T`s; the freeze rules out arithmetic traits). **Slice 6, parts 1–2
 shipped**: `Component` (tag literals need it), `Show` (`"{x}"` of user
-types). **Next**: `Encodable` / `Decodable`, declared, in std/json.
+types). **Part 3 shipped**: `Encodable` / `Decodable`, declared, in
+std/json. **Next**: slice 7, `mixed Trait`.
 Generic functions are slice 5, so the "generic constructor inference" gap
 below waits for it. Joshua: "lean toward long-term correct design rather
 than short term stop gaps."
@@ -229,8 +230,8 @@ Freezes:
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 182 programs, 102 rejections, 8 site samples, 219 unit tests
-after D228 slice 6 part 2 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 182 programs, 104 rejections, 8 site samples, 219 unit tests
+after D228 slice 6 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`

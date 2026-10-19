@@ -2,12 +2,14 @@
 ## (D191 §4): arguments, constructor fields, annotated lets, array elements,
 ## returns, branches, and assignments. Decoding is never implicit.
 import { Has, Not, May } from "std/fallible"
-import { Json, encode } from "std/json"
+import { Json, encode, Encodable } from "std/json"
 import logging, { info } from "std/logging"
 
 type Size = "small" | "large"
 type Line(drink: String, size: Size)
+conform Line to Encodable
 type Event(name: String, data: Json)
+conform Event to Encodable
 
 fn show(value!: Json) -> String {
     encode(value)

@@ -171,6 +171,49 @@ impl LowerCtx {
     fn conforms(&self, ty: &Ty, name: &str) -> bool {
         ty_conforms(&self.types, &self.synthetics.borrow().conditional, ty, &core_trait(name))
     }
+
+    /// Whether `ty` declares std/json's `Encodable` or `Decodable` (D228).
+    fn json_declares(&self, ty: &Ty, name: &str) -> bool {
+        let trait_ref = TraitRef {
+            module: "std_json".into(),
+            name: name.into(),
+        };
+        ty_conforms(&self.types, &self.synthetics.borrow().conditional, ty, &trait_ref)
+    }
+}
+
+/// The first field (or a union's member) of `type_name` whose type is a
+/// declared type that does not declare `name` (D228): why it has no codec.
+fn undeclared_part(ctx: &LowerCtx, type_name: &str, name: &str) -> Option<(String, Ty)> {
+    fn inner(ty: &Ty) -> &Ty {
+        match ty {
+            Ty::Array { elem } => inner(elem),
+            Ty::Map { val, .. } => inner(val),
+            _ => ty,
+        }
+    }
+    let info = ctx.types.get(type_name)?;
+    let parts: Vec<(String, Ty)> = match &info.sum {
+        Some(sum) => sum
+            .variants
+            .iter()
+            .filter(|variant| variant.lit.is_none())
+            .map(|variant| (variant.name.clone(), variant.ty.clone()))
+            .collect(),
+        None => info.fields.iter().map(|field| (field.name.clone(), field.ty.clone())).collect(),
+    };
+    parts.into_iter().find(|(_, ty)| {
+        let ty = inner(ty);
+        matches!(ty, Ty::User(_)) && !ctx.json_declares(ty, name)
+    })
+}
+
+/// "`Point` is not `Encodable`", with how to declare it (D228).
+fn not_codec(ty: &Ty, name: &str, span: Span) -> Error {
+    let shown = display_ty(ty);
+    Error::at(format!("`{shown}` is not `{name}`"), span).with_help(format!(
+        "declare `conform {shown} to {name}`, with `import {{ {name} }} from \"std/json\"`"
+    ))
 }
 
 /// A user method called on an immutable binding, a field, or a temporary.
@@ -11617,6 +11660,21 @@ fn lower_method_call(
                             sig.ret,
                         );
                     }
+                    if !info.methods.contains_key(method) && !ctx.json_declares(&recv_ty, "Encodable") {
+                        return Err(not_codec(&recv_ty, "Encodable", method_span));
+                    }
+                    if !info.methods.contains_key(method) {
+                        if let Some((part, part_ty)) = undeclared_part(ctx, &type_name, "Encodable") {
+                            return Err(Error::at(
+                                format!(
+                                    "`{}` cannot be encoded: `{part}` is {}, which is not `Encodable`",
+                                    display_ty(&recv_ty),
+                                    display_ty(&part_ty)
+                                ),
+                                method_span,
+                            ));
+                        }
+                    }
                     if !info.methods.contains_key(method) {
                         return Err(Error::at(
                             format!(
@@ -11905,6 +11963,20 @@ fn lower_type_read_static(
         .ok_or_else(|| Error::at(format!("unknown type `{mangled_ty}`"), span))?
         .clone();
     if info.sum.is_some() && lookup_generated_read_fn(ctx, &info, mangled_ty, method).is_none() {
+        let ty = Ty::User(mangled_ty.to_string());
+        if !ctx.json_declares(&ty, "Decodable") {
+            return Err(not_codec(&ty, "Decodable", span));
+        }
+        if let Some((part, part_ty)) = undeclared_part(ctx, mangled_ty, "Decodable") {
+            return Err(Error::at(
+                format!(
+                    "`{}` cannot be read: `{part}` is {}, which is not `Decodable`",
+                    display_ty(&ty),
+                    display_ty(&part_ty)
+                ),
+                span,
+            ));
+        }
         return Err(Error::at(
             format!("cannot `{method}` this union: a union reads when its members are products whose fields read"),
             span,
@@ -11917,6 +11989,20 @@ fn lower_type_read_static(
         ));
     }
     let Some(mangled_fn) = lookup_generated_read_fn(ctx, &info, mangled_ty, method) else {
+        let ty = Ty::User(mangled_ty.to_string());
+        if !ctx.json_declares(&ty, "Decodable") {
+            return Err(not_codec(&ty, "Decodable", span));
+        }
+        if let Some((part, part_ty)) = undeclared_part(ctx, mangled_ty, "Decodable") {
+            return Err(Error::at(
+                format!(
+                    "`{}` cannot be read: `{part}` is {}, which is not `Decodable`",
+                    display_ty(&ty),
+                    display_ty(&part_ty)
+                ),
+                span,
+            ));
+        }
         if matches!(method, "readForm" | "fromForm") {
             return Err(codec::form_unreadable(ctx, mangled_ty, span));
         }

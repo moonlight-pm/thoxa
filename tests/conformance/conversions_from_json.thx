@@ -2,7 +2,7 @@
 ## `T.read`, and reads of fields of type `T` all use it, and its issues land
 ## under the field being read.
 import { Pass, Fail, Trial } from "std/fallible"
-import { Json, Issue, messages, issueRejected } from "std/json"
+import { Json, Issue, messages, issueRejected, Decodable, Encodable } from "std/json"
 import logging, { info } from "std/logging"
 
 ## A point is written as [x, y].
@@ -14,13 +14,16 @@ type Point(x: Int64, y: Int64) {
         }
         Pass(Point(x: pair[0], y: pair[1]))
     }
-
-    export fn toJson() -> Json {
+}
+conform Point to Encodable {
+    fn toJson() -> Json {
         [x, y]
     }
 }
+conform Point to Decodable
 
 type Marker(name: String, at: Point)
+conform Marker to Encodable, Decodable
 
 fn main() -> Int64 {
     logging.toStdout()

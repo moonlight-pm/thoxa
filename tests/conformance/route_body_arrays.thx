@@ -3,11 +3,12 @@
 ## the parameter is a Trial.
 import http, { Request, Response, Header, ok, notFound, badRequest } from "std/http"
 import { Pass, Fail, Trial } from "std/fallible"
-import { Issue, messages } from "std/json"
+import { Issue, messages, Decodable } from "std/json"
 import logging, { info } from "std/logging"
 
 type Quantity = Int64 where >= 1 & <= 12
 type CreateOrder(drink: String, quantity: Quantity = 1)
+conform CreateOrder to Decodable
 
 type Routes {
     POST "/batch" (orders: Array<CreateOrder>) -> String {

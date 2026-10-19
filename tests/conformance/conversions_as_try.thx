@@ -1,11 +1,12 @@
 ## `x as? T` is `(x as T)?` (D191 §2): the converted value, or the Fail
 ## returned from the enclosing function.
 import { Pass, Fail, Trial } from "std/fallible"
-import { Json, Issue, messages } from "std/json"
+import { Json, Issue, messages, Decodable } from "std/json"
 import logging, { info } from "std/logging"
 
 type Quantity = Int64 where >= 1 & <= 12
 type Line(drink: String, quantity: Quantity = 1)
+conform Line to Decodable
 
 fn total(json!: Json, extra!: Int64) -> Trial<Int64, Array<Issue>> {
     let lines = json as? Array<Line>

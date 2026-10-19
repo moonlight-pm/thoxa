@@ -5,6 +5,7 @@ import models, { Drink } from "./models"
 import sqlite, { Db, Row, SqlInt, SqlText, SqlValue } from "std/sqlite"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
+import { Encodable } from "std/json"
 
 export type OrderRow(
     id: Int64,
@@ -14,6 +15,7 @@ export type OrderRow(
     unitCents: Int64,
     totalCents: Int64
 )
+conform OrderRow to Encodable
 
 export type DrinkMiss
 export type DrinkHit(drink: Drink)

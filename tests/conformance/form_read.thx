@@ -1,5 +1,5 @@
 ## T.readForm reads a form body or query string into a type (D182 §3).
-import { Issue, message } from "std/json"
+import { Issue, message, Decodable } from "std/json"
 import { Pass, Fail, Trial, Has, Not, May } from "std/fallible"
 import { formPairs } from "std/http"
 import logging, { info } from "std/logging"
@@ -7,9 +7,11 @@ import logging, { info } from "std/logging"
 type Qty = Int64 where >= 1
 type Slug = "espresso" | "mocha"
 type CreateOrder(slug: Slug, qty: Qty)
+conform CreateOrder to Decodable
 
 type Topic = "art" | "music" | "dance"
 type Location(city: String, zip: Int64)
+conform Location to Decodable
 type Signup(
     name: String,
     age: May<Int64>,
@@ -19,8 +21,11 @@ type Signup(
     ratio: Float64,
     note: May<String>
 )
+conform Signup to Decodable
 type Pin(code: String where >= 4)
+conform Pin to Decodable
 type MenuSearch(q: May<String>, page: May<Int64>)
+conform MenuSearch to Decodable
 
 fn report(label!: String, issues!: Array<Issue>) {
     info("{label}: {issues.count} issue(s)")

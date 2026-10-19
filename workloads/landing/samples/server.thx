@@ -5,10 +5,11 @@
 import server from "std/http/server"
 import { Request, Response, ok, badRequest, seeOther, htmlResponse } from "std/http"
 import { Pass, Fail } from "std/fallible"
-import { messages } from "std/json"
+import { messages, Decodable } from "std/json"
 
 type NoteText = String where >= 1 & <= 280
 type NewNote(text: NoteText)
+conform NewNote to Decodable
 
 mut notes: Array<String> = []
 

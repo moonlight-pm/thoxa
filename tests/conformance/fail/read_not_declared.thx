@@ -1,0 +1,8 @@
+## D228: a type reads from JSON only by declaring `Decodable`.
+import { Json, Issue } from "std/json"
+
+type Point(x: Int64, y: Int64)
+
+fn main() {
+    let read = Point.read("{{\"x\": 1, \"y\": 2}}")
+}

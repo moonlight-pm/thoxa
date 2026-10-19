@@ -267,6 +267,28 @@ fn checked(
 }
 
 fn no_conversion(ctx: &LowerCtx, from: &Ty, to: &Ty, span: Span) -> Error {
+    // Reading from JSON needs the target to say it reads (D228).
+    if matches!(from, Ty::User(name) if name == "std_json_Json") {
+        let mut target = to;
+        while let Ty::Array { elem } = target {
+            target = elem;
+        }
+        if matches!(target, Ty::User(_)) && !ctx.json_declares(target, "Decodable") {
+            return super::not_codec(target, "Decodable", span);
+        }
+        if let Ty::User(name) = target {
+            if let Some((part, part_ty)) = super::undeclared_part(ctx, name, "Decodable") {
+                return Error::at(
+                    format!(
+                        "`{}` cannot be read: `{part}` is {}, which is not `Decodable`",
+                        display_ty(target),
+                        display_ty(&part_ty)
+                    ),
+                    span,
+                );
+            }
+        }
+    }
     let message = format!("no conversion from {} to {}", display_ty(from), display_ty(to));
     let parsed = *from == Ty::String && matches!(to, Ty::User(_)) && !is_literal_union(ctx, to);
     let error = Error::at(message, span);

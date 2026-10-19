@@ -1,14 +1,18 @@
 ## Type.read of constructor-param products (D149); a read reports every
 ## issue as Array<Issue> (D182 §2).
-import { Issue, messages, decode } from "std/json"
+import { Issue, messages, decode, Decodable } from "std/json"
 import { Pass, Fail, Trial, Has, Not, May } from "std/fallible"
 import logging, { info } from "std/logging"
 
 type Order(slug: String, qty: Int64)
+conform Order to Decodable
 type Note(text: String)
 type Wrap(inner: Order)
+conform Wrap to Decodable
 type Line(items: Array<Order>)
+conform Line to Decodable
 type OptNote(text: May<String>, n: Int64)
+conform OptNote to Decodable
 
 fn showOrder(t!: Trial<Order, Array<Issue>>) -> String {
     match t {

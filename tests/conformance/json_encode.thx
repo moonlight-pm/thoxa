@@ -1,5 +1,5 @@
 ## toJson / encode on every encodable type (D182 §1).
-import { Json, JInt, JStr, decode, encode } from "std/json"
+import { Json, JInt, JStr, decode, encode, Encodable } from "std/json"
 import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 import { Shape, Circle, Square, Blank } from "./codecmod/shapes"
 import logging, { info } from "std/logging"
@@ -7,6 +7,7 @@ import logging, { info } from "std/logging"
 type Qty = Int64 where >= 1
 type Size = "small" | "large"
 type Line(item: String, qty: Qty, size: Size)
+conform Line to Encodable
 type Order(
     id: Int64,
     lines: Array<Line>,
@@ -15,8 +16,11 @@ type Order(
     shape: Shape,
     extra: Json
 )
+conform Order to Encodable
 type Tree(label: String, children: Array<Tree>)
+conform Tree to Encodable
 type Gauge(level: Float64, on: Bool)
+conform Gauge to Encodable
 
 fn main() -> Int64 {
     logging.toStdout()

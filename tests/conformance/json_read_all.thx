@@ -1,14 +1,18 @@
 ## A read reports every issue, in field order, with each one's path (D182 §2).
-import { Issue, message, messages, errorsObject, encode } from "std/json"
+import { Issue, message, messages, errorsObject, encode, Decodable } from "std/json"
 import { Pass, Fail, Trial, May } from "std/fallible"
 import logging, { info } from "std/logging"
 
 type Qty = Int64 where >= 1
 type Slug = "espresso" | "mocha"
 type Order(slug: Slug, qty: Qty)
+conform Order to Decodable
 type Basket(owner: String, orders: Array<Order>, note: May<String>)
+conform Basket to Decodable
 type Grid(rows: Array<Array<Int64>>)
+conform Grid to Decodable
 type Reading(celsius: Float64, label: String where >= 2)
+conform Reading to Decodable
 
 fn report(label!: String, issues!: Array<Issue>) {
     info("{label}: {issues.count} issue(s)")

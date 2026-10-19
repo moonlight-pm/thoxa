@@ -6,6 +6,7 @@ import store from "~/app/store"
 import session from "~/app/session"
 import http, { Request, Response } from "std/http"
 import { Pass, Fail } from "std/fallible"
+import { Decodable } from "std/json"
 
 export fn page(request!: Request) -> Response {
     match store.drinkCount() {
@@ -53,6 +54,7 @@ fn welcome(request!: Request) -> Node {
 }
 
 type SignIn(name: String)
+conform SignIn to Decodable
 
 export fn signIn(request!: Request) -> Response {
     let redirect = http.seeOther("/")

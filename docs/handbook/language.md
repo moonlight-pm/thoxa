@@ -1080,14 +1080,14 @@ let numbers = [1, 2] as Pair<Int64>                 ## Trial<Pair<Int64>, String
 - A clause replaces any built-in conversion for its pair, and `as?` on a
   fallible clause propagates its `E`.
 - Only the target declares conversions into itself. Conversion into `Json` is
-  the exception: a type declares it with its own `toJson` (see
+  the exception: a type declares it with its `Encodable` conformance (see
   [Encoding](#encoding)).
 
 A `from(json: Json)` clause is the type's JSON reader. It returns the type or
-`Trial<Type, Array<Issue>>`, and `json as T`, `T.read(text)`, and the read of
-any field of type `T` call it; a field read places its issues under the
-field's path (`at: expected array, got object`). With its own `toJson` a type
-owns both directions of its JSON:
+`Trial<Type, Array<Issue>>`, and `json as T` calls it; for a `Decodable` type,
+`T.read(text)` and the read of any field of type `T` call it too, and a field
+read places its issues under the field's path (`at: expected array, got
+object`). With its own `toJson` a type owns both directions of its JSON:
 
 ```thx
 ## A point is written as [x, y].
@@ -1099,8 +1099,10 @@ type Point(x: Int64, y: Int64) {
         }
         Pass(Point(x: pair[0], y: pair[1]))
     }
-
-    export fn toJson() -> Json {
+}
+conform Point to Decodable
+conform Point to Encodable {
+    fn toJson() -> Json {
         [x, y]
     }
 }
@@ -1757,12 +1759,13 @@ A type is its own schema. The compiler attaches readers and encoders to every
 type it can represent; there is no derive step and no schema library.
 
 ```thx
-import { Issue, messages } from "std/json"
+import { Issue, messages, Encodable, Decodable } from "std/json"
 import { Pass, Fail, Trial } from "std/fallible"
 
 type Qty = Int64 where >= 1
 type DrinkSlug = "espresso" | "mocha"
 type CreateOrder(slug: DrinkSlug, qty: Qty)
+conform CreateOrder to Encodable, Decodable
 
 match CreateOrder.read(body) {
     Fail(issues) => info(messages(issues))     ## every bad field
@@ -1778,8 +1781,12 @@ match CreateOrder.read(body) {
 | `t.encode()` | Compact JSON text |
 | `t.toJson()` | A `Json` tree |
 
-These need `std/json` somewhere in the program (`readForm` also needs
-`std/http`). `Issue` is `Missing | Mismatch | Rejected` from `std/json`;
+A type is written only when it declares `Encodable`, and read only when it
+declares `Decodable`, both traits in `std/json` (import them to declare them).
+Without a body, the conformance gets the generated codec; the parts must
+conform too, and the error names a field that does not. Refined types and
+unions of literals codec as their base without declaring. These need
+`std/json` somewhere in the program (`readForm` also needs `std/http`). `Issue` is `Missing | Mismatch | Rejected` from `std/json`;
 `message(issue)` formats one, `messages(issues)` a read's list, and
 `errorsObject(issues)` builds a JSON error reply.
 
@@ -1823,7 +1830,7 @@ error at the `readForm` call that names the field. An absent `Bool` or
 
 ### Encoding
 
-`encode` / `toJson` work for every type JSON can hold:
+`encode` / `toJson` work for every `Encodable` type:
 
 | Type | JSON |
 |------|------|
@@ -1840,8 +1847,9 @@ error at the `readForm` call that names the field. An absent `Bool` or
 | product | an object of its fields in declaration order; a `Not` field is left out |
 | union of products | the member's object with `"type": "Member"` first |
 
-A type that defines its own exported `fn toJson() -> Json` is encoded by it,
-including inside other types, and gets no generated reader (a
+A conformance may write its own `toJson`, `conform Cents to Encodable { fn
+toJson() -> Json { … } }`; the type is then encoded by it, including inside
+other types, and gets no generated reader (a
 [`from(json: Json)` clause](#from-clauses) gives it one). `Bytes`, `Buffer`,
 `Node`, functions, `Address`, a `Resource`, C-layout types, maps with
 non-`String` keys, unions that mix literals and products, generic types, and

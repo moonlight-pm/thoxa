@@ -1,7 +1,8 @@
 ## D182 §1: a product encodes only when every field does.
-import { Json } from "std/json"
+import { Json, Encodable } from "std/json"
 
 type Upload(name: String, payload: Bytes)
+conform Upload to Encodable
 
 fn main() -> Int64 {
     let upload = Upload(name: "a", payload: Bytes(3))

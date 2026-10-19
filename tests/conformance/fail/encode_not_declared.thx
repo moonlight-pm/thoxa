@@ -1,0 +1,6 @@
+## D228: a type has a JSON form only by declaring `Encodable`.
+type Point(x: Int64, y: Int64)
+
+fn main() {
+    let text = Point(x: 1, y: 2).encode()
+}

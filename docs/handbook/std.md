@@ -36,7 +36,7 @@ The source is in [`std/`](../../std/).
 | `std/http` | HTTP/1.1 messages: parse and write, query / form / cookie helpers, HTML responses, ETags, cookies |
 | `std/http/server` | An HTTP/1.1 server loop: `serve`, `serveOne`, `readBody`, server-sent events |
 | `std/http/static` | A static-file `Router` |
-| `std/json` | The `Json` tree, `decode` / `encode`, and `Issue` for typed reads |
+| `std/json` | The `Json` tree, `decode` / `encode`, `Issue` for typed reads, and the `Encodable` / `Decodable` traits |
 | `std/sqlite` | Embedded SQLite: `open`, `exec`, `query`, `sql"…"` |
 | `std/string` | String's methods (in every program), `Split`, `parseUInt` |
 | `std/array` | Array's `contains`, `indexOf`, `sorted` (in every program) |

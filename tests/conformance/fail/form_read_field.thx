@@ -1,9 +1,11 @@
 ## D182 §3: a form holds flat values, so a Map field cannot be read from one.
-import { Issue } from "std/json"
+import { Issue, Decodable } from "std/json"
 import { Request } from "std/http"
 
 type Settings(name: String)
+conform Settings to Decodable
 type Profile(name: String, settings: Settings, extras: Map<String, String>)
+conform Profile to Decodable
 
 fn main() -> Int64 {
     match Profile.readForm("name=ada") {

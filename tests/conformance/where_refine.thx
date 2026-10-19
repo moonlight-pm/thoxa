@@ -1,14 +1,17 @@
 ## `type T = Int64 where …` + Type.read / `x as T` (builtin validation; `as` replaced Type.from, D191).
-import { Issue, messages } from "std/json"
+import { Issue, messages, Decodable, Encodable } from "std/json"
 import { Pass, Fail, Trial } from "std/fallible"
 import logging, { info } from "std/logging"
 
 type Qty = Int64 where >= 1 "need {expected}, got {value}"
 type Dozen = Qty where <= 12
 type Order(slug: String, qty: Qty)
+conform Order to Encodable, Decodable
 type Line(n: Int64 where >= 1)
+conform Line to Decodable
 type DrinkSlug = "espresso" | "mocha"
 type Drink(slug: DrinkSlug)
+conform Drink to Decodable
 type Closed = String where "a" | "b"
 
 fn showQ(t!: Trial<Qty, Array<Issue>>) -> String {

@@ -706,33 +706,6 @@ impl Parser {
     }
 
     /// `<T, U>` type parameter list on a type definition.
-    fn parse_type_params(&mut self) -> Result<Vec<String>> {
-        self.expect_kind(&TokenKind::LAngle)?;
-        let mut params = Vec::new();
-        if !self.at_rangle() {
-            loop {
-                let (p, pspan) = self.expect_ident()?;
-                if params.iter().any(|x| x == &p) {
-                    return Err(Error::at(format!("duplicate type parameter `{p}`"), pspan));
-                }
-                params.push(p);
-                if self.at(TokenKind::Comma) {
-                    self.bump();
-                    continue;
-                }
-                break;
-            }
-        }
-        self.expect_rangle()?;
-        if params.is_empty() {
-            return Err(Error::at(
-                "type parameter list cannot be empty",
-                self.peek_span(),
-            ));
-        }
-        Ok(params)
-    }
-
     /// `A | B | C` type members (atoms only — each may carry trailing `!` / `?` marks).
     fn parse_union_members(&mut self) -> Result<Vec<TypeExpr>> {
         let mut members = Vec::new();
