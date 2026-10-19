@@ -1142,6 +1142,7 @@ impl Parser {
             type_params: Vec::new(),
             provided: None,
             requires: Vec::new(),
+            generic: Vec::new(),
         };
         Ok((method, property))
     }
@@ -1218,6 +1219,7 @@ impl Parser {
             type_params,
             provided: None,
             requires: Vec::new(),
+            generic: Vec::new(),
         })
     }
 

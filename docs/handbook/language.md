@@ -735,6 +735,28 @@ let word = largest(["pear", "fig"])     ## Has("pear")
 - A generic function without `->` infers its return type for each set of
   type arguments, as other functions do. It is not multi-clause and not a
   function value.
+- A type's method may take type parameters of its own, with bounds, as a
+  function does:
+
+```thx
+type Box<T>(value: T) {
+    export fn map<U>(transform!: (item: T) -> U) -> Box<U> {
+        Box(value: transform(value))
+    }
+}
+
+fn label(value!: Int64) -> String {
+    "#{value}"
+}
+
+let labelled = Box(value: 4).map(label)   ## Box(value: "#4"), a Box<String>
+```
+
+  A call infers them from its arguments (not from the expected result) and
+  gets the type's method for them, compiled once for each set the program
+  uses; the body is checked once against their bounds. It is otherwise a
+  method: it sees the fields by bare name, writes them, and calls its
+  siblings. It is not a function value.
 - std declares methods for every instance of a built-in generic type whose
   arguments meet bounds, with `extend Array<T: Equatable> { … }`: that is how
   `contains` and `sorted` exist (only std may `extend`).

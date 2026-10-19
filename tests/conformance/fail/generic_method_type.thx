@@ -1,9 +1,0 @@
-## D228 §5: a declared type's methods take no type parameters yet; a generic
-## function does the job.
-type Shelf(count: Int64) {
-    export fn twice<T>(value!: T) -> Array<T> {
-        [value, value]
-    }
-}
-
-fn main() {}

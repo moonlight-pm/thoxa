@@ -1,0 +1,1 @@
+`Shelf.put` needs `T: Show`, and Plain is not `Show`

@@ -545,6 +545,7 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
                     body: function.body.clone(),
                     provided: None,
                     requires: Vec::new(),
+                    generic: Vec::new(),
                 };
                 own_members
                     .entry((BUILT_IN_MODULE.to_string(), name.to_string()))
@@ -1816,6 +1817,7 @@ fn provided_method(
             members,
         }),
         requires: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -1990,6 +1992,7 @@ fn field_accessor(method: &str, field_ty: &TypeExpr, span: Span) -> Method {
         type_params: Vec::new(),
         provided: None,
         requires: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -2041,6 +2044,7 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
         type_params: Vec::new(),
         provided: None,
         requires: Vec::new(),
+        generic: Vec::new(),
     }
 }
 
@@ -2074,19 +2078,35 @@ fn generic_functions(package: &mut Package, scope: &Scope) -> Result<()> {
 fn type_bounds(package: &mut Package, scope: &Scope) -> Result<()> {
     let mut errors = Vec::new();
     for module in &mut package.modules {
+        let mut archetypes = Vec::new();
         for item in &mut module.ast.items {
             let Item::Type(def) = item else { continue };
-            if let Some(method) = def.methods.iter().find(|method| !method.type_params.is_empty()) {
-                errors.push(
-                    Error::at(
-                        format!(
-                            "a type's method cannot take type parameters yet (`{}`): write a generic function",
-                            method.name
-                        ),
-                        method.name_span,
-                    )
-                    .with_path(module.path.clone()),
-                );
+            // A method's own type parameters (and bare trait parameters),
+            // resolved as a generic function's are; its archetypes are
+            // `Param_Boxmap_U`.
+            for method in &mut def.methods {
+                let mut function = Function {
+                    exported: method.exported,
+                    name: format!("{}{}", def.name, method.name),
+                    name_span: method.name_span,
+                    type_params: method.type_params.clone(),
+                    params: method.params.clone(),
+                    return_type: method.return_type.clone(),
+                    body: Block {
+                        items: Vec::new(),
+                        tail: None,
+                        span: method.name_span,
+                    },
+                    generic: Vec::new(),
+                };
+                match resolve_generics(&mut function, &module.id, scope, &mut archetypes, &HashMap::new()) {
+                    Ok(()) => {
+                        method.type_params = function.type_params;
+                        method.params = function.params;
+                        method.generic = function.generic;
+                    }
+                    Err(error) => errors.push(error.with_path(module.path.clone())),
+                }
             }
             let mut resolved = Vec::new();
             for bounds in &def.param_bounds {
@@ -2103,6 +2123,7 @@ fn type_bounds(package: &mut Package, scope: &Scope) -> Result<()> {
             }
             def.bounds = resolved;
         }
+        module.ast.items.extend(archetypes.into_iter().map(Item::Type));
     }
     if errors.is_empty() {
         Ok(())

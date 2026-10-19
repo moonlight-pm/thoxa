@@ -1,0 +1,67 @@
+## A declared type's methods with their own type parameters (D228 §5). Each
+## call infers them from its arguments and gets the type's method for them,
+## made on first use; the body is checked once against their bounds. Such a
+## method sees the fields by bare name, writes them, and calls its siblings,
+## as any method does; a generic type's has the instance's arguments too.
+import logging, { info } from "std/logging"
+
+type Box<T>(value: T) {
+    export fn map<U>(transform!: (item: T) -> U) -> Box<U> {
+        Box(value: transform(value))
+    }
+
+    ## Through `self`, as a sibling.
+    export fn twice<U>(transform!: (item: T) -> U) -> Box<U> {
+        self.map(transform)
+    }
+}
+
+type Tally(count: Int64) {
+    export fn describe<T: Show>(item!: T) -> String {
+        "{count}: {item}"
+    }
+
+    ## Writes its receiver.
+    export fn add<T: Show>(item!: T) {
+        count = count + 1
+    }
+
+    ## Calls another by bare name.
+    export fn both<T: Show>(item!: T) -> String {
+        describe(item)
+    }
+
+    ## No `->`: inferred for each instance.
+    export fn first<T>(items!: Array<T>) {
+        items[0]
+    }
+}
+
+fn double(value!: Int64) -> Int64 {
+    value * 2
+}
+
+fn label(value!: Int64) -> String {
+    "#{value}"
+}
+
+## Inside a generic function, on its parameter's instance.
+fn relabel<T>(box!: Box<T>, transform!: (item: T) -> String) -> String {
+    box.map(transform).value
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let box = Box(value: 4)
+    info("{box.map(double).value} {box.map(label).value} {box.twice(label).value}")
+    info(relabel(Box(value: 9), label))
+
+    mut tally = Tally(count: 1)
+    info(tally.describe(true))
+    tally.add("x")
+    info(tally.both(2.5))
+    info("{tally.first([5, 6]) + 1} {tally.first(["tea"])}")
+    0
+}

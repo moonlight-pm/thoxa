@@ -51,6 +51,25 @@ struct SyntheticRegistry {
     mixed_closed: HashMap<String, HashSet<String>>,
     /// Built-in types' associated types, by the type's name (D228 §7).
     built_in_assoc: crate::trait_desugar::BuiltInAssoc,
+    /// Methods made from templates (`map_String`), by their type (D228 §5).
+    method_instances: HashMap<String, HashMap<String, MethodSig>>,
+    /// Those methods' bodies, still to lower.
+    method_jobs: Vec<generic::MethodJob>,
+}
+
+/// The types and methods made while lowering, added to a context's `types`:
+/// generic types' instances, and methods made from templates.
+fn seed_synthetics(types: &mut HashMap<String, TypeInfo>, synthetics: &SyntheticRegistry) {
+    for (name, (info, _)) in synthetics.entries.iter() {
+        types.entry(name.clone()).or_insert_with(|| info.clone());
+    }
+    for (type_name, methods) in &synthetics.method_instances {
+        if let Some(info) = types.get_mut(type_name) {
+            for (name, sig) in methods {
+                info.methods.entry(name.clone()).or_insert_with(|| sig.clone());
+            }
+        }
+    }
 }
 
 /// Whether a Map keyed by the type `name` calls its own `hash` and `equals`
@@ -195,9 +214,7 @@ impl LowerCtx {
     /// Take the generic types' instances made since this context was, as a
     /// probe of an argument's type makes them (D228 §5).
     fn take_new_instances(&mut self) {
-        for (name, (info, _)) in self.synthetics.borrow().entries.iter() {
-            self.types.entry(name.clone()).or_insert_with(|| info.clone());
-        }
+        seed_synthetics(&mut self.types, &self.synthetics.borrow());
     }
 
     /// Whether `ty` conforms to std's core trait `name` (D228).
@@ -1325,6 +1342,19 @@ struct TypeInfo {
     /// An instance of a generic type: its template's mangled name and its
     /// type arguments, in order.
     instance: Option<(String, Vec<Ty>)>,
+    /// Its methods with their own type parameters (D228 §5), by name.
+    templates: HashMap<String, MethodTemplate>,
+}
+
+/// A method with its own type parameters (D228 §5): a call infers them and
+/// makes the type's method for those arguments (`map_String`), lowered as
+/// any method is.
+#[derive(Clone)]
+struct MethodTemplate {
+    /// For a generic type's instance, with the instance's arguments in.
+    method: Method,
+    /// Where its body resolves.
+    def_mod: String,
 }
 
 #[derive(Clone)]
@@ -1515,9 +1545,7 @@ impl LowerCtx {
     ) -> Self {
         let mut types = types;
         // Seed with synthetics created by earlier functions in this package.
-        for (name, (info, _)) in synthetics.borrow().entries.iter() {
-            types.entry(name.clone()).or_insert_with(|| info.clone());
-        }
+        seed_synthetics(&mut types, &synthetics.borrow());
         Self {
             stmts: Vec::new(),
             temps: 0,
@@ -2038,6 +2066,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                     traits: td.traits.clone(),
                     derived: td.derived.iter().cloned().collect(),
                     instance: None,
+                    templates: HashMap::new(),
                 },
             );
             if td.exported {
@@ -2250,6 +2279,18 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         let mut groups: HashMap<String, Vec<&Method>> = HashMap::new();
         let mut group_order: Vec<String> = Vec::new();
         for m in &td.methods {
+            // A method with type parameters is a template (D228 §5).
+            if !m.generic.is_empty() {
+                let def_mod = method_scope(m, mod_id).to_string();
+                types_info.get_mut(mangled).unwrap().templates.insert(
+                    m.name.clone(),
+                    MethodTemplate {
+                        method: m.clone(),
+                        def_mod,
+                    },
+                );
+                continue;
+            }
             if !groups.contains_key(&m.name) {
                 group_order.push(m.name.clone());
             }
@@ -2914,7 +2955,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     let mut archetype_errors = false;
     for (type_mod, mangled_ty, td) in lower_order {
         let mut seen_methods: HashSet<String> = HashSet::new();
-        for method in &td.methods {
+        for method in td.methods.iter().filter(|method| method.generic.is_empty()) {
             if !seen_methods.insert(method.name.clone()) {
                 continue; // multi-clause: lower once per name
             }
@@ -3089,6 +3130,34 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     // may ask for more, and for the methods of generic types' instances.
     let mut lowered_instances: HashSet<String> = HashSet::new();
     let mut failed_templates: HashSet<String> = HashSet::new();
+    let mut failed_methods: HashSet<(String, String)> = HashSet::new();
+    // Each method template checked once against its archetypes (D228 §5).
+    let mut with_templates: Vec<(String, String)> = types_info
+        .iter()
+        .filter(|(_, info)| !info.templates.is_empty())
+        .map(|(name, info)| (name.clone(), info.def_mod.clone()))
+        .collect();
+    with_templates.sort();
+    for (type_name, def_mod) in with_templates {
+        let maps = package_maps.get(&def_mod).cloned().unwrap_or_default();
+        let mut check_ctx = LowerCtx::new(
+            fns.clone(),
+            types_info.clone(),
+            maps.name_to_type,
+            maps.name_to_fn,
+            maps.name_to_global,
+            maps.namespaces,
+            module_exports.clone(),
+            package_maps.clone(),
+            Ty::Void,
+            def_mod.clone(),
+            false,
+            Rc::clone(&synthetics),
+        );
+        if let Err(e) = generic::check_templates(&mut check_ctx, &type_name) {
+            body_errors.push(in_module_id(e, package, &def_mod));
+        }
+    }
     loop {
         let job = {
             let mut synthetics = synthetics.borrow_mut();
@@ -3104,7 +3173,8 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         };
         let Some(job) = job else {
             let late = std::mem::take(&mut synthetics.borrow_mut().late_mono_jobs);
-            if late.is_empty() {
+            let mut made_methods = std::mem::take(&mut synthetics.borrow_mut().method_jobs);
+            if late.is_empty() && made_methods.is_empty() {
                 break;
             }
             for job in late
@@ -3131,6 +3201,39 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                 ) {
                     Ok(f) => functions.push(f),
                     Err(e) => body_errors.push(in_module_file(e, &m.path)),
+                }
+            }
+            // Methods made from templates (D228 §5): each template's checking
+            // one first; a template whose body fails there makes no others.
+            made_methods.sort_by_key(|job| !job.archetypal);
+            for job in &made_methods {
+                if !job.archetypal && failed_methods.contains(&job.template) {
+                    continue;
+                }
+                let m = package.modules.iter().find(|x| x.id == job.def_mod).unwrap();
+                let maps = package_maps.get(&job.def_mod).unwrap();
+                match lower_method(
+                    &job.type_name,
+                    &job.method,
+                    &fns,
+                    &types_info,
+                    &maps.name_to_type,
+                    &maps.name_to_fn,
+                    &maps.name_to_global,
+                    &maps.namespaces,
+                    &module_exports,
+                    &package_maps,
+                    &job.def_mod,
+                    m.is_entry,
+                    &synthetics,
+                ) {
+                    Ok(f) => functions.push(f),
+                    Err(e) => {
+                        if job.archetypal {
+                            failed_methods.insert(job.template.clone());
+                        }
+                        body_errors.push(in_module_file(e, &m.path));
+                    }
                 }
             }
             continue;
@@ -3953,6 +4056,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             traits: Vec::new(),
             derived: HashSet::new(),
             instance: None,
+            templates: HashMap::new(),
         },
     );
     type_layouts.push(TypeLayout {
@@ -3992,6 +4096,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             traits: Vec::new(),
             derived: HashSet::new(),
             instance: None,
+            templates: HashMap::new(),
         },
     );
     types_info.insert(
@@ -4007,6 +4112,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             traits: Vec::new(),
             derived: HashSet::new(),
             instance: None,
+            templates: HashMap::new(),
         },
     );
     types_info.insert(
@@ -4022,6 +4128,7 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             traits: Vec::new(),
             derived: HashSet::new(),
             instance: None,
+            templates: HashMap::new(),
         },
     );
 }
@@ -5249,7 +5356,7 @@ fn infer_unannotated_returns(
     }
     for (type_mod, type_mangled, td) in type_defs {
         let mut seen: HashSet<&str> = HashSet::new();
-        for method in &td.methods {
+        for method in td.methods.iter().filter(|method| method.generic.is_empty()) {
             if !seen.insert(method.name.as_str()) {
                 continue;
             }
@@ -6761,13 +6868,14 @@ fn instantiate_product_mono(
             traits: Vec::new(),
             derived: HashSet::new(),
             instance: Some(instance_of(gdef, subst)),
+            templates: HashMap::new(),
         },
     );
     layouts.push(layout);
 
     // Enqueue monomorphs referenced by method and `from` clause signatures
-    // (after type-param subst).
-    for m in methods {
+    // (after type-param subst); a template's are made per call.
+    for m in methods.iter().filter(|m| m.generic.is_empty()) {
         for te in method_sig_type_exprs(m) {
             let te = subst_type_expr(te, subst);
             enqueue_type_app_mono(&te, types, name_map, generics, pending, span);
@@ -6804,6 +6912,14 @@ fn instantiate_product_methods(
     let name_map = &name_map;
     let mut method_sigs = HashMap::new();
     for m in methods {
+        if !m.generic.is_empty() {
+            let template = MethodTemplate {
+                method: subst_method(m, subst),
+                def_mod: gdef.def_mod.clone(),
+            };
+            types.get_mut(&mono).unwrap().templates.insert(m.name.clone(), template);
+            continue;
+        }
         let ret = match m.return_type.as_ref() {
             Some(t) => resolve_ty(&subst_type_expr(t, subst), types, name_map)?,
             None => Ty::Void,
@@ -6875,6 +6991,7 @@ fn instantiate_product_methods(
                 type_params: Vec::new(),
                 provided: None,
                 requires: Vec::new(),
+                generic: Vec::new(),
             },
             subst: subst.clone(),
             def_mod: gdef.def_mod.clone(),
@@ -7346,6 +7463,7 @@ fn instantiate_union_mono(
         traits: Vec::new(),
         derived: HashSet::new(),
         instance: Some(instance_of(gdef, subst)),
+        templates: HashMap::new(),
     };
     let layout = TypeLayout {
         name: mono.clone(),
@@ -8060,6 +8178,7 @@ pub(crate) fn subst_method<S: TypeSubst + ?Sized>(m: &Method, subst: &S) -> Meth
         type_params: m.type_params.clone(),
         provided: m.provided.clone(),
         requires: m.requires.clone(),
+        generic: m.generic.clone(),
     }
 }
 
@@ -8503,7 +8622,7 @@ fn sibling_visible(ctx: &LowerCtx, type_name: &str, method: &str) -> bool {
     let declared = ctx
         .types
         .get(type_name)
-        .is_some_and(|info| info.methods.contains_key(method));
+        .is_some_and(|info| info.methods.contains_key(method) || info.templates.contains_key(method));
     declared
         && ctx
             .trait_scope
@@ -8546,6 +8665,13 @@ fn lower_sibling_call(
     args: &[Arg],
     span: Span,
 ) -> Result<(Place, Ty)> {
+    let instance: String;
+    let method = if ctx.types[type_name].methods.contains_key(method) {
+        method
+    } else {
+        instance = generic::instantiate_method(ctx, type_name, method, args, span)?;
+        instance.as_str()
+    };
     let info = ctx.types.get(type_name).unwrap().clone();
     let sig = info.methods.get(method).unwrap().clone();
     check_requires(ctx, type_name, method, &sig, span)?;
@@ -8617,9 +8743,7 @@ fn lower_method(
     let name_to_type = &with_self_type(name_to_type.clone(), mangled_type);
     // A late instance's signature may name instances made while lowering.
     let mut seeded = types.clone();
-    for (name, (info, _)) in synthetics.borrow().entries.iter() {
-        seeded.entry(name.clone()).or_insert_with(|| info.clone());
-    }
+    seed_synthetics(&mut seeded, &synthetics.borrow());
     let types = &seeded;
     // Unannotated: the type inference gave the signature (D174), else Void.
     let ret_ty = match m.return_type.as_ref() {
@@ -12401,6 +12525,14 @@ fn lower_method_call(
                     return order::int_to_order(ctx, sign, method_span);
                 }
             }
+            // A method with type parameters: the one for this call's (D228 §5).
+            let instance: String;
+            let (info, method) = if !info.methods.contains_key(method) && info.templates.contains_key(method) {
+                instance = generic::instantiate_method(ctx, &type_name, method, args, method_span)?;
+                (ctx.types[&type_name].clone(), instance.as_str())
+            } else {
+                (info, method)
+            };
             let sig = info.methods.get(method).ok_or_else(|| {
                 Error::at(
                     no_member_message(&type_name, method, "method"),
@@ -14765,6 +14897,7 @@ fn ensure_lit_type(
         traits: Vec::new(),
         derived: HashSet::new(),
         instance: None,
+        templates: HashMap::new(),
     };
     let layout = TypeLayout {
         name: name.clone(),
@@ -14910,6 +15043,7 @@ fn ensure_member_set_type(
         traits: Vec::new(),
         derived: HashSet::new(),
         instance: None,
+        templates: HashMap::new(),
     };
     let layout = TypeLayout {
         name: name.clone(),
@@ -14974,7 +15108,7 @@ fn materialize_item_typespace(
                     materialize_type_expr(mem, types, layouts, name_map, def_mod)?;
                 }
             }
-            for method in &td.methods {
+            for method in td.methods.iter().filter(|method| method.generic.is_empty()) {
                 for p in &method.params {
                     materialize_type_expr(&p.ty, types, layouts, name_map, def_mod)?;
                 }
@@ -19784,6 +19918,7 @@ fn ensure_synthetic_sum(
         traits: Vec::new(),
         derived: HashSet::new(),
         instance: None,
+        templates: HashMap::new(),
     };
     let layout = TypeLayout {
         name: syn_name.clone(),

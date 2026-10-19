@@ -20,7 +20,7 @@ use super::{
     probe_body_return, resolve_ty, subst_expr, subst_method, subst_type_expr, tail_block,
     ty_conforms, ty_mono_suffix, FnSig, LowerCtx, Ty,
 };
-use crate::ast::{Arg, Expr, ExprKind, Function, Param, TypeArg, TypeExpr};
+use crate::ast::{Arg, Expr, ExprKind, Function, GenericParam, Method, Param, TypeArg, TypeExpr};
 use crate::error::{Error, Result};
 use crate::span::Span;
 
@@ -75,42 +75,8 @@ pub(super) fn instantiate_call(
             let _ = bind(ret, expect, &names, &mut bindings, ctx, span, shown);
         }
     }
-    ctx.take_new_instances();
-    for param in &function.generic {
-        if let Some((owner, assoc)) = &param.derived {
-            let owner_ty = bindings.get(owner).cloned().unwrap_or(Ty::Void);
-            let found = super::assoc_type(ctx, &owner_ty, assoc, span)?;
-            let Some(ty) = found else {
-                return Err(Error::at(
-                    format!("`{shown}` needs `{owner}.{assoc}`, and {} names no `{assoc}`", display_ty(&owner_ty)),
-                    span,
-                ));
-            };
-            bindings.insert(param.name.clone(), ty);
-        }
-        let Some(ty) = bindings.get(&param.name) else {
-            return Err(Error::at(
-                format!("cannot infer `{}` for `{shown}` from its arguments", param.name),
-                span,
-            )
-            .with_help("annotate what the call's result is assigned to, or pass a typed value"));
-        };
-        let conditional = ctx.synthetics.borrow().conditional.clone();
-        for bound in &param.bounds {
-            if !ty_conforms(&ctx.types, &conditional, ty, bound) {
-                return Err(Error::at(
-                    format!(
-                        "`{shown}` needs `{}: {}`, and {} is not `{}`",
-                        param.name,
-                        bound.name,
-                        display_ty(ty),
-                        bound.name
-                    ),
-                    span,
-                ));
-            }
-        }
-    }
+    let help = "annotate what the call's result is assigned to, or pass a typed value";
+    complete_bindings(ctx, &function.generic, &mut bindings, shown, span, help)?;
     let instance = instance_name(template_name, function, &bindings);
     let existing = ctx.synthetics.borrow().fn_instances.get(&instance).cloned();
     let sig = match existing {
@@ -130,6 +96,236 @@ pub(super) fn instantiate_call(
     };
     ctx.fns.insert(instance.clone(), sig);
     Ok(instance)
+}
+
+/// Bind a template's parameters that are not inferred (`S.Item`, read off
+/// `S`'s argument), and check every one is bound and meets its bounds.
+fn complete_bindings(
+    ctx: &mut LowerCtx,
+    generic: &[GenericParam],
+    bindings: &mut HashMap<String, Ty>,
+    shown: &str,
+    span: Span,
+    help: &str,
+) -> Result<()> {
+    ctx.take_new_instances();
+    for param in generic {
+        if let Some((owner, assoc)) = &param.derived {
+            let owner_ty = bindings.get(owner).cloned().unwrap_or(Ty::Void);
+            let found = super::assoc_type(ctx, &owner_ty, assoc, span)?;
+            let Some(ty) = found else {
+                return Err(Error::at(
+                    format!("`{shown}` needs `{owner}.{assoc}`, and {} names no `{assoc}`", display_ty(&owner_ty)),
+                    span,
+                ));
+            };
+            bindings.insert(param.name.clone(), ty);
+        }
+        let Some(ty) = bindings.get(&param.name) else {
+            return Err(Error::at(
+                format!("cannot infer `{}` for `{shown}` from its arguments", param.name),
+                span,
+            )
+            .with_help(help));
+        };
+        let conditional = ctx.synthetics.borrow().conditional.clone();
+        for bound in &param.bounds {
+            if !ty_conforms(&ctx.types, &conditional, ty, bound) {
+                return Err(Error::at(
+                    format!(
+                        "`{shown}` needs `{}: {}`, and {} is not `{}`",
+                        param.name,
+                        bound.name,
+                        display_ty(ty),
+                        bound.name
+                    ),
+                    span,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A method made from a template (D228 §5), whose body is still to lower.
+#[derive(Clone)]
+pub(super) struct MethodJob {
+    pub(super) type_name: String,
+    pub(super) method: Method,
+    pub(super) def_mod: String,
+    /// Its template: its type and name. A template whose checking method
+    /// fails makes no others.
+    pub(super) template: (String, String),
+    /// The checking method, made with the template's archetypes.
+    pub(super) archetypal: bool,
+}
+
+/// The method a call to `type_name`'s template `method` needs (D228 §5): its
+/// type arguments inferred from the call's arguments, made on first use, its
+/// signature in the type's methods.
+pub(super) fn instantiate_method(
+    ctx: &mut LowerCtx,
+    type_name: &str,
+    method: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<String> {
+    let template = ctx.types[type_name].templates[method].clone();
+    let shown = format!("{}.{method}", display_ty(&Ty::User(type_name.to_string())));
+    let generic = &template.method.generic;
+    let names: Vec<String> = generic
+        .iter()
+        .filter(|param| param.derived.is_none())
+        .map(|param| param.name.clone())
+        .collect();
+    let params = &template.method.params;
+    let mut bindings: HashMap<String, Ty> = HashMap::new();
+    for (param, arg) in params.iter().zip(match_args(params, args)) {
+        let Some(arg) = arg else { continue };
+        if !mentions(&param.ty, &names) {
+            continue;
+        }
+        let ty = infer_block_ty(ctx, &tail_block(arg.clone()))?;
+        bind(&param.ty, &ty, &names, &mut bindings, ctx, arg.span, &shown)?;
+    }
+    let help = "pass a typed value: a method's type arguments come from its arguments";
+    complete_bindings(ctx, generic, &mut bindings, &shown, span, help)?;
+    method_instance(ctx, type_name, &template, bindings, false)
+}
+
+/// Each template of `type_name` checked once, as its method for its
+/// archetypes, which have only their bounds' members (D228 §5).
+pub(super) fn check_templates(ctx: &mut LowerCtx, type_name: &str) -> Result<()> {
+    let templates: Vec<super::MethodTemplate> = ctx
+        .types
+        .get(type_name)
+        .map(|info| info.templates.values().cloned().collect())
+        .unwrap_or_default();
+    for template in templates {
+        let name_map = ctx
+            .package_maps
+            .get(&template.def_mod)
+            .map(|maps| maps.name_to_type.clone())
+            .unwrap_or_default();
+        let bindings: HashMap<String, Ty> = template
+            .method
+            .generic
+            .iter()
+            .map(|param| {
+                let archetype = name_map.get(&param.archetype).cloned().unwrap_or_else(|| param.archetype.clone());
+                (param.name.clone(), Ty::User(archetype))
+            })
+            .collect();
+        method_instance(ctx, type_name, &template, bindings, true)?;
+    }
+    Ok(())
+}
+
+/// `template`'s method for `bindings` (`map_String`), made if it does not
+/// exist yet: its signature joins the type's methods, and its body the late
+/// bodies.
+fn method_instance(
+    ctx: &mut LowerCtx,
+    type_name: &str,
+    template: &super::MethodTemplate,
+    bindings: HashMap<String, Ty>,
+    archetypal: bool,
+) -> Result<String> {
+    let mut name = template.method.name.clone();
+    for param in template.method.generic.iter().filter(|param| param.derived.is_none()) {
+        let arg = bindings.get(&param.name).cloned().unwrap_or(Ty::Void);
+        // A C method name splits at its last `__`.
+        name.push('_');
+        name.push_str(&ty_mono_suffix(&arg).replace("__", "_"));
+    }
+    if ctx.types.get(type_name).is_some_and(|info| info.methods.contains_key(&name)) {
+        return Ok(name);
+    }
+    let made = ctx
+        .synthetics
+        .borrow()
+        .method_instances
+        .get(type_name)
+        .and_then(|methods| methods.get(&name))
+        .cloned();
+    if let Some(sig) = made {
+        ctx.types.get_mut(type_name).unwrap().methods.insert(name.clone(), sig);
+        return Ok(name);
+    }
+    let mut method = subst_method(&template.method, &bindings);
+    method.name = name.clone();
+    method.generic.clear();
+    method.type_params.clear();
+    let maps = ctx.package_maps.get(&template.def_mod).cloned().unwrap_or_default();
+    let mut name_map = maps.name_to_type.clone();
+    name_map.insert("Self".into(), type_name.to_string());
+    let mut params = Vec::new();
+    for param in &method.params {
+        ensure_instances(ctx, &param.ty, &name_map)?;
+        params.push((param.name.clone(), resolve_ty(&param.ty, &ctx.types, &name_map)?));
+    }
+    let ret = match &method.return_type {
+        Some(ret) => {
+            ensure_instances(ctx, ret, &name_map)?;
+            resolve_ty(ret, &ctx.types, &name_map)?
+        }
+        None => Ty::Void,
+    };
+    let mut sig = super::MethodSig {
+        params,
+        defaults: method.params.iter().map(|param| param.default.clone()).collect(),
+        ret,
+        exported: method.exported,
+        def_mod: template.def_mod.clone(),
+        multi_clause: false,
+        mutable: method.params.iter().map(|param| param.mutable).collect(),
+        positional: method.params.iter().map(|param| param.positional).collect(),
+        requires: Vec::new(),
+    };
+    ctx.types.get_mut(type_name).unwrap().methods.insert(name.clone(), sig.clone());
+    // Without `->`, its return type comes from its body's exits (D174).
+    if method.return_type.is_none() {
+        let mut probe = LowerCtx::new(
+            ctx.fns.clone(),
+            ctx.types.clone(),
+            maps.name_to_type,
+            maps.name_to_fn,
+            maps.name_to_global,
+            maps.namespaces,
+            ctx.module_exports.clone(),
+            ctx.package_maps.clone(),
+            Ty::Void,
+            template.def_mod.clone(),
+            false,
+            Rc::clone(&ctx.synthetics),
+        );
+        probe.inferring = true;
+        probe.infer_self = Some(format!("{type_name}__{name}"));
+        let generics = ctx.synthetics.borrow().generics.clone();
+        probe.generics = generics.clone();
+        define_method_scope(&mut probe, type_name, &method)?;
+        let mut types = ctx.types.clone();
+        let mut layouts = Vec::new();
+        sig.ret = probe_body_return(probe, &method.body, method.name_span, &generics, &mut types, &mut layouts)?;
+        for (each, info) in types {
+            ctx.types.entry(each).or_insert(info);
+        }
+        ctx.types.get_mut(type_name).unwrap().methods.insert(name.clone(), sig.clone());
+    }
+    let mut synthetics = ctx.synthetics.borrow_mut();
+    synthetics
+        .method_instances
+        .entry(type_name.to_string())
+        .or_default()
+        .insert(name.clone(), sig);
+    synthetics.method_jobs.push(MethodJob {
+        type_name: type_name.to_string(),
+        method,
+        def_mod: template.def_mod.clone(),
+        template: (type_name.to_string(), template.method.name.clone()),
+        archetypal,
+    });
+    Ok(name)
 }
 
 /// `largest__Int64`: the template's name and each type argument.
@@ -329,6 +525,7 @@ fn make_instance(
             }
         }
     }
+    let made: Vec<String> = layouts.iter().map(|layout| layout.name.clone()).collect();
     let mut synthetics = ctx.synthetics.borrow_mut();
     for mut layout in layouts {
         (layout.own_hash, layout.own_equals) = super::own_key_ops(&types, &synthetics.conditional, &layout.name);
@@ -340,6 +537,13 @@ fn make_instance(
         }
     }
     synthetics.late_mono_jobs.extend(jobs);
+    drop(synthetics);
+    // Their method templates are checked as the ones made before lowering are.
+    for name in made {
+        if ctx.types.get(&name).is_some_and(|info| !info.templates.is_empty()) {
+            check_templates(ctx, &name)?;
+        }
+    }
     Ok(mono)
 }
 

@@ -1,0 +1,14 @@
+## D228 §5: a method's type parameter has only its bounds' members; the
+## body is checked once, not for each call.
+type Shelf(count: Int64) {
+    export fn put<T: Show>(item!: T) -> String {
+        "{item.size}"
+    }
+}
+
+fn main() {
+    let shelf = Shelf(count: 1)
+    shelf.put(1)
+    shelf.put("a")
+    0
+}

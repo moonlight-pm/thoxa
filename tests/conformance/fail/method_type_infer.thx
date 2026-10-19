@@ -1,0 +1,12 @@
+## D228 §5: a method's type arguments come from its call's arguments.
+type Shelf(count: Int64) {
+    export fn empty<T>() -> Array<T> {
+        []
+    }
+}
+
+fn main() {
+    let shelf = Shelf(count: 1)
+    shelf.empty()
+    0
+}

@@ -282,6 +282,10 @@ pub struct Method {
     /// the type's parameters, one list per parameter. The method exists for
     /// the instances whose arguments meet them. Empty for every other method.
     pub requires: Vec<Vec<TraitRef>>,
+    /// `fn map<U>(…)` on a declared type (D228 §5): its type parameters
+    /// resolved by `trait_desugar`, as a generic function's are. A method
+    /// with them is a template; each call makes an instance of it.
+    pub generic: Vec<GenericParam>,
 }
 
 /// `mixed Shape` in type position is the application `__mixed<Shape>` (D228

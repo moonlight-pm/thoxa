@@ -1,0 +1,14 @@
+## D228 §5: a call to a method with type parameters meets their bounds.
+type Plain(count: Int64)
+
+type Shelf(count: Int64) {
+    export fn put<T: Show>(item!: T) -> String {
+        "{item}"
+    }
+}
+
+fn main() {
+    let shelf = Shelf(count: 1)
+    shelf.put(Plain(count: 2))
+    0
+}
