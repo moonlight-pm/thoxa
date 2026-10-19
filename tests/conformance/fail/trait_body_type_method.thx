@@ -1,0 +1,16 @@
+## D228: a trait's body cannot call a method only some conforming type has.
+trait Named {
+    fn label() -> String {
+        nickname()
+    }
+}
+
+type Card(name: String) {
+    export fn nickname() -> String {
+        name
+    }
+}
+
+conform Card to Named
+
+fn main() {}

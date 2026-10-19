@@ -1,0 +1,44 @@
+## `self` is the receiver (D228): the whole value, a field even where a local
+## shadows it, a call to a sibling, and a field write that reaches the caller.
+import logging, { info } from "std/logging"
+
+type Counter(count: Int64, label: String) {
+    export fn snapshot() -> Counter {
+        self
+    }
+
+    export fn shadowed() -> Int64 {
+        let count = 100
+        count + self.count
+    }
+
+    export fn bump() {
+        self.count = self.count + 1
+    }
+
+    export fn twice() {
+        self.bump()
+        bump()
+    }
+
+    export fn sameAs(other!: Counter) -> Bool {
+        self == other
+    }
+
+    export fn describe() -> String {
+        "{self.label}: {self.count}"
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut counter = Counter(count: 1, label: "taps")
+    let before = counter.snapshot()
+    counter.twice()
+    info(counter.describe())
+    info("before: {before.describe()}")
+    info("shadowed: {counter.shadowed()}")
+    info("same as before: {counter.sameAs(before)}")
+    info("same as itself: {counter.sameAs(counter.snapshot())}")
+}

@@ -1,7 +1,8 @@
 //! D196: `extend` blocks.
 //!
-//! `extend String as text { export fn splitOnce(separator!: String) -> … }`
-//! declares methods on a built-in type, written in Thoxa. Only std modules may
+//! `extend String { export fn splitOnce(separator!: String) -> … }` declares
+//! methods on a built-in type, written in Thoxa; the receiver is `self`
+//! (D228). Only std modules may
 //! extend a type, so a type's methods do not depend on what a program imports.
 //! Each method becomes a free function `__extend_String_splitOnce` whose first
 //! parameter is the receiver, exported when the method is; a method call on a
@@ -53,15 +54,15 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
         check_type(&extension.ty)?;
         let key = cast_reader_key(&extension.ty);
         for method in &extension.methods {
-            if let Some(param) = method.params.iter().find(|p| p.name == extension.receiver) {
+            if let Some(param) = method.params.iter().find(|p| p.name == "self") {
                 return Err(Error::at(
-                    format!("parameter `{}` has the receiver's name", param.name),
+                    "`self` is the receiver; a parameter cannot take its name",
                     param.name_span,
                 ));
             }
             let receiver = Param {
-                name: extension.receiver.clone(),
-                name_span: extension.receiver_span,
+                name: "self".into(),
+                name_span: extension.span,
                 positional: true,
                 mutable: false,
                 ty: extension.ty.clone(),

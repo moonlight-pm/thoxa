@@ -194,14 +194,12 @@ pub struct FieldDecl {
     pub ty: TypeExpr,
 }
 
-/// `extend Type as receiver { [export] fn … }` (D196). There is no `self`, so
-/// the header names the receiver the methods see.
+/// `extend Type { [export] fn … }` (D196): methods on a built-in type, whose
+/// receiver is `self` (D228).
 #[derive(Debug, Clone)]
 pub struct Extension {
     pub span: Span,
     pub ty: TypeExpr,
-    pub receiver: String,
-    pub receiver_span: Span,
     pub methods: Vec<Method>,
 }
 
@@ -213,6 +211,18 @@ pub struct Method {
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
     pub body: Block,
+    /// Set on a method a trait provides, copied into a conforming type by
+    /// `trait_desugar` (D228). `None` for a type's own methods.
+    pub provided: Option<Provided>,
+}
+
+/// Where a provided method's body looks: its signature and free names resolve
+/// in the trait's module, and only the trait's members (its own and its
+/// ancestors') are visible by bare name or through `self` (D228).
+#[derive(Debug, Clone)]
+pub struct Provided {
+    pub module: String,
+    pub members: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

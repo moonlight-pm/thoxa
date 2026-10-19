@@ -1,0 +1,4 @@
+## D228: `self` is a method's receiver; a free function has none.
+fn main() {
+    let value = self
+}

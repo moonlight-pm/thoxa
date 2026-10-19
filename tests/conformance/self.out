@@ -1,0 +1,5 @@
+taps: 3
+before: taps: 1
+shadowed: 103
+same as before: false
+same as itself: true

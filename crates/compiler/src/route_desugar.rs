@@ -598,6 +598,7 @@ fn build_route_method(handlers: &[HandlerMeta], name_span: Span, names: &HttpNam
         params: vec![param("req", ty_named(&names.request))],
         return_type: Some(ty_named(&names.response)),
         body,
+        provided: None,
     })
 }
 

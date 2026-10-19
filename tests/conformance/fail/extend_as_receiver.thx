@@ -1,0 +1,8 @@
+## D228: an `extend` block's receiver is `self`, not a name in its header.
+extend String as text {
+    export fn shout() -> String {
+        "{text}!"
+    }
+}
+
+fn main() {}

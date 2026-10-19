@@ -1,0 +1,12 @@
+## D228: a trait's body sees the trait, not a conforming type's fields.
+trait Shape {
+    fn area() -> Float64 {
+        3.0 * radius * radius
+    }
+}
+
+type Circle(radius: Float64)
+
+conform Circle to Shape
+
+fn main() {}

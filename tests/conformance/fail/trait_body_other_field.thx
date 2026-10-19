@@ -1,0 +1,10 @@
+## D228: a value of type `Self` is known only through the trait.
+trait Ranked {
+    fn rank() -> Int64
+
+    fn beats(other!: Self) -> Bool {
+        rank() > other.value
+    }
+}
+
+fn main() {}

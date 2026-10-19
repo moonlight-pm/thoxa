@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-18 (**D228**: traits designed, freeze below; slice 1 shipped (`trait`, `conform`, `Resource`), slice 2 next; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-18 (**D228**: traits designed, freeze below; slices 1–2 shipped (`trait`, `conform`, `Resource`, `self`, provided members), slice 3 next; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -100,8 +100,9 @@ code, getters and setters, `self`, built-in abilities as declared traits
 `Component`, `Resource`), generic functions with bounds, `mixed Trait`.
 Eight slices. **Slice 1 shipped**: `trait` with required methods and
 parents, `Self`, `conform`, and `Resource` (std/core) replacing a `drop`
-method found by name. **Slice 2 is next**: `self` everywhere (`extend`
-drops `as name`) and provided members, checked at the trait.
+method found by name. **Slice 2 shipped**: `self` everywhere (`extend`
+drops `as name`) and provided members, checked once at the trait.
+**Slice 3 is next**: getters, setters, `field`.
 Generic functions are slice 5, so the "generic constructor inference" gap
 below waits for it. Joshua: "lean toward long-term correct design rather
 than short term stop gaps."
@@ -213,12 +214,12 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D228 slice 1 (`trait`, `conform`, `Resource`), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
+**Shipped recently:** D228 slices 1–2 (`trait`, `conform`, `Resource`, `self`, provided members), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 171 programs, 73 rejections, 8 site samples, 216 unit tests
-after D228 slice 1 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 173 programs, 78 rejections, 8 site samples, 217 unit tests
+after D228 slice 2 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`

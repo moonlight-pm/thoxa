@@ -1206,6 +1206,13 @@ struct LowerCtx {
     /// The type whose method body is being lowered: a bare call to one of its
     /// methods is a call on the receiver, and its private methods are callable.
     method_type: Option<String>,
+    /// The method's fields by name, as bound at its start: `self.name` reaches
+    /// one even when a local shadows it (D228).
+    method_fields: HashMap<String, Binding>,
+    /// A body a trait provides (D228): only the trait's members are visible
+    /// by bare name or through `self`, not the conforming type's fields or
+    /// its own methods.
+    trait_scope: Option<HashSet<String>>,
     /// Types whose `==` is being expanded inline; one met again calls its
     /// generated function instead (D212).
     eq_expanding: Vec<String>,
@@ -1269,6 +1276,8 @@ impl LowerCtx {
             route_clause: false,
             mut_field_args: Vec::new(),
             method_type: None,
+            method_fields: HashMap::new(),
+            trait_scope: None,
             eq_expanding: Vec::new(),
         }
     }
@@ -1505,6 +1514,12 @@ impl LowerCtx {
                 name_span,
             ));
         }
+        self.reassign_binding(binding, name, value)
+    }
+
+    /// Store `value` in a mutable binding (and through the receiver, for a
+    /// method's field).
+    fn reassign_binding(&mut self, binding: Binding, name: &str, value: &Expr) -> Result<()> {
         let expect = binding.ty.clone();
         let (place, ty) = lower_expr_expect(self, value, Some(&expect))?;
         // Converts as the binding's annotation would (D192).
@@ -1906,7 +1921,6 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     // (type_mangled, method_name) → clause bodies for multi-clause lower
     let mut multi_methods: HashMap<(String, String), Vec<MultiClause>> = HashMap::new();
     for (mod_id, mangled, td) in &type_defs {
-        let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
         // Group methods by name (source order).
         let mut groups: HashMap<String, Vec<&Method>> = HashMap::new();
         let mut group_order: Vec<String> = Vec::new();
@@ -1918,9 +1932,14 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         }
         for method_name in group_order {
             let clauses = groups.get(&method_name).unwrap();
+            let scope = method_scope(clauses[0], mod_id);
+            let name_map = with_self_type(
+                per_mod_types.get(scope).cloned().unwrap_or_default(),
+                mangled,
+            );
             match merge_method_clauses(
                 clauses,
-                mod_id,
+                scope,
                 &mut types_info,
                 &mut type_layouts,
                 &name_map,
@@ -1935,7 +1954,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                         multi_methods.insert((mangled.clone(), method_name), mc);
                     }
                 }
-                Err(e) => method_reg_errors.push(in_module_id(e, package, mod_id)),
+                Err(e) => method_reg_errors.push(in_module_id(e, package, scope)),
             }
         }
     }
@@ -2354,14 +2373,23 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     // Collect independent body-lower errors so LSP can show more than one (E7+).
     let mut body_errors: Vec<Error> = Vec::new();
 
-    for (mod_id, mangled_ty, td) in &type_defs {
-        let m = package.modules.iter().find(|x| x.id == *mod_id).unwrap();
-        let maps = package_maps.get(mod_id).unwrap();
+    // A trait's archetype first (D228): an error in a body it provides is
+    // reported once, against the trait, not again for each conforming type.
+    let mut lower_order: Vec<&(String, String, &TypeDef)> = type_defs.iter().collect();
+    lower_order.sort_by_key(|(_, _, td)| !is_archetype(td));
+    let mut archetype_errors = false;
+    for (type_mod, mangled_ty, td) in lower_order {
         let mut seen_methods: HashSet<String> = HashSet::new();
         for method in &td.methods {
             if !seen_methods.insert(method.name.clone()) {
                 continue; // multi-clause: lower once per name
             }
+            if archetype_errors && !is_archetype(td) && method.provided.is_some() {
+                continue;
+            }
+            let mod_id = &method_scope(method, type_mod).to_string();
+            let m = package.modules.iter().find(|x| x.id == *mod_id).unwrap();
+            let maps = package_maps.get(mod_id).unwrap();
             let result = if let Some(clauses) =
                 multi_methods.get(&(mangled_ty.clone(), method.name.clone()))
             {
@@ -2400,7 +2428,10 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             };
             match result {
                 Ok(f) => functions.push(f),
-                Err(e) => body_errors.push(in_module_file(e, &m.path)),
+                Err(e) => {
+                    archetype_errors |= is_archetype(td);
+                    body_errors.push(in_module_file(e, &m.path));
+                }
             }
         }
     }
@@ -3004,6 +3035,39 @@ fn mangle_type(mod_id: &str, name: &str, is_entry: bool) -> String {
     } else {
         format!("{mod_id}_{name}")
     }
+}
+
+/// "no field `rank` on `Card`"; for a trait's archetype, the trait has no such
+/// member (D228).
+fn no_member_message(type_mangled: &str, member: &str, kind: &str) -> String {
+    let shown = display_ty(&Ty::User(type_mangled.to_string()));
+    if type_mangled.starts_with("Self_") || type_mangled.contains("_Self_") {
+        format!("`{shown}` has no member `{member}` (a trait's body sees only the trait)")
+    } else {
+        format!("no {kind} `{member}` on `{shown}`")
+    }
+}
+
+/// The type `trait_desugar` makes to check a trait's provided bodies once
+/// (`Self_Named`; no source name has an `_`).
+fn is_archetype(td: &TypeDef) -> bool {
+    td.name.starts_with("Self_")
+}
+
+/// The module whose names a method's signature and body see: its trait's for
+/// a body a trait provides, else its type's (D228).
+fn method_scope<'a>(method: &'a Method, type_module: &'a str) -> &'a str {
+    method
+        .provided
+        .as_ref()
+        .map_or(type_module, |provided| provided.module.as_str())
+}
+
+/// A module's type names, plus `Self` for the type whose method is resolved
+/// (D228).
+fn with_self_type(mut name_map: HashMap<String, String>, type_mangled: &str) -> HashMap<String, String> {
+    name_map.insert("Self".to_string(), type_mangled.to_string());
+    name_map
 }
 
 fn mangle_fn(mod_id: &str, name: &str, is_entry: bool) -> String {
@@ -4342,13 +4406,14 @@ fn infer_unannotated_returns(
             },
         });
     }
-    for (mod_id, type_mangled, td) in type_defs {
-        let is_entry = module_is_entry(mod_id);
+    for (type_mod, type_mangled, td) in type_defs {
         let mut seen: HashSet<&str> = HashSet::new();
         for method in &td.methods {
             if !seen.insert(method.name.as_str()) {
                 continue;
             }
+            let mod_id = &method_scope(method, type_mod).to_string();
+            let is_entry = module_is_entry(mod_id);
             let key = format!("{type_mangled}__{}", method.name);
             let shown = format!("{}.{}", td.name, method.name);
             // A multi-clause method joins its clauses, as a function does (D211).
@@ -5861,6 +5926,7 @@ fn instantiate_product_mono(
                 }],
                 return_type: Some(clause.return_type.clone()),
                 body: clause.body.clone(),
+                provided: None,
             },
             subst: subst.clone(),
             def_mod: gdef.def_mod.clone(),
@@ -6878,6 +6944,7 @@ fn subst_method(m: &Method, subst: &HashMap<String, Ty>) -> Method {
             .collect(),
         return_type: m.return_type.as_ref().map(|t| subst_type_expr(t, subst)),
         body: subst_block(&m.body, subst),
+        provided: m.provided.clone(),
     }
 }
 
@@ -7139,6 +7206,11 @@ fn subst_arg(a: &Arg, subst: &HashMap<String, Ty>) -> Arg {
 /// D107 write-back: ctor-param fields and C-layout `mut` fields are mutable
 /// locals; reassignment also stores through `_self`.
 fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Result<()> {
+    ctx.name_to_type.insert("Self".to_string(), mangled_type.to_string());
+    ctx.trait_scope = m
+        .provided
+        .as_ref()
+        .map(|provided| provided.members.iter().cloned().collect());
     bind_method_fields(ctx, mangled_type);
     // Heap params owned (D154). `_self` stays borrowed (pointer, D107).
     for p in &m.params {
@@ -7154,6 +7226,10 @@ fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Re
 fn bind_method_fields(ctx: &mut LowerCtx, mangled_type: &str) {
     let info = ctx.types.get(mangled_type).unwrap().clone();
     ctx.method_type = Some(mangled_type.to_string());
+    // A trait's body sees the trait, not the conforming type's fields (D228).
+    if ctx.trait_scope.is_some() {
+        return;
+    }
     let recv = Place {
         name: "_self".to_string(),
     };
@@ -7171,7 +7247,47 @@ fn bind_method_fields(ctx: &mut LowerCtx, mangled_type: &str) {
             None
         };
         ctx.define_full(&f.name, f.ty.clone(), writable, p, writeback);
+        if let Some(binding) = ctx.lookup(&f.name) {
+            ctx.method_fields.insert(f.name.clone(), binding);
+        }
     }
+}
+
+/// `self`, the receiver as a value (D228): a copy of what `_self` points to
+/// (a `Resource` is its box, shared).
+fn lower_self_value(ctx: &mut LowerCtx, type_name: &str) -> (Place, Ty) {
+    let ty = Ty::User(type_name.to_string());
+    let boxed = ctx.types.get(type_name).is_some_and(|info| info.resource);
+    let source = Place {
+        name: if boxed { "_self" } else { "(*_self)" }.to_string(),
+    };
+    let place = ctx.fresh("self");
+    ctx.assign(place.clone(), ty.clone(), RValue::Use(source));
+    (place, ty)
+}
+
+/// The receiver's type when `self` names it: inside a method, unless a local
+/// is called `self` (an `extend` method's receiver parameter is).
+fn self_receiver(ctx: &LowerCtx) -> Option<String> {
+    if ctx.lookup("self").is_some() {
+        return None;
+    }
+    ctx.method_type.clone()
+}
+
+/// A method of `type_name` callable by bare name or through `self` in the body
+/// being lowered: any of its methods, or, in a body a trait provides, only the
+/// trait's members (D208, D228).
+fn sibling_visible(ctx: &LowerCtx, type_name: &str, method: &str) -> bool {
+    let declared = ctx
+        .types
+        .get(type_name)
+        .is_some_and(|info| info.methods.contains_key(method));
+    declared
+        && ctx
+            .trait_scope
+            .as_ref()
+            .is_none_or(|members| members.contains(method))
 }
 
 /// Load a field from `_self` into its local in a method body (a heap field
@@ -7276,6 +7392,7 @@ fn lower_method(
     is_entry: bool,
     synthetics: &Rc<RefCell<SyntheticRegistry>>,
 ) -> Result<Function> {
+    let name_to_type = &with_self_type(name_to_type.clone(), mangled_type);
     // Unannotated: the type inference gave the signature (D174), else Void.
     let ret_ty = match m.return_type.as_ref() {
         Some(t) => resolve_ty(t, types, name_to_type)?,
@@ -7745,6 +7862,22 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
         AssignTarget::Name { name, name_span } => ctx.reassign_name(name, *name_span, value),
         AssignTarget::Field {
             base,
+            field,
+            field_span,
+            ..
+        } if base == "self" && self_receiver(ctx).is_some() => {
+            // `self.field = …` writes the field, even where a local shadows it (D228).
+            match ctx.method_fields.get(field).cloned() {
+                Some(binding) if binding.mutable => ctx.reassign_binding(binding, field, value),
+                Some(_) => Err(Error::at(
+                    format!("cannot assign to immutable field `{field}`"),
+                    *field_span,
+                )),
+                None => Err(Error::at(format!("no field `{field}` on `self`"), *field_span)),
+            }
+        }
+        AssignTarget::Field {
+            base,
             base_span,
             field,
             field_span,
@@ -8122,6 +8255,10 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
                 } else {
                     Ok((src, ty))
                 }
+            } else if let Some(type_name) = (name == "self").then(|| self_receiver(ctx)).flatten() {
+                Ok(lower_self_value(ctx, &type_name))
+            } else if name == "self" {
+                Err(Error::at("`self` is the receiver; it is only inside a method", expr.span))
             } else if ctx.name_to_fn.contains_key(name) {
                 form_free_fn(ctx, name, expr.span)
             } else {
@@ -9844,6 +9981,24 @@ fn lower_field(
     name: &str,
     name_span: Span,
 ) -> Result<(Place, Ty)> {
+    // `self.field` is the field, even where a local shadows it (D228).
+    if matches!(&base.kind, ExprKind::Name(name) if name == "self") && self_receiver(ctx).is_some() {
+        if let Some(binding) = ctx.method_fields.get(name).cloned() {
+            let ty = binding.ty.clone();
+            if needs_drop(&ty) {
+                let place = ctx.fresh("dup");
+                ctx.assign(place.clone(), ty.clone(), RValue::Use(binding.place));
+                return Ok((place, ty));
+            }
+            return Ok((binding.place, ty));
+        }
+        if ctx.trait_scope.is_some() {
+            return Err(Error::at(
+                format!("the trait has no member `{name}`"),
+                name_span,
+            ));
+        }
+    }
     // Namespace member: `geometry.origin` (module-level let) or `routes.handle` (fn).
     if let ExprKind::Name(ns) = &base.kind {
         if let Some(mod_id) = ctx.namespaces.get(ns).cloned() {
@@ -10024,9 +10179,7 @@ fn lower_field(
                 .iter()
                 .find(|f| f.name == name)
                 .map(|f| f.ty.clone())
-                .ok_or_else(|| {
-                    Error::at(format!("no field `{name}` on `{type_name}`"), name_span)
-                })?;
+                .ok_or_else(|| Error::at(no_member_message(type_name, name, "field"), name_span))?;
             // Whole fixed-array field load: copy into a local (C arrays not first-class).
             if let Ty::FixedArray { elem, len } = &field_ty {
                 let mut places = Vec::new();
@@ -10330,6 +10483,23 @@ fn lower_method_call(
     method_span: Span,
     args: &[Arg],
 ) -> Result<(Place, Ty)> {
+    // `self.method(…)` is a sibling call on the receiver (D228).
+    if matches!(&receiver.kind, ExprKind::Name(name) if name == "self") {
+        if let Some(type_name) = self_receiver(ctx) {
+            if sibling_visible(ctx, &type_name, method) {
+                return lower_sibling_call(ctx, &type_name, method, args, method_span);
+            }
+            let shown = display_ty(&Ty::User(type_name.clone()));
+            return Err(Error::at(
+                if ctx.trait_scope.is_some() {
+                    format!("the trait has no member `{method}`")
+                } else {
+                    format!("`{shown}` has no method `{method}`")
+                },
+                method_span,
+            ));
+        }
+    }
     // Static methods: `Bytes.fromString(…)`, `Type.read` / `Type.fromJson`.
     if let ExprKind::Name(type_name) = &receiver.kind {
         if type_name == "Bytes" && ctx.lookup(type_name).is_none() {
@@ -10731,7 +10901,7 @@ fn lower_method_call(
                 .clone();
             let sig = info.methods.get(method).ok_or_else(|| {
                 Error::at(
-                    format!("no method `{method}` on `{type_name}`"),
+                    no_member_message(&type_name, method, "method"),
                     method_span,
                 )
             })?;
@@ -16907,7 +17077,7 @@ fn form_unbound_method(
     let sig = info
         .methods
         .get(method)
-        .ok_or_else(|| Error::at(format!("no method `{method}` on `{type_name}`"), span))?;
+        .ok_or_else(|| Error::at(no_member_message(&type_name, method, "method"), span))?;
     ctx.infer_check_callee(&format!("{type_name}__{method}"), method, span)?;
     if !sig.exported && ctx.module_id != info.def_mod {
         return Err(Error::at(format!("method `{method}` is private"), span));
@@ -16956,7 +17126,7 @@ fn form_bound_method(
     let sig = info
         .methods
         .get(method)
-        .ok_or_else(|| Error::at(format!("no method `{method}` on `{type_name}`"), span))?;
+        .ok_or_else(|| Error::at(no_member_message(&type_name, method, "method"), span))?;
     ctx.infer_check_callee(&format!("{type_name}__{method}"), method, span)?;
     if !sig.exported && ctx.module_id != info.def_mod {
         return Err(Error::at(format!("method `{method}` is private"), span));
@@ -17030,11 +17200,7 @@ fn lower_call(
     }
     // Inside a method, a sibling method wins over a free function.
     if let Some(type_name) = ctx.method_type.clone() {
-        if ctx
-            .types
-            .get(&type_name)
-            .is_some_and(|info| info.methods.contains_key(callee))
-        {
+        if sibling_visible(ctx, &type_name, callee) {
             return lower_sibling_call(ctx, &type_name, callee, args, span);
         }
     }
@@ -18018,6 +18184,8 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         route_clause: ctx.route_clause,
         mut_field_args: Vec::new(),
         method_type: ctx.method_type.clone(),
+        method_fields: ctx.method_fields.clone(),
+        trait_scope: ctx.trait_scope.clone(),
         eq_expanding: ctx.eq_expanding.clone(),
     };
     if block.tail.is_none() {

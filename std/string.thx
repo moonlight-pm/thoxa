@@ -16,22 +16,22 @@ import { lowerRanges, lowerExpansions, upperRanges, upperExpansions, foldRanges,
 ## The text before and after a separator (`splitOnce`).
 export type Split(before: String, after: String)
 
-extend String as text {
+extend String {
     export fn isEmpty() -> Bool {
-        text.byteCount == 0
+        self.byteCount == 0
     }
 
     ## Every scalar is ASCII (one byte each).
     export fn isAscii() -> Bool {
-        text.count == text.byteCount
+        self.count == self.byteCount
     }
 
     ## `needle` occurs in the text. `ignoreCase` compares Unicode case folds.
     export fn contains(needle!: String, ignoreCase: Bool = false) -> Bool {
         if ignoreCase {
-            caseFold(text).contains(caseFold(needle))
+            caseFold(self).contains(caseFold(needle))
         } else {
-            match text.byteIndexOf(needle) {
+            match self.byteIndexOf(needle) {
                 Has(_) => true
                 Not => false
             }
@@ -40,85 +40,85 @@ extend String as text {
 
     export fn startsWith(prefix!: String, ignoreCase: Bool = false) -> Bool {
         if ignoreCase {
-            caseFold(text).startsWith(caseFold(prefix))
+            caseFold(self).startsWith(caseFold(prefix))
         } else {
-            prefix.byteCount <= text.byteCount and text.byteSlice(0, prefix.byteCount) == prefix
+            prefix.byteCount <= self.byteCount and self.byteSlice(0, prefix.byteCount) == prefix
         }
     }
 
     export fn endsWith(suffix!: String, ignoreCase: Bool = false) -> Bool {
         if ignoreCase {
-            caseFold(text).endsWith(caseFold(suffix))
+            caseFold(self).endsWith(caseFold(suffix))
         } else {
-            let start = text.byteCount - suffix.byteCount
-            start >= 0 and text.byteSlice(start, text.byteCount) == suffix
+            let start = self.byteCount - suffix.byteCount
+            start >= 0 and self.byteSlice(start, self.byteCount) == suffix
         }
     }
 
     ## `==`, or with `ignoreCase` equal Unicode case folds (`Straße` and `STRASSE`).
     export fn equals(other!: String, ignoreCase: Bool = false) -> Bool {
         if ignoreCase {
-            caseFold(text) == caseFold(other)
+            caseFold(self) == caseFold(other)
         } else {
-            text == other
+            self == other
         }
     }
 
     ## Unicode's default lowercase mapping. A capital sigma that ends a word
     ## becomes the final form: `ΟΔΟΣ` → `οδος`.
     export fn toLower() -> String {
-        mapCase(text, lowerRanges, lowerExpansions, true)
+        mapCase(self, lowerRanges, lowerExpansions, true)
     }
 
     ## Unicode's default uppercase mapping; one scalar may become several (`ß` → `SS`).
     export fn toUpper() -> String {
-        mapCase(text, upperRanges, upperExpansions, false)
+        mapCase(self, upperRanges, upperExpansions, false)
     }
 
     ## Without leading and trailing Unicode white space.
     export fn trim() -> String {
-        text.trimStart().trimEnd()
+        self.trimStart().trimEnd()
     }
 
     export fn trimStart() -> String {
-        text.byteSlice(leadingSpace(text), text.byteCount)
+        self.byteSlice(leadingSpace(self), self.byteCount)
     }
 
     export fn trimEnd() -> String {
-        text.byteSlice(0, text.byteCount - trailingSpace(text))
+        self.byteSlice(0, self.byteCount - trailingSpace(self))
     }
 
     ## Without `prefix`; unchanged when the text does not start with it.
     export fn removePrefix(prefix!: String) -> String {
-        if text.startsWith(prefix) {
-            text.byteSlice(prefix.byteCount, text.byteCount)
+        if self.startsWith(prefix) {
+            self.byteSlice(prefix.byteCount, self.byteCount)
         } else {
-            text
+            self
         }
     }
 
     ## Without `suffix`; unchanged when the text does not end with it.
     export fn removeSuffix(suffix!: String) -> String {
-        if text.endsWith(suffix) {
-            text.byteSlice(0, text.byteCount - suffix.byteCount)
+        if self.endsWith(suffix) {
+            self.byteSlice(0, self.byteCount - suffix.byteCount)
         } else {
-            text
+            self
         }
     }
 
     ## Every non-overlapping `old` replaced by `new`; an empty `old` changes nothing.
     export fn replace(old!: String, new!: String) -> String {
-        replaceIn(text, old, new, false)
+        replaceIn(self, old, new, false)
     }
 
     ## The first `old` replaced by `new`.
     export fn replaceFirst(old!: String, new!: String) -> String {
-        replaceIn(text, old, new, true)
+        replaceIn(self, old, new, true)
     }
 
     ## The text `count` times; `""` when `count <= 0`.
     export fn repeat(count!: Int64) -> String {
-        let bytes = Bytes.fromString(text)
+        let bytes = Bytes.fromString(self)
         mut out = Buffer()
         for _ in 0..count {
             out.appendBytes(bytes)
@@ -130,18 +130,18 @@ extend String as text {
     ## gives the whole text.
     export fn split(separator!: String) -> Array<String> {
         if separator.isEmpty() {
-            [text]
+            [self]
         } else {
             mut parts: Array<String> = []
             mut start = 0
             loop {
-                match text.byteIndexOf(separator, from: start) {
+                match self.byteIndexOf(separator, from: start) {
                     Has(at) {
-                        parts.append(text.byteSlice(start, at))
+                        parts.append(self.byteSlice(start, at))
                         start = at + separator.byteCount
                     }
                     Not {
-                        parts.append(text.byteSlice(start, text.byteCount))
+                        parts.append(self.byteSlice(start, self.byteCount))
                         break
                     }
                 }
@@ -153,7 +153,7 @@ extend String as text {
     ## Split on `\n`, each line without a trailing `\r`.
     export fn lines() -> Array<String> {
         mut out: Array<String> = []
-        for line in text.split("\n") {
+        for line in self.split("\n") {
             out.append(line.removeSuffix("\r"))
         }
         out
@@ -165,8 +165,8 @@ extend String as text {
         if separator.isEmpty() {
             Not()
         } else {
-            match text.byteIndexOf(separator) {
-                Has(at) => Has(Split(before: text.byteSlice(0, at), after: text.byteSlice(at + separator.byteCount, text.byteCount)))
+            match self.byteIndexOf(separator) {
+                Has(at) => Has(Split(before: self.byteSlice(0, at), after: self.byteSlice(at + separator.byteCount, self.byteCount)))
                 Not => Not()
             }
         }
@@ -174,8 +174,8 @@ extend String as text {
 
     ## The position of the first `needle`; an empty needle is at 0.
     export fn indexOf(needle!: String) -> May<Int64> {
-        match text.byteIndexOf(needle) {
-            Has(at) => Has(scalarIndex(text, at))
+        match self.byteIndexOf(needle) {
+            Has(at) => Has(scalarIndex(self, at))
             Not => Not()
         }
     }
@@ -185,7 +185,7 @@ extend String as text {
         mut found = -1
         mut next = 0
         loop {
-            match text.byteIndexOf(needle, from: next) {
+            match self.byteIndexOf(needle, from: next) {
                 Has(at) {
                     found = at
                     next = at + 1
@@ -196,56 +196,56 @@ extend String as text {
         if found < 0 {
             Not()
         } else {
-            Has(scalarIndex(text, found))
+            Has(scalarIndex(self, found))
         }
     }
 
     ## The scalars from `start` up to `end`; positions outside the text are clamped.
     export fn substring(start!: Int64, end!: Int64) -> String {
-        let first = clamp(start, text.count)
-        let last = clamp(end, text.count)
+        let first = clamp(start, self.count)
+        let last = clamp(end, self.count)
         if first >= last {
             ""
         } else {
-            text.byteSlice(byteOffset(text, first), byteOffset(text, last))
+            self.byteSlice(byteOffset(self, first), byteOffset(self, last))
         }
     }
 
     ## The first `max` scalars.
     export fn truncate(max!: Int64) -> String {
-        text.substring(0, max)
+        self.substring(0, max)
     }
 
     ## Padded on the left with `pad`, repeated and cut, to `width` scalars.
     export fn padLeft(width!: Int64, pad: String = " ") -> String {
-        "{padding(text, width, pad)}{text}"
+        "{padding(self, width, pad)}{self}"
     }
 
     ## Padded on the right with `pad`, repeated and cut, to `width` scalars.
     export fn padRight(width!: Int64, pad: String = " ") -> String {
-        "{text}{padding(text, width, pad)}"
+        "{self}{padding(self, width, pad)}"
     }
 
     ## The scalars in reverse order (a combining mark moves before its base).
     export fn reverse() -> String {
         mut out = Buffer()
-        mut end = text.byteCount
+        mut end = self.byteCount
         while end > 0 {
-            let start = scalarStart(text, end - 1)
-            out.appendBytes(Bytes.fromString(text.byteSlice(start, end)))
+            let start = scalarStart(self, end - 1)
+            out.appendBytes(Bytes.fromString(self.byteSlice(start, end)))
             end = start
         }
         out.freeze().toString()
     }
 }
 
-extend Array<String> as parts {
+extend Array<String> {
     ## The parts with `separator` between them.
     export fn join(separator!: String) -> String {
         let between = Bytes.fromString(separator)
         mut out = Buffer()
         mut first = true
-        for part in parts {
+        for part in self {
             if not first {
                 out.appendBytes(between)
             }

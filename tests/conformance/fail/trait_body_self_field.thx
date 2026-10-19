@@ -1,0 +1,8 @@
+## D228: through `self`, a trait's body reaches only the trait's members.
+trait Shape {
+    fn area() -> Float64 {
+        3.0 * self.radius * self.radius
+    }
+}
+
+fn main() {}

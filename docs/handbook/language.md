@@ -1229,9 +1229,24 @@ receiver.
 ### Methods
 
 Methods are declared in a product type's body. A method sees the type's fields
-by their bare names; there is no `self`. A method marked `export` can be
-called from outside the type; one without `export` is private, and calling it
-from outside is a compile error.
+by their bare names. A method marked `export` can be called from outside the
+type; one without `export` is private, and calling it from outside is a
+compile error.
+
+`self` is the receiver. Alone it is a copy of the whole value; `self.count` is
+the field even where a local named `count` hides it; `self.count = 2` writes
+the field, as `count = 2` does; and `self.bump()` calls a sibling method. In a
+type's methods, `Self` names the type.
+
+```thx
+type Tally(count: Int64) {
+    export fn snapshot() -> Tally { self }
+    export fn shadowed() -> Int64 {
+        let count = 100
+        count + self.count
+    }
+}
+```
 
 A method calls another method of its type by bare name, on the same receiver.
 Inside a method, such a name wins over a module-level function of the same
@@ -1314,9 +1329,15 @@ let ace = Card(name: "ace", rank: 14)
 let wins = ace.beats(Card(name: "king", rank: 13))   ## true
 ```
 
-- A trait's members are method signatures without bodies. A conforming type
-  supplies every one with the trait's parameters; a member may leave out the
-  return type and takes the trait's.
+- A member without a body is required: a conforming type supplies it with the
+  trait's parameters, and may leave out the return type to take the trait's.
+- A member with a body is provided: written once on the trait, and every
+  conforming type has it, unless its conformance supplies its own. A provided
+  body sees only the trait: the trait's members (its parents' too) by bare
+  name and through `self`, not the fields or other methods of whichever type
+  conforms. Its other names resolve in the trait's module, so it may call that
+  module's private functions. It is checked once, where the trait is written,
+  and compiled for each conforming type.
 - `Self` in a signature is the conforming type: `beats` on a `Card` takes a
   `Card`.
 - `trait Ranked: Named` makes `Named` a parent (several are joined with `&`).
@@ -1338,9 +1359,27 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
 - A trait is private to its module unless marked `export`, and is imported by
   name like a type. The built-in `Resource` needs no import.
 
-Limits: a trait's members cannot have bodies or parameter defaults, a trait
-cannot be used as a type, and generic types, built-in types, and unions with
-methods cannot conform.
+```thx
+trait Named {
+    fn label() -> String
+
+    fn greet() -> String {
+        "hello, {label()}"
+    }
+}
+
+type Guest(name: String)
+
+conform Guest to Named {
+    fn label() -> String { name }
+}
+
+let hello = Guest(name: "ada").greet()     ## "hello, ada"
+```
+
+Limits: a trait's members take no parameter defaults, a trait cannot be used
+as a type, and generic types, built-in types, and unions with methods cannot
+conform.
 
 ### Resources
 

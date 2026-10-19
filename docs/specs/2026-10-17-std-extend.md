@@ -1,5 +1,7 @@
 # Freeze: std writes built-in types' methods in Thoxa (D196)
 
+**Amended by D228 (2026-10-18):** the receiver is `self`; the header is `extend String { … }`, and `as name` is an error ([`2026-10-18-traits.md`](2026-10-18-traits.md)).
+
 **Date:** 2026-10-17
 **Status:** target (freeze)
 **Implementation:** shipped

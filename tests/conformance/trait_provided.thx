@@ -1,0 +1,86 @@
+## Traits over mixins (D228): a member with a body is provided, written once
+## on the trait. A conforming type writes only what is required, may replace a
+## provided member, and gets the rest. A provided body sees the trait's members
+## (its parents' too) and resolves its other names where the trait is written.
+import { Shape } from "./traitmod/shapes"
+import logging, { info } from "std/logging"
+
+## Not the one Shape's bodies call: theirs is in their own module.
+fn unitsOf(area!: Float64) -> String {
+    "the wrong units"
+}
+
+trait Named {
+    fn label() -> String
+
+    fn greet() -> String {
+        "hello, {label()}"
+    }
+}
+
+trait Ranked: Named {
+    fn rank() -> Int64
+
+    ## Uses its parent's members, required and provided.
+    fn title() -> String {
+        "{self.label()} #{rank()}: {greet()}"
+    }
+
+    ## No `->`: inferred for each conforming type.
+    fn doubled() {
+        rank() * 2
+    }
+}
+
+type Card(name: String, value: Int64)
+
+conform Card to Named {
+    fn label() -> String {
+        name
+    }
+}
+
+conform Card to Ranked {
+    fn rank() -> Int64 {
+        value
+    }
+}
+
+type Guest(name: String)
+
+## Replaces the provided `greet`.
+conform Guest to Named {
+    fn label() -> String {
+        name
+    }
+
+    fn greet() -> String {
+        "welcome, {name}"
+    }
+}
+
+type Square(side: Float64)
+
+conform Square to Shape {
+    fn area() -> Float64 {
+        side * side
+    }
+
+    fn name() -> String {
+        "square"
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let ace = Card(name: "ace", value: 14)
+    info(ace.greet())
+    info(ace.title())
+    info("doubled: {ace.doubled()}")
+    info(Guest(name: "ada").greet())
+    let small = Square(side: 2.0)
+    let big = Square(side: 3.0)
+    info(big.describe())
+    info("larger side: {small.larger(big).side}")
+}

@@ -1,5 +1,24 @@
-## A trait exported for traits.thx to import and conform to (D228).
+## Traits exported for traits.thx and trait_provided.thx (D228).
+
+## Private: only this module's bodies can call it.
+fn unitsOf(area!: Float64) -> String {
+    "{area} square units"
+}
+
 export trait Shape {
     fn area() -> Float64
     fn name() -> String
+
+    ## Provided: written once here, and every Shape has it.
+    fn describe() -> String {
+        "a {name()} of {unitsOf(area())}"
+    }
+
+    fn larger(other!: Self) -> Self {
+        if area() >= other.area() {
+            self
+        } else {
+            other
+        }
+    }
 }

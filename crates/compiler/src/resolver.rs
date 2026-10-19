@@ -706,6 +706,19 @@ impl<'a> Resolver<'a> {
                         true,
                     );
                     self.define(root, &def.name, id);
+                    // A trait's members, visible by bare name in its bodies.
+                    for member in &def.members {
+                        let id = self.member_binding(
+                            &def.name,
+                            &member.name,
+                            BindingKind::Method,
+                            member.name_span,
+                            true,
+                        );
+                        if let Some(ret) = &member.return_type {
+                            self.set_nav_ty(id, Self::nav_ty_from_type_expr(ret));
+                        }
+                    }
                 }
                 // A conformance's methods are members of its type (D228).
                 Item::Conform(conformance) => {
@@ -891,11 +904,14 @@ impl<'a> Resolver<'a> {
                 for (name, span) in &def.parents {
                     self.add_ref(*span, self.lookup(root, name), RefCtx::Type);
                 }
+                let body = self.member_scope(&def.name, root);
                 for member in &def.members {
-                    for p in &member.params {
-                        self.walk_type_expr(&p.ty, root);
-                    }
                     self.walk_type_expr_opt(member.return_type.as_ref(), root);
+                    let member_scope = self.push_scope(Some(body));
+                    self.bind_params(&member.params, member_scope, root);
+                    if let Some(block) = &member.body {
+                        self.walk_block(block, member_scope);
+                    }
                 }
             }
             Item::Conform(conformance) => {
@@ -918,7 +934,8 @@ impl<'a> Resolver<'a> {
     }
 
     /// A scope where a type's members (fields, methods, conformance methods)
-    /// are visible by bare name, as in its method bodies.
+    /// are visible by bare name, as in its method bodies, with `self` the
+    /// receiver (D228). A trait's bodies see the trait's members.
     fn member_scope(&mut self, type_name: &str, root: usize) -> usize {
         let body = self.push_scope(Some(root));
         let member_ids: Vec<(String, u32)> = self
@@ -931,6 +948,15 @@ impl<'a> Resolver<'a> {
         for (name, id) in member_ids {
             self.define(body, &name, id);
         }
+        let receiver = self.new_binding("self", BindingKind::Param, None, false, None, false);
+        self.set_nav_ty(
+            receiver,
+            Some(NavTy {
+                head: type_name.to_string(),
+                args: Vec::new(),
+            }),
+        );
+        self.define(body, "self", receiver);
         body
     }
 
@@ -1676,6 +1702,30 @@ fn main() { let card = Card(rank: 3)
         assert_eq!(label.owner.as_deref(), Some("Card"));
         assert_eq!(at("rank}").kind, BindingKind::Field);
         assert_eq!(at("Named {\n  fn label() -> String {").kind, BindingKind::Trait);
+    }
+
+    #[test]
+    fn self_members_and_trait_bodies() {
+        // D228: `self.name` is the receiver's member; a trait's body sees its
+        // own members by bare name.
+        let src = "\
+type Tally(count: Int64) {
+  export fn read() -> Int64 { self.count }
+}
+trait Named {
+  fn label() -> String
+  fn greet() -> String { \"hi {label()}\" }
+}
+";
+        let res = resolve_ok(src);
+        let at = |needle: &str| {
+            let p = byte_to_position(src, src.find(needle).unwrap());
+            res.binding_of(res.ref_at(src, p.line, p.character)).expect(needle)
+        };
+        assert_eq!(at("count }").kind, BindingKind::Field);
+        let label = at("label()}");
+        assert_eq!(label.kind, BindingKind::Method);
+        assert_eq!(label.owner.as_deref(), Some("Named"));
     }
 
     #[test]

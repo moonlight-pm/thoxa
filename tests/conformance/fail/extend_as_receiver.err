@@ -1,0 +1,1 @@
+an `extend` block's methods call their receiver `self`; drop `as …`

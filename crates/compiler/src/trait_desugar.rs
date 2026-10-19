@@ -10,9 +10,13 @@
 //! traits. A name means nothing by itself: a type's own `fn drop()` is an
 //! ordinary method.
 //!
-//! Not yet (later slices of the freeze): provided members, `self`, getters and
-//! setters, generic and built-in types as targets, members written outside the
-//! type's module.
+//! A member with a body is provided: each conforming type that does not
+//! implement it gets a copy that resolves in the trait's module and sees only
+//! the trait's members (`Method::provided`), and the trait's archetype
+//! (`Self_Name`) checks the body once against the trait alone.
+//!
+//! Not yet (later slices of the freeze): getters and setters, generic and
+//! built-in types as targets, members written outside the type's module.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -199,6 +203,15 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
         return Err(Error::multi(errors));
     }
 
+    // Each trait with provided bodies gets its archetype, in its module.
+    for key in &keys {
+        if let Some(def) = archetype(key, &traits) {
+            if let Some(module) = package.modules.iter_mut().find(|module| module.id == key.module) {
+                module.ast.items.push(Item::Type(def));
+            }
+        }
+    }
+
     // Take every conformance out of its module.
     let mut pending: Vec<Pending> = Vec::new();
     for module in &mut package.modules {
@@ -319,7 +332,7 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
     Ok(())
 }
 
-/// What slice 1 accepts in a trait: required methods with distinct names.
+/// A trait's members have distinct names and no parameter defaults.
 fn check_trait(def: &TraitDef) -> Result<()> {
     let mut seen = HashSet::new();
     for member in &def.members {
@@ -327,12 +340,6 @@ fn check_trait(def: &TraitDef) -> Result<()> {
             return Err(Error::at(
                 format!("`{}` is declared twice in `{}`", member.name, def.name),
                 member.name_span,
-            ));
-        }
-        if let Some(body) = &member.body {
-            return Err(Error::at(
-                "a trait's members with bodies are not supported yet; declare the signature only",
-                body.span,
             ));
         }
         if let Some(param) = member.params.iter().find(|param| param.default.is_some()) {
@@ -537,18 +544,28 @@ fn check_conformance(
                 ));
             }
             taken.insert(member.name.clone(), trait_ref.clone());
-            let Some(method) = implemented.get(member.name.as_str()) else {
-                return Err(Error::at(
-                    format!(
-                        "`{}` does not implement `{}` from `{}`",
-                        target.1,
-                        signature(member, &target.1),
-                        trait_ref.name
-                    ),
-                    conformance.span,
-                ));
-            };
-            methods.push(implementation(method, member, trait_ref, item, &target, scope)?);
+            match (implemented.get(member.name.as_str()), &member.body) {
+                (Some(method), _) => {
+                    methods.push(implementation(method, member, trait_ref, item, &target, scope)?)
+                }
+                (None, Some(body)) => methods.push(provided_method(
+                    member,
+                    body.clone(),
+                    trait_ref,
+                    visible_members(trait_ref, scope.traits),
+                )),
+                (None, None) => {
+                    return Err(Error::at(
+                        format!(
+                            "`{}` does not implement `{}` from `{}`",
+                            target.1,
+                            signature(member, &target.1),
+                            trait_ref.name
+                        ),
+                        conformance.span,
+                    ))
+                }
+            }
         }
     }
     let done = conformed.entry(target.clone()).or_default();
@@ -559,7 +576,8 @@ fn check_conformance(
 }
 
 /// The conformance's method, checked against the trait member it implements:
-/// public, with `Self` replaced and the trait's return type when it writes none.
+/// public, with the trait's return type when it writes none. `Self` stays: in
+/// a type's methods it names the type.
 fn implementation(
     method: &Method,
     member: &TraitMember,
@@ -603,20 +621,127 @@ fn implementation(
         .return_type
         .clone()
         .unwrap_or_else(|| void_type(member.name_span));
-    if let Some(written) = &method.return_type {
-        if in_conformance(written) != in_trait(&declared_return) {
-            return Err(mismatch());
+    match &method.return_type {
+        Some(written) if in_conformance(written) != in_trait(&declared_return) => {
+            return Err(mismatch())
         }
+        Some(_) => {}
+        // The trait's return type, spelled as the trait spells it: it must
+        // name the same types here.
+        None if in_conformance(&declared_return) != in_trait(&declared_return) => {
+            return Err(Error::at(
+                format!(
+                    "write `{}`'s return type: `{}`'s spelling does not name the same type here",
+                    method.name, trait_ref.name
+                ),
+                method.name_span,
+            ))
+        }
+        None => {}
     }
     let mut method = method.clone();
     method.exported = true;
-    for param in &mut method.params {
-        replace_self(&mut param.ty, &target.1);
-    }
-    let mut return_type = method.return_type.take().unwrap_or(declared_return);
-    replace_self(&mut return_type, &target.1);
-    method.return_type = Some(return_type);
+    method.return_type.get_or_insert(declared_return);
     Ok(method)
+}
+
+/// A member a trait provides, as a method of a conforming type (or of the
+/// trait's own archetype): public, resolved in the trait's module, seeing only
+/// the trait's members.
+fn provided_method(
+    member: &TraitMember,
+    body: Block,
+    trait_ref: &TraitRef,
+    members: Vec<String>,
+) -> Method {
+    Method {
+        exported: true,
+        name: member.name.clone(),
+        name_span: member.name_span,
+        params: member.params.clone(),
+        return_type: member.return_type.clone(),
+        body,
+        provided: Some(Provided {
+            module: trait_ref.module.clone(),
+            members,
+        }),
+    }
+}
+
+/// A trait and its ancestors, nearest first, each once.
+fn lineage(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Vec<TraitRef> {
+    let mut out = vec![trait_ref.clone()];
+    let mut index = 0;
+    while index < out.len() {
+        for parent in &traits[&out[index]].parents {
+            if !out.contains(parent) {
+                out.push(parent.clone());
+            }
+        }
+        index += 1;
+    }
+    out
+}
+
+/// The member names a trait's bodies see: its own and its ancestors'.
+fn visible_members(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Vec<String> {
+    lineage(trait_ref, traits)
+        .iter()
+        .flat_map(|each| traits[each].def.members.iter().map(|member| member.name.clone()))
+        .collect()
+}
+
+/// The type a trait's provided bodies are checked against, once, where the
+/// trait is declared (D228): no fields, the trait's provided members, and a
+/// stub for every other member of its lineage. Its name has an `_`, which no
+/// source name has, and shows as the trait's (`Self_Named` is `Named`).
+fn archetype(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Option<TypeDef> {
+    let entry = &traits[trait_ref];
+    if entry.def.members.iter().all(|member| member.body.is_none()) {
+        return None;
+    }
+    let members = visible_members(trait_ref, traits);
+    let lineage = lineage(trait_ref, traits);
+    let mut methods = Vec::new();
+    for each in &lineage {
+        for member in &traits[each].def.members {
+            let body = match (&member.body, each == trait_ref) {
+                (Some(body), true) => body.clone(),
+                _ => stub_body(member.name_span),
+            };
+            methods.push(provided_method(member, body, each, members.clone()));
+        }
+    }
+    Some(TypeDef {
+        exported: false,
+        name: format!("Self_{}", trait_ref.name),
+        name_span: entry.def.name_span,
+        type_params: Vec::new(),
+        params: Vec::new(),
+        fields: Vec::new(),
+        methods,
+        routes: Vec::new(),
+        conversions: Vec::new(),
+        union_members: None,
+        traits: lineage.into_iter().filter(|each| !each.is_resource()).collect(),
+    })
+}
+
+/// `loop {}`: a body of any return type that never returns.
+fn stub_body(span: Span) -> Block {
+    let empty = Block {
+        items: Vec::new(),
+        tail: None,
+        span,
+    };
+    Block {
+        items: Vec::new(),
+        tail: Some(Box::new(Expr {
+            kind: ExprKind::Loop { body: empty },
+            span,
+        })),
+        span,
+    }
 }
 
 fn void_type(span: Span) -> TypeExpr {
@@ -629,28 +754,6 @@ fn void_type(span: Span) -> TypeExpr {
         union_members: None,
         fn_type: None,
         where_clause: None,
-    }
-}
-
-/// `Self` written in a conformance's signature is the conforming type. A
-/// conformance's members are in the type's module, so its name reaches it.
-fn replace_self(ty: &mut TypeExpr, target: &str) {
-    if ty.name == "Self" && ty.lit.is_none() {
-        ty.name = target.to_string();
-    }
-    for arg in &mut ty.args {
-        if let TypeArg::Type(inner) = arg {
-            replace_self(inner, target);
-        }
-    }
-    for member in ty.union_members.iter_mut().flatten() {
-        replace_self(member, target);
-    }
-    if let Some(fn_type) = &mut ty.fn_type {
-        for (_, param) in &mut fn_type.params {
-            replace_self(param, target);
-        }
-        replace_self(&mut fn_type.ret, target);
     }
 }
 

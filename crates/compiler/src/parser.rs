@@ -756,8 +756,12 @@ impl Parser {
         let span = self.peek_span();
         self.expect_kind(&TokenKind::Extend)?;
         let ty = self.parse_type()?;
-        self.expect_kind(&TokenKind::As)?;
-        let (receiver, receiver_span) = self.expect_ident()?;
+        if self.at(TokenKind::As) {
+            return Err(Error::at(
+                "an `extend` block's methods call their receiver `self`; drop `as …`",
+                self.peek_span(),
+            ));
+        }
         self.expect_kind(&TokenKind::LBrace)?;
         let mut methods = Vec::new();
         while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
@@ -770,13 +774,7 @@ impl Parser {
             methods.push(self.parse_method()?);
         }
         self.expect_kind(&TokenKind::RBrace)?;
-        Ok(Extension {
-            span,
-            ty,
-            receiver,
-            receiver_span,
-            methods,
-        })
+        Ok(Extension { span, ty, methods })
     }
 
     /// `[export] trait Name [: Parent & Parent] { fn … }` (D228). A member
@@ -946,6 +944,7 @@ impl Parser {
             params,
             return_type,
             body,
+            provided: None,
         })
     }
 
