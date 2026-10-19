@@ -1,0 +1,9 @@
+802416 7 -3 9
+State(value: 3, small: 255, wide: 5, half: 4000000000)
+false true true
+1
+{"value":3,"small":255,"wide":5,"half":4000000000}
+true
+-1 does not fit in UInt64; 300 does not fit in Byte
+18446744073709551615 9223372036854775808 9223372036854775807
+true

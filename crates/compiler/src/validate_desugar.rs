@@ -464,6 +464,9 @@ fn is_eligible(
 enum Shape {
     Str,
     Int,
+    /// A narrower integer type (`UInt64`, `Byte`), read from a JSON integer
+    /// that fits it: std/json's `asUInt64` and the like.
+    Narrow(&'static str),
     Bool,
     Float,
     Array(Box<Shape>),
@@ -491,6 +494,10 @@ fn shape_of(
     match ty.name.as_str() {
         "String" if ty.args.is_empty() => Some(Shape::Str),
         "Int64" if ty.args.is_empty() => Some(Shape::Int),
+        "Int32" if ty.args.is_empty() => Some(Shape::Narrow("Int32")),
+        "UInt32" if ty.args.is_empty() => Some(Shape::Narrow("UInt32")),
+        "UInt64" if ty.args.is_empty() => Some(Shape::Narrow("UInt64")),
+        "Byte" | "UInt8" if ty.args.is_empty() => Some(Shape::Narrow("Byte")),
         "Bool" if ty.args.is_empty() => Some(Shape::Bool),
         "Float64" if ty.args.is_empty() => Some(Shape::Float),
         "Array" if ty.args.len() == 1 => match &ty.args[0] {
@@ -873,6 +880,8 @@ fn form_text(text: Expr, shape: &Shape, ty: &TypeExpr, path: Expr) -> Expr {
     match shape {
         Shape::Str => typed("__out", trial, call("Pass", vec![Arg::Pos(text)])),
         Shape::Int => http_call("formInt", vec![Arg::Pos(text), Arg::Pos(path)]),
+        // `form_scalar` leaves it out: no form reads one.
+        Shape::Narrow(kind) => unreachable!("a form does not read {kind}"),
         Shape::Float => http_call("formFloat", vec![Arg::Pos(text), Arg::Pos(path)]),
         Shape::Bool => typed("__out", trial, call("Pass", vec![Arg::Pos(bool_lit(true))])),
         Shape::Refined { name: type_name, base } => {
@@ -1201,6 +1210,7 @@ fn convert_json(raw: Expr, shape: &Shape, ty: &TypeExpr, path: Expr, depth: usiz
     match shape {
         Shape::Str => json_call("asStr", vec![Arg::Pos(raw), Arg::Pos(path)]),
         Shape::Int => json_call("asInt", vec![Arg::Pos(raw), Arg::Pos(path)]),
+        Shape::Narrow(kind) => json_call(&format!("as{kind}"), vec![Arg::Pos(raw), Arg::Pos(path)]),
         Shape::Bool => json_call("asBool", vec![Arg::Pos(raw), Arg::Pos(path)]),
         Shape::Float => json_call("asFloat", vec![Arg::Pos(raw), Arg::Pos(path)]),
         Shape::Product(type_name)
@@ -1702,6 +1712,7 @@ fn shape_base(shape: &Shape) -> &'static str {
     match shape {
         Shape::Str => "String",
         Shape::Int => "Int64",
+        Shape::Narrow(kind) => kind,
         Shape::Bool => "Bool",
         Shape::Float => "Float64",
         Shape::Array(_) => "Array",
@@ -2481,7 +2492,7 @@ fn casts_in_expr(expr: &Expr, visit: &mut dyn FnMut(&TypeExpr)) {
             visit(ty);
             casts_in_expr(inner, visit);
         }
-        ExprKind::Int(_)
+        ExprKind::Int(_) | ExprKind::BigInt(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
         | ExprKind::String(_)

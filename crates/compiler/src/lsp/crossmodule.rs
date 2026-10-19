@@ -946,7 +946,7 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
         }
         ExprKind::Name(_)
         | ExprKind::MutArg(_)
-        | ExprKind::Int(_)
+        | ExprKind::Int(_) | ExprKind::BigInt(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
         | ExprKind::String(_)
@@ -1385,7 +1385,7 @@ fn walk_expr_call_args(expr: &Expr, byte: usize, best: &mut Option<CallArgHit>) 
         }
         ExprKind::Name(_)
         | ExprKind::MutArg(_)
-        | ExprKind::Int(_)
+        | ExprKind::Int(_) | ExprKind::BigInt(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
         | ExprKind::String(_)

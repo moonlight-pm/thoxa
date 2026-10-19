@@ -1,0 +1,5 @@
+## A literal above the largest Int64 is a UInt64: it does not fit an Int64.
+fn main() {
+    let count: Int64 = 9223372036854775808
+    0
+}

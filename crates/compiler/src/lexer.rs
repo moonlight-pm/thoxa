@@ -39,6 +39,8 @@ pub enum TokenKind {
     // Identifiers & literals
     Ident(String),
     Int(i64),
+    /// An integer above the largest `Int64`, which only a `UInt64` holds.
+    BigInt(u64),
     /// Decimal / exponent / `f64`-suffixed float (always `Float64`).
     Float(f64),
     String(String),
@@ -535,14 +537,17 @@ impl<'a> Lexer<'a> {
                 line_start: false,
             })
         } else {
-            let value: i64 = text.parse().map_err(|_| {
-                Error::at(
-                    format!("invalid integer `{text}`"),
-                    Span::new(start, self.pos),
-                )
-            })?;
+            let kind = match text.parse::<i64>() {
+                Ok(value) => TokenKind::Int(value),
+                Err(_) => TokenKind::BigInt(text.parse().map_err(|_| {
+                    Error::at(
+                        format!("integer `{text}` is out of range for UInt64"),
+                        Span::new(start, self.pos),
+                    )
+                })?),
+            };
             Ok(Token {
-                kind: TokenKind::Int(value),
+                kind,
                 span: Span::new(start, self.pos),
                 line_start: false,
             })

@@ -288,6 +288,57 @@ export fn asInt(v!: Json, path!: String) -> Trial<Int64, Array<Issue>> {
     }
 }
 
+## A JSON integer as a narrower integer type; one that does not fit is
+## rejected.
+export fn asInt32(v!: Json, path!: String) -> Trial<Int32, Array<Issue>> {
+    match v {
+        JInt(n) {
+            if n < -2147483648 or n > 2147483647 {
+                return Fail([issueRejected(path, "{n} does not fit in Int32")])
+            }
+            Pass(Int32(truncating: n))
+        }
+        else => Fail([issueMismatch(path, "integer", kind(v))])
+    }
+}
+
+export fn asUInt32(v!: Json, path!: String) -> Trial<UInt32, Array<Issue>> {
+    match v {
+        JInt(n) {
+            if n < 0 or n > 4294967295 {
+                return Fail([issueRejected(path, "{n} does not fit in UInt32")])
+            }
+            Pass(UInt32(truncating: n))
+        }
+        else => Fail([issueMismatch(path, "integer", kind(v))])
+    }
+}
+
+## Up to the largest `Int64`, which a JSON integer here holds.
+export fn asUInt64(v!: Json, path!: String) -> Trial<UInt64, Array<Issue>> {
+    match v {
+        JInt(n) {
+            if n < 0 {
+                return Fail([issueRejected(path, "{n} does not fit in UInt64")])
+            }
+            Pass(UInt64(truncating: n))
+        }
+        else => Fail([issueMismatch(path, "integer", kind(v))])
+    }
+}
+
+export fn asByte(v!: Json, path!: String) -> Trial<Byte, Array<Issue>> {
+    match v {
+        JInt(n) {
+            if n < 0 or n > 255 {
+                return Fail([issueRejected(path, "{n} does not fit in Byte")])
+            }
+            Pass(Byte(truncating: n))
+        }
+        else => Fail([issueMismatch(path, "integer", kind(v))])
+    }
+}
+
 export fn asBool(v!: Json, path!: String) -> Trial<Bool, Array<Issue>> {
     match v {
         JBool(b) => Pass(b)

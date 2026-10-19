@@ -1094,7 +1094,7 @@ impl<'a> Resolver<'a> {
 
     fn walk_expr(&mut self, expr: &Expr, scope: usize) {
         match &expr.kind {
-            ExprKind::Int(_)
+            ExprKind::Int(_) | ExprKind::BigInt(_)
             | ExprKind::Float(_)
             | ExprKind::Bool(_)
             | ExprKind::String(_)

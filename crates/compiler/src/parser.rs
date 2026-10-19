@@ -2455,6 +2455,14 @@ impl Parser {
                     span: Span::new(start.start, self.prev_span().end),
                 })
             }
+            TokenKind::BigInt(n) => {
+                let n = *n;
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::BigInt(n),
+                    span: Span::new(start.start, self.prev_span().end),
+                })
+            }
             TokenKind::Float(n) => {
                 let n = *n;
                 self.bump();

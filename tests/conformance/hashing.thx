@@ -23,7 +23,7 @@ conform Point to Equatable, Hashable
 type Labelled(tag: Tag, at: Point)
 conform Labelled to Equatable, Hashable
 
-fn hashOf(point!: Point) -> Int64 {
+fn hashOf(point!: Point) -> UInt64 {
     mut hasher = Hasher()
     point.hash(mut hasher)
     hasher.state

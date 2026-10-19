@@ -1,0 +1,5 @@
+## An integer literal holds at most the largest UInt64.
+fn main() {
+    let count = 99999999999999999999
+    0
+}

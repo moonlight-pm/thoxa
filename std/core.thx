@@ -35,10 +35,12 @@ export trait Hashable: Equatable {
     fn hash(mut hasher!: Hasher)
 }
 
-## What `hash` feeds: each part of a value, in order. Its arithmetic wraps.
-export type Hasher(state: Int64 = 0) {
+## What `hash` feeds: each part of a value, in order. Its arithmetic wraps,
+## and its shifts fill with zeros.
+export type Hasher(state: UInt64 = 0) {
     export fn mix(value!: Int64) {
-        state = state ^ (value - 7046029254386353131 + (state << 6) + (state >> 2))
+        let bits = UInt64(truncating: value)
+        state = state ^ (bits + 11400714819323198485 + (state << 6) + (state >> 2))
     }
 }
 

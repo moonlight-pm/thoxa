@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Integer fields and literals
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D229 | A declared type's constructor fields take every integer type; a literal above `Int64` is a `UInt64` | `type State(value: UInt64 = 0, small: Byte = 7)` is a product like any other: defaults, writes in methods, `==`, Map keys, order, `"{x}"`, encoding (generic types' fields always could). A generated JSON reader reads `Int32` / `UInt32` / `UInt64` / `Byte` fields from a JSON integer that fits (std/json's `asInt32` / `asUInt32` / `asUInt64` / `asByte`, in Thoxa), else `Rejected(path, "300 does not fit in Byte")`; a form does not read them. An integer literal above the largest `Int64` is a `UInt64` (`let max: UInt64 = 18446744073709551615`); one beyond `UInt64` is an error, and one that cannot fit its expected type is a compile error (`9223372036854775808 does not fit in Int64`), as for narrower types (D167). std/core's `Hasher` keeps its state as a `UInt64` (`mix` still takes an `Int64`; logical shifts). | **Shipped** 2026-10-19 (a D228 gap: "`Hasher` uses `Int64` because constructor fields cannot be `UInt64` yet"). Also fixed: cgen writes the smallest `Int64` as `INT64_MIN` (C has no such literal). Not yet: a `UInt64` above the largest `Int64` has no JSON encoding (`Json`'s integers are `Int64`; encoding one panics). Gates: `integer_fields`, `fail/int_literal_range`, `fail/int_literal_int64`, `hashing` (`Hasher.state` a `UInt64`). |
+
 ## 2026-10-18 — Traits (Joshua: "'implicit' traits scattered about like 'drop()' -- which is kind of too informal")
 
 | ID | Decision | Choice | Notes |

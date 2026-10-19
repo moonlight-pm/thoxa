@@ -1,0 +1,53 @@
+## A declared type's constructor fields take every integer type (`UInt64`,
+## `Int32`, `UInt32`, `Byte`): defaults, writes in methods, `==`, Map keys,
+## order, `"{x}"`, and JSON both ways, a value out of range rejected. An
+## integer literal above the largest `Int64` is a `UInt64`.
+import { Encodable, Decodable } from "std/json"
+import json from "std/json"
+import logging, { info } from "std/logging"
+
+type State(value: UInt64 = 0, small: Byte = 7, wide: Int32 = -3, half: UInt32 = 9) {
+    export fn mix(item!: UInt64) {
+        value = value ^ (item + (value << 6))
+    }
+}
+conform State to Equatable, Hashable, Ordered, Show, Encodable, Decodable
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    mut state = State()
+    state.mix(12345)
+    state.mix(9)
+    info("{state.value} {state.small} {state.wide} {state.half}")
+
+    let other = State(value: 3, small: 255, wide: 5, half: 4000000000)
+    info("{other}")
+    info("{state == other} {other == State(value: 3, small: 255, wide: 5, half: 4000000000)} {other < state}")
+
+    mut seen: Map<State, Int64> = Map()
+    seen[other] = 1
+    seen[State(value: 3, small: 255, wide: 5, half: 4000000000)] = 2
+    info("{seen.count}")
+
+    let text = other.encode()
+    info(text)
+    match State.read(text) {
+        Pass(back) => info("{back == other}")
+        Fail(issues) => info(json.messages(issues))
+    }
+    match State.read("{{\"value\": -1, \"small\": 300, \"wide\": 1, \"half\": 2}}") {
+        Pass(back) => info("{back}")
+        Fail(issues) => info(json.messages(issues))
+    }
+
+    let max: UInt64 = 18446744073709551615
+    let big = 9223372036854775808
+    info("{max} {big} {max - big}")
+
+    mut hasher = Hasher()
+    7.hash(mut hasher)
+    info("{hasher.state > 0}")
+    0
+}

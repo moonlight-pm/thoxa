@@ -1319,6 +1319,9 @@ fn emit_rvalue(
         RValue::Use(p) => {
             out.push_str(&p.name);
         }
+        // C has no literal for the smallest `int64_t` (`-9223372036854775808`
+        // is a negated literal out of range).
+        RValue::Int(n) if *n == i64::MIN => out.push_str("INT64_MIN"),
         RValue::Int(n) => {
             let _ = write!(out, "INT64_C({n})");
         }

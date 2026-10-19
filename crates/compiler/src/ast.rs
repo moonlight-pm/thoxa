@@ -543,6 +543,9 @@ pub struct Expr {
 #[derive(Debug, Clone)]
 pub enum ExprKind {
     Int(i64),
+    /// An integer literal above the largest `Int64`: only a `UInt64` holds
+    /// it.
+    BigInt(u64),
     /// Float64 literal (`1.5`, `1e10`, `3.14f64`).
     Float(f64),
     Bool(bool),

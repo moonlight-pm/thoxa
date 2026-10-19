@@ -1169,7 +1169,8 @@ fn is_array_user_elem(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
 /// D48 / D135: constructor-param fields (not C-layout body fields, not fn types).
 fn is_ctor_field_ty(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
     match ty {
-        Ty::Int64 | Ty::Float64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Node => true,
+        Ty::Float64 | Ty::Bool | Ty::String | Ty::Bytes | Ty::Node => true,
+        ty if is_int(ty) => true,
         Ty::Array { .. } | Ty::Map { .. } => true,
         Ty::User(name) => types.get(name).is_some_and(|info| !info.zero_init),
         _ => false,
@@ -3630,7 +3631,7 @@ fn resolve_type_def_shape(
             // (including sums). C-layout and function types stay out.
             if !is_ctor_field_ty(&ty, types_info) {
                 return Err(Error::at(
-                    "constructor-param fields must be Int64, Float64, Bool, String, Bytes, Node, Array, Map, or a constructor-param type",
+                    "constructor-param fields must be an integer type, Float64, Bool, String, Bytes, Node, Array, Map, or a constructor-param type",
                     p.ty.span,
                 ));
             }
@@ -5261,7 +5262,7 @@ fn collect_local_fn_calls_expr(expr: &Expr, out: &mut CallNames) {
                 }
             }
         }
-        ExprKind::Int(_)
+        ExprKind::Int(_) | ExprKind::BigInt(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
         | ExprKind::String(_)
@@ -8287,6 +8288,7 @@ fn subst_assign_target<S: TypeSubst + ?Sized>(t: &AssignTarget, subst: &S) -> As
 fn subst_expr<S: TypeSubst + ?Sized>(e: &Expr, subst: &S) -> Expr {
     let kind = match &e.kind {
         ExprKind::Int(n) => ExprKind::Int(*n),
+        ExprKind::BigInt(n) => ExprKind::BigInt(*n),
         ExprKind::Float(n) => ExprKind::Float(*n),
         ExprKind::Bool(b) => ExprKind::Bool(*b),
         ExprKind::String(s) => ExprKind::String(s.clone()),
@@ -9579,6 +9581,13 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
                 expr.span,
             )
         }
+        // Above the largest `Int64`: a `UInt64`, its bit pattern in the place
+        // (read back unsigned by `literal_int_value`).
+        ExprKind::BigInt(n) => {
+            let p = ctx.fresh("big");
+            ctx.assign(p.clone(), Ty::UInt64, RValue::Int(*n as i64));
+            Ok((p, Ty::UInt64))
+        }
         ExprKind::Float(n) => {
             let p = ctx.fresh("f");
             ctx.assign(p.clone(), Ty::Float64, RValue::Float(*n));
@@ -10115,7 +10124,7 @@ fn expr_has_break(expr: &Expr, depth: u32) -> bool {
         ExprKind::Continue
         | ExprKind::Name(_)
         | ExprKind::MutArg(_)
-        | ExprKind::Int(_)
+        | ExprKind::Int(_) | ExprKind::BigInt(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
         | ExprKind::String(_) => false,
@@ -12811,7 +12820,7 @@ fn lower_type_read_static(
         }
         return Err(Error::at(
             format!(
-                "type `{}` cannot be read — its fields must be String, Int64, Float64, \
+                "type `{}` cannot be read — its fields must be String, an integer type, Float64, \
                  Bool, refined or literal types, Array, May, Map<String, …>, Json, or \
                  types that read (a type with its own toJson has no generated reader)",
                 type_source_name(&info, mangled_ty)
@@ -15183,7 +15192,7 @@ fn materialize_expr_typespace(
     def_mod: &str,
 ) -> Result<()> {
     match &expr.kind {
-        ExprKind::Int(_)
+        ExprKind::Int(_) | ExprKind::BigInt(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
         | ExprKind::String(_)
@@ -19481,6 +19490,12 @@ fn literal_int_value(ctx: &LowerCtx, place: &Place) -> Option<i128> {
     if temp_of("_i", &place.name) {
         return match assigned(place)? {
             RValue::Int(value) => Some(*value as i128),
+            _ => None,
+        };
+    }
+    if temp_of("_big", &place.name) {
+        return match assigned(place)? {
+            RValue::Int(bits) => Some(*bits as u64 as i128),
             _ => None,
         };
     }

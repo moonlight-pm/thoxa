@@ -288,10 +288,12 @@ non-negative literal. `+`, `-`, and `*` wrap modulo 2^64, `/` and `%` divide
 unsigned (by zero panics), comparisons are unsigned, `>>` shifts in zeros,
 and `~` keeps all 64 bits. A `UInt64` cannot be negated, and mixing one with
 a signed value (`count + offset` where `offset` is an `Int64`) is a compile
-error: convert one side with `truncating:` or `as?`.
+error: convert one side with `truncating:` or `as?`. An integer literal above
+the largest `Int64` is a `UInt64`, and fits nothing else.
 
 ```thx
 let max = UInt64(truncating: -1)       ## 18446744073709551615
+let same: UInt64 = 18446744073709551615
 let half = max / 2                     ## 9223372036854775807
 let more = half + 1                    ## 9223372036854775808
 let wrapped = max + 1                  ## 0
@@ -577,8 +579,8 @@ let x = p.x                   ## 3
 ```
 
 A type with no parameters and no body (`type Empty`) has one value, written
-`Empty()`. Fields may hold any type, including heap values, `Node`, other user
-types, and unions. A field may not contain its own type, directly or through
+`Empty()`. Fields may hold any type, including every integer type, heap
+values, `Node`, other user types, and unions. A field may not contain its own type, directly or through
 other products (use an `Array` or a `Map`). Fields are readable from outside
 the type and read-only there, unless a setter makes them writable (see
 [Properties](#properties)). Constructors take arguments like any call (see
@@ -2045,6 +2047,10 @@ at path `""`; a non-object where an object is expected is one `Mismatch`.
   `Missing` issue at `path.type`; an unknown one is a `Mismatch` listing the
   members.
 - `Map<String, T>` fields read JSON objects; `Json` fields accept any value.
+- An `Int32`, `UInt32`, `UInt64`, or `Byte` field reads a JSON integer that
+  fits it; one that does not is `Rejected` (`300 does not fit in Byte`). A
+  JSON integer holds at most the largest `Int64`, so a `UInt64` above it has
+  no JSON form. A form does not read these fields.
 
 ### Forms
 
