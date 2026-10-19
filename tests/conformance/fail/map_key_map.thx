@@ -1,6 +1,7 @@
-## D179 / D214: a key hashes and compares by value. A Map inside one has
+## D179 / D214 / D228: a key hashes by value, field by field. A Map inside one has
 ## no hash yet.
 type Index(name: String, entries: Map<String, Int64>)
+conform Index to Equatable, Hashable
 
 fn main() -> Int64 {
     mut seen: Map<Index, Int64> = Map()

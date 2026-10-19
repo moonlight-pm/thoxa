@@ -8,3 +8,23 @@ export type May<T> = Has<T!> | Not?
 export type Pass<T>(value!: T)
 export type Fail<E>(error!: E)
 export type Trial<P, F> = Pass<P!> | Fail<F?>
+
+## Equal, hashed, and ordered by what they hold, when it is (D228). A `May`
+## orders `Has` before `Not`; a `Trial`, `Pass` before `Fail`.
+conform Has<T: Equatable> to Equatable
+conform Has<T: Hashable> to Hashable
+conform Has<T: Ordered> to Ordered
+conform Not to Equatable, Hashable, Ordered
+conform May<T: Equatable> to Equatable
+conform May<T: Hashable> to Hashable
+conform May<T: Ordered> to Ordered
+
+conform Pass<T: Equatable> to Equatable
+conform Pass<T: Hashable> to Hashable
+conform Pass<T: Ordered> to Ordered
+conform Fail<E: Equatable> to Equatable
+conform Fail<E: Hashable> to Hashable
+conform Fail<E: Ordered> to Ordered
+conform Trial<P: Equatable, F: Equatable> to Equatable
+conform Trial<P: Hashable, F: Hashable> to Hashable
+conform Trial<P: Ordered, F: Ordered> to Ordered

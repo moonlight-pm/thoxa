@@ -3,6 +3,7 @@
 import logging, { info } from "std/logging"
 
 type Point(x: Int64, y: Int64)
+conform Point to Equatable, Hashable
 
 fn without(items!: Array<String>, item!: String) -> Array<String> {
     mut kept: Array<String> = []

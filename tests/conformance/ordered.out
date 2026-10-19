@@ -1,0 +1,10 @@
+versions: true false before true
+map: true false
+shapes: true true
+players: true after
+tags: true false
+strings: true false same
+floats: after before same
+ints: before after
+mays: true true
+refined: true

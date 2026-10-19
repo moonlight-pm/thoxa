@@ -1,0 +1,1 @@
+`Handle` is a `Resource`, not a value, so it cannot be `Equatable`

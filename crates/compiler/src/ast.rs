@@ -110,6 +110,12 @@ pub struct TypeDef {
     /// Traits the type conforms to, filled by `trait_desugar` from
     /// `conform` items (D228). Empty in the parser's output.
     pub traits: Vec<TraitRef>,
+    /// A generic type's conformances, each holding for the instances whose
+    /// arguments meet its bounds (D228).
+    pub conditional: Vec<ConditionalConformance>,
+    /// Members whose bodies are the compiler's field-by-field defaults
+    /// (`equals`, `compare`), from conformances that do not write them (D228).
+    pub derived: Vec<String>,
 }
 
 /// A trait by its defining module's id and its name (D228).
@@ -150,13 +156,34 @@ pub struct TraitMember {
 }
 
 /// `conform Type to Trait, … [{ fn … }]` (D228). The methods implement the
-/// listed traits' members; each goes to the trait that declares it.
+/// listed traits' members; each goes to the trait that declares it. A generic
+/// type names its parameters with their bounds: `conform Box<T: Equatable>`.
 #[derive(Debug, Clone)]
 pub struct Conformance {
     pub span: Span,
     pub ty: TypeExpr,
+    /// One per type parameter of a generic target, in order.
+    pub params: Vec<TypeParamBound>,
     pub traits: Vec<(String, Span)>,
     pub methods: Vec<Method>,
+}
+
+/// `T: Equatable & Hashable`: a type parameter and the traits it must meet
+/// (D228). No traits means any type.
+#[derive(Debug, Clone)]
+pub struct TypeParamBound {
+    pub name: String,
+    pub span: Span,
+    pub traits: Vec<(String, Span)>,
+}
+
+/// A conformance of a generic type, or of a built-in one, that holds for the
+/// instances whose arguments meet `bounds`, one list per type parameter
+/// (D228): `conform Array<T: Equatable> to Equatable`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConditionalConformance {
+    pub trait_ref: TraitRef,
+    pub bounds: Vec<Vec<TraitRef>>,
 }
 
 /// `[export] from(source: S) -> T { … }` in `type T`'s body: a conversion into

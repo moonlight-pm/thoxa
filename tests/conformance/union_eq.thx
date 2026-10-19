@@ -6,12 +6,17 @@ import { Has, Not, May, Pass, Fail, Trial } from "std/fallible"
 type Red()
 type Green()
 type Color = Red | Green
+conform Color to Equatable
 
 type Circle(radius: Int64)
+conform Circle to Equatable
 type Rect(width: Int64, height: Int64)
+conform Rect to Equatable
 type Shape = Circle | Rect
+conform Shape to Equatable
 
 type Pixel(x: Int64, color: Color)
+conform Pixel to Equatable
 
 fn parsed(text!: String) -> Trial<Int64, String> {
     if text == "one" {

@@ -1,0 +1,77 @@
+## Declared comparison (D228): `==` is `Equatable`'s, `<` and the rest are
+## `Ordered`'s, and a Map key is `Hashable`. A conformance without its own
+## `equals` or `compare` gets the field-by-field one: a product in declaration
+## order, a union by member, then payload. `compare` gives an `Order`.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Version(major: Int64, minor: Int64, patch: Int64)
+conform Version to Equatable, Hashable, Ordered
+
+type Circle(radius: Int64)
+conform Circle to Equatable, Ordered
+type Square(side: Int64)
+conform Square to Equatable, Ordered
+type Shape = Circle | Square
+conform Shape to Equatable, Ordered
+
+## Its own `compare`: by score, highest first.
+type Player(name: String, score: Int64)
+conform Player to Equatable
+conform Player to Ordered {
+    fn compare(other!: Self) -> Order {
+        other.score.compare(score)
+    }
+}
+
+## Its own `equals`: names match without regard to case.
+type Tag(name: String)
+conform Tag to Equatable {
+    fn equals(other!: Self) -> Bool {
+        name.toLower() == other.name.toLower()
+    }
+}
+
+type Qty = Int64 where >= 0
+
+fn describe(order!: Order) -> String {
+    match order {
+        "less" => "before"
+        "equal" => "same"
+        "greater" => "after"
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let old = Version(major: 1, minor: 9, patch: 4)
+    let new = Version(major: 1, minor: 10, patch: 0)
+    info("versions: {old < new} {old >= new} {describe(old.compare(new))} {old == old}")
+    mut seen: Map<Version, String> = Map()
+    seen[old] = "old"
+    info("map: {seen.has(old)} {seen.has(new)}")
+
+    let small: Shape = Circle(radius: 9)
+    let large: Shape = Square(side: 1)
+    info("shapes: {small < large} {Square(side: 1) < Square(side: 2)}")
+
+    let ada = Player(name: "ada", score: 90)
+    let bob = Player(name: "bob", score: 70)
+    info("players: {ada < bob} {describe(bob.compare(ada))}")
+
+    info("tags: {Tag(name: \"Swift\") == Tag(name: \"swift\")} {Tag(name: \"a\").equals(Tag(name: \"b\"))}")
+
+    info("strings: {\"apple\" < \"banana\"} {\"b\" < \"ab\"} {describe(\"same\".compare(\"same\"))}")
+    let nan = 0.0 / 0.0
+    info("floats: {describe(nan.compare(1.0))} {describe(1.0.compare(nan))} {describe(2.5.compare(2.5))}")
+    info("ints: {describe(3.compare(4))} {describe(true.compare(false))}")
+
+    let some: May<Int64> = Has(1)
+    let none: May<Int64> = Not()
+    info("mays: {some < none} {Has(1) < Has(2)}")
+
+    let few: Qty = 2
+    let many: Qty = 7
+    info("refined: {few < many}")
+}

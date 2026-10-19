@@ -1,4 +1,5 @@
-## D228: built-in types conform in std, with bounds (a later slice).
+## D228: a built-in type conforms without a body for now: the methods a
+## conformance would add to it need `extend`, which only std may use.
 trait Named {
     fn label() -> String
 }

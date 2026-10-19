@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-18 (**D228**: traits designed, freeze below; slices 1–3 shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties), slice 4 next; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-18 (**D228**: traits designed, freeze below; slices 1–4 shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison), slice 5 next; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -103,8 +103,9 @@ parents, `Self`, `conform`, and `Resource` (std/core) replacing a `drop`
 method found by name. **Slice 2 shipped**: `self` everywhere (`extend`
 drops `as name`) and provided members, checked once at the trait.
 **Slice 3 shipped**: getters, setters, `field`, trait property
-requirements. **Slice 4 is next**: `Equatable`, `Hashable`, `Ordered`,
-declared; bounds on `conform`; std conformances.
+requirements. **Slice 4 shipped**: `Equatable`, `Hashable`, `Ordered`,
+`Order`, declared (`==`, Map keys, `<` need them), conformances with bounds,
+std's conformances. **Slice 5 is next**: generic functions and bounds.
 Generic functions are slice 5, so the "generic constructor inference" gap
 below waits for it. Joshua: "lean toward long-term correct design rather
 than short term stop gaps."
@@ -216,12 +217,12 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D228 slices 1–3 (`trait`, `conform`, `Resource`, `self`, provided members, properties), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
+**Shipped recently:** D228 slices 1–4 (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 175 programs, 85 rejections, 8 site samples, 219 unit tests
-after D228 slice 3 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 176 programs, 89 rejections, 8 site samples, 219 unit tests
+after D228 slice 4 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
@@ -297,7 +298,7 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Function pointers | `(a: T) -> R` values: free fn, unbound `Type.method`, bound `instance.method` (**D132** — **shipped**). Receiver+code only; no lexical closures. Module store yes; fields/arrays no (D48 / D135). |
 | Nowait | Token **`--> name(args)`** starts a named free Thoxa function (**D148**). `Void`; return dropped. Colorless: Net parks; `main` drains. No Future / `async` / `--> { }` / pointer `-->`. |
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. An element of a `mut` Array is a place (`grid[0].append(x)`); a field from outside its type and a temporary are not, and a write on them is an error (**D180**). |
-| Equality | Structural, no traits: `==` / `!=` compare products field by field, unions by arm and payload, arrays by count and elements, maps by keys and values in any order (**D175**, **D177**, **D178**, **D212**); never by RC pointer. A type that contains itself compares through a generated function. No ordering on them. |
+| Equality | Declared (**D228**): `==` needs `conform T to Equatable`, `<` `Ordered`, a Map key `Hashable`; the default compares field by field. Structural: `==` / `!=` compare products field by field, unions by arm and payload, arrays by count and elements, maps by keys and values in any order (**D175**, **D177**, **D178**, **D212**); never by RC pointer. A type that contains itself compares through a generated function. No ordering on them. |
 | Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Float64/Bool (Float64 SameValueZero, **D214**); values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User products / unions are keys too (**D175** `==` + a generated hash, **D179**; arrays inside them, **D214**; not traits). `remove` keeps insertion order (**D181**). No `std/http` header flip. |
 | Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); `htmlFragment` / `etagOf` / `cached` (**D145**). **`peerFd` + `streamed()`** (**D146**) for SSE takeover; the handler gets

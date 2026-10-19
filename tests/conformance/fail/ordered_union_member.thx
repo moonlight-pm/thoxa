@@ -1,0 +1,10 @@
+## D228: a union's default order goes member by member, so each member must
+## be `Ordered`.
+type Circle(radius: Int64)
+conform Circle to Equatable
+type Square(side: Int64)
+conform Square to Equatable, Ordered
+type Shape = Circle | Square
+conform Shape to Equatable, Ordered
+
+fn main() {}

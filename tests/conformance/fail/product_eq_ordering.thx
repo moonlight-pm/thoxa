@@ -1,4 +1,4 @@
-## D175: products have `==` and `!=`, not an order.
+## D228: `<` is `Ordered`'s; a type has an order only when it declares one.
 type Point(x: Int64, y: Int64)
 
 fn main() -> Int64 {

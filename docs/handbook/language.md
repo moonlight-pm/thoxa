@@ -527,16 +527,18 @@ for name, age in ages {
 Removing a key keeps the other keys in insertion order; a key set again after
 its removal goes to the end. Writes need a writable place.
 
-**Keys** may be `String`, `Int64`, `Float64`, `Bool`, or a user type whose
-fields hash by value: integers, `Float64`, `Bool`, `String`, `Bytes`, arrays of
-those, refined and literal-union fields, and nested such types. Two keys are the
-same key when they are `==`, except that a `Float64` matches as JavaScript's
-`Map` does: any NaN matches NaN, and `-0.0` matches `0.0`, so every key can be
-found again. A key type holding a `Map` or a `Node`, a `Resource`, or a
-C-layout type is a compile error. A call can be a literal key:
+**Keys** may be `String`, `Int64`, `Float64`, `Bool`, or a user type that
+declares `Hashable` (see [Equality and order](#equality-and-order)), which hashes field by field:
+integers, `Float64`, `Bool`, `String`, `Bytes`, arrays of those, refined and
+literal-union fields, and nested `Hashable` types. Two keys are the same key
+when they are `==`, except that a `Float64` matches as JavaScript's `Map`
+does: any NaN matches NaN, and `-0.0` matches `0.0`, so every key can be found
+again. A `Hashable` type holding a `Map` or a `Node` is a compile error, and a
+`Resource` or a C-layout type cannot be one. A call can be a literal key:
 
 ```thx
 type Point(x: Int64, y: Int64)
+conform Point to Equatable, Hashable
 
 mut grid: Map<Point, String> = Map()
 grid.set(Point(x: 2, y: 3), "treasure")
@@ -545,7 +547,7 @@ let named = {Point(x: 0, y: 0): "origin"}
 ```
 
 Two maps are `==` when they hold the same keys with equal values, in any
-order (see [Equality](#equality)).
+order (see [Equality and order](#equality-and-order)).
 
 ### Products
 
@@ -723,9 +725,9 @@ only in `for` heads and `where` clauses.
 - `+ - * / %` on integers and `+ - * /` on `Float64`; see [Integers](#integers)
   for overflow and division.
 - `& | ^ ~ << >>` on integers.
-- `==` and `!=` on scalars, `String`, `Bytes`, and structurally on products,
-  unions, and arrays; see [Equality](#equality).
-- `< <= > >=` on numbers only.
+- `==` and `!=` on `Equatable` types, and `< <= > >=` on `Ordered` ones:
+  numbers, `Bool`, `String`, and the types that declare them; see
+  [Equality and order](#equality-and-order).
 - `and`, `or`, `not` on `Bool`. `and` and `or` short-circuit: the right
   operand is evaluated only when the left one does not decide the result, so
   `i < bytes.count and bytes.get(i) == 32` never reads past the end. Both
@@ -815,41 +817,71 @@ without a receiver is an unbound method (see
 [Function values](#function-values)); `Type.read(…)` and the other
 [typed-data](#typed-data) functions are called on the type.
 
-### Equality
+### Equality and order
 
-`==` and `!=` work on two values of the same type:
-
-- numbers and `Bool` by value (`Float64` follows IEEE: NaN is never equal);
-- `String` and `Bytes` byte by byte;
-- products field by field, each field compared by its own type: a refined
-  field by its base value, a literal-union field by which literal it is, a
-  nested product field by field again;
-- unions: equal when they are the same member with equal payloads, so `May`
-  and `Trial` values compare. A union and one of its members compare as if the
-  member were in the union;
-- arrays: the same count and equal elements, in order;
-- maps: the same keys, each with an equal value. Order does not matter:
-  `{"a": 1, "b": 2} == {"b": 2, "a": 1}` is `true`.
-
-A type that contains itself, such as a tree with an `Array<Tree>` field or
-`Json`, compares the same way, to any depth.
+`==` and `!=` belong to the built-in trait `Equatable`, `<` `<=` `>` `>=` to
+`Ordered`, and a Map key's type is `Hashable` (all three are in every program;
+see [Traits](#traits)). A declared type has them only when it says so:
 
 ```thx
 type Point(x: Int64, y: Int64)
-type Line(start: Point, end: Point)
+conform Point to Equatable, Hashable
 
-let line = Line(start: Point(x: 0, y: 0), end: Point(x: 3, y: 0))
-let same = Line(start: Point(x: 0, y: 0), end: Point(x: 3, y: 0))
-let equal = line == same                   ## true
+type Version(major: Int64, minor: Int64, patch: Int64)
+conform Version to Equatable, Ordered
 
-let found: May<Int64> = Has(2)
-let two = found == Has(2)                  ## true
+let same = Point(x: 1, y: 2) == Point(x: 1, y: 2)       ## true
+let older = Version(major: 1, minor: 9, patch: 4) < Version(major: 1, minor: 10, patch: 0)   ## true
 ```
 
-It is a compile error to compare values of different types, to use `<` or `>`
-on a product, union, array, map, or string, or to compare types where some
-field, member, element, or map value has no `==` (a `Node`). A `Resource`
-and C-layout types have no `==`. There is no `==` on function values.
+A conformance without its own `equals` or `compare` gets the compiler's, which
+works field by field, so every field (every member's payload, for a union)
+must conform too; the error names the one that does not:
+
+- products compare field by field, each by its own type: a refined field by
+  its base value, a literal-union field by which literal it is;
+- unions are equal when they are the same member with equal payloads; a union
+  and one of its members compare as if the member were in the union. They
+  order by member, in declaration order, then by payload;
+- products order field by field in declaration order: the first field that
+  differs decides.
+
+A conformance may write its own instead:
+
+```thx
+type Tag(name: String)
+conform Tag to Equatable {
+    fn equals(other!: Self) -> Bool {
+        name.toLower() == other.name.toLower()
+    }
+}
+```
+
+`compare` returns an `Order`, `"less"`, `"equal"`, or `"greater"`;
+`a.compare(b)` works on every `Ordered` type, built-in ones included. The
+built-in types conform as follows:
+
+| Type | `Equatable` | `Hashable` | `Ordered` |
+|------|-------------|------------|-----------|
+| integers, `Bool` | yes | yes | yes, by value (`false` before `true`) |
+| `Float64` | yes, IEEE: NaN equals nothing | yes | yes: NaN after everything, `-0.0` equal to `0.0` |
+| `String` | yes, byte by byte | yes | yes, by Unicode scalars (byte order) |
+| `Bytes` | yes | yes | no |
+| `Array<T>` | when `T` is: same count, equal elements | when `T` is | no |
+| `Map<K, V>` | when `V` is: same keys, equal values, in any order | no | no |
+| `May<T>`, `Trial<P, F>` | when what they hold is | when it is | when it is: `Has` before `Not`, `Pass` before `Fail` |
+| `Json` | yes | no | no |
+| `Node`, functions | no | no | no |
+
+`<` on two `Float64` values is IEEE's, as on integers; only `compare` orders
+NaN. A refined type compares as its base, and a union of literals is
+`Equatable` and `Hashable` as its literals are; `Ordered` it must declare, and
+then orders by declaration (`Order` itself orders `"less"`, `"equal"`,
+`"greater"`). A type that contains itself, such as a tree with an
+`Array<Tree>` field or `Json`, compares to any depth.
+
+It is a compile error to compare values of different types or of a type that
+does not conform. A `Resource` and C-layout types cannot be `Equatable`.
 
 ## Conversions
 
@@ -1409,7 +1441,13 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
   defines the trait; one with methods goes in the type's module. A type
   conforms to a trait once.
 - A trait is private to its module unless marked `export`, and is imported by
-  name like a type. The built-in `Resource` needs no import.
+  name like a type. The built-in traits, `Equatable`, `Hashable`, `Ordered`
+  (see [Equality and order](#equality-and-order)), and `Resource`, need no
+  import.
+- A generic type conforms for the instances whose arguments meet bounds:
+  `conform Box<T: Equatable> to Equatable` makes `Box<Int64>` equatable and
+  not `Box<Node>`. Such a conformance, and one of a built-in type, has no body
+  for now.
 
 ```thx
 trait Named {
@@ -1430,8 +1468,8 @@ let hello = Guest(name: "ada").greet()     ## "hello, ada"
 ```
 
 Limits: a trait's members take no parameter defaults, a trait cannot be used
-as a type, and generic types, built-in types, and unions with methods cannot
-conform.
+as a type, and a conformance of a generic type, of a built-in type, or of a
+union cannot have a body.
 
 ### Resources
 

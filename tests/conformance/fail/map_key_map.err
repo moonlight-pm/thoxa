@@ -1,1 +1,1 @@
-cannot use Index as a Map key: it holds Map<String, Int64>
+`Index` cannot be `Hashable` field by field: field `entries` is Map<String, Int64>, which is not `Hashable`

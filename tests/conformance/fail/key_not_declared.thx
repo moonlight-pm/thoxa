@@ -1,0 +1,7 @@
+## D228: a Map key's type declares `Hashable`.
+type Point(x: Int64, y: Int64)
+conform Point to Equatable
+
+fn main() {
+    mut seen: Map<Point, Int64> = Map()
+}

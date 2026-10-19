@@ -2,22 +2,29 @@
 import logging, { info } from "std/logging"
 
 type Point(x: Int64, y: Int64)
+conform Point to Equatable
 
 type Line(start: Point, end: Point)
+conform Line to Equatable
 
 type Header(name: String, value: String)
+conform Header to Equatable
 
 type Packet(tag: String, payload: Bytes, weight: Float64, urgent: Bool, flags: Int64)
+conform Packet to Equatable
 
 type Qty = Int64 where >= 1
 
 type DrinkSlug = "espresso" | "mocha"
 
 type Order(slug: DrinkSlug, qty: Qty)
+conform Order to Equatable
 
 type Pair<T>(left: T, right: T)
+conform Pair<T: Equatable> to Equatable
 
 type Empty()
+conform Empty to Equatable
 
 fn same(left!: Point, right!: Point) -> Bool {
     left == right

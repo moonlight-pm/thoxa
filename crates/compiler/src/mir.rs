@@ -2,8 +2,7 @@
 //! R8: multi-file modules, import/export, module-level let/mut.
 
 use crate::ast::{
-    accessor_of, getter_name, setter_name, AccessorKind,
-    self, Arg, AssignTarget, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item, MapEntry,
+    self, accessor_of, getter_name, setter_name, AccessorKind, TraitRef, Arg, AssignTarget, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item, MapEntry,
     MatchArm, Method, Pattern, TypeArg, TypeDef, TypeExpr, TypeLit, TypeMark, UnaryOp,
 };
 use crate::error::{Error, Result};
@@ -16,6 +15,7 @@ use std::rc::Rc;
 
 mod codec;
 mod convert;
+mod order;
 
 /// Synthetic union types inferred for unannotated `if` lub (D119).
 #[derive(Default)]
@@ -30,6 +30,105 @@ struct SyntheticRegistry {
     /// contain themselves (through an Array, a Map, or a union arm), so
     /// expanding their comparison inline would not end (D212).
     eq_functions: Vec<String>,
+    /// Conformances that hold per instance (D228): a generic type's, keyed by
+    /// its mangled template name, and the built-in types' (`Array`, `Int64`).
+    conditional: HashMap<String, Vec<ast::ConditionalConformance>>,
+}
+
+/// A trait std's core module declares (`Equatable`, `Hashable`, `Ordered`).
+fn core_trait(name: &str) -> TraitRef {
+    TraitRef {
+        module: "std_core".into(),
+        name: name.into(),
+    }
+}
+
+/// Whether values of `ty` conform to `trait_ref` (D228): declared, through a
+/// conditional conformance whose bounds its arguments meet, or, for a
+/// refinement, through its base. A union of literals is `Equatable` and
+/// `Hashable` as its literals' type is.
+fn ty_conforms(
+    types: &HashMap<String, TypeInfo>,
+    conditional: &HashMap<String, Vec<ast::ConditionalConformance>>,
+    ty: &Ty,
+    trait_ref: &TraitRef,
+) -> bool {
+    fn walk(
+        types: &HashMap<String, TypeInfo>,
+        conditional: &HashMap<String, Vec<ast::ConditionalConformance>>,
+        ty: &Ty,
+        trait_ref: &TraitRef,
+        depth: u32,
+    ) -> bool {
+        // A type that contains itself meets its own bound.
+        if depth > 32 {
+            return true;
+        }
+        let holds = |key: &str, args: &[Ty]| {
+            conditional.get(key).is_some_and(|list| {
+                list.iter().any(|each| {
+                    each.trait_ref == *trait_ref
+                        && each.bounds.iter().zip(args).all(|(bounds, arg)| {
+                            bounds
+                                .iter()
+                                .all(|bound| walk(types, conditional, arg, bound, depth + 1))
+                        })
+                })
+            })
+        };
+        match ty {
+            Ty::User(name) => {
+                let Some(info) = types.get(name) else {
+                    return false;
+                };
+                if info.traits.contains(trait_ref) {
+                    return true;
+                }
+                if let Some(refined) = &info.refined {
+                    return walk(types, conditional, &refined.base, trait_ref, depth + 1);
+                }
+                if let Some((base, args)) = &info.instance {
+                    return holds(base, args);
+                }
+                if let Some(sum) = &info.sum {
+                    let literal = sum.variants.iter().all(|variant| variant.lit.is_some());
+                    let synthetic = name.starts_with('$');
+                    if (literal && trait_ref.name != "Ordered") || synthetic {
+                        return sum.variants.iter().all(|variant| match &variant.lit {
+                            Some(TypeLit::Int(_)) => holds("Int64", &[]),
+                            Some(TypeLit::Bool(_)) => holds("Bool", &[]),
+                            Some(TypeLit::String(_)) => holds("String", &[]),
+                            None => walk(types, conditional, &variant.ty, trait_ref, depth + 1),
+                        });
+                    }
+                }
+                false
+            }
+            Ty::Array { elem } => holds("Array", std::slice::from_ref(elem.as_ref())),
+            Ty::Map { key, val } => holds("Map", &[key.as_ref().clone(), val.as_ref().clone()]),
+            Ty::Int64 => holds("Int64", &[]),
+            Ty::Int32 => holds("Int32", &[]),
+            Ty::UInt64 => holds("UInt64", &[]),
+            Ty::UInt32 => holds("UInt32", &[]),
+            Ty::Byte => holds("Byte", &[]),
+            Ty::Float64 => holds("Float64", &[]),
+            Ty::Bool => holds("Bool", &[]),
+            Ty::String => holds("String", &[]),
+            Ty::Bytes => holds("Bytes", &[]),
+            Ty::Buffer => holds("Buffer", &[]),
+            Ty::Void => holds("Void", &[]),
+            Ty::Node => holds("Node", &[]),
+            _ => false,
+        }
+    }
+    walk(types, conditional, ty, trait_ref, 0)
+}
+
+impl LowerCtx {
+    /// Whether `ty` conforms to std's core trait `name` (D228).
+    fn conforms(&self, ty: &Ty, name: &str) -> bool {
+        ty_conforms(&self.types, &self.synthetics.borrow().conditional, ty, &core_trait(name))
+    }
 }
 
 /// A user method called on an immutable binding, a field, or a temporary.
@@ -830,13 +929,14 @@ fn is_map_key_ty(ty: &Ty) -> bool {
 /// D179: why values of `ty` cannot be (part of) a Map key, or `None`. A key
 /// hashes and compares by value, so it may hold integers, Float64, Bool,
 /// String, Bytes, and arrays, products, and unions of those (D214).
-fn map_key_problem(types: &HashMap<String, TypeInfo>, ty: &Ty) -> Option<String> {
+fn map_key_problem(ctx: &LowerCtx, ty: &Ty) -> Option<String> {
+    let types = &ctx.types;
     if is_int(ty) || matches!(ty, Ty::Bool | Ty::Float64 | Ty::String | Ty::Bytes | Ty::Void) {
         return None;
     }
     // An array hashes its count and elements in order (D214).
     if let Ty::Array { elem } = ty {
-        return map_key_problem(types, elem);
+        return map_key_problem(ctx, elem);
     }
     let Ty::User(name) = ty else {
         return Some(format!("it holds {}", display_ty(ty)));
@@ -848,6 +948,10 @@ fn map_key_problem(types: &HashMap<String, TypeInfo>, ty: &Ty) -> Option<String>
     if info.resource {
         return Some(format!("`{shown}` is a `Resource`"));
     }
+    // A key's type says it hashes (D228).
+    if !ctx.conforms(ty, "Hashable") {
+        return Some(format!("`{shown}` is not `Hashable`"));
+    }
     if info.zero_init {
         return Some(format!("`{shown}` is a C-layout type"));
     }
@@ -856,16 +960,16 @@ fn map_key_problem(types: &HashMap<String, TypeInfo>, ty: &Ty) -> Option<String>
             .variants
             .iter()
             .filter(|variant| variant.lit.is_none())
-            .find_map(|variant| map_key_problem(types, &variant.ty));
+            .find_map(|variant| map_key_problem(ctx, &variant.ty));
     }
     info.fields
         .iter()
-        .find_map(|field| map_key_problem(types, &field.ty))
+        .find_map(|field| map_key_problem(ctx, &field.ty))
 }
 
 /// Refuse a map whose key type cannot be hashed (D179).
 fn check_map_key(ctx: &LowerCtx, key_ty: &Ty, span: Span) -> Result<()> {
-    match map_key_problem(&ctx.types, key_ty) {
+    match map_key_problem(ctx, key_ty) {
         None => Ok(()),
         Some(problem) => Err(Error::at(
             format!("cannot use {} as a Map key: {problem}", display_ty(key_ty)),
@@ -1066,6 +1170,15 @@ struct TypeInfo {
     /// Conforms to `Resource` (D228): a shared heap box whose `drop` runs
     /// with its last copy (D155).
     resource: bool,
+    /// Traits the type declares it conforms to (D228). An instance of a
+    /// generic type conforms through its template's conditional
+    /// conformances instead (`instance`).
+    traits: Vec<TraitRef>,
+    /// Methods whose bodies are the compiler's field-by-field defaults.
+    derived: HashSet<String>,
+    /// An instance of a generic type: its template's mangled name and its
+    /// type arguments, in order.
+    instance: Option<(String, Vec<Ty>)>,
 }
 
 #[derive(Clone)]
@@ -1650,7 +1763,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     let lower_started = std::time::Instant::now();
     // D150: type-body `GET "/…"` → handlers + `route` (names Request/Response/ok).
     let mut package = package.clone();
-    crate::trait_desugar::desugar_package(&mut package)?;
+    let built_in_conformances = crate::trait_desugar::desugar_package(&mut package)?;
     crate::extend_desugar::desugar_package(&mut package)?;
     crate::conversion_desugar::desugar_package(&mut package)?;
     crate::route_desugar::desugar_package(&mut package)?;
@@ -1668,6 +1781,9 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     let mut type_defs: Vec<(String, String, &TypeDef)> = Vec::new();
     // Generic templates: mangled base name → def (D118 / May prelude path).
     let mut generics: HashMap<String, GenericDef> = HashMap::new();
+    // Conformances that hold per instance (D228): a generic type's, by its
+    // mangled name, and the built-in types', by theirs.
+    let mut conditional: HashMap<String, Vec<ast::ConditionalConformance>> = built_in_conformances;
     let mut module_exports: HashMap<String, ModuleExports> = HashMap::new();
 
     for m in &package.modules {
@@ -1711,6 +1827,9 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                         conversions: td.conversions.clone(),
                     }
                 };
+                if !td.conditional.is_empty() {
+                    conditional.insert(mangled.clone(), td.conditional.clone());
+                }
                 generics.insert(
                     mangled.clone(),
                     GenericDef {
@@ -1752,6 +1871,9 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                     sum: None,
                     refined: None,
                     resource: td.traits.iter().any(|r| r.is_resource()),
+                    traits: td.traits.clone(),
+                    derived: td.derived.iter().cloned().collect(),
+                    instance: None,
                 },
             );
             if td.exported {
@@ -1787,6 +1909,12 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                         map.insert(local.clone(), mangled.clone());
                     }
                 }
+            }
+        }
+        // std/core's types (`Order`) are visible by name everywhere (D228).
+        if let Some(core) = module_exports.get("std_core") {
+            for (name, mangled) in &core.types {
+                map.entry(name.clone()).or_insert_with(|| mangled.clone());
             }
         }
         per_mod_types.insert(m.id.clone(), map);
@@ -2007,6 +2135,63 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     }
     if !drop_errors.is_empty() {
         return Err(errors_to_multi(drop_errors));
+    }
+
+    // D228 §4: the compiler's default `==`, hash, and order go field by
+    // field (a union's member by member), so each part must conform too.
+    let mut default_errors: Vec<Error> = Vec::new();
+    for (mod_id, mangled, td) in &type_defs {
+        let info = &types_info[mangled];
+        for (trait_name, member) in [("Equatable", Some("equals")), ("Hashable", None), ("Ordered", Some("compare"))] {
+            let trait_ref = core_trait(trait_name);
+            if !info.traits.contains(&trait_ref) {
+                continue;
+            }
+            if info.resource {
+                default_errors.push(in_module_id(
+                    Error::at(format!("`{}` is a `Resource`, not a value, so it cannot be `{trait_name}`", td.name), td.name_span),
+                    package,
+                    mod_id,
+                ));
+                continue;
+            }
+            if member.is_some_and(|member| info.methods.contains_key(member) && !info.derived.contains(member)) {
+                continue;
+            }
+            let parts: Vec<(&str, String, Ty)> = match &info.sum {
+                Some(sum) => sum
+                    .variants
+                    .iter()
+                    .filter(|variant| variant.lit.is_none() && has_storage(&types_info, &variant.ty))
+                    .map(|variant| ("member", variant.name.clone(), variant.ty.clone()))
+                    .collect(),
+                None => info
+                    .fields
+                    .iter()
+                    .filter(|field| field.ty != Ty::Void)
+                    .map(|field| ("field", field.name.clone(), field.ty.clone()))
+                    .collect(),
+            };
+            for (kind, name, ty) in parts {
+                if !ty_conforms(&types_info, &conditional, &ty, &trait_ref) {
+                    default_errors.push(in_module_id(
+                        Error::at(
+                            format!(
+                                "`{}` cannot be `{trait_name}` field by field: {kind} `{name}` is {}, which is not `{trait_name}`",
+                                td.name,
+                                display_ty(&ty)
+                            ),
+                            td.name_span,
+                        ),
+                        package,
+                        mod_id,
+                    ));
+                }
+            }
+        }
+    }
+    if !default_errors.is_empty() {
+        return Err(errors_to_multi(default_errors));
     }
 
     // ---------- Phase 2: functions + externs ----------
@@ -2253,7 +2438,10 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     // Every global's init lands in one C function: number temps across all of
     // them, or `_obj0` from two modules would share one (mistyped) local.
     let mut init_temps = 0;
-    let synthetics = Rc::new(RefCell::new(SyntheticRegistry::default()));
+    let synthetics = Rc::new(RefCell::new(SyntheticRegistry {
+        conditional: std::mem::take(&mut conditional),
+        ..SyntheticRegistry::default()
+    }));
     // Name maps of the modules whose globals are done, so a default argument
     // resolves in its defining module (D116) inside a module initializer.
     let mut init_package_maps: HashMap<String, ModuleNameMaps> = HashMap::new();
@@ -3175,6 +3363,9 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             sum: None,
             refined: None,
             resource: false,
+            traits: Vec::new(),
+            derived: HashSet::new(),
+            instance: None,
         },
     );
     type_layouts.push(TypeLayout {
@@ -3209,6 +3400,9 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             sum: None,
             refined: None,
             resource: false,
+            traits: Vec::new(),
+            derived: HashSet::new(),
+            instance: None,
         },
     );
     types_info.insert(
@@ -3221,6 +3415,9 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             sum: None,
             refined: None,
             resource: false,
+            traits: Vec::new(),
+            derived: HashSet::new(),
+            instance: None,
         },
     );
     types_info.insert(
@@ -3233,6 +3430,9 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
             sum: None,
             refined: None,
             resource: false,
+            traits: Vec::new(),
+            derived: HashSet::new(),
+            instance: None,
         },
     );
 }
@@ -5790,6 +5990,16 @@ fn subst_type_expr(te: &TypeExpr, subst: &HashMap<String, Ty>) -> TypeExpr {
     }
 }
 
+/// An instance's template and its type arguments in the template's order.
+fn instance_of(gdef: &GenericDef, subst: &HashMap<String, Ty>) -> (String, Vec<Ty>) {
+    let args = gdef
+        .type_params
+        .iter()
+        .map(|param| subst.get(param).cloned().unwrap_or(Ty::Void))
+        .collect();
+    (gdef.mangled_base.clone(), args)
+}
+
 fn instantiate_product_mono(
     mono: String,
     gdef: &GenericDef,
@@ -5888,6 +6098,9 @@ fn instantiate_product_mono(
             sum: None,
             refined: None,
             resource: false,
+            traits: Vec::new(),
+            derived: HashSet::new(),
+            instance: Some(instance_of(gdef, subst)),
         },
     );
     layouts.push(layout);
@@ -6285,6 +6498,9 @@ fn instantiate_union_mono(
         sum: Some(sum),
         refined: None,
         resource: false,
+        traits: Vec::new(),
+        derived: HashSet::new(),
+        instance: Some(instance_of(gdef, subst)),
     };
     let layout = TypeLayout {
         name: mono.clone(),
@@ -11077,6 +11293,19 @@ fn lower_method_call(
                 .get(&type_name)
                 .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), method_span))?
                 .clone();
+            // `equals` / `compare` of a type without the method (a union, a
+            // generic type's instance): the structural default (D228).
+            if !info.methods.contains_key(method) && matches!(method, "equals" | "compare") {
+                if let [Arg::Pos(other)] = args {
+                    let (other_p, _) = lower_expr_expect(ctx, other, Some(&recv_ty))?;
+                    if method == "equals" {
+                        let equal = lower_user_eq(ctx, recv_p, other_p, &type_name, method_span)?;
+                        return Ok((equal, Ty::Bool));
+                    }
+                    let sign = order::lower_compare(ctx, recv_p, other_p, &recv_ty, method_span)?;
+                    return order::int_to_order(ctx, sign, method_span);
+                }
+            }
             let sig = info.methods.get(method).ok_or_else(|| {
                 Error::at(
                     no_member_message(&type_name, method, "method"),
@@ -11946,6 +12175,10 @@ fn extension_key(ty: &Ty) -> Option<String> {
         Ty::Bytes => Some("Bytes".into()),
         Ty::Buffer => Some("Buffer".into()),
         Ty::Int64 => Some("Int64".into()),
+        Ty::Int32 => Some("Int32".into()),
+        Ty::UInt64 => Some("UInt64".into()),
+        Ty::UInt32 => Some("UInt32".into()),
+        Ty::Byte => Some("Byte".into()),
         Ty::Float64 => Some("Float64".into()),
         Ty::Bool => Some("Bool".into()),
         Ty::Array { elem } => Some(format!("Array_{}", extension_key(elem)?)),
@@ -13376,6 +13609,9 @@ fn ensure_lit_type(
         sum: Some(sum),
         refined: None,
         resource: false,
+        traits: Vec::new(),
+        derived: HashSet::new(),
+        instance: None,
     };
     let layout = TypeLayout {
         name: name.clone(),
@@ -13516,6 +13752,9 @@ fn ensure_member_set_type(
         sum: Some(sum),
         refined: None,
         resource: false,
+        traits: Vec::new(),
+        derived: HashSet::new(),
+        instance: None,
     };
     let layout = TypeLayout {
         name: name.clone(),
@@ -13969,6 +14208,36 @@ fn ty_eq(types: &HashMap<String, TypeInfo>, a: &Ty, b: &Ty) -> bool {
 /// [`can_coerce_ty`], or a value with a JSON encoding where a `Json` is
 /// expected (D191 §4). Only for an expected type: dispatch and unification
 /// never encode.
+/// A branch of an `if` where `expect` is expected: its type fits, or its
+/// value is a literal `expect` takes (`"less"` where an `Order` is), or an
+/// `if` whose branches are.
+fn branch_fits(ctx: &LowerCtx, branch: &Block, ty: &Ty, expect: &Ty) -> bool {
+    if fits_expected(&ctx.types, ty, expect) {
+        return true;
+    }
+    let Some(tail) = &branch.tail else {
+        return false;
+    };
+    if let Some(lit) = expr_as_type_lit(tail) {
+        return sum_info_of(&ctx.types, expect)
+            .is_some_and(|sum| sum.variants.iter().any(|variant| variant.lit.as_ref() == Some(&lit)));
+    }
+    match &tail.kind {
+        ExprKind::If {
+            then_branch,
+            else_branch: Some(else_branch),
+            ..
+        } => {
+            let then_ty = infer_block_ty(ctx, then_branch).unwrap_or(Ty::Void);
+            let else_ty = infer_block_ty(ctx, else_branch).unwrap_or(Ty::Void);
+            branch_fits(ctx, then_branch, &then_ty, expect)
+                && branch_fits(ctx, else_branch, &else_ty, expect)
+        }
+        ExprKind::Block(inner) => branch_fits(ctx, inner, ty, expect),
+        _ => false,
+    }
+}
+
 fn fits_expected(types: &HashMap<String, TypeInfo>, from: &Ty, to: &Ty) -> bool {
     can_coerce_ty(types, from, to)
         || (matches!(to, Ty::User(n) if n == "std_json_Json")
@@ -15591,6 +15860,15 @@ fn lower_binary(
     let (r, rt) = lower_expr(ctx, right)?;
     let (l, lt) = unwrap_refined(ctx, l, &lt)?;
     let (r, rt) = unwrap_refined(ctx, r, &rt)?;
+    // `<` and the rest are `Ordered`'s (D228). A union of literals orders by
+    // declaration, so this comes before it widens to its literals' type.
+    if matches!(op, BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge)
+        && matches!(&lt, Ty::User(_))
+        && lt == rt
+    {
+        let sign = order::lower_compare(ctx, l, r, &lt, span)?;
+        return Ok(compare_sign(ctx, op, sign));
+    }
     let (l, lt) = match maybe_widen_lit_sum(ctx, l.clone(), &lt)? {
         Some(w) => w,
         None => (l, lt),
@@ -15768,8 +16046,10 @@ fn lower_binary(
                 return Ok((p, Ty::Bool));
             }
             if lt == Ty::String && rt == Ty::String {
+                // String is `Ordered` by scalars, which is byte order (D228).
                 if !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
-                    return Err(Error::at("String only supports `==` and `!=`", span));
+                    let sign = order::lower_compare(ctx, l, r, &lt, span)?;
+                    return Ok(compare_sign(ctx, op, sign));
                 }
                 let eq_p = ctx.fresh("seq");
                 ctx.assign(
@@ -15932,6 +16212,23 @@ fn lower_binary(
     }
 }
 
+/// `sign op 0` for a -1 / 0 / 1 comparison: `a < b` is `compare(a, b) < 0`.
+fn compare_sign(ctx: &mut LowerCtx, op: BinaryOp, sign: Place) -> (Place, Ty) {
+    let zero = ctx.fresh("zero");
+    ctx.assign(zero.clone(), Ty::Int64, RValue::Int(0));
+    let p = ctx.fresh("ord");
+    ctx.assign(
+        p.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op,
+            left: sign,
+            right: zero,
+        },
+    );
+    (p, Ty::Bool)
+}
+
 /// D219: an operand of a `UInt64` operation, as a `UInt64`: a `UInt64`, a
 /// `UInt32` or `Byte` (widened), or a non-negative integer literal. A signed
 /// value has no type in common with a `UInt64`, so mixing them is an error.
@@ -16036,6 +16333,40 @@ fn lower_user_eq(
     type_name: &str,
     span: Span,
 ) -> Result<Place> {
+    // `==` is `Equatable`'s (D228): declared, and with the type's own
+    // `equals` when it writes one.
+    let ty = Ty::User(type_name.to_string());
+    let info = ctx.types.get(type_name).cloned();
+    let shown = display_ty(&ty);
+    if info.as_ref().is_some_and(|info| info.resource) {
+        return Err(Error::at(
+            format!("cannot compare {shown} values: a `Resource` is not a value"),
+            span,
+        ));
+    }
+    if !ctx.conforms(&ty, "Equatable") {
+        return Err(Error::at(
+            format!("cannot compare {shown} values: `{shown}` is not `Equatable`"),
+            span,
+        )
+        .with_help(format!(
+            "declare `conform {shown} to Equatable`: field by field, or with its own `equals`"
+        )));
+    }
+    if info.is_some_and(|info| info.methods.contains_key("equals") && !info.derived.contains("equals")) {
+        let other = ctx.fresh("eqarg");
+        ctx.assign(other.clone(), ty, RValue::Use(right));
+        let (equal, _) = emit_call_result(
+            ctx,
+            Callee::Method {
+                type_name: type_name.to_string(),
+                method: "equals".into(),
+            },
+            vec![left, other],
+            Ty::Bool,
+        )?;
+        return Ok(equal);
+    }
     if ctx.eq_expanding.iter().any(|expanding| expanding == type_name) {
         return Ok(call_eq_function(ctx, left, right, type_name));
     }
@@ -17395,6 +17726,8 @@ fn lower_call(
             lower_truncating(ctx, callee, args, span)
         }
         "Float64" => lower_float_rounding(ctx, args, span),
+        // A derived `compare`'s body (D228).
+        "__compare" => order::lower_compare_intrinsic(ctx, args, span),
         // The exactness test of a generated `as Float64` reader (D224).
         "__float64Exact" => lower_float_exact(ctx, args, span),
         "Map" => lower_map_new(ctx, args, span, expect),
@@ -17987,8 +18320,9 @@ fn lower_if(
         // type cannot be met; fall through to unify (Void) and its error.
         if *exp != Ty::Void
             && else_branch.is_some()
-            && fits_expected(&ctx.types, &then_ty, exp)
-            && (fits_expected(&ctx.types, &else_ty, exp) || else_ty == Ty::Void)
+            && branch_fits(ctx, then_branch, &then_ty, exp)
+            && (else_branch.is_some_and(|eb| branch_fits(ctx, eb, &else_ty, exp))
+                || else_ty == Ty::Void)
         {
             exp.clone()
         } else {
@@ -18258,6 +18592,9 @@ fn ensure_synthetic_sum(
         sum: Some(sum),
         refined: None,
         resource: false,
+        traits: Vec::new(),
+        derived: HashSet::new(),
+        instance: None,
     };
     let layout = TypeLayout {
         name: syn_name.clone(),

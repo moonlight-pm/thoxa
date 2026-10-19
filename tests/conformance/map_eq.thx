@@ -5,8 +5,11 @@ import logging, { info } from "std/logging"
 import { Json } from "std/json"
 
 type Point(x: Int64, y: Int64)
+conform Point to Equatable, Hashable
 type Sheet(title: String, cells: Map<String, Array<Int64>>)
+conform Sheet to Equatable
 type Tree(label: String, children: Array<Tree>)
+conform Tree to Equatable
 
 fn main() -> Int64 {
     logging.toStdout()

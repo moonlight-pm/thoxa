@@ -1,0 +1,10 @@
+## D228: a `Resource` is a shared box, not a value: it has no `==`.
+type Handle(fd: Int64)
+
+conform Handle to Resource {
+    fn drop() {}
+}
+
+conform Handle to Equatable
+
+fn main() {}

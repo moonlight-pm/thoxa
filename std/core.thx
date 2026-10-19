@@ -1,8 +1,10 @@
 ## std/core — the built-in traits (D228).
 ##
-## Every program has this module, imported or not, and its traits are visible
-## by name everywhere. A type conforms to one only by saying so:
-## `conform File to Resource { fn drop() { … } }`.
+## Every program has this module, imported or not, and its traits and types
+## are visible by name everywhere. A type conforms to a trait only by saying
+## so: `conform Point to Equatable, Hashable`. A conformance that leaves out
+## `equals` or `compare` gets the compiler's, field by field; every field must
+## conform too.
 
 ## A value that owns something outside the program (a file descriptor, a
 ## socket, a database handle). Its values are one shared box: copies share it,
@@ -10,4 +12,124 @@
 ## type can call its constructor (D155, D168).
 export trait Resource {
     fn drop()
+}
+
+## `==` and `!=`. Without its own `equals`, a product compares field by field
+## and a union by member, then payload.
+export trait Equatable {
+    fn equals(other!: Self) -> Bool
+}
+
+## A Map key: hashes by value, field by field.
+export trait Hashable: Equatable {}
+
+## `<`, `<=`, `>`, `>=`. Without its own `compare`, a product orders field by
+## field in declaration order, and a union by member in declaration order,
+## then payload.
+export trait Ordered: Equatable {
+    fn compare(other!: Self) -> Order
+}
+
+## How two values order.
+export type Order = "less" | "equal" | "greater"
+
+conform Order to Equatable, Hashable, Ordered
+
+conform Int64 to Equatable, Hashable, Ordered
+conform Int32 to Equatable, Hashable, Ordered
+conform UInt64 to Equatable, Hashable, Ordered
+conform UInt32 to Equatable, Hashable, Ordered
+conform Byte to Equatable, Hashable, Ordered
+conform Bool to Equatable, Hashable, Ordered
+conform String to Equatable, Hashable, Ordered
+conform Bytes to Equatable, Hashable
+conform Void to Equatable, Hashable
+
+## IEEE `==` (a NaN equals nothing); `compare` puts every NaN last, after the
+## infinities, and -0 equal to 0.
+conform Float64 to Equatable, Hashable, Ordered
+
+conform Array<T: Equatable> to Equatable
+conform Array<T: Hashable> to Hashable
+conform Map<K: Hashable, V: Equatable> to Equatable
+
+extend Int64 {
+    export fn equals(other!: Int64) -> Bool {
+        self == other
+    }
+
+    export fn compare(other!: Int64) -> Order {
+        if self < other { "less" } else if self > other { "greater" } else { "equal" }
+    }
+}
+
+extend Int32 {
+    export fn equals(other!: Int32) -> Bool {
+        self == other
+    }
+
+    export fn compare(other!: Int32) -> Order {
+        if self < other { "less" } else if self > other { "greater" } else { "equal" }
+    }
+}
+
+extend UInt64 {
+    export fn equals(other!: UInt64) -> Bool {
+        self == other
+    }
+
+    export fn compare(other!: UInt64) -> Order {
+        if self < other { "less" } else if self > other { "greater" } else { "equal" }
+    }
+}
+
+extend UInt32 {
+    export fn equals(other!: UInt32) -> Bool {
+        self == other
+    }
+
+    export fn compare(other!: UInt32) -> Order {
+        if self < other { "less" } else if self > other { "greater" } else { "equal" }
+    }
+}
+
+extend Byte {
+    export fn equals(other!: Byte) -> Bool {
+        self == other
+    }
+
+    export fn compare(other!: Byte) -> Order {
+        if self < other { "less" } else if self > other { "greater" } else { "equal" }
+    }
+}
+
+extend Bool {
+    export fn equals(other!: Bool) -> Bool {
+        self == other
+    }
+
+    ## `false` before `true`.
+    export fn compare(other!: Bool) -> Order {
+        if self == other { "equal" } else if other { "less" } else { "greater" }
+    }
+}
+
+extend Float64 {
+    export fn equals(other!: Float64) -> Bool {
+        self == other
+    }
+
+    export fn compare(other!: Float64) -> Order {
+        if self < other {
+            "less"
+        } else if self > other {
+            "greater"
+        } else if self == other {
+            "equal"
+        } else if self != self {
+            if other != other { "equal" } else { "greater" }
+        } else {
+            "less"
+        }
+    }
 }

@@ -6,9 +6,12 @@ import { formPairs } from "std/http"
 import logging, { info } from "std/logging"
 
 type Circle(radius: Int64)
+conform Circle to Equatable
 type Square(side: Int64, label: String)
+conform Square to Equatable
 type Blank
 type Shape = Circle | Square | Blank
+conform Shape to Equatable
 type Drawing(name: String, shapes: Array<Shape>)
 
 type Leaf(value: Int64)

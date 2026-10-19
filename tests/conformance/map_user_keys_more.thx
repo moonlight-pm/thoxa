@@ -4,8 +4,10 @@ import logging, { info } from "std/logging"
 import { Has, Not, May } from "std/fallible"
 
 type Point(x: Int64, y: Int64)
+conform Point to Equatable, Hashable
 type DrinkSlug = "espresso" | "mocha"
 type Tagged(blob: Bytes, flag: Bool, slug: DrinkSlug)
+conform Tagged to Equatable, Hashable
 
 mut visits: Map<Point, Int64> = Map()
 

@@ -1,0 +1,6 @@
+## D228: `==` is `Equatable`'s, and a type conforms only by declaring it.
+type Point(x: Int64, y: Int64)
+
+fn main() {
+    let same = Point(x: 1, y: 2) == Point(x: 1, y: 2)
+}

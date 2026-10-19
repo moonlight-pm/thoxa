@@ -1,1 +1,1 @@
-Point only supports `==` and `!=`
+cannot order Point values: `Point` is not `Ordered`

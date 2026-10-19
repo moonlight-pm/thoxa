@@ -6,9 +6,13 @@ import logging, { info } from "std/logging"
 import { Has, Not, May } from "std/fallible"
 
 type Path(steps: Array<String>)
+conform Path to Equatable, Hashable
 type Cell(row: Int64, tags: Array<Array<Int64>>)
+conform Cell to Equatable, Hashable
 type Reading(sensor: String, celsius: Float64)
+conform Reading to Equatable, Hashable
 type Route(stops: Array<Path>)
+conform Route to Equatable, Hashable
 
 fn main() -> Int64 {
     logging.toStdout()

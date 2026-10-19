@@ -29,6 +29,7 @@ type Counter(count: Int64, label: String) {
         "{self.label}: {self.count}"
     }
 }
+conform Counter to Equatable
 
 fn main() {
     logging.toStdout()

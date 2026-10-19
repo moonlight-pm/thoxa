@@ -17,11 +17,26 @@ export type JArr(value!: Array<Json>)
 export type JObj(value!: Map<String, Json>)
 export type Json = JNull | JBool | JInt | JFloat | JStr | JArr | JObj
 
+## A Json compares by value: an object's keys in any order (D212, D228).
+conform JNull to Equatable
+conform JBool to Equatable
+conform JInt to Equatable
+conform JFloat to Equatable
+conform JStr to Equatable
+conform JArr to Equatable
+conform JObj to Equatable
+conform Json to Equatable
+
 ## Shape / refinement failures for Type.read (D149).
 export type Missing(path: String)
 export type Mismatch(path: String, expected: String, got: String)
 export type Rejected(path: String, reason: String)
 export type Issue = Missing | Mismatch | Rejected
+
+conform Missing to Equatable, Hashable
+conform Mismatch to Equatable, Hashable
+conform Rejected to Equatable, Hashable
+conform Issue to Equatable, Hashable
 
 type Parsed(value: Json, pos: Int64)
 type Cut(text: String, pos: Int64)

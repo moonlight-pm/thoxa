@@ -3,8 +3,10 @@ import logging, { info } from "std/logging"
 import { Has, Not, May } from "std/fallible"
 
 type Point(x: Int64, y: Int64)
+conform Point to Equatable
 
 type Path(name: String, points: Array<Point>)
+conform Path to Equatable
 
 fn main() -> Int64 {
     logging.toStdout()

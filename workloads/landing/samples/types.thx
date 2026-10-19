@@ -1,11 +1,12 @@
 ## Types and match
 ## A product type lists its fields; a union lists its members. `match` takes a
 ## union apart, with guards, and says so at compile time when a member is
-## missing. `==` compares values field by field.
+## missing. A type that declares `Equatable` compares field by field.
 import logging, { info } from "std/logging"
 
 type Circle(radius: Float64)
 type Rect(width: Float64, height: Float64)
+conform Rect to Equatable
 type Triangle(base: Float64, height: Float64)
 type Shape = Circle | Rect | Triangle
 

@@ -62,6 +62,8 @@ struct Scope<'a> {
     imports: &'a HashMap<String, HashMap<String, BoundImport>>,
     types: HashSet<(String, String)>,
     traits: &'a HashMap<TraitRef, TraitEntry>,
+    /// std/core's exported types, visible by name everywhere (`Order`).
+    core_types: HashSet<String>,
 }
 
 impl Scope<'_> {
@@ -105,12 +107,20 @@ impl Scope<'_> {
         if self.types.contains(&local) {
             return Some(local);
         }
-        self.import(module, name)
-            .filter(|imported| self.types.contains(imported))
+        if let Some(imported) = self.import(module, name).filter(|imported| self.types.contains(imported)) {
+            return Some(imported);
+        }
+        self.core_types
+            .contains(name)
+            .then(|| (CORE_MODULE.to_string(), name.to_string()))
     }
 }
 
-pub fn desugar_package(package: &mut Package) -> Result<()> {
+/// Conformances of built-in types, by the type's name (`Int64`, `Array`),
+/// each holding for the instances whose arguments meet its bounds.
+pub type BuiltInConformances = HashMap<String, Vec<ConditionalConformance>>;
+
+pub fn desugar_package(package: &mut Package) -> Result<BuiltInConformances> {
     let has_traits = package.modules.iter().any(|module| {
         module
             .ast
@@ -119,7 +129,7 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
             .any(|item| matches!(item, Item::Trait(_) | Item::Conform(_)))
     });
     if !has_traits {
-        return Ok(());
+        return Ok(BuiltInConformances::new());
     }
     let imports = loader::build_import_maps(package)?;
     let mut errors: Vec<Error> = Vec::new();
@@ -179,6 +189,7 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
                 imports: &imports,
                 types: HashSet::new(),
                 traits: &traits,
+                core_types: HashSet::new(),
             };
             match scope.trait_named(&key.module, name) {
                 Some(parent) if parent == *key => errors.push(
@@ -238,14 +249,25 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
             .retain(|item| !matches!(item, Item::Conform(_)));
     }
 
+    let core_types = package
+        .modules
+        .iter()
+        .filter(|module| module.id == CORE_MODULE)
+        .flat_map(|module| module.ast.items.iter())
+        .filter_map(|item| match item {
+            Item::Type(def) if def.exported => Some(def.name.clone()),
+            _ => None,
+        })
+        .collect();
     let scope = Scope {
         imports: &imports,
         types,
         traits: &traits,
+        core_types,
     };
     // The type's own members, before any conformance adds to them.
     let mut own_members: HashMap<(String, String), OwnMembers> = HashMap::new();
-    let mut generic: HashSet<(String, String)> = HashSet::new();
+    let mut generic: HashMap<(String, String), usize> = HashMap::new();
     let mut unions: HashSet<(String, String)> = HashSet::new();
     for module in &package.modules {
         for item in &module.ast.items {
@@ -269,16 +291,19 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
                 unions.insert(key.clone());
             }
             if !def.type_params.is_empty() {
-                generic.insert(key);
+                generic.insert(key, def.type_params.len());
             }
         }
     }
 
-    // (type) → trait → where it was declared; (type) → member → its trait.
-    let mut conformed: HashMap<(String, String), HashMap<TraitRef, Span>> = HashMap::new();
+    // (type) → trait → where it was declared, and its bounds when the
+    // conformance holds per instance; (type) → member → its trait.
+    let mut conformed: Conformed = HashMap::new();
     let mut trait_members: HashMap<(String, String), HashMap<String, TraitRef>> = HashMap::new();
     let mut additions: HashMap<(String, String), Vec<Method>> = HashMap::new();
     let mut declared_at: Vec<((String, String), TraitRef, Span, PathBuf)> = Vec::new();
+    let mut built_in: BuiltInConformances = HashMap::new();
+    let mut derived: HashMap<(String, String), Vec<String>> = HashMap::new();
 
     for item in &pending {
         let result = check_conformance(
@@ -291,7 +316,8 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
             &mut trait_members,
         );
         match result {
-            Ok((target, refs, methods)) => {
+            Ok((target, refs, methods, defaults)) => {
+                derived.entry(target.clone()).or_default().extend(defaults);
                 for trait_ref in refs {
                     declared_at.push((
                         target.clone(),
@@ -306,10 +332,25 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
         }
     }
 
-    // A trait's parents are conformed too.
+    // A trait's parents are conformed too, for every instance this one holds
+    // for: a parent's bounds follow from this conformance's.
     for (target, trait_ref, span, path) in &declared_at {
+        let bounds = &conformed[target][trait_ref].1;
         for parent in &traits[trait_ref].parents {
-            if !conformed[target].contains_key(parent) {
+            let covered = conformed[target].get(parent).is_some_and(|(_, parent_bounds)| {
+                match (parent_bounds, bounds) {
+                    (None, _) => true,
+                    (Some(parent_bounds), Some(bounds)) => {
+                        parent_bounds.iter().zip(bounds).all(|(needed, given)| {
+                            let given: Vec<TraitRef> =
+                                given.iter().flat_map(|each| lineage(each, &traits)).collect();
+                            needed.iter().all(|each| given.contains(each))
+                        })
+                    }
+                    (Some(_), None) => false,
+                }
+            });
+            if !covered {
                 errors.push(
                     Error::at(
                         format!(
@@ -328,6 +369,20 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
         return Err(Error::multi(errors));
     }
 
+    for (target, done) in &conformed {
+        if target.0 != BUILT_IN_MODULE || scope.types.contains(target) {
+            continue;
+        }
+        let mut list: Vec<ConditionalConformance> = done
+            .iter()
+            .map(|(trait_ref, (_, bounds))| ConditionalConformance {
+                trait_ref: trait_ref.clone(),
+                bounds: bounds.clone().unwrap_or_default(),
+            })
+            .collect();
+        list.sort_by(|a, b| a.trait_ref.name.cmp(&b.trait_ref.name));
+        built_in.insert(target.1.clone(), list);
+    }
     for module in &mut package.modules {
         for item in &mut module.ast.items {
             let Item::Type(def) = item else { continue };
@@ -335,14 +390,50 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
             if let Some(methods) = additions.remove(&key) {
                 def.methods.extend(methods);
             }
-            if let Some(refs) = conformed.get(&key) {
-                let mut refs: Vec<TraitRef> = refs.keys().cloned().collect();
-                refs.sort_by(|a, b| (&a.module, &a.name).cmp(&(&b.module, &b.name)));
-                def.traits = refs;
+            if let Some(names) = derived.remove(&key) {
+                def.derived = names;
+            }
+            if let Some(done) = conformed.get(&key) {
+                let mut plain: Vec<TraitRef> = Vec::new();
+                for (trait_ref, (_, bounds)) in done {
+                    match bounds {
+                        None => plain.push(trait_ref.clone()),
+                        Some(bounds) => def.conditional.push(ConditionalConformance {
+                            trait_ref: trait_ref.clone(),
+                            bounds: bounds.clone(),
+                        }),
+                    }
+                }
+                plain.sort_by(|a, b| (&a.module, &a.name).cmp(&(&b.module, &b.name)));
+                def.traits = plain;
+                def.conditional
+                    .sort_by(|a, b| (&a.trait_ref.module, &a.trait_ref.name).cmp(&(&b.trait_ref.module, &b.trait_ref.name)));
             }
         }
     }
-    Ok(())
+    Ok(built_in)
+}
+
+/// A target type → each trait it conforms to: where, and the bounds per type
+/// parameter when it holds per instance (`None` for a plain type).
+type Conformed = HashMap<(String, String), HashMap<TraitRef, (Span, Option<Vec<Vec<TraitRef>>>)>>;
+
+/// Built-in types belong to std's core module, which declares their
+/// conformances (D228).
+const BUILT_IN_MODULE: &str = CORE_MODULE;
+
+/// Built-in types a conformance may name, with their number of type
+/// parameters.
+const CONFORMABLE_BUILT_INS: &[(&str, usize)] = &[
+    ("Int64", 0), ("Int32", 0), ("UInt64", 0), ("UInt32", 0), ("Byte", 0), ("Float64", 0),
+    ("Bool", 0), ("String", 0), ("Bytes", 0), ("Buffer", 0), ("Void", 0), ("Node", 0),
+    ("Array", 1), ("Map", 2),
+];
+
+/// Traits whose required members the compiler implements for a conformance
+/// without them, field by field (D228 §4).
+fn has_defaults(trait_ref: &TraitRef) -> bool {
+    trait_ref.module == CORE_MODULE && matches!(trait_ref.name.as_str(), "Equatable" | "Ordered")
 }
 
 /// A trait's members have distinct names and no parameter defaults.
@@ -391,45 +482,95 @@ fn parent_cycle(start: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Opt
     walk(start, start, traits, &mut seen, &mut path).then(|| path.join(" → "))
 }
 
-type Checked = ((String, String), Vec<TraitRef>, Vec<Method>);
+/// A checked conformance: its target, its traits, the methods it adds, and
+/// which of them are the compiler's defaults.
+type Checked = ((String, String), Vec<TraitRef>, Vec<Method>, Vec<String>);
 
 fn check_conformance(
     item: &Pending,
     scope: &Scope,
     own_members: &HashMap<(String, String), OwnMembers>,
-    generic: &HashSet<(String, String)>,
+    generic: &HashMap<(String, String), usize>,
     unions: &HashSet<(String, String)>,
-    conformed: &mut HashMap<(String, String), HashMap<TraitRef, Span>>,
+    conformed: &mut Conformed,
     trait_members: &mut HashMap<(String, String), HashMap<String, TraitRef>>,
 ) -> Result<Checked> {
     let conformance = &item.conformance;
     let ty = &conformance.ty;
-    if ty.lit.is_some()
-        || ty.union_members.is_some()
-        || ty.fn_type.is_some()
-        || ty.where_clause.is_some()
-        || ty.mark.is_some()
-    {
-        return Err(Error::at("`conform` names a declared type", ty.span));
-    }
-    if BUILT_IN_TYPES.contains(&ty.name.as_str()) {
+    let built_in = CONFORMABLE_BUILT_INS
+        .iter()
+        .find(|(name, _)| *name == ty.name)
+        .map(|(_, arity)| *arity);
+    let (target, arity) = if let Some(arity) = built_in {
+        ((BUILT_IN_MODULE.to_string(), ty.name.clone()), Some(arity))
+    } else if BUILT_IN_TYPES.contains(&ty.name.as_str()) {
         return Err(Error::at(
-            format!("conforming the built-in type `{}` is not supported yet", ty.name),
+            format!("the built-in type `{}` cannot conform to a trait", ty.name),
             ty.span,
         ));
-    }
-    let Some(target) = scope.type_named(&item.module, &ty.name) else {
-        let message = if scope.trait_named(&item.module, &ty.name).is_some() {
-            format!("`{}` is a trait; `conform` names a type first: `conform Type to {}`", ty.name, ty.name)
-        } else {
-            format!("unknown type `{}`", ty.name)
+    } else {
+        let Some(target) = scope.type_named(&item.module, &ty.name) else {
+            let message = if scope.trait_named(&item.module, &ty.name).is_some() {
+                format!("`{}` is a trait; `conform` names a type first: `conform Type to {}`", ty.name, ty.name)
+            } else {
+                format!("unknown type `{}`", ty.name)
+            };
+            return Err(Error::at(message, ty.span));
         };
-        return Err(Error::at(message, ty.span));
+        let arity = generic.get(&target).copied();
+        (target, arity)
     };
-    if !ty.args.is_empty() || generic.contains(&target) {
+    // A generic or built-in target holds per instance, with bounds.
+    let bounds: Option<Vec<Vec<TraitRef>>> = match arity {
+        None if conformance.params.is_empty() => None,
+        None => {
+            return Err(Error::at(
+                format!("`{}` takes no type parameters", ty.name),
+                ty.span,
+            ))
+        }
+        Some(_) if built_in == Some(0) && conformance.params.is_empty() => Some(Vec::new()),
+        Some(count) if conformance.params.len() != count => {
+            return Err(Error::at(
+                format!(
+                    "`{}` takes {count} type parameter{}: `conform {}<{}> to …`",
+                    ty.name,
+                    if count == 1 { "" } else { "s" },
+                    ty.name,
+                    ["T", "U", "V", "W"][..count.min(4)].join(", ")
+                ),
+                ty.span,
+            ))
+        }
+        Some(_) => {
+            let mut seen = HashSet::new();
+            let mut lists = Vec::new();
+            for param in &conformance.params {
+                if !seen.insert(param.name.as_str()) {
+                    return Err(Error::at(
+                        format!("type parameter `{}` is named twice", param.name),
+                        param.span,
+                    ));
+                }
+                let mut list = Vec::new();
+                for (name, span) in &param.traits {
+                    let Some(bound) = scope.trait_named(&item.module, name) else {
+                        return Err(Error::at(format!("unknown trait `{name}`"), *span));
+                    };
+                    list.push(bound);
+                }
+                lists.push(list);
+            }
+            Some(lists)
+        }
+    };
+    if bounds.is_some() && !conformance.methods.is_empty() {
         return Err(Error::at(
-            format!("a generic type cannot conform yet (`{}`)", ty.name),
-            ty.span,
+            format!(
+                "a conformance of `{}` with members is not supported yet (generic and built-in types conform without a body for now)",
+                ty.name
+            ),
+            conformance.span,
         ));
     }
 
@@ -534,6 +675,7 @@ fn check_conformance(
     let empty = OwnMembers::default();
     let own = own_members.get(&target).unwrap_or(&empty);
     let mut methods = Vec::new();
+    let mut derived = Vec::new();
     for (trait_ref, span) in &refs {
         let entry = &scope.traits[trait_ref];
         for member in &entry.def.members {
@@ -609,6 +751,15 @@ fn check_conformance(
                     visible_members(trait_ref, scope.traits),
                 )),
                 (None, None) if own_method.is_some() => return Err(clash()),
+                // The compiler's field-by-field default (D228 §4): a method
+                // of a plain product; a union or an instance compares
+                // structurally without one.
+                (None, None) if has_defaults(trait_ref) => {
+                    if bounds.is_none() && !unions.contains(&target) {
+                        methods.push(default_member(member, conformance.span));
+                        derived.push(member.name.clone());
+                    }
+                }
                 (None, None) => {
                     return Err(Error::at(
                         format!(
@@ -625,9 +776,14 @@ fn check_conformance(
     }
     let done = conformed.entry(target.clone()).or_default();
     for (trait_ref, span) in &refs {
-        done.insert(trait_ref.clone(), *span);
+        done.insert(trait_ref.clone(), (*span, bounds.clone()));
     }
-    Ok((target, refs.into_iter().map(|(trait_ref, _)| trait_ref).collect(), methods))
+    Ok((
+        target,
+        refs.into_iter().map(|(trait_ref, _)| trait_ref).collect(),
+        methods,
+        derived,
+    ))
 }
 
 /// The conformance's method, checked against the trait member it implements:
@@ -779,6 +935,8 @@ fn archetype(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Op
         conversions: Vec::new(),
         union_members: None,
         traits: lineage.into_iter().filter(|each| !each.is_resource()).collect(),
+        conditional: Vec::new(),
+        derived: Vec::new(),
     })
 }
 
@@ -829,6 +987,41 @@ fn field_accessor(method: &str, field_ty: &TypeExpr, span: Span) -> Method {
         params,
         return_type,
         body,
+        provided: None,
+    }
+}
+
+/// A member the compiler writes for a conformance that leaves it out (D228
+/// §4): `equals` is `self == other` and `compare` the field-by-field order,
+/// both lowered structurally because the type marks them derived.
+fn default_member(member: &TraitMember, span: Span) -> Method {
+    let name = |text: &str| Expr {
+        kind: ExprKind::Name(text.to_string()),
+        span,
+    };
+    let value = if member.name == "equals" {
+        ExprKind::Binary {
+            op: BinaryOp::Eq,
+            left: Box::new(name("self")),
+            right: Box::new(name("other")),
+        }
+    } else {
+        ExprKind::Call {
+            callee: "__compare".into(),
+            args: vec![Arg::Pos(name("self")), Arg::Pos(name("other"))],
+        }
+    };
+    Method {
+        exported: true,
+        name: member.name.clone(),
+        name_span: span,
+        params: member.params.clone(),
+        return_type: member.return_type.clone(),
+        body: Block {
+            items: Vec::new(),
+            tail: Some(Box::new(Expr { kind: value, span })),
+            span,
+        },
         provided: None,
     }
 }

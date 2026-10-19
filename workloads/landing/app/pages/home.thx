@@ -100,10 +100,11 @@ type Feature(name: String, detail: String)
 fn featureList() -> Array<Feature> {
     [
         Feature(name: "Types", detail: "`Int64`, `Int32`, `UInt32`, `UInt64`, `Byte`, `Float64`, `Bool`, `String`, `Bytes`; products and unions; literal types; refinements (`where`); generic types; function types."),
+        Feature(name: "Traits", detail: "`trait` and `conform`: a type conforms only by declaring it, and a trait writes the members its conforming types share. Getters and setters read like fields; `self` is the receiver."),
         Feature(name: "Inference", detail: "Local inference for `let`. Return types are inferred for functions and methods without an annotation."),
         Feature(name: "Matching", detail: "Constructor, literal, and or-patterns, with guards. A match on a union must cover every member."),
         Feature(name: "Functions", detail: "Positional or named arguments, defaults, and multi-clause functions that dispatch on parameter types, literal types included."),
-        Feature(name: "Values", detail: "Structural `==` on products, unions, and arrays. User types as map keys. `Array` and `Map` copy on write; a `Map` keeps insertion order."),
+        Feature(name: "Values", detail: "Declared `Equatable`, `Hashable`, and `Ordered`, field by field or written by hand: `==`, map keys, and `<` on your own types. `Array` and `Map` copy on write; a `Map` keeps insertion order."),
         Feature(name: "Errors", detail: "`May`, `Trial`, and `?`. A panic ends the task it happens in, not the process."),
         Feature(name: "Memory", detail: "Reference counting. A type that conforms to `Resource` owns something outside the program and releases it with its last reference."),
         Feature(name: "Concurrency", detail: "`-->` starts a task. Socket operations park it until they can proceed. One OS thread."),

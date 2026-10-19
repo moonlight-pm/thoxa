@@ -762,6 +762,8 @@ fn parse_int_type() -> TypeDef {
         conversions: vec![],
         union_members: None,
         traits: vec![],
+        conditional: vec![],
+        derived: vec![],
     }
 }
 

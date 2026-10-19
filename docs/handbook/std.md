@@ -28,6 +28,7 @@ The source is in [`std/`](../../std/).
 
 | Module | Contents |
 |--------|----------|
+| `std/core` | The built-in traits and `Order` (in every program, no import) |
 | `std/fallible` | `May<T>` (`Has` / `Not`) and `Trial<P, F>` (`Pass` / `Fail`) |
 | `std/logging` | The process logger: `trace`, `debug`, `info`, `warn`, `error`, `emit`; level, sink, format |
 | `std/io` | Files: `readFile`, `writeFile`, `appendFile`, `File`, open modes |
@@ -45,6 +46,23 @@ The source is in [`std/`](../../std/).
 | `std/ansi` | Terminal colors |
 | `std/git` | Branch and repository facts read from `.git/HEAD` |
 
+## std/core
+
+Every program has this module, and its names need no import:
+
+| Name | What it is |
+|------|------------|
+| `Equatable` | `==` and `!=`; member `equals(other!: Self) -> Bool` |
+| `Hashable` | a Map key; parent `Equatable` |
+| `Ordered` | `<` `<=` `>` `>=`; parent `Equatable`; member `compare(other!: Self) -> Order` |
+| `Order` | `"less" \| "equal" \| "greater"` |
+| `Resource` | a shared box whose `drop()` runs with its last copy |
+
+It also declares how the built-in types conform, and writes their `equals`
+and `compare` in Thoxa (`String`'s are in `std/string`). See
+[Equality and order](language.md#equality-and-order) and
+[Traits](language.md#traits).
+
 ## std/fallible
 
 ```thx
@@ -53,7 +71,8 @@ type Trial<P, F> = Pass<P!> | Fail<F?>
 ```
 
 These are ordinary unions, not built-ins, and a program must import the names
-it uses. See [Errors and panics](language.md#errors-and-panics).
+it uses. They are `Equatable`, `Hashable`, and `Ordered` when what they hold
+is. See [Errors and panics](language.md#errors-and-panics).
 
 ## std/logging
 

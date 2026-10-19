@@ -3,16 +3,22 @@ import logging, { info } from "std/logging"
 import { Has, Not, May } from "std/fallible"
 
 type Point(x: Int64, y: Int64)
+conform Point to Equatable, Hashable
 
 type Cell(sheet: String, at: Point)
+conform Cell to Equatable, Hashable
 
 type Qty = Int64 where >= 1
 
 type Order(drink: String, qty: Qty)
+conform Order to Equatable, Hashable
 
 type Circle(radius: Int64)
+conform Circle to Equatable, Hashable
 type Square(side: Int64)
+conform Square to Equatable, Hashable
 type Shape = Circle | Square
+conform Shape to Equatable, Hashable
 
 fn label(found!: May<String>) -> String {
     match found {

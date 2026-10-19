@@ -449,6 +449,8 @@ impl Parser {
                 conversions: Vec::new(),
                 union_members: Some(members),
                 traits: Vec::new(),
+                conditional: Vec::new(),
+                derived: Vec::new(),
             });
         }
 
@@ -585,6 +587,8 @@ impl Parser {
             conversions,
             union_members: None,
             traits: Vec::new(),
+            conditional: Vec::new(),
+            derived: Vec::new(),
         })
     }
 
@@ -859,7 +863,7 @@ impl Parser {
     fn parse_conformance(&mut self) -> Result<Conformance> {
         let span = self.peek_span();
         self.expect_kind(&TokenKind::Conform)?;
-        let ty = self.parse_type()?;
+        let (ty, params) = self.parse_conformance_target()?;
         match &self.current().kind {
             TokenKind::Ident(word) if word == "to" => self.bump(),
             _ => {
@@ -903,9 +907,79 @@ impl Parser {
         Ok(Conformance {
             span,
             ty,
+            params,
             traits,
             methods,
         })
+    }
+
+    /// `Type` or `Type<T: Bound & Bound, U>` after `conform` (D228).
+    fn parse_conformance_target(&mut self) -> Result<(TypeExpr, Vec<TypeParamBound>)> {
+        let start = self.peek_span();
+        let (name, _) = self.expect_ident()?;
+        let mut params = Vec::new();
+        if self.at(TokenKind::LAngle) {
+            self.bump();
+            loop {
+                let (param, param_span) = self.expect_ident()?;
+                let traits = self.parse_bounds()?;
+                params.push(TypeParamBound {
+                    name: param,
+                    span: param_span,
+                    traits,
+                });
+                if self.at(TokenKind::Comma) {
+                    self.bump();
+                    continue;
+                }
+                break;
+            }
+            self.expect_kind(&TokenKind::RAngle)?;
+        }
+        let end = self.tokens[self.pos.saturating_sub(1)].span;
+        let args = params
+            .iter()
+            .map(|param| {
+                TypeArg::Type(TypeExpr {
+                    name: param.name.clone(),
+                    args: Vec::new(),
+                    span: param.span,
+                    lit: None,
+                    mark: None,
+                    union_members: None,
+                    fn_type: None,
+                    where_clause: None,
+                })
+            })
+            .collect();
+        let ty = TypeExpr {
+            name,
+            args,
+            span: Span::new(start.start, end.end),
+            lit: None,
+            mark: None,
+            union_members: None,
+            fn_type: None,
+            where_clause: None,
+        };
+        Ok((ty, params))
+    }
+
+    /// `: A & B` after a type parameter, or nothing (D228).
+    fn parse_bounds(&mut self) -> Result<Vec<(String, Span)>> {
+        let mut traits = Vec::new();
+        if self.at(TokenKind::Colon) {
+            self.bump();
+            loop {
+                traits.push(self.expect_ident()?);
+                if self.at(TokenKind::Amp) {
+                    self.bump();
+                    continue;
+                }
+                break;
+            }
+        }
+        Ok(traits)
     }
 
     /// `get name` / `set name` at a member's start (D228): `get` and `set` are

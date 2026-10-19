@@ -14,7 +14,10 @@ use crate::error::{Error, Result};
 use crate::loader::{std_lib_root, Package};
 
 /// Built-in types an `extend` block may name.
-const EXTENDABLE: &[&str] = &["String", "Bytes", "Buffer", "Array", "Map", "Int64", "Float64", "Bool"];
+const EXTENDABLE: &[&str] = &[
+    "String", "Bytes", "Buffer", "Array", "Map", "Int64", "Int32", "UInt64", "UInt32", "Byte",
+    "Float64", "Bool",
+];
 
 pub fn desugar_package(package: &mut Package) -> Result<()> {
     let std_root = std_lib_root().ok().and_then(|root| root.canonicalize().ok());

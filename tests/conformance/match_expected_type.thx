@@ -3,8 +3,11 @@
 import logging, { info } from "std/logging"
 
 type Circle(radius: Float64)
+conform Circle to Equatable
 type Square(side: Float64)
+conform Square to Equatable
 type Shape = Circle | Square
+conform Shape to Equatable
 type Small
 type Large(count: Int64)
 type Size = Small | Large

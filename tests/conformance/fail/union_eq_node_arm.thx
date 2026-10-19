@@ -1,9 +1,13 @@
 ## D177: `==` on a union compares the arm's payload, so every field of
 ## every arm needs `==`. Node has none.
 type Card(body: Node)
+conform Card to Equatable
 type Boxed(card: Card)
+conform Boxed to Equatable
 type Nothing()
+conform Nothing to Equatable
 type Holder = Boxed | Nothing
+conform Holder to Equatable
 
 fn main() -> Int64 {
     let left: Holder = Boxed(card: Card(body: <p>hi</p>))

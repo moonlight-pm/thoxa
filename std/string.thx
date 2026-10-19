@@ -21,6 +21,27 @@ extend String {
         self.byteCount == 0
     }
 
+    ## By Unicode scalars, which for UTF-8 is byte order: `"Z" < "a" < "é"`.
+    export fn compare(other!: String) -> Order {
+        let shorter = if self.byteCount < other.byteCount { self.byteCount } else { other.byteCount }
+        mut index = 0
+        while index < shorter {
+            let mine = self.byteAt(index)
+            let theirs = other.byteAt(index)
+            if mine != theirs {
+                return if mine < theirs { "less" } else { "greater" }
+            }
+            index = index + 1
+        }
+        if self.byteCount < other.byteCount {
+            "less"
+        } else if self.byteCount > other.byteCount {
+            "greater"
+        } else {
+            "equal"
+        }
+    }
+
     ## Every scalar is ASCII (one byte each).
     export fn isAscii() -> Bool {
         self.count == self.byteCount

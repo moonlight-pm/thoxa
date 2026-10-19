@@ -1,6 +1,7 @@
-## D175: `==` on a product compares its fields, so every field needs `==`.
-## Node has none.
+## D175 / D228: a product's default `==` compares its fields, so every field
+## needs `==`. Node has none.
 type Card(label: String, body: Node)
+conform Card to Equatable
 
 fn main() -> Int64 {
     let left = Card(label: "a", body: <p>hi</p>)
