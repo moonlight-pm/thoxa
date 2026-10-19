@@ -198,7 +198,7 @@ encoding where a `Json` is expected (and `match` takes its expected type), §5
 typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
 Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 (route clauses import only what they write; generated code names `std/http`
-itself). thoxa.dev runs `80a2369` (redeployed 2026-10-19 at Joshua's request; its manual goes through D228 slice 8, so slices 9–12 and D229–D231 are not on it yet; a redeploy needs Joshua's go-ahead).
+itself). thoxa.dev runs `7e5451d` (redeployed 2026-10-19 at Joshua's request; its manual goes through D232; a redeploy needs Joshua's go-ahead).
 
 **Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
 order"):** done; each slice with conformance and docs, decisions on the
@@ -274,7 +274,7 @@ lits; overwrite-drop; **D152** match/init RC.
 session items (Ctrl-C in a loop, the command-or-Thoxa guess, redefining a
 session `fn`) went with D227. Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14) and the copied site templates (finding 38). thoxa.dev runs `80a2369` (D228 slice 8; redeployed 2026-10-19); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
+14) and the copied site templates (finding 38). thoxa.dev runs `7e5451d` (D232; redeployed 2026-10-19); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
 
 ### Proceed order
 
