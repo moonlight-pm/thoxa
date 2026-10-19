@@ -1854,7 +1854,8 @@ fn extension_function(method: &Method, conformance: &Conformance, module: &str) 
         name: "self".into(),
         name_span: method.name_span,
         positional: true,
-        mutable: false,
+        // By address, so a member may write `self` (D228).
+        mutable: true,
         ty: self_ty,
         default: None,
     };

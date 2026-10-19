@@ -1,0 +1,18 @@
+## D233: a getter only reads. Reading a property never changes the value,
+## as reading a field does not; a getter that writes a field (here through
+## a method it calls) is an error at the getter.
+type Counter(hits: Int64) {
+    fn tick() {
+        hits = hits + 1
+    }
+
+    get next: Int64 {
+        tick()
+        hits
+    }
+}
+
+fn main() -> Int64 {
+    let counter = Counter(hits: 0)
+    counter.next
+}

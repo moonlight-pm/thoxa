@@ -1,0 +1,1 @@
+the getter `next` writes its value: reading a property never changes it

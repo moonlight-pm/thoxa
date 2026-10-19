@@ -27,6 +27,9 @@ struct SyntheticRegistry {
     /// error only if the method writes its receiver, which is known once
     /// every body in the package is lowered.
     receiver_checks: Vec<ReceiverCheck>,
+    /// Getters, each an error if it writes its receiver (D228): reading a
+    /// property never changes the value, as reading a field does not.
+    getter_checks: Vec<GetterCheck>,
     /// Types whose `==` is a generated function `__eq_{type}`, because they
     /// contain themselves (through an Array, a Map, or a union arm), so
     /// expanding their comparison inline would not end (D212).
@@ -376,6 +379,15 @@ struct ReceiverCheck {
     module_id: String,
 }
 
+/// A getter's function, for the check that it does not write its receiver.
+#[derive(Debug, Clone)]
+struct GetterCheck {
+    function: String,
+    property: String,
+    span: Span,
+    module_id: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Program {
     pub types: Vec<TypeLayout>,
@@ -450,7 +462,7 @@ fn referenced_fns(stmts: &[Stmt], out: &mut Vec<String>) {
                 referenced_fns(else_body, out);
                 None
             }
-            Stmt::Loop { body } | Stmt::ForRange { body, .. } => {
+            Stmt::Loop { body } | Stmt::ForRange { body, .. } | Stmt::StoreBack { body, .. } => {
                 referenced_fns(body, out);
                 None
             }
@@ -610,6 +622,14 @@ pub enum Stmt {
     Drop {
         place: Place,
         ty: Ty,
+    },
+    /// Stores a receiver back where it came from after a call that may have
+    /// changed it in place. C runs `body` either way; it writes the
+    /// enclosing function's receiver only when one of `callees` writes
+    /// theirs (D163, D233).
+    StoreBack {
+        callees: Vec<String>,
+        body: Vec<Stmt>,
     },
     /// `--> name(args)` — enqueue a task; do not wait for the result.
     Start {
@@ -3525,7 +3545,11 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             bodies_started.elapsed()
         );
     }
-    for error in receiver_errors(&functions, &synthetics.borrow().receiver_checks) {
+    let write_errors = {
+        let synthetics = synthetics.borrow();
+        receiver_errors(&functions, &synthetics.receiver_checks, &synthetics.getter_checks)
+    };
+    for error in write_errors {
         let path = package
             .modules
             .iter()
@@ -4082,6 +4106,7 @@ fn is_mixed(type_name: &str) -> bool {
 fn lower_mixed_call(
     ctx: &mut LowerCtx,
     receiver: Place,
+    receiver_write: ReceiverWrite,
     mixed: &str,
     method: &str,
     args: &[Arg],
@@ -4158,16 +4183,11 @@ fn lower_mixed_call(
             },
         );
         let outside = std::mem::take(&mut ctx.stmts);
-        let payload = ctx.fresh("mixpay");
-        ctx.assign_no_drop(
-            payload.clone(),
-            variant.ty.clone(),
-            RValue::SumPayload {
-                base: receiver.clone(),
-                tag: variant.tag,
-                payload_ty: variant.ty.clone(),
-            },
-        );
+        // The member's method gets the payload in place, so a write reaches
+        // the mixed value (D228 §6).
+        let payload = Place {
+            name: format!("{}.u.v{}", receiver.name, variant.tag),
+        };
         // Each branch passes its own copies: only one runs.
         let mut passed = vec![payload];
         for (place, (_, ty)) in arg_places.iter().zip(&sig.params) {
@@ -4194,6 +4214,15 @@ fn lower_mixed_call(
             else_body: Vec::new(),
         });
     }
+    let functions: Vec<String> = sum
+        .variants
+        .iter()
+        .filter_map(|variant| match &variant.ty {
+            Ty::User(member) => Some(format!("{member}__{method}")),
+            _ => None,
+        })
+        .collect();
+    store_receiver(ctx, receiver_write, receiver, &functions, method, span);
     if sig.ret == Ty::Void {
         let (unit, _) = void_place(ctx);
         return Ok((unit, Ty::Void));
@@ -7857,6 +7886,10 @@ fn lower_function(
         bind_param(&mut ctx, &p.name, ty, p.mutable);
     }
     ctx.route_clause = is_generated_route_handler(&f.name);
+    // A built-in type's getter, `__extend_String_get_initial` (D228).
+    if let Some((_, method)) = f.name.strip_prefix("__extend_").and_then(|rest| rest.rsplit_once("_get_")) {
+        note_getter(&ctx, mangled, &getter_name(method), f.name_span);
+    }
 
     let ret = lower_block_value(&mut ctx, &f.body, &ret_ty)?;
     ctx.stmts = fill_early_return_drops(ctx.stmts, &ctx.drop_places, &ret_ty);
@@ -8896,6 +8929,31 @@ fn lower_self_value(ctx: &mut LowerCtx, type_name: &str) -> (Place, Ty) {
     (place, ty)
 }
 
+/// The local a write through `receiver` changes in place, with what it is
+/// for errors: a binding by name, or, in a type's methods, `self.name` for a
+/// stored field, which is that field's local, as a bare `name` is (D228).
+fn named_receiver(ctx: &LowerCtx, receiver: &Expr) -> Option<(String, Binding)> {
+    match &receiver.kind {
+        ExprKind::Name(name) => ctx.lookup(name).map(|binding| (format!("binding `{name}`"), binding)),
+        ExprKind::Field { base, name, .. } => {
+            self_field(ctx, base, name).map(|binding| (format!("field `{name}`"), binding))
+        }
+        _ => None,
+    }
+}
+
+/// `self.name`'s local in a type's methods when `name` is a stored field,
+/// not a property read through its getter.
+fn self_field(ctx: &LowerCtx, base: &Expr, name: &str) -> Option<Binding> {
+    if !matches!(&base.kind, ExprKind::Name(base) if base == "self") || self_receiver(ctx).is_none() {
+        return None;
+    }
+    if property_accessor(ctx, name, AccessorKind::Get, None).is_some() {
+        return None;
+    }
+    ctx.method_fields.get(name).cloned()
+}
+
 /// The receiver's type when `self` names it: inside a method, unless a local
 /// is called `self` (an `extend` method's receiver parameter is).
 fn self_receiver(ctx: &LowerCtx) -> Option<String> {
@@ -9084,6 +9142,7 @@ fn lower_method(
     );
 
     define_method_scope(&mut ctx, mangled_type, m)?;
+    note_getter(&ctx, &format!("{mangled_type}__{}", m.name), &m.name, m.name_span);
 
     let ret = lower_block_value(&mut ctx, &m.body, &ret_ty)?;
     ctx.stmts = fill_early_return_drops(ctx.stmts, &ctx.drop_places, &ret_ty);
@@ -9099,6 +9158,18 @@ fn lower_method(
         ret,
         ret_ty,
     })
+}
+
+/// Note `function` for the getter check when `method` is a getter.
+fn note_getter(ctx: &LowerCtx, function: &str, method: &str, span: Span) {
+    if let Some((AccessorKind::Get, property)) = accessor_of(method) {
+        ctx.synthetics.borrow_mut().getter_checks.push(GetterCheck {
+            function: function.to_string(),
+            property: property.to_string(),
+            span,
+            module_id: ctx.module_id.clone(),
+        });
+    }
 }
 
 /// Drop every noted heap local at function end except the returned place (moved out).
@@ -9145,7 +9216,7 @@ fn collect_drop_places(stmts: &[Stmt], out: &mut Vec<(String, Ty)>) {
                 collect_drop_places(then_body, out);
                 collect_drop_places(else_body, out);
             }
-            Stmt::Loop { body } => collect_drop_places(body, out),
+            Stmt::Loop { body } | Stmt::StoreBack { body, .. } => collect_drop_places(body, out),
             Stmt::ForRange { body, .. } => collect_drop_places(body, out),
             _ => {}
         }
@@ -9612,6 +9683,25 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
             });
             Ok(())
         }
+        // `self.items[i] = …` in a type's methods writes the field (D228).
+        AssignTarget::Index {
+            base,
+            field,
+            field_span,
+            index,
+            ..
+        } if base == "self" && ctx.method_fields.contains_key(field) => {
+            let receiver = crate::ast_build::name("self");
+            match self_field(ctx, &receiver, field) {
+                Some(binding) => {
+                    assign_element(ctx, binding, &format!("field `{field}`"), *field_span, index, value)
+                }
+                None => Err(Error::at(
+                    format!("`{field}` is a property: write it whole, `self.{field} = …`"),
+                    *field_span,
+                )),
+            }
+        }
         AssignTarget::Index {
             base,
             base_span,
@@ -9619,9 +9709,18 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
             field_span,
             index,
         } => {
-            let binding = ctx
-                .lookup(base)
-                .ok_or_else(|| Error::at(format!("undefined name `{base}`"), *base_span))?;
+            // A fixed-array field of `self` is stored through the receiver.
+            let binding = match self_receiver(ctx).filter(|_| base == "self") {
+                Some(type_name) => Binding {
+                    ty: Ty::User(type_name),
+                    mutable: true,
+                    place: Place { name: "_self".into() },
+                    writeback: None,
+                },
+                None => ctx
+                    .lookup(base)
+                    .ok_or_else(|| Error::at(format!("undefined name `{base}`"), *base_span))?,
+            };
             if !binding.mutable {
                 return Err(Error::at(
                     format!("cannot assign to field of immutable binding `{base}`"),
@@ -9702,112 +9801,125 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
             let binding = ctx
                 .lookup(name)
                 .ok_or_else(|| Error::at(format!("undefined name `{name}`"), *name_span))?;
-            if !binding.mutable {
+            assign_element(ctx, binding, &format!("binding `{name}`"), *name_span, index, value)
+        }
+    }
+}
+
+/// `items[index] = value` on a binding: an Array element or a Map entry,
+/// stored through the receiver for a method's field (D107).
+fn assign_element(
+    ctx: &mut LowerCtx,
+    binding: Binding,
+    described: &str,
+    span: Span,
+    index: &Expr,
+    value: &Expr,
+) -> Result<()> {
+    if !binding.mutable {
+        return Err(Error::at(
+            format!("cannot assign through immutable {described}"),
+            span,
+        ));
+    }
+    match &binding.ty {
+        Ty::Array { elem } => {
+            let elem_ty = elem.as_ref().clone();
+            let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+            if !is_int(&idx_ty) {
+                return Err(Error::at("array index must be an integer", index.span));
+            }
+            let idx_p = if idx_ty == Ty::Int64 {
+                idx_p
+            } else {
+                coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+            };
+            let (v, vty) = lower_expr(ctx, value)?;
+            if vty != elem_ty {
                 return Err(Error::at(
-                    format!("cannot assign through immutable binding `{name}`"),
-                    *name_span,
+                    format!(
+                        "array element type mismatch: expected {elem_ty:?}, found {vty:?}"
+                    ),
+                    value.span,
                 ));
             }
-            match &binding.ty {
-                Ty::Array { elem } => {
-                    let elem_ty = elem.as_ref().clone();
-                    let (idx_p, idx_ty) = lower_expr(ctx, index)?;
-                    if !is_int(&idx_ty) {
-                        return Err(Error::at("array index must be an integer", index.span));
-                    }
-                    let idx_p = if idx_ty == Ty::Int64 {
-                        idx_p
-                    } else {
-                        coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
-                    };
-                    let (v, vty) = lower_expr(ctx, value)?;
-                    if vty != elem_ty {
-                        return Err(Error::at(
-                            format!(
-                                "array element type mismatch: expected {elem_ty:?}, found {vty:?}"
-                            ),
-                            value.span,
-                        ));
-                    }
-                    ctx.stmts.push(Stmt::DynIndexAssign {
-                        base: binding.place.clone(),
-                        index: idx_p,
-                        elem_ty,
-                        value: v,
-                    });
-                    write_back_field(ctx, &binding);
-                    Ok(())
-                }
-                Ty::Map { key, val } => {
-                    let key_ty = key.as_ref().clone();
-                    let val_ty = val.as_ref().clone();
-                    let (kp, kt) = lower_expr(ctx, index)?;
-                    if kt != key_ty {
-                        return Err(Error::at(
-                            format!("Map key type mismatch: expected {key_ty:?}, found {kt:?}"),
-                            index.span,
-                        ));
-                    }
-                    let (v, vty) = lower_expr(ctx, value)?;
-                    if vty != val_ty {
-                        return Err(Error::at(
-                            format!("Map value type mismatch: expected {val_ty:?}, found {vty:?}"),
-                            value.span,
-                        ));
-                    }
-                    let kp = coerce_map_key(ctx, kp, &key_ty);
-                    let map_ty = binding.ty.clone();
-                    ctx.assign(
-                        binding.place.clone(),
-                        map_ty,
-                        RValue::MapSet {
-                            map: binding.place.clone(),
-                            key: kp,
-                            val: v,
-                            key_ty,
-                            val_ty,
-                        },
-                    );
-                    write_back_field(ctx, &binding);
-                    Ok(())
-                }
-                Ty::FixedArray { elem, len } => {
-                    let elem_ty = elem.as_ref().clone();
-                    let len = *len;
-                    let (idx_p, idx_ty) = lower_expr(ctx, index)?;
-                    if !is_int(&idx_ty) {
-                        return Err(Error::at("array index must be an integer", index.span));
-                    }
-                    let idx_p = if idx_ty == Ty::Int64 {
-                        idx_p
-                    } else {
-                        coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
-                    };
-                    if let ExprKind::Int(n) = &index.kind {
-                        if *n < 0 || (*n as u64) >= len {
-                            return Err(Error::at(
-                                format!("index {n} out of bounds for Array of length {len}"),
-                                index.span,
-                            ));
-                        }
-                    }
-                    let (v, vty) = lower_expr(ctx, value)?;
-                    let v = coerce_to_field(ctx, v, &vty, &elem_ty, value.span)?;
-                    ctx.stmts.push(Stmt::FixedIndexAssign {
-                        base: binding.place,
-                        index: idx_p,
-                        ty: elem_ty,
-                        value: v,
-                        len,
-                    });
-                    Ok(())
-                }
-                other => Err(Error::at(
-                    format!("index assign on non-Array type {other:?}"),
-                    *name_span,
-                )),
-            }
+            ctx.stmts.push(Stmt::DynIndexAssign {
+                base: binding.place.clone(),
+                index: idx_p,
+                elem_ty,
+                value: v,
+            });
+            write_back_field(ctx, &binding);
+            Ok(())
         }
+        Ty::Map { key, val } => {
+            let key_ty = key.as_ref().clone();
+            let val_ty = val.as_ref().clone();
+            let (kp, kt) = lower_expr(ctx, index)?;
+            if kt != key_ty {
+                return Err(Error::at(
+                    format!("Map key type mismatch: expected {key_ty:?}, found {kt:?}"),
+                    index.span,
+                ));
+            }
+            let (v, vty) = lower_expr(ctx, value)?;
+            if vty != val_ty {
+                return Err(Error::at(
+                    format!("Map value type mismatch: expected {val_ty:?}, found {vty:?}"),
+                    value.span,
+                ));
+            }
+            let kp = coerce_map_key(ctx, kp, &key_ty);
+            let map_ty = binding.ty.clone();
+            ctx.assign(
+                binding.place.clone(),
+                map_ty,
+                RValue::MapSet {
+                    map: binding.place.clone(),
+                    key: kp,
+                    val: v,
+                    key_ty,
+                    val_ty,
+                },
+            );
+            write_back_field(ctx, &binding);
+            Ok(())
+        }
+        Ty::FixedArray { elem, len } => {
+            let elem_ty = elem.as_ref().clone();
+            let len = *len;
+            let (idx_p, idx_ty) = lower_expr(ctx, index)?;
+            if !is_int(&idx_ty) {
+                return Err(Error::at("array index must be an integer", index.span));
+            }
+            let idx_p = if idx_ty == Ty::Int64 {
+                idx_p
+            } else {
+                coerce_place(ctx, idx_p, &idx_ty, &Ty::Int64, index.span)?
+            };
+            if let ExprKind::Int(n) = &index.kind {
+                if *n < 0 || (*n as u64) >= len {
+                    return Err(Error::at(
+                        format!("index {n} out of bounds for Array of length {len}"),
+                        index.span,
+                    ));
+                }
+            }
+            let (v, vty) = lower_expr(ctx, value)?;
+            let v = coerce_to_field(ctx, v, &vty, &elem_ty, value.span)?;
+            ctx.stmts.push(Stmt::FixedIndexAssign {
+                base: binding.place,
+                index: idx_p,
+                ty: elem_ty,
+                value: v,
+                len,
+            });
+            Ok(())
+        }
+        other => Err(Error::at(
+            format!("index assign on non-Array type {other:?}"),
+            span,
+        )),
     }
 }
 
@@ -10288,6 +10400,10 @@ fn fill_early_return_drops(
                 index,
                 end,
                 inclusive,
+                body: fill_early_return_drops(body, drop_places, ret_ty),
+            }),
+            Stmt::StoreBack { callees, body } => out.push(Stmt::StoreBack {
+                callees,
                 body: fill_early_return_drops(body, drop_places, ret_ty),
             }),
             other => out.push(other),
@@ -11869,7 +11985,7 @@ fn lower_field(
     // A getter std declares on a built-in type with `extend` (D228).
     if !matches!(base_ty, Ty::User(_)) {
         if let Some(sig) = extension_method(ctx, &base_ty, &getter_name(name), name_span)? {
-            return lower_extension_call(ctx, base_p, &base_ty, sig, name, &[], name_span);
+            return lower_extension_call(ctx, Some(base), base_p, &base_ty, sig, name, &[], name_span);
         }
     }
     // A Float64's IEEE bits (D228: std/core hashes it with them).
@@ -12007,7 +12123,8 @@ fn lower_field(
             // A `mixed T`'s property, through its member type (D228 §6).
             if is_mixed(type_name) {
                 let type_name = type_name.clone();
-                return lower_mixed_call(ctx, base_p, &type_name, &getter_name(name), &[], name_span);
+                let read = ReceiverWrite::ReadOnly("a property read".into());
+                return lower_mixed_call(ctx, base_p, read, &type_name, &getter_name(name), &[], name_span);
             }
             // A property with a getter reads through it (D228).
             let getter = getter_name(name);
@@ -12537,63 +12654,59 @@ fn lower_method_call_typed(
             | "set"
             | "remove"
     ) {
-        if let ExprKind::Name(recv_name) = &receiver.kind {
-            if let Some(binding) = ctx.lookup(recv_name) {
-                if binding.ty == Ty::Buffer {
-                    let result = lower_buffer_method(
-                        ctx,
-                        binding.place.clone(),
-                        method,
-                        args,
+        if let Some((described, binding)) = named_receiver(ctx, receiver) {
+            if binding.ty == Ty::Buffer {
+                let result = lower_buffer_method(
+                    ctx,
+                    binding.place.clone(),
+                    method,
+                    args,
+                    method_span,
+                    /*write_back*/ method != "freeze",
+                )?;
+                if method != "freeze" {
+                    write_back_field(ctx, &binding);
+                }
+                return Ok(result);
+            }
+            if matches!(&binding.ty, Ty::Array { .. } | Ty::Map { .. }) {
+                let mutating = !matches!(method, "freeze");
+                if mutating && !binding.mutable {
+                    return Err(Error::at(
+                        format!("cannot mutate immutable {described}"),
                         method_span,
-                        /*write_back*/ method != "freeze",
-                    )?;
-                    if method != "freeze" {
-                        write_back_field(ctx, &binding);
-                    }
-                    return Ok(result);
+                    ));
                 }
-                if matches!(&binding.ty, Ty::Array { .. } | Ty::Map { .. }) {
-                    let mutating = !matches!(method, "freeze");
-                    if mutating && !binding.mutable {
-                        return Err(Error::at(
-                            format!("cannot mutate immutable binding `{recv_name}`"),
-                            method_span,
-                        ));
-                    }
-                    let recv_p = binding.place.clone();
-                    let recv_ty = binding.ty.clone();
-                    let result =
-                        lower_collection_method(ctx, recv_p, &recv_ty, method, args, method_span)?;
-                    if mutating {
-                        write_back_field(ctx, &binding);
-                    }
-                    return Ok(result);
+                let recv_p = binding.place.clone();
+                let recv_ty = binding.ty.clone();
+                let result =
+                    lower_collection_method(ctx, recv_p, &recv_ty, method, args, method_span)?;
+                if mutating {
+                    write_back_field(ctx, &binding);
                 }
+                return Ok(result);
             }
         }
         // `grid[i].append(x)` on a `mut` Array: change a copy of the element,
         // then store it back, as `items[i].method()` does (D163).
         if let ExprKind::Index { base, index } = &receiver.kind {
-            if let ExprKind::Name(array_name) = &base.kind {
-                if let Some(binding) = ctx.lookup(array_name) {
-                    let elem_ty = match &binding.ty {
-                        Ty::Array { elem } => elem.as_ref().clone(),
-                        _ => Ty::Void,
-                    };
-                    let collection = matches!(elem_ty, Ty::Array { .. } | Ty::Map { .. });
-                    if collection {
-                        return lower_element_collection_write(
-                            ctx,
-                            array_name,
-                            binding,
-                            &elem_ty,
-                            index,
-                            method,
-                            args,
-                            method_span,
-                        );
-                    }
+            if let Some((described, binding)) = named_receiver(ctx, base) {
+                let elem_ty = match &binding.ty {
+                    Ty::Array { elem } => elem.as_ref().clone(),
+                    _ => Ty::Void,
+                };
+                let collection = matches!(elem_ty, Ty::Array { .. } | Ty::Map { .. });
+                if collection {
+                    return lower_element_collection_write(
+                        ctx,
+                        &described,
+                        binding,
+                        &elem_ty,
+                        index,
+                        method,
+                        args,
+                        method_span,
+                    );
                 }
             }
         }
@@ -12602,71 +12715,19 @@ fn lower_method_call_typed(
     // User method receivers: use the binding place when the receiver is a name so
     // D107 field write-back mutates the caller's object (not a needs_drop temp copy).
     // `items[i].method()` on a `mut` Array stores the element back (D163).
-    let mut receiver_write = ReceiverWrite::ReadOnly("a temporary value".into());
-    let (recv_p, recv_ty) = match &receiver.kind {
-        ExprKind::Name(n) => match ctx.lookup(n) {
-            Some(b) if matches!(&b.ty, Ty::User(_)) => {
-                receiver_write = if b.mutable {
-                    ReceiverWrite::Binding(b.clone())
-                } else {
-                    ReceiverWrite::ReadOnly(format!("immutable binding `{n}`"))
-                };
-                (b.place.clone(), b.ty.clone())
-            }
-            _ => lower_expr(ctx, receiver)?,
-        },
-        ExprKind::Index { base, index } => {
-            let array = match &base.kind {
-                ExprKind::Name(n) => ctx.lookup(n).and_then(|b| match &b.ty {
-                    Ty::Array { elem } if matches!(elem.as_ref(), Ty::User(_)) => {
-                        Some((n.clone(), b.clone(), elem.as_ref().clone()))
-                    }
-                    _ => None,
-                }),
-                _ => None,
-            };
-            match array {
-                Some((name, binding, elem_ty)) => {
-                    let (index_p, index_ty) = lower_expr(ctx, index)?;
-                    if !is_int(&index_ty) {
-                        return Err(Error::at("array index must be an integer", index.span));
-                    }
-                    let index_p = if index_ty == Ty::Int64 {
-                        index_p
-                    } else {
-                        coerce_place(ctx, index_p, &index_ty, &Ty::Int64, index.span)?
-                    };
-                    let element = ctx.fresh("aget");
-                    ctx.assign(
-                        element.clone(),
-                        elem_ty.clone(),
-                        RValue::ArrayGet {
-                            arr: binding.place.clone(),
-                            index: index_p.clone(),
-                            elem_ty: elem_ty.clone(),
-                        },
-                    );
-                    receiver_write = if binding.mutable {
-                        ReceiverWrite::Element {
-                            binding,
-                            index: index_p,
-                            elem_ty: elem_ty.clone(),
-                        }
-                    } else {
-                        ReceiverWrite::ReadOnly(format!("an element of immutable binding `{name}`"))
-                    };
-                    (element, elem_ty)
+    let in_place = receiver_in_place(ctx, receiver, |ty| matches!(ty, Ty::User(_)))?;
+    let (recv_p, recv_ty, receiver_write) = match in_place {
+        Some(in_place) => in_place,
+        None => {
+            let receiver_write = ReceiverWrite::ReadOnly(match &receiver.kind {
+                ExprKind::Field { name, .. } => {
+                    format!("field `{name}` (a field changes only inside its own type's methods)")
                 }
-                None => lower_expr(ctx, receiver)?,
-            }
+                _ => "a temporary value".into(),
+            });
+            let (place, ty) = lower_expr(ctx, receiver)?;
+            (place, ty, receiver_write)
         }
-        ExprKind::Field { name, .. } => {
-            receiver_write = ReceiverWrite::ReadOnly(format!(
-                "field `{name}` (a field changes only inside its own type's methods)"
-            ));
-            lower_expr(ctx, receiver)?
-        }
-        _ => lower_expr(ctx, receiver)?,
     };
     let collection_write = matches!(
         method,
@@ -12710,12 +12771,12 @@ fn lower_method_call_typed(
     // Methods std writes in Thoxa with `extend` (D196), then the runtime's.
     if let Some(sig) = extension_method(ctx, &recv_ty, method, method_span)? {
         no_type_args(&explicit, method, method_span)?;
-        return lower_extension_call(ctx, recv_p, &recv_ty, sig, method, args, method_span);
+        return lower_extension_call(ctx, Some(receiver), recv_p, &recv_ty, sig, method, args, method_span);
     }
     // A generic `extend` block's (`extend Array<T: Equatable>`, D228 §5).
     if let Some(template) = generic_extension(ctx, &recv_ty, method, method_span)? {
-        let receiver = codec::bind_fresh(ctx, "__receiver", &recv_ty, recv_p);
-        let mut all_args = vec![Arg::Pos(crate::ast_build::name(&receiver))];
+        let (receiver_arg, receiver_write, place) = extension_receiver(ctx, Some(receiver), recv_p, &recv_ty)?;
+        let mut all_args = vec![receiver_arg];
         all_args.extend(args.iter().cloned());
         let instance = generic::instantiate_call(ctx, &template, method, &all_args, method_span, None, &explicit)?;
         let sig = ctx.fns[&instance].clone();
@@ -12729,7 +12790,9 @@ fn lower_method_call_typed(
             method_span,
             &sig.def_mod,
         )?;
-        return emit_call_result(ctx, Callee::User(instance), places, sig.ret);
+        let result = emit_call_result(ctx, Callee::User(instance.clone()), places, sig.ret)?;
+        store_receiver(ctx, receiver_write, place, &[instance], method, method_span);
+        return Ok(result);
     }
     if !matches!(recv_ty, Ty::User(_)) {
         no_type_args(&explicit, method, method_span)?;
@@ -12823,7 +12886,7 @@ fn lower_method_call_typed(
             // generic type's instance): the structural default (D228).
             // A `mixed T`'s member, through its member type (D228 §6).
             if is_mixed(&type_name) {
-                return lower_mixed_call(ctx, recv_p, &type_name, method, args, method_span);
+                return lower_mixed_call(ctx, recv_p, receiver_write, &type_name, method, args, method_span);
             }
             if !info.methods.contains_key(method) && method == "show" && args.is_empty() {
                 let text = order::show_text(ctx, recv_p, &recv_ty, method_span)?;
@@ -12904,31 +12967,8 @@ fn lower_method_call_typed(
             )?;
             // A `drop` type is a shared box (D155): every copy sees the write.
             if !type_has_drop(&ctx.types, &recv_ty) {
-                match receiver_write {
-                    ReceiverWrite::Binding(binding) => write_back_field(ctx, &binding),
-                    ReceiverWrite::Element {
-                        binding,
-                        index,
-                        elem_ty,
-                    } => {
-                        ctx.stmts.push(Stmt::DynIndexAssign {
-                            base: binding.place.clone(),
-                            index,
-                            elem_ty,
-                            value: recv_p,
-                        });
-                        write_back_field(ctx, &binding);
-                    }
-                    ReceiverWrite::ReadOnly(receiver) => {
-                        ctx.synthetics.borrow_mut().receiver_checks.push(ReceiverCheck {
-                            function: format!("{type_name}__{method}"),
-                            method: method.to_string(),
-                            receiver,
-                            span: method_span,
-                            module_id: ctx.module_id.clone(),
-                        });
-                    }
-                }
+                let functions = [format!("{type_name}__{method}")];
+                store_receiver(ctx, receiver_write, recv_p, &functions, method, method_span);
             }
             Ok(result)
         }
@@ -12939,29 +12979,44 @@ fn lower_method_call_typed(
     }
 }
 
-/// Methods that write their receiver: a store through `_self`, or a call
-/// on `_self` to a sibling that does. (A field's method call writes the
-/// field back through `_self` directly.)
-fn mutating_methods(functions: &[Function]) -> HashSet<String> {
-    let mut mutating: HashSet<String> = functions
+/// The functions that write their receiver (D163, D233): a type's methods,
+/// which write through `_self`, and built-in types' members, which write
+/// `*self`. One writes it by storing to it, by passing it to a `mut`
+/// parameter, by calling a sibling that writes it, or by storing it back
+/// after a call that writes its own (`Stmt::StoreBack`).
+fn mutating_functions(functions: &[Function]) -> HashSet<String> {
+    let members: HashSet<&str> = functions
         .iter()
-        .filter(|function| function.receiver.is_some() && stmts_write_self(&function.body))
-        .map(|function| function.name.clone())
+        .filter(|function| is_member_of_built_in(function))
+        .map(|function| function.name.as_str())
         .collect();
-    let calls: Vec<(String, Vec<String>)> = functions
-        .iter()
-        .filter(|function| function.receiver.is_some())
-        .map(|function| {
-            let mut siblings = Vec::new();
-            stmts_self_calls(&function.body, &mut siblings);
-            (function.name.clone(), siblings)
-        })
-        .filter(|(_, siblings)| !siblings.is_empty())
-        .collect();
+    let mut mutating = HashSet::new();
+    let mut edges: Vec<(String, Vec<String>)> = Vec::new();
+    for function in functions {
+        let receiver = if function.receiver.is_some() {
+            "_self".to_string()
+        } else if is_member_of_built_in(function) {
+            format!("(*{})", sanitize_name("self"))
+        } else {
+            continue;
+        };
+        let mut effects = ReceiverEffects {
+            receiver,
+            members: &members,
+            writes: false,
+            calls: Vec::new(),
+        };
+        effects.scan(&function.body);
+        if effects.writes {
+            mutating.insert(function.name.clone());
+        } else if !effects.calls.is_empty() {
+            edges.push((function.name.clone(), effects.calls));
+        }
+    }
     loop {
         let before = mutating.len();
-        for (name, siblings) in &calls {
-            if siblings.iter().any(|sibling| mutating.contains(sibling)) {
+        for (name, calls) in &edges {
+            if calls.iter().any(|call| mutating.contains(call)) {
                 mutating.insert(name.clone());
             }
         }
@@ -12971,58 +13026,127 @@ fn mutating_methods(functions: &[Function]) -> HashSet<String> {
     }
 }
 
-/// The C names of the methods called on `_self` (sibling calls).
-fn stmts_self_calls(stmts: &[Stmt], out: &mut Vec<String>) {
-    for stmt in stmts {
-        match stmt {
-            Stmt::Assign {
-                value: RValue::Call { callee, args },
-                ..
-            }
-            | Stmt::Eval(RValue::Call { callee, args }) => {
-                if let Callee::Method { type_name, method } = callee {
-                    if args.first().is_some_and(|recv| recv.name == "_self") {
-                        out.push(format!("{type_name}__{method}"));
+/// A built-in type's member: a function whose first parameter is `self`,
+/// by address.
+fn is_member_of_built_in(function: &Function) -> bool {
+    function.receiver.is_none()
+        && function.mut_params.first() == Some(&true)
+        && function.params.first().is_some_and(|(name, _)| *name == sanitize_name("self"))
+}
+
+/// What a body does to its receiver (`receiver`, the C place): whether it
+/// writes it outright, and the functions it writes it through if they
+/// write theirs.
+struct ReceiverEffects<'a> {
+    receiver: String,
+    members: &'a HashSet<&'a str>,
+    writes: bool,
+    calls: Vec<String>,
+}
+
+impl ReceiverEffects<'_> {
+    fn scan(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::Assign { place, value, .. } => {
+                    self.writes |= place.name == self.receiver;
+                    if let RValue::Call { callee, args } = value {
+                        self.call(callee, args);
                     }
                 }
+                Stmt::Eval(RValue::Call { callee, args }) => self.call(callee, args),
+                Stmt::FieldAssign { base, .. }
+                | Stmt::IndexAssign { base, .. }
+                | Stmt::DynIndexAssign { base, .. }
+                | Stmt::FixedIndexAssign { base, .. } => self.writes |= base.name == self.receiver,
+                Stmt::If {
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    self.scan(then_body);
+                    self.scan(else_body);
+                }
+                Stmt::Loop { body } | Stmt::ForRange { body, .. } => self.scan(body),
+                Stmt::StoreBack { callees, body } => {
+                    let mut inner = ReceiverEffects {
+                        receiver: self.receiver.clone(),
+                        members: self.members,
+                        writes: false,
+                        calls: Vec::new(),
+                    };
+                    inner.scan(body);
+                    if inner.writes {
+                        self.calls.extend(callees.iter().cloned());
+                    }
+                }
+                _ => {}
             }
-            Stmt::If {
-                then_body,
-                else_body,
-                ..
-            } => {
-                stmts_self_calls(then_body, out);
-                stmts_self_calls(else_body, out);
+        }
+    }
+
+    /// A call that takes the receiver: a sibling method on `_self`, a
+    /// member on `&*self`, or anything else, which writes it.
+    fn call(&mut self, callee: &Callee, args: &[Place]) {
+        let address = format!("&{}", self.receiver);
+        for (index, arg) in args.iter().enumerate() {
+            let sibling = match callee {
+                Callee::Method { type_name, method } if index == 0 && arg.name == self.receiver => {
+                    Some(format!("{type_name}__{method}"))
+                }
+                Callee::User(name) if index == 0 && arg.name == address && self.members.contains(name.as_str()) => {
+                    Some(name.clone())
+                }
+                _ => None,
+            };
+            match sibling {
+                Some(sibling) => self.calls.push(sibling),
+                None => self.writes |= arg.name == address,
             }
-            Stmt::Loop { body } | Stmt::ForRange { body, .. } => stmts_self_calls(body, out),
-            _ => {}
         }
     }
 }
 
-fn stmts_write_self(stmts: &[Stmt]) -> bool {
-    stmts.iter().any(|stmt| match stmt {
-        Stmt::FieldAssign { base, .. } | Stmt::IndexAssign { base, .. } => base.name == "_self",
-        Stmt::If {
-            then_body,
-            else_body,
-            ..
-        } => stmts_write_self(then_body) || stmts_write_self(else_body),
-        Stmt::Loop { body } | Stmt::ForRange { body, .. } => stmts_write_self(body),
-        _ => false,
-    })
-}
-
 /// D163: a method that writes its receiver needs a writable one. Returns
 /// each error with the id of the module it is in.
-fn receiver_errors(functions: &[Function], checks: &[ReceiverCheck]) -> Vec<(Error, String)> {
-    if checks.is_empty() {
+fn receiver_errors(
+    functions: &[Function],
+    checks: &[ReceiverCheck],
+    getters: &[GetterCheck],
+) -> Vec<(Error, String)> {
+    if checks.is_empty() && getters.is_empty() {
         return Vec::new();
     }
-    let mutating = mutating_methods(functions);
-    // Return inference (D129) lowers a body twice: report each call once.
+    let mutating = mutating_functions(functions);
+    // Return inference (D129) lowers a body twice: report each once.
     let mut seen = HashSet::new();
-    checks
+    let returns: HashMap<&str, &Ty> = functions
+        .iter()
+        .map(|function| (function.name.as_str(), &function.ret_ty))
+        .collect();
+    let getter_errors = getters
+        .iter()
+        .filter(|getter| mutating.contains(&getter.function))
+        .filter(|getter| seen.insert((getter.module_id.clone(), getter.span.start, getter.span.end)))
+        .map(|getter| {
+            let shown = returns
+                .get(getter.function.as_str())
+                .map_or_else(|| "…".to_string(), |ty| display_ty(ty));
+            let error = Error::at(
+                format!(
+                    "the getter `{}` writes its value: reading a property never changes it",
+                    getter.property
+                ),
+                getter.span,
+            )
+            .with_help(format!(
+                "make it a method, `fn {}() -> {shown} {{ … }}`, which may write fields",
+                getter.property
+            ));
+            (error, getter.module_id.clone())
+        })
+        .collect::<Vec<_>>();
+    getter_errors.into_iter().chain(checks
         .iter()
         .filter(|check| mutating.contains(&check.function))
         .filter(|check| seen.insert((check.module_id.clone(), check.span.start, check.span.end)))
@@ -13039,8 +13163,57 @@ fn receiver_errors(functions: &[Function], checks: &[ReceiverCheck]) -> Vec<(Err
                 check.method
             ));
             (error, check.module_id.clone())
-        })
+        }))
         .collect()
+}
+
+/// After a call that may have changed `recv` in place: store it back where
+/// it came from, or, when it cannot be written, check once every body is
+/// lowered that none of `functions` (the methods the call may run) writes
+/// its receiver (D163).
+fn store_receiver(
+    ctx: &mut LowerCtx,
+    receiver_write: ReceiverWrite,
+    recv: Place,
+    functions: &[String],
+    method: &str,
+    span: Span,
+) {
+    let outside = std::mem::take(&mut ctx.stmts);
+    match receiver_write {
+        ReceiverWrite::Binding(binding) => write_back_field(ctx, &binding),
+        ReceiverWrite::Element {
+            binding,
+            index,
+            elem_ty,
+        } => {
+            ctx.stmts.push(Stmt::DynIndexAssign {
+                base: binding.place.clone(),
+                index,
+                elem_ty,
+                value: recv,
+            });
+            write_back_field(ctx, &binding);
+        }
+        ReceiverWrite::ReadOnly(receiver) => {
+            for function in functions {
+                ctx.synthetics.borrow_mut().receiver_checks.push(ReceiverCheck {
+                    function: function.clone(),
+                    method: method.to_string(),
+                    receiver: receiver.clone(),
+                    span,
+                    module_id: ctx.module_id.clone(),
+                });
+            }
+        }
+    }
+    let body = std::mem::replace(&mut ctx.stmts, outside);
+    if !body.is_empty() {
+        ctx.stmts.push(Stmt::StoreBack {
+            callees: functions.to_vec(),
+            body,
+        });
+    }
 }
 
 /// How a user method call writes its receiver back (D163).
@@ -13425,7 +13598,7 @@ fn unwritable_receiver(ctx: &LowerCtx, receiver: &Expr) -> Option<String> {
 /// and stores it back into the `mut` Array.
 fn lower_element_collection_write(
     ctx: &mut LowerCtx,
-    array_name: &str,
+    described: &str,
     binding: Binding,
     elem_ty: &Ty,
     index: &Expr,
@@ -13435,7 +13608,7 @@ fn lower_element_collection_write(
 ) -> Result<(Place, Ty)> {
     if !binding.mutable {
         return Err(Error::at(
-            format!("cannot mutate an element of immutable binding `{array_name}`"),
+            format!("cannot mutate an element of immutable {described}"),
             span,
         ));
     }
@@ -13830,10 +14003,15 @@ fn generic_extension(ctx: &LowerCtx, ty: &Ty, method: &str, span: Span) -> Resul
     Ok(None)
 }
 
-/// `value.method(args)` for an `extend` method: the receiver is the
-/// function's first argument.
+/// `value.method(args)` for a built-in type's member (an `extend` method or
+/// a conformance's): the function's first argument is the receiver, by
+/// address, so a member may write `self` (D228). `receiver` is the written
+/// receiver, when there is one: a binding or an element of one is passed
+/// in place.
+#[allow(clippy::too_many_arguments)]
 fn lower_extension_call(
     ctx: &mut LowerCtx,
+    receiver: Option<&Expr>,
     recv: Place,
     recv_ty: &Ty,
     sig: FnSig,
@@ -13842,29 +14020,113 @@ fn lower_extension_call(
     span: Span,
 ) -> Result<(Place, Ty)> {
     ctx.infer_check_callee(&sig.mangled, method, span)?;
-    let receiver = codec::bind_fresh(ctx, "__receiver", recv_ty, recv);
-    let (receiver_name, receiver_ty) = sig.params[0].clone();
-    let mut places = vec![lower_arg_for_formal(
+    let (receiver_arg, receiver_write, place) = extension_receiver(ctx, receiver, recv, recv_ty)?;
+    let mut all_args = vec![receiver_arg];
+    all_args.extend(args.iter().cloned());
+    let places = resolve_call_args_full(
         ctx,
-        &crate::ast_build::name(&receiver),
-        &receiver_ty,
-        &receiver_name,
-        0,
-    )?];
-    let defaults = sig.defaults.get(1..).unwrap_or(&[]);
-    let mutable = sig.mutable.get(1..).unwrap_or(&[]);
-    let marked = sig.positional.get(1..).unwrap_or(&[]);
-    places.extend(resolve_call_args_full(
-        ctx,
-        &sig.params[1..],
-        defaults,
-        mutable,
-        marked,
-        args,
+        &sig.params,
+        &sig.defaults,
+        &sig.mutable,
+        &sig.positional,
+        &all_args,
         span,
         &sig.def_mod,
-    )?);
-    emit_call_result(ctx, Callee::User(sig.mangled.clone()), places, sig.ret)
+    )?;
+    let result = emit_call_result(ctx, Callee::User(sig.mangled.clone()), places, sig.ret)?;
+    store_receiver(ctx, receiver_write, place, &[sig.mangled.clone()], method, span);
+    Ok(result)
+}
+
+/// The receiver argument of a built-in type's member: `mut` an alias of the
+/// place the member may change (D228), with how that place is stored back
+/// after the call (`store_receiver`). A binding or an element of one is
+/// that place; anything else is the temporary `recv`.
+fn extension_receiver(
+    ctx: &mut LowerCtx,
+    receiver: Option<&Expr>,
+    recv: Place,
+    recv_ty: &Ty,
+) -> Result<(Arg, ReceiverWrite, Place)> {
+    let in_place = match receiver {
+        Some(receiver) => receiver_in_place(ctx, receiver, |ty| ty == recv_ty)?,
+        None => None,
+    };
+    let (place, _, receiver_write) = in_place
+        .unwrap_or_else(|| (recv, recv_ty.clone(), ReceiverWrite::ReadOnly("a temporary value".into())));
+    let alias = format!("__receiver{}", ctx.temps);
+    ctx.temps += 1;
+    ctx.define_full(&alias, recv_ty.clone(), true, place.clone(), None);
+    let span = receiver.map_or_else(Span::dummy, |receiver| receiver.span);
+    let arg = Arg::Pos(Expr {
+        kind: ExprKind::MutArg(alias),
+        span,
+    });
+    Ok((arg, receiver_write, place))
+}
+
+/// The place a method call on `receiver` changes in place, with its type,
+/// when it is a binding (or `self.field`) or an element of an Array
+/// binding whose type `fits`, and how it is stored back (D163): a `mut`
+/// binding is its own place, an element is loaded and stored back into its
+/// `mut` Array, and an immutable one is checked once every body is
+/// lowered.
+fn receiver_in_place(
+    ctx: &mut LowerCtx,
+    receiver: &Expr,
+    fits: impl Fn(&Ty) -> bool,
+) -> Result<Option<(Place, Ty, ReceiverWrite)>> {
+    if let Some((described, binding)) = named_receiver(ctx, receiver) {
+        if !fits(&binding.ty) {
+            return Ok(None);
+        }
+        let (place, ty) = (binding.place.clone(), binding.ty.clone());
+        let receiver_write = if binding.mutable {
+            ReceiverWrite::Binding(binding)
+        } else {
+            ReceiverWrite::ReadOnly(format!("immutable {described}"))
+        };
+        return Ok(Some((place, ty, receiver_write)));
+    }
+    let ExprKind::Index { base, index } = &receiver.kind else {
+        return Ok(None);
+    };
+    let Some((described, binding)) = named_receiver(ctx, base) else {
+        return Ok(None);
+    };
+    let elem_ty = match &binding.ty {
+        Ty::Array { elem } if fits(elem) => elem.as_ref().clone(),
+        _ => return Ok(None),
+    };
+    let (index_p, index_ty) = lower_expr(ctx, index)?;
+    if !is_int(&index_ty) {
+        return Err(Error::at("array index must be an integer", index.span));
+    }
+    let index_p = if index_ty == Ty::Int64 {
+        index_p
+    } else {
+        coerce_place(ctx, index_p, &index_ty, &Ty::Int64, index.span)?
+    };
+    let element = ctx.fresh("aget");
+    ctx.assign(
+        element.clone(),
+        elem_ty.clone(),
+        RValue::ArrayGet {
+            arr: binding.place.clone(),
+            index: index_p.clone(),
+            elem_ty: elem_ty.clone(),
+        },
+    );
+    let receiver_write = if binding.mutable {
+        ReceiverWrite::Element {
+            binding,
+            index: index_p,
+            elem_ty: elem_ty.clone(),
+        }
+    } else {
+        ReceiverWrite::ReadOnly(format!("an element of immutable {described}"))
+    };
+    Ok(Some((element, elem_ty, receiver_write)))
 }
 
 /// String's primitives (D196): `name → (runtime builtin, parameters, result)`.

@@ -36,8 +36,9 @@ fn is_name_token(kind: &TokenKind) -> bool {
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
-    /// Synthetic `>` closers left after splitting a `>>` (Shr) in type args (D113).
-    extra_rangles: usize,
+    /// Each `>>` split in type arguments (D113): its position and the token
+    /// it was, so backing out restores it.
+    split_shr: Vec<(usize, Token)>,
     /// Recoverable errors inside blocks that still produced a partial AST.
     soft_errors: Vec<Error>,
     /// Original source (byte offsets match token spans). Needed so JSX text
@@ -71,7 +72,7 @@ impl Parser {
         Self {
             tokens,
             pos: 0,
-            extra_rangles: 0,
+            split_shr: Vec::new(),
             soft_errors: Vec::new(),
             source: String::new(),
             depth: 0,
@@ -1481,9 +1482,7 @@ impl Parser {
                     break;
                 }
             }
-            self.expect_rangle()?;
-            // After a synthetic `>` from `>>`, prev token may still be Shr — fine for spans.
-            self.prev_span().end
+            self.expect_rangle()?
         } else {
             start_span.end
         };
@@ -1746,22 +1745,26 @@ impl Parser {
 
     /// `>` or the first half of `>>` (lexer emits Shr for nested generics like `May<Array<T>>`).
     fn at_rangle(&self) -> bool {
-        self.extra_rangles > 0 || self.at(TokenKind::RAngle) || self.at(TokenKind::Shr)
+        self.at(TokenKind::RAngle) || self.at(TokenKind::Shr)
     }
 
-    fn expect_rangle(&mut self) -> Result<()> {
-        if self.extra_rangles > 0 {
-            self.extra_rangles -= 1;
-            return Ok(());
-        }
+    /// Take a `>` closing type arguments; the offset just past it.
+    fn expect_rangle(&mut self) -> Result<usize> {
         if self.at(TokenKind::RAngle) {
+            let end = self.current().span.end;
             self.bump();
-            Ok(())
+            Ok(end)
         } else if self.at(TokenKind::Shr) {
-            // Consume one `>` from `>>`; leave one synthetic closer for the outer type.
-            self.bump();
-            self.extra_rangles += 1;
-            Ok(())
+            // Take the first `>` of `>>` and leave the second as the current
+            // token, so the outer list sees its `>` before anything after it.
+            let token = self.current().clone();
+            self.split_shr.push((self.pos, token.clone()));
+            self.tokens[self.pos] = Token {
+                kind: TokenKind::RAngle,
+                span: Span::new(token.span.start + 1, token.span.end),
+                line_start: false,
+            };
+            Ok(token.span.start + 1)
         } else {
             Err(Error::at(
                 format!("expected `>`, found {:?}", self.current().kind),
@@ -2321,8 +2324,7 @@ impl Parser {
                     break;
                 }
             }
-            self.expect_rangle()?;
-            end = self.prev_span().end;
+            end = self.expect_rangle()?;
         }
         Ok(TypeExpr {
             name,
@@ -2825,7 +2827,7 @@ impl Parser {
         if !self.at(TokenKind::LAngle) || !self.angle_glued_to_prev() || !self.angle_glued_to_next() {
             return Vec::new();
         }
-        let (pos, extra, soft) = (self.pos, self.extra_rangles, self.soft_errors.len());
+        let (pos, splits, soft) = (self.pos, self.split_shr.len(), self.soft_errors.len());
         let parsed = (|| -> Result<Vec<TypeExpr>> {
             self.bump();
             let mut args = Vec::new();
@@ -2840,10 +2842,12 @@ impl Parser {
             Ok(args)
         })();
         match parsed {
-            Ok(args) if self.extra_rangles == extra && self.at(TokenKind::LParen) => args,
+            Ok(args) if self.at(TokenKind::LParen) => args,
             _ => {
                 self.pos = pos;
-                self.extra_rangles = extra;
+                for (at, token) in self.split_shr.drain(splits..).rev() {
+                    self.tokens[at] = token;
+                }
                 self.soft_errors.truncate(soft);
                 Vec::new()
             }
@@ -4408,6 +4412,25 @@ mod tests {
             }
             _ => panic!("expected function"),
         }
+    }
+
+    #[test]
+    fn parse_double_rangle_before_comma() {
+        // The second `>` of `>>` closes the outer list before a comma does.
+        let module = parse(
+            r#"
+            fn f(rows: Array<Array<Int64>>, other: Map<String, Array<Int64>>, last: Int64) -> Int64 {
+                last
+            }
+            "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        let names: Vec<&str> = f.params.iter().map(|param| param.name.as_str()).collect();
+        assert_eq!(names, ["rows", "other", "last"]);
+        assert_eq!(f.params[0].ty.args.len(), 1);
+        assert_eq!(f.params[1].ty.args.len(), 2);
     }
 
     #[test]

@@ -73,7 +73,8 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
                 name: "self".into(),
                 name_span: extension.span,
                 positional: true,
-                mutable: false,
+                // By address, so a member may write `self` (D228).
+                mutable: true,
                 ty: extension.ty.clone(),
                 default: None,
             };

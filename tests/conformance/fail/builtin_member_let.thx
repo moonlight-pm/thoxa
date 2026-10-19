@@ -1,0 +1,22 @@
+## D233: a built-in type's member that writes `self` needs a writable
+## receiver, here through a member that calls it.
+trait Steps {
+    fn step()
+    fn twice()
+}
+
+conform Int64 to Steps {
+    fn step() {
+        self = self + 1
+    }
+
+    fn twice() {
+        step()
+    }
+}
+
+fn main() -> Int64 {
+    let number = 5
+    number.twice()
+    number
+}

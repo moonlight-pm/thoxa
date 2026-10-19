@@ -19,6 +19,18 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Writes through `self`
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D233 | Writes reach the value they name: `self.items`, built-in members, `mixed`; a getter only reads | In a type's methods `self.items` is the field `items` for every write a bare `items` takes: `self.items.append(x)`, `self.items[0] = x`, `self.rows[0].append(x)`, `self.tally.bump()`, `self.tallies[0].bump()`. A built-in type's member (an `extend` method or a conformance's) may write `self` (`self = self + 1`, `self.append(item)`): it is then a mutating member and needs a writable receiver, as a type's mutating methods do (D163), checked through the members it calls. A mutating member called through `mixed` writes the value inside (a `mut` binding, an element of a `mut` array, or a field in the type's own methods). A getter only reads: one that writes a field, or calls a method that does, is an error at the getter ("reading a property never changes it"), since uniform access means reading a property, like reading a field, never needs `mut`. A method that only reads through a field's method (`tally.value()`) no longer counts as mutating. | **Shipped** 2026-10-19 (the D228 gaps "`self.items.append(x)`", "a built-in type's member that writes `self`", "a mutating member called through `mixed` writes a copy", "a getter that writes fields writes a copy"; the getter rule is the uniform-access reading of freeze §3). `named_receiver` / `self_field` give `self.name`'s field local; `receiver_in_place` passes a binding or an element of one in place for user methods and built-in members alike; a built-in member's `self` is a `mut` parameter (by address), its call passing `mut` an alias of the receiver's place (`extension_receiver`); `lower_mixed_call` hands the member its payload in place (`value.u.vN`). Stores back after such calls are `Stmt::StoreBack { callees, body }`, a write only when a callee writes its receiver; `mutating_functions` (one fixpoint for methods and members, replacing `mutating_methods`) reads them, and getters are checked against it (`GetterCheck`). Found on the way: a field store of an `Array` or `Map` dropped the old value without its elements' fields, leaking them when it was the last copy (cgen `FieldAssign` now drops through `emit_rc`). Gates: `self_writes`, `fail/getter_writes`, `fail/builtin_member_let`, `fail/builtin_member_temporary`, `fail/mixed_mutating_let`. |
+
+## 2026-10-19 — `>>` before a comma
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D234 | `>>` closing two type-argument lists closes both before what follows | `rows: Array<Array<Int64>>, other: Int64` declares two parameters. The parser splits a `>>` token in place (the second `>` stays the current token) instead of counting a pending closer, so a `,`, `|`, or `!` after it belongs to the outer type. | **Shipped** 2026-10-19. Before, the outer list read the comma as another argument (`Array<Array<Int64>, other>`), so a constructor or function parameter after a nested generic was a syntax error. `Parser::split_shr` records each split for `call_type_args` to restore when it backs out. Gate: `parser::tests::parse_double_rangle_before_comma`. |
+
 ## 2026-10-19 — Generic types' methods checked against their bounds
 
 | ID | Decision | Choice | Notes |

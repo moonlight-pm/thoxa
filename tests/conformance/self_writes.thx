@@ -1,0 +1,168 @@
+## Writes through `self` (D233). In a type's methods `self.items` is the
+## field `items`: `self.items.append(x)`, `self.items[0] = x`, and a method
+## call on a field or on one of its elements change the field. A built-in
+## type's member may write `self`, a mutating member through `mixed` writes
+## the value inside, and each needs a writable receiver, as a type's
+## mutating methods do. A method that only reads through a field's method
+## does not write its receiver, so a `let` may call it.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Tally(count: Int64) {
+    export fn bump() {
+        count = count + 1
+    }
+
+    export fn value() -> Int64 {
+        count
+    }
+}
+
+type Report(tally: Tally, title: String) {
+    export fn read() -> String {
+        "{title.trim()}: {tally.value()}"
+    }
+}
+
+type Shelf(items: Array<Int64>, tags: Map<String, Int64>, rows: Array<Array<Int64>>, tallies: Array<Tally>, total: Tally) {
+    export fn add(item: Int64) {
+        self.items.append(item)
+        self.tags["n{item}"] = item
+        self.rows[0].append(item)
+        self.tallies[0].bump()
+        self.total.bump()
+    }
+
+    export fn reset() {
+        self.items[0] = 0
+        self.items.removeAt(self.items.count - 1)
+    }
+}
+
+trait Steps {
+    fn step()
+    fn twice()
+}
+
+conform Int64 to Steps {
+    fn step() {
+        self = self + 1
+    }
+
+    fn twice() {
+        step()
+        self.step()
+    }
+}
+
+trait Stack {
+    type Item
+    fn push(item!: Item)
+    fn pop() -> May<Item>
+}
+
+conform Array<T> to Stack {
+    type Item = T
+
+    fn push(item!: T) {
+        self.append(item)
+    }
+
+    fn pop() -> May<T> {
+        if self.count == 0 {
+            return Not()
+        }
+        let last = self[self.count - 1]
+        self.removeAt(self.count - 1)
+        Has(last)
+    }
+}
+
+type Counter(steps: Int64, names: Array<String>) {
+    export fn advance() {
+        steps.twice()
+        names.push("step {steps}")
+    }
+}
+
+trait Bump {
+    fn bump()
+    fn label() -> String
+}
+
+type One(count: Int64, mark: String)
+
+conform One to Bump {
+    fn bump() {
+        count = count + 1
+        mark = "{mark}+"
+    }
+
+    fn label() -> String {
+        "{mark}{count}"
+    }
+}
+
+type Two(count: Int64)
+
+conform Two to Bump {
+    fn bump() {
+        count = count + 2
+    }
+
+    fn label() -> String {
+        "two {count}"
+    }
+}
+
+type Scene(parts: Array<mixed Bump>, lead: mixed Bump) {
+    export fn bumpAll() {
+        parts[0].bump()
+        self.parts[1].bump()
+        lead.bump()
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut shelf = Shelf(items: [], tags: Map(), rows: [[]], tallies: [Tally(count: 0)], total: Tally(count: 10))
+    shelf.add(item: 1)
+    shelf.add(item: 2)
+    info("{shelf.items} {shelf.tags.count} {shelf.rows} {shelf.tallies[0].count} {shelf.total.count}")
+    shelf.reset()
+    info("{shelf.items}")
+
+    mut number = 5
+    number.twice()
+    info("{number}")
+
+    mut stack = [1]
+    stack.push(2)
+    stack.push(3)
+    let popped = match stack.pop() {
+        Has(value) => "{value}"
+        Not => "empty"
+    }
+    info("{popped} {stack}")
+
+    mut counter = Counter(steps: 0, names: [])
+    counter.advance()
+    counter.advance()
+    info("{counter.steps} {counter.names}")
+
+    mut part: mixed Bump = One(count: 0, mark: "a")
+    part.bump()
+    part.bump()
+    info(part.label())
+    mut parts: Array<mixed Bump> = [One(count: 0, mark: "x"), Two(count: 0)]
+    parts[0].bump()
+    parts[1].bump()
+    mut scene = Scene(parts: parts, lead: Two(count: 10))
+    scene.bumpAll()
+    info("{scene.parts[0].label()}, {scene.parts[1].label()}, {scene.lead.label()}")
+    info("{parts[0].label()}, {parts[1].label()}")
+
+    let report = Report(tally: Tally(count: 3), title: " tally ")
+    info(report.read())
+}

@@ -703,7 +703,7 @@ fn collect_locals(stmts: &[Stmt], locals: &mut Vec<(String, Ty)>, seen: &mut Has
                 collect_locals(then_body, locals, seen);
                 collect_locals(else_body, locals, seen);
             }
-            Stmt::Loop { body } => collect_locals(body, locals, seen),
+            Stmt::Loop { body } | Stmt::StoreBack { body, .. } => collect_locals(body, locals, seen),
             Stmt::ForRange { body, .. } => collect_locals(body, locals, seen),
             Stmt::Return { .. }
             | Stmt::Dup { .. }
@@ -857,7 +857,7 @@ fn collect_starts<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
                 collect_starts(then_body, out);
                 collect_starts(else_body, out);
             }
-            Stmt::Loop { body } => collect_starts(body, out),
+            Stmt::Loop { body } | Stmt::StoreBack { body, .. } => collect_starts(body, out),
             Stmt::ForRange { body, .. } => collect_starts(body, out),
             _ => {}
         }
@@ -1097,8 +1097,16 @@ fn emit_stmts(
                     continue;
                 }
                 // Heap field store: drop previous field ownership, then share
-                // `value` (MIR Dup keeps a live local when needed).
-                if is_heap_ty(ty, types) {
+                // `value` (MIR Dup keeps a live local when needed). An Array or
+                // Map drops its elements' fields too when it is the last copy.
+                if matches!(ty, Ty::Array { .. } | Ty::Map { .. }) {
+                    let field_place = crate::mir::Place {
+                        name: format!("{}{}{}", base.name, acc, field),
+                    };
+                    emit_rc(out, &pad, &field_place, ty, false, types);
+                    let _ = writeln!(out, "{pad}{} = ({}){};", field_place.name, c_val_ty(ty, types), value.name);
+                    emit_rc(out, &pad, value, ty, true, types);
+                } else if is_heap_ty(ty, types) {
                     let _ = writeln!(out, "{pad}thoxa_drop({}{}{});", base.name, acc, field);
                     let _ = writeln!(
                         out,
@@ -1252,6 +1260,9 @@ fn emit_stmts(
                 let _ = writeln!(out, "{pad}while (1) {{");
                 emit_stmts(out, body, indent + 1, types, start_id, fn_label, boxed);
                 let _ = writeln!(out, "{pad}}}");
+            }
+            Stmt::StoreBack { body, .. } => {
+                emit_stmts(out, body, indent, types, start_id, fn_label, boxed);
             }
             Stmt::ForRange {
                 index,
@@ -2070,7 +2081,9 @@ fn collect_map_keys_stmts(stmts: &[Stmt], out: &mut Vec<String>) {
                 collect_map_keys_stmts(then_body, out);
                 collect_map_keys_stmts(else_body, out);
             }
-            Stmt::Loop { body } | Stmt::ForRange { body, .. } => collect_map_keys_stmts(body, out),
+            Stmt::Loop { body } | Stmt::ForRange { body, .. } | Stmt::StoreBack { body, .. } => {
+                collect_map_keys_stmts(body, out)
+            }
             _ => {}
         }
     }
@@ -2800,7 +2813,7 @@ fn collect_user_array_elems_stmts(stmts: &[Stmt], out: &mut Vec<String>) {
                 collect_user_array_elems_stmts(then_body, out);
                 collect_user_array_elems_stmts(else_body, out);
             }
-            Stmt::Loop { body } => collect_user_array_elems_stmts(body, out),
+            Stmt::Loop { body } | Stmt::StoreBack { body, .. } => collect_user_array_elems_stmts(body, out),
             Stmt::ForRange { body, .. } => collect_user_array_elems_stmts(body, out),
             _ => {}
         }
@@ -3263,7 +3276,7 @@ fn collect_fn_targets_stmts(stmts: &[Stmt], thunks: &mut Vec<FnTarget>, recvs: &
                 collect_fn_targets_stmts(then_body, thunks, recvs);
                 collect_fn_targets_stmts(else_body, thunks, recvs);
             }
-            Stmt::Loop { body } | Stmt::ForRange { body, .. } => {
+            Stmt::Loop { body } | Stmt::ForRange { body, .. } | Stmt::StoreBack { body, .. } => {
                 collect_fn_targets_stmts(body, thunks, recvs);
             }
             _ => {}

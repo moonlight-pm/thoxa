@@ -1412,8 +1412,10 @@ compile error.
 
 `self` is the receiver. Alone it is a copy of the whole value; `self.count` is
 the field even where a local named `count` hides it; `self.count = 2` writes
-the field, as `count = 2` does; and `self.bump()` calls a sibling method. In a
-type's methods, `Self` names the type.
+the field, as `count = 2` does, and so do the field's other writes through
+`self` (`self.items.append(x)`, `self.items[0] = x`, `self.tally.bump()`); and
+`self.bump()` calls a sibling method. In a type's methods, `Self` names the
+type.
 
 ```thx
 type Tally(count: Int64) {
@@ -1464,7 +1466,10 @@ temperature.celsius = 30.0              ## kelvin is now 303.0
 ```
 
 - `get name: Type { … }` declares a getter. It takes no arguments.
-  `value.name` reads it, and so does a bare `name` inside the type.
+  `value.name` reads it, and so does a bare `name` inside the type. A getter
+  only reads: reading a property, like reading a field, never changes the
+  value, so a getter that writes a field, or calls a method that does, is a
+  compile error. Write a method for that.
 - `set name(value: Type) { … }` declares a setter, with one parameter, the new
   value. `value.name = x` on a `mut` binding calls it, from outside the type
   as from inside; it is a mutating member.
@@ -1507,18 +1512,22 @@ let stored = counter.n          ## 15
 ```
 
 The same holds for in-place collection writes on fields (`items.append(x)`,
-`items[i] = x`, `tags[k] = v`, `.remove`) and for calls to other types'
-mutating methods on a field.
+`items[i] = x`, `tags[k] = v`, `.remove`, written bare or through `self`) and
+for calls to other types' mutating methods on a field or on one of its
+elements (`tallies[0].bump()`).
 
 ### Mutating methods
 
-A method that writes a field, or calls a sibling method that does, needs a
-writable receiver: a `mut` binding, or
-`items[i]` on a `mut` array (the element is stored back). Calling it on a
-`let`, a parameter, a `for` or match binding, or a temporary is a compile
-error. From outside its type a field is read-only, so `pair.left.add(by: 1)`
-is an error; inside `Pair`'s own methods, `left.add(by: 1)` writes back. A
-`Resource` is exempt (its values are shared boxes).
+A method that writes a field, calls a sibling method that does, or calls a
+mutating method on one of its fields, needs a writable receiver: a `mut`
+binding, or `items[i]` on a `mut` array (the element is stored back). A
+method that only reads through a field's methods does not. Calling a mutating
+method on a `let`, a parameter, a `for` or match binding, or a temporary is a
+compile error. From outside its type a field is read-only, so
+`pair.left.add(by: 1)` is an error; inside `Pair`'s own methods,
+`left.add(by: 1)` writes back. A `Resource` is exempt (its values are shared
+boxes). The same rule holds for a built-in type's members that write `self`
+and for members called through a `mixed` value.
 
 ### Traits
 
@@ -1599,9 +1608,11 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
 - A built-in type conforms too, with bounds for `Array` and `Map`
   (`conform Array<T: Show> to Describe`). Its members are written like the
   methods std adds to it: `self` is the value (`self.count`), and a bare
-  call or property reaches the value's own (`describe()`). They take the
-  value as it is and cannot change it. A built-in type's own methods (`String`'s
-  `trim`) count as members, so a trait cannot add one of the same name.
+  call or property reaches the value's own (`describe()`). A member may change
+  the value by writing `self` (`self = self + 1`, `self.append(item)`); it is
+  then a mutating member, called on a `mut` binding. A built-in type's own
+  methods (`String`'s `trim`) count as members, so a trait cannot add one of
+  the same name.
 
 ```thx
 type Box<T>(value: T)
@@ -1837,7 +1848,9 @@ fn kind(shape!: mixed Shape) -> String {
   type is unknown), nor one whose signature names an associated type (each
   type names its own).
 - `match` takes it apart by type, and ends in `else`: more types can conform.
-- It is a value: copies are copies.
+- It is a value: copies are copies. A mutating member called through it
+  changes the value inside, so it needs a `mut` binding (or an element of a
+  `mut` array).
 - It holds the declared types that conform without bounds; a generic type's
   instances and built-in types are not among them.
 

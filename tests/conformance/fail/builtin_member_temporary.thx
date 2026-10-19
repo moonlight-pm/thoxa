@@ -1,0 +1,20 @@
+## D233: a built-in type's member that writes `self`, called on a
+## temporary, would change the temporary and drop the change.
+trait Steps {
+    fn step()
+}
+
+conform Int64 to Steps {
+    fn step() {
+        self = self + 1
+    }
+}
+
+fn five() -> Int64 {
+    5
+}
+
+fn main() -> Int64 {
+    five().step()
+    0
+}

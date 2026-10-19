@@ -245,6 +245,7 @@ fn call_extension_compare(
     let right = super::codec::bind_fresh(ctx, "__other", ty, right);
     lower_extension_call(
         ctx,
+        None,
         left,
         ty,
         sig,

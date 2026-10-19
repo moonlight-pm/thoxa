@@ -76,7 +76,7 @@ pub(super) fn instantiate_call(
         if !mentions(&param.ty, &names) {
             continue;
         }
-        let ty = infer_block_ty(ctx, &tail_block(arg.clone()))?;
+        let ty = infer_block_ty(ctx, &tail_block(probe(arg)))?;
         bind(&param.ty, &ty, &names, &mut bindings, ctx, arg.span, shown)?;
     }
     if let (Some(ret), Some(expect)) = (&function.return_type, expect) {
@@ -108,6 +108,17 @@ pub(super) fn instantiate_call(
     };
     ctx.fns.insert(instance.clone(), sig);
     Ok(instance)
+}
+
+/// An argument as its type is inferred: `mut items` has the type of `items`.
+fn probe(arg: &Expr) -> Expr {
+    match &arg.kind {
+        ExprKind::MutArg(binding) => Expr {
+            kind: ExprKind::Name(binding.clone()),
+            span: arg.span,
+        },
+        _ => arg.clone(),
+    }
 }
 
 /// The type arguments a call writes out (D230), bound to `own` in order:
@@ -252,7 +263,7 @@ pub(super) fn instantiate_method(
         if !mentions(&param.ty, &names) {
             continue;
         }
-        let ty = infer_block_ty(ctx, &tail_block(arg.clone()))?;
+        let ty = infer_block_ty(ctx, &tail_block(probe(arg)))?;
         bind(&param.ty, &ty, &names, &mut bindings, ctx, arg.span, &shown)?;
     }
     let help = format!("write them out, `.{method}<{}>(…)`: a method's come from its arguments", names.join(", "));
@@ -637,7 +648,7 @@ pub(super) fn infer_constructor(
         if !mentions(&param.ty, &names) {
             continue;
         }
-        let ty = infer_block_ty(ctx, &tail_block(arg.clone()))?;
+        let ty = infer_block_ty(ctx, &tail_block(probe(arg)))?;
         bind(&param.ty, &ty, &names, &mut bindings, ctx, arg.span, shown)?;
     }
     let mut args_tys = Vec::new();

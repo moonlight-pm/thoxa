@@ -1,0 +1,19 @@
+## D233: a mutating member called through `mixed` writes the value inside,
+## so it needs a writable receiver.
+trait Bump {
+    fn bump()
+}
+
+type One(count: Int64)
+
+conform One to Bump {
+    fn bump() {
+        count = count + 1
+    }
+}
+
+fn main() -> Int64 {
+    let part: mixed Bump = One(count: 0)
+    part.bump()
+    0
+}
