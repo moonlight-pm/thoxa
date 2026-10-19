@@ -46,6 +46,37 @@ struct SyntheticRegistry {
     late_mono_jobs: Vec<MonoMethodJob>,
 }
 
+/// A generic type's instance for `args` meets its parameters' bounds.
+fn instance_meets_bounds(
+    types: &HashMap<String, TypeInfo>,
+    conditional: &HashMap<String, Vec<ast::ConditionalConformance>>,
+    generics: &HashMap<String, GenericDef>,
+    base: &str,
+    args: &[Ty],
+) -> Result<()> {
+    let Some(gdef) = generics.get(base) else {
+        return Ok(());
+    };
+    for ((param, bounds), arg) in gdef.type_params.iter().zip(&gdef.bounds).zip(args) {
+        for bound in bounds {
+            if !ty_conforms(types, conditional, arg, bound) {
+                let shown: Vec<String> = args.iter().map(display_ty).collect();
+                return Err(Error::at(
+                    format!(
+                        "`{}<{}>`: `{param}` must be `{}`, and {} is not",
+                        gdef.source_name,
+                        shown.join(", "),
+                        bound.name,
+                        display_ty(arg)
+                    ),
+                    gdef.name_span,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// A trait std's core module declares (`Equatable`, `Hashable`, `Ordered`).
 fn core_trait(name: &str) -> TraitRef {
     TraitRef {
@@ -1228,6 +1259,9 @@ struct GenericDef {
     def_mod: String,
     kind: GenericKind,
     name_span: Span,
+    /// Each type parameter's bounds, which an instance's arguments meet
+    /// (D228 §5).
+    bounds: Vec<Vec<TraitRef>>,
 }
 
 #[derive(Clone)]
@@ -1861,6 +1895,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                         mangled_base: mangled.clone(),
                         type_params: td.type_params.clone(),
                         def_mod: m.id.clone(),
+                        bounds: td.bounds.clone(),
                         kind,
                         name_span: td.name_span,
                     },
@@ -2520,6 +2555,19 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     // Every global's init lands in one C function: number temps across all of
     // them, or `_obj0` from two modules would share one (mistyped) local.
     let mut init_temps = 0;
+    // A generic type's instances meet its parameters' bounds (D228 §5).
+    let mut bound_errors = Vec::new();
+    for info in types_info.values() {
+        if let Some((base, args)) = &info.instance {
+            if let Err(error) = instance_meets_bounds(&types_info, &conditional, &generics, base, args) {
+                bound_errors.push(in_module_id(error, package, &info.def_mod));
+            }
+        }
+    }
+    if !bound_errors.is_empty() {
+        return Err(errors_to_multi(bound_errors));
+    }
+
     // Each generic function is checked once, as its instance for its own
     // archetypes (D228 §5).
     let checking_jobs: Vec<generic::InstanceJob> = generic_templates
@@ -6422,6 +6470,7 @@ fn instantiate_product_mono(
                 }],
                 return_type: Some(clause.return_type.clone()),
                 body: clause.body.clone(),
+                type_params: Vec::new(),
                 provided: None,
             },
             subst: subst.clone(),
@@ -7445,6 +7494,7 @@ fn subst_method(m: &Method, subst: &HashMap<String, Ty>) -> Method {
             .collect(),
         return_type: m.return_type.as_ref().map(|t| subst_type_expr(t, subst)),
         body: subst_block(&m.body, subst),
+        type_params: m.type_params.clone(),
         provided: m.provided.clone(),
     }
 }

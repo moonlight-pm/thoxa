@@ -1,0 +1,1 @@
+a type's method cannot take type parameters yet (`twice`): write a generic function

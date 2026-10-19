@@ -116,6 +116,10 @@ pub struct TypeDef {
     /// Members whose bodies are the compiler's field-by-field defaults
     /// (`equals`, `compare`), from conformances that do not write them (D228).
     pub derived: Vec<String>,
+    /// Each type parameter's bounds as written (`type SortedSet<T: Ordered>`),
+    /// parallel to `type_params`, and as `trait_desugar` resolves them.
+    pub param_bounds: Vec<Vec<(String, Span)>>,
+    pub bounds: Vec<Vec<TraitRef>>,
 }
 
 /// A trait by its defining module's id and its name (D228).
@@ -238,6 +242,8 @@ pub struct Method {
     pub exported: bool,
     pub name: String,
     pub name_span: Span,
+    /// `fn map<U>(…)` (D228 §5): in an `extend` block for now.
+    pub type_params: Vec<TypeParamBound>,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
     pub body: Block,

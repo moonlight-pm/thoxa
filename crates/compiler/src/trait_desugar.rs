@@ -266,6 +266,7 @@ pub fn desugar_package(package: &mut Package) -> Result<BuiltInConformances> {
         core_types,
     };
     generic_functions(package, &scope)?;
+    type_bounds(package, &scope)?;
     // The type's own members, before any conformance adds to them.
     let mut own_members: HashMap<(String, String), OwnMembers> = HashMap::new();
     let mut generic: HashMap<(String, String), usize> = HashMap::new();
@@ -871,6 +872,7 @@ fn provided_method(
         exported: true,
         name: member.name.clone(),
         name_span: member.name_span,
+        type_params: Vec::new(),
         params: member.params.clone(),
         return_type: member.return_type.clone(),
         body,
@@ -939,6 +941,8 @@ fn archetype(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Op
         traits: lineage.into_iter().filter(|each| !each.is_resource()).collect(),
         conditional: Vec::new(),
         derived: Vec::new(),
+        param_bounds: Vec::new(),
+        bounds: Vec::new(),
     })
 }
 
@@ -989,6 +993,7 @@ fn field_accessor(method: &str, field_ty: &TypeExpr, span: Span) -> Method {
         params,
         return_type,
         body,
+        type_params: Vec::new(),
         provided: None,
     }
 }
@@ -1034,6 +1039,7 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
             tail: Some(Box::new(Expr { kind: value, span })),
             span,
         },
+        type_params: Vec::new(),
         provided: None,
     }
 }
@@ -1055,6 +1061,48 @@ fn generic_functions(package: &mut Package, scope: &Scope) -> Result<()> {
             }
         }
         module.ast.items.extend(archetypes.into_iter().map(Item::Type));
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::multi(errors))
+    }
+}
+
+/// A generic type's parameters' bounds, resolved in its module: every
+/// instance's arguments must meet them (D228 §5).
+fn type_bounds(package: &mut Package, scope: &Scope) -> Result<()> {
+    let mut errors = Vec::new();
+    for module in &mut package.modules {
+        for item in &mut module.ast.items {
+            let Item::Type(def) = item else { continue };
+            if let Some(method) = def.methods.iter().find(|method| !method.type_params.is_empty()) {
+                errors.push(
+                    Error::at(
+                        format!(
+                            "a type's method cannot take type parameters yet (`{}`): write a generic function",
+                            method.name
+                        ),
+                        method.name_span,
+                    )
+                    .with_path(module.path.clone()),
+                );
+            }
+            let mut resolved = Vec::new();
+            for bounds in &def.param_bounds {
+                let mut list = Vec::new();
+                for (name, span) in bounds {
+                    match scope.trait_named(&module.id, name) {
+                        Some(bound) => list.push(bound),
+                        None => errors.push(
+                            Error::at(format!("unknown trait `{name}`"), *span).with_path(module.path.clone()),
+                        ),
+                    }
+                }
+                resolved.push(list);
+            }
+            def.bounds = resolved;
+        }
     }
     if errors.is_empty() {
         Ok(())
@@ -1181,6 +1229,8 @@ fn param_archetype(
         traits: lineage_all,
         conditional: Vec::new(),
         derived: Vec::new(),
+        param_bounds: Vec::new(),
+        bounds: Vec::new(),
     })
 }
 

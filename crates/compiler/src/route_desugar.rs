@@ -602,6 +602,7 @@ fn build_route_method(handlers: &[HandlerMeta], name_span: Span, names: &HttpNam
         params: vec![param("req", ty_named(&names.request))],
         return_type: Some(ty_named(&names.response)),
         body,
+        type_params: Vec::new(),
         provided: None,
     })
 }
@@ -768,6 +769,8 @@ fn parse_int_type() -> TypeDef {
         traits: vec![],
         conditional: vec![],
         derived: vec![],
+        param_bounds: Vec::new(),
+        bounds: Vec::new(),
     }
 }
 

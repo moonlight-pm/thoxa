@@ -55,3 +55,25 @@ extend Array<T: Ordered> {
         out
     }
 }
+
+extend Array<T> {
+    ## Each element through `transform`, in order.
+    export fn map<U>(transform!: (item: T) -> U) -> Array<U> {
+        mut out: Array<U> = []
+        for element in self {
+            out.append(transform(element))
+        }
+        out
+    }
+
+    ## The elements `keep` says yes to, in order.
+    export fn filter(keep!: (item: T) -> Bool) -> Array<T> {
+        mut out: Array<T> = []
+        for element in self {
+            if keep(element) {
+                out.append(element)
+            }
+        }
+        out
+    }
+}

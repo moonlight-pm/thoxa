@@ -483,8 +483,10 @@ mut names: Array<String> = []
 | `.contains(item)` | whether an element `==` `item`; `T` is `Equatable` |
 | `.indexOf(item)` | the first such element's index, a `May<Int64>`; `T` is `Equatable` |
 | `.sorted()` | a copy in ascending order, equal elements in their order; `T` is `Ordered` |
+| `.map(transform)` | each element through the function `transform`, an `Array<U>` |
+| `.filter(keep)` | the elements the function `keep` returns `true` for |
 
-The last three are written in Thoxa in std/array, for the arrays whose
+The last five are written in Thoxa in std/array, for the arrays whose
 element type meets their bound (see [Generic functions](#generic-functions)).
 The writing members return `Void` and need a writable place: write
 `xs.append(4)`, not `xs = xs.append(4)`. Arrays may nest; an inner array is
@@ -675,8 +677,10 @@ let a: Opt<Int64> = Box(value: 7)
 let b = Box(value: "seven")             ## a Box<String>
 ```
 
-A constructor takes its type arguments from the expected type, or, without
-one, from its arguments: `Box(value: "seven")` is a `Box<String>`, and
+A type parameter may have bounds, which every instance's argument must meet:
+`type Range<T: Ordered>(low: T, high: T)` has a `Range<Int64>` and no
+`Range<Node>`. A constructor takes its type arguments from the expected type,
+or, without one, from its arguments: `Box(value: "seven")` is a `Box<String>`, and
 `Box(value: [])` is an error, since `[]` names no element type.
 
 A field of a generic type may be any integer type, `Float64`, `Bool`,

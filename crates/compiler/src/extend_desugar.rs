@@ -81,7 +81,12 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
                 exported: method.exported,
                 name: extension_fn_name(&key, &method.name),
                 name_span: method.name_span,
-                type_params: extension.params.clone(),
+                type_params: extension
+                    .params
+                    .iter()
+                    .chain(&method.type_params)
+                    .cloned()
+                    .collect(),
                 params: std::iter::once(receiver).chain(method.params.iter().cloned()).collect(),
                 return_type: method.return_type.clone(),
                 body: method.body.clone(),

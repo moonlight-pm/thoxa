@@ -1,0 +1,9 @@
+## D228 §5: a generic type's instances meet its parameters' bounds.
+type Range<T: Ordered>(low: T, high: T)
+
+type Point(x: Int64, y: Int64)
+conform Point to Equatable
+
+fn main() {
+    let corners: Range<Point> = Range(low: Point(x: 0, y: 0), high: Point(x: 1, y: 1))
+}

@@ -1,0 +1,34 @@
+## Bounds on a generic type's parameters (D228 §5), and type parameters on
+## std's Array methods: `map<U>` and `filter` take function values.
+import logging, { info } from "std/logging"
+
+## Every instance's `T` is `Ordered`.
+type Range<T: Ordered>(low: T, high: T) {
+    export fn holds(value!: T) -> Bool {
+        value >= low and value <= high
+    }
+}
+
+fn double(value!: Int64) -> Int64 {
+    value * 2
+}
+
+fn isEven(value!: Int64) -> Bool {
+    value % 2 == 0
+}
+
+fn shout(word!: String) -> String {
+    "{word.toUpper()}!"
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let digits = Range(low: 0, high: 9)
+    info("range: {digits.holds(4)} {digits.holds(12)}")
+    let letters = Range(low: "a", high: "m")
+    info("letters: {letters.holds(\"f\")} {letters.holds(\"z\")}")
+    info("map: {[1, 2, 3].map(double)} {[\"hi\"].map(shout)}")
+    info("filter: {[1, 2, 3, 4].filter(isEven)}")
+    info("chain: {[5, 6, 7].filter(isEven).map(double)}")
+}

@@ -1,0 +1,5 @@
+range: true false
+letters: true false
+map: [2, 4, 6] ["HI!"]
+filter: [2, 4]
+chain: [12]

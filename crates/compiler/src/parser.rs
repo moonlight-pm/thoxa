@@ -420,12 +420,17 @@ impl Parser {
         self.expect_kind(&TokenKind::Type)?;
         let (name, name_span) = self.expect_ident()?;
 
-        // Optional type parameters: `type Box<T>` / `type Trial<P, F>` (D118).
-        let type_params = if self.at(TokenKind::LAngle) {
-            self.parse_type_params()?
-        } else {
-            Vec::new()
-        };
+        // Optional type parameters: `type Box<T>` / `type Trial<P, F>` (D118),
+        // with bounds: `type SortedSet<T: Ordered>` (D228).
+        let (type_params, param_bounds): (Vec<String>, Vec<Vec<(String, Span)>>) =
+            if self.at(TokenKind::LAngle) {
+                self.parse_bounded_type_params()?
+                    .into_iter()
+                    .map(|param| (param.name, param.traits))
+                    .unzip()
+            } else {
+                (Vec::new(), Vec::new())
+            };
 
         // Union / singleton alias: `type Name = A | B | …`, `type Home = "home"` (D118/D131).
         if self.at(TokenKind::Eq) {
@@ -451,6 +456,8 @@ impl Parser {
                 traits: Vec::new(),
                 conditional: Vec::new(),
                 derived: Vec::new(),
+                param_bounds: param_bounds.clone(),
+                bounds: Vec::new(),
             });
         }
 
@@ -589,6 +596,8 @@ impl Parser {
             traits: Vec::new(),
             conditional: Vec::new(),
             derived: Vec::new(),
+            param_bounds: param_bounds.clone(),
+            bounds: Vec::new(),
         })
     }
 
@@ -994,6 +1003,9 @@ impl Parser {
         self.bump();
         loop {
             let (name, span) = self.expect_ident()?;
+            if params.iter().any(|param: &TypeParamBound| param.name == name) {
+                return Err(Error::at(format!("duplicate type parameter `{name}`"), span));
+            }
             let traits = self.parse_bounds()?;
             params.push(TypeParamBound { name, span, traits });
             if self.at(TokenKind::Comma) {
@@ -1076,6 +1088,7 @@ impl Parser {
                 tail: None,
                 span: property_span,
             },
+            type_params: Vec::new(),
             provided: None,
         };
         Ok((method, property))
@@ -1122,6 +1135,7 @@ impl Parser {
         };
         self.expect_kind(&TokenKind::Fn)?;
         let (name, name_span) = self.expect_ident()?;
+        let type_params = self.parse_bounded_type_params()?;
         self.expect_kind(&TokenKind::LParen)?;
         let mut params = Vec::new();
         if !self.at(TokenKind::RParen) {
@@ -1149,6 +1163,7 @@ impl Parser {
             params,
             return_type,
             body,
+            type_params,
             provided: None,
         })
     }

@@ -260,6 +260,9 @@ fn make_instance(
         return Ok(mono);
     }
     let generics = ctx.synthetics.borrow().generics.clone();
+    let conditional = ctx.synthetics.borrow().conditional.clone();
+    super::instance_meets_bounds(&ctx.types, &conditional, &generics, base, &args)
+        .map_err(|error| Error::at(error.message, span))?;
     let mut types = ctx.types.clone();
     let mut layouts = Vec::new();
     let mut jobs = Vec::new();
