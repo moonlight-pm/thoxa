@@ -1,0 +1,8 @@
+## D228 §6: `mixed T` holds a value of a type that conforms to `T`.
+trait Lonely {
+    fn name() -> String
+}
+
+fn main() {
+    let nobody: Array<mixed Lonely> = []
+}

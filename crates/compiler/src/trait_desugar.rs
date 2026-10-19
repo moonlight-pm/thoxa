@@ -120,7 +120,16 @@ impl Scope<'_> {
 /// each holding for the instances whose arguments meet its bounds.
 pub type BuiltInConformances = HashMap<String, Vec<ConditionalConformance>>;
 
-pub fn desugar_package(package: &mut Package) -> Result<BuiltInConformances> {
+/// What the trait pass tells the MIR besides the AST it rewrites.
+#[derive(Default)]
+pub struct TraitOutput {
+    pub built_in: BuiltInConformances,
+    /// `mixed T` as a module spells it, (module id, trait name), → the mangled
+    /// name of the union of `T`'s conforming types (D228 §6).
+    pub mixed: HashMap<(String, String), String>,
+}
+
+pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
     let has_traits = package.modules.iter().any(|module| {
         module
             .ast
@@ -129,7 +138,7 @@ pub fn desugar_package(package: &mut Package) -> Result<BuiltInConformances> {
             .any(|item| matches!(item, Item::Trait(_) | Item::Conform(_)))
     });
     if !has_traits {
-        return Ok(BuiltInConformances::new());
+        return Ok(TraitOutput::default());
     }
     let imports = loader::build_import_maps(package)?;
     let mut errors: Vec<Error> = Vec::new();
@@ -413,7 +422,116 @@ pub fn desugar_package(package: &mut Package) -> Result<BuiltInConformances> {
             }
         }
     }
-    Ok(built_in)
+    let mixed = mixed_unions(package, &scope, &conformed, &traits)?;
+    Ok(TraitOutput { built_in, mixed })
+}
+
+/// `mixed T` (D228 §6): a union, in `T`'s module, of every declared type
+/// that conforms to `T`, known once the whole program is. Its member calls
+/// dispatch on the member; it conforms to `T` and `T`'s ancestors.
+fn mixed_unions(
+    package: &mut Package,
+    scope: &Scope,
+    conformed: &Conformed,
+    traits: &HashMap<TraitRef, TraitEntry>,
+) -> Result<HashMap<(String, String), String>> {
+    let mut uses: Vec<(String, String, TraitRef, Span, PathBuf)> = Vec::new();
+    for module in &package.modules {
+        let mut apps = Vec::new();
+        for item in &module.ast.items {
+            crate::mir::collect_item_type_apps(item, &mut apps);
+        }
+        for (te, span) in apps {
+            if te.name != MIXED {
+                continue;
+            }
+            let Some(TypeArg::Type(arg)) = te.args.first() else { continue };
+            let Some(trait_ref) = scope.trait_named(&module.id, &arg.name) else {
+                return Err(Error::at(format!("unknown trait `{}`", arg.name), arg.span)
+                    .with_path(module.path.clone()));
+            };
+            uses.push((module.id.clone(), arg.name.clone(), trait_ref, span, module.path.clone()));
+        }
+    }
+    let mangle = |module: &str, name: &str| -> String {
+        let entry = package
+            .modules
+            .iter()
+            .any(|each| each.id == module && each.is_entry);
+        if entry {
+            name.to_string()
+        } else {
+            format!("{module}_{name}")
+        }
+    };
+    let mut made: HashMap<TraitRef, String> = HashMap::new();
+    let mut unions: Vec<(String, TypeDef)> = Vec::new();
+    for (_, _, trait_ref, span, path) in &uses {
+        if made.contains_key(trait_ref) {
+            continue;
+        }
+        let mut members: Vec<(String, String)> = conformed
+            .iter()
+            .filter(|((module, name), done)| {
+                (module != BUILT_IN_MODULE || scope.types.contains(&(module.clone(), name.clone())))
+                    && done.get(trait_ref).is_some_and(|(_, bounds)| bounds.is_none())
+            })
+            .map(|(target, _)| target.clone())
+            .collect();
+        members.sort();
+        if members.is_empty() {
+            return Err(Error::at(
+                format!("no type conforms to `{}`, so `mixed {}` has no values", trait_ref.name, trait_ref.name),
+                *span,
+            )
+            .with_path(path.clone()));
+        }
+        let name = format!("Mixed_{}", trait_ref.name);
+        let member_exprs = members
+            .iter()
+            .map(|(module, member)| TypeExpr {
+                name: mangle(module, member),
+                args: Vec::new(),
+                span: *span,
+                lit: None,
+                mark: None,
+                union_members: None,
+                fn_type: None,
+                where_clause: None,
+            })
+            .collect();
+        unions.push((
+            trait_ref.module.clone(),
+            TypeDef {
+                exported: true,
+                name: name.clone(),
+                name_span: *span,
+                type_params: Vec::new(),
+                params: Vec::new(),
+                fields: Vec::new(),
+                methods: Vec::new(),
+                routes: Vec::new(),
+                conversions: Vec::new(),
+                union_members: Some(member_exprs),
+                traits: lineage(trait_ref, traits),
+                conditional: Vec::new(),
+                derived: Vec::new(),
+                param_bounds: Vec::new(),
+                bounds: Vec::new(),
+                mixed: Some(trait_ref.clone()),
+            },
+        ));
+        made.insert(trait_ref.clone(), mangle(&trait_ref.module, &name));
+    }
+    for (module_id, def) in unions {
+        if let Some(module) = package.modules.iter_mut().find(|module| module.id == module_id) {
+            module.ast.items.push(Item::Type(def));
+        }
+    }
+    Ok(uses
+        .into_iter()
+        .map(|(module, name, trait_ref, _, _)| ((module, name), made[&trait_ref].clone()))
+        .collect())
 }
 
 /// A target type → each trait it conforms to: where, and the bounds per type
@@ -948,6 +1066,7 @@ fn archetype(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Op
         derived: Vec::new(),
         param_bounds: Vec::new(),
         bounds: Vec::new(),
+        mixed: None,
     })
 }
 
@@ -1240,6 +1359,7 @@ fn param_archetype(
         derived: Vec::new(),
         param_bounds: Vec::new(),
         bounds: Vec::new(),
+        mixed: None,
     })
 }
 

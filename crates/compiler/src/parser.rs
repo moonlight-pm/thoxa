@@ -458,6 +458,7 @@ impl Parser {
                 derived: Vec::new(),
                 param_bounds: param_bounds.clone(),
                 bounds: Vec::new(),
+                mixed: None,
             });
         }
 
@@ -598,6 +599,7 @@ impl Parser {
             derived: Vec::new(),
             param_bounds: param_bounds.clone(),
             bounds: Vec::new(),
+            mixed: None,
         })
     }
 
@@ -1258,6 +1260,35 @@ impl Parser {
 
     /// Single type atom: named, generic app, or literal (`0`, `true`, `"x"`).
     fn parse_type_atom(&mut self) -> Result<TypeExpr> {
+        // `mixed Shape` (D228 §6): a value of any type that conforms, written
+        // as the internal application `__mixed<Shape>`.
+        if matches!(&self.current().kind, TokenKind::Ident(word) if word == "mixed")
+            && matches!(self.tokens.get(self.pos + 1).map(|token| &token.kind), Some(TokenKind::Ident(name)) if name.starts_with(|c: char| c.is_ascii_uppercase()))
+        {
+            let start = self.current().span.start;
+            self.bump();
+            let (trait_name, trait_span) = self.expect_ident()?;
+            let trait_ty = TypeExpr {
+                name: trait_name,
+                args: Vec::new(),
+                span: trait_span,
+                lit: None,
+                mark: None,
+                union_members: None,
+                fn_type: None,
+                where_clause: None,
+            };
+            return Ok(TypeExpr {
+                name: MIXED.into(),
+                args: vec![TypeArg::Type(trait_ty)],
+                span: Span::new(start, trait_span.end),
+                lit: None,
+                mark: None,
+                union_members: None,
+                fn_type: None,
+                where_clause: None,
+            });
+        }
         // Literal types (D118/D131): `0`, `true`, `"x"` in any type position.
         if let TokenKind::Int(n) = self.current().kind {
             let n = n;

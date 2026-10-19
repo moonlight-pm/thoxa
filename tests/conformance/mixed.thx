@@ -1,0 +1,54 @@
+## `mixed Shape` (D228 §6): a value of any type that conforms to `Shape`,
+## chosen at run time. Members are called through it; a match takes it apart
+## by type and ends in `else`, since more types can conform.
+import logging, { info } from "std/logging"
+
+trait Shape {
+    get area: Float64
+    fn name() -> String
+
+    fn describe() -> String {
+        "a {name()} of {area}"
+    }
+}
+
+type Circle(radius: Float64)
+conform Circle to Shape {
+    get area: Float64 { 3.0 * radius * radius }
+    fn name() -> String { "circle" }
+}
+
+type Square(area: Float64)
+conform Square to Shape {
+    fn name() -> String { "square" }
+}
+
+type Scene(title: String, shapes: Array<mixed Shape>)
+
+fn total(shapes!: Array<mixed Shape>) -> Float64 {
+    mut sum = 0.0
+    for shape in shapes {
+        sum = sum + shape.area
+    }
+    sum
+}
+
+fn kind(shape!: mixed Shape) -> String {
+    match shape {
+        Circle(radius) => "round, radius {radius}"
+        else => "not round"
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let scene = Scene(title: "demo", shapes: [Circle(radius: 1.0), Square(area: 4.0)])
+    for shape in scene.shapes {
+        info(shape.describe())
+    }
+    info("total: {total(scene.shapes)}")
+    let one: mixed Shape = Square(area: 9.0)
+    info("{one.name()}: {kind(one)}")
+    info(kind(Circle(radius: 2.0)))
+}

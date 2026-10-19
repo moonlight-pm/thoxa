@@ -1,0 +1,1 @@
+`beats` takes a `Self`, so it cannot be called through mixed Ranked

@@ -1,0 +1,17 @@
+## D228 §6: more types can conform to a trait, so a match on a mixed value
+## ends in `else`.
+trait Named {
+    fn name() -> String
+}
+
+type Cat(age: Int64)
+conform Cat to Named {
+    fn name() -> String { "cat" }
+}
+
+fn main() {
+    let pet: mixed Named = Cat(age: 3)
+    let age = match pet {
+        Cat(age) => age
+    }
+}

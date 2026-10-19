@@ -1,0 +1,15 @@
+## D228 §6: a member that takes a `Self` cannot be called through `mixed`:
+## the other side's type is unknown.
+trait Ranked {
+    fn beats(other!: Self) -> Bool
+}
+
+type Card(rank: Int64)
+conform Card to Ranked {
+    fn beats(other!: Self) -> Bool { rank > other.rank }
+}
+
+fn main() {
+    let card: mixed Ranked = Card(rank: 3)
+    let wins = card.beats(Card(rank: 2))
+}

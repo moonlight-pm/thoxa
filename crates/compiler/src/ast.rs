@@ -120,6 +120,9 @@ pub struct TypeDef {
     /// parallel to `type_params`, and as `trait_desugar` resolves them.
     pub param_bounds: Vec<Vec<(String, Span)>>,
     pub bounds: Vec<Vec<TraitRef>>,
+    /// The union `trait_desugar` makes for `mixed Trait`, of every type that
+    /// conforms (D228 §6): its member calls dispatch on the member.
+    pub mixed: Option<TraitRef>,
 }
 
 /// A trait by its defining module's id and its name (D228).
@@ -251,6 +254,10 @@ pub struct Method {
     /// `trait_desugar` (D228). `None` for a type's own methods.
     pub provided: Option<Provided>,
 }
+
+/// `mixed Shape` in type position is the application `__mixed<Shape>` (D228
+/// §6); no source name has an `_`.
+pub const MIXED: &str = "__mixed";
 
 /// A property's accessors are methods (D228): `get name: T { … }` is
 /// `get_name() -> T`, `set name(value: T) { … }` is `set_name(value!: T)`. No

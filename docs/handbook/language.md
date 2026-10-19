@@ -730,7 +730,8 @@ let word = largest(["pear", "fig"])     ## Has("pear")
 - A bare trait as a parameter's type is a hidden type parameter, one per
   parameter: `fn report(shape!: Shape)` is `fn report<S: Shape>(shape!: S)`,
   so `report(Circle(…))` and `report(Square(…))` are two copies. A trait is not
-  a return type, a field's type, or a type argument.
+  a return type, a field's type, or a type argument; write a concrete type, a
+  type parameter, or `mixed Trait` (see [Mixed values](#mixed-values)).
 - A generic function without `->` infers its return type for each set of
   type arguments, as other functions do. It is not multi-clause and not a
   function value.
@@ -1546,6 +1547,41 @@ Limits: a trait's members take no parameter defaults, a trait cannot be used
 as a type, and a conformance of a generic type, of a built-in type, or of a
 union cannot have a body.
 
+### Mixed values
+
+`mixed Shape` is a value of any type that conforms to `Shape`, chosen at run
+time, so values of several types can share an array, a field, or a
+parameter:
+
+```thx
+type Scene(title: String, shapes: Array<mixed Shape>)
+
+let scene = Scene(title: "demo", shapes: [Circle(radius: 1.0), Square(area: 4.0)])
+for shape in scene.shapes {
+    info(shape.describe())          ## each shape's own
+}
+
+fn kind(shape!: mixed Shape) -> String {
+    match shape {
+        Circle(radius) => "round, radius {radius}"
+        else => "not round"
+    }
+}
+```
+
+- A value of a conforming type becomes a `mixed Shape` where one is expected.
+- Calling a member or reading a property through it calls the value's own.
+  A member that takes a `Self` cannot be called this way (the other side's
+  type is unknown).
+- `match` takes it apart by type, and ends in `else`: more types can conform.
+- It is a value: copies are copies.
+- It holds the declared types that conform without bounds; a generic type's
+  instances and built-in types are not among them.
+
+`mixed Shape` differs from `shape!: Shape` as a parameter's type: the latter
+is a type parameter, one copy of the function per shape type (see
+[Generic functions](#generic-functions)).
+
 ### Resources
 
 A type that conforms to the built-in trait `Resource` owns something outside
@@ -2088,7 +2124,6 @@ have no `==`, cannot be map keys, and have no JSON encoding.
 
 ## Not in the language
 
-So that nobody looks for them: closures, traits used as types (values of
-several types behind one trait), exceptions, threads, macros, operator overloading, tuples, nested
+So that nobody looks for them: closures, exceptions, threads, macros, operator overloading, tuples, nested
 patterns, compound assignment, algebraic effects,
 a package manager, a named `ffi` import root, and a REPL or interactive shell.
