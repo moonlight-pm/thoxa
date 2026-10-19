@@ -1,0 +1,30 @@
+## A generic type's constructor infers its type arguments from its arguments
+## when no expected type picks the instance (D228 §5), and the instance is
+## made on first use, with its methods.
+import logging, { info } from "std/logging"
+
+type Shelf<T>(items: Array<T>, label: String) {
+    ## No `->`: inferred for the instance.
+    export fn size() {
+        items.count
+    }
+
+    export fn first() -> T {
+        items[0]
+    }
+}
+
+type Pair<A, B>(first: A, second: B)
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let numbers = Shelf(items: [3, 4], label: "numbers")
+    info("{numbers.label}: {numbers.size()}, first {numbers.first()}")
+    let words = Shelf(items: ["pear"], label: "words")
+    info("{words.label}: {words.size()}, first {words.first()}")
+    let pair = Pair(first: 1.5, second: true)
+    info("{pair.first} {pair.second}")
+    let annotated: Shelf<Bool> = Shelf(items: [], label: "empty")
+    info("{annotated.label}: {annotated.size()}")
+}

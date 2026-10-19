@@ -1,0 +1,7 @@
+## D228 §5: a constructor's type arguments come from its arguments; `[]` says
+## nothing about its elements.
+type Shelf<T>(items: Array<T>)
+
+fn main() {
+    let shelf = Shelf(items: [])
+}

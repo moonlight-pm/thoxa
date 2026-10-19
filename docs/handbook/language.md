@@ -672,7 +672,12 @@ type Empty
 type Opt<T> = Box<T!> | Empty?
 
 let a: Opt<Int64> = Box(value: 7)
+let b = Box(value: "seven")             ## a Box<String>
 ```
+
+A constructor takes its type arguments from the expected type, or, without
+one, from its arguments: `Box(value: "seven")` is a `Box<String>`, and
+`Box(value: [])` is an error, since `[]` names no element type.
 
 A field of a generic type may be any integer type, `Float64`, `Bool`,
 `String`, `Bytes`, an `Array`, a `Map`, a user type, or `Void`.

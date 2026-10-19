@@ -108,8 +108,10 @@ requirements. **Slice 4 shipped**: `Equatable`, `Hashable`, `Ordered`,
 std's conformances. **Slice 5, part 1 shipped**: generic functions with
 bounds, inferred type arguments, bare trait parameters. **Part 2
 shipped**: generic `extend Array<T: Bound>`, std/array (`contains`,
-`indexOf`, `sorted` in Thoxa). **Next**: the rest of slice 5 (generic
-methods, constructor inference, a hand-written `hash`).
+`indexOf`, `sorted` in Thoxa). **Part 3 shipped**: a generic constructor
+infers its type arguments (`Shelf(items: [1, 2])`), its instance made on
+first use. **Next**: the rest of slice 5 (generic methods, a hand-written
+`hash`).
 Generic functions are slice 5, so the "generic constructor inference" gap
 below waits for it. Joshua: "lean toward long-term correct design rather
 than short term stop gaps."
@@ -199,10 +201,7 @@ NormalizationTest.
 From D206: a heap field passed `mut` is copied on the callee's
 first write (it is shared with the receiver until the write-back; Joshua
 2026-10-18: leave it). Found in
-the 2026-10-18 pass: a generic constructor does not infer its type arguments
-from its arguments (`Shelf(items: [1, 2])` needs `let s: Shelf<Int64>`;
-instances are made before bodies are lowered, so this needs lazy
-instantiation; Joshua 2026-10-18: later, as its own piece); multi-clause parameters cannot join `Int64` and `Float64`
+the 2026-10-18 pass: multi-clause parameters cannot join `Int64` and `Float64`
 (no union of built-in scalars); a `UInt64` above `Int64` max cannot be
 written to JSON.
 
@@ -225,8 +224,8 @@ Freezes:
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 178 programs, 97 rejections, 8 site samples, 219 unit tests
-after D228 slice 5 part 2 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 179 programs, 98 rejections, 8 site samples, 219 unit tests
+after D228 slice 5 part 3 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`

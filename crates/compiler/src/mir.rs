@@ -17999,8 +17999,15 @@ fn lower_call(
         other => {
             // Type constructor via local or imported name.
             if let Some(base_mangled) = ctx.resolve_type_name(other) {
-                let mangled_ty = resolve_ctor_mono(ctx, &base_mangled, other, expect, span)?
-                    .unwrap_or(base_mangled);
+                // A generic type's instance: from the expected type, else
+                // from its arguments (D228 §5).
+                let mangled_ty = match resolve_ctor_mono(ctx, &base_mangled, other, expect, span) {
+                    Ok(chosen) => chosen.unwrap_or(base_mangled),
+                    Err(error) => match generic::infer_constructor(ctx, &base_mangled, other, args, span)? {
+                        Some(inferred) => inferred,
+                        None => return Err(error),
+                    },
+                };
                 let info = ctx
                     .types
                     .get(&mangled_ty)

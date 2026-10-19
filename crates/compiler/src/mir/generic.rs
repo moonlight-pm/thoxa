@@ -13,10 +13,12 @@
 //! named (`May<Point>`); it is made then, like the ones named in the source.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use super::{
-    display_ty, infer_block_ty, mono_type_name, monomorphize_pending, resolve_ty, subst_expr,
-    subst_type_expr, tail_block, ty_conforms, ty_mono_suffix, FnSig, LowerCtx, Ty,
+    define_method_scope, display_ty, infer_block_ty, mono_type_name, monomorphize_pending,
+    probe_body_return, resolve_ty, subst_expr, subst_method, subst_type_expr, tail_block,
+    ty_conforms, ty_mono_suffix, FnSig, LowerCtx, Ty,
 };
 use crate::ast::{Arg, Expr, ExprKind, Function, Param, TypeArg, TypeExpr};
 use crate::error::{Error, Result};
@@ -198,19 +200,68 @@ pub(super) fn ensure_instances(
             TypeArg::Int { .. } => return Ok(()),
         }
     }
-    if ctx.types.contains_key(&mono_type_name(&base, &args)) {
-        return Ok(());
+    make_instance(ctx, &base, args, name_map, te.span)?;
+    Ok(())
+}
+
+/// The generic type `base`'s instance for `args`, made now if it does not
+/// exist: it and any instances it needs join the package's synthetic types,
+/// and their methods are lowered with the other late bodies.
+fn make_instance(
+    ctx: &mut LowerCtx,
+    base: &str,
+    args: Vec<Ty>,
+    name_map: &HashMap<String, String>,
+    span: Span,
+) -> Result<String> {
+    let mono = mono_type_name(base, &args);
+    if ctx.types.contains_key(&mono) {
+        return Ok(mono);
     }
+    let generics = ctx.synthetics.borrow().generics.clone();
     let mut types = ctx.types.clone();
     let mut layouts = Vec::new();
     let mut jobs = Vec::new();
     monomorphize_pending(
-        vec![(base, args, name_map.clone(), te.span)],
+        vec![(base.to_string(), args, name_map.clone(), span)],
         &mut types,
         &mut layouts,
         &generics,
         &mut jobs,
     )?;
+    // Methods without `->` infer their return type per instance (D211), as
+    // the instances made before lowering do; twice, so a sibling's is known.
+    for _ in 0..2 {
+        for job in jobs.iter().filter(|job| !job.conversion && job.method.return_type.is_none()) {
+            let method = subst_method(&job.method, &job.subst);
+            let maps = ctx.package_maps.get(&job.def_mod).cloned().unwrap_or_default();
+            let mut probe = LowerCtx::new(
+                ctx.fns.clone(),
+                types.clone(),
+                maps.name_to_type,
+                maps.name_to_fn,
+                maps.name_to_global,
+                maps.namespaces,
+                ctx.module_exports.clone(),
+                ctx.package_maps.clone(),
+                Ty::Void,
+                job.def_mod.clone(),
+                false,
+                Rc::clone(&ctx.synthetics),
+            );
+            probe.inferring = true;
+            probe.infer_self = Some(format!("{}__{}", job.mono_type, method.name));
+            probe.generics = generics.clone();
+            define_method_scope(&mut probe, &job.mono_type, &method)?;
+            let ret = probe_body_return(probe, &method.body, method.name_span, &generics, &mut types, &mut layouts)?;
+            if let Some(sig) = types
+                .get_mut(&job.mono_type)
+                .and_then(|info| info.methods.get_mut(&method.name))
+            {
+                sig.ret = ret;
+            }
+        }
+    }
     let mut synthetics = ctx.synthetics.borrow_mut();
     for layout in layouts {
         if let Some(info) = types.get(&layout.name) {
@@ -221,7 +272,53 @@ pub(super) fn ensure_instances(
         }
     }
     synthetics.late_mono_jobs.extend(jobs);
-    Ok(())
+    Ok(mono)
+}
+
+/// A generic product's constructor called without an expected type to pick
+/// its instance: the type arguments come from its field arguments (D228 §5),
+/// `Shelf(items: [1, 2])` is a `Shelf<Int64>`. `None` when `base` is not a
+/// generic product.
+pub(super) fn infer_constructor(
+    ctx: &mut LowerCtx,
+    base: &str,
+    shown: &str,
+    args: &[Arg],
+    span: Span,
+) -> Result<Option<String>> {
+    let Some(gdef) = ctx.synthetics.borrow().generics.get(base).cloned() else {
+        return Ok(None);
+    };
+    let super::GenericKind::Product { params, .. } = &gdef.kind else {
+        return Ok(None);
+    };
+    let names = gdef.type_params.clone();
+    let mut bindings: HashMap<String, Ty> = HashMap::new();
+    for (param, arg) in params.iter().zip(match_args(params, args)) {
+        let Some(arg) = arg else { continue };
+        if !mentions(&param.ty, &names) {
+            continue;
+        }
+        let ty = infer_block_ty(ctx, &tail_block(arg.clone()))?;
+        bind(&param.ty, &ty, &names, &mut bindings, ctx, arg.span, shown)?;
+    }
+    let mut args_tys = Vec::new();
+    for name in &names {
+        let Some(ty) = bindings.get(name) else {
+            return Err(Error::at(
+                format!("cannot infer `{name}` for `{shown}` from its arguments"),
+                span,
+            )
+            .with_help(format!("annotate the value: `let x: {shown}<…> = …`")));
+        };
+        args_tys.push(ty.clone());
+    }
+    let name_map = ctx
+        .package_maps
+        .get(&gdef.def_mod)
+        .map(|maps| maps.name_to_type.clone())
+        .unwrap_or_default();
+    make_instance(ctx, base, args_tys, &name_map, span).map(Some)
 }
 
 /// Whether `te` names one of `params`.
@@ -272,6 +369,8 @@ fn bind(
         _ => None,
     };
     match (te.name.as_str(), ty) {
+        // `[]` says nothing about its elements.
+        ("Array", Ty::Array { elem }) if **elem == Ty::Void => {}
         ("Array", Ty::Array { elem }) => {
             if let Some(element) = inner(0) {
                 bind(element, elem, params, bindings, ctx, span, shown)?;
