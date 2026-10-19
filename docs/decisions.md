@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Maps and strings as sequences, arrays ordered
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D236 | `Map` and `String` are `Sequence`s; `Array<T: Ordered>` is `Ordered` | A map is a sequence of its entries in insertion order, each an `Entry<K, V>(key:, value:)` from std/core; a string is a sequence of its Unicode scalars, each a one-scalar `String` (Thoxa has no character type, and positions already count scalars, D195). So `for entry in table`, `for scalar in text`, and generic code over sequences (`collect(ages)`) take them; `for key, value in table` still reads a map directly, and `for` an array directly. An array of an `Ordered` type orders element by element, then the shorter first, so `<` and `sorted()` take arrays of arrays. | **Shipped** 2026-10-19 (the D228 gaps "`Map` and `String` as `Sequence`s" and "`Array` as `Ordered`"). std/core: `conform Map<K, V> to Sequence` with `MapCursor<K, V>` (the keys and the map, snapshotted when it starts), `Entry` (`Equatable` and `Show` when its parts are), `conform String to Sequence` with `StringCursor` (by byte offset, a scalar's length from its lead byte), and `conform Array<T: Ordered> to Ordered` with its `compare` in Thoxa; `order::lower_compare` calls it for arrays. Found on the way: an instance named inside another in a generic type's method signature (`May<Pair<A, B>>`) was never made, so the method failed ("internal monomorph missing"), since D228 slice 5 (`enqueue_type_app_mono` now queues by instance name); a built-in's `May` / `Trial` result of a type parameter (`table[key]` in generic code) asked for an annotation (`fallible_mono` makes the instance); a method call on an element of a built-in array (`self[index].compare(…)`) read the element as a struct. Gates: `sequences`, `nested_instances`. |
+
 ## 2026-10-19 — Open `mixed`
 
 | ID | Decision | Choice | Notes |

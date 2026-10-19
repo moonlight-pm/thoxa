@@ -1003,7 +1003,7 @@ built-in types conform as follows:
 | `Float64` | yes, IEEE: NaN equals nothing | yes | yes: NaN after everything, `-0.0` equal to `0.0` |
 | `String` | yes, byte by byte | yes | yes, by Unicode scalars (byte order) |
 | `Bytes` | yes | yes | no |
-| `Array<T>` | when `T` is: same count, equal elements | when `T` is | no |
+| `Array<T>` | when `T` is: same count, equal elements | when `T` is | when `T` is: element by element, then the shorter first |
 | `Map<K, V>` | when `V` is: same keys, equal values, in any order | no | no |
 | `May<T>`, `Trial<P, F>` | when what they hold is | when it is | when it is: `Has` before `Not`, `Pass` before `Fail` |
 | `Json` | yes | no | no |
@@ -1203,11 +1203,13 @@ for i in 0..3 { }             ## 0, 1, 2
 for i in 1..=3 { }            ## 1, 2, 3
 for name in names { }         ## array elements
 for key, value in table { }   ## map entries, in insertion order
+for entry in table { }        ## the same, as `Entry` values (`entry.key`)
+for scalar in "héllo" { }     ## a string's Unicode scalars, each a String
 for card in deck { }          ## an Iterator's or a Sequence's values
 ```
 
-`for … in` takes a range, an Array, a Map, or a value whose type conforms to
-`Iterator` or `Sequence` (see [Associated types](#associated-types)).
+`for … in` takes a range, an Array, a Map, a String, or a value whose type
+conforms to `Iterator` or `Sequence` (see [Associated types](#associated-types)).
 
 `break` leaves the innermost loop and `continue` starts its next iteration.
 The loop variable is a new binding; an outer variable of the same name is
@@ -1814,11 +1816,13 @@ let six = total([1, 2, 3])
 
 - An `Array` is a `Sequence` (its cursor is std's `ArrayCursor<T>`), so
   `collect([1, 2, 3])` takes one; `for` reads an array directly.
+- A `Map` is a `Sequence` of its entries in insertion order, each an
+  `Entry<K, V>` with `key` and `value` (std/core's, in every program), and a
+  `String` is one of its Unicode scalars, each a one-scalar `String`.
 
-Limits: a `Map` and a `String` are not `Sequence`s (`for` reads them
-directly); `S.Item` is written in generic functions, not in generic types;
-and a member whose signature names an associated type cannot be called
-through `mixed`.
+Limits: `S.Item` is written in generic functions, not in generic types; and
+a member whose signature names an associated type cannot be called through
+`mixed`.
 
 ### Mixed values
 

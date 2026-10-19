@@ -3,7 +3,8 @@
 ## meets, or a built-in type. A `match` names the type, an instance with its
 ## type arguments; a built-in type binds the value. Members, `"{x}"`, `==`,
 ## `<`, and `toJson` reach the value inside; `<` orders by the types' names,
-## then by the values. An instance that misses a conformance's bounds
+## then by the values; a member that returns `Self` returns a `mixed T`.
+## An instance that misses a conformance's bounds
 ## (`Box<Secret>`) lacks its members, and is not compiled with them.
 import logging, { info } from "std/logging"
 import { Encodable } from "std/json"
@@ -84,6 +85,31 @@ type Secret(code: Int64)
 
 conform Tag to Encodable
 
+trait Double {
+    fn doubled() -> Self
+    fn label() -> String
+}
+
+conform Plain to Double {
+    fn doubled() -> Self {
+        Plain(name: "{name}{name}")
+    }
+
+    fn label() -> String {
+        name
+    }
+}
+
+conform Int64 to Double {
+    fn doubled() -> Self {
+        self * 2
+    }
+
+    fn label() -> String {
+        "{self}"
+    }
+}
+
 fn wrap<T: Show>(item!: T) -> mixed Show {
     item
 }
@@ -114,6 +140,10 @@ fn main() {
     growing[0].grow()
     growing[1].grow()
     info("{growing[0].size()} {growing[1].size()}")
+    let doubles: Array<mixed Double> = [Plain(name: "ab"), 5]
+    for double in doubles {
+        info(double.doubled().doubled().label())
+    }
     let hidden = Box(value: Secret(code: 4))
     info("{hidden.value.code}")
 }

@@ -1,0 +1,37 @@
+## `Map` and `String` are `Sequence`s (D236): a map's entries in insertion
+## order (`Entry<K, V>`), a string's Unicode scalars, each a `String`. So
+## `for entry in table`, `for scalar in text`, and generic code over
+## sequences take them; `for key, value in table` still reads a map
+## directly. `Array<T: Ordered>` is `Ordered`: element by element, then the
+## shorter first, so `<` and `sorted()` take arrays of arrays.
+import logging, { info } from "std/logging"
+
+fn collect<S: Sequence>(items!: S) -> Array<S.Item> {
+    mut out: Array<S.Item> = []
+    for item in items {
+        out.append(item)
+    }
+    out
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let ages = {"ada": 36, "alan": 41}
+    for entry in ages {
+        info("{entry.key} is {entry.value}")
+    }
+    info("{collect(ages)}")
+    mut total = 0
+    for name, age in ages {
+        total = total + age
+    }
+    info("{total}")
+    for scalar in "héllo" {
+        info(scalar)
+    }
+    info("{collect("añb").count}")
+    let rows = [[1, 2], [1], [0, 9]]
+    info("{rows.sorted()}")
+    info("{[1, 2] < [1, 3]} {[1] < [1, 0]} {[2] < [1, 9]} {[1, 2] <= [1, 2]}")
+}

@@ -1,0 +1,31 @@
+## A generic type's method may name an instance inside another,
+## `May<Pair<A, B>>`, and generic code may index a map, whose result is a
+## `May` of a type parameter: each instance is made when it is first named
+## (D236).
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Pair<A, B>(first: A, second: B)
+
+type Wrap<A, B>(first: A, second: B) {
+    export fn get() -> May<Pair<A, B>> {
+        Has(Pair(first: first, second: second))
+    }
+}
+
+fn lookup<K: Hashable, V>(table!: Map<K, V>, key!: K) -> May<V> {
+    table[key]
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    match Wrap(first: 1, second: "b").get() {
+        Has(pair) => info("{pair.first} {pair.second}")
+        Not => info("none")
+    }
+    match lookup({"a": 2.5}, "a") {
+        Has(value) => info("{value}")
+        Not => info("missing")
+    }
+}

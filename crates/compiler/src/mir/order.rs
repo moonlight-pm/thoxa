@@ -230,6 +230,14 @@ pub(super) fn lower_compare(
         let (right, _) = unwrap_refined(ctx, right, ty)?;
         return lower_compare(ctx, left, right, &base, span);
     }
+    // An array's is std/core's, generic over its elements (D236).
+    if matches!(ty, Ty::Array { .. }) {
+        let left = super::codec::bind_fresh(ctx, "__left", ty, left);
+        let right = super::codec::bind_fresh(ctx, "__right", ty, right);
+        let other = [Arg::Pos(crate::ast_build::name(&right))];
+        let (order, _) = super::lower_method_call(ctx, &crate::ast_build::name(&left), "compare", span, &other)?;
+        return order_to_int(ctx, order, span);
+    }
     // std writes `compare` for Float64 and String, in Thoxa.
     if let Some(sig) = extension_method(ctx, ty, "compare", span)? {
         let (order, _) = call_extension_compare(ctx, left, right, ty, sig, span)?;

@@ -7870,6 +7870,9 @@ fn method_sig_type_exprs(m: &Method) -> Vec<&TypeExpr> {
     out
 }
 
+/// Queue the generic instances `te` names, nested ones too, and give the
+/// type it is: an instance by the name it will have once made, so an
+/// instance that names another (`May<Pair<A, B>>`) is queued with it.
 fn enqueue_type_app_mono(
     te: &TypeExpr,
     types: &HashMap<String, TypeInfo>,
@@ -7877,49 +7880,38 @@ fn enqueue_type_app_mono(
     generics: &HashMap<String, GenericDef>,
     pending: &mut Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
     span: Span,
-) {
-    if te.args.is_empty() || is_builtin_generic(&te.name) {
-        // Still walk nested args when present.
-    } else {
-        let base = name_map
-            .get(&te.name)
-            .cloned()
-            .unwrap_or_else(|| te.name.clone());
-        if generics.contains_key(&base) {
-            let mut arg_tys = Vec::new();
-            let mut ok = true;
-            for a in &te.args {
-                match a {
-                    TypeArg::Type(inner) => {
-                        let mut bare = inner.clone();
-                        bare.mark = None;
-                        match resolve_ty(&bare, types, name_map) {
-                            Ok(ty) => arg_tys.push(ty),
-                            Err(_) => {
-                                ok = false;
-                                break;
-                            }
-                        }
-                    }
-                    TypeArg::Int { .. } => {
-                        ok = false;
-                        break;
-                    }
-                }
-            }
-            if ok && arg_tys.len() == te.args.len() {
-                let mono = mono_type_name(&base, &arg_tys);
-                if !types.contains_key(&mono) {
-                    pending.push((base, arg_tys, name_map.clone(), span));
-                }
-            }
+) -> Option<Ty> {
+    let mut bare = te.clone();
+    bare.mark = None;
+    if te.args.is_empty() {
+        return resolve_ty(&bare, types, name_map).ok();
+    }
+    let mut arg_tys = Vec::new();
+    for arg in &te.args {
+        match arg {
+            TypeArg::Type(inner) => arg_tys.push(enqueue_type_app_mono(inner, types, name_map, generics, pending, span)),
+            TypeArg::Int { .. } => arg_tys.push(None),
         }
     }
-    for a in &te.args {
-        if let TypeArg::Type(inner) = a {
-            enqueue_type_app_mono(inner, types, name_map, generics, pending, span);
-        }
+    let base = name_map.get(&te.name).cloned().unwrap_or_else(|| te.name.clone());
+    if is_builtin_generic(&te.name) || !generics.contains_key(&base) {
+        return match (te.name.as_str(), arg_tys.as_slice()) {
+            ("Array", [Some(elem)]) => Some(Ty::Array {
+                elem: Box::new(elem.clone()),
+            }),
+            ("Map", [Some(key), Some(val)]) => Some(Ty::Map {
+                key: Box::new(key.clone()),
+                val: Box::new(val.clone()),
+            }),
+            _ => resolve_ty(&bare, types, name_map).ok(),
+        };
     }
+    let arg_tys: Vec<Ty> = arg_tys.into_iter().collect::<Option<_>>()?;
+    let mono = mono_type_name(&base, &arg_tys);
+    if !types.contains_key(&mono) {
+        pending.push((base, arg_tys, name_map.clone(), span));
+    }
+    Some(Ty::User(mono))
 }
 
 fn instantiate_union_mono(
@@ -11044,8 +11036,9 @@ fn lower_for_array(
     body: &Block,
 ) -> Result<(Place, Ty)> {
     let (arr_p, arr_ty) = lower_expr(ctx, collection)?;
-    // An Array is a `Sequence` too, but read directly.
-    let built_in = matches!(arr_ty, Ty::Array { .. } | Ty::Map { .. });
+    // An Array is a `Sequence` too, but read directly; a Map with one name
+    // gives its entries, and a String its scalars (D236).
+    let built_in = matches!(arr_ty, Ty::Array { .. });
     if !built_in && (ctx.conforms(&arr_ty, "Iterator") || ctx.conforms(&arr_ty, "Sequence")) {
         return lower_for_cursor(ctx, name, name_span, arr_p, arr_ty, collection.span, body);
     }
@@ -14492,15 +14485,8 @@ fn receiver_in_place(
         coerce_place(ctx, index_p, &index_ty, &Ty::Int64, index.span)?
     };
     let element = ctx.fresh("aget");
-    ctx.assign(
-        element.clone(),
-        elem_ty.clone(),
-        RValue::ArrayGet {
-            arr: binding.place.clone(),
-            index: index_p.clone(),
-            elem_ty: elem_ty.clone(),
-        },
-    );
+    init_place(ctx, &element, &elem_ty)?;
+    read_array_elem(ctx, &binding.place, &index_p, &element, &elem_ty);
     let receiver_write = if binding.mutable {
         ReceiverWrite::Element {
             binding,
@@ -18330,7 +18316,7 @@ fn lower_binary(
     // `<` and the rest are `Ordered`'s (D228). A union of literals orders by
     // declaration, so this comes before it widens to its literals' type.
     if matches!(op, BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge)
-        && matches!(&lt, Ty::User(_))
+        && matches!(&lt, Ty::User(_) | Ty::Array { .. })
         && lt == rt
     {
         let sign = order::lower_compare(ctx, l, r, &lt, span)?;
@@ -19489,16 +19475,19 @@ fn lower_field_eq(
     }
 }
 
-/// Resolve a `std/fallible` monomorph (`May`/`Trial`/…) if imported in this module.
-fn fallible_mono(ctx: &LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Result<Ty> {
-    // A built-in result (`Bytes.find`, `String.indexOf`) needs std/fallible
-    // in the program, not `May` imported by name.
+/// A `std/fallible` instance (`May<V>`, `Trial<…>`) for a built-in's
+/// result, made when it does not exist yet (`map[key]` in generic code is a
+/// `May` of an archetype). std/fallible must be in the program; `May` need
+/// not be imported by name.
+fn fallible_mono(ctx: &mut LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Result<Ty> {
     let std_base = format!("std_fallible_{base_src}");
-    let base = ctx.name_to_type.get(base_src).cloned().or_else(|| {
-        ctx.types
-            .contains_key(&mono_type_name(&std_base, args))
-            .then_some(std_base)
-    });
+    let in_program = ctx.types.contains_key(&mono_type_name(&std_base, args))
+        || ctx.synthetics.borrow().generics.contains_key(&std_base);
+    let base = ctx
+        .name_to_type
+        .get(base_src)
+        .cloned()
+        .or_else(|| in_program.then_some(std_base));
     let Some(base) = base else {
         return Err(Error::coded_at(
             crate::diagnostic::CODE_FALLIBLE_IMPORT,
@@ -19514,7 +19503,10 @@ fn fallible_mono(ctx: &LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Res
         ));
     };
     let mono = mono_type_name(&base, args);
-    if !ctx.types.contains_key(&mono) {
+    if ctx.types.contains_key(&mono) {
+        return Ok(Ty::User(mono));
+    }
+    if !ctx.synthetics.borrow().generics.contains_key(&base) {
         return Err(Error::at(
             format!(
                 "type `{base_src}` monomorph `{mono}` missing — add a type annotation using `{base_src}<…>`"
@@ -19522,7 +19514,9 @@ fn fallible_mono(ctx: &LowerCtx, base_src: &str, args: &[Ty], span: Span) -> Res
             span,
         ));
     }
-    Ok(Ty::User(mono))
+    let name_map = ctx.name_to_type.clone();
+    let made = generic::make_instance(ctx, &base, args.to_vec(), &name_map, span)?;
+    Ok(Ty::User(made))
 }
 
 fn is_residual_union(types: &HashMap<String, TypeInfo>, ty: &Ty) -> bool {

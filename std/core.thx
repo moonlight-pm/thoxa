@@ -132,6 +132,85 @@ conform ArrayCursor<T> to Iterator {
     }
 }
 
+## A map is a `Sequence` of its entries, in insertion order (D236), so
+## generic code over sequences takes one. `for key, value in table` reads a
+## map directly; `for entry in table` and `iterate()` give `Entry` values.
+conform Map<K, V> to Sequence {
+    type Cursor = MapCursor<K, V>
+
+    fn iterate() -> MapCursor<K, V> {
+        MapCursor(entries: self, keys: self.keys(), index: 0)
+    }
+}
+
+## One key of a map and its value.
+export type Entry<K, V>(key: K, value: V)
+
+conform Entry<K: Equatable, V: Equatable> to Equatable
+conform Entry<K: Show, V: Show> to Show
+
+## A map's entries in insertion order, one at a time: the keys as they were
+## when it started, each with its value.
+export type MapCursor<K, V>(entries: Map<K, V>, keys: Array<K>, index: Int64)
+
+conform MapCursor<K, V> to Iterator {
+    type Item = Entry<K, V>
+
+    fn next() -> May<Entry<K, V>> {
+        while index < keys.count {
+            let key = keys[index]
+            index = index + 1
+            match entries[key] {
+                Has(value) => return Has(Entry(key: key, value: value))
+                Not => continue
+            }
+        }
+        Not()
+    }
+}
+
+## A string is a `Sequence` of its Unicode scalars (D236), each a one-scalar
+## `String`, so `for scalar in text` reads them in order.
+conform String to Sequence {
+    type Cursor = StringCursor
+
+    fn iterate() -> StringCursor {
+        StringCursor(text: self, offset: 0)
+    }
+}
+
+## A string's scalars in order, one at a time, by byte offset.
+export type StringCursor(text: String, offset: Int64)
+
+conform StringCursor to Iterator {
+    type Item = String
+
+    fn next() -> May<String> {
+        if offset >= text.byteCount {
+            return Not()
+        }
+        let lead = text.byteAt(offset)
+        let length = if lead < 128 { 1 } else if lead < 224 { 2 } else if lead < 240 { 3 } else { 4 }
+        offset = offset + length
+        Has(text.byteSlice(offset - length, offset))
+    }
+}
+
+## Element by element, then the shorter first (D236).
+conform Array<T: Ordered> to Ordered {
+    fn compare(other!: Self) -> Order {
+        mut index = 0
+        while index < self.count and index < other.count {
+            let order = self[index].compare(other[index])
+            if order != "equal" {
+                return order
+            }
+            index = index + 1
+        }
+        self.count.compare(other.count)
+    }
+}
+
 extend Int64 {
     export fn equals(other!: Int64) -> Bool {
         self == other

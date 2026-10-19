@@ -546,7 +546,7 @@ pub(super) fn ensure_instances(
 /// The generic type `base`'s instance for `args`, made now if it does not
 /// exist: it and any instances it needs join the package's synthetic types,
 /// and their methods are lowered with the other late bodies.
-fn make_instance(
+pub(super) fn make_instance(
     ctx: &mut LowerCtx,
     base: &str,
     args: Vec<Ty>,
