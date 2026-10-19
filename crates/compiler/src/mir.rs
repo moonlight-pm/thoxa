@@ -1774,8 +1774,10 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     let lower_started = std::time::Instant::now();
     // D150: type-body `GET "/…"` → handlers + `route` (names Request/Response/ok).
     let mut package = package.clone();
-    let built_in_conformances = crate::trait_desugar::desugar_package(&mut package)?;
+    // `extend` first: a generic `extend` block's methods become generic
+    // functions, which the trait pass resolves (D228 §5).
     crate::extend_desugar::desugar_package(&mut package)?;
+    let built_in_conformances = crate::trait_desugar::desugar_package(&mut package)?;
     crate::conversion_desugar::desugar_package(&mut package)?;
     crate::route_desugar::desugar_package(&mut package)?;
     crate::validate_desugar::desugar_package(&mut package)?;
@@ -11436,6 +11438,25 @@ fn lower_method_call(
     if let Some(sig) = extension_method(ctx, &recv_ty, method, method_span)? {
         return lower_extension_call(ctx, recv_p, &recv_ty, sig, method, args, method_span);
     }
+    // A generic `extend` block's (`extend Array<T: Equatable>`, D228 §5).
+    if let Some(template) = generic_extension(ctx, &recv_ty, method, method_span)? {
+        let receiver = codec::bind_fresh(ctx, "__receiver", &recv_ty, recv_p);
+        let mut all_args = vec![Arg::Pos(crate::ast_build::name(&receiver))];
+        all_args.extend(args.iter().cloned());
+        let instance = generic::instantiate_call(ctx, &template, method, &all_args, method_span, None)?;
+        let sig = ctx.fns[&instance].clone();
+        let places = resolve_call_args_full(
+            ctx,
+            &sig.params,
+            &sig.defaults,
+            &sig.mutable,
+            &sig.positional,
+            &all_args,
+            method_span,
+            &sig.def_mod,
+        )?;
+        return emit_call_result(ctx, Callee::User(instance), places, sig.ret);
+    }
     if string_receiver {
         return lower_string_method(ctx, recv_p, method, args, method_span);
     }
@@ -12422,6 +12443,31 @@ fn extension_method(ctx: &LowerCtx, ty: &Ty, method: &str, span: Span) -> Result
             ));
         }
         return Ok(Some(sig.clone()));
+    }
+    Ok(None)
+}
+
+/// The template a generic `extend` block in a std module declares for
+/// `method` on instances of `ty`'s type (`Array`, `Map`), if any (D228 §5).
+fn generic_extension(ctx: &LowerCtx, ty: &Ty, method: &str, span: Span) -> Result<Option<String>> {
+    let base = match ty {
+        Ty::Array { .. } => "Array",
+        Ty::Map { .. } => "Map",
+        _ => return Ok(None),
+    };
+    let short = crate::extend_desugar::extension_fn_name(base, method);
+    for (module, exports) in &ctx.module_exports {
+        let template = format!("{module}_{short}");
+        if !ctx.synthetics.borrow().generic_fns.contains_key(&template) {
+            continue;
+        }
+        if *module != ctx.module_id && !exports.fns.contains_key(&short) {
+            return Err(Error::at(
+                format!("method `{method}` on {} is private", display_ty(ty)),
+                span,
+            ));
+        }
+        return Ok(Some(template));
     }
     Ok(None)
 }

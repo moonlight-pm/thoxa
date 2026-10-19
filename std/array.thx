@@ -1,0 +1,47 @@
+## std/array — Array's methods, written in Thoxa (D228).
+##
+## Every program has this module, imported or not: its generic `extend`
+## blocks add methods to every `Array<T>` whose `T` meets their bounds, and a
+## method call finds them. The runtime keeps the primitives: `count`,
+## `append`, `dropLast`, `insert`, `removeAt`, and `[index]`.
+
+import { Has, Not, May } from "std/fallible"
+
+extend Array<T: Equatable> {
+    ## Whether an element is `==` to `item`.
+    export fn contains(item!: T) -> Bool {
+        for element in self {
+            if element == item {
+                return true
+            }
+        }
+        false
+    }
+
+    ## The position of the first element `==` to `item`.
+    export fn indexOf(item!: T) -> May<Int64> {
+        mut index = 0
+        while index < self.count {
+            if self[index] == item {
+                return Has(index)
+            }
+            index = index + 1
+        }
+        Not()
+    }
+}
+
+extend Array<T: Ordered> {
+    ## The elements in ascending order; equal ones keep their order.
+    export fn sorted() -> Array<T> {
+        mut out: Array<T> = []
+        for element in self {
+            mut at = out.count
+            while at > 0 and element < out[at - 1] {
+                at = at - 1
+            }
+            out.insert(element, at: at)
+        }
+        out
+    }
+}

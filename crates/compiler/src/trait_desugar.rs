@@ -1114,7 +1114,8 @@ fn resolve_generics(
             };
             bounds.push(bound);
         }
-        let archetype = format!("Param_{}_{}", function.name, param.name);
+        // No `__` in a type's name: the C name of its methods splits there.
+        let archetype = format!("Param_{}_{}", function.name.replace("__", ""), param.name);
         archetypes.push(param_archetype(&archetype, &bounds, scope.traits, param.span)?);
         function.generic.push(GenericParam {
             name: param.name.clone(),

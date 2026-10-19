@@ -480,7 +480,12 @@ mut names: Array<String> = []
 | `.dropLast()` | removes the last element; panics on an empty array |
 | `.insert(item, at: index)` | inserts before `index` (`at: items.count` appends) |
 | `.removeAt(at)` | removes index `at` |
+| `.contains(item)` | whether an element `==` `item`; `T` is `Equatable` |
+| `.indexOf(item)` | the first such element's index, a `May<Int64>`; `T` is `Equatable` |
+| `.sorted()` | a copy in ascending order, equal elements in their order; `T` is `Ordered` |
 
+The last three are written in Thoxa in std/array, for the arrays whose
+element type meets their bound (see [Generic functions](#generic-functions)).
 The writing members return `Void` and need a writable place: write
 `xs.append(4)`, not `xs = xs.append(4)`. Arrays may nest; an inner array is
 reference counted like any other heap value.
@@ -716,6 +721,9 @@ let word = largest(["pear", "fig"])     ## Has("pear")
   a return type, a field's type, or a type argument.
 - A generic function declares its return type, is not multi-clause, and is
   not a function value.
+- std declares methods for every instance of a built-in generic type whose
+  arguments meet bounds, with `extend Array<T: Equatable> { … }`: that is how
+  `contains` and `sorted` exist (only std may `extend`).
 
 ### Function types
 

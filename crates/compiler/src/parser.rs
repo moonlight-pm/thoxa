@@ -764,7 +764,22 @@ impl Parser {
     fn parse_extension(&mut self) -> Result<Extension> {
         let span = self.peek_span();
         self.expect_kind(&TokenKind::Extend)?;
-        let ty = self.parse_type()?;
+        // `extend Array<T: Equatable>` names type parameters, with bounds or
+        // as one capital letter (`extend Array<T>`); `extend Array<String>`
+        // names a type.
+        let parameter = match self.tokens.get(self.pos + 2).map(|token| &token.kind) {
+            Some(TokenKind::Ident(name)) => {
+                self.peek_kind_is(3, TokenKind::Colon)
+                    || (name.len() == 1 && name.chars().all(|c| c.is_ascii_uppercase()))
+            }
+            _ => false,
+        };
+        let generic = parameter && self.peek_kind_is(1, TokenKind::LAngle);
+        let (ty, params) = if generic {
+            self.parse_conformance_target()?
+        } else {
+            (self.parse_type()?, Vec::new())
+        };
         if self.at(TokenKind::As) {
             return Err(Error::at(
                 "an `extend` block's methods call their receiver `self`; drop `as …`",
@@ -787,7 +802,12 @@ impl Parser {
             methods.push(self.parse_method()?);
         }
         self.expect_kind(&TokenKind::RBrace)?;
-        Ok(Extension { span, ty, methods })
+        Ok(Extension {
+            span,
+            ty,
+            params,
+            methods,
+        })
     }
 
     /// `[export] trait Name [: Parent & Parent] { fn … }` (D228). A member

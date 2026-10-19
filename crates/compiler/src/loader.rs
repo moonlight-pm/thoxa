@@ -215,9 +215,10 @@ fn load_package_from_entry_ast_inner(
 }
 
 /// std modules in every package, imported or not: `core` holds the built-in
-/// traits, visible by name everywhere (D228); `string` holds String's
-/// methods, written with `extend` (D196), which a method call finds.
-const CORE_MODULES: &[&str] = &["core", "string"];
+/// traits, visible by name everywhere (D228); `string` and `array` hold
+/// String's and Array's methods, written with `extend` (D196), which a method
+/// call finds.
+const CORE_MODULES: &[&str] = &["core", "string", "array"];
 
 pub fn include_core_modules(package: &mut Package) -> Result<()> {
     let Ok(root) = std_lib_root() else {

@@ -39,6 +39,7 @@ The source is in [`std/`](../../std/).
 | `std/json` | The `Json` tree, `decode` / `encode`, and `Issue` for typed reads |
 | `std/sqlite` | Embedded SQLite: `open`, `exec`, `query`, `sql"…"` |
 | `std/string` | String's methods (in every program), `Split`, `parseUInt` |
+| `std/array` | Array's `contains`, `indexOf`, `sorted` (in every program) |
 | `std/unicode` | The Unicode case tables `std/string` uses |
 | `std/normalize` | Unicode normalization: `nfc`, `nfd`, `nfkc`, `nfkd` |
 | `std/path` | Path manipulation and the working directory |

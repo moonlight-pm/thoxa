@@ -55,7 +55,13 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
             continue;
         };
         check_type(&extension.ty)?;
-        let key = cast_reader_key(&extension.ty);
+        // A generic header's functions are generic (D228 §5), keyed by the
+        // type alone: `__extend_Array_contains`.
+        let key = if extension.params.is_empty() {
+            cast_reader_key(&extension.ty)
+        } else {
+            extension.ty.name.clone()
+        };
         for method in &extension.methods {
             if let Some(param) = method.params.iter().find(|p| p.name == "self") {
                 return Err(Error::at(
@@ -75,10 +81,10 @@ pub fn desugar_module(module: &mut Module) -> Result<()> {
                 exported: method.exported,
                 name: extension_fn_name(&key, &method.name),
                 name_span: method.name_span,
+                type_params: extension.params.clone(),
                 params: std::iter::once(receiver).chain(method.params.iter().cloned()).collect(),
                 return_type: method.return_type.clone(),
                 body: method.body.clone(),
-                type_params: Vec::new(),
                 generic: Vec::new(),
             });
         }

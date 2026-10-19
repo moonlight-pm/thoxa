@@ -1,0 +1,27 @@
+## Array's methods in Thoxa (D228 §5): generic `extend` blocks in std/array
+## give every `Array<T>` the methods its `T`'s conformances allow.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Version(major: Int64, minor: Int64)
+conform Version to Equatable, Ordered
+
+fn at(found!: May<Int64>) -> String {
+    match found {
+        Has(index) => "{index}"
+        Not => "none"
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let numbers = [5, 3, 8, 3]
+    info("contains: {numbers.contains(8)} {numbers.contains(4)}")
+    info("indexOf: {at(numbers.indexOf(3))} {at(numbers.indexOf(9))}")
+    info("sorted: {numbers.sorted()}")
+    info("words: {[\"pear\", \"apple\", \"fig\"].sorted()}")
+    let versions = [Version(major: 2, minor: 0), Version(major: 1, minor: 9)]
+    let ordered = versions.sorted()
+    info("versions: {ordered[0].major}.{ordered[0].minor} {versions.contains(Version(major: 1, minor: 9))}")
+}

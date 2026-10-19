@@ -222,11 +222,14 @@ pub struct FieldDecl {
 }
 
 /// `extend Type { [export] fn … }` (D196): methods on a built-in type, whose
-/// receiver is `self` (D228).
+/// receiver is `self` (D228). `extend Array<T: Equatable> { … }` declares them
+/// for every instance whose arguments meet the bounds (D228 §5).
 #[derive(Debug, Clone)]
 pub struct Extension {
     pub span: Span,
     pub ty: TypeExpr,
+    /// A generic header's type parameters, one per argument of `ty`.
+    pub params: Vec<TypeParamBound>,
     pub methods: Vec<Method>,
 }
 

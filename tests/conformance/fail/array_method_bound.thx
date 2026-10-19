@@ -1,0 +1,5 @@
+## D228 §5: an Array method from a generic `extend` needs its bound.
+fn main() {
+    let tags = [<p>a</p>]
+    let found = tags.contains(<p>a</p>)
+}

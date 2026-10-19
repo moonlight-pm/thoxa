@@ -1,0 +1,5 @@
+contains: true false
+indexOf: 1 none
+sorted: [3, 3, 5, 8]
+words: ["apple", "fig", "pear"]
+versions: 1.9 true
