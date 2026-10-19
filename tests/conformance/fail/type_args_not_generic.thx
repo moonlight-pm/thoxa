@@ -1,0 +1,9 @@
+## D230: only a generic function, method, or type takes type arguments.
+fn label(value!: Int64) -> String {
+    "#{value}"
+}
+
+fn main() {
+    label<Int64>(1)
+    0
+}

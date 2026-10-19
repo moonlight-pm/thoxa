@@ -51,6 +51,7 @@ pub(super) fn instantiate_call(
     args: &[Arg],
     span: Span,
     expect: Option<&Ty>,
+    explicit: &[Ty],
 ) -> Result<String> {
     let template = ctx.synthetics.borrow().generic_fns[template_name].clone();
     let function = &template.function;
@@ -61,7 +62,15 @@ pub(super) fn instantiate_call(
         .filter(|param| param.derived.is_none())
         .map(|param| param.name.clone())
         .collect();
-    let mut bindings: HashMap<String, Ty> = HashMap::new();
+    // Written ones are the function's own: an `extend` method's are those
+    // its receiver does not fix (`map<U>`'s `U`, not `Array<T>`'s `T`).
+    let own: Vec<String> = match function.params.first() {
+        Some(receiver) if function.name.starts_with("__extend_") && receiver.name == "self" => {
+            names.iter().filter(|name| !mentions(&receiver.ty, std::slice::from_ref(name))).cloned().collect()
+        }
+        _ => names.clone(),
+    };
+    let mut bindings = written_bindings(&own, explicit, shown, span)?;
     for (param, arg) in function.params.iter().zip(match_args(&function.params, args)) {
         let Some(arg) = arg else { continue };
         if !mentions(&param.ty, &names) {
@@ -75,8 +84,11 @@ pub(super) fn instantiate_call(
             let _ = bind(ret, expect, &names, &mut bindings, ctx, span, shown);
         }
     }
-    let help = "annotate what the call's result is assigned to, or pass a typed value";
-    complete_bindings(ctx, &function.generic, &mut bindings, shown, span, help)?;
+    let help = format!(
+        "write them out, `{shown}<{}>(…)`, or annotate what the call's result is assigned to",
+        own.join(", ")
+    );
+    complete_bindings(ctx, &function.generic, &mut bindings, shown, span, &help)?;
     let instance = instance_name(template_name, function, &bindings);
     let existing = ctx.synthetics.borrow().fn_instances.get(&instance).cloned();
     let sig = match existing {
@@ -96,6 +108,26 @@ pub(super) fn instantiate_call(
     };
     ctx.fns.insert(instance.clone(), sig);
     Ok(instance)
+}
+
+/// The type arguments a call writes out (D230), bound to `own` in order:
+/// all of them, or none.
+fn written_bindings(own: &[String], explicit: &[Ty], shown: &str, span: Span) -> Result<HashMap<String, Ty>> {
+    if explicit.is_empty() {
+        return Ok(HashMap::new());
+    }
+    if explicit.len() != own.len() {
+        return Err(Error::at(
+            format!(
+                "`{shown}` takes {} type argument{}, and the call writes {}",
+                own.len(),
+                if own.len() == 1 { "" } else { "s" },
+                explicit.len()
+            ),
+            span,
+        ));
+    }
+    Ok(own.iter().cloned().zip(explicit.iter().cloned()).collect())
 }
 
 /// Bind a template's parameters that are not inferred (`S.Item`, read off
@@ -169,6 +201,7 @@ pub(super) fn instantiate_method(
     method: &str,
     args: &[Arg],
     span: Span,
+    explicit: &[Ty],
 ) -> Result<String> {
     let template = ctx.types[type_name].templates[method].clone();
     let shown = format!("{}.{method}", display_ty(&Ty::User(type_name.to_string())));
@@ -179,7 +212,7 @@ pub(super) fn instantiate_method(
         .map(|param| param.name.clone())
         .collect();
     let params = &template.method.params;
-    let mut bindings: HashMap<String, Ty> = HashMap::new();
+    let mut bindings = written_bindings(&names, explicit, &shown, span)?;
     for (param, arg) in params.iter().zip(match_args(params, args)) {
         let Some(arg) = arg else { continue };
         if !mentions(&param.ty, &names) {
@@ -188,8 +221,8 @@ pub(super) fn instantiate_method(
         let ty = infer_block_ty(ctx, &tail_block(arg.clone()))?;
         bind(&param.ty, &ty, &names, &mut bindings, ctx, arg.span, &shown)?;
     }
-    let help = "pass a typed value: a method's type arguments come from its arguments";
-    complete_bindings(ctx, generic, &mut bindings, &shown, span, help)?;
+    let help = format!("write them out, `.{method}<{}>(…)`: a method's come from its arguments", names.join(", "));
+    complete_bindings(ctx, generic, &mut bindings, &shown, span, &help)?;
     method_instance(ctx, type_name, &template, bindings, false)
 }
 

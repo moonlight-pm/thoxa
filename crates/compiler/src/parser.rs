@@ -2378,6 +2378,7 @@ impl Parser {
                 let start = expr.span.start;
                 self.bump();
                 let (name, name_span) = self.expect_member_name()?;
+                let type_args = self.call_type_args();
                 if self.at(TokenKind::LParen) {
                     self.bump();
                     let args = self.parse_arg_list()?;
@@ -2389,6 +2390,7 @@ impl Parser {
                             method: name,
                             method_span: name_span,
                             args,
+                            type_args,
                         },
                         span: Span::new(start, end),
                     };
@@ -2530,12 +2532,13 @@ impl Parser {
                 {
                     return self.parse_tagged_interp(name, name_span);
                 }
+                let type_args = self.call_type_args();
                 if self.at(TokenKind::LParen) {
                     self.bump();
                     let args = self.parse_arg_list()?;
                     self.expect_kind(&TokenKind::RParen)?;
                     Ok(Expr {
-                        kind: ExprKind::Call { callee: name, args },
+                        kind: ExprKind::Call { callee: name, args, type_args },
                         span: Span::new(start.start, self.prev_span().end),
                     })
                 } else {
@@ -2793,6 +2796,39 @@ impl Parser {
             && self.angle_glued_to_next()
             && (self.peek_kind_is(1, TokenKind::Ident(String::new()))
                 || self.peek_kind_is(1, TokenKind::RAngle))
+    }
+
+    /// `<Int64, String>` glued to the name before it and followed by `(`:
+    /// a call's type arguments written out (D230). A comparison needs spaces
+    /// around its `<`, so this is never one; anything else leaves the tokens
+    /// as they were.
+    fn call_type_args(&mut self) -> Vec<TypeExpr> {
+        if !self.at(TokenKind::LAngle) || !self.angle_glued_to_prev() || !self.angle_glued_to_next() {
+            return Vec::new();
+        }
+        let (pos, extra, soft) = (self.pos, self.extra_rangles, self.soft_errors.len());
+        let parsed = (|| -> Result<Vec<TypeExpr>> {
+            self.bump();
+            let mut args = Vec::new();
+            loop {
+                args.push(self.parse_type()?);
+                if !self.at(TokenKind::Comma) {
+                    break;
+                }
+                self.bump();
+            }
+            self.expect_rangle()?;
+            Ok(args)
+        })();
+        match parsed {
+            Ok(args) if self.extra_rangles == extra && self.at(TokenKind::LParen) => args,
+            _ => {
+                self.pos = pos;
+                self.extra_rangles = extra;
+                self.soft_errors.truncate(soft);
+                Vec::new()
+            }
+        }
     }
 
     fn angle_glued_to_next(&self) -> bool {
@@ -3598,6 +3634,7 @@ fn jsx_child_wrap(expr: Expr) -> Expr {
         kind: ExprKind::Call {
             callee: "__jsx_child".into(),
             args: vec![Arg::Pos(expr)],
+            type_args: Vec::new(),
         },
         span,
     }
@@ -3610,6 +3647,7 @@ fn jsx_attr_wrap(expr: Expr) -> Expr {
         kind: ExprKind::Call {
             callee: "__jsx_attr".into(),
             args: vec![Arg::Pos(expr)],
+            type_args: Vec::new(),
         },
         span,
     }
@@ -3658,6 +3696,7 @@ fn desugar_jsx(
             kind: ExprKind::Call {
                 callee: tag,
                 args: prop_args,
+                type_args: Vec::new(),
             },
             span,
         };
@@ -3668,6 +3707,7 @@ fn desugar_jsx(
                 method: "__view".into(),
                 method_span: tag_span,
                 args: vec![jsx_named("children", tag_span, jsx_array_lit(kids, span))],
+                type_args: Vec::new(),
             },
             span,
         }
@@ -3681,6 +3721,7 @@ fn desugar_jsx(
                     jsx_named("attributes", tag_span, attrs_expr),
                     jsx_named("children", tag_span, jsx_array_lit(kids, span)),
                 ],
+                type_args: Vec::new(),
             },
             span,
         }
@@ -3732,6 +3773,7 @@ fn desugar_jsx_for(for_expr: Expr) -> Result<Expr> {
             method: "append".into(),
             method_span: span,
             args: vec![Arg::Pos(jsx_child_wrap(*tail.clone()))],
+            type_args: Vec::new(),
         },
         span,
     };
@@ -3786,6 +3828,7 @@ fn jsx_attr_ctor(name: String, name_span: Span, value: Expr) -> Expr {
                 jsx_named("name", name_span, jsx_string_lit(name, name_span)),
                 jsx_named("value", name_span, jsx_attr_wrap(value)),
             ],
+            type_args: Vec::new(),
         },
         span: name_span,
     }
@@ -3835,6 +3878,7 @@ fn desugar_html_attrs(attrs: Vec<JsxAttr>, span: Span) -> Expr {
                         method: "append".into(),
                         method_span: name_span,
                         args: vec![Arg::Pos(jsx_attr_ctor(name, name_span, value))],
+                        type_args: Vec::new(),
                     },
                     span: name_span,
                 }));
@@ -3856,6 +3900,7 @@ fn desugar_html_attrs(attrs: Vec<JsxAttr>, span: Span) -> Expr {
                                     method: "append".into(),
                                     method_span: sp,
                                     args: vec![Arg::Pos(jsx_name_expr("__jsx_a", sp))],
+                                    type_args: Vec::new(),
                                 },
                                 span: sp,
                             })),
@@ -4621,7 +4666,7 @@ mod tests {
             panic!("expected let");
         };
         match &init.kind {
-            ExprKind::Call { callee, args } => {
+            ExprKind::Call { callee, args, .. } => {
                 assert_eq!(callee, "__jsx_el");
                 assert_eq!(args.len(), 3);
             }
@@ -4671,7 +4716,7 @@ mod tests {
             panic!("expected let");
         };
         match &init.kind {
-            ExprKind::Call { callee, args } => {
+            ExprKind::Call { callee, args, .. } => {
                 assert_eq!(callee, "__jsx_el");
                 assert_eq!(args.len(), 3);
             }
@@ -4822,6 +4867,57 @@ mod tests {
             err.contains("needs spaces") || err.contains("no space"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn parse_call_type_args_glued() {
+        let module = parse(
+            r#"
+            fn main() -> Int64 {
+                let names = none<String>()
+                let rows = shelf.empty<Map<String, Array<Int64>>>()
+                0
+            }
+        "#,
+        );
+        let Item::Function(f) = &module.items[0] else {
+            panic!("expected fn");
+        };
+        let BlockItem::Let { init, .. } = &f.body.items[0] else {
+            panic!("expected let");
+        };
+        match &init.kind {
+            ExprKind::Call { callee, type_args, .. } => {
+                assert_eq!(callee, "none");
+                assert_eq!(type_args.len(), 1);
+                assert_eq!(type_args[0].name, "String");
+            }
+            other => panic!("expected a call, got {other:?}"),
+        }
+        let BlockItem::Let { init, .. } = &f.body.items[1] else {
+            panic!("expected let");
+        };
+        match &init.kind {
+            ExprKind::MethodCall { method, type_args, .. } => {
+                assert_eq!(method, "empty");
+                assert_eq!(type_args.len(), 1);
+                assert_eq!(type_args[0].name, "Map");
+            }
+            other => panic!("expected a method call, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_glued_lt_without_call_still_needs_spaces() {
+        let err = parse_err(
+            r#"
+            fn main() -> Int64 {
+                let b = a<b>c
+                0
+            }
+        "#,
+        );
+        assert!(err.contains("needs spaces"), "unexpected error: {err}");
     }
 
     #[test]

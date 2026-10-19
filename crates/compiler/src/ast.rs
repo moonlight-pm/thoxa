@@ -576,6 +576,9 @@ pub enum ExprKind {
     Call {
         callee: String,
         args: Vec<Arg>,
+        /// `empty<Int64>()`: type arguments written out, `<` glued to the
+        /// name (D230). Empty when inferred.
+        type_args: Vec<TypeExpr>,
     },
     /// `(expr)(args)` / call through a function value (D132).
     IndirectCall {
@@ -600,6 +603,8 @@ pub enum ExprKind {
         method: String,
         method_span: Span,
         args: Vec<Arg>,
+        /// `shelf.empty<Int64>()` (D230). Empty when inferred.
+        type_args: Vec<TypeExpr>,
     },
     /// `base[index]` — fixed-array field element (R7) or dynamic Array element.
     Index {

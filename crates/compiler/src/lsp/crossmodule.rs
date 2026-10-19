@@ -822,6 +822,7 @@ fn walk_expr_member(expr: &Expr, span: Span) -> Option<(String, String)> {
             method,
             method_span,
             args,
+            ..
         } => {
             if *method_span == span {
                 if let ExprKind::Name(recv) = &receiver.kind {
@@ -1275,7 +1276,7 @@ fn walk_block_item_call_args(item: &ast::BlockItem, byte: usize, best: &mut Opti
 
 fn walk_expr_call_args(expr: &Expr, byte: usize, best: &mut Option<CallArgHit>) {
     match &expr.kind {
-        ExprKind::Call { callee, args } | ExprKind::Start { callee, args, .. } => {
+        ExprKind::Call { callee, args, .. } | ExprKind::Start { callee, args, .. } => {
             collect_args(
                 args,
                 CallShape::Free {

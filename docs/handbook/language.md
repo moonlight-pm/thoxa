@@ -728,6 +728,14 @@ let word = largest(["pear", "fig"])     ## Has("pear")
   result names it, from the type the result is expected to have
   (`let names: Array<String> = none()`). One type parameter is one type:
   `same(1, "one")` is an error. The arguments must meet the bounds.
+- A call may write its type arguments out, with `<` glued to the name:
+  `none<String>()`, `pair<Int64, String>(1, "b")`. It writes all of them,
+  in order, or none; inference then fills none. A comparison needs spaces
+  around its `<`, so `a<b` is never one. The same goes for a method's own
+  (`shelf.empty<Int64>()`, `[1, 2].map<String>(label)`, where the array
+  fixes `T`), a generic type's constructor (`Box<Int64>(value: 5)`,
+  `Map<String, Int64>()`), and `Has<Int64>(5)`, a `May<Int64>`. `Pass` and
+  `Fail` take their `Trial` from where they are used.
 - The function is compiled for each set of type arguments the program uses.
 - A bare trait as a parameter's type is a hidden type parameter, one per
   parameter: `fn report(shape!: Shape)` is `fn report<S: Shape>(shape!: S)`,

@@ -139,6 +139,7 @@ pub(crate) fn call(callee: &str, args: Vec<Arg>) -> Expr {
         kind: ExprKind::Call {
             callee: callee.into(),
             args,
+            type_args: Vec::new(),
         },
         span: dummy(),
     }
@@ -151,6 +152,7 @@ pub(crate) fn method_call(receiver: Expr, method: &str, args: Vec<Arg>) -> Expr 
             method: method.into(),
             method_span: dummy(),
             args,
+            type_args: Vec::new(),
         },
         span: dummy(),
     }

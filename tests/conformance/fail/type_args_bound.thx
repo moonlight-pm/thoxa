@@ -1,0 +1,11 @@
+## D230: written type arguments meet the bounds.
+type Plain(count: Int64)
+
+fn show<T: Show>(item!: T) -> String {
+    "{item}"
+}
+
+fn main() {
+    show<Plain>(Plain(count: 1))
+    0
+}

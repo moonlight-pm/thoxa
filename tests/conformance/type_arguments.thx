@@ -1,0 +1,57 @@
+## Type arguments written out (D230): `<` glued to the name, which a
+## comparison never is (`a < b` needs spaces). They fill a generic function's,
+## a method's own, or a generic type's parameters, in order, where nothing
+## else names them; inference fills none of them then, and bounds still hold.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Box<T>(value: T)
+
+type Shelf(count: Int64) {
+    export fn empty<T>() -> Array<T> {
+        []
+    }
+}
+
+fn none<T>() -> Array<T> {
+    []
+}
+
+fn pair<A: Show, B: Show>(first!: A, second!: B) -> String {
+    "{first} {second}"
+}
+
+fn label(value!: Int64) -> String {
+    "#{value}"
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## A generic function whose arguments do not name `T`.
+    let words = none<String>()
+    info("{words.count}")
+    info(pair<Int64, String>(1, "b"))
+
+    ## A method's own type parameters; std's `map<U>` too (`T` is the array's).
+    let shelf = Shelf(count: 1)
+    let numbers = shelf.empty<Int64>()
+    info("{numbers.count}")
+    info([1, 2].map<String>(label)[1])
+
+    ## A generic type's constructor, `Map`, and `Has` (a `May`).
+    let box = Box<Int64>(value: 5)
+    mut table = Map<String, Int64>()
+    table["a"] = 1
+    info("{box.value} {table.count}")
+    match Has<Int64>(5) {
+        Has(count) => info("has {count}")
+        Not => info("none")
+    }
+
+    ## With spaces, `<` compares.
+    let less = 1 < 2
+    info("{less}")
+    0
+}

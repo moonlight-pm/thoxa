@@ -57,6 +57,104 @@ struct SyntheticRegistry {
     method_jobs: Vec<generic::MethodJob>,
 }
 
+/// A call's written type arguments (D230), resolved in its module.
+fn resolve_type_args(ctx: &mut LowerCtx, type_args: &[TypeExpr]) -> Result<Vec<Ty>> {
+    let name_map = ctx.name_to_type.clone();
+    let mut out = Vec::new();
+    for te in type_args {
+        generic::ensure_instances(ctx, te, &name_map)?;
+        out.push(resolve_ty(te, &ctx.types, &name_map)?);
+    }
+    Ok(out)
+}
+
+/// Type arguments written on a call that takes none.
+fn no_type_args(explicit: &[Ty], name: &str, span: Span) -> Result<()> {
+    if explicit.is_empty() {
+        return Ok(());
+    }
+    Err(Error::at(format!("`{name}` takes no type arguments"), span))
+}
+
+/// `Box<Int64>(value: 1)` and `Map<String, Int64>()`: a generic type's
+/// constructor with its instance written out is the constructor that
+/// instance is expected (D230). `None` for a generic function, which takes
+/// them itself.
+fn explicit_type_call(
+    ctx: &mut LowerCtx,
+    callee: &str,
+    args: &[Arg],
+    span: Span,
+    expect: Option<&Ty>,
+    type_args: &[TypeExpr],
+    explicit: &[Ty],
+) -> Result<Option<(Place, Ty)>> {
+    if ctx.lookup(callee).is_some() {
+        return Err(Error::at(format!("`{callee}` is a function value: it takes no type arguments"), span));
+    }
+    if callee == "Map" {
+        let [key, val] = explicit else {
+            return Err(Error::at("`Map` takes 2 type arguments: `Map<K, V>()`", span));
+        };
+        let ty = Ty::Map {
+            key: Box::new(key.clone()),
+            val: Box::new(val.clone()),
+        };
+        return lower_map_new(ctx, args, span, Some(&ty)).map(Some);
+    }
+    // `Has<Int64>(5)` makes the `May<Int64>` it is a member of; a `Pass` or
+    // `Fail` names only one side of its `Trial`.
+    match callee {
+        "Has" if explicit.len() == 1 => {
+            let may = TypeExpr {
+                name: "std_fallible_May".into(),
+                args: type_args.iter().cloned().map(TypeArg::Type).collect(),
+                span,
+                lit: None,
+                mark: None,
+                union_members: None,
+                fn_type: None,
+                where_clause: None,
+            };
+            let name_map = ctx.name_to_type.clone();
+            generic::ensure_instances(ctx, &may, &name_map)?;
+            let may = resolve_ty(&may, &ctx.types, &name_map)?;
+            return lower_call(ctx, callee, args, span, Some(expect.unwrap_or(&may)), &[]).map(Some);
+        }
+        "Pass" | "Fail" => {
+            return Err(Error::at(
+                format!("`{callee}` takes its `Trial` from where it is used, not from type arguments"),
+                span,
+            )
+            .with_help("annotate the value: `let result: Trial<Int64, String> = Pass(5)`"))
+        }
+        _ => {}
+    }
+    let mangled = ctx.name_to_fn.get(callee).cloned().unwrap_or_else(|| callee.to_string());
+    if ctx.synthetics.borrow().generic_fns.contains_key(&mangled) {
+        return Ok(None);
+    }
+    let base = ctx.name_to_type.get(callee).cloned().unwrap_or_else(|| callee.to_string());
+    if ctx.synthetics.borrow().generics.contains_key(&base) {
+        let written = TypeExpr {
+            name: callee.to_string(),
+            args: type_args.iter().cloned().map(TypeArg::Type).collect(),
+            span,
+            lit: None,
+            mark: None,
+            union_members: None,
+            fn_type: None,
+            where_clause: None,
+        };
+        let name_map = ctx.name_to_type.clone();
+        generic::ensure_instances(ctx, &written, &name_map)?;
+        let instance = resolve_ty(&written, &ctx.types, &name_map)?;
+        let _ = expect;
+        return lower_call(ctx, callee, args, span, Some(&instance), &[]).map(Some);
+    }
+    Err(Error::at(format!("`{callee}` takes no type arguments"), span))
+}
+
 /// The types and methods made while lowering, added to a context's `types`:
 /// generic types' instances, and methods made from templates.
 fn seed_synthetics(types: &mut HashMap<String, TypeInfo>, synthetics: &SyntheticRegistry) {
@@ -5156,7 +5254,7 @@ fn collect_local_fn_calls(block: &Block, out: &mut CallNames) {
 
 fn collect_local_fn_calls_expr(expr: &Expr, out: &mut CallNames) {
     match &expr.kind {
-        ExprKind::Call { callee, args } | ExprKind::Start { callee, args, .. } => {
+        ExprKind::Call { callee, args, .. } | ExprKind::Start { callee, args, .. } => {
             out.functions.insert(callee.clone());
             for a in args {
                 match a {
@@ -8322,9 +8420,10 @@ fn subst_expr<S: TypeSubst + ?Sized>(e: &Expr, subst: &S) -> Expr {
             left: Box::new(subst_expr(left, subst)),
             right: Box::new(subst_expr(right, subst)),
         },
-        ExprKind::Call { callee, args } => ExprKind::Call {
+        ExprKind::Call { callee, args, type_args } => ExprKind::Call {
             callee: callee.clone(),
             args: args.iter().map(|a| subst_arg(a, subst)).collect(),
+            type_args: type_args.iter().map(|ty| subst_type_expr(ty, subst)).collect(),
         },
         ExprKind::IndirectCall { callee, args } => ExprKind::IndirectCall {
             callee: Box::new(subst_expr(callee, subst)),
@@ -8353,11 +8452,13 @@ fn subst_expr<S: TypeSubst + ?Sized>(e: &Expr, subst: &S) -> Expr {
             method,
             method_span,
             args,
+            type_args,
         } => ExprKind::MethodCall {
             receiver: Box::new(subst_expr(receiver, subst)),
             method: method.clone(),
             method_span: *method_span,
             args: args.iter().map(|a| subst_arg(a, subst)).collect(),
+            type_args: type_args.iter().map(|ty| subst_type_expr(ty, subst)).collect(),
         },
         ExprKind::Index { base, index } => ExprKind::Index {
             base: Box::new(subst_expr(base, subst)),
@@ -8671,7 +8772,7 @@ fn lower_sibling_call(
     let method = if ctx.types[type_name].methods.contains_key(method) {
         method
     } else {
-        instance = generic::instantiate_method(ctx, type_name, method, args, span)?;
+        instance = generic::instantiate_method(ctx, type_name, method, args, span, &[])?;
         instance.as_str()
     };
     let info = ctx.types.get(type_name).unwrap().clone();
@@ -9761,7 +9862,7 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             }
         }
         ExprKind::Binary { op, left, right } => lower_binary(ctx, *op, left, right, expr.span),
-        ExprKind::Call { callee, args } => lower_call(ctx, callee, args, expr.span, expect),
+        ExprKind::Call { callee, args, type_args } => lower_call(ctx, callee, args, expr.span, expect, type_args),
         ExprKind::IndirectCall { callee, args } => {
             let (fun, fun_ty) = lower_expr(ctx, callee)?;
             lower_indirect_call(ctx, fun, fun_ty, args, expr.span)
@@ -9780,7 +9881,8 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             method,
             method_span,
             args,
-        } => lower_method_call(ctx, receiver, method, *method_span, args),
+            type_args,
+        } => lower_method_call_typed(ctx, receiver, method, *method_span, args, type_args),
         ExprKind::If { .. } => unreachable!("If handled in lower_expr_expect"),
         ExprKind::While { cond, body } => lower_while(ctx, cond, body, expr.span),
         ExprKind::Loop { body } => lower_loop(ctx, body, expr.span),
@@ -10349,6 +10451,7 @@ fn lower_for_cursor(
             method: method.to_string(),
             method_span: span,
             args: Vec::new(),
+            type_args: Vec::new(),
         },
         span,
     };
@@ -12029,6 +12132,20 @@ fn lower_method_call(
     method_span: Span,
     args: &[Arg],
 ) -> Result<(Place, Ty)> {
+    lower_method_call_typed(ctx, receiver, method, method_span, args, &[])
+}
+
+/// `value.method<Int64>(…)`: a method call with its type arguments written
+/// out (D230), or none.
+fn lower_method_call_typed(
+    ctx: &mut LowerCtx,
+    receiver: &Expr,
+    method: &str,
+    method_span: Span,
+    args: &[Arg],
+    type_args: &[TypeExpr],
+) -> Result<(Place, Ty)> {
+    let explicit = resolve_type_args(ctx, type_args)?;
     // `<Card …>…</Card>` calls `view` on a `Component` (D228).
     if method == "__view" {
         let ty = infer_block_ty(ctx, &tail_block(receiver.clone()))?;
@@ -12389,6 +12506,7 @@ fn lower_method_call(
     };
     // Methods std writes in Thoxa with `extend` (D196), then the runtime's.
     if let Some(sig) = extension_method(ctx, &recv_ty, method, method_span)? {
+        no_type_args(&explicit, method, method_span)?;
         return lower_extension_call(ctx, recv_p, &recv_ty, sig, method, args, method_span);
     }
     // A generic `extend` block's (`extend Array<T: Equatable>`, D228 §5).
@@ -12396,7 +12514,7 @@ fn lower_method_call(
         let receiver = codec::bind_fresh(ctx, "__receiver", &recv_ty, recv_p);
         let mut all_args = vec![Arg::Pos(crate::ast_build::name(&receiver))];
         all_args.extend(args.iter().cloned());
-        let instance = generic::instantiate_call(ctx, &template, method, &all_args, method_span, None)?;
+        let instance = generic::instantiate_call(ctx, &template, method, &all_args, method_span, None, &explicit)?;
         let sig = ctx.fns[&instance].clone();
         let places = resolve_call_args_full(
             ctx,
@@ -12409,6 +12527,9 @@ fn lower_method_call(
             &sig.def_mod,
         )?;
         return emit_call_result(ctx, Callee::User(instance), places, sig.ret);
+    }
+    if !matches!(recv_ty, Ty::User(_)) {
+        no_type_args(&explicit, method, method_span)?;
     }
     if string_receiver {
         return lower_string_method(ctx, recv_p, method, args, method_span);
@@ -12537,9 +12658,10 @@ fn lower_method_call(
             // A method with type parameters: the one for this call's (D228 §5).
             let instance: String;
             let (info, method) = if !info.methods.contains_key(method) && info.templates.contains_key(method) {
-                instance = generic::instantiate_method(ctx, &type_name, method, args, method_span)?;
+                instance = generic::instantiate_method(ctx, &type_name, method, args, method_span, &explicit)?;
                 (ctx.types[&type_name].clone(), instance.as_str())
             } else {
+                no_type_args(&explicit, method, method_span)?;
                 (info, method)
             };
             let sig = info.methods.get(method).ok_or_else(|| {
@@ -19012,7 +19134,15 @@ fn lower_call(
     args: &[Arg],
     span: Span,
     expect: Option<&Ty>,
+    type_args: &[TypeExpr],
 ) -> Result<(Place, Ty)> {
+    // `empty<Int64>()`: type arguments written out (D230).
+    let explicit = resolve_type_args(ctx, type_args)?;
+    if !explicit.is_empty() {
+        if let Some(found) = explicit_type_call(ctx, callee, args, span, expect, type_args, &explicit)? {
+            return Ok(found);
+        }
+    }
     if let Some(b) = ctx.lookup(callee) {
         if matches!(b.ty, Ty::Fn { .. }) {
             return lower_indirect_call(ctx, b.place, b.ty, args, span);
@@ -19155,7 +19285,7 @@ fn lower_call(
             // A generic function's call names its instance (D228 §5).
             let generic = ctx.synthetics.borrow().generic_fns.contains_key(&mangled);
             let mangled = if generic {
-                generic::instantiate_call(ctx, &mangled, other, args, span, expect)?
+                generic::instantiate_call(ctx, &mangled, other, args, span, expect, &explicit)?
             } else {
                 mangled
             };

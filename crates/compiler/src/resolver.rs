@@ -1120,11 +1120,14 @@ impl<'a> Resolver<'a> {
                 self.walk_expr(left, scope);
                 self.walk_expr(right, scope);
             }
-            ExprKind::Call { callee, args } => {
+            ExprKind::Call { callee, args, type_args } => {
                 // Callee span is not stored separately; best-effort: ref at expr start length.
                 let callee_span = Span::new(expr.span.start, expr.span.start + callee.len());
                 let bid = self.lookup(scope, callee);
                 self.add_ref(callee_span, bid, RefCtx::Call);
+                for ty in type_args {
+                    self.walk_type_expr(ty, scope);
+                }
                 self.walk_args(args, scope, bid);
             }
             ExprKind::IndirectCall { callee, args } => {
@@ -1156,7 +1159,11 @@ impl<'a> Resolver<'a> {
                 method,
                 method_span,
                 args,
+                type_args,
             } => {
+                for ty in type_args {
+                    self.walk_type_expr(ty, scope);
+                }
                 self.walk_expr(receiver, scope);
                 let mid = self
                     .receiver_ty_hint(receiver, scope)

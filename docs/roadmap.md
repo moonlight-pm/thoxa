@@ -139,11 +139,11 @@ charter
 accept loop uses **D128** + **`--> serveOne`** (**D148**) + keep-alive. `examples/kilo`
 shipped and exercised; continue matrix gaps when samples force them.
 
-**Traits (D228, partial: ten slices shipped by 2026-10-19):**
+**Traits (D228, partial: eleven slices shipped by 2026-10-19):**
 declared conformance, traits with shared code, properties, generic
 functions, `mixed` values, associated types and `for` over user types,
 conformances of generic and built-in types with members, methods with type
-parameters;
+parameters, explicit type arguments;
 [`specs/2026-10-18-traits.md`](specs/2026-10-18-traits.md). The gaps left
 are in [`capabilities.md`](capabilities.md) (`traits` row).
 

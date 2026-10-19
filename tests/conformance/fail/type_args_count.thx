@@ -1,0 +1,9 @@
+## D230: a call writes all of a function's type arguments, or none.
+fn none<T>() -> Array<T> {
+    []
+}
+
+fn main() {
+    none<String, Int64>()
+    0
+}

@@ -2014,6 +2014,7 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
         "show" => ExprKind::Call {
             callee: "__show".into(),
             args: vec![Arg::Pos(name("self"))],
+            type_args: Vec::new(),
         },
         "hash" => ExprKind::Call {
             callee: "__hash".into(),
@@ -2024,10 +2025,12 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
                     span,
                 }),
             ],
+            type_args: Vec::new(),
         },
         _ => ExprKind::Call {
             callee: "__compare".into(),
             args: vec![Arg::Pos(name("self")), Arg::Pos(name("other"))],
+            type_args: Vec::new(),
         },
     };
     Method {
