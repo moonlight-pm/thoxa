@@ -1,0 +1,119 @@
+## Conformances of generic types with members and associated types (D228).
+## A conformance with bounds gives its members only to the instances that
+## meet them: `Box<Int64>` has this `equals`, `Box<Plain>` does not. Its
+## members write the type's parameters by the conformance's own names
+## (`conform StackCursor<U>`), and `Self` is the instance.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Box<T>(value: T)
+conform Box<T: Equatable> to Equatable {
+    fn equals(other!: Self) -> Bool {
+        info("  Box.equals")
+        value == other.value
+    }
+}
+
+## A Map keyed by an instance calls the conformance's `hash` and `equals`,
+## which leave out `note`: two keys that differ only there are one key.
+type Key<T>(value: T, note: String)
+conform Key<T: Hashable> to Equatable, Hashable {
+    fn equals(other!: Key<T>) -> Bool {
+        value == other.value
+    }
+    fn hash(mut hasher!: Hasher) {
+        value.hash(mut hasher)
+    }
+}
+conform Key<T: Show> to Show {
+    fn show() -> String {
+        "Key({value})"
+    }
+}
+
+## A sequence of any element type, with a generic cursor.
+type Stack<T>(items: Array<T>)
+conform Stack<T> to Sequence {
+    type Cursor = StackCursor<T>
+    fn iterate() -> Cursor {
+        StackCursor(items: items, index: items.count)
+    }
+}
+
+type StackCursor<T>(items: Array<T>, index: Int64)
+conform StackCursor<U> to Iterator {
+    type Item = U
+    fn next() -> May<U> {
+        if index == 0 {
+            return Not()
+        }
+        index = index - 1
+        Has(items[index])
+    }
+}
+
+## A trait's provided members, and an `Item` it fixes as its cursor's.
+trait Peekable {
+    type Cursor: Iterator
+    type Item = Cursor.Item
+    fn iterate() -> Cursor
+    fn size() -> Int64
+    fn isEmpty() -> Bool {
+        size() == 0
+    }
+    fn first() -> May<Item> {
+        mut cursor = iterate()
+        cursor.next()
+    }
+}
+
+type Shelf<T>(items: Array<T>)
+conform Shelf<T> to Peekable {
+    type Cursor = StackCursor<T>
+    fn iterate() -> Cursor {
+        StackCursor(items: items, index: items.count)
+    }
+    fn size() -> Int64 {
+        items.count
+    }
+}
+
+fn collect<S: Sequence>(items!: S) -> Array<S.Item> {
+    mut out: Array<S.Item> = []
+    for item in items {
+        out.append(item)
+    }
+    out
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let box = Box(value: 3)
+    info("{box == Box(value: 3)} {box.equals(Box(value: 4))}")
+
+    mut counts: Map<Key<String>, Int64> = Map()
+    counts[Key(value: "tea", note: "hot")] = 1
+    counts[Key(value: "tea", note: "iced")] = 2
+    match counts[Key(value: "tea", note: "")] {
+        Has(count) => info("{counts.count} key, {count}, {Key(value: 5, note: "")}")
+        Not => info("missing")
+    }
+
+    let stack = Stack(items: [1, 2, 3])
+    for item in stack {
+        info("{item}")
+    }
+    let words = collect(Stack(items: ["a", "b"]))
+    info("{words.count} {words[0]}")
+
+    let shelf = Shelf(items: ["Emma", "Dune"])
+    match shelf.first() {
+        Has(title) => info("first {title}")
+        Not => info("empty")
+    }
+    let none: Shelf<Int64> = Shelf(items: [])
+    info("{shelf.isEmpty()} {none.isEmpty()}")
+    0
+}

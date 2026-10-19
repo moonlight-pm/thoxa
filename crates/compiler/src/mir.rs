@@ -51,6 +51,24 @@ struct SyntheticRegistry {
     mixed_closed: HashMap<String, HashSet<String>>,
 }
 
+/// Whether a Map keyed by the type `name` calls its own `hash` and `equals`
+/// (D228): it is `Hashable` and writes them, rather than taking the
+/// compiler's field-by-field ones.
+fn own_key_ops(
+    types: &HashMap<String, TypeInfo>,
+    conditional: &HashMap<String, Vec<ast::ConditionalConformance>>,
+    name: &str,
+) -> (bool, bool) {
+    let Some(info) = types.get(name) else {
+        return (false, false);
+    };
+    if !ty_conforms(types, conditional, &Ty::User(name.to_string()), &core_trait("Hashable")) {
+        return (false, false);
+    }
+    let own = |member: &str| info.methods.contains_key(member) && !info.derived.contains(member);
+    (own("hash"), own("equals"))
+}
+
 /// A generic type's instance for `args` meets its parameters' bounds.
 fn instance_meets_bounds(
     types: &HashMap<String, TypeInfo>,
@@ -172,6 +190,14 @@ fn ty_conforms(
 }
 
 impl LowerCtx {
+    /// Take the generic types' instances made since this context was, as a
+    /// probe of an argument's type makes them (D228 §5).
+    fn take_new_instances(&mut self) {
+        for (name, (info, _)) in self.synthetics.borrow().entries.iter() {
+            self.types.entry(name.clone()).or_insert_with(|| info.clone());
+        }
+    }
+
     /// Whether `ty` conforms to std's core trait `name` (D228).
     fn conforms(&self, ty: &Ty, name: &str) -> bool {
         ty_conforms(&self.types, &self.synthetics.borrow().conditional, ty, &core_trait(name))
@@ -1227,6 +1253,10 @@ struct MethodSig {
     mutable: Vec<bool>,
     /// Parallel to `params`: marked `!` (D200).
     positional: Vec<bool>,
+    /// A generic type's instance has this method only when each of these
+    /// type arguments (the parameter, its argument) meets its bound: the
+    /// conformance it comes from holds per instance (D228).
+    requires: Vec<(String, Ty, TraitRef)>,
 }
 
 /// One clause of a multi-clause function/method (D131).
@@ -1326,6 +1356,9 @@ struct GenericDef {
     /// Its defining module's type names, which its fields and members are
     /// written with, wherever an instance is made (`May`'s `Has`).
     name_map: HashMap<String, String>,
+    /// Its conformances' associated types, written with its parameters
+    /// (`type Cursor = StackCursor<T>`), and their bounds (D228 §7).
+    assoc: Vec<(String, TypeExpr, Vec<TraitRef>)>,
 }
 
 #[derive(Clone)]
@@ -1967,6 +2000,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                         kind,
                         name_span: td.name_span,
                         name_map: HashMap::new(),
+                        assoc: td.assoc.clone(),
                     },
                 );
                 if td.exported {
@@ -2278,11 +2312,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     }
     // D228: a Map keyed by a type with its own `hash` / `equals` calls them.
     for layout in &mut type_layouts {
-        if let Some(info) = types_info.get(&layout.name) {
-            let own = |member: &str| info.methods.contains_key(member) && !info.derived.contains(member);
-            layout.own_hash = info.traits.contains(&core_trait("Hashable")) && own("hash");
-            layout.own_equals = info.traits.contains(&core_trait("Hashable")) && own("equals");
-        }
+        (layout.own_hash, layout.own_equals) = own_key_ops(&types_info, &conditional, &layout.name);
     }
     if !drop_errors.is_empty() {
         return Err(errors_to_multi(drop_errors));
@@ -2355,6 +2385,25 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                     ));
                 }
             }
+        }
+    }
+    // A generic type's instances hash structurally unless a conformance
+    // writes `hash`: one with its own `equals` must, too.
+    for (mangled, gdef) in &generics {
+        let GenericKind::Product { methods, .. } = &gdef.kind else { continue };
+        let hashable = conditional
+            .get(mangled)
+            .is_some_and(|list| list.iter().any(|each| each.trait_ref == core_trait("Hashable")));
+        let has = |name: &str| methods.iter().any(|method| method.name == name);
+        if hashable && has("equals") && !has("hash") {
+            default_errors.push(in_module_id(
+                Error::at(
+                    format!("`{}` has its own `equals`, so its `Hashable` conformance needs its own `hash`: equal values must hash alike", gdef.source_name),
+                    gdef.name_span,
+                ),
+                package,
+                &gdef.def_mod,
+            ));
         }
     }
     if !default_errors.is_empty() {
@@ -2918,8 +2967,13 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         }
     }
 
-    // Monomorphized methods on generic products (no multi-clause on generic templates in v0).
-    for job in mono_method_jobs.iter().filter(|job| !job.conversion) {
+    // Monomorphized methods on generic products (no multi-clause on generic
+    // templates in v0); an instance has a conformance's only when it meets
+    // the conformance's bounds.
+    for job in mono_method_jobs
+        .iter()
+        .filter(|job| !job.conversion && job_applies(&types_info, &synthetics, job))
+    {
         let m = package
             .modules
             .iter()
@@ -3050,7 +3104,10 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             if late.is_empty() {
                 break;
             }
-            for job in late.iter().filter(|job| !job.conversion) {
+            for job in late
+                .iter()
+                .filter(|job| !job.conversion && job_applies(&types_info, &synthetics, job))
+            {
                 let m = package.modules.iter().find(|x| x.id == job.def_mod).unwrap();
                 let maps = package_maps.get(&job.def_mod).unwrap();
                 let method = subst_method(&job.method, &job.subst);
@@ -4374,6 +4431,7 @@ fn merge_method_clauses(
                 multi_clause: false,
                 mutable,
                 positional,
+                requires: Vec::new(),
             },
             None,
         ));
@@ -4531,6 +4589,7 @@ fn merge_method_clauses(
             multi_clause: true,
             mutable: Vec::new(),
             positional: clauses[0].params.iter().map(|p| p.positional).collect(),
+            requires: Vec::new(),
         },
         Some(resolved),
     ))
@@ -5129,7 +5188,7 @@ fn infer_unannotated_returns(
     let mono_methods: Vec<(&MonoMethodJob, Method)> = mono_method_jobs
         .iter()
         .filter(|job| {
-            !job.conversion && job.method.return_type.is_none()
+            !job.conversion && job.method.return_type.is_none() && job_applies(types, synthetics, job)
         })
         .map(|job| (job, subst_method(&job.method, &job.subst)))
         .collect();
@@ -6051,6 +6110,9 @@ fn monomorphize_pending(
     mono_methods: &mut Vec<MonoMethodJob>,
 ) -> Result<()> {
     let mut guard = 0;
+    // Products made, whose methods' signatures resolve once every instance
+    // they name is made.
+    let mut made: Vec<(String, String, HashMap<String, Ty>, HashMap<String, String>)> = Vec::new();
     while !pending.is_empty() {
         guard += 1;
         if guard > 10_000 {
@@ -6089,7 +6151,7 @@ fn monomorphize_pending(
                 conversions,
             } => {
                 instantiate_product_mono(
-                    mono,
+                    mono.clone(),
                     gdef,
                     params,
                     methods,
@@ -6100,9 +6162,9 @@ fn monomorphize_pending(
                     &name_map,
                     generics,
                     &mut pending,
-                    mono_methods,
                     span,
                 )?;
+                made.push((mono, base.clone(), subst, name_map));
             }
             GenericKind::Union { members } => {
                 instantiate_union_mono(
@@ -6119,6 +6181,13 @@ fn monomorphize_pending(
                 )?;
             }
         }
+    }
+    for (mono, base, subst, name_map) in made {
+        let gdef = &generics[&base];
+        let GenericKind::Product { methods, conversions, .. } = &gdef.kind else {
+            continue;
+        };
+        instantiate_product_methods(&mono, gdef, methods, conversions, &subst, types, &name_map, mono_methods)?;
     }
     Ok(())
 }
@@ -6599,7 +6668,6 @@ fn instantiate_product_mono(
     name_map: &HashMap<String, String>,
     generics: &HashMap<String, GenericDef>,
     pending: &mut Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
-    mono_methods: &mut Vec<MonoMethodJob>,
     span: Span,
 ) -> Result<()> {
     let mut fields = Vec::new();
@@ -6709,6 +6777,28 @@ fn instantiate_product_mono(
         }
     }
 
+    Ok(())
+}
+
+/// An instance's methods and `from` clauses, once every instance their
+/// signatures name has been made: their signatures, and the jobs that lower
+/// their bodies.
+#[allow(clippy::too_many_arguments)]
+fn instantiate_product_methods(
+    mono: &str,
+    gdef: &GenericDef,
+    methods: &[Method],
+    conversions: &[ast::Conversion],
+    subst: &HashMap<String, Ty>,
+    types: &mut HashMap<String, TypeInfo>,
+    name_map: &HashMap<String, String>,
+    mono_methods: &mut Vec<MonoMethodJob>,
+) -> Result<()> {
+    let mono = mono.to_string();
+    // `Self` in a signature is the instance (D228).
+    let mut name_map = name_map.clone();
+    name_map.insert("Self".into(), mono.clone());
+    let name_map = &name_map;
     let mut method_sigs = HashMap::new();
     for m in methods {
         let ret = match m.return_type.as_ref() {
@@ -6749,6 +6839,7 @@ fn instantiate_product_mono(
                 multi_clause: false,
                 mutable: m.params.iter().map(|p| p.mutable).collect(),
                 positional: m.params.iter().map(|p| p.positional).collect(),
+                requires: method_requires(gdef, m, subst),
             },
         );
         mono_methods.push(MonoMethodJob {
@@ -6780,6 +6871,7 @@ fn instantiate_product_mono(
                 body: clause.body.clone(),
                 type_params: Vec::new(),
                 provided: None,
+                requires: Vec::new(),
             },
             subst: subst.clone(),
             def_mod: gdef.def_mod.clone(),
@@ -6787,6 +6879,116 @@ fn instantiate_product_mono(
         });
     }
     Ok(())
+}
+
+/// What an instance's arguments must meet for it to have `method` (D228):
+/// its conformance's bounds, each with the parameter's argument.
+fn method_requires(gdef: &GenericDef, method: &Method, subst: &HashMap<String, Ty>) -> Vec<(String, Ty, TraitRef)> {
+    let mut out = Vec::new();
+    for (param, bounds) in gdef.type_params.iter().zip(&method.requires) {
+        let Some(arg) = subst.get(param) else { continue };
+        for bound in bounds {
+            out.push((param.clone(), arg.clone(), bound.clone()));
+        }
+    }
+    out
+}
+
+/// `ty`'s associated type `name` (D228 §7), as its conformance names it: a
+/// declared type's, recorded before lowering; a generic type's instance's,
+/// its template's with the instance's arguments, worked out on first use.
+fn assoc_type(ctx: &mut LowerCtx, ty: &Ty, name: &str, span: Span) -> Result<Option<Ty>> {
+    let Ty::User(mangled) = ty else {
+        return Ok(None);
+    };
+    let recorded = ctx
+        .synthetics
+        .borrow()
+        .assoc
+        .get(mangled)
+        .and_then(|types| types.get(name))
+        .cloned();
+    if recorded.is_some() {
+        return Ok(recorded);
+    }
+    let Some((base, args)) = ctx.types.get(mangled).and_then(|info| info.instance.clone()) else {
+        return Ok(None);
+    };
+    let Some(gdef) = ctx.synthetics.borrow().generics.get(&base).cloned() else {
+        return Ok(None);
+    };
+    let Some((_, written, _)) = gdef.assoc.iter().find(|(each, ..)| each == name) else {
+        return Ok(None);
+    };
+    let subst: HashMap<String, Ty> = gdef.type_params.iter().cloned().zip(args).collect();
+    let written = TypeExpr {
+        span,
+        ..subst_type_expr(written, &subst)
+    };
+    generic::ensure_instances(ctx, &written, &gdef.name_map)?;
+    let found = resolve_ty(&written, &ctx.types, &gdef.name_map)?;
+    let conditional = ctx.synthetics.borrow().conditional.clone();
+    for bound in gdef.assoc.iter().find(|(each, ..)| each == name).map(|(_, _, bounds)| bounds).into_iter().flatten() {
+        if !ty_conforms(&ctx.types, &conditional, &found, bound) {
+            return Err(Error::at(
+                format!(
+                    "`{}`'s `{name}` is {}, which is not `{}`",
+                    display_ty(ty),
+                    display_ty(&found),
+                    bound.name
+                ),
+                span,
+            ));
+        }
+    }
+    ctx.synthetics
+        .borrow_mut()
+        .assoc
+        .entry(mangled.clone())
+        .or_default()
+        .insert(name.to_string(), found.clone());
+    Ok(Some(found))
+}
+
+/// A method of a generic type's instance that a conformance with bounds
+/// gives (D228): its arguments must meet them.
+fn check_requires(ctx: &LowerCtx, type_name: &str, method: &str, sig: &MethodSig, span: Span) -> Result<()> {
+    let conditional = ctx.synthetics.borrow().conditional.clone();
+    for (param, arg, bound) in &sig.requires {
+        if !ty_conforms(&ctx.types, &conditional, arg, bound) {
+            return Err(Error::at(
+                format!(
+                    "`{}` has `{}` only where `{param}` is `{}`, and {} is not",
+                    display_ty(&Ty::User(type_name.to_string())),
+                    ast::member_display(method),
+                    bound.name,
+                    display_ty(arg)
+                ),
+                span,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Whether a generic type's instance has the method a job lowers: its
+/// conformance's bounds, if any, are met (D228).
+fn job_applies(types: &HashMap<String, TypeInfo>, synthetics: &Rc<RefCell<SyntheticRegistry>>, job: &MonoMethodJob) -> bool {
+    let Some(sig) = types.get(&job.mono_type).and_then(|info| info.methods.get(&job.method.name)) else {
+        return true;
+    };
+    requires_met(types, &synthetics.borrow().conditional, &sig.requires)
+}
+
+/// Whether an instance's arguments meet what `requires` asks (D228).
+fn requires_met(
+    types: &HashMap<String, TypeInfo>,
+    conditional: &HashMap<String, Vec<ast::ConditionalConformance>>,
+    requires: &[(String, Ty, TraitRef)],
+) -> bool {
+    requires
+        .iter()
+        .all(|(_, arg, bound)| ty_conforms(types, conditional, arg, bound))
 }
 
 fn method_sig_type_exprs(m: &Method) -> Vec<&TypeExpr> {
@@ -7804,6 +8006,7 @@ pub(crate) fn subst_method<S: TypeSubst + ?Sized>(m: &Method, subst: &S) -> Meth
         body: subst_block(&m.body, subst),
         type_params: m.type_params.clone(),
         provided: m.provided.clone(),
+        requires: m.requires.clone(),
     }
 }
 
@@ -8276,6 +8479,7 @@ fn lower_sibling_call(
 ) -> Result<(Place, Ty)> {
     let info = ctx.types.get(type_name).unwrap().clone();
     let sig = info.methods.get(method).unwrap().clone();
+    check_requires(ctx, type_name, method, &sig, span)?;
     ctx.infer_check_callee(&format!("{type_name}__{method}"), method, span)?;
     let arg_places = resolve_call_args_full(
         ctx,
@@ -12114,6 +12318,7 @@ fn lower_method_call(
                     method_span,
                 )
             })?;
+            check_requires(ctx, &type_name, method, sig, method_span)?;
             ctx.infer_check_callee(&format!("{type_name}__{method}"), method, method_span)?;
             if !sig.exported && ctx.method_type.as_deref() != Some(type_name.as_str()) {
                 return Err(Error::at(

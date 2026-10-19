@@ -604,6 +604,7 @@ fn build_route_method(handlers: &[HandlerMeta], name_span: Span, names: &HttpNam
         body,
         type_params: Vec::new(),
         provided: None,
+        requires: Vec::new(),
     })
 }
 

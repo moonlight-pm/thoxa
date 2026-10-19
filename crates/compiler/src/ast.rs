@@ -277,6 +277,11 @@ pub struct Method {
     /// Set on a method a trait provides, copied into a conforming type by
     /// `trait_desugar` (D228). `None` for a type's own methods.
     pub provided: Option<Provided>,
+    /// A generic type's conformance that holds only for some instances
+    /// (`conform Box<T: Equatable> to Equatable { … }`): the bounds it puts on
+    /// the type's parameters, one list per parameter. The method exists for
+    /// the instances whose arguments meet them. Empty for every other method.
+    pub requires: Vec<Vec<TraitRef>>,
 }
 
 /// `mixed Shape` in type position is the application `__mixed<Shape>` (D228

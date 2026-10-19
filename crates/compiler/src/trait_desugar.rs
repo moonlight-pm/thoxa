@@ -89,6 +89,8 @@ struct Scope<'a> {
     core_types: HashSet<String>,
     /// The entry module's id: its types' C names are bare.
     entry: String,
+    /// Each generic type's parameters.
+    params: HashMap<(String, String), Vec<String>>,
 }
 
 impl Scope<'_> {
@@ -138,6 +140,23 @@ impl Scope<'_> {
         self.core_types
             .contains(name)
             .then(|| (CORE_MODULE.to_string(), name.to_string()))
+    }
+
+    /// The declared type a MIR name (`mangle`'s) names.
+    fn unmangle(&self, mir: &str) -> Option<(String, String)> {
+        self.types
+            .iter()
+            .find(|(module, name)| self.mangle(module, name) == mir)
+            .cloned()
+    }
+
+    /// A name in a type `globalize` wrote, as its source spells it.
+    fn source_name(&self, name: &str) -> String {
+        let mir = name.strip_prefix(RESOLVED_TYPE).unwrap_or(name);
+        match self.unmangle(mir) {
+            Some((_, original)) if mir != name || mir != original => original,
+            _ => name.to_string(),
+        }
     }
 
     /// A declared type's name in the MIR, which resolves in any module.
@@ -276,6 +295,7 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
             traits: &traits,
             core_types: HashSet::new(),
             entry: entry_module.clone(),
+            params: HashMap::new(),
         };
         let mut assoc = Vec::new();
         for declared in &entry.def.assoc {
@@ -364,6 +384,7 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
             traits: &traits,
             core_types: HashSet::new(),
             entry: entry_module.clone(),
+            params: HashMap::new(),
         };
         match archetype(key, &scope) {
             Ok(defs) => {
@@ -407,18 +428,31 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
             _ => None,
         })
         .collect();
+    let params = package
+        .modules
+        .iter()
+        .flat_map(|module| {
+            module.ast.items.iter().filter_map(|item| match item {
+                Item::Type(def) if !def.type_params.is_empty() => {
+                    Some(((module.id.clone(), def.name.clone()), def.type_params.clone()))
+                }
+                _ => None,
+            })
+        })
+        .collect();
     let scope = Scope {
         imports: &imports,
         types,
         traits: &traits,
         core_types,
         entry: entry_module,
+        params,
     };
     generic_functions(package, &scope)?;
     type_bounds(package, &scope)?;
     // The type's own members, before any conformance adds to them.
     let mut own_members: HashMap<(String, String), OwnMembers> = HashMap::new();
-    let mut generic: HashMap<(String, String), usize> = HashMap::new();
+    let mut generic: HashMap<(String, String), Vec<String>> = HashMap::new();
     let mut unions: HashSet<(String, String)> = HashSet::new();
     for module in &package.modules {
         for item in &module.ast.items {
@@ -442,8 +476,49 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
                 unions.insert(key.clone());
             }
             if !def.type_params.is_empty() {
-                generic.insert(key, def.type_params.len());
+                generic.insert(key, def.type_params.clone());
             }
+        }
+    }
+
+    // A generic type's conformance writes its members and associated types
+    // with its own names for the type's parameters (`conform Box<U: …>`):
+    // they become the type's (`T`), as its methods write them.
+    for item in &mut pending {
+        let Some(params) = scope
+            .type_named(&item.module, &item.conformance.ty.name)
+            .and_then(|target| generic.get(&target))
+        else {
+            continue;
+        };
+        let written: Vec<&str> = item.conformance.params.iter().map(|param| param.name.as_str()).collect();
+        let distinct: HashSet<&str> = written.iter().copied().collect();
+        // A wrong count or a name twice is the conformance's error.
+        if written.len() != params.len() || distinct.len() != written.len() || written == *params {
+            continue;
+        }
+        let renames: HashMap<String, TypeExpr> = written
+            .iter()
+            .zip(params)
+            .map(|(from, to)| {
+                (
+                    from.to_string(),
+                    TypeExpr {
+                        name: to.clone(),
+                        ..void_type(item.conformance.span)
+                    },
+                )
+            })
+            .collect();
+        let conformance = &mut item.conformance;
+        for (param, name) in conformance.params.iter_mut().zip(params) {
+            param.name = name.clone();
+        }
+        for method in &mut conformance.methods {
+            *method = crate::mir::subst_method(method, &renames);
+        }
+        for (_, _, ty) in &mut conformance.assoc {
+            *ty = crate::mir::subst_type_expr(ty, &renames);
         }
     }
 
@@ -1072,12 +1147,29 @@ fn assoc_of(
     };
     let inner = if ty.name == "Self" {
         target.clone()
-    } else if ty.args.is_empty() {
-        scope.type_named(module, &ty.name)?
     } else {
-        return None;
+        scope.type_named(module, &ty.name)?
     };
-    assoc_of(&inner, rest, named, listed, scope, depth + 1)
+    let found = assoc_of(&inner, rest, named, listed, scope, depth + 1)?;
+    if ty.args.is_empty() {
+        return Some(found);
+    }
+    // A generic type's conformance writes it with the type's parameters
+    // (`type Item = T`), which are this type's arguments here; both are
+    // named as the MIR names them, so it means the same in either module.
+    let (found, found_module, owner) = found;
+    let args: HashMap<String, TypeExpr> = scope
+        .params
+        .get(&inner)?
+        .iter()
+        .zip(&ty.args)
+        .filter_map(|(param, arg)| match arg {
+            TypeArg::Type(arg) => Some((param.clone(), scope.globalize(arg, module, target))),
+            TypeArg::Int { .. } => None,
+        })
+        .collect();
+    let found = crate::mir::subst_type_expr(&scope.globalize(&found, &found_module, &owner), &args);
+    Some((found, found_module, owner))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1085,7 +1177,7 @@ fn check_conformance(
     item: &Pending,
     scope: &Scope,
     own_members: &HashMap<(String, String), OwnMembers>,
-    generic: &HashMap<(String, String), usize>,
+    generic: &HashMap<(String, String), Vec<String>>,
     unions: &HashSet<(String, String)>,
     conformed: &mut Conformed,
     trait_members: &mut HashMap<(String, String), HashMap<String, TraitRef>>,
@@ -1114,7 +1206,7 @@ fn check_conformance(
             };
             return Err(Error::at(message, ty.span));
         };
-        let arity = generic.get(&target).copied();
+        let arity = generic.get(&target).map(Vec::len);
         (target, arity)
     };
     // A generic or built-in target holds per instance, with bounds.
@@ -1161,10 +1253,10 @@ fn check_conformance(
             Some(lists)
         }
     };
-    if bounds.is_some() && !conformance.methods.is_empty() {
+    if built_in.is_some() && !conformance.methods.is_empty() {
         return Err(Error::at(
             format!(
-                "a conformance of `{}` with members is not supported yet (generic and built-in types conform without a body for now)",
+                "a conformance of `{}` with members is not supported yet (built-in types conform without a body for now)",
                 ty.name
             ),
             conformance.span,
@@ -1223,7 +1315,20 @@ fn check_conformance(
         ));
     }
 
-    let assoc = conformance_assoc(item, &target, &refs, bounds.is_some(), named, listed, scope)?;
+    let mut assoc = conformance_assoc(item, &target, &refs, built_in.is_some(), named, listed, scope)?;
+    // A generic type's `Self` is its instance: `Box<T>`, with the type's own
+    // parameters (the conformance's were renamed to them).
+    let params = generic.get(&target).cloned().unwrap_or_default();
+    if built_in.is_none() && !params.is_empty() {
+        let args = params.join(", ");
+        assoc
+            .canonical
+            .insert("Self".into(), format!("{}::{}<{args}>", target.0, target.1));
+        assoc.shown.insert("Self".into(), format!("{}<{args}>", target.1));
+        for param in &params {
+            assoc.canonical.insert(param.clone(), param.clone());
+        }
+    }
 
     // Each member goes to the listed trait that declares it.
     let mut implemented: HashMap<&str, &Method> = HashMap::new();
@@ -1386,9 +1491,19 @@ fn check_conformance(
     }
     // A conformance's members and the trait's provided ones see its
     // associated types by name.
+    // A generic type's members from a conformance with bounds exist only
+    // for the instances that meet them.
+    let requires = bounds
+        .as_ref()
+        .filter(|lists| built_in.is_none() && lists.iter().any(|list| !list.is_empty()))
+        .cloned()
+        .unwrap_or_default();
     let methods = methods
         .iter()
-        .map(|method| crate::mir::subst_method(method, &assoc.types))
+        .map(|method| Method {
+            requires: requires.clone(),
+            ..crate::mir::subst_method(method, &assoc.types)
+        })
         .collect();
     let mut entries = Vec::new();
     for (trait_ref, _) in &refs {
@@ -1414,17 +1529,17 @@ fn conformance_assoc(
     item: &Pending,
     target: &(String, String),
     refs: &[(TraitRef, Span)],
-    per_instance: bool,
+    built_in: bool,
     named: &Named,
     listed: &Listed,
     scope: &Scope,
 ) -> Result<ConformedAssoc> {
     let conformance = &item.conformance;
     let declares = refs.iter().any(|(trait_ref, _)| !scope.traits[trait_ref].assoc.is_empty());
-    if per_instance && (declares || !conformance.assoc.is_empty()) {
+    if built_in && (declares || !conformance.assoc.is_empty()) {
         return Err(Error::at(
             format!(
-                "a conformance of `{}` with associated types is not supported yet (generic and built-in types conform without them for now)",
+                "a conformance of `{}` with associated types is not supported yet (built-in types conform without them for now)",
                 conformance.ty.name
             ),
             conformance.span,
@@ -1489,7 +1604,7 @@ fn conformance_assoc(
             continue;
         };
         out.types.insert(node.path.clone(), scope.globalize(&ty, &module, &owner));
-        out.shown.insert(node.path.clone(), render(&ty, &|name: &str| name.to_string()));
+        out.shown.insert(node.path.clone(), render(&ty, &|name: &str| scope.source_name(name)));
         out.canonical
             .insert(node.path.clone(), canonical(&ty, &module, &owner, scope, &HashMap::new()));
     }
@@ -1608,6 +1723,7 @@ fn provided_method(
             module: trait_ref.module.clone(),
             members,
         }),
+        requires: Vec::new(),
     }
 }
 
@@ -1739,6 +1855,7 @@ fn field_accessor(method: &str, field_ty: &TypeExpr, span: Span) -> Method {
         body,
         type_params: Vec::new(),
         provided: None,
+        requires: Vec::new(),
     }
 }
 
@@ -1789,6 +1906,7 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
         },
         type_params: Vec::new(),
         provided: None,
+        requires: Vec::new(),
     }
 }
 
@@ -1952,11 +2070,14 @@ fn resolve_generics(
             archetype,
             derived: None,
         });
-        // `T.Item`: a parameter read off `T`'s argument, after its owner's.
+        // `T.Item`: a parameter read off `T`'s argument, after its owner's;
+        // one a trait fixes as another (`S.Item` as `S.Cursor.Item`) is
+        // read where it is fixed, after that one.
         for node in &types.nodes {
-            let (owner, assoc) = match node.path.rsplit_once('.') {
+            let path = unalias(&node.path, &types.nodes);
+            let (owner, assoc) = match path.rsplit_once('.') {
                 Some((owner, assoc)) => (format!("{}.{owner}", param.name), assoc.to_string()),
-                None => (param.name.clone(), node.path.clone()),
+                None => (param.name.clone(), path.clone()),
             };
             function.generic.push(GenericParam {
                 name: format!("{}.{}", param.name, node.path),
@@ -2109,7 +2230,13 @@ fn canonical(
             found.clone()
         } else if name == "Self" {
             format!("{}::{}", target.0, target.1)
-        } else if let Some((from, original)) = scope.type_named(module, name) {
+        } else if let Some((from, original)) = name
+            .strip_prefix(RESOLVED_TYPE)
+            .and_then(|mir| scope.unmangle(mir))
+            .or_else(|| scope.type_named(module, name))
+            .or_else(|| scope.unmangle(name))
+        {
+            // A name `globalize` wrote is the MIR's.
             format!("{from}::{original}")
         } else {
             name.to_string()

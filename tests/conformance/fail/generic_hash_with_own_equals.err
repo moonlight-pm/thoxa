@@ -1,0 +1,1 @@
+`Key` has its own `equals`, so its `Hashable` conformance needs its own `hash`

@@ -1,0 +1,16 @@
+## D228: a conformance with bounds gives its members only to the instances
+## that meet them; `Plain` is not `Equatable`, so `Box<Plain>` has no `equals`.
+type Box<T>(value: T)
+conform Box<T: Equatable> to Equatable {
+    fn equals(other!: Box<T>) -> Bool {
+        value == other.value
+    }
+}
+
+type Plain(count: Int64)
+
+fn main() {
+    let box = Box(value: Plain(count: 1))
+    box.equals(box)
+    0
+}

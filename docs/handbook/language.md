@@ -1531,8 +1531,23 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
   import.
 - A generic type conforms for the instances whose arguments meet bounds:
   `conform Box<T: Equatable> to Equatable` makes `Box<Int64>` equatable and
-  not `Box<Node>`. Such a conformance, and one of a built-in type, has no body
-  for now.
+  not `Box<Node>`. Its members are the instances' methods, and only those
+  instances have them: `Box<Node>` has no `equals`. `Self` is the instance,
+  `Box<T>`. A conformance may name the type's parameters its own way
+  (`conform Box<U: Equatable>`); its members use its names. A conformance of
+  a built-in type has no body for now.
+
+```thx
+type Box<T>(value: T)
+
+conform Box<T: Equatable> to Equatable {
+    fn equals(other!: Self) -> Bool {
+        value == other.value
+    }
+}
+
+let same = Box(value: 3) == Box(value: 3)   ## true, through this `equals`
+```
 
 ```thx
 trait Named {
@@ -1553,8 +1568,8 @@ let hello = Guest(name: "ada").greet()     ## "hello, ada"
 ```
 
 Limits: a trait's members take no parameter defaults, a trait cannot be used
-as a type, and a conformance of a generic type, of a built-in type, or of a
-union cannot have a body.
+as a type, and a conformance of a built-in type or of a union cannot have a
+body.
 
 ### Associated types
 
@@ -1632,6 +1647,36 @@ conform DeckCursor to Iterator {
 }
 ```
 
+- A generic type's conformance names its associated types with the type's
+  parameters, so each instance has its own: a `Stack<Int64>`'s cursor is a
+  `StackCursor<Int64>`, whose `Item` is `Int64`.
+
+```thx
+type Stack<T>(items: Array<T>)
+
+conform Stack<T> to Sequence {
+    type Cursor = StackCursor<T>
+
+    fn iterate() -> Cursor {
+        StackCursor(items: items, index: items.count)
+    }
+}
+
+type StackCursor<T>(items: Array<T>, index: Int64)
+
+conform StackCursor<T> to Iterator {
+    type Item = T
+
+    fn next() -> May<T> {
+        if index == 0 {
+            return Not()
+        }
+        index = index - 1
+        Has(items[index])
+    }
+}
+```
+
 - A generic function writes a type parameter's associated types under it,
   `S.Item`, `S.Cursor.Item`, and bounds them with `where` after its
   signature. In the body they have only their bounds' members:
@@ -1655,11 +1700,11 @@ fn count<I: Iterator>(cursor!: I) -> Int64 where I.Item: Show {
 }
 ```
 
-Limits: a generic type or a built-in type cannot conform to a trait with
-associated types, so an `Array` is not a `Sequence` (`for` reads arrays
-directly) and a generic function over `Sequence` does not take one; `S.Item`
-is written in generic functions, not in generic types; and a member whose
-signature names an associated type cannot be called through `mixed`.
+Limits: a built-in type cannot conform to a trait with associated types, so
+an `Array` is not a `Sequence` (`for` reads arrays directly) and a generic
+function over `Sequence` does not take one; `S.Item` is written in generic
+functions, not in generic types; and a member whose signature names an
+associated type cannot be called through `mixed`.
 
 ### Mixed values
 

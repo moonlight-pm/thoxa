@@ -1,0 +1,11 @@
+## D228: equal values hash alike, so a generic type whose conformance
+## writes `equals` writes `hash` too when it is `Hashable`.
+type Key<T>(value: T, note: String)
+conform Key<T: Equatable> to Equatable {
+    fn equals(other!: Key<T>) -> Bool {
+        value == other.value
+    }
+}
+conform Key<T: Hashable> to Hashable
+
+fn main() { 0 }

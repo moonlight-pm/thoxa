@@ -1,0 +1,21 @@
+## D228: a generic type's associated type meets its bounds in each instance.
+type Wrap<T>(value: T)
+conform Wrap<T> to Sequence {
+    type Cursor = T
+    fn iterate() -> T {
+        value
+    }
+}
+
+fn size<S: Sequence>(items!: S) -> Int64 {
+    mut total = 0
+    for _ in items {
+        total = total + 1
+    }
+    total
+}
+
+fn main() {
+    size(Wrap(value: 3))
+    0
+}

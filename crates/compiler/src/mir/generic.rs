@@ -75,13 +75,11 @@ pub(super) fn instantiate_call(
             let _ = bind(ret, expect, &names, &mut bindings, ctx, span, shown);
         }
     }
+    ctx.take_new_instances();
     for param in &function.generic {
         if let Some((owner, assoc)) = &param.derived {
             let owner_ty = bindings.get(owner).cloned().unwrap_or(Ty::Void);
-            let found = match &owner_ty {
-                Ty::User(name) => ctx.synthetics.borrow().assoc.get(name).and_then(|types| types.get(assoc)).cloned(),
-                _ => None,
-            };
+            let found = super::assoc_type(ctx, &owner_ty, assoc, span)?;
             let Some(ty) = found else {
                 return Err(Error::at(
                     format!("`{shown}` needs `{owner}.{assoc}`, and {} names no `{assoc}`", display_ty(&owner_ty)),
@@ -296,8 +294,12 @@ fn make_instance(
     )?;
     // Methods without `->` infer their return type per instance (D211), as
     // the instances made before lowering do; twice, so a sibling's is known.
+    let probed: Vec<&super::MonoMethodJob> = jobs
+        .iter()
+        .filter(|job| !job.conversion && job.method.return_type.is_none() && super::job_applies(&types, &ctx.synthetics, job))
+        .collect();
     for _ in 0..2 {
-        for job in jobs.iter().filter(|job| !job.conversion && job.method.return_type.is_none()) {
+        for job in &probed {
             let method = subst_method(&job.method, &job.subst);
             let maps = ctx.package_maps.get(&job.def_mod).cloned().unwrap_or_default();
             let mut probe = LowerCtx::new(
@@ -328,7 +330,8 @@ fn make_instance(
         }
     }
     let mut synthetics = ctx.synthetics.borrow_mut();
-    for layout in layouts {
+    for mut layout in layouts {
+        (layout.own_hash, layout.own_equals) = super::own_key_ops(&types, &synthetics.conditional, &layout.name);
         if let Some(info) = types.get(&layout.name) {
             ctx.types.insert(layout.name.clone(), info.clone());
             synthetics
