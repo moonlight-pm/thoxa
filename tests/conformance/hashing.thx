@@ -1,0 +1,50 @@
+## `Hashable` (D228): a Map key's type declares it. Without its own `hash`, a
+## product feeds its fields to the `Hasher` in order; a type with its own
+## `equals` writes its own `hash`, and a Map keyed by it uses both.
+import logging, { info } from "std/logging"
+
+## Names match without regard to case, so they hash without it too.
+type Tag(name: String)
+conform Tag to Equatable {
+    fn equals(other!: Self) -> Bool {
+        name.toLower() == other.name.toLower()
+    }
+}
+conform Tag to Hashable {
+    fn hash(mut hasher!: Hasher) {
+        name.toLower().hash(mut hasher)
+    }
+}
+
+type Point(x: Int64, y: Int64)
+conform Point to Equatable, Hashable
+
+## A key whose part has its own `hash` and `equals`.
+type Labelled(tag: Tag, at: Point)
+conform Labelled to Equatable, Hashable
+
+fn hashOf(point!: Point) -> Int64 {
+    mut hasher = Hasher()
+    point.hash(mut hasher)
+    hasher.state
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut counts: Map<Tag, Int64> = Map()
+    counts[Tag(name: "Swift")] = 1
+    counts[Tag(name: "swift")] = 2
+    counts[Tag(name: "Rust")] = 3
+    info("tags: {counts.count} {counts.has(Tag(name: \"SWIFT\"))}")
+    mut labels: Map<Labelled, String> = Map()
+    labels[Labelled(tag: Tag(name: "A"), at: Point(x: 1, y: 2))] = "first"
+    info("labels: {labels.has(Labelled(tag: Tag(name: \"a\"), at: Point(x: 1, y: 2)))} {labels.has(Labelled(tag: Tag(name: \"a\"), at: Point(x: 2, y: 1)))}")
+    info("same hash: {hashOf(Point(x: 1, y: 2)) == hashOf(Point(x: 1, y: 2))} {hashOf(Point(x: 1, y: 2)) == hashOf(Point(x: 2, y: 1))}")
+    mut floats = Hasher()
+    0.0.hash(mut floats)
+    mut negative = Hasher()
+    let negativeZero = 0.0 - 0.0
+    negativeZero.hash(mut negative)
+    info("floats: {floats.state == negative.state}")
+}

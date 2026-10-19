@@ -1,6 +1,0 @@
-## D228 §5: a generic function writes its return type.
-fn first<T>(items!: Array<T>) {
-    items[0]
-}
-
-fn main() {}

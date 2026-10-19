@@ -724,8 +724,9 @@ let word = largest(["pear", "fig"])     ## Has("pear")
   parameter: `fn report(shape!: Shape)` is `fn report<S: Shape>(shape!: S)`,
   so `report(Circle(…))` and `report(Square(…))` are two copies. A trait is not
   a return type, a field's type, or a type argument.
-- A generic function declares its return type, is not multi-clause, and is
-  not a function value.
+- A generic function without `->` infers its return type for each set of
+  type arguments, as other functions do. It is not multi-clause and not a
+  function value.
 - std declares methods for every instance of a built-in generic type whose
   arguments meet bounds, with `extend Array<T: Equatable> { … }`: that is how
   `contains` and `sorted` exist (only std may `extend`).
@@ -899,13 +900,24 @@ must conform too; the error names the one that does not:
 - products order field by field in declaration order: the first field that
   differs decides.
 
-A conformance may write its own instead:
+- a product hashes each field in declaration order, and a union its member,
+  then its payload.
+
+A conformance may write its own instead. Equal values must hash alike, so a
+`Hashable` type with its own `equals` writes its own `hash`, which feeds the
+parts that `equals` looks at to a `Hasher`; a Map keyed by the type uses
+both:
 
 ```thx
 type Tag(name: String)
 conform Tag to Equatable {
     fn equals(other!: Self) -> Bool {
         name.toLower() == other.name.toLower()
+    }
+}
+conform Tag to Hashable {
+    fn hash(mut hasher!: Hasher) {
+        name.toLower().hash(mut hasher)
     }
 }
 ```

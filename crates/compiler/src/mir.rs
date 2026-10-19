@@ -182,6 +182,13 @@ pub fn retain_reachable(program: &mut Program) {
         if layout.has_drop {
             pending.push(format!("{}__drop", layout.name));
         }
+        // A Map's key ops call a key type's own `hash` / `equals` (D228).
+        if layout.own_hash {
+            pending.push(format!("{}__hash", layout.name));
+        }
+        if layout.own_equals {
+            pending.push(format!("{}__equals", layout.name));
+        }
     }
     referenced_fns(&program.init, &mut pending);
     let bodies: HashMap<&str, &Vec<Stmt>> = program
@@ -271,6 +278,10 @@ pub struct TypeLayout {
     pub sum_scalar: Option<Ty>,
     /// D155: product has `fn drop()` — values are heap boxes (header + payload).
     pub has_drop: bool,
+    /// Its own `hash` / `equals`, not the derived ones (D228): a Map keyed
+    /// by it calls them instead of hashing and comparing field by field.
+    pub own_hash: bool,
+    pub own_equals: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2002,6 +2013,8 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                         sum: None,
                         sum_scalar: None,
                         has_drop: false,
+                        own_hash: false,
+                        own_equals: false,
                     });
                     refined_progress = true;
                 }
@@ -2062,6 +2075,8 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                     sum: sum_layout,
                     sum_scalar,
                     has_drop: false,
+                    own_hash: false,
+                    own_equals: false,
                 });
             }
             Err(e) => type_reg_errors.push(in_module_id(e, package, mod_id)),
@@ -2146,6 +2161,14 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         }
         layout.has_drop = true;
     }
+    // D228: a Map keyed by a type with its own `hash` / `equals` calls them.
+    for layout in &mut type_layouts {
+        if let Some(info) = types_info.get(&layout.name) {
+            let own = |member: &str| info.methods.contains_key(member) && !info.derived.contains(member);
+            layout.own_hash = info.traits.contains(&core_trait("Hashable")) && own("hash");
+            layout.own_equals = info.traits.contains(&core_trait("Hashable")) && own("equals");
+        }
+    }
     if !drop_errors.is_empty() {
         return Err(errors_to_multi(drop_errors));
     }
@@ -2163,6 +2186,22 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             if info.resource {
                 default_errors.push(in_module_id(
                     Error::at(format!("`{}` is a `Resource`, not a value, so it cannot be `{trait_name}`", td.name), td.name_span),
+                    package,
+                    mod_id,
+                ));
+                continue;
+            }
+            // Equal values hash alike: its own `equals` means its own `hash`.
+            if trait_name == "Hashable"
+                && info.methods.contains_key("equals")
+                && !info.derived.contains("equals")
+                && info.derived.contains("hash")
+            {
+                default_errors.push(in_module_id(
+                    Error::at(
+                        format!("`{}` has its own `equals`, so its `Hashable` conformance needs its own `hash`: equal values must hash alike", td.name),
+                        td.name_span,
+                    ),
                     package,
                     mod_id,
                 ));
@@ -3575,6 +3614,8 @@ fn seed_html_types(types_info: &mut HashMap<String, TypeInfo>, type_layouts: &mu
         sum: None,
         sum_scalar: None,
         has_drop: false,
+        own_hash: false,
+        own_equals: false,
     });
     types_info.insert(
         "Element".into(),
@@ -6277,6 +6318,8 @@ fn instantiate_product_mono(
         sum: None,
         sum_scalar: None,
         has_drop: false,
+        own_hash: false,
+        own_equals: false,
     };
     types.insert(
         mono.clone(),
@@ -6707,6 +6750,8 @@ fn instantiate_union_mono(
         ),
         sum_scalar,
         has_drop: false,
+        own_hash: false,
+        own_equals: false,
     };
     types.insert(mono, info);
     layouts.push(layout);
@@ -10646,6 +10691,19 @@ fn lower_field(
             return lower_extension_call(ctx, base_p, &base_ty, sig, name, &[], name_span);
         }
     }
+    // A Float64's IEEE bits (D228: std/core hashes it with them).
+    if base_ty == Ty::Float64 && name == "bits" {
+        let p = ctx.fresh("bits");
+        ctx.assign(
+            p.clone(),
+            Ty::UInt64,
+            RValue::Call {
+                callee: Callee::Builtin("f64_to_bits".into()),
+                args: vec![base_p],
+            },
+        );
+        return Ok((p, Ty::UInt64));
+    }
     match &base_ty {
         Ty::String => {
             // `.count` is Unicode scalars, `.byteCount` bytes (D195 §4).
@@ -11529,6 +11587,24 @@ fn lower_method_call(
                 .clone();
             // `equals` / `compare` of a type without the method (a union, a
             // generic type's instance): the structural default (D228).
+            if !info.methods.contains_key(method) && method == "hash" {
+                if let [Arg::Pos(Expr {
+                    kind: ExprKind::MutArg(hasher),
+                    ..
+                })] = args
+                {
+                    if !ctx.conforms(&recv_ty, "Hashable") {
+                        return Err(Error::at(
+                            format!("`{}` is not `Hashable`", display_ty(&recv_ty)),
+                            method_span,
+                        ));
+                    }
+                    order::lower_structural_hash(ctx, recv_p, &recv_ty, hasher, method_span)?;
+                    let unit = ctx.fresh("u");
+                    ctx.assign(unit.clone(), Ty::Int64, RValue::Int(0));
+                    return Ok((unit, Ty::Void));
+                }
+            }
             if !info.methods.contains_key(method) && matches!(method, "equals" | "compare") {
                 if let [Arg::Pos(other)] = args {
                     let (other_p, _) = lower_expr_expect(ctx, other, Some(&recv_ty))?;
@@ -13882,6 +13958,8 @@ fn ensure_lit_type(
         }]),
         sum_scalar: Some(pure_lit_scalar_ty(1)),
         has_drop: false,
+        own_hash: false,
+        own_equals: false,
     };
     types.insert(name.clone(), info);
     layouts.push(layout);
@@ -14025,6 +14103,8 @@ fn ensure_member_set_type(
             None
         },
         has_drop: false,
+        own_hash: false,
+        own_equals: false,
     };
     types.insert(name.clone(), info);
     layouts.push(layout);
@@ -17985,8 +18065,9 @@ fn lower_call(
             lower_truncating(ctx, callee, args, span)
         }
         "Float64" => lower_float_rounding(ctx, args, span),
-        // A derived `compare`'s body (D228).
+        // A derived `compare`'s and `hash`'s bodies (D228).
         "__compare" => order::lower_compare_intrinsic(ctx, args, span),
+        "__hash" => order::lower_hash_intrinsic(ctx, args, span),
         // The exactness test of a generated `as Float64` reader (D224).
         "__float64Exact" => lower_float_exact(ctx, args, span),
         "Map" => lower_map_new(ctx, args, span, expect),
@@ -18875,6 +18956,8 @@ fn ensure_synthetic_sum(
         sum: Some(layout_vars),
         sum_scalar: None,
         has_drop: false,
+        own_hash: false,
+        own_equals: false,
     };
 
     ctx.types.insert(syn_name.clone(), info.clone());

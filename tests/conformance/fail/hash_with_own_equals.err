@@ -1,0 +1,1 @@
+`Tag` has its own `equals`, so its `Hashable` conformance needs its own `hash`: equal values must hash alike

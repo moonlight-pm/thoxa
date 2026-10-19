@@ -434,7 +434,8 @@ const CONFORMABLE_BUILT_INS: &[(&str, usize)] = &[
 /// Traits whose required members the compiler implements for a conformance
 /// without them, field by field (D228 §4).
 fn has_defaults(trait_ref: &TraitRef) -> bool {
-    trait_ref.module == CORE_MODULE && matches!(trait_ref.name.as_str(), "Equatable" | "Ordered")
+    trait_ref.module == CORE_MODULE
+        && matches!(trait_ref.name.as_str(), "Equatable" | "Hashable" | "Ordered")
 }
 
 /// A trait's members have distinct names and no parameter defaults.
@@ -993,24 +994,34 @@ fn field_accessor(method: &str, field_ty: &TypeExpr, span: Span) -> Method {
 }
 
 /// A member the compiler writes for a conformance that leaves it out (D228
-/// §4): `equals` is `self == other` and `compare` the field-by-field order,
-/// both lowered structurally because the type marks them derived.
+/// §4): `equals` is `self == other`, `compare` the field-by-field order, and
+/// `hash` feeds each field to the hasher, all lowered structurally because the
+/// type marks them derived.
 fn default_member(member: &TraitMember, span: Span) -> Method {
     let name = |text: &str| Expr {
         kind: ExprKind::Name(text.to_string()),
         span,
     };
-    let value = if member.name == "equals" {
-        ExprKind::Binary {
+    let value = match member.name.as_str() {
+        "equals" => ExprKind::Binary {
             op: BinaryOp::Eq,
             left: Box::new(name("self")),
             right: Box::new(name("other")),
-        }
-    } else {
-        ExprKind::Call {
+        },
+        "hash" => ExprKind::Call {
+            callee: "__hash".into(),
+            args: vec![
+                Arg::Pos(name("self")),
+                Arg::Pos(Expr {
+                    kind: ExprKind::MutArg("hasher".into()),
+                    span,
+                }),
+            ],
+        },
+        _ => ExprKind::Call {
             callee: "__compare".into(),
             args: vec![Arg::Pos(name("self")), Arg::Pos(name("other"))],
-        }
+        },
     };
     Method {
         exported: true,
@@ -1089,12 +1100,6 @@ fn resolve_generics(
     }
     if function.type_params.is_empty() {
         return Ok(());
-    }
-    if function.return_type.is_none() {
-        return Err(Error::at(
-            format!("a generic function declares its return type: `fn {}<…>(…) -> Type`", function.name),
-            function.name_span,
-        ));
     }
     let mut seen = HashSet::new();
     for param in &function.type_params {

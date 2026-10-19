@@ -375,3 +375,110 @@ pub(super) fn lower_compare_intrinsic(
     let sign = lower_structural_compare(ctx, left, right, type_name, span)?;
     int_to_order(ctx, sign, span)
 }
+
+/// `__hash(value, mut hasher)`, a derived `hash`'s body, and `value.hash(mut
+/// hasher)` on a type without the method (a union, a generic type's
+/// instance): a union feeds its member, then its payload; a product each
+/// field, in declaration order, each through its own `hash` (D228 §4).
+pub(super) fn lower_structural_hash(
+    ctx: &mut LowerCtx,
+    value: Place,
+    ty: &Ty,
+    hasher: &str,
+    span: Span,
+) -> Result<()> {
+    let Ty::User(type_name) = ty else {
+        return hash_part(ctx, value, ty, hasher, span);
+    };
+    let info = ctx
+        .types
+        .get(type_name)
+        .cloned()
+        .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?;
+    if let Some(sum) = &info.sum {
+        let tag = ctx.fresh("hashtag");
+        ctx.assign(
+            tag.clone(),
+            Ty::Int64,
+            RValue::SumTag {
+                place: value.clone(),
+                sum_type: type_name.clone(),
+            },
+        );
+        mix(ctx, tag.clone(), hasher, span)?;
+        for variant in &sum.variants {
+            if variant.lit.is_some() || !has_storage(&ctx.types, &variant.ty) {
+                continue;
+            }
+            let want = int(ctx, variant.tag as i64);
+            let this_arm = binary(ctx, BinaryOp::Eq, tag.clone(), want);
+            emit_if(
+                ctx,
+                this_arm,
+                |ctx| {
+                    let payload = ctx.fresh("hashpay");
+                    ctx.assign_no_drop(
+                        payload.clone(),
+                        variant.ty.clone(),
+                        RValue::SumPayload {
+                            base: value.clone(),
+                            tag: variant.tag,
+                            payload_ty: variant.ty.clone(),
+                        },
+                    );
+                    hash_part(ctx, payload, &variant.ty, hasher, span)
+                },
+                |_| Ok(()),
+            )?;
+        }
+        return Ok(());
+    }
+    for field in info.fields.iter().filter(|field| field.ty != Ty::Void) {
+        let part = borrow_field(ctx, &value, &field.name, &field.ty);
+        hash_part(ctx, part, &field.ty, hasher, span)?;
+    }
+    Ok(())
+}
+
+/// `hasher.mix(value)`.
+fn mix(ctx: &mut LowerCtx, value: Place, hasher: &str, _span: Span) -> Result<()> {
+    let part = super::codec::bind_fresh(ctx, "__mixed", &Ty::Int64, value);
+    let call = crate::ast_build::method_call(
+        crate::ast_build::name(hasher),
+        "mix",
+        vec![Arg::Pos(crate::ast_build::name(&part))],
+    );
+    lower_expr(ctx, &call)?;
+    Ok(())
+}
+
+/// One part's `hash`: its own method, std's for a built-in, or the
+/// structural one for a type without the method.
+fn hash_part(ctx: &mut LowerCtx, part: Place, ty: &Ty, hasher: &str, span: Span) -> Result<()> {
+    let part = super::codec::bind_fresh(ctx, "__hashed", ty, part);
+    let call = crate::ast_build::method_call(
+        crate::ast_build::name(&part),
+        "hash",
+        vec![Arg::Pos(crate::ast::Expr {
+            kind: crate::ast::ExprKind::MutArg(hasher.to_string()),
+            span,
+        })],
+    );
+    lower_expr(ctx, &call)?;
+    Ok(())
+}
+
+/// `__hash(value, mut hasher)`.
+pub(super) fn lower_hash_intrinsic(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    let [Arg::Pos(value), Arg::Pos(hasher)] = args else {
+        return Err(Error::at("`__hash` takes a value and `mut hasher`", span));
+    };
+    let crate::ast::ExprKind::MutArg(hasher) = &hasher.kind else {
+        return Err(Error::at("`__hash` takes `mut hasher`", span));
+    };
+    let (place, ty) = lower_expr(ctx, value)?;
+    lower_structural_hash(ctx, place, &ty, hasher, span)?;
+    let unit = ctx.fresh("u");
+    ctx.assign(unit.clone(), Ty::Int64, RValue::Int(0));
+    Ok((unit, Ty::Void))
+}

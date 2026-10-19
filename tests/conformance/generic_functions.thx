@@ -32,6 +32,11 @@ fn pair<A, B>(first!: A, second!: B) -> String {
     "two values"
 }
 
+## No `->`: the return type is inferred for each instance.
+fn firstOf<T>(items!: Array<T>) {
+    items[0]
+}
+
 ## A type parameter only the result names comes from the expected type.
 fn none<T>() -> Array<T> {
     []
@@ -98,4 +103,5 @@ fn main() {
     info("none: {nothing.count}")
     info("or zero: {largestOrZero([5, 2], zero: 0)} {largestOrZero(empty, zero: -1)}")
     info("bigger: {bigger(3, 8)} {bigger(\"b\", \"a\")}")
+    info("first: {firstOf([7, 8])} {firstOf([\"x\"])}")
 }

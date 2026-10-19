@@ -31,6 +31,16 @@ extend Array<T: Equatable> {
     }
 }
 
+extend Array<T: Hashable> {
+    ## Its count, then each element (D228).
+    export fn hash(mut hasher!: Hasher) {
+        hasher.mix(self.count)
+        for element in self {
+            element.hash(mut hasher)
+        }
+    }
+}
+
 extend Array<T: Ordered> {
     ## The elements in ascending order; equal ones keep their order.
     export fn sorted() -> Array<T> {

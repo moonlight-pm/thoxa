@@ -1,0 +1,11 @@
+## D228: equal values hash alike, so a type with its own `equals` writes its
+## own `hash` to be `Hashable`.
+type Tag(name: String)
+conform Tag to Equatable {
+    fn equals(other!: Self) -> Bool {
+        name.toLower() == other.name.toLower()
+    }
+}
+conform Tag to Hashable
+
+fn main() {}

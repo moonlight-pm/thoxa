@@ -20,8 +20,19 @@ export trait Equatable {
     fn equals(other!: Self) -> Bool
 }
 
-## A Map key: hashes by value, field by field.
-export trait Hashable: Equatable {}
+## A Map key: hashes by value. Without its own `hash`, a product hashes field
+## by field and a union by member, then payload. A type with its own `equals`
+## writes its own `hash` too, so equal values hash alike.
+export trait Hashable: Equatable {
+    fn hash(mut hasher!: Hasher)
+}
+
+## What `hash` feeds: each part of a value, in order. Its arithmetic wraps.
+export type Hasher(state: Int64 = 0) {
+    export fn mix(value!: Int64) {
+        state = state ^ (value - 7046029254386353131 + (state << 6) + (state >> 2))
+    }
+}
 
 ## `<`, `<=`, `>`, `>=`. Without its own `compare`, a product orders field by
 ## field in declaration order, and a union by member in declaration order,
@@ -58,6 +69,10 @@ extend Int64 {
         self == other
     }
 
+    export fn hash(mut hasher!: Hasher) {
+        hasher.mix(self)
+    }
+
     export fn compare(other!: Int64) -> Order {
         if self < other { "less" } else if self > other { "greater" } else { "equal" }
     }
@@ -66,6 +81,10 @@ extend Int64 {
 extend Int32 {
     export fn equals(other!: Int32) -> Bool {
         self == other
+    }
+
+    export fn hash(mut hasher!: Hasher) {
+        hasher.mix(self)
     }
 
     export fn compare(other!: Int32) -> Order {
@@ -78,6 +97,10 @@ extend UInt64 {
         self == other
     }
 
+    export fn hash(mut hasher!: Hasher) {
+        hasher.mix(Int64(truncating: self))
+    }
+
     export fn compare(other!: UInt64) -> Order {
         if self < other { "less" } else if self > other { "greater" } else { "equal" }
     }
@@ -86,6 +109,10 @@ extend UInt64 {
 extend UInt32 {
     export fn equals(other!: UInt32) -> Bool {
         self == other
+    }
+
+    export fn hash(mut hasher!: Hasher) {
+        hasher.mix(self)
     }
 
     export fn compare(other!: UInt32) -> Order {
@@ -98,6 +125,10 @@ extend Byte {
         self == other
     }
 
+    export fn hash(mut hasher!: Hasher) {
+        hasher.mix(self)
+    }
+
     export fn compare(other!: Byte) -> Order {
         if self < other { "less" } else if self > other { "greater" } else { "equal" }
     }
@@ -106,6 +137,10 @@ extend Byte {
 extend Bool {
     export fn equals(other!: Bool) -> Bool {
         self == other
+    }
+
+    export fn hash(mut hasher!: Hasher) {
+        hasher.mix(if self { 1 } else { 0 })
     }
 
     ## `false` before `true`.
@@ -117,6 +152,17 @@ extend Bool {
 extend Float64 {
     export fn equals(other!: Float64) -> Bool {
         self == other
+    }
+
+    ## As a Map key compares it: every NaN alike, -0 as 0.
+    export fn hash(mut hasher!: Hasher) {
+        if self != self {
+            hasher.mix(9221120237041090560)
+        } else if self == 0.0 {
+            hasher.mix(0)
+        } else {
+            hasher.mix(Int64(truncating: self.bits))
+        }
     }
 
     export fn compare(other!: Float64) -> Order {
@@ -131,5 +177,17 @@ extend Float64 {
         } else {
             "less"
         }
+    }
+}
+
+extend Bytes {
+    ## Its bytes, then its count.
+    export fn hash(mut hasher!: Hasher) {
+        mut index = 0
+        while index < self.count {
+            hasher.mix(self.get(index))
+            index = index + 1
+        }
+        hasher.mix(self.count)
     }
 }

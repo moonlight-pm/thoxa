@@ -110,8 +110,9 @@ bounds, inferred type arguments, bare trait parameters. **Part 2
 shipped**: generic `extend Array<T: Bound>`, std/array (`contains`,
 `indexOf`, `sorted` in Thoxa). **Part 3 shipped**: a generic constructor
 infers its type arguments (`Shelf(items: [1, 2])`), its instance made on
-first use. **Next**: the rest of slice 5 (generic methods, a hand-written
-`hash`).
+first use. **Part 4 shipped**: a hand-written `hash` (`Hasher`), used by
+Maps; generic functions infer their return type. **Next**: the rest of
+slice 5 (generic methods; bounds on generic types' parameters).
 Generic functions are slice 5, so the "generic constructor inference" gap
 below waits for it. Joshua: "lean toward long-term correct design rather
 than short term stop gaps."
@@ -224,8 +225,8 @@ Freezes:
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 179 programs, 98 rejections, 8 site samples, 219 unit tests
-after D228 slice 5 part 3 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 180 programs, 98 rejections, 8 site samples, 219 unit tests
+after D228 slice 5 part 4 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`

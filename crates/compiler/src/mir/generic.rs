@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::{
-    define_method_scope, display_ty, infer_block_ty, mono_type_name, monomorphize_pending,
+    bind_param, define_method_scope, display_ty, infer_block_ty, mono_type_name, monomorphize_pending,
     probe_body_return, resolve_ty, subst_expr, subst_method, subst_type_expr, tail_block,
     ty_conforms, ty_mono_suffix, FnSig, LowerCtx, Ty,
 };
@@ -157,7 +157,8 @@ pub(super) fn instance_sig(
             ensure_instances(ctx, &ty, &name_map)?;
             resolve_ty(&ty, &ctx.types, &name_map)?
         }
-        None => Ty::Void,
+        // Without `->`, inferred for each instance from its body (D129).
+        None => infer_instance_return(ctx, template, instance, bindings, &params)?,
     };
     Ok(FnSig {
         params,
@@ -170,6 +171,46 @@ pub(super) fn instance_sig(
         mutable: function.params.iter().map(|param| param.mutable).collect(),
         positional: function.params.iter().map(|param| param.positional).collect(),
     })
+}
+
+/// An instance's return type, from its body's exits.
+fn infer_instance_return(
+    ctx: &mut LowerCtx,
+    template: &GenericFn,
+    instance: &str,
+    bindings: &HashMap<String, Ty>,
+    params: &[(String, Ty)],
+) -> Result<Ty> {
+    let maps = ctx.package_maps.get(&template.module).cloned().unwrap_or_default();
+    let mut probe = LowerCtx::new(
+        ctx.fns.clone(),
+        ctx.types.clone(),
+        maps.name_to_type,
+        maps.name_to_fn,
+        maps.name_to_global,
+        maps.namespaces,
+        ctx.module_exports.clone(),
+        ctx.package_maps.clone(),
+        Ty::Void,
+        template.module.clone(),
+        false,
+        Rc::clone(&ctx.synthetics),
+    );
+    probe.inferring = true;
+    probe.infer_self = Some(instance.to_string());
+    let generics = ctx.synthetics.borrow().generics.clone();
+    probe.generics = generics.clone();
+    for (param, (_, ty)) in template.function.params.iter().zip(params) {
+        bind_param(&mut probe, &param.name, ty.clone(), param.mutable);
+    }
+    let body = super::subst_block(&template.function.body, bindings);
+    let mut types = ctx.types.clone();
+    let mut layouts = Vec::new();
+    let ret = probe_body_return(probe, &body, template.function.name_span, &generics, &mut types, &mut layouts)?;
+    for (name, info) in types {
+        ctx.types.entry(name).or_insert(info);
+    }
+    Ok(ret)
 }
 
 /// Make the instances of generic types `te` names that do not exist yet:

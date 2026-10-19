@@ -21,6 +21,16 @@ extend String {
         self.byteCount == 0
     }
 
+    ## Its bytes, then its length (D228).
+    export fn hash(mut hasher!: Hasher) {
+        mut index = 0
+        while index < self.byteCount {
+            hasher.mix(self.byteAt(index))
+            index = index + 1
+        }
+        hasher.mix(self.byteCount)
+    }
+
     ## By Unicode scalars, which for UTF-8 is byte order: `"Z" < "a" < "é"`.
     export fn compare(other!: String) -> Order {
         let shorter = if self.byteCount < other.byteCount { self.byteCount } else { other.byteCount }

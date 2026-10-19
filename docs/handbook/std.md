@@ -54,7 +54,8 @@ Every program has this module, and its names need no import:
 | Name | What it is |
 |------|------------|
 | `Equatable` | `==` and `!=`; member `equals(other!: Self) -> Bool` |
-| `Hashable` | a Map key; parent `Equatable` |
+| `Hashable` | a Map key; parent `Equatable`; member `hash(mut hasher!: Hasher)` |
+| `Hasher` | what `hash` feeds: `mix(value!: Int64)`; `state` is the hash so far |
 | `Ordered` | `<` `<=` `>` `>=`; parent `Equatable`; member `compare(other!: Self) -> Order` |
 | `Order` | `"less" \| "equal" \| "greater"` |
 | `Resource` | a shared box whose `drop()` runs with its last copy |

@@ -49,6 +49,12 @@ pub fn emit_program(program: &Program) -> String {
     for name in &map_keys {
         push_user_array_elem_ty(&Ty::User(name.clone()), &mut user_arr_elems);
     }
+    // A key part with its own `equals` copies the right side (D228).
+    for name in key_part_types(&map_keys, &program.types) {
+        if program.types.iter().any(|t| t.name == name && t.own_equals) {
+            push_user_array_elem_ty(&Ty::User(name), &mut user_arr_elems);
+        }
+    }
     for name in &user_arr_elems {
         if program.types.iter().any(|t| t.name == *name) {
             let _ = writeln!(
@@ -71,8 +77,6 @@ pub fn emit_program(program: &Program) -> String {
     if !user_arr_elems.is_empty() {
         out.push('\n');
     }
-    emit_map_key_ops(&mut out, &map_keys, &program.types);
-
     // Module-level values (R8).
     for g in &program.globals {
         emit_global(&mut out, g, /*is_static*/ true, &program.types);
@@ -85,6 +89,8 @@ pub fn emit_program(program: &Program) -> String {
         emit_proto(&mut out, f, &program.types);
     }
     out.push('\n');
+    // After the prototypes: a key type's own `hash` / `equals` is called here.
+    emit_map_key_ops(&mut out, &map_keys, &program.types);
     emit_drop_dtors(&mut out, &program.types);
     emit_fn_support(&mut out, program, &program.types);
 
@@ -2144,6 +2150,37 @@ fn emit_map_key_ops(out: &mut String, keys: &[String], types: &[TypeLayout]) {
 fn emit_map_key_hash_eq(out: &mut String, layout: &TypeLayout, types: &[TypeLayout]) {
     let name = &layout.name;
     let cty = c_type_name(name);
+    // D228: its own `hash` feeds a `Hasher`; its own `equals` takes the
+    // right side as an owned copy.
+    if layout.own_hash {
+        let hasher = types.iter().find(|t| t.name == "std_core_Hasher");
+        let state = hasher
+            .and_then(|hasher| hasher.fields.first())
+            .map(|field| field.c_name.clone())
+            .unwrap_or_else(|| "state".into());
+        let hasher_ty = c_type_name("std_core_Hasher");
+        let _ = writeln!(out, "static uint64_t {}(const void *p) {{", map_key_hash_fn(name));
+        let _ = writeln!(out, "    {hasher_ty} hasher = {{0}};");
+        let _ = writeln!(out, "    {}(({cty} *)p, &hasher);", c_method_name(name, "hash"));
+        let _ = writeln!(out, "    return (uint64_t)hasher.{state};\n}}");
+    }
+    if layout.own_equals {
+        let _ = writeln!(out, "static int {}(const void *a, const void *b) {{", map_key_eq_fn(name));
+        let _ = writeln!(out, "    {cty} other = *(const {cty} *)b;");
+        let _ = writeln!(out, "    {}(&other);", array_user_elem_dup_fn(name));
+        let _ = writeln!(out, "    return {}(({cty} *)a, other);\n}}", c_method_name(name, "equals"));
+    }
+    if !layout.own_hash {
+        emit_structural_key_hash(out, layout, types);
+    }
+    if !layout.own_equals {
+        emit_structural_key_eq(out, layout, types);
+    }
+}
+
+fn emit_structural_key_hash(out: &mut String, layout: &TypeLayout, types: &[TypeLayout]) {
+    let name = &layout.name;
+    let cty = c_type_name(name);
     let _ = writeln!(
         out,
         "static uint64_t {}(const void *p) {{",
@@ -2176,7 +2213,11 @@ fn emit_map_key_hash_eq(out: &mut String, layout: &TypeLayout, types: &[TypeLayo
         }
     }
     out.push_str("    return hash;\n}\n");
+}
 
+fn emit_structural_key_eq(out: &mut String, layout: &TypeLayout, types: &[TypeLayout]) {
+    let name = &layout.name;
+    let cty = c_type_name(name);
     let _ = writeln!(
         out,
         "static int {}(const void *a, const void *b) {{",
@@ -2215,6 +2256,30 @@ fn emit_map_key_hash_eq(out: &mut String, layout: &TypeLayout, types: &[TypeLayo
     } else {
         let _ = writeln!(out, "    return {};\n}}", parts.join("\n        && "));
     }
+}
+
+/// Every user type inside the key types `keys`, themselves included.
+fn key_part_types(keys: &[String], types: &[TypeLayout]) -> Vec<String> {
+    let mut all: Vec<String> = Vec::new();
+    let mut arrays: Vec<Ty> = Vec::new();
+    let mut pending: Vec<String> = keys.to_vec();
+    while let Some(name) = pending.pop() {
+        if all.contains(&name) {
+            continue;
+        }
+        let Some(layout) = types.iter().find(|t| t.name == name) else {
+            continue;
+        };
+        let inner: Vec<&Ty> = match &layout.sum {
+            Some(variants) => variants.iter().map(|v| &v.payload_ty).collect(),
+            None => layout.fields.iter().map(|f| &f.ty).collect(),
+        };
+        for ty in inner {
+            collect_key_parts(ty, &mut pending, &mut arrays);
+        }
+        all.push(name);
+    }
+    all
 }
 
 /// The user types and array element types a key part holds, for their hash
