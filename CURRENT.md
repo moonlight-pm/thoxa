@@ -112,9 +112,8 @@ shipped**: generic `extend Array<T: Bound>`, std/array (`contains`,
 infers its type arguments (`Shelf(items: [1, 2])`), its instance made on
 first use. **Part 4 shipped**: a hand-written `hash` (`Hasher`), used by
 Maps; generic functions infer their return type. **Part 5 shipped**:
-bounds on generic types' parameters; `Array.map` / `filter`. Open for
-Joshua: check a generic type's methods against its bounds (`Counter<T>`
-adds `T`s; the freeze rules out arithmetic traits). **Slice 6, parts 1–2
+bounds on generic types' parameters; `Array.map` / `filter` (checking a
+generic type's methods against its bounds is open for Joshua, below). **Slice 6, parts 1–2
 shipped**: `Component` (tag literals need it), `Show` (`"{x}"` of user
 types). **Part 3 shipped**: `Encodable` / `Decodable`, declared, in
 std/json. **Slice 7 shipped**: `mixed Trait`, values of several types
@@ -135,7 +134,12 @@ design rather than short term stop gaps."
 **Next: the rest of D228's gaps** (Joshua 2026-10-19: "take whatever makes
 sense and keep working through the rest"; all in the `traits` row of
 [`docs/capabilities.md`](docs/capabilities.md)). Every gap Joshua listed is
-now shipped; the ones left are smaller (the `traits` row's **Gaps**).
+now shipped; the ones left are smaller (the `traits` row's **Gaps**):
+`S.Item` outside generic functions (generic types' and `extend` headers),
+`mixed` over generic instances and built-ins (and a mutating member through
+`mixed` writes a copy), `self.items.append(x)`, getters that write fields,
+a built-in's member writing `self`, `Map` and `String` as `Sequence`s,
+`Array` as `Ordered`.
 **D231 shipped** (D228 slice 12): same-type constraints, `where S.Item ==
 Int64` or `== T`. **D230 shipped** (D228 slice 11): explicit type arguments, `none<String>()`, `<` glued to the name.
 **D229 shipped**: constructor fields take every integer type, an integer
@@ -194,7 +198,7 @@ encoding where a `Json` is expected (and `match` takes its expected type), §5
 typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
 Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 (route clauses import only what they write; generated code names `std/http`
-itself). thoxa.dev runs `09f76de` (redeployed 2026-10-18 at Joshua's go-ahead; no shell, its manual includes D207–D227).
+itself). thoxa.dev runs `80a2369` (redeployed 2026-10-19 at Joshua's request; its manual goes through D228 slice 8, so slices 9–12 and D229–D231 are not on it yet; a redeploy needs Joshua's go-ahead).
 
 **Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
 order"):** done; each slice with conformance and docs, decisions on the
@@ -249,7 +253,7 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D228 slices 1–8 (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions, declared `Show` / `Component` / codecs, `mixed`, associated types) slice 9 (generic and built-in types' conformances with members, `Array` a `Sequence`), and slice 10 (methods with type parameters), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
+**Shipped recently:** D228 slices 1–8 (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions, declared `Show` / `Component` / codecs, `mixed`, associated types) slice 9 (generic and built-in types' conformances with members, `Array` a `Sequence`), slice 10 (methods with type parameters), D229 (integer constructor fields, `UInt64` literals), D230 (explicit type arguments, slice 11), and D231 (same-type constraints, slice 12), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
@@ -270,7 +274,7 @@ lits; overwrite-drop; **D152** match/init RC.
 session items (Ctrl-C in a loop, the command-or-Thoxa guess, redefining a
 session `fn`) went with D227. Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14) and the copied site templates (finding 38). thoxa.dev runs `09f76de` (D227; redeployed 2026-10-18); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
+14) and the copied site templates (finding 38). thoxa.dev runs `80a2369` (D228 slice 8; redeployed 2026-10-19); sola.computer and oath.wicket.cloud still run `e0c0bcf` (D170–D172, redeployed 2026-10-16).
 
 ### Proceed order
 
@@ -332,8 +336,8 @@ Horizon: [`docs/roadmap.md`](docs/roadmap.md). Matrix:
 | Nowait | Token **`--> name(args)`** starts a named free Thoxa function (**D148**). `Void`; return dropped. Colorless: Net parks; `main` drains. No Future / `async` / `--> { }` / pointer `-->`. |
 | Value collections | **D133 shipped** — Array/Map writes through `mut` places (Swift/Buffer COW). `let` aliases do not see later writes. Mutating methods return `Void`. An element of a `mut` Array is a place (`grid[0].append(x)`); a field from outside its type and a temporary are not, and a write on them is an error (**D180**). |
 | Equality | Declared (**D228**): `==` needs `conform T to Equatable`, `<` `Ordered`, a Map key `Hashable`; the default compares field by field. Structural: `==` / `!=` compare products field by field, unions by arm and payload, arrays by count and elements, maps by keys and values in any order (**D175**, **D177**, **D178**, **D212**); never by RC pointer. A type that contains itself compares through a generated function. No ordering on them. |
-| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Float64/Bool (Float64 SameValueZero, **D214**); values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User products / unions are keys too (**D175** `==` + a generated hash, **D179**; arrays inside them, **D214**; not traits). `remove` keeps insertion order (**D181**). No `std/http` header flip. |
-| Ctor fields | Int64, **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
+| Map | **D134 shipped** — builtin `Map<K, V>`; keys String/Int64/Float64/Bool (Float64 SameValueZero, **D214**); values include **Float64 (D140)** and User sums (`Json`, **D141**). `.has` / `May` get; `{k:v}` lits; `for k, v in m`. User products / unions are keys too (**D175** `==` + a generated hash, **D179**; arrays inside them, **D214**); a key type declares `Hashable` (**D228**). `remove` keeps insertion order (**D181**). No `std/http` header flip. |
+| Ctor fields | Every integer type (**D229**), **Float64**, Bool, String, Bytes, Node, Array, Map, constructor-param User (including sums) (**D135** / **D140**). No C-layout, no fn types, no recursive User fields (use Array/Map). |
 | HTTP request | `Request.query` kept (no leading `?`); path still stripped. `parseRequest` body empty; host `readBody` fills it (**D136**). Headers stay `Array<Header>`. `queryParam` / `formField` / `cookie` / `htmlResponse` (**D137**). `Cookie` / `withCookie` / `clearCookie` (**D142**); `htmlFragment` / `etagOf` / `cached` (**D145**). **`peerFd` + `streamed()`** (**D146**) for SSE takeover; the handler gets
 its Socket from `server.peerOf(request)` (**D168**). Cookie and `Cache-Control` *policy* stay in the app. |
 | SQLite | Amalgamation in `libthoxa_rt` (**D143**). Write `sql"… {value} …"` (**D144**); holes quote themselves. `exec`/`query` take `Sql`. No named `ffi` root. No product `thoxa migrate` — apps own schema files. |
@@ -345,7 +349,7 @@ its Socket from `server.peerOf(request)` (**D168**). Cookie and `Cache-Control` 
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. A parameter that is neither a capture nor the `Request` binds the body (query for GET/HEAD, JSON or form by `Content-Type`, else 415); a failed read is a 400 unless the parameter is `Trial<T, Array<Issue>>` (**D191** §5). The module imports only what its clauses write (**D193**). No fallthrough. |
 | String → Bytes | **`Bytes.fromString` only** — no cast sugar (D15 **rejected**) |
 | Resource `drop` | `conform T to Resource { fn drop() { … } }` runs `drop` on last RC (**D155**, **D228**); a type's own `fn drop()` is an ordinary method. Heap box; copies share. `File` / `Socket` / `Db` close in `drop`. Explicit `close` stays inert. Only the defining module calls the constructor (**D168**). No unions / C-layout / multi-clause `drop`. Not Perceus. |
-| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Heap params owned (**D154**). If/match result places overwrite-drop. `tests/conformance/lsan-skip` is empty (ratchet). Bounded ASan (**D153**, 2026-09-03): 88 non-fiber programs clean (140 on 2026-10-17); `cargo make test-asan` is optional, not the default (ucontext fibers in `asan-skip`). `thoxa_alloc` panics on size wrap; `Socket.close` clears `fd`. Resource `drop` **D155**. Not Perceus. Session/libtcc unsanitized. |
+| Leak gate | GCC/Clang LeakSanitizer on batch `cc` (**D151**). `cargo make test` always sets `THOXA_SANITIZE=leak`. Match-bind / union-match / unused-global RC (**D152**). Heap params owned (**D154**). If/match result places overwrite-drop. `tests/conformance/lsan-skip` is empty (ratchet). Bounded ASan (**D153**, 2026-09-03): 88 non-fiber programs clean (180 on 2026-10-19); `cargo make test-asan` is optional, not the default (ucontext fibers in `asan-skip`). `thoxa_alloc` panics on size wrap; `Socket.close` clears `fd`. Resource `drop` **D155**. Not Perceus. |
 | Done means | Conformance `.thx` + `.out` under `cargo make test` |
 | Progress docs | Meta first-class; capabilities + CURRENT (+ handbook when shipped) |
 | Diagnostics | Structured IR → pretty check + `--json` + rich LSP (**D124** shipped); agent-only extras parked |
@@ -403,7 +407,6 @@ cargo make run workloads/landing
 cargo make run workloads/sola
 cargo make run workloads/oath
 cargo run -p thoxa -- tests/conformance/param_defaults.thx
-printf 'echo hi\nexit\n' | cargo run -p thoxa --
 ```
 
 ---
