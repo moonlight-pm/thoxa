@@ -71,10 +71,12 @@ let at = find("abc", from: 2)
 ```
 
 Some other words have a meaning only in one position: `sql` directly before
-a string literal (`sql"…"`), `to` after `conform Type`, `Self` as a type in a
-trait or a conformance (see [Traits](#traits)), and the HTTP verbs `GET`
-`POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS` at the start of an entry in a
-type body (see [Route clauses](#route-clauses)).
+a string literal (`sql"…"`), `to` after `conform Type`, `get` and `set` at
+the start of a member and `field` inside an accessor (see
+[Properties](#properties)), `self` in a method and `Self` as a type there (see
+[Methods](#methods)), and the HTTP verbs `GET` `POST` `PUT` `PATCH` `DELETE`
+`HEAD` `OPTIONS` at the start of an entry in a type body (see
+[Route clauses](#route-clauses)).
 
 ### Literals
 
@@ -566,7 +568,8 @@ A type with no parameters and no body (`type Empty`) has one value, written
 `Empty()`. Fields may hold any type, including heap values, `Node`, other user
 types, and unions. A field may not contain its own type, directly or through
 other products (use an `Array` or a `Map`). Fields are readable from outside
-the type and read-only there. Constructors take arguments like any call (see
+the type and read-only there, unless a setter makes them writable (see
+[Properties](#properties)). Constructors take arguments like any call (see
 [Calls and arguments](#calls-and-arguments)) and may declare defaults
 (`qty: Int64 = 1`). Methods are described in
 [User types and methods](#user-types-and-methods).
@@ -1266,6 +1269,51 @@ let four = tally.quad()                    ## 12
 let same = tally.sameAs(Tally(count: 3))   ## true
 ```
 
+### Properties
+
+A getter and a setter make a property, which reads and writes like a field:
+
+```thx
+type Temperature(kelvin: Float64) {
+    get celsius: Float64 {
+        kelvin - 273.0
+    }
+
+    set celsius(value: Float64) {
+        kelvin = value + 273.0
+    }
+}
+
+mut temperature = Temperature(kelvin: 293.0)
+let warm = temperature.celsius          ## 20.0
+temperature.celsius = 30.0              ## kelvin is now 303.0
+```
+
+- `get name: Type { … }` declares a getter. It takes no arguments.
+  `value.name` reads it, and so does a bare `name` inside the type.
+- `set name(value: Type) { … }` declares a setter, with one parameter, the new
+  value. `value.name = x` on a `mut` binding calls it, from outside the type
+  as from inside; it is a mutating member.
+- A getter or setter may share its name with a stored field. Then the name
+  means the property everywhere, the type's own methods included, and only
+  inside that accessor is the stored value reachable, as `field`; the bare name
+  there would call the accessor itself and is an error.
+- Construction goes through setters: `User(name: "  Ada ")` runs `name`'s
+  setter on `"  Ada "`.
+- A stored field without a setter is read-only outside its type; inside, a
+  write to it goes to the field even when it has a getter.
+- Accessors are public; there is no `export` on them.
+
+```thx
+type User(name: String) {
+    set name(value: String) {
+        field = value.trim()
+    }
+}
+
+let user = User(name: "  Ada  ")        ## user.name is "Ada"
+```
+
 ### Field write-back
 
 Inside a method, constructor-parameter fields (and the `mut` fields of a
@@ -1331,6 +1379,10 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
 
 - A member without a body is required: a conforming type supplies it with the
   trait's parameters, and may leave out the return type to take the trait's.
+- A trait may ask for a property: `get name: Type` and `set name(value:
+  Type)`. A getter or setter in the conformance meets it, and so does the
+  type's own accessor or a field of that name and type. A field that meets a
+  `set` requirement becomes writable from outside: conforming says so.
 - A member with a body is provided: written once on the trait, and every
   conforming type has it, unless its conformance supplies its own. A provided
   body sees only the trait: the trait's members (its parents' too) by bare

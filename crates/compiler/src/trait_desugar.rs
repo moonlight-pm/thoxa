@@ -37,6 +37,13 @@ const BUILT_IN_TYPES: &[&str] = &[
     "Address",
 ];
 
+/// A type's own methods (accessors among them) and fields, by name.
+#[derive(Default)]
+struct OwnMembers {
+    methods: HashMap<String, Method>,
+    fields: HashMap<String, TypeExpr>,
+}
+
 struct TraitEntry {
     def: TraitDef,
     path: PathBuf,
@@ -236,22 +243,28 @@ pub fn desugar_package(package: &mut Package) -> Result<()> {
         types,
         traits: &traits,
     };
-    // The type's own member names, before any conformance adds to them.
-    let mut own_members: HashMap<(String, String), HashSet<String>> = HashMap::new();
+    // The type's own members, before any conformance adds to them.
+    let mut own_members: HashMap<(String, String), OwnMembers> = HashMap::new();
     let mut generic: HashSet<(String, String)> = HashSet::new();
     let mut unions: HashSet<(String, String)> = HashSet::new();
     for module in &package.modules {
         for item in &module.ast.items {
             let Item::Type(def) = item else { continue };
             let key = (module.id.clone(), def.name.clone());
-            let names = def
-                .methods
-                .iter()
-                .map(|method| method.name.clone())
-                .chain(def.params.iter().map(|param| param.name.clone()))
-                .chain(def.fields.iter().map(|field| field.name.clone()))
-                .collect();
-            own_members.insert(key.clone(), names);
+            let members = OwnMembers {
+                methods: def
+                    .methods
+                    .iter()
+                    .map(|method| (method.name.clone(), method.clone()))
+                    .collect(),
+                fields: def
+                    .params
+                    .iter()
+                    .map(|param| (param.name.clone(), param.ty.clone()))
+                    .chain(def.fields.iter().map(|field| (field.name.clone(), field.ty.clone())))
+                    .collect(),
+            };
+            own_members.insert(key.clone(), members);
             if def.union_members.is_some() {
                 unions.insert(key.clone());
             }
@@ -383,7 +396,7 @@ type Checked = ((String, String), Vec<TraitRef>, Vec<Method>);
 fn check_conformance(
     item: &Pending,
     scope: &Scope,
-    own_members: &HashMap<(String, String), HashSet<String>>,
+    own_members: &HashMap<(String, String), OwnMembers>,
     generic: &HashSet<(String, String)>,
     unions: &HashSet<(String, String)>,
     conformed: &mut HashMap<(String, String), HashMap<TraitRef, Span>>,
@@ -518,42 +531,84 @@ fn check_conformance(
     }
 
     // Every member supplied, with the trait's signature; no name taken twice.
-    let empty = HashSet::new();
+    let empty = OwnMembers::default();
     let own = own_members.get(&target).unwrap_or(&empty);
     let mut methods = Vec::new();
     for (trait_ref, span) in &refs {
         let entry = &scope.traits[trait_ref];
         for member in &entry.def.members {
-            if own.contains(&member.name) {
-                return Err(Error::at(
+            let shown = member_display(&member.name);
+            let clash = || {
+                Error::at(
                     format!(
                         "`{}` already has a member named `{}`, so it cannot take `{}`'s",
-                        target.1, member.name, trait_ref.name
+                        target.1, shown, trait_ref.name
                     ),
                     *span,
-                ));
-            }
+                )
+            };
             let taken = trait_members.entry(target.clone()).or_default();
             if let Some(other) = taken.get(&member.name) {
                 return Err(Error::at(
                     format!(
                         "`{}` is a member of both `{}` and `{}`, and `{}` conforms to both",
-                        member.name, other.name, trait_ref.name, target.1
+                        shown, other.name, trait_ref.name, target.1
                     ),
                     *span,
                 ));
             }
             taken.insert(member.name.clone(), trait_ref.clone());
+            // A property's field (`area` for `get area`).
+            let property = accessor_of(&member.name);
+            let stored = property.and_then(|(_, name)| own.fields.get(name).map(|ty| (name, ty)));
+            let own_method = own.methods.get(&member.name);
+            if property.is_none() && own.fields.contains_key(&member.name) {
+                return Err(clash());
+            }
             match (implemented.get(member.name.as_str()), &member.body) {
+                (Some(_), _) if own_method.is_some() => return Err(clash()),
                 (Some(method), _) => {
                     methods.push(implementation(method, member, trait_ref, item, &target, scope)?)
                 }
+                // A required accessor the type's own accessor or field
+                // satisfies: uniform access.
+                (None, None) if property.is_some() && own_method.is_some() => {
+                    let own_item = Pending {
+                        module: target.0.clone(),
+                        path: item.path.clone(),
+                        conformance: item.conformance.clone(),
+                    };
+                    implementation(own_method.unwrap(), member, trait_ref, &own_item, &target, scope)?;
+                }
+                (None, None) if stored.is_some() => {
+                    let (name, field_ty) = stored.unwrap();
+                    let declared = match property.unwrap().0 {
+                        AccessorKind::Get => member.return_type.as_ref(),
+                        AccessorKind::Set => member.params.first().map(|param| &param.ty),
+                    };
+                    let matches = declared.is_some_and(|declared| {
+                        canonical(field_ty, &target.0, &target, scope)
+                            == canonical(declared, &trait_ref.module, &target, scope)
+                    });
+                    if !matches {
+                        return Err(Error::at(
+                            format!(
+                                "field `{name}` of `{}` does not have the type `{}`'s `{}` asks for",
+                                target.1, trait_ref.name, shown
+                            ),
+                            conformance.span,
+                        ));
+                    }
+                    methods.push(field_accessor(&member.name, field_ty, conformance.span));
+                }
+                (None, Some(_)) if own_method.is_some() || stored.is_some() => return Err(clash()),
                 (None, Some(body)) => methods.push(provided_method(
                     member,
                     body.clone(),
                     trait_ref,
                     visible_members(trait_ref, scope.traits),
                 )),
+                (None, None) if own_method.is_some() => return Err(clash()),
                 (None, None) => {
                     return Err(Error::at(
                         format!(
@@ -727,6 +782,57 @@ fn archetype(trait_ref: &TraitRef, traits: &HashMap<TraitRef, TraitEntry>) -> Op
     })
 }
 
+/// The accessor a stored field gives a trait's `get` / `set` requirement: it
+/// reads or writes `field` (D228).
+fn field_accessor(method: &str, field_ty: &TypeExpr, span: Span) -> Method {
+    let name = |text: &str| Expr {
+        kind: ExprKind::Name(text.to_string()),
+        span,
+    };
+    let (params, return_type, body) = match accessor_of(method) {
+        Some((AccessorKind::Set, _)) => (
+            vec![Param {
+                name: "value".into(),
+                name_span: span,
+                positional: true,
+                mutable: false,
+                ty: field_ty.clone(),
+                default: None,
+            }],
+            None,
+            Block {
+                items: vec![BlockItem::Assign {
+                    target: AssignTarget::Name {
+                        name: "field".into(),
+                        name_span: span,
+                    },
+                    value: name("value"),
+                }],
+                tail: None,
+                span,
+            },
+        ),
+        _ => (
+            Vec::new(),
+            Some(field_ty.clone()),
+            Block {
+                items: Vec::new(),
+                tail: Some(Box::new(name("field"))),
+                span,
+            },
+        ),
+    };
+    Method {
+        exported: true,
+        name: method.to_string(),
+        name_span: span,
+        params,
+        return_type,
+        body,
+        provided: None,
+    }
+}
+
 /// `loop {}`: a body of any return type that never returns.
 fn stub_body(span: Span) -> Block {
     let empty = Block {
@@ -780,6 +886,17 @@ fn signature(member: &TraitMember, target: &str) -> String {
             name.to_string()
         }
     };
+    match accessor_of(&member.name) {
+        Some((AccessorKind::Get, property)) => {
+            let ty = member.return_type.as_ref().map_or("Void".to_string(), |ty| render(ty, &name));
+            return format!("get {property}: {ty}");
+        }
+        Some((AccessorKind::Set, property)) => {
+            let ty = member.params.first().map_or(String::new(), |param| render(&param.ty, &name));
+            return format!("set {property}(value: {ty})");
+        }
+        None => {}
+    }
     let params: Vec<String> = member
         .params
         .iter()

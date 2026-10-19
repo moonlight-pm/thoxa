@@ -1,0 +1,69 @@
+## Properties (D228): `get` and `set` look like fields to every caller. Inside
+## its own accessor a property's stored field is `field`; everywhere else,
+## the type's own methods included, the name goes through the accessors, and
+## construction goes through the setters.
+import logging, { info } from "std/logging"
+
+## Computed: no field named `celsius`.
+type Temperature(kelvin: Float64) {
+    get celsius: Float64 {
+        kelvin - 273.0
+    }
+
+    set celsius(value: Float64) {
+        kelvin = value + 273.0
+    }
+
+    export fn warm(by!: Float64) {
+        celsius = celsius + by
+    }
+
+    export fn report() -> String {
+        "{self.celsius} C"
+    }
+}
+
+## A setter on a stored field: every write, the constructor's too, trims.
+type User(name: String) {
+    set name(value: String) {
+        field = value.trim()
+    }
+
+    export fn rename(to!: String) {
+        name = to
+    }
+}
+
+## A getter over a stored field; the type's own writes go to the field.
+type Badge(label: String) {
+    get label: String {
+        field.toUpper()
+    }
+
+    export fn relabel(to!: String) {
+        label = to
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    mut temperature = Temperature(kelvin: 293.0)
+    info("celsius: {temperature.celsius}")
+    temperature.celsius = 30.0
+    info("kelvin after set: {temperature.kelvin}")
+    temperature.warm(5.0)
+    info(temperature.report())
+
+    mut user = User(name: "  Ada  ")
+    info("[{user.name}]")
+    user.name = " Bob "
+    info("[{user.name}]")
+    user.rename(" Cy ")
+    info("[{user.name}]")
+
+    mut badge = Badge(label: "vip")
+    info(badge.label)
+    badge.relabel("guest")
+    info(badge.label)
+}

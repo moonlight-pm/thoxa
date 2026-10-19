@@ -1,0 +1,8 @@
+## D228: a setter takes the new value and nothing else.
+type Temperature(kelvin: Float64) {
+    set celsius(value: Float64, scale: Float64) {
+        kelvin = value * scale
+    }
+}
+
+fn main() {}

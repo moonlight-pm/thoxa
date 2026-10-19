@@ -1,0 +1,11 @@
+## D228: without a setter, a field stays read-only outside its type.
+type Badge(label: String) {
+    get label: String {
+        field.toUpper()
+    }
+}
+
+fn main() {
+    mut badge = Badge(label: "vip")
+    badge.label = "guest"
+}

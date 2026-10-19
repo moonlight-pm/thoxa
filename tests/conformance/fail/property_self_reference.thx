@@ -1,0 +1,8 @@
+## D228: inside its own getter a property's name would call the getter again.
+type Temperature(kelvin: Float64) {
+    get celsius: Float64 {
+        celsius
+    }
+}
+
+fn main() {}

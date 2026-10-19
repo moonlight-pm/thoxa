@@ -1,0 +1,10 @@
+## D228: a field meets a `get` requirement only with the type it asks for.
+trait Shape {
+    get area: Float64
+}
+
+type Square(area: Int64)
+
+conform Square to Shape
+
+fn main() {}

@@ -1,0 +1,10 @@
+## D228: a `get` requirement needs a getter or a field of that name.
+trait Shape {
+    get area: Float64
+}
+
+type Circle(radius: Float64)
+
+conform Circle to Shape
+
+fn main() {}

@@ -2,6 +2,7 @@
 //! R8: multi-file modules, import/export, module-level let/mut.
 
 use crate::ast::{
+    accessor_of, getter_name, setter_name, AccessorKind,
     self, Arg, AssignTarget, BinaryOp, Block, BlockItem, Expr, ExprKind, InterpPart, Item, MapEntry,
     MatchArm, Method, Pattern, TypeArg, TypeDef, TypeExpr, TypeLit, TypeMark, UnaryOp,
 };
@@ -1209,6 +1210,9 @@ struct LowerCtx {
     /// The method's fields by name, as bound at its start: `self.name` reaches
     /// one even when a local shadows it (D228).
     method_fields: HashMap<String, Binding>,
+    /// The method whose body is being lowered (`get_name` in a getter): its
+    /// own property's stored field is `field` there (D228).
+    current_method: Option<String>,
     /// A body a trait provides (D228): only the trait's members are visible
     /// by bare name or through `self`, not the conforming type's fields or
     /// its own methods.
@@ -1277,6 +1281,7 @@ impl LowerCtx {
             mut_field_args: Vec::new(),
             method_type: None,
             method_fields: HashMap::new(),
+            current_method: None,
             trait_scope: None,
             eq_expanding: Vec::new(),
         }
@@ -1505,9 +1510,22 @@ impl LowerCtx {
     /// Reassign a mut binding; drops the old heap value if any.
     /// Method field locals (D107) also FieldAssign through the receiver.
     fn reassign_name(&mut self, name: &str, name_span: Span, value: &Expr) -> Result<()> {
-        let binding = self
-            .lookup(name)
-            .ok_or_else(|| Error::at(format!("undefined name `{name}`"), name_span))?;
+        let found = self.lookup(name);
+        // A property with a setter writes through it (D228).
+        if let Some((type_name, setter)) =
+            property_accessor(self, name, AccessorKind::Set, found.as_ref())
+        {
+            let args = [Arg::Pos(value.clone())];
+            lower_sibling_call(self, &type_name, &setter, &args, name_span)?;
+            return Ok(());
+        }
+        if found.is_none() {
+            if let Some(error) = own_accessor_error(self, name, name_span) {
+                return Err(error);
+            }
+        }
+        let binding =
+            found.ok_or_else(|| Error::at(format!("undefined name `{name}`"), name_span))?;
         if !binding.mutable {
             return Err(Error::at(
                 format!("cannot assign to immutable binding `{name}`"),
@@ -3046,6 +3064,38 @@ fn no_member_message(type_mangled: &str, member: &str, kind: &str) -> String {
     } else {
         format!("no {kind} `{member}` on `{shown}`")
     }
+}
+
+/// Construction goes through setters (D228): once the value `place` exists,
+/// each field's setter runs on that field's argument.
+fn run_constructor_setters(
+    ctx: &mut LowerCtx,
+    info: &TypeInfo,
+    ty: &Ty,
+    place: &Place,
+    arguments: &[Place],
+) -> Result<()> {
+    let Ty::User(type_name) = ty else {
+        return Ok(());
+    };
+    for (field, argument) in info.fields.iter().zip(arguments) {
+        let setter = setter_name(&field.name);
+        if !info.methods.contains_key(&setter) {
+            continue;
+        }
+        let value = ctx.fresh("setarg");
+        ctx.assign(value.clone(), field.ty.clone(), RValue::Use(argument.clone()));
+        emit_call_result(
+            ctx,
+            Callee::Method {
+                type_name: type_name.clone(),
+                method: setter,
+            },
+            vec![place.clone(), value],
+            Ty::Void,
+        )?;
+    }
+    Ok(())
 }
 
 /// The type `trait_desugar` makes to check a trait's provided bodies once
@@ -7211,6 +7261,7 @@ fn define_method_scope(ctx: &mut LowerCtx, mangled_type: &str, m: &Method) -> Re
         .provided
         .as_ref()
         .map(|provided| provided.members.iter().cloned().collect());
+    ctx.current_method = Some(m.name.clone());
     bind_method_fields(ctx, mangled_type);
     // Heap params owned (D154). `_self` stays borrowed (pointer, D107).
     for p in &m.params {
@@ -7246,11 +7297,75 @@ fn bind_method_fields(ctx: &mut LowerCtx, mangled_type: &str) {
         } else {
             None
         };
+        // In its own accessor, a property's stored field is `field` (D228).
+        let own_accessor = ctx
+            .current_method
+            .as_deref()
+            .and_then(accessor_of)
+            .is_some_and(|(_, property)| property == f.name);
+        if own_accessor {
+            ctx.define_full("field", f.ty.clone(), writable, p, writeback);
+            continue;
+        }
         ctx.define_full(&f.name, f.ty.clone(), writable, p, writeback);
         if let Some(binding) = ctx.lookup(&f.name) {
             ctx.method_fields.insert(f.name.clone(), binding);
         }
     }
+}
+
+/// The accessor a property name reaches in the body being lowered (D228): the
+/// receiver type's `get_name` / `set_name`, when visible, unless the body is
+/// that accessor, and unless `found` is a local that hides the property.
+fn property_accessor(
+    ctx: &LowerCtx,
+    property: &str,
+    kind: AccessorKind,
+    found: Option<&Binding>,
+) -> Option<(String, String)> {
+    let type_name = ctx.method_type.clone()?;
+    let method = match kind {
+        AccessorKind::Get => getter_name(property),
+        AccessorKind::Set => setter_name(property),
+    };
+    if ctx.current_method.as_deref() == Some(method.as_str())
+        || !sibling_visible(ctx, &type_name, &method)
+    {
+        return None;
+    }
+    let is_field = |binding: &Binding| {
+        ctx.method_fields
+            .get(property)
+            .is_some_and(|field| field.place == binding.place)
+    };
+    if found.is_some_and(|binding| !is_field(binding)) {
+        return None;
+    }
+    Some((type_name, method))
+}
+
+/// A property named inside its own accessor, where it would call itself.
+fn own_accessor_error(ctx: &LowerCtx, property: &str, span: Span) -> Option<Error> {
+    let (kind, own) = accessor_of(ctx.current_method.as_deref()?)?;
+    if own != property {
+        return None;
+    }
+    let which = match kind {
+        AccessorKind::Get => "getter",
+        AccessorKind::Set => "setter",
+    };
+    let stored = ctx.lookup("field").is_some();
+    Some(
+        Error::at(
+            format!("`{property}` inside its own {which} would call the {which} again"),
+            span,
+        )
+        .with_help(if stored {
+            "the stored value is `field` here".to_string()
+        } else {
+            format!("`{property}` has no stored field; use the fields it is computed from")
+        }),
+    )
 }
 
 /// `self`, the receiver as a value (D228): a copy of what `_self` points to
@@ -7866,6 +7981,14 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
             field_span,
             ..
         } if base == "self" && self_receiver(ctx).is_some() => {
+            if let Some((type_name, setter)) = property_accessor(ctx, field, AccessorKind::Set, None) {
+                let args = [Arg::Pos(value.clone())];
+                lower_sibling_call(ctx, &type_name, &setter, &args, *field_span)?;
+                return Ok(());
+            }
+            if let Some(error) = own_accessor_error(ctx, field, *field_span) {
+                return Err(error);
+            }
             // `self.field = …` writes the field, even where a local shadows it (D228).
             match ctx.method_fields.get(field).cloned() {
                 Some(binding) if binding.mutable => ctx.reassign_binding(binding, field, value),
@@ -7885,6 +8008,22 @@ fn lower_assign(ctx: &mut LowerCtx, target: &AssignTarget, value: &Expr) -> Resu
             let binding = ctx
                 .lookup(base)
                 .ok_or_else(|| Error::at(format!("undefined name `{base}`"), *base_span))?;
+            // A property with a setter is written through it, from anywhere (D228).
+            if let Ty::User(type_name) = &binding.ty {
+                let setter = setter_name(field);
+                if ctx
+                    .types
+                    .get(type_name)
+                    .is_some_and(|info| info.methods.contains_key(&setter))
+                {
+                    let receiver = Expr {
+                        kind: ExprKind::Name(base.clone()),
+                        span: *base_span,
+                    };
+                    lower_method_call(ctx, &receiver, &setter, *field_span, &[Arg::Pos(value.clone())])?;
+                    return Ok(());
+                }
+            }
             if !binding.mutable {
                 return Err(Error::at(
                     format!("cannot assign to field of immutable binding `{base}`"),
@@ -8244,7 +8383,19 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
                 let p = ctx.fresh("void");
                 return Ok((p, Ty::Void));
             }
-            if let Some(binding) = ctx.lookup(name) {
+            let found = ctx.lookup(name);
+            // A property with a getter reads through it (D228).
+            if let Some((type_name, getter)) =
+                property_accessor(ctx, name, AccessorKind::Get, found.as_ref())
+            {
+                return lower_sibling_call(ctx, &type_name, &getter, &[], expr.span);
+            }
+            if found.is_none() {
+                if let Some(error) = own_accessor_error(ctx, name, expr.span) {
+                    return Err(error);
+                }
+            }
+            if let Some(binding) = found {
                 let ty = binding.ty.clone();
                 let src = binding.place;
                 // Simple RC: reading a heap / Trial-with-heap produces a new owner (`assign` dups).
@@ -9983,6 +10134,12 @@ fn lower_field(
 ) -> Result<(Place, Ty)> {
     // `self.field` is the field, even where a local shadows it (D228).
     if matches!(&base.kind, ExprKind::Name(name) if name == "self") && self_receiver(ctx).is_some() {
+        if let Some((type_name, getter)) = property_accessor(ctx, name, AccessorKind::Get, None) {
+            return lower_sibling_call(ctx, &type_name, &getter, &[], name_span);
+        }
+        if let Some(error) = own_accessor_error(ctx, name, name_span) {
+            return Err(error);
+        }
         if let Some(binding) = ctx.method_fields.get(name).cloned() {
             let ty = binding.ty.clone();
             if needs_drop(&ty) {
@@ -10052,6 +10209,12 @@ fn lower_field(
     } else {
         (base_p, base_ty)
     };
+    // A getter std declares on a built-in type with `extend` (D228).
+    if !matches!(base_ty, Ty::User(_)) {
+        if let Some(sig) = extension_method(ctx, &base_ty, &getter_name(name), name_span)? {
+            return lower_extension_call(ctx, base_p, &base_ty, sig, name, &[], name_span);
+        }
+    }
     match &base_ty {
         Ty::String => {
             // `.count` is Unicode scalars, `.byteCount` bytes (D195 §4).
@@ -10171,6 +10334,20 @@ fn lower_field(
                 .types
                 .get(type_name)
                 .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), name_span))?;
+            // A property with a getter reads through it (D228).
+            let getter = getter_name(name);
+            if let Some(sig) = info.methods.get(&getter).cloned() {
+                ctx.infer_check_callee(&format!("{type_name}__{getter}"), name, name_span)?;
+                return emit_call_result(
+                    ctx,
+                    Callee::Method {
+                        type_name: type_name.clone(),
+                        method: getter,
+                    },
+                    vec![base_p],
+                    sig.ret,
+                );
+            }
             if info.methods.contains_key(name) && info.fields.iter().all(|f| f.name != name) {
                 return form_bound_method(ctx, base_p, base_ty, name, name_span);
             }
@@ -10579,7 +10756,7 @@ fn lower_method_call(
                         ty.clone(),
                         RValue::StructLit {
                             type_name: mangled_ty.clone(),
-                            fields: field_places,
+                            fields: field_places.clone(),
                         },
                     );
                     // StructLit copies field pointers; take our own refs so arg temps can drop.
@@ -10590,6 +10767,7 @@ fn lower_method_call(
                             ty: ty.clone(),
                         });
                     }
+                    run_constructor_setters(ctx, &info, &ty, &p, &field_places)?;
                 }
                 return Ok((p, ty));
             }
@@ -17294,7 +17472,7 @@ fn lower_call(
                         ty.clone(),
                         RValue::StructLit {
                             type_name: mangled_ty,
-                            fields: field_places,
+                            fields: field_places.clone(),
                         },
                     );
                     // StructLit copies field pointers; take our own refs so arg temps can drop.
@@ -17305,6 +17483,7 @@ fn lower_call(
                             ty: ty.clone(),
                         });
                     }
+                    run_constructor_setters(ctx, &info, &ty, &p, &field_places)?;
                 }
                 return Ok((p, ty));
             }
@@ -18185,6 +18364,7 @@ fn infer_block_ty(ctx: &LowerCtx, block: &Block) -> Result<Ty> {
         mut_field_args: Vec::new(),
         method_type: ctx.method_type.clone(),
         method_fields: ctx.method_fields.clone(),
+        current_method: ctx.current_method.clone(),
         trait_scope: ctx.trait_scope.clone(),
         eq_expanding: ctx.eq_expanding.clone(),
     };

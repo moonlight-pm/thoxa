@@ -1,0 +1,66 @@
+## A trait may ask for a property (D228): `get area: Float64` is met by a
+## getter in the conformance, the type's own getter, or a field of that type;
+## `set name(value: String)` by a setter or a field, which conforming makes
+## writable from outside. A trait's bodies read and write it by name.
+import logging, { info } from "std/logging"
+
+trait Shape {
+    get area: Float64
+
+    fn describe() -> String {
+        "area {area}"
+    }
+}
+
+type Circle(radius: Float64)
+
+conform Circle to Shape {
+    get area: Float64 {
+        3.0 * radius * radius
+    }
+}
+
+## The field is the area.
+type Square(area: Float64)
+
+conform Square to Shape
+
+## Its own getter is the area.
+type Tile(side: Float64) {
+    get area: Float64 {
+        side * side
+    }
+}
+
+conform Tile to Shape
+
+trait Named {
+    get name: String
+    set name(value: String)
+
+    fn shout() -> String {
+        "{name}!"
+    }
+
+    fn rename(to!: String) {
+        name = to
+    }
+}
+
+type Pet(name: String)
+
+conform Pet to Named
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info(Circle(radius: 1.0).describe())
+    info(Square(area: 4.0).describe())
+    info(Tile(side: 3.0).describe())
+    mut pet = Pet(name: "rex")
+    info(pet.shout())
+    pet.name = "max"
+    info(pet.shout())
+    pet.rename("fido")
+    info(pet.name)
+}

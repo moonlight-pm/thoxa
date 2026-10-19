@@ -216,6 +216,43 @@ pub struct Method {
     pub provided: Option<Provided>,
 }
 
+/// A property's accessors are methods (D228): `get name: T { … }` is
+/// `get_name() -> T`, `set name(value: T) { … }` is `set_name(value!: T)`. No
+/// source name has an `_`, so these never meet a declared one.
+pub fn getter_name(property: &str) -> String {
+    format!("get_{property}")
+}
+
+pub fn setter_name(property: &str) -> String {
+    format!("set_{property}")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessorKind {
+    Get,
+    Set,
+}
+
+/// The property a method accesses, when it is an accessor.
+pub fn accessor_of(method: &str) -> Option<(AccessorKind, &str)> {
+    if let Some(property) = method.strip_prefix("get_") {
+        Some((AccessorKind::Get, property))
+    } else {
+        method
+            .strip_prefix("set_")
+            .map(|property| (AccessorKind::Set, property))
+    }
+}
+
+/// A member as source writes it: `get area`, `set area`, or the method name.
+pub fn member_display(method: &str) -> String {
+    match accessor_of(method) {
+        Some((AccessorKind::Get, property)) => format!("get {property}"),
+        Some((AccessorKind::Set, property)) => format!("set {property}"),
+        None => method.to_string(),
+    }
+}
+
 /// Where a provided method's body looks: its signature and free names resolve
 /// in the trait's module, and only the trait's members (its own and its
 /// ancestors') are visible by bare name or through `self` (D228).

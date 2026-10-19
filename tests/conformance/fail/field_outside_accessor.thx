@@ -1,0 +1,12 @@
+## D228: `field` is a property's stored value only inside its accessors.
+type Badge(label: String) {
+    get label: String {
+        field.toUpper()
+    }
+
+    export fn raw() -> String {
+        field
+    }
+}
+
+fn main() {}

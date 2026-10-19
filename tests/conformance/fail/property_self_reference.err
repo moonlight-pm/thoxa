@@ -1,0 +1,1 @@
+`celsius` inside its own getter would call the getter again

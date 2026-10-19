@@ -496,6 +496,10 @@ impl Parser {
                     self.parse_conversion().map(|c| {
                         conversions.push(c);
                     })
+                } else if self.at_accessor() || self.at_exported_accessor() {
+                    self.parse_accessor().map(|m| {
+                        methods.push(m);
+                    })
                 } else if self.at(TokenKind::Fn) || self.at(TokenKind::Export) {
                     self.parse_method().map(|m| {
                         methods.push(m);
@@ -510,8 +514,8 @@ impl Parser {
                     })
                 } else {
                     Err(Error::at(
-                        "expected field (`mut`/`let name: Type`), method, or route \
-                         (`GET \"/…\" { … }`) in type body",
+                        "expected field (`mut`/`let name: Type`), method, accessor \
+                         (`get name: Type { … }`), or route (`GET \"/…\" { … }`) in type body",
                         self.peek_span(),
                     ))
                 };
@@ -533,6 +537,7 @@ impl Parser {
                                 || self.at(TokenKind::Mut)
                                 || self.at(TokenKind::Let)
                                 || self.at_route_method()
+                                || self.at_accessor()
                             {
                                 break;
                             }
@@ -765,9 +770,13 @@ impl Parser {
         self.expect_kind(&TokenKind::LBrace)?;
         let mut methods = Vec::new();
         while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
+            if self.at_accessor() || self.at_exported_accessor() {
+                methods.push(self.parse_accessor()?);
+                continue;
+            }
             if !(self.at(TokenKind::Fn) || self.at(TokenKind::Export)) {
                 return Err(Error::at(
-                    "an `extend` block holds methods (`fn` / `export fn`)",
+                    "an `extend` block holds methods (`fn` / `export fn`) and getters",
                     self.peek_span(),
                 ));
             }
@@ -803,20 +812,25 @@ impl Parser {
                     self.peek_span(),
                 ));
             }
-            if !self.at(TokenKind::Fn) {
+            let (member_name, member_span, params, return_type) = if self.at_accessor() {
+                let (method, _) = self.parse_accessor_head()?;
+                (method.name, method.name_span, method.params, method.return_type)
+            } else if self.at(TokenKind::Fn) {
+                self.bump();
+                let (name, span) = self.expect_ident()?;
+                let params = self.parse_param_list()?;
+                let return_type = if self.at(TokenKind::Arrow) {
+                    self.bump();
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+                (name, span, params, return_type)
+            } else {
                 return Err(Error::at(
-                    "a trait holds methods (`fn name(…)`, with a body or without)",
+                    "a trait holds methods (`fn name(…)`) and accessors (`get name: Type`, `set name(value: Type)`), with a body or without",
                     self.peek_span(),
                 ));
-            }
-            self.bump();
-            let (member_name, member_span) = self.expect_ident()?;
-            let params = self.parse_param_list()?;
-            let return_type = if self.at(TokenKind::Arrow) {
-                self.bump();
-                Some(self.parse_type()?)
-            } else {
-                None
             };
             let body = if self.at(TokenKind::LBrace) {
                 Some(self.parse_block()?)
@@ -870,9 +884,13 @@ impl Parser {
                         self.peek_span(),
                     ));
                 }
+                if self.at_accessor() {
+                    methods.push(self.parse_accessor()?);
+                    continue;
+                }
                 if !self.at(TokenKind::Fn) {
                     return Err(Error::at(
-                        "a conformance holds the traits' methods (`fn name(…) { … }`)",
+                        "a conformance holds the traits' methods (`fn name(…) { … }`) and accessors (`get name: Type { … }`)",
                         self.peek_span(),
                     ));
                 }
@@ -888,6 +906,78 @@ impl Parser {
             traits,
             methods,
         })
+    }
+
+    /// `get name` / `set name` at a member's start (D228): `get` and `set` are
+    /// words only there.
+    fn at_accessor(&self) -> bool {
+        matches!(&self.current().kind, TokenKind::Ident(word) if word == "get" || word == "set")
+            && self
+                .tokens
+                .get(self.pos + 1)
+                .is_some_and(|token| is_name_token(&token.kind))
+    }
+
+    fn at_exported_accessor(&self) -> bool {
+        self.at(TokenKind::Export)
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|token| &token.kind),
+                Some(TokenKind::Ident(word)) if word == "get" || word == "set"
+            )
+    }
+
+    /// `get name: T` or `set name(value: T)`, without the body: the method it
+    /// is (`get_name` / `set_name`, public) and the property's name.
+    fn parse_accessor_head(&mut self) -> Result<(Method, String)> {
+        let getter = matches!(&self.current().kind, TokenKind::Ident(word) if word == "get");
+        self.bump();
+        let (property, property_span) = self.expect_ident()?;
+        let (name, params, return_type) = if getter {
+            self.expect_kind(&TokenKind::Colon)?;
+            (getter_name(&property), Vec::new(), Some(self.parse_type()?))
+        } else {
+            let mut params = self.parse_param_list()?;
+            if params.len() != 1 {
+                return Err(Error::at(
+                    "a setter takes one parameter, the new value: `set name(value: Type)`",
+                    property_span,
+                ));
+            }
+            if self.at(TokenKind::Arrow) {
+                return Err(Error::at("a setter returns nothing", self.peek_span()));
+            }
+            // Called by position: `x.name = value` has no label to give.
+            params[0].positional = true;
+            (setter_name(&property), params, None)
+        };
+        let method = Method {
+            exported: true,
+            name,
+            name_span: property_span,
+            params,
+            return_type,
+            body: Block {
+                items: Vec::new(),
+                tail: None,
+                span: property_span,
+            },
+            provided: None,
+        };
+        Ok((method, property))
+    }
+
+    /// `get name: T { … }` / `set name(value: T) { … }` in a type, a
+    /// conformance, or an `extend` block (D228). Accessors are public.
+    fn parse_accessor(&mut self) -> Result<Method> {
+        if self.at(TokenKind::Export) {
+            return Err(Error::at(
+                "accessors are public; drop `export`",
+                self.peek_span(),
+            ));
+        }
+        let (mut method, _) = self.parse_accessor_head()?;
+        method.body = self.parse_block()?;
+        Ok(method)
     }
 
     /// `(param, …)` after a name.

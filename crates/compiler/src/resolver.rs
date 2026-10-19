@@ -13,7 +13,7 @@
 //! types-by-binding can be plumbed without changing diagnostics.
 
 use crate::ast::{
-    self, Arg, AssignTarget, Block, BlockItem, Expr, ExprKind, ImportKind, Item, MatchArm, Module,
+    self, accessor_of, Arg, AssignTarget, Block, BlockItem, Expr, ExprKind, ImportKind, Item, MatchArm, Module,
     Pattern, TypeArg, TypeExpr,
 };
 use crate::error::Result;
@@ -708,13 +708,11 @@ impl<'a> Resolver<'a> {
                     self.define(root, &def.name, id);
                     // A trait's members, visible by bare name in its bodies.
                     for member in &def.members {
-                        let id = self.member_binding(
-                            &def.name,
-                            &member.name,
-                            BindingKind::Method,
-                            member.name_span,
-                            true,
-                        );
+                        let (name, kind) = match accessor_of(&member.name) {
+                            Some((_, property)) => (property, BindingKind::Field),
+                            None => (member.name.as_str(), BindingKind::Method),
+                        };
+                        let id = self.member_binding(&def.name, name, kind, member.name_span, true);
                         if let Some(ret) = &member.return_type {
                             self.set_nav_ty(id, Self::nav_ty_from_type_expr(ret));
                         }
@@ -723,13 +721,7 @@ impl<'a> Resolver<'a> {
                 // A conformance's methods are members of its type (D228).
                 Item::Conform(conformance) => {
                     for method in &conformance.methods {
-                        let id = self.member_binding(
-                            &conformance.ty.name,
-                            &method.name,
-                            BindingKind::Method,
-                            method.name_span,
-                            true,
-                        );
+                        let id = self.method_member(&conformance.ty.name, method);
                         if let Some(ret) = &method.return_type {
                             self.set_nav_ty(id, Self::nav_ty_from_type_expr(ret));
                         }
@@ -816,17 +808,39 @@ impl<'a> Resolver<'a> {
             self.set_nav_ty(id, Self::nav_ty_from_type_expr(&f.ty));
         }
         for m in &td.methods {
-            let id = self.member_binding(
-                &td.name,
-                &m.name,
-                BindingKind::Method,
-                m.name_span,
-                m.exported,
-            );
+            let id = self.method_member(&td.name, m);
             // Method return (may be type param `T`) for chain nav after subst.
             if let Some(ret) = &m.return_type {
                 self.set_nav_ty(id, Self::nav_ty_from_type_expr(ret));
             }
+        }
+    }
+
+    /// A method as a member of its type: an accessor (`get_area`) is the
+    /// property `area`, which reads like a field (D228).
+    fn method_member(&mut self, type_name: &str, method: &ast::Method) -> u32 {
+        match accessor_of(&method.name) {
+            Some((_, property)) => {
+                self.member_binding(type_name, property, BindingKind::Field, method.name_span, true)
+            }
+            None => self.member_binding(
+                type_name,
+                &method.name,
+                BindingKind::Method,
+                method.name_span,
+                method.exported,
+            ),
+        }
+    }
+
+    /// Inside an accessor, `field` is its property's stored field (D228).
+    fn bind_accessor_field(&mut self, type_name: &str, method: &str, scope: usize) {
+        let Some((_, property)) = accessor_of(method) else {
+            return;
+        };
+        let key = (type_name.to_string(), property.to_string());
+        if let Some(&id) = self.res.member_index.get(&key) {
+            self.define(scope, "field", id);
         }
     }
 
@@ -888,6 +902,7 @@ impl<'a> Resolver<'a> {
                 for m in &td.methods {
                     self.walk_type_expr_opt(m.return_type.as_ref(), root);
                     let method_scope = self.push_scope(Some(body));
+                    self.bind_accessor_field(&td.name, &m.name, method_scope);
                     self.bind_params(&m.params, method_scope, root);
                     self.walk_block(&m.body, method_scope);
                 }
@@ -923,6 +938,7 @@ impl<'a> Resolver<'a> {
                 for m in &conformance.methods {
                     self.walk_type_expr_opt(m.return_type.as_ref(), root);
                     let method_scope = self.push_scope(Some(body));
+                    self.bind_accessor_field(&conformance.ty.name, &m.name, method_scope);
                     self.bind_params(&m.params, method_scope, root);
                     self.walk_block(&m.body, method_scope);
                 }
@@ -1726,6 +1742,39 @@ trait Named {
         let label = at("label()}");
         assert_eq!(label.kind, BindingKind::Method);
         assert_eq!(label.owner.as_deref(), Some("Named"));
+    }
+
+    #[test]
+    fn accessors_are_properties() {
+        // D228: `get name` is the property `name`, unified with its stored
+        // field; inside the accessor, `field` is that field.
+        let src = "\
+type Badge(label: String) {
+  get label: String { field.toUpper() }
+  export fn show() -> String { label }
+}
+";
+        let res = resolve_ok(src);
+        let at = |needle: &str| {
+            let p = byte_to_position(src, src.find(needle).unwrap());
+            res.binding_of(res.ref_at(src, p.line, p.character)).expect(needle)
+        };
+        let stored = at("field.toUpper");
+        assert_eq!(stored.kind, BindingKind::Field);
+        assert_eq!(stored.name, "label");
+        let read = at("label }");
+        assert_eq!(read.id, stored.id);
+    }
+
+    #[test]
+    fn trait_accessors_are_properties() {
+        // D228: a trait's `get name` is a property its bodies read by name.
+        let src = "trait Named {\n  get name: String\n  fn greet() -> String { name }\n}\n";
+        let res = resolve_ok(src);
+        let p = byte_to_position(src, src.find("name }").unwrap());
+        let name = res.binding_of(res.ref_at(src, p.line, p.character)).expect("name");
+        assert_eq!(name.kind, BindingKind::Field);
+        assert_eq!(name.owner.as_deref(), Some("Named"));
     }
 
     #[test]

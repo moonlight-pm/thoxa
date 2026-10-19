@@ -1,0 +1,8 @@
+## D228: accessors are public, like fields.
+type Temperature(kelvin: Float64) {
+    export get celsius: Float64 {
+        kelvin - 273.0
+    }
+}
+
+fn main() {}
