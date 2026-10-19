@@ -206,6 +206,8 @@ pub struct TypeParamBound {
     pub name: String,
     pub span: Span,
     pub traits: Vec<(String, Span)>,
+    /// `where S.Item == Int64` (D231): the type an associated type is.
+    pub same: Option<TypeExpr>,
 }
 
 /// A conformance of a generic type, or of a built-in one, that holds for the
@@ -366,6 +368,9 @@ pub struct GenericParam {
     /// `S.Item` (D228 §7): not inferred but read off its owner's argument,
     /// the type `S`'s conformance names: (owner, associated type).
     pub derived: Option<(String, String)>,
+    /// `where S.Item == Int64` (D231): the type it must be, in MIR names, a
+    /// type parameter of the function by its name.
+    pub fixed: Option<TypeExpr>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,60 @@
+## Same-type constraints (D231): `where S.Item == Int64` makes an associated
+## type that type, in the body (`sum + item`) and at the call, which must pass
+## a sequence of it. `where S.Item == T` names it with a type parameter, which
+## the call's argument then gives.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+fn total<S: Sequence>(items!: S) -> Int64 where S.Item == Int64 {
+    mut sum = 0
+    for item in items {
+        sum = sum + item
+    }
+    sum
+}
+
+fn joined<S: Sequence>(items!: S) -> String where S.Item == String {
+    mut out = ""
+    for item in items {
+        out = "{out}{item.toUpper()}"
+    }
+    out
+}
+
+fn firstOf<T, S: Sequence>(items!: S) -> May<T> where S.Item == T {
+    mut cursor = items.iterate()
+    cursor.next()
+}
+
+type Countdown(from: Int64)
+conform Countdown to Iterator {
+    type Item = Int64
+    fn next() -> May<Item> {
+        if from == 0 {
+            return Not()
+        }
+        from = from - 1
+        Has(from + 1)
+    }
+}
+
+fn countAll<I: Iterator>(cursor!: I) -> Int64 where I.Item == Int64 {
+    mut sum = 0
+    for item in cursor {
+        sum = sum + item
+    }
+    sum
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info("{total([1, 2, 3])}")
+    info(joined(["a", "b"]))
+    match firstOf(["x", "y"]) {
+        Has(first) => info("first {first}")
+        Not => info("none")
+    }
+    info("{countAll(Countdown(from: 3))}")
+    0
+}

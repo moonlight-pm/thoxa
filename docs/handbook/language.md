@@ -1752,6 +1752,26 @@ fn count<I: Iterator>(cursor!: I) -> Int64 where I.Item: Show {
 }
 ```
 
+- `where S.Item == Int64` makes an associated type that type: in the body it
+  is an `Int64` (so `sum + item` works), and a call must pass a sequence of
+  them. `where S.Item == T` names it with a type parameter, which the call's
+  argument gives, so `T` need not appear elsewhere. The type fixed has no
+  associated types of its own (`S.Item`, not `S.Cursor`), and two associated
+  types are made the same through a type parameter
+  (`where A.Item == T, B.Item == T`):
+
+```thx
+fn total<S: Sequence>(items!: S) -> Int64 where S.Item == Int64 {
+    mut sum = 0
+    for item in items {
+        sum = sum + item
+    }
+    sum
+}
+
+let six = total([1, 2, 3])
+```
+
 - An `Array` is a `Sequence` (its cursor is std's `ArrayCursor<T>`), so
   `collect([1, 2, 3])` takes one; `for` reads an array directly.
 

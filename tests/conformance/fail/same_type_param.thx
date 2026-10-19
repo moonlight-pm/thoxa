@@ -1,0 +1,6 @@
+## D231: a same-type constraint names an associated type.
+fn same<T>(item!: T) -> Int64 where T == Int64 {
+    0
+}
+
+fn main() { 0 }

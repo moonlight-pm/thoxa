@@ -141,18 +141,52 @@ fn complete_bindings(
     help: &str,
 ) -> Result<()> {
     ctx.take_new_instances();
+    // Associated types, read off their owners' arguments (an owner not
+    // bound is reported below); one a `where` fixes must be that type, or
+    // binds the type parameter it names (D231).
     for param in generic {
-        if let Some((owner, assoc)) = &param.derived {
-            let owner_ty = bindings.get(owner).cloned().unwrap_or(Ty::Void);
-            let found = super::assoc_type(ctx, &owner_ty, assoc, span)?;
-            let Some(ty) = found else {
-                return Err(Error::at(
-                    format!("`{shown}` needs `{owner}.{assoc}`, and {} names no `{assoc}`", display_ty(&owner_ty)),
-                    span,
-                ));
-            };
-            bindings.insert(param.name.clone(), ty);
+        let Some((owner, assoc)) = &param.derived else { continue };
+        let Some(owner_ty) = bindings.get(owner).cloned() else { continue };
+        let found = super::assoc_type(ctx, &owner_ty, assoc, span)?;
+        let Some(ty) = found else {
+            return Err(Error::at(
+                format!("`{shown}` needs `{owner}.{assoc}`, and {} names no `{assoc}`", display_ty(&owner_ty)),
+                span,
+            ));
+        };
+        bindings.insert(param.name.clone(), ty.clone());
+        let Some(fixed) = &param.fixed else { continue };
+        let names_param = fixed.args.is_empty()
+            && generic.iter().any(|each| each.derived.is_none() && each.name == fixed.name);
+        let want = match bindings.get(&fixed.name) {
+            None if names_param => {
+                bindings.insert(fixed.name.clone(), ty);
+                continue;
+            }
+            Some(bound) if names_param => bound.clone(),
+            _ => {
+                let written = super::subst_type_expr(fixed, &*bindings);
+                let name_map = ctx.name_to_type.clone();
+                ensure_instances(ctx, &written, &name_map)?;
+                resolve_ty(&written, &ctx.types, &name_map)?
+            }
+        };
+        if want != ty {
+            // Named by the argument the call passes, not a cursor under it.
+            let root = param.name.split('.').next().and_then(|root| bindings.get(root)).unwrap_or(&owner_ty);
+            return Err(Error::at(
+                format!(
+                    "`{shown}` needs `{}` to be {}, and {}'s is {}",
+                    param.name,
+                    display_ty(&want),
+                    display_ty(root),
+                    display_ty(&ty)
+                ),
+                span,
+            ));
         }
+    }
+    for param in generic {
         let Some(ty) = bindings.get(&param.name) else {
             return Err(Error::at(
                 format!("cannot infer `{}` for `{shown}` from its arguments", param.name),

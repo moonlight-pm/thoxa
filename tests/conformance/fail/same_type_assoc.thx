@@ -1,0 +1,6 @@
+## D231: two associated types are the same through a type parameter.
+fn both<A: Sequence, B: Sequence>(a!: A, b!: B) -> Int64 where A.Item == B.Item {
+    0
+}
+
+fn main() { 0 }

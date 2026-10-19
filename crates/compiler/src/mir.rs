@@ -3346,6 +3346,38 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         let template = synthetics.borrow().generic_fns[&job.template].clone();
         let m = package.modules.iter().find(|x| x.id == template.module).unwrap();
         let maps = package_maps.get(&template.module).unwrap();
+        // A checking instance's fixed associated types (D231) are their types,
+        // with the archetypes for the type parameters they name.
+        let mut job = job;
+        if job.archetypal && template.function.generic.iter().any(|param| param.fixed.is_some()) {
+            let mut fixed_ctx = LowerCtx::new(
+                fns.clone(),
+                types_info.clone(),
+                maps.name_to_type.clone(),
+                maps.name_to_fn.clone(),
+                maps.name_to_global.clone(),
+                maps.namespaces.clone(),
+                module_exports.clone(),
+                package_maps.clone(),
+                Ty::Void,
+                template.module.clone(),
+                false,
+                Rc::clone(&synthetics),
+            );
+            for param in &template.function.generic {
+                let Some(fixed) = &param.fixed else { continue };
+                let written = subst_type_expr(fixed, &job.subst);
+                let name_map = maps.name_to_type.clone();
+                let resolved = generic::ensure_instances(&mut fixed_ctx, &written, &name_map)
+                    .and_then(|()| resolve_ty(&written, &fixed_ctx.types, &name_map));
+                match resolved {
+                    Ok(ty) => {
+                        job.subst.insert(param.name.clone(), ty);
+                    }
+                    Err(e) => body_errors.push(in_module_file(e, &m.path)),
+                }
+            }
+        }
         let function = subst_function(&template.function, &job.subst);
         let mut known = fns.clone();
         known.extend(synthetics.borrow().fn_instances.clone());

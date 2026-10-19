@@ -1071,6 +1071,9 @@ struct Archetypes<'a> {
     module: String,
     nodes: Vec<AssocNode>,
     scope: &'a Scope<'a>,
+    /// The ones a `where` fixes (D231), by path: the type itself, not an
+    /// archetype.
+    fixed: HashMap<String, TypeExpr>,
 }
 
 impl Archetypes<'_> {
@@ -1085,6 +1088,9 @@ impl Archetypes<'_> {
     }
 
     fn type_expr(&self, path: &str, span: Span) -> TypeExpr {
+        if let Some(fixed) = self.fixed.get(&unalias(path, &self.nodes)) {
+            return TypeExpr { span, ..fixed.clone() };
+        }
         TypeExpr {
             name: format!("{RESOLVED_TYPE}{}", self.scope.mangle(&self.module, &self.name(path))),
             ..void_type(span)
@@ -1134,7 +1140,7 @@ impl Archetypes<'_> {
     /// The associated types' archetypes, stubs only.
     fn assoc_defs(&self, span: Span) -> Result<Vec<TypeDef>> {
         let mut defs = Vec::new();
-        for node in self.nodes.iter().filter(|node| node.alias.is_none()) {
+        for node in self.nodes.iter().filter(|node| node.alias.is_none() && !self.fixed.contains_key(&node.path)) {
             defs.push(param_archetype(
                 &self.name(&node.path),
                 &node.bounds,
@@ -1904,6 +1910,7 @@ fn archetype(trait_ref: &TraitRef, scope: &Scope) -> Result<Vec<TypeDef>> {
         module: trait_ref.module.clone(),
         nodes,
         scope,
+        fixed: HashMap::new(),
     };
     let assoc = archetypes.subst("", span);
     let members = visible_members(trait_ref, traits);
@@ -2158,6 +2165,7 @@ fn resolve_generics(
                 name: hidden.clone(),
                 span: ty.span,
                 traits: vec![(ty.name.clone(), ty.span)],
+                same: None,
             });
             param.ty.name = hidden;
         }
@@ -2177,6 +2185,33 @@ fn resolve_generics(
     // `where S.Item: Equatable` (D228 §7): bounds on associated types, by the
     // parameter and the path under it.
     let mut extra: HashMap<String, HashMap<String, Vec<TraitRef>>> = HashMap::new();
+    // `where S.Item == Int64` (D231): the type one is, by the parameter and
+    // the path under it, in MIR names.
+    let mut fixed: HashMap<String, HashMap<String, (TypeExpr, Span)>> = HashMap::new();
+    let plain: Vec<String> = function
+        .type_params
+        .iter()
+        .filter(|param| !param.name.contains('.'))
+        .map(|param| param.name.clone())
+        .collect();
+    for param in function.type_params.iter() {
+        let Some(same) = &param.same else { continue };
+        if !param.name.contains('.') {
+            return Err(Error::at(
+                format!("`where {} == …` fixes a type parameter: write the type instead", param.name),
+                param.span,
+            ));
+        }
+        if same.name.contains('.') {
+            return Err(Error::at(
+                format!("`{}` is fixed as another associated type: name a type parameter for both (`where A.Item == T, B.Item == T`)", param.name),
+                same.span,
+            ));
+        }
+        let (owner, path) = param.name.split_once('.').unwrap();
+        let written = scope.globalize(same, module, &(module.to_string(), String::new()));
+        fixed.entry(owner.to_string()).or_default().insert(path.to_string(), (written, param.span));
+    }
     for param in function.type_params.iter().filter(|param| param.name.contains('.')) {
         let (owner, path) = param.name.split_once('.').unwrap();
         let list = extra.entry(owner.to_string()).or_default().entry(path.to_string()).or_default();
@@ -2187,6 +2222,21 @@ fn resolve_generics(
             list.push(bound);
         }
     }
+    // In the archetypes a fixed type is that type, a type parameter by its
+    // archetype.
+    let archetype_of = |name: &str| format!("Param_{}_{}", function.name.replace("__", ""), name);
+    let in_archetypes: HashMap<String, TypeExpr> = plain
+        .iter()
+        .map(|name| {
+            (
+                name.clone(),
+                TypeExpr {
+                    name: format!("{RESOLVED_TYPE}{}", scope.mangle(module, &archetype_of(name))),
+                    ..void_type(function.name_span)
+                },
+            )
+        })
+        .collect();
     let mut seen = HashSet::new();
     for param in function.type_params.iter().filter(|param| !param.name.contains('.')) {
         if !seen.insert(param.name.as_str()) {
@@ -2209,11 +2259,26 @@ fn resolve_generics(
         // No `__` in a type's name: the C name of its methods splits there.
         let archetype = format!("Param_{}_{}", function.name.replace("__", ""), param.name);
         let nodes = where_nodes(&param.name, &bounds, extra.remove(&param.name).unwrap_or_default(), scope, param.span)?;
+        // Each fixed one by the path it is fixed at (`Item` is `Cursor.Item`),
+        // a leaf: what is under it would come from the type it is fixed as.
+        let mut fixed_here: HashMap<String, (TypeExpr, TypeExpr, String)> = HashMap::new();
+        for (as_written, (written, span)) in fixed.remove(&param.name).unwrap_or_default() {
+            let path = unalias(&as_written, &nodes);
+            if nodes.iter().any(|node| node.path.starts_with(&format!("{path}."))) {
+                return Err(Error::at(
+                    format!("`{}.{path}` has associated types of its own: fix one of those instead", param.name),
+                    span,
+                ));
+            }
+            let archetypal = crate::mir::subst_type_expr(&written, &in_archetypes);
+            fixed_here.insert(path, (written, archetypal, as_written));
+        }
         let types = Archetypes {
             base: archetype.clone(),
             module: module.to_string(),
             nodes,
             scope,
+            fixed: fixed_here.iter().map(|(path, (_, archetypal, _))| (path.clone(), archetypal.clone())).collect(),
         };
         archetypes.push(param_archetype(
             &archetype,
@@ -2229,6 +2294,7 @@ fn resolve_generics(
             bounds,
             archetype,
             derived: None,
+            fixed: None,
         });
         // `T.Item`: a parameter read off `T`'s argument, after its owner's;
         // one a trait fixes as another (`S.Item` as `S.Cursor.Item`) is
@@ -2244,6 +2310,11 @@ fn resolve_generics(
                 bounds: types.bounds(&node.path),
                 archetype: types.name(&node.path),
                 derived: Some((owner, assoc)),
+                // Checked where it is written (`S.Item`), as the call sees it.
+                fixed: fixed_here
+                    .get(&path)
+                    .filter(|(_, _, as_written)| *as_written == node.path)
+                    .map(|(written, _, _)| written.clone()),
             });
         }
     }

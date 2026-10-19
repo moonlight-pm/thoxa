@@ -1,0 +1,6 @@
+## D231: what is fixed has no associated types of its own (yet).
+fn whole<S: Sequence>(items!: S) -> Int64 where S.Cursor == ArrayCursor<Int64> {
+    0
+}
+
+fn main() { 0 }

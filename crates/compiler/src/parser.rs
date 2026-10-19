@@ -965,6 +965,7 @@ impl Parser {
                     name: param,
                     span: param_span,
                     traits,
+                    same: None,
                 });
                 if self.at(TokenKind::Comma) {
                     self.bump();
@@ -1016,7 +1017,7 @@ impl Parser {
                 return Err(Error::at(format!("duplicate type parameter `{name}`"), span));
             }
             let traits = self.parse_bounds()?;
-            params.push(TypeParamBound { name, span, traits });
+            params.push(TypeParamBound { name, span, traits, same: None });
             if self.at(TokenKind::Comma) {
                 self.bump();
                 continue;
@@ -1059,17 +1060,33 @@ impl Parser {
                 let (assoc, _) = self.expect_ident()?;
                 name = format!("{name}.{assoc}");
             }
-            if !self.at(TokenKind::Colon) {
-                return Err(Error::at("expected `:` and a trait after the type in `where`", self.peek_span()));
+            // `S.Item == Int64`: the type it is (D231).
+            let same = if self.at(TokenKind::EqEq) {
+                self.bump();
+                Some(self.parse_type()?)
+            } else {
+                None
+            };
+            if same.is_none() && !self.at(TokenKind::Colon) {
+                return Err(Error::at(
+                    "expected `:` and a trait, or `==` and a type, after the type in `where`",
+                    self.peek_span(),
+                ));
             }
-            let traits = self.parse_bounds()?;
+            let traits = if same.is_none() { self.parse_bounds()? } else { Vec::new() };
             let owner = name.split('.').next().unwrap_or_default();
             if !type_params.iter().any(|param| param.name == owner) {
                 return Err(Error::at(format!("`{owner}` is not a type parameter of this function"), span));
             }
             match type_params.iter_mut().find(|param| param.name == name) {
-                Some(param) => param.traits.extend(traits),
-                None => type_params.push(TypeParamBound { name, span, traits }),
+                Some(param) if same.is_some() && param.same.is_some() => {
+                    return Err(Error::at(format!("`{name}` is fixed twice"), span));
+                }
+                Some(param) => {
+                    param.traits.extend(traits);
+                    param.same = param.same.take().or(same);
+                }
+                None => type_params.push(TypeParamBound { name, span, traits, same }),
             }
             if !self.at(TokenKind::Comma) {
                 break;

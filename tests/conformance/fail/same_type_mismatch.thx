@@ -1,0 +1,9 @@
+## D231: a call meets its same-type constraints.
+fn total<S: Sequence>(items!: S) -> Int64 where S.Item == Int64 {
+    0
+}
+
+fn main() {
+    total(["a"])
+    0
+}
