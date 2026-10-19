@@ -222,6 +222,10 @@ pub struct TraitOutput {
     /// Each such union's members whose signatures name an associated type,
     /// which differs from one conforming type to the next (D228 §7).
     pub mixed_closed: HashMap<String, HashSet<String>>,
+    /// Each such union's trait and the members of its lineage, whose
+    /// signatures calls through it take (D235): the trait's module, its
+    /// name, and the members.
+    pub mixed_members: HashMap<String, (TraitRef, Vec<TraitMember>)>,
 }
 
 pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
@@ -752,19 +756,26 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
         }
     }
     checking_instances(package, &scope)?;
-    let (mixed, mixed_closed) = mixed_unions(package, &scope, &conformed, &traits)?;
+    let (mixed, mixed_closed, mixed_members) = mixed_unions(package, &scope, &conformed, &traits)?;
     Ok(TraitOutput {
         built_in,
         built_in_assoc,
         mixed,
         mixed_closed,
+        mixed_members,
     })
 }
 
-/// `mixed T` (D228 §6): a union, in `T`'s module, of every declared type
-/// that conforms to `T`, known once the whole program is. Its member calls
-/// dispatch on the member; it conforms to `T` and `T`'s ancestors.
-type MixedUnions = (HashMap<(String, String), String>, HashMap<String, HashSet<String>>);
+/// `mixed T` (D228 §6): a union, in `T`'s module, of the types that conform
+/// to `T` whose values convert into it, which the MIR adds as it meets them
+/// (D235): declared types, a generic type's instances, built-in types. Its
+/// member calls dispatch on the member; it conforms to `T` and `T`'s
+/// ancestors.
+type MixedUnions = (
+    HashMap<(String, String), String>,
+    HashMap<String, HashSet<String>>,
+    HashMap<String, (TraitRef, Vec<TraitMember>)>,
+);
 
 fn mixed_unions(
     package: &mut Package,
@@ -803,21 +814,14 @@ fn mixed_unions(
     };
     let mut made: HashMap<TraitRef, String> = HashMap::new();
     let mut closed: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut signatures: HashMap<String, (TraitRef, Vec<TraitMember>)> = HashMap::new();
     let mut unions: Vec<(String, TypeDef)> = Vec::new();
     for (_, _, trait_ref, span, path) in &uses {
         if made.contains_key(trait_ref) {
             continue;
         }
-        let mut members: Vec<(String, String)> = conformed
-            .iter()
-            .filter(|((module, name), done)| {
-                (module != BUILT_IN_MODULE || scope.types.contains(&(module.clone(), name.clone())))
-                    && done.get(trait_ref).is_some_and(|(_, bounds)| bounds.is_none())
-            })
-            .map(|(target, _)| target.clone())
-            .collect();
-        members.sort();
-        if members.is_empty() {
+        let conforms = conformed.values().any(|done| done.contains_key(trait_ref));
+        if !conforms {
             return Err(Error::at(
                 format!("no type conforms to `{}`, so `mixed {}` has no values", trait_ref.name, trait_ref.name),
                 *span,
@@ -825,19 +829,6 @@ fn mixed_unions(
             .with_path(path.clone()));
         }
         let name = format!("Mixed_{}", trait_ref.name);
-        let member_exprs = members
-            .iter()
-            .map(|(module, member)| TypeExpr {
-                name: mangle(module, member),
-                args: Vec::new(),
-                span: *span,
-                lit: None,
-                mark: None,
-                union_members: None,
-                fn_type: None,
-                where_clause: None,
-            })
-            .collect();
         unions.push((
             trait_ref.module.clone(),
             TypeDef {
@@ -850,7 +841,8 @@ fn mixed_unions(
                 methods: Vec::new(),
                 routes: Vec::new(),
                 conversions: Vec::new(),
-                union_members: Some(member_exprs),
+                // Its members are the types that convert into it (D235).
+                union_members: Some(Vec::new()),
                 traits: lineage(trait_ref, traits),
                 conditional: Vec::new(),
                 derived: Vec::new(),
@@ -877,6 +869,11 @@ fn mixed_unions(
             .map(|member| member.name.clone())
             .collect();
         closed.insert(mangle(&trait_ref.module, &name), members);
+        let lineage_members = lineage(trait_ref, traits)
+            .iter()
+            .flat_map(|each| traits[each].def.members.iter().cloned())
+            .collect();
+        signatures.insert(mangle(&trait_ref.module, &name), (trait_ref.clone(), lineage_members));
     }
     for (module_id, def) in unions {
         if let Some(module) = package.modules.iter_mut().find(|module| module.id == module_id) {
@@ -887,7 +884,7 @@ fn mixed_unions(
         .into_iter()
         .map(|(module, name, trait_ref, _, _)| ((module, name), made[&trait_ref].clone()))
         .collect();
-    Ok((mixed, closed))
+    Ok((mixed, closed, signatures))
 }
 
 /// Whether `ty` names one of `names` (or a path under one: `Cursor.Item`).

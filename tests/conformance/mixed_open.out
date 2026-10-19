@@ -1,0 +1,13 @@
+plain p: plain, p
+number 7: an Int64, 7
+box of 3: a Box<Int64>, 3
+box of s: another type
+3 items: another type
+[1, Box<Float64>(value: 3.5), [4, 5], true]
+true false
+false false true true
+{"name":"t"}
+"x"
+[true]
+2 2
+4

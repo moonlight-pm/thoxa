@@ -1423,6 +1423,7 @@ impl<'a> Resolver<'a> {
                 binds,
                 bind_span,
                 span,
+                ..
             } => {
                 // Pass / Fail / Has / Not / union constructors.
                 let name_end = span.start + name.len().min(span.end - span.start);
@@ -1456,6 +1457,7 @@ impl<'a> Resolver<'a> {
                             binds,
                             bind_span,
                             span,
+                            ..
                         } => {
                             let name_end = span.start + name.len().min(span.end - span.start);
                             let name_span = Span::new(span.start, name_end);

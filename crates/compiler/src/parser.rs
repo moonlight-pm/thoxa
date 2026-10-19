@@ -3392,12 +3392,15 @@ impl Parser {
             }
             TokenKind::Ident(_) => {
                 let (name, name_span) = self.expect_ident()?;
+                // `Box<Int64>(value)`: an instance of a generic type (D235).
+                let type_args = self.call_type_args();
                 // Bare `Not` / `Pass` / `Fail` / `Has`: empty binds = tag-only (D130).
                 // Payload binds still use `Name(x)` / `Name(_)`. Arm body is `=>` or `{ }`.
                 if !self.at(TokenKind::LParen) {
                     if name == "Not" || name == "Pass" || name == "Fail" || name == "Has" {
                         return Ok(Pattern::Variant {
                             name,
+                            type_args: Vec::new(),
                             binds: Vec::new(),
                             bind_span: name_span,
                             span: name_span,
@@ -3438,6 +3441,7 @@ impl Parser {
                 let end = self.prev_span().end;
                 Ok(Pattern::Variant {
                     name,
+                    type_args,
                     binds,
                     bind_span,
                     span: Span::new(name_span.start, end),

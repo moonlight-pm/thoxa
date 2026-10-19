@@ -1,0 +1,18 @@
+## D235: a match arm on a `mixed T` names a type that conforms to `T`.
+trait Describe {
+    fn describe() -> String
+}
+
+conform Int64 to Describe {
+    fn describe() -> String {
+        "number {self}"
+    }
+}
+
+fn main() -> Int64 {
+    let thing: mixed Describe = 1
+    match thing {
+        String(text) => text.count
+        else => 0
+    }
+}

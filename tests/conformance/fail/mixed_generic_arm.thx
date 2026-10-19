@@ -1,0 +1,21 @@
+## D235: a `mixed` value may hold several instances of a generic type, so a
+## match arm names the instance.
+trait Describe {
+    fn describe() -> String
+}
+
+type Box<T>(value: T)
+
+conform Box<T: Show> to Describe {
+    fn describe() -> String {
+        "box of {value}"
+    }
+}
+
+fn main() -> Int64 {
+    let thing: mixed Describe = Box(value: 1)
+    match thing {
+        Box(value) => value
+        else => 0
+    }
+}

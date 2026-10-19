@@ -1,0 +1,119 @@
+## `mixed T` holds a value of any type that conforms to `T` (D235): a
+## declared type, a generic type's instance whose conformance's bounds it
+## meets, or a built-in type. A `match` names the type, an instance with its
+## type arguments; a built-in type binds the value. Members, `"{x}"`, `==`,
+## `<`, and `toJson` reach the value inside; `<` orders by the types' names,
+## then by the values. An instance that misses a conformance's bounds
+## (`Box<Secret>`) lacks its members, and is not compiled with them.
+import logging, { info } from "std/logging"
+import { Encodable } from "std/json"
+
+trait Describe {
+    fn describe() -> String
+}
+
+type Box<T>(value: T)
+
+conform Box<T: Show> to Describe {
+    fn describe() -> String {
+        "box of {value}"
+    }
+}
+
+conform Box<T: Show> to Show
+conform Box<T: Equatable> to Equatable
+conform Box<T: Ordered> to Ordered
+
+conform Int64 to Describe {
+    fn describe() -> String {
+        "number {self}"
+    }
+}
+
+conform Array<T: Show> to Describe {
+    fn describe() -> String {
+        "{self.count} items"
+    }
+}
+
+type Plain(name: String)
+
+conform Plain to Describe {
+    fn describe() -> String {
+        "plain {name}"
+    }
+}
+
+fn kind(thing!: mixed Describe) -> String {
+    match thing {
+        Plain(name) => "plain, {name}"
+        Int64(number) => "an Int64, {number}"
+        Box<Int64>(value) => "a Box<Int64>, {value}"
+        else => "another type"
+    }
+}
+
+trait Grow {
+    fn grow()
+    fn size() -> Int64
+}
+
+conform Int64 to Grow {
+    fn grow() {
+        self = self + 1
+    }
+
+    fn size() -> Int64 {
+        self
+    }
+}
+
+conform Array<T> to Grow {
+    fn grow() {
+        self.append(self[0])
+    }
+
+    fn size() -> Int64 {
+        self.count
+    }
+}
+
+type Tag(name: String)
+
+type Secret(code: Int64)
+
+conform Tag to Encodable
+
+fn wrap<T: Show>(item!: T) -> mixed Show {
+    item
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let things: Array<mixed Describe> = [Plain(name: "p"), 7, Box(value: 3), Box(value: "s"), [1, 2, 3]]
+    for thing in things {
+        info("{thing.describe()}: {kind(thing)}")
+    }
+    let shown: Array<mixed Show> = [1, Box(value: 3.5), [4, 5], wrap(true)]
+    info("{shown}")
+    let one: mixed Equatable = Box(value: 1)
+    let same: mixed Equatable = Box(value: 1)
+    let other: mixed Equatable = 1
+    info("{one == same} {one == other}")
+    let low: mixed Ordered = "a"
+    let high: mixed Ordered = 2
+    let boxed: mixed Ordered = Box(value: 9)
+    let smaller: mixed Ordered = Box(value: 1)
+    info("{low < high} {high < boxed} {boxed < low} {smaller < boxed}")
+    let data: Array<mixed Encodable> = [Tag(name: "t"), "x", [true]]
+    for item in data {
+        info(item.encode())
+    }
+    mut growing: Array<mixed Grow> = [1, [7]]
+    growing[0].grow()
+    growing[1].grow()
+    info("{growing[0].size()} {growing[1].size()}")
+    let hidden = Box(value: Secret(code: 4))
+    info("{hidden.value.code}")
+}

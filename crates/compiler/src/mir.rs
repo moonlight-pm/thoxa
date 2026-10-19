@@ -52,6 +52,17 @@ struct SyntheticRegistry {
     assoc: HashMap<String, HashMap<String, Ty>>,
     /// `mixed T`'s members that name an associated type, by the union.
     mixed_closed: HashMap<String, HashSet<String>>,
+    /// `mixed T`'s trait and the members of its lineage, by the union
+    /// (D235).
+    mixed_members: HashMap<String, (TraitRef, Vec<ast::TraitMember>)>,
+    /// Those members' signatures, resolved on first call.
+    mixed_sigs: HashMap<String, HashMap<String, MethodSig>>,
+    /// The members a `mixed T` gained as values of them converted into it
+    /// (D235): a generic type's instances and built-in types, by the union.
+    mixed_added: HashMap<String, Vec<SumVariant>>,
+    /// The functions calls through `mixed` values make, made once every
+    /// body is lowered, over the members known then (D235).
+    mixed_functions: Vec<MixedFunction>,
     /// Built-in types' associated types, by the type's name (D228 §7).
     built_in_assoc: crate::trait_desugar::BuiltInAssoc,
     /// Methods made from templates (`map_String`), by their type (D228 §5).
@@ -164,6 +175,9 @@ fn seed_synthetics(types: &mut HashMap<String, TypeInfo>, synthetics: &Synthetic
     for (name, (info, _)) in synthetics.entries.iter() {
         types.entry(name.clone()).or_insert_with(|| info.clone());
     }
+    for (mixed, added) in &synthetics.mixed_added {
+        add_mixed_variants(types, mixed, added);
+    }
     for (type_name, methods) in &synthetics.method_instances {
         if let Some(info) = types.get_mut(type_name) {
             for (name, sig) in methods {
@@ -171,6 +185,35 @@ fn seed_synthetics(types: &mut HashMap<String, TypeInfo>, synthetics: &Synthetic
             }
         }
     }
+}
+
+/// Join `added` to `mixed`'s members in `types`, each once (D235).
+fn add_mixed_variants(types: &mut HashMap<String, TypeInfo>, mixed: &str, added: &[SumVariant]) {
+    if let Some(sum) = types.get_mut(mixed).and_then(|info| info.sum.as_mut()) {
+        for variant in added {
+            if sum.variants.iter().all(|known| known.tag != variant.tag) {
+                sum.variants.push(variant.clone());
+            }
+        }
+    }
+}
+
+/// A function calls through a `mixed T` value make (D235), made over the
+/// union's members once every body is lowered.
+#[derive(Clone)]
+struct MixedFunction {
+    name: String,
+    mixed: String,
+    kind: MixedKind,
+}
+
+#[derive(Clone)]
+enum MixedKind {
+    /// One of the trait's members, called on the value inside.
+    Member { method: String, sig: MethodSig },
+    /// `compare`'s sign: by member type, the types ranked by name, then by
+    /// the values.
+    Compare,
 }
 
 /// Whether a Map keyed by the type `name` calls its own `hash` and `equals`
@@ -2955,6 +2998,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         generics: generics.clone(),
         assoc: assoc_types,
         mixed_closed: trait_output.mixed_closed.clone(),
+        mixed_members: trait_output.mixed_members.clone(),
         built_in_assoc: trait_output.built_in_assoc.clone(),
         ..SyntheticRegistry::default()
     }));
@@ -3335,6 +3379,13 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             body_errors.push(in_module_id(e, package, &def_mod));
         }
     }
+    let entry_module = package
+        .modules
+        .iter()
+        .find(|module| module.is_entry)
+        .map(|module| module.id.clone())
+        .unwrap_or_else(|| "Main".into());
+    let mut mixed_made: HashMap<String, usize> = HashMap::new();
     loop {
         let job = {
             let mut synthetics = synthetics.borrow_mut();
@@ -3352,11 +3403,38 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             let late = std::mem::take(&mut synthetics.borrow_mut().late_mono_jobs);
             let mut made_methods = std::mem::take(&mut synthetics.borrow_mut().method_jobs);
             if late.is_empty() && made_methods.is_empty() {
-                break;
+                // Calls through `mixed` values (D235), over every member known
+                // once nothing else is left to lower; making them may add
+                // jobs, and those may add members.
+                let made = lower_mixed_functions(
+                    &fns,
+                    &types_info,
+                    &package_maps,
+                    &module_exports,
+                    &entry_module,
+                    &synthetics,
+                    &mut mixed_made,
+                );
+                if made.is_empty() {
+                    break;
+                }
+                for function in made {
+                    match function {
+                        Ok(function) => {
+                            functions.retain(|known| known.name != function.name);
+                            functions.push(function);
+                        }
+                        Err(error) => body_errors.push(error),
+                    }
+                }
+                continue;
             }
+            // Late instances' bounds are checked with the types made so far.
+            let mut types_now = types_info.clone();
+            seed_synthetics(&mut types_now, &synthetics.borrow());
             for job in late.iter().filter(|job| {
                 !job.conversion
-                    && job_applies(&types_info, &synthetics, job)
+                    && job_applies(&types_now, &synthetics, job)
                     && !failed_members.contains(&template_member(&types_info, job))
             }) {
                 let m = package.modules.iter().find(|x| x.id == job.def_mod).unwrap();
@@ -3568,6 +3646,19 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     // Synthetic unions from unannotated if lub (D119).
     for (_, (_, layout)) in synthetics.borrow().entries.iter() {
         type_layouts.push(layout.clone());
+    }
+    // The members `mixed` unions gained while lowering (D235).
+    for (mixed, added) in &synthetics.borrow().mixed_added {
+        if let Some(layout) = type_layouts.iter_mut().find(|layout| layout.name == *mixed) {
+            let variants = layout.sum.get_or_insert_with(Vec::new);
+            for variant in added {
+                variants.push(SumVariantLayout {
+                    tag: variant.tag,
+                    name: variant.name.clone(),
+                    payload_ty: variant.ty.clone(),
+                });
+            }
+        }
     }
     // The types only generic code's checks use are not the program's.
     let archetypes: HashSet<String> = type_defs
@@ -4100,9 +4191,12 @@ fn is_mixed(type_name: &str) -> bool {
     type_name.starts_with("Mixed_") || type_name.contains("_Mixed_")
 }
 
-/// `value.method(args)` on a `mixed T` value: the member's method, chosen by
-/// its tag (D228 §6). A member that takes a `Self` cannot be called this way:
-/// the other side's type is unknown.
+/// `value.member(…)` on a `mixed T` (D228 §6, D235): a call to the
+/// function made for the member once every body is lowered, which calls the
+/// member of whichever type the value holds, on the value in place. Its
+/// signature is the trait's; one that takes a `Self` cannot be called, and
+/// one that returns a `Self` returns a `mixed T`.
+#[allow(clippy::too_many_arguments)]
 fn lower_mixed_call(
     ctx: &mut LowerCtx,
     receiver: Place,
@@ -4112,11 +4206,6 @@ fn lower_mixed_call(
     args: &[Arg],
     span: Span,
 ) -> Result<(Place, Ty)> {
-    let sum = ctx
-        .types
-        .get(mixed)
-        .and_then(|info| info.sum.clone())
-        .ok_or_else(|| Error::at("internal: `mixed` without members", span))?;
     let shown = display_ty(&Ty::User(mixed.to_string()));
     if ctx
         .synthetics
@@ -4130,21 +4219,15 @@ fn lower_mixed_call(
             span,
         ));
     }
-    let mut signature: Option<MethodSig> = None;
-    for variant in &sum.variants {
-        let Ty::User(member) = &variant.ty else { continue };
-        let Some(sig) = ctx.types.get(member).and_then(|info| info.methods.get(method)).cloned() else {
-            return Err(Error::at(format!("{shown} has no member `{method}`"), span));
-        };
-        if sig.params.iter().any(|(_, ty)| *ty == variant.ty) {
-            return Err(Error::at(
-                format!("`{method}` takes a `Self`, so it cannot be called through {shown}: the other side's type is unknown"),
-                span,
-            ));
-        }
-        signature.get_or_insert(sig);
+    let sig = mixed_member_sig(ctx, mixed, method, span)?
+        .ok_or_else(|| Error::at(format!("{shown} has no member `{method}`"), span))?;
+    let mixed_ty = Ty::User(mixed.to_string());
+    if sig.params.iter().any(|(_, ty)| *ty == mixed_ty) {
+        return Err(Error::at(
+            format!("`{method}` takes a `Self`, so it cannot be called through {shown}: the other side's type is unknown"),
+            span,
+        ));
     }
-    let sig = signature.ok_or_else(|| Error::at(format!("{shown} has no members"), span))?;
     let arg_places = resolve_call_args_full(
         ctx,
         &sig.params,
@@ -4155,79 +4238,362 @@ fn lower_mixed_call(
         span,
         &sig.def_mod,
     )?;
+    let function = request_mixed_function(
+        ctx,
+        mixed,
+        MixedKind::Member {
+            method: method.to_string(),
+            sig: sig.clone(),
+        },
+    );
+    let mut all_args = vec![Place {
+        name: format!("&{}", receiver.name),
+    }];
+    all_args.extend(arg_places);
+    let result = emit_call_result(ctx, Callee::User(function.clone()), all_args, sig.ret.clone())?;
+    store_receiver(ctx, receiver_write, receiver, &[function], method, span);
+    Ok(result)
+}
+
+/// The signature of `mixed`'s member `method`, from its trait's lineage,
+/// resolved in the trait's module with `Self` the union; `None` when the
+/// trait has no such member.
+fn mixed_member_sig(ctx: &mut LowerCtx, mixed: &str, method: &str, span: Span) -> Result<Option<MethodSig>> {
+    if let Some(sig) = ctx.synthetics.borrow().mixed_sigs.get(mixed).and_then(|sigs| sigs.get(method)) {
+        return Ok(Some(sig.clone()));
+    }
+    let Some((trait_ref, members)) = ctx.synthetics.borrow().mixed_members.get(mixed).cloned() else {
+        return Ok(None);
+    };
+    let Some(member) = members.iter().find(|member| member.name == method) else {
+        return Ok(None);
+    };
+    let name_map = ctx
+        .package_maps
+        .get(&trait_ref.module)
+        .map(|maps| with_self_type(maps.name_to_type.clone(), mixed))
+        .ok_or_else(|| Error::at(format!("internal: no names for `{}`", trait_ref.module), span))?;
+    let mut resolve = |te: &TypeExpr| -> Result<Ty> {
+        generic::ensure_instances(ctx, te, &name_map)?;
+        resolve_ty(te, &ctx.types, &name_map)
+    };
+    let mut params = Vec::new();
+    for param in &member.params {
+        params.push((param.name.clone(), resolve(&param.ty)?));
+    }
+    let ret = match &member.return_type {
+        Some(te) => resolve(te)?,
+        None => Ty::Void,
+    };
+    let sig = MethodSig {
+        params,
+        defaults: member.params.iter().map(|param| param.default.clone()).collect(),
+        ret,
+        exported: true,
+        def_mod: trait_ref.module.clone(),
+        multi_clause: false,
+        mutable: member.params.iter().map(|param| param.mutable).collect(),
+        positional: member.params.iter().map(|param| param.positional).collect(),
+        requires: Vec::new(),
+    };
+    ctx.synthetics
+        .borrow_mut()
+        .mixed_sigs
+        .entry(mixed.to_string())
+        .or_default()
+        .insert(method.to_string(), sig.clone());
+    Ok(Some(sig))
+}
+
+/// The function for `kind` on `mixed` (D235), asked for once: its name.
+fn request_mixed_function(ctx: &mut LowerCtx, mixed: &str, kind: MixedKind) -> String {
+    let name = match &kind {
+        MixedKind::Member { method, .. } => format!("__mixed_{mixed}_{method}"),
+        MixedKind::Compare => format!("__mixed_{mixed}__compare"),
+    };
+    let mut synthetics = ctx.synthetics.borrow_mut();
+    if synthetics.mixed_functions.iter().all(|function| function.name != name) {
+        synthetics.mixed_functions.push(MixedFunction {
+            name: name.clone(),
+            mixed: mixed.to_string(),
+            kind,
+        });
+    }
+    name
+}
+
+/// Make each requested `mixed` function (D235) over its union's members
+/// known now. `made` holds how many members each was made with; one made
+/// with fewer is made again, replacing the old. Returns what was made.
+#[allow(clippy::too_many_arguments)]
+fn lower_mixed_functions(
+    fns: &HashMap<String, FnSig>,
+    types: &HashMap<String, TypeInfo>,
+    package_maps: &HashMap<String, ModuleNameMaps>,
+    module_exports: &HashMap<String, ModuleExports>,
+    entry_mod_id: &str,
+    synthetics: &Rc<RefCell<SyntheticRegistry>>,
+    made: &mut HashMap<String, usize>,
+) -> Vec<Result<Function>> {
+    let requests = synthetics.borrow().mixed_functions.clone();
+    let mut out = Vec::new();
+    for request in requests {
+        let mut seeded = types.clone();
+        seed_synthetics(&mut seeded, &synthetics.borrow());
+        let Some(info) = seeded.get(&request.mixed).cloned() else { continue };
+        let variants: Vec<SumVariant> = info
+            .sum
+            .map(|sum| sum.variants)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|variant| !mentions_archetype(&variant.ty))
+            .collect();
+        if made.get(&request.name) == Some(&variants.len()) {
+            continue;
+        }
+        made.insert(request.name.clone(), variants.len());
+        let module_id = Some(info.def_mod.clone())
+            .filter(|module| package_maps.contains_key(module))
+            .unwrap_or_else(|| entry_mod_id.to_string());
+        let maps = &package_maps[&module_id];
+        let ctx = LowerCtx::new(
+            fns.clone(),
+            seeded,
+            maps.name_to_type.clone(),
+            maps.name_to_fn.clone(),
+            maps.name_to_global.clone(),
+            maps.namespaces.clone(),
+            module_exports.clone(),
+            package_maps.clone(),
+            Ty::Void,
+            module_id,
+            false,
+            Rc::clone(synthetics),
+        );
+        out.push(lower_mixed_function(ctx, &request, &variants));
+    }
+    out
+}
+
+/// One `mixed` function's body: on the tag of `*self`, the member of the type
+/// it holds, on the value in place (or, for `Compare`, the sign of `*self`
+/// against `*other`).
+fn lower_mixed_function(mut ctx: LowerCtx, request: &MixedFunction, variants: &[SumVariant]) -> Result<Function> {
+    let span = Span::dummy();
+    let mixed_ty = Ty::User(request.mixed.clone());
+    let (params, mutable, ret) = match &request.kind {
+        MixedKind::Member { sig, .. } => {
+            let mutable = (0..sig.params.len()).map(|index| sig.mutable.get(index) == Some(&true)).collect();
+            (sig.params.clone(), mutable, sig.ret.clone())
+        }
+        MixedKind::Compare => (vec![("other".to_string(), mixed_ty.clone())], vec![true], Ty::Int64),
+    };
+    ctx.fn_ret = ret.clone();
+    bind_param(&mut ctx, "self", mixed_ty.clone(), true);
+    for ((name, ty), is_mut) in params.iter().zip(&mutable) {
+        bind_param(&mut ctx, name, ty.clone(), *is_mut);
+    }
+    let receiver = Place {
+        name: format!("(*{})", sanitize_name("self")),
+    };
     let tag = ctx.fresh("mixtag");
     ctx.assign(
         tag.clone(),
         Ty::Int64,
         RValue::SumTag {
             place: receiver.clone(),
-            sum_type: mixed.to_string(),
+            sum_type: request.mixed.clone(),
         },
     );
     let result = ctx.fresh("mixed");
-    if sig.ret != Ty::Void {
-        init_place(ctx, &result, &sig.ret)?;
+    if ret != Ty::Void {
+        init_place(&mut ctx, &result, &ret)?;
     }
-    for variant in &sum.variants {
-        let Ty::User(member) = &variant.ty else { continue };
-        let want = ctx.fresh("mixarm");
-        ctx.assign(want.clone(), Ty::Int64, RValue::Int(variant.tag as i64));
-        let this_arm = ctx.fresh("mixis");
-        ctx.assign(
-            this_arm.clone(),
-            Ty::Bool,
-            RValue::Binary {
-                op: BinaryOp::Eq,
-                left: tag.clone(),
-                right: want,
-            },
-        );
-        let outside = std::mem::take(&mut ctx.stmts);
-        // The member's method gets the payload in place, so a write reaches
-        // the mixed value (D228 §6).
-        let payload = Place {
-            name: format!("{}.u.v{}", receiver.name, variant.tag),
-        };
-        // Each branch passes its own copies: only one runs.
-        let mut passed = vec![payload];
-        for (place, (_, ty)) in arg_places.iter().zip(&sig.params) {
-            let copy = ctx.fresh("mixarg");
-            ctx.assign(copy.clone(), ty.clone(), RValue::Use(place.clone()));
-            passed.push(copy);
+    let payload = |place: &Place, variant: &SumVariant| Place {
+        name: format!("{}.u.v{}", place.name, variant.tag),
+    };
+    match &request.kind {
+        MixedKind::Member { method, sig } => {
+            let args: Vec<Arg> = sig
+                .params
+                .iter()
+                .enumerate()
+                .map(|(index, (name, _))| {
+                    let kind = if mutable[index] {
+                        ExprKind::MutArg(name.clone())
+                    } else {
+                        ExprKind::Name(name.clone())
+                    };
+                    let value = Expr { kind, span };
+                    if sig.positional.get(index) == Some(&true) {
+                        Arg::Pos(value)
+                    } else {
+                        Arg::Named {
+                            name: name.clone(),
+                            name_span: span,
+                            value,
+                        }
+                    }
+                })
+                .collect();
+            for variant in variants {
+                let this_arm = tag_is(&mut ctx, &tag, variant.tag);
+                let outside = std::mem::take(&mut ctx.stmts);
+                ctx.push_scope();
+                let held = format!("__held{}", variant.tag);
+                ctx.define_full(&held, variant.ty.clone(), true, payload(&receiver, variant), None);
+                let lowered = lower_method_call(&mut ctx, &crate::ast_build::name(&held), method, span, &args);
+                let (value, value_ty) = lowered.map_err(|error| {
+                    error.with_help(format!("a {} holds a {}", display_ty(&mixed_ty), display_ty(&variant.ty)))
+                })?;
+                if ret != Ty::Void {
+                    // A member that returns `Self` returns the mixed value.
+                    let value = if value_ty == ret {
+                        value
+                    } else {
+                        try_sum_coerce(&mut ctx, value, &value_ty, &ret, None, span)?.ok_or_else(|| {
+                            Error::at(
+                                format!(
+                                    "`{method}` of {} returns {}, not {}",
+                                    display_ty(&variant.ty),
+                                    display_ty(&value_ty),
+                                    display_ty(&ret)
+                                ),
+                                span,
+                            )
+                        })?
+                    };
+                    ctx.assign(result.clone(), ret.clone(), RValue::Use(value));
+                }
+                ctx.pop_scope();
+                let then_body = std::mem::replace(&mut ctx.stmts, outside);
+                ctx.stmts.push(Stmt::If {
+                    cond: this_arm,
+                    then_body,
+                    else_body: Vec::new(),
+                });
+            }
         }
-        let (value, _) = emit_call_result(
-            ctx,
-            Callee::Method {
-                type_name: member.clone(),
-                method: method.to_string(),
-            },
-            passed,
-            sig.ret.clone(),
-        )?;
-        if sig.ret != Ty::Void {
-            ctx.assign(result.clone(), sig.ret.clone(), RValue::Use(value));
+        MixedKind::Compare => {
+            let other = Place {
+                name: format!("(*{})", sanitize_name("other")),
+            };
+            let other_tag = ctx.fresh("mixtag");
+            ctx.assign(
+                other_tag.clone(),
+                Ty::Int64,
+                RValue::SumTag {
+                    place: other.clone(),
+                    sum_type: request.mixed.clone(),
+                },
+            );
+            // Different types order by their names.
+            let mut ranked: Vec<&SumVariant> = variants.iter().collect();
+            ranked.sort_by(|a, b| a.name.cmp(&b.name));
+            let mut ranks = Vec::new();
+            for side in [&tag, &other_tag] {
+                let rank = ctx.fresh("mixrank");
+                ctx.assign(rank.clone(), Ty::Int64, RValue::Int(0));
+                for (position, variant) in ranked.iter().enumerate() {
+                    let this_arm = tag_is(&mut ctx, side, variant.tag);
+                    let outside = std::mem::take(&mut ctx.stmts);
+                    ctx.assign(rank.clone(), Ty::Int64, RValue::Int(position as i64));
+                    let then_body = std::mem::replace(&mut ctx.stmts, outside);
+                    ctx.stmts.push(Stmt::If {
+                        cond: this_arm,
+                        then_body,
+                        else_body: Vec::new(),
+                    });
+                }
+                ranks.push(rank);
+            }
+            ctx.assign(result.clone(), Ty::Int64, RValue::Int(0));
+            for (op, sign) in [(BinaryOp::Lt, -1), (BinaryOp::Gt, 1)] {
+                let differs = ctx.fresh("mixcmp");
+                ctx.assign(
+                    differs.clone(),
+                    Ty::Bool,
+                    RValue::Binary {
+                        op,
+                        left: ranks[0].clone(),
+                        right: ranks[1].clone(),
+                    },
+                );
+                let outside = std::mem::take(&mut ctx.stmts);
+                ctx.assign(result.clone(), Ty::Int64, RValue::Int(sign));
+                let then_body = std::mem::replace(&mut ctx.stmts, outside);
+                ctx.stmts.push(Stmt::If {
+                    cond: differs,
+                    then_body,
+                    else_body: Vec::new(),
+                });
+            }
+            // The same type: its values' order.
+            let same = ctx.fresh("mixsame");
+            ctx.assign(
+                same.clone(),
+                Ty::Bool,
+                RValue::Binary {
+                    op: BinaryOp::Eq,
+                    left: ranks[0].clone(),
+                    right: ranks[1].clone(),
+                },
+            );
+            let outside = std::mem::take(&mut ctx.stmts);
+            for variant in variants {
+                let this_arm = tag_is(&mut ctx, &tag, variant.tag);
+                let before = std::mem::take(&mut ctx.stmts);
+                let sign = order::lower_compare(&mut ctx, payload(&receiver, variant), payload(&other, variant), &variant.ty, span)?;
+                ctx.assign(result.clone(), Ty::Int64, RValue::Use(sign));
+                let then_body = std::mem::replace(&mut ctx.stmts, before);
+                ctx.stmts.push(Stmt::If {
+                    cond: this_arm,
+                    then_body,
+                    else_body: Vec::new(),
+                });
+            }
+            let then_body = std::mem::replace(&mut ctx.stmts, outside);
+            ctx.stmts.push(Stmt::If {
+                cond: same,
+                then_body,
+                else_body: Vec::new(),
+            });
         }
-        let then_body = std::mem::replace(&mut ctx.stmts, outside);
-        ctx.stmts.push(Stmt::If {
-            cond: this_arm,
-            then_body,
-            else_body: Vec::new(),
-        });
     }
-    let functions: Vec<String> = sum
-        .variants
-        .iter()
-        .filter_map(|variant| match &variant.ty {
-            Ty::User(member) => Some(format!("{member}__{method}")),
-            _ => None,
-        })
-        .collect();
-    store_receiver(ctx, receiver_write, receiver, &functions, method, span);
-    if sig.ret == Ty::Void {
-        let (unit, _) = void_place(ctx);
-        return Ok((unit, Ty::Void));
-    }
-    Ok((result, sig.ret))
+    let ret_place = (ret != Ty::Void).then_some(result);
+    let mut body = ctx.stmts;
+    insert_function_drops(&mut body, &ret_place, &ret, &ctx.drop_places);
+    let mut all_params = vec![(sanitize_name("self"), mixed_ty)];
+    all_params.extend(params.iter().map(|(name, ty)| (sanitize_name(name), ty.clone())));
+    let mut mut_params = vec![true];
+    mut_params.extend(mutable);
+    Ok(Function {
+        name: request.name.clone(),
+        is_main: false,
+        receiver: None,
+        params: all_params,
+        mut_params,
+        body,
+        ret: ret_place,
+        ret_ty: ret,
+    })
+}
+
+/// Whether the tag in `tag` is `want`.
+fn tag_is(ctx: &mut LowerCtx, tag: &Place, want: u32) -> Place {
+    let wanted = ctx.fresh("mixarm");
+    ctx.assign(wanted.clone(), Ty::Int64, RValue::Int(want as i64));
+    let is = ctx.fresh("mixis");
+    ctx.assign(
+        is.clone(),
+        Ty::Bool,
+        RValue::Binary {
+            op: BinaryOp::Eq,
+            left: tag.clone(),
+            right: wanted,
+        },
+    );
+    is
 }
 
 /// The type `trait_desugar` makes to check a trait's provided bodies once
@@ -6414,8 +6780,9 @@ fn resolve_ctor_mono(
         if is_mono_of_base(base, n) && ctx.types.contains_key(n) {
             return Ok(Some(n.clone()));
         }
-        // Expect is a union containing a monomorph of this product.
-        if let Some(sum) = ctx.types.get(n).and_then(|i| i.sum.as_ref()) {
+        // Expect is a union containing a monomorph of this product. A
+        // `mixed` value may hold several, so its arguments decide (D235).
+        if let Some(sum) = ctx.types.get(n).and_then(|i| i.sum.as_ref()).filter(|_| !is_mixed(n)) {
             for v in &sum.variants {
                 if let Ty::User(pn) = &v.ty {
                     if is_mono_of_base(base, pn) && ctx.types.contains_key(pn) {
@@ -10783,6 +11150,7 @@ fn lower_for_cursor(
         MatchArm {
             pattern: Pattern::Variant {
                 name: "Has".into(),
+                type_args: Vec::new(),
                 binds: vec![(name != "_").then(|| name.to_string())],
                 bind_span: name_span,
                 span: name_span,
@@ -10793,6 +11161,7 @@ fn lower_for_cursor(
         MatchArm {
             pattern: Pattern::Variant {
                 name: "Not".into(),
+                type_args: Vec::new(),
                 binds: Vec::new(),
                 bind_span: span,
                 span,
@@ -12742,6 +13111,20 @@ fn lower_method_call_typed(
             ));
         }
     }
+    // A `mixed T`'s member, through the value it holds (D228 §6, D235);
+    // `encode` is its `toJson`'s text.
+    if let Ty::User(type_name) = &recv_ty {
+        if is_mixed(type_name) {
+            let type_name = type_name.clone();
+            if method == "encode" && args.is_empty() {
+                let (json, json_ty) =
+                    lower_mixed_call(ctx, recv_p, receiver_write, &type_name, "toJson", &[], method_span)?;
+                let bound = codec::bind_fresh(ctx, "__encoded", &json_ty, json);
+                return lower_method_call(ctx, &crate::ast_build::name(&bound), "encode", method_span, &[]);
+            }
+            return lower_mixed_call(ctx, recv_p, receiver_write, &type_name, method, args, method_span);
+        }
+    }
     if matches!(method, "toJson" | "encode") && args.is_empty() {
         if let Some(result) =
             codec::lower_structural_encode(ctx, recv_p.clone(), &recv_ty, method, method_span)?
@@ -12884,10 +13267,6 @@ fn lower_method_call_typed(
                 .clone();
             // `equals` / `compare` of a type without the method (a union, a
             // generic type's instance): the structural default (D228).
-            // A `mixed T`'s member, through its member type (D228 §6).
-            if is_mixed(&type_name) {
-                return lower_mixed_call(ctx, recv_p, receiver_write, &type_name, method, args, method_span);
-            }
             if !info.methods.contains_key(method) && method == "show" && args.is_empty() {
                 let text = order::show_text(ctx, recv_p, &recv_ty, method_span)?;
                 return Ok((text, Ty::String));
@@ -13085,23 +13464,28 @@ impl ReceiverEffects<'_> {
         }
     }
 
-    /// A call that takes the receiver: a sibling method on `_self`, a
-    /// member on `&*self`, or anything else, which writes it.
+    /// A call that takes the receiver, or a part of it (a `mixed` value's
+    /// payload, `(*self).u.v0`): as the receiver of a method or a member,
+    /// it writes it if that does; passed by address anywhere else, it does.
     fn call(&mut self, callee: &Callee, args: &[Place]) {
-        let address = format!("&{}", self.receiver);
         for (index, arg) in args.iter().enumerate() {
+            let (address, name) = match arg.name.strip_prefix('&') {
+                Some(rest) => (true, rest),
+                None => (false, arg.name.as_str()),
+            };
+            let part = name == self.receiver
+                || name.strip_prefix(self.receiver.as_str()).is_some_and(|rest| rest.starts_with('.'));
+            if !part {
+                continue;
+            }
             let sibling = match callee {
-                Callee::Method { type_name, method } if index == 0 && arg.name == self.receiver => {
-                    Some(format!("{type_name}__{method}"))
-                }
-                Callee::User(name) if index == 0 && arg.name == address && self.members.contains(name.as_str()) => {
-                    Some(name.clone())
-                }
+                Callee::Method { type_name, method } if index == 0 => Some(format!("{type_name}__{method}")),
+                Callee::User(name) if index == 0 && self.members.contains(name.as_str()) => Some(name.clone()),
                 _ => None,
             };
             match sibling {
                 Some(sibling) => self.calls.push(sibling),
-                None => self.writes |= arg.name == address,
+                None => self.writes |= address,
             }
         }
     }
@@ -16333,7 +16717,7 @@ fn try_sum_inject(
     place: Place,
     from: &Ty,
     to: &Ty,
-    _span: Span,
+    span: Span,
 ) -> Result<Option<Place>> {
     let Ty::User(to_n) = to else {
         return Ok(None);
@@ -16344,11 +16728,22 @@ fn try_sum_inject(
     let Some(sum) = info.sum.as_ref() else {
         return Ok(None);
     };
-    let Some(v) = sum.variants.iter().find(|v| match (&v.ty, from) {
+    let found = sum.variants.iter().find(|v| match (&v.ty, from) {
         (Ty::User(n), Ty::User(from_n)) => n == from_n,
         (vt, ft) => ty_eq(&ctx.types, vt, ft),
-    }) else {
-        return Ok(None);
+    });
+    // A `mixed T` holds any type that conforms (D235).
+    let v = match found {
+        Some(found) => found.clone(),
+        None if is_mixed(to_n) => {
+            let to_n = to_n.clone();
+            match mixed_variant(ctx, &to_n, from) {
+                Some(variant) => variant,
+                None if matches!(from, Ty::Void) || is_never(from) => return Ok(None),
+                None => return Err(not_mixed_member(ctx, &to_n, from, span)),
+            }
+        }
+        None => return Ok(None),
     };
     let tag = v.tag;
     let payload_ty = v.ty.clone();
@@ -16371,6 +16766,104 @@ fn try_sum_inject(
         },
     );
     Ok(Some(p))
+}
+
+/// The member of `mixed` that holds a `ty` (D235): one already in it, or,
+/// when `ty` conforms to its trait, a new one, which every body lowered
+/// after this one sees too. A type only generic code's checks use (an
+/// archetype) is added for this body alone: it is never a program's.
+fn mixed_variant(ctx: &mut LowerCtx, mixed: &str, ty: &Ty) -> Option<SumVariant> {
+    {
+        let synthetics = ctx.synthetics.borrow();
+        if let Some(added) = synthetics.mixed_added.get(mixed) {
+            add_mixed_variants(&mut ctx.types, mixed, added);
+        }
+    }
+    let sum = ctx.types.get(mixed)?.sum.clone()?;
+    if let Some(found) = sum.variants.iter().find(|variant| ty_eq(&ctx.types, &variant.ty, ty)) {
+        return Some(found.clone());
+    }
+    let trait_ref = ctx.synthetics.borrow().mixed_members.get(mixed)?.0.clone();
+    // A `Void` is no value to hold.
+    if matches!(ty, Ty::Void) || is_never(ty) {
+        return None;
+    }
+    if !ty_conforms(&ctx.types, &ctx.synthetics.borrow().conditional, ty, &trait_ref) {
+        return None;
+    }
+    let variant = SumVariant {
+        tag: sum.variants.iter().map(|variant| variant.tag + 1).max().unwrap_or(0),
+        name: display_ty(ty),
+        ty: ty.clone(),
+        lit: None,
+        mark: None,
+        unwrap_payload: false,
+    };
+    if !mentions_archetype(ty) {
+        ctx.synthetics
+            .borrow_mut()
+            .mixed_added
+            .entry(mixed.to_string())
+            .or_default()
+            .push(variant.clone());
+    }
+    add_mixed_variants(&mut ctx.types, mixed, std::slice::from_ref(&variant));
+    Some(variant)
+}
+
+/// "`Box<Secret>` is not `Describe`, so it does not convert to `mixed
+/// Describe`", naming the bounds of a generic type's conformance (D235).
+fn not_mixed_member(ctx: &LowerCtx, mixed: &str, from: &Ty, span: Span) -> Error {
+    let synthetics = ctx.synthetics.borrow();
+    let trait_name = synthetics
+        .mixed_members
+        .get(mixed)
+        .map_or_else(|| display_ty(&Ty::User(mixed.to_string())), |(trait_ref, _)| trait_ref.name.clone());
+    let error = Error::at(
+        format!(
+            "{} is not `{trait_name}`, so it does not convert to `{}`",
+            display_ty(from),
+            display_ty(&Ty::User(mixed.to_string()))
+        ),
+        span,
+    );
+    let template = match from {
+        Ty::User(name) => ctx.types.get(name).and_then(|info| info.instance.as_ref()).map(|(base, _)| base.clone()),
+        _ => None,
+    };
+    let bounds = template.and_then(|base| {
+        let gdef = synthetics.generics.get(&base)?;
+        let conformance = synthetics
+            .conditional
+            .get(&base)?
+            .iter()
+            .find(|each| each.trait_ref.name == trait_name)?;
+        let parts: Vec<String> = gdef
+            .type_params
+            .iter()
+            .zip(&conformance.bounds)
+            .filter(|(_, bounds)| !bounds.is_empty())
+            .map(|(param, bounds)| {
+                let names: Vec<&str> = bounds.iter().map(|bound| bound.name.as_str()).collect();
+                format!("`{param}` is `{}`", names.join(" & "))
+            })
+            .collect();
+        (!parts.is_empty()).then(|| format!("`{}` is `{trait_name}` when {}", gdef.source_name, parts.join(" and ")))
+    });
+    match bounds {
+        Some(help) => error.with_help(help),
+        None => error,
+    }
+}
+
+/// Whether `ty` is, or holds, a type only generic code's checks use.
+fn mentions_archetype(ty: &Ty) -> bool {
+    match ty {
+        Ty::User(name) => is_param_archetype(ty) || name.starts_with("Self_") || name.contains("_Self_"),
+        Ty::Array { elem } => mentions_archetype(elem),
+        Ty::Map { key, val } => mentions_archetype(key) || mentions_archetype(val),
+        _ => false,
+    }
 }
 
 /// Inject a literal expression into a pure-literal (or lit-arm) union (D118).
@@ -16801,6 +17294,44 @@ fn lower_match_node(
 }
 
 /// Match on a user union (D118): constructor arms + optional `else`.
+/// The member a `match` arm on a `mixed` value names (D235): the arm's type,
+/// `Circle`, `Int64`, or an instance written out, `Box<Int64>`, which joins
+/// the union when it conforms.
+fn mixed_arm(ctx: &mut LowerCtx, mixed: &str, name: &str, type_args: &[TypeExpr], span: Span) -> Result<SumVariant> {
+    let written = TypeExpr {
+        name: name.to_string(),
+        args: type_args.iter().cloned().map(TypeArg::Type).collect(),
+        span,
+        lit: None,
+        mark: None,
+        union_members: None,
+        fn_type: None,
+        where_clause: None,
+    };
+    let name_map = ctx.name_to_type.clone();
+    if type_args.is_empty() && generic_template(ctx, name).is_some() {
+        return Err(Error::at(
+            format!("`{name}` is generic: name the instance, `{name}<Int64>(…)`"),
+            span,
+        ));
+    }
+    generic::ensure_instances(ctx, &written, &name_map)?;
+    let ty = resolve_ty(&written, &ctx.types, &name_map)?;
+    let shown = display_ty(&Ty::User(mixed.to_string()));
+    mixed_variant(ctx, mixed, &ty).ok_or_else(|| {
+        Error::at(
+            format!("{} does not conform, so a {shown} never holds one", display_ty(&ty)),
+            span,
+        )
+    })
+}
+
+/// The mangled template `name` is when it names a generic type.
+fn generic_template(ctx: &LowerCtx, name: &str) -> Option<String> {
+    let mangled = ctx.name_to_type.get(name).cloned().unwrap_or_else(|| name.to_string());
+    ctx.synthetics.borrow().generics.contains_key(&mangled).then_some(mangled)
+}
+
 fn lower_match_sum(
     ctx: &mut LowerCtx,
     scrut_p: Place,
@@ -16953,18 +17484,28 @@ fn lower_match_sum(
             }
             Pattern::Variant {
                 name,
+                type_args,
                 binds,
                 span: pspan,
                 ..
             } => {
-                let variant = sum
-                    .variants
-                    .iter()
-                    .find(|v| v.name == *name)
-                    .ok_or_else(|| {
-                        Error::at(format!("`{name}` is not a member of this union"), *pspan)
-                    })?
-                    .clone();
+                let variant = if is_mixed(sum_name) {
+                    mixed_arm(ctx, sum_name, name, type_args, *pspan)?
+                } else {
+                    if !type_args.is_empty() {
+                        return Err(Error::at(
+                            format!("`{name}` is a member by its name alone: write `{name}(…)`"),
+                            *pspan,
+                        ));
+                    }
+                    sum.variants
+                        .iter()
+                        .find(|v| v.name == *name)
+                        .ok_or_else(|| {
+                            Error::at(format!("`{name}` is not a member of this union"), *pspan)
+                        })?
+                        .clone()
+                };
                 let guarded = arm.guard.is_some();
                 if !guarded && !covered.insert(variant.tag) {
                     return Err(Error::at(
@@ -16986,6 +17527,34 @@ fn lower_match_sum(
                 if binds.is_empty() {
                     // Tag-only: nullary member, or payload member with no destructure (D130).
                     // Heap payloads remain owned by the scrutinee sum (dropped with it).
+                } else if !matches!(variant.ty, Ty::User(_)) {
+                    // A built-in type held by a `mixed` value binds the value (D235).
+                    if binds.len() != 1 {
+                        return Err(Error::at(
+                            format!("`{name}(…)` binds the value: one name"),
+                            *pspan,
+                        ));
+                    }
+                    if let Some(bname) = &binds[0] {
+                        let held = ctx.fresh("spay");
+                        ctx.assign_no_drop(
+                            held.clone(),
+                            variant.ty.clone(),
+                            RValue::SumPayload {
+                                base: scrut_p.clone(),
+                                tag: variant.tag,
+                                payload_ty: variant.ty.clone(),
+                            },
+                        );
+                        if needs_drop(&variant.ty) {
+                            ctx.stmts.push(Stmt::Dup {
+                                place: held.clone(),
+                                ty: variant.ty.clone(),
+                            });
+                            ctx.note_drop_place(&held, &variant.ty);
+                        }
+                        ctx.define(bname, variant.ty.clone(), false, held);
+                    }
                 } else {
                     if member_fields.is_empty() {
                         return Err(Error::at(
@@ -18282,7 +18851,8 @@ fn lower_user_eq(
         )?;
         return Ok(equal);
     }
-    if ctx.eq_expanding.iter().any(|expanding| expanding == type_name) {
+    // A `mixed` value's members are known once every body is (D235).
+    if is_mixed(type_name) || ctx.eq_expanding.iter().any(|expanding| expanding == type_name) {
         return Ok(call_eq_function(ctx, left, right, type_name));
     }
     ctx.eq_expanding.push(type_name.to_string());

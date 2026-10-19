@@ -1842,17 +1842,28 @@ fn kind(shape!: mixed Shape) -> String {
 }
 ```
 
-- A value of a conforming type becomes a `mixed Shape` where one is expected.
-- Calling a member or reading a property through it calls the value's own.
-  A member that takes a `Self` cannot be called this way (the other side's
-  type is unknown), nor one whose signature names an associated type (each
-  type names its own).
+- A value of a conforming type becomes a `mixed Shape` where one is expected:
+  a declared type, a generic type's instance that meets its conformance's
+  bounds (`Box<Int64>` for `conform Box<T: Show> to Shape`), or a built-in
+  type (`Int64`, `Array<Int64>`) with a conformance. Any other value is a
+  compile error naming the bound it misses.
+- Calling a member or reading a property through it calls the value's own,
+  with the trait's signature. A member that takes a `Self` cannot be called
+  this way (the other side's type is unknown), nor one whose signature names
+  an associated type (each type names its own); one that returns a `Self`
+  returns a `mixed Shape`.
 - `match` takes it apart by type, and ends in `else`: more types can conform.
+  An arm names a type that conforms: `Circle(radius)`, `Int64(number)` (a
+  built-in type binds the value), and a generic type's instance with its type
+  arguments, `Box<Int64>(value)`, since one value may hold any of its
+  instances.
+- `"{x}"` writes the value's `show`, `==` is true for values of the same type
+  that are equal, and `<` orders values of different types by their types'
+  names, then values of one type by their order, when the trait asks for
+  `Show`, `Equatable`, or `Ordered`.
 - It is a value: copies are copies. A mutating member called through it
   changes the value inside, so it needs a `mut` binding (or an element of a
   `mut` array).
-- It holds the declared types that conform without bounds; a generic type's
-  instances and built-in types are not among them.
 
 `mixed Shape` differs from `shape!: Shape` as a parameter's type: the latter
 is a type parameter, one copy of the function per shape type (see

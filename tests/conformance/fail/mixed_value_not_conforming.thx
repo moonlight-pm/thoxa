@@ -1,0 +1,20 @@
+## D235: only a value whose type conforms converts into a `mixed T`; here
+## `Box<Secret>` does not meet the conformance's bound.
+trait Describe {
+    fn describe() -> String
+}
+
+type Box<T>(value: T)
+
+type Secret(code: Int64)
+
+conform Box<T: Show> to Describe {
+    fn describe() -> String {
+        "box of {value}"
+    }
+}
+
+fn main() -> Int64 {
+    let thing: mixed Describe = Box(value: Secret(code: 1))
+    0
+}

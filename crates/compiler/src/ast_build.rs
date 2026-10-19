@@ -33,6 +33,7 @@ pub(crate) fn match_arm_block(
     MatchArm {
         pattern: Pattern::Variant {
             name: name.into(),
+            type_args: Vec::new(),
             binds,
             bind_span: dummy(),
             span: dummy(),

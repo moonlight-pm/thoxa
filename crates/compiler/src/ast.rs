@@ -742,6 +742,9 @@ pub enum Pattern {
     /// Entry `None` = discard `_` (D66). Body `_` is ordinary name lookup.
     Variant {
         name: String,
+        /// A generic type's instance, written out where a `mixed` value is
+        /// matched: `Box<Int64>(value)` (D235). Empty otherwise.
+        type_args: Vec<TypeExpr>,
         /// One entry per constructor field; empty = tag-only (nullary or discard-all payload).
         binds: Vec<Option<String>>,
         bind_span: Span,

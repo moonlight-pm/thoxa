@@ -197,6 +197,29 @@ pub(super) fn lower_compare(
     if !ctx.conforms(ty, "Ordered") {
         return Err(not_ordered(ty, span));
     }
+    // A `mixed` value: by the type it holds, then the values (D235).
+    if let Ty::User(type_name) = ty {
+        if super::is_mixed(type_name) {
+            let function = super::request_mixed_function(ctx, type_name, super::MixedKind::Compare);
+            let sign = ctx.fresh("mixcompare");
+            ctx.assign(
+                sign.clone(),
+                Ty::Int64,
+                RValue::Call {
+                    callee: Callee::User(function),
+                    args: vec![
+                        Place {
+                            name: format!("&{}", left.name),
+                        },
+                        Place {
+                            name: format!("&{}", right.name),
+                        },
+                    ],
+                },
+            );
+            return Ok(sign);
+        }
+    }
     if is_int(ty) || *ty == Ty::Bool {
         let result = int(ctx, 0);
         sign_into(ctx, &result, left, right)?;
@@ -501,6 +524,12 @@ pub(super) fn show_text(ctx: &mut LowerCtx, value: Place, ty: &Ty, span: Span) -
         .with_help(conform_help(ty, "Show", "Show", "field by field, or with its own `show`")));
     }
     if let Ty::User(type_name) = ty {
+        // A `mixed` value's text is its member's `show` (D235).
+        if super::is_mixed(type_name) {
+            let read = super::ReceiverWrite::ReadOnly("a value shown".into());
+            let (text, _) = super::lower_mixed_call(ctx, value, read, type_name, "show", &[], span)?;
+            return Ok(text);
+        }
         if ctx.types.get(type_name).is_some_and(|info| info.methods.contains_key("show")) {
             let (text, _) = emit_call_result(
                 ctx,
