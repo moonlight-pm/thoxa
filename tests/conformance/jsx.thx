@@ -1,8 +1,10 @@
 ## Builtin Node + tag literals (JSX experiment). No import.
 import logging from "std/logging"
 
-type Card(title: String) {
-    export fn view(children: Array<Node>) -> Node {
+type Card(title: String)
+
+conform Card to Component {
+    fn view(children: Array<Node>) -> Node {
         <section class="card">
             <h1>{title}</h1>
             {children}

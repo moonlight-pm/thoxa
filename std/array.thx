@@ -41,6 +41,17 @@ extend Array<T: Hashable> {
     }
 }
 
+extend Array<T: Show> {
+    ## `[a, b]`: each element's text.
+    export fn show() -> String {
+        mut parts: Array<String> = []
+        for element in self {
+            parts.append(element.show())
+        }
+        "[{parts.join(", ")}]"
+    }
+}
+
 extend Array<T: Ordered> {
     ## The elements in ascending order; equal ones keep their order.
     export fn sorted() -> Array<T> {

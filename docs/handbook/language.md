@@ -116,8 +116,11 @@ of a hole.
 `{expr}` inside a string is an interpolation hole: the expression's value is
 formatted into the string. A hole may contain strings of its own
 (`"{greet("ada")}"`). `{{` and `}}` are literal braces. Holes accept `String`,
-the integer types, `Float64`, and `Bool`. A `Node` does not interpolate; call
-`.html()`.
+the integer types, `Float64`, `Bool`, arrays and maps of those, and any type
+that is `Show` (see [Equality and order](#equality-and-order)): a hole writes
+its `show()`. Without its own `show`, a product shows as `Point(x: 1, y: 2)`
+(a `String` field in quotes), a union as its member, and an array of `Show`
+values as `[a, b]`. A `Node` does not interpolate; call `.html()`.
 
 ```thx
 let name = "ada"
@@ -1511,7 +1514,8 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
   conforms to a trait once.
 - A trait is private to its module unless marked `export`, and is imported by
   name like a type. The built-in traits, `Equatable`, `Hashable`, `Ordered`
-  (see [Equality and order](#equality-and-order)), and `Resource`, need no
+  (see [Equality and order](#equality-and-order)), `Show`, `Component` (see
+  [Tag literals and Node](#tag-literals-and-node)), and `Resource`, need no
   import.
 - A generic type conforms for the instances whose arguments meet bounds:
   `conform Box<T: Equatable> to Equatable` makes `Box<Int64>` equatable and
@@ -1877,8 +1881,10 @@ Tag literals are expressions that build a `Node`, an HTML tree. `n.html()` is
 its escaped markup (no doctype, no indentation).
 
 ```thx
-type Card(title: String) {
-    export fn view(children: Array<Node>) -> Node {
+type Card(title: String)
+
+conform Card to Component {
+    fn view(children: Array<Node>) -> Node {
         <section class="card">
             <h1>{title}</h1>
             {children}
@@ -1896,7 +1902,7 @@ info(page.html())
 | Piece | Behaviour |
 |-------|-----------|
 | HTML element | `<div class="x">…</div>`; hyphenated names (`data-*`) are allowed |
-| Component | `<Card title="Hi">…</Card>` calls `Card(title: "Hi").view(children: […])` at once. A component is a type that produces a `Node`, not a subtype of it |
+| Component | `<Card title="Hi">…</Card>` calls `Card(title: "Hi").view(children: […])` at once, for a type that conforms to the built-in trait `Component`. A component is a type that produces a `Node`, not a subtype of it |
 | Fragment | `<>…</>`; an empty `<></>` is a valid `Node` |
 | `{e}` child | `String` (escaped text), integers, `Float64`, `Bool` (formatted as in interpolation), `Node`, `Array<Node>` (spliced) |
 | `{for x in xs { child }}` | collects an `Array<Node>`; only in child position |

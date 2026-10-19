@@ -1,0 +1,11 @@
+## D228: a tag literal builds a `Component`; a type with a `view` method is
+## not one until it says so.
+type Card(title: String) {
+    export fn view(children: Array<Node>) -> Node {
+        <section>{title}</section>
+    }
+}
+
+fn main() {
+    let page = <Card title="Hi"></Card>
+}

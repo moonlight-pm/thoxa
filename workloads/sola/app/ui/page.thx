@@ -2,8 +2,10 @@
 
 import http, { Request } from "std/http"
 
-export type Page(title: String, request: Request) {
-    export fn view(children: Array<Node>) -> Node {
+export type Page(title: String, request: Request)
+
+conform Page to Component {
+    fn view(children: Array<Node>) -> Node {
         <html lang="en">
             <head>
                 <meta charset="utf-8" />

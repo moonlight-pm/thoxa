@@ -5,8 +5,10 @@ import http, { Request } from "std/http"
 export let repository = "https://github.com/moonlight-pm/thoxa"
 
 ## `current` names the page the navigation marks (`home`, `manual`).
-export type Page(title: String, request: Request, current: String = "") {
-    export fn view(children: Array<Node>) -> Node {
+export type Page(title: String, request: Request, current: String = "")
+
+conform Page to Component {
+    fn view(children: Array<Node>) -> Node {
         <html lang="en">
             <head>
                 <meta charset="utf-8" />

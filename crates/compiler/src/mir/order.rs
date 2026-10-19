@@ -482,3 +482,155 @@ pub(super) fn lower_hash_intrinsic(ctx: &mut LowerCtx, args: &[Arg], span: Span)
     ctx.assign(unit.clone(), Ty::Int64, RValue::Int(0));
     Ok((unit, Ty::Void))
 }
+
+
+/// A value's text where a `String` is expected, past the built-in table
+/// (D228): a user type's `show`, its own or derived; a union's or a generic
+/// instance's from its member or fields; an array's from std's `show`.
+pub(super) fn show_text(ctx: &mut LowerCtx, value: Place, ty: &Ty, span: Span) -> Result<Place> {
+    let shown = display_ty(ty);
+    if !ctx.conforms(ty, "Show") {
+        return Err(Error::at(
+            format!("cannot interpolate {shown}: `{shown}` is not `Show`"),
+            span,
+        )
+        .with_help(format!("declare `conform {shown} to Show`: field by field, or with its own `show`")));
+    }
+    if let Ty::User(type_name) = ty {
+        if ctx.types.get(type_name).is_some_and(|info| info.methods.contains_key("show")) {
+            let (text, _) = emit_call_result(
+                ctx,
+                Callee::Method {
+                    type_name: type_name.clone(),
+                    method: "show".into(),
+                },
+                vec![value],
+                Ty::String,
+            )?;
+            return Ok(text);
+        }
+        return lower_structural_show(ctx, value, type_name, span);
+    }
+    let bound = super::codec::bind_fresh(ctx, "__shown", ty, value);
+    let call = crate::ast_build::method_call(crate::ast_build::name(&bound), "show", Vec::new());
+    let (text, _) = lower_expr(ctx, &call)?;
+    Ok(text)
+}
+
+/// `Point(x: 1, y: "a")`, or a union's member's text (D228 §4).
+fn lower_structural_show(ctx: &mut LowerCtx, value: Place, type_name: &str, span: Span) -> Result<Place> {
+    use crate::ast::{Expr, ExprKind, InterpPart};
+    let info = ctx
+        .types
+        .get(type_name)
+        .cloned()
+        .ok_or_else(|| Error::at(format!("unknown type `{type_name}`"), span))?;
+    let ty = Ty::User(type_name.to_string());
+    let shown = display_ty(&ty);
+    if let Some(sum) = &info.sum {
+        let result = ctx.fresh("show");
+        ctx.assign(result.clone(), Ty::String, RValue::StringLit(String::new()));
+        let tag = ctx.fresh("showtag");
+        ctx.assign(
+            tag.clone(),
+            Ty::Int64,
+            RValue::SumTag {
+                place: value.clone(),
+                sum_type: type_name.to_string(),
+            },
+        );
+        for variant in &sum.variants {
+            let want = int(ctx, variant.tag as i64);
+            let this_arm = binary(ctx, BinaryOp::Eq, tag.clone(), want);
+            emit_if(
+                ctx,
+                this_arm,
+                |ctx| {
+                    let text = match &variant.lit {
+                        Some(lit) => {
+                            let place = ctx.fresh("showlit");
+                            let literal = match lit {
+                                TypeLit::Int(value) => value.to_string(),
+                                TypeLit::Bool(value) => value.to_string(),
+                                TypeLit::String(value) => value.clone(),
+                            };
+                            ctx.assign(place.clone(), Ty::String, RValue::StringLit(literal));
+                            place
+                        }
+                        None if !has_storage(&ctx.types, &variant.ty) => {
+                            let place = ctx.fresh("showname");
+                            ctx.assign(
+                                place.clone(),
+                                Ty::String,
+                                RValue::StringLit(format!("{}()", display_ty(&variant.ty))),
+                            );
+                            place
+                        }
+                        None => {
+                            let payload = ctx.fresh("showpay");
+                            ctx.assign_no_drop(
+                                payload.clone(),
+                                variant.ty.clone(),
+                                RValue::SumPayload {
+                                    base: value.clone(),
+                                    tag: variant.tag,
+                                    payload_ty: variant.ty.clone(),
+                                },
+                            );
+                            show_text(ctx, payload, &variant.ty, span)?
+                        }
+                    };
+                    ctx.assign(result.clone(), Ty::String, RValue::Use(text));
+                    Ok(())
+                },
+                |_| Ok(()),
+            )?;
+        }
+        return Ok(result);
+    }
+    let bound = super::codec::bind_fresh(ctx, "__shown", &ty, value);
+    let field = |name: &str| Expr {
+        kind: ExprKind::Field {
+            base: Box::new(crate::ast_build::name(&bound)),
+            name: name.to_string(),
+            name_span: span,
+        },
+        span,
+    };
+    let mut parts = vec![InterpPart::Lit(format!("{shown}("))];
+    for (index, info_field) in info.fields.iter().filter(|field| field.ty != Ty::Void).enumerate() {
+        if index > 0 {
+            parts.push(InterpPart::Lit(", ".into()));
+        }
+        parts.push(InterpPart::Lit(format!("{}: ", info_field.name)));
+        if info_field.ty == Ty::String {
+            parts.push(InterpPart::Lit("\"".into()));
+            parts.push(InterpPart::Expr(field(&info_field.name)));
+            parts.push(InterpPart::Lit("\"".into()));
+        } else {
+            parts.push(InterpPart::Expr(field(&info_field.name)));
+        }
+    }
+    parts.push(InterpPart::Lit(")".into()));
+    let (text, _) = lower_expr(
+        ctx,
+        &Expr {
+            kind: ExprKind::Interpolate(parts),
+            span,
+        },
+    )?;
+    Ok(text)
+}
+
+/// `__show(self)`, a derived `show`'s body.
+pub(super) fn lower_show_intrinsic(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    let [Arg::Pos(value)] = args else {
+        return Err(Error::at("`__show` takes a value", span));
+    };
+    let (place, ty) = lower_expr(ctx, value)?;
+    let Ty::User(type_name) = &ty else {
+        return Err(Error::at("`__show` shows declared types", span));
+    };
+    let text = lower_structural_show(ctx, place, type_name, span)?;
+    Ok((text, Ty::String))
+}

@@ -1,0 +1,6 @@
+## D228: `"{value}"` writes a `Show` value; a type is one by saying so.
+type Point(x: Int64, y: Int64)
+
+fn main() {
+    let text = "{Point(x: 1, y: 2)}"
+}

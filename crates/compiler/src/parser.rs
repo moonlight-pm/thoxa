@@ -3561,7 +3561,8 @@ fn desugar_jsx(
         Expr {
             kind: ExprKind::MethodCall {
                 receiver: Box::new(ctor),
-                method: "view".into(),
+                // A `Component`'s `view` (D228); no source name has an `_`.
+                method: "__view".into(),
                 method_span: tag_span,
                 args: vec![jsx_named("children", tag_span, jsx_array_lit(kids, span))],
             },
@@ -4543,7 +4544,7 @@ mod tests {
         };
         match &init.kind {
             ExprKind::MethodCall { method, args, .. } => {
-                assert_eq!(method, "view");
+                assert_eq!(method, "__view");
                 assert_eq!(args.len(), 1);
             }
             other => panic!("expected Page(...).view(...), got {other:?}"),

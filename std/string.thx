@@ -21,6 +21,11 @@ extend String {
         self.byteCount == 0
     }
 
+    ## Itself (D228).
+    export fn show() -> String {
+        self
+    }
+
     ## Its bytes, then its length (D228).
     export fn hash(mut hasher!: Hasher) {
         mut index = 0

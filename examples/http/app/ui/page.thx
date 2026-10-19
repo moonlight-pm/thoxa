@@ -42,8 +42,10 @@ export fn csrfField(request!: Request) -> Node {
     <input type="hidden" name="csrf" value={session.csrf(request)} />
 }
 
-export type Page(title: String, request: Request) {
-    export fn view(children: Array<Node>) -> Node {
+export type Page(title: String, request: Request)
+
+conform Page to Component {
+    fn view(children: Array<Node>) -> Node {
         <html lang="en">
             <head>
                 <meta charset="utf-8" />

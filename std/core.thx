@@ -14,6 +14,12 @@ export trait Resource {
     fn drop()
 }
 
+## A type a tag literal builds: `<Card title="Hi">…</Card>` is
+## `Card(title: "Hi").view(children: […])`.
+export trait Component {
+    fn view(children: Array<Node>) -> Node
+}
+
 ## `==` and `!=`. Without its own `equals`, a product compares field by field
 ## and a union by member, then payload.
 export trait Equatable {
@@ -44,6 +50,13 @@ export trait Ordered: Equatable {
 ## How two values order.
 export type Order = "less" | "equal" | "greater"
 
+## A value's text, which `"{value}"` writes. Without its own `show`, a
+## product shows as `Point(x: 1, y: 2)` (a `String` field in quotes) and a
+## union as its member.
+export trait Show {
+    fn show() -> String
+}
+
 conform Order to Equatable, Hashable, Ordered
 
 conform Int64 to Equatable, Hashable, Ordered
@@ -60,6 +73,17 @@ conform Void to Equatable, Hashable
 ## infinities, and -0 equal to 0.
 conform Float64 to Equatable, Hashable, Ordered
 
+conform Int64 to Show
+conform Int32 to Show
+conform UInt64 to Show
+conform UInt32 to Show
+conform Byte to Show
+conform Float64 to Show
+conform Bool to Show
+conform String to Show
+conform Order to Show
+conform Array<T: Show> to Show
+
 conform Array<T: Equatable> to Equatable
 conform Array<T: Hashable> to Hashable
 conform Map<K: Hashable, V: Equatable> to Equatable
@@ -67,6 +91,10 @@ conform Map<K: Hashable, V: Equatable> to Equatable
 extend Int64 {
     export fn equals(other!: Int64) -> Bool {
         self == other
+    }
+
+    export fn show() -> String {
+        "{self}"
     }
 
     export fn hash(mut hasher!: Hasher) {
@@ -83,6 +111,10 @@ extend Int32 {
         self == other
     }
 
+    export fn show() -> String {
+        "{self}"
+    }
+
     export fn hash(mut hasher!: Hasher) {
         hasher.mix(self)
     }
@@ -95,6 +127,10 @@ extend Int32 {
 extend UInt64 {
     export fn equals(other!: UInt64) -> Bool {
         self == other
+    }
+
+    export fn show() -> String {
+        "{self}"
     }
 
     export fn hash(mut hasher!: Hasher) {
@@ -111,6 +147,10 @@ extend UInt32 {
         self == other
     }
 
+    export fn show() -> String {
+        "{self}"
+    }
+
     export fn hash(mut hasher!: Hasher) {
         hasher.mix(self)
     }
@@ -123,6 +163,10 @@ extend UInt32 {
 extend Byte {
     export fn equals(other!: Byte) -> Bool {
         self == other
+    }
+
+    export fn show() -> String {
+        "{self}"
     }
 
     export fn hash(mut hasher!: Hasher) {
@@ -139,6 +183,10 @@ extend Bool {
         self == other
     }
 
+    export fn show() -> String {
+        "{self}"
+    }
+
     export fn hash(mut hasher!: Hasher) {
         hasher.mix(if self { 1 } else { 0 })
     }
@@ -152,6 +200,10 @@ extend Bool {
 extend Float64 {
     export fn equals(other!: Float64) -> Bool {
         self == other
+    }
+
+    export fn show() -> String {
+        "{self}"
     }
 
     ## As a Map key compares it: every NaN alike, -0 as 0.

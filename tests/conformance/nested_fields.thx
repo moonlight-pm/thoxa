@@ -10,8 +10,10 @@ type Drink(name: String, roast: Roast)
 
 type Wrap(n: Node)
 
-type Card(d: Drink) {
-    export fn view(children: Array<Node>) -> Node {
+type Card(d: Drink)
+
+conform Card to Component {
+    fn view(children: Array<Node>) -> Node {
         <p>{"{d.name} {roastLabel(d.roast)}"}</p>
     }
 }

@@ -436,7 +436,7 @@ const CONFORMABLE_BUILT_INS: &[(&str, usize)] = &[
 /// without them, field by field (D228 §4).
 fn has_defaults(trait_ref: &TraitRef) -> bool {
     trait_ref.module == CORE_MODULE
-        && matches!(trait_ref.name.as_str(), "Equatable" | "Hashable" | "Ordered")
+        && matches!(trait_ref.name.as_str(), "Equatable" | "Hashable" | "Ordered" | "Show")
 }
 
 /// A trait's members have distinct names and no parameter defaults.
@@ -1012,6 +1012,10 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
             op: BinaryOp::Eq,
             left: Box::new(name("self")),
             right: Box::new(name("other")),
+        },
+        "show" => ExprKind::Call {
+            callee: "__show".into(),
+            args: vec![Arg::Pos(name("self"))],
         },
         "hash" => ExprKind::Call {
             callee: "__hash".into(),

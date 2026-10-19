@@ -114,8 +114,9 @@ first use. **Part 4 shipped**: a hand-written `hash` (`Hasher`), used by
 Maps; generic functions infer their return type. **Part 5 shipped**:
 bounds on generic types' parameters; `Array.map` / `filter`. Open for
 Joshua: check a generic type's methods against its bounds (`Counter<T>`
-adds `T`s; the freeze rules out arithmetic traits). **Next**: slice 6
-(`Show`, `Encodable`, `Decodable`, `Component`).
+adds `T`s; the freeze rules out arithmetic traits). **Slice 6, parts 1–2
+shipped**: `Component` (tag literals need it), `Show` (`"{x}"` of user
+types). **Next**: `Encodable` / `Decodable`, declared, in std/json.
 Generic functions are slice 5, so the "generic constructor inference" gap
 below waits for it. Joshua: "lean toward long-term correct design rather
 than short term stop gaps."
@@ -228,8 +229,8 @@ Freezes:
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 181 programs, 100 rejections, 8 site samples, 219 unit tests
-after D228 slice 5 part 5 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
+`cargo make test` 182 programs, 102 rejections, 8 site samples, 219 unit tests
+after D228 slice 6 part 2 (2026-10-18); `cargo make test-asan` 149 clean, 10 excepted (2026-10-18). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`
@@ -313,7 +314,7 @@ its Socket from `server.peerOf(request)` (**D168**). Cookie and `Cache-Control` 
 | SQLite | Amalgamation in `libthoxa_rt` (**D143**). Write `sql"… {value} …"` (**D144**); holes quote themselves. `exec`/`query` take `Sql`. No named `ffi` root. No product `thoxa migrate` — apps own schema files. |
 | Combined import | `import ns, { a, b as c } from "…"` (**D127**) — namespace + selective in one clause |
 | Module files | A `.thx` file is a **module** (scope), not a type (**D138**). Non-entry stems are kebab-case (`http.thx`, `math-utils.thx`). Types stay PascalCase; namespace bindings stay camelCase. Directory entry is `main.thx` (D68 / D138). Module ids for C mangling are path-qualified (`std/http/server` → `std_http_server`). HTTP hosts live under `std/http/` (**D139**). No user-facing `Module` type |
-| Node / tag literals | Builtin **`Node`** (`Element \| Text \| Fragment`) + JSX tags (**D147**). No import. PascalCase is `Type(…).view(children:)`. `{e}` children/attrs stringify String / Int64 / Float64 / Bool; `{for}` collects `Array<Node>`. `.html()` is the markup codec — not generic `toString`. Comparison `<` needs a space (`a < b`). |
+| Node / tag literals | Builtin **`Node`** (`Element \| Text \| Fragment`) + JSX tags (**D147**). No import. PascalCase is `Type(…).view(children:)` on a `Component` (**D228**). `{e}` children/attrs stringify String / Int64 / Float64 / Bool; `{for}` collects `Array<Node>`. `.html()` is the markup codec — not generic `toString`. Comparison `<` needs a space (`a < b`). |
 | Refinements / `Type.read` | `where` refinements are real types (**D149**). `n as Qty` checks a base value and `json as T` reads a `Json`, both `Trial<T, Array<Issue>>`; `T.read` / `T.readForm` parse text into the same, every issue reported (**D182** §2, **D191**; `Issue` in `std/json`). `T.from` / `T.fromJson` are removed (**D191** §6). Literal unions <: String. Qty→base implicit. Tree `decode` stays D141. No cross-field `where`; write `May<Qty>`. |
 | Conversions | `x as T` converts and its type says whether it can fail; `x as? T` is `(x as T)?` (**D191**). At most one conversion per pair of types: built in, or a `from` clause on the target (the target alone declares conversions into itself; `toJson` is the source's way into `Json`). Only infallible conversions are implicit, and encoding to `Json` where a `Json` is expected is the only one D191 added; decoding always needs `as`. Like integer narrowing (D167), an implicit `Int64` / `UInt64` → `Float64` is checked and panics when inexact, and its `as` is a `Trial` (**D224**). Text is parsed, not converted (`T.read`). `return` and `=` convert to the expected type (**D192**). No traits. |
 | Route clauses | Type-body `GET "/…"` / `POST` / … on a nullary type → `route(req) -> Response` (**D150**). String wrap `ok`; miss `notFound()`; `Int64`/`String` captures. A parameter that is neither a capture nor the `Request` binds the body (query for GET/HEAD, JSON or form by `Content-Type`, else 415); a failed read is a 400 unless the parameter is `Trial<T, Array<Issue>>` (**D191** §5). The module imports only what its clauses write (**D193**). No fallthrough. |

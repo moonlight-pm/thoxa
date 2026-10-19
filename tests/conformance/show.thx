@@ -1,0 +1,49 @@
+## `Show` (D228): `"{value}"` writes a value's `show`. Without its own, a
+## product shows its fields and a union its member.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+type Point(x: Int64, y: Int64)
+conform Point to Show
+
+type User(name: String, at: Point)
+conform User to Show
+
+type Red
+type Green
+type Light = Red | Green
+conform Light to Show
+
+type Circle(radius: Float64)
+conform Circle to Show
+type Shape = Circle | "blank"
+conform Shape to Show
+
+## Its own text.
+type Money(cents: Int64)
+conform Money to Show {
+    fn show() -> String {
+        "${cents / 100}.{cents % 100}"
+    }
+}
+
+fn label<T: Show>(value!: T) -> String {
+    "<{value}>"
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let point = Point(x: 1, y: 2)
+    info("{point}")
+    info("{User(name: \"ada\", at: point)}")
+    let light: Light = Green()
+    info("{light}")
+    let round: Shape = Circle(radius: 2.5)
+    let blank: Shape = "blank"
+    info("{round} {blank}")
+    info("{Money(cents: 1250)}")
+    info("{[Point(x: 0, y: 0), Point(x: 3, y: 4)]}")
+    info("{label(7)} {label(point)} {label(\"hi\")}")
+    info(point.show())
+}

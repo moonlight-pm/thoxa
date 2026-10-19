@@ -58,6 +58,8 @@ Every program has this module, and its names need no import:
 | `Hasher` | what `hash` feeds: `mix(value!: Int64)`; `state` is the hash so far |
 | `Ordered` | `<` `<=` `>` `>=`; parent `Equatable`; member `compare(other!: Self) -> Order` |
 | `Order` | `"less" \| "equal" \| "greater"` |
+| `Show` | `"{value}"`; member `show() -> String` |
+| `Component` | a tag literal's type; member `view(children: Array<Node>) -> Node` |
 | `Resource` | a shared box whose `drop()` runs with its last copy |
 
 It also declares how the built-in types conform, and writes their `equals`

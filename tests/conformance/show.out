@@ -1,0 +1,8 @@
+Point(x: 1, y: 2)
+User(name: "ada", at: Point(x: 1, y: 2))
+Green()
+Circle(radius: 2.5) blank
+$12.50
+[Point(x: 0, y: 0), Point(x: 3, y: 4)]
+<7> <Point(x: 1, y: 2)> <hi>
+Point(x: 1, y: 2)

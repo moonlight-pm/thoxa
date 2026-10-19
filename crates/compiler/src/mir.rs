@@ -10364,14 +10364,7 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                         );
                         p
                     }
-                    Ty::Array { ref elem } => {
-                        return Err(Error::at(
-                            format!(
-                                "cannot interpolate Array<{elem:?}> into String (supported: Int64, Bool, String)"
-                            ),
-                            span,
-                        ));
-                    }
+                    ref array @ Ty::Array { .. } => order::show_text(ctx, v, array, span)?,
                     Ty::Map { ref key, ref val }
                         if matches!(key.as_ref(), Ty::String | Ty::Int64 | Ty::Bool)
                             && matches!(val.as_ref(), Ty::Int64 | Ty::Bool | Ty::String) =>
@@ -10420,12 +10413,7 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                             }
                         }
                     }
-                    other => {
-                        return Err(Error::at(
-                            format!("cannot interpolate {other:?} into String"),
-                            span,
-                        ));
-                    }
+                    other => order::show_text(ctx, v, &other, span)?,
                 }
             }
         };
@@ -11199,6 +11187,21 @@ fn lower_method_call(
     method_span: Span,
     args: &[Arg],
 ) -> Result<(Place, Ty)> {
+    // `<Card …>…</Card>` calls `view` on a `Component` (D228).
+    if method == "__view" {
+        let ty = infer_block_ty(ctx, &tail_block(receiver.clone()))?;
+        if !ctx.conforms(&ty, "Component") {
+            let shown = display_ty(&ty);
+            return Err(Error::at(
+                format!("`<{shown}>` needs `{shown}` to be a `Component`"),
+                method_span,
+            )
+            .with_help(format!(
+                "declare `conform {shown} to Component {{ fn view(children: Array<Node>) -> Node {{ … }} }}`"
+            )));
+        }
+        return lower_method_call(ctx, receiver, "view", method_span, args);
+    }
     // `self.method(…)` is a sibling call on the receiver (D228).
     if matches!(&receiver.kind, ExprKind::Name(name) if name == "self") {
         if let Some(type_name) = self_receiver(ctx) {
@@ -11637,6 +11640,10 @@ fn lower_method_call(
                 .clone();
             // `equals` / `compare` of a type without the method (a union, a
             // generic type's instance): the structural default (D228).
+            if !info.methods.contains_key(method) && method == "show" && args.is_empty() {
+                let text = order::show_text(ctx, recv_p, &recv_ty, method_span)?;
+                return Ok((text, Ty::String));
+            }
             if !info.methods.contains_key(method) && method == "hash" {
                 if let [Arg::Pos(Expr {
                     kind: ExprKind::MutArg(hasher),
@@ -18118,6 +18125,7 @@ fn lower_call(
         // A derived `compare`'s and `hash`'s bodies (D228).
         "__compare" => order::lower_compare_intrinsic(ctx, args, span),
         "__hash" => order::lower_hash_intrinsic(ctx, args, span),
+        "__show" => order::lower_show_intrinsic(ctx, args, span),
         // The exactness test of a generated `as Float64` reader (D224).
         "__float64Exact" => lower_float_exact(ctx, args, span),
         "Map" => lower_map_new(ctx, args, span, expect),
