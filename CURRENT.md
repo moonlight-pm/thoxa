@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-19 (**D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-19 (**D232**: a generic type's methods are checked once against its bounds; **D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -112,8 +112,8 @@ shipped**: generic `extend Array<T: Bound>`, std/array (`contains`,
 infers its type arguments (`Shelf(items: [1, 2])`), its instance made on
 first use. **Part 4 shipped**: a hand-written `hash` (`Hasher`), used by
 Maps; generic functions infer their return type. **Part 5 shipped**:
-bounds on generic types' parameters; `Array.map` / `filter` (checking a
-generic type's methods against its bounds is open for Joshua, below). **Slice 6, parts 1–2
+bounds on generic types' parameters; `Array.map` / `filter` (a generic
+type's methods are checked against its bounds since D232, below). **Slice 6, parts 1–2
 shipped**: `Component` (tag literals need it), `Show` (`"{x}"` of user
 types). **Part 3 shipped**: `Encodable` / `Decodable`, declared, in
 std/json. **Slice 7 shipped**: `mixed Trait`, values of several types
@@ -140,14 +140,14 @@ now shipped; the ones left are smaller (the `traits` row's **Gaps**):
 `mixed` writes a copy), `self.items.append(x)`, getters that write fields,
 a built-in's member writing `self`, `Map` and `String` as `Sequence`s,
 `Array` as `Ordered`.
+**D232 shipped** (Joshua 2026-10-19: yes to the recommendation): a generic
+type's methods, `from` clauses, and conformance members are checked once,
+against its bounds, as generic functions are; `Counter<T>` adds through a
+`Summable` trait.
 **D231 shipped** (D228 slice 12): same-type constraints, `where S.Item ==
 Int64` or `== T`. **D230 shipped** (D228 slice 11): explicit type arguments, `none<String>()`, `<` glued to the name.
 **D229 shipped**: constructor fields take every integer type, an integer
-literal above `Int64` is a `UInt64`, and `Hasher` keeps a `UInt64`. Waiting
-on Joshua: whether a generic type's methods are
-checked once against its bounds, as generic functions are (recommended:
-yes, as freeze §5 says; `Counter<T>`'s `value + d` then needs a trait with
-a method, which `Int64` can now conform to).
+literal above `Int64` is a `UInt64`, and `Hasher` keeps a `UInt64`.
 
 **Shell and session removed (D227, Joshua 2026-10-18: "drop the shell feature
 entirely. This is scope creep.")** `thoxa` is a compiler CLI; every program

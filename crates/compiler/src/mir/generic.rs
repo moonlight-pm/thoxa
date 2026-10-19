@@ -379,6 +379,11 @@ fn method_instance(
         }
         ctx.types.get_mut(type_name).unwrap().methods.insert(name.clone(), sig.clone());
     }
+    // A generic type's instances share their template's check.
+    let owner = ctx.types[type_name]
+        .instance
+        .as_ref()
+        .map_or_else(|| type_name.to_string(), |(base, _)| base.clone());
     let mut synthetics = ctx.synthetics.borrow_mut();
     synthetics
         .method_instances
@@ -389,7 +394,7 @@ fn method_instance(
         type_name: type_name.to_string(),
         method,
         def_mod: template.def_mod.clone(),
-        template: (type_name.to_string(), template.method.name.clone()),
+        template: (owner, template.method.name.clone()),
         archetypal,
     });
     Ok(name)
@@ -592,7 +597,6 @@ fn make_instance(
             }
         }
     }
-    let made: Vec<String> = layouts.iter().map(|layout| layout.name.clone()).collect();
     let mut synthetics = ctx.synthetics.borrow_mut();
     for mut layout in layouts {
         (layout.own_hash, layout.own_equals) = super::own_key_ops(&types, &synthetics.conditional, &layout.name);
@@ -603,14 +607,9 @@ fn make_instance(
                 .insert(layout.name.clone(), (info.clone(), layout));
         }
     }
+    // Their method templates are checked on their template's checking
+    // instance, not again for each.
     synthetics.late_mono_jobs.extend(jobs);
-    drop(synthetics);
-    // Their method templates are checked as the ones made before lowering are.
-    for name in made {
-        if ctx.types.get(&name).is_some_and(|info| !info.templates.is_empty()) {
-            check_templates(ctx, &name)?;
-        }
-    }
     Ok(mono)
 }
 

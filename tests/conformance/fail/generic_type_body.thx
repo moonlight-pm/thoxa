@@ -1,0 +1,10 @@
+## D228 §5: a generic type's methods are checked once, where they are
+## declared, against its parameters' bounds, with or without an instance:
+## a `T` has no `+`.
+type Counter<T>(value: T) {
+    export fn add(amount: T) -> Counter<T> {
+        Counter(value: value + amount)
+    }
+}
+
+fn main() {}

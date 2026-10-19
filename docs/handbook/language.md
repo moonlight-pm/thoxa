@@ -691,10 +691,37 @@ or, without one, from its arguments: `Box(value: "seven")` is a `Box<String>`, a
 A field of a generic type may be any integer type, `Float64`, `Bool`,
 `String`, `Bytes`, an `Array`, a `Map`, a user type, or `Void`.
 
-A generic type's methods and `from` clauses are compiled for each instance
-the program uses, so a method without `->` infers its return type per
-instance (see [Return types](#return-types)). A conformance can hold for some
-instances only (see [Traits](#traits)).
+A generic type's methods and `from` clauses are checked once, where they are
+written, whether or not the program makes an instance. In them a type
+parameter has only its bounds' members, as in a generic function (see
+[Generic functions](#generic-functions)): with no bound, a `T` can be stored,
+passed, and returned, but `value + amount` is an error. A trait with a method
+gives a bound what it needs:
+
+```thx
+trait Summable {
+    fn plus(other!: Self) -> Self
+}
+
+conform Int64 to Summable {
+    fn plus(other!: Int64) -> Int64 {
+        self + other
+    }
+}
+
+type Counter<T: Summable>(value: T) {
+    export fn add(amount: T) -> Counter<T> {
+        Counter(value: value.plus(amount))
+    }
+}
+
+let more = Counter(value: 7).add(amount: 3)   ## a Counter<Int64> of 10
+```
+
+They are compiled for each instance the program uses, so a method without
+`->` infers its return type per instance (see [Return types](#return-types)).
+A conformance can hold for some instances only; its members are checked with
+the type's bounds and the conformance's (see [Traits](#traits)).
 
 ### Generic functions
 
@@ -1564,7 +1591,9 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
 - A generic type conforms for the instances whose arguments meet bounds:
   `conform Box<T: Equatable> to Equatable` makes `Box<Int64>` equatable and
   not `Box<Node>`. Its members are the instances' methods, and only those
-  instances have them: `Box<Node>` has no `equals`. `Self` is the instance,
+  instances have them: `Box<Node>` has no `equals`. They are checked once,
+  with the type's bounds and the conformance's, so in this `equals` a `T` is
+  `Equatable` and nothing else. `Self` is the instance,
   `Box<T>`. A conformance may name the type's parameters its own way
   (`conform Box<U: Equatable>`); its members use its names.
 - A built-in type conforms too, with bounds for `Array` and `Map`

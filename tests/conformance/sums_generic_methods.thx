@@ -1,4 +1,6 @@
-## Methods on generic products — monomorphized with the type.
+## Methods on generic products: monomorphized with the type, and checked
+## once against the type's bounds (D228 §5). `Counter<T>` adds through a
+## trait's method, since a `T` has only its bounds' members.
 import logging from "std/logging"
 type Box<T>(value: T) {
     export fn get() -> T {
@@ -6,12 +8,22 @@ type Box<T>(value: T) {
     }
 }
 
-type Counter<T>(value: T) {
+trait Summable {
+    fn plus(other!: Self) -> Self
+}
+
+conform Int64 to Summable {
+    fn plus(other!: Int64) -> Int64 {
+        self + other
+    }
+}
+
+type Counter<T: Summable>(value: T) {
     export fn get() -> T {
         value
     }
-    export fn add(d: T) -> Counter<T> {
-        Counter(value: value + d)
+    export fn add(amount: T) -> Counter<T> {
+        Counter(value: value.plus(amount))
     }
 }
 
@@ -23,9 +35,9 @@ fn main() -> Int64 {
     logging.info("{a.get()}")
     let s: Box<String> = Box(value: "hi")
     logging.info("{s.get()}")
-    let c: Counter<Int64> = Counter(value: 7)
-    logging.info("{c.get()}")
-    let d = c.add(d: 3)
-    logging.info("{d.get()}")
+    let counter: Counter<Int64> = Counter(value: 7)
+    logging.info("{counter.get()}")
+    let more = counter.add(amount: 3)
+    logging.info("{more.get()}")
     0
 }

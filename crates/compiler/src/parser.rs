@@ -460,6 +460,7 @@ impl Parser {
                 bounds: Vec::new(),
                 mixed: None,
                 assoc: Vec::new(),
+                checking: Vec::new(),
             });
         }
 
@@ -602,6 +603,7 @@ impl Parser {
             bounds: Vec::new(),
             mixed: None,
             assoc: Vec::new(),
+            checking: Vec::new(),
         })
     }
 

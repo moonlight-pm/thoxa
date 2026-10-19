@@ -1490,6 +1490,9 @@ struct GenericDef {
     /// Its conformances' associated types, written with its parameters
     /// (`type Cursor = StackCursor<T>`), and their bounds (D228 §7).
     assoc: Vec<(String, TypeExpr, Vec<TraitRef>)>,
+    /// Its checking instances' arguments, archetypes, each with the bounds a
+    /// conformance adds for the members it checks (D228 §5).
+    checking: Vec<(Vec<Ty>, Vec<Vec<TraitRef>>)>,
 }
 
 #[derive(Clone)]
@@ -2130,6 +2133,18 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                         name_span: td.name_span,
                         name_map: HashMap::new(),
                         assoc: td.assoc.clone(),
+                        checking: td
+                            .checking
+                            .iter()
+                            .map(|checking| {
+                                let args = checking
+                                    .archetypes
+                                    .iter()
+                                    .map(|archetype| Ty::User(mangle_type(&m.id, archetype, m.is_entry)))
+                                    .collect();
+                                (args, checking.requires.clone())
+                            })
+                            .collect(),
                     },
                 );
                 if td.exported {
@@ -2240,6 +2255,17 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         &per_mod_types,
         &mut mono_method_jobs,
     )?;
+    // Generic types' checking instances (D228 §5), by name: the template,
+    // and the bounds a conformance adds for the members checked there.
+    let checking: HashMap<String, (String, Vec<Vec<TraitRef>>)> = generics
+        .iter()
+        .flat_map(|(base, gdef)| {
+            gdef.checking
+                .iter()
+                .map(move |(args, requires)| (mono_type_name(base, args), (base.clone(), requires.clone())))
+        })
+        .collect();
+    mono_method_jobs.sort_by_key(|job| !checking.contains_key(&job.mono_type));
 
     // Fill type fields with resolved types (concrete AST defs only).
     // Independent type-shape errors are collected for LSP multi-diag.
@@ -2742,7 +2768,8 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
 
     // A generic instance's `from` clauses are free functions of its module,
     // with the type arguments substituted (D217).
-    let mut mono_conversions: Vec<(String, String, ast::Function, bool)> = Vec::new();
+    // Each with its instance and its template's member (D228 §5).
+    let mut mono_conversions: Vec<(String, String, ast::Function, bool, (String, (String, String)))> = Vec::new();
     for job in mono_method_jobs.iter().filter(|job| job.conversion) {
         let module = package
             .modules
@@ -2780,7 +2807,8 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                 .fns
                 .insert(function.name.clone(), mangled.clone());
         }
-        mono_conversions.push((job.def_mod.clone(), mangled, function, module.is_entry));
+        let member = (job.mono_type.clone(), template_member(&types_info, job));
+        mono_conversions.push((job.def_mod.clone(), mangled, function, module.is_entry, member));
     }
 
     if opts.require_main && !fns.contains_key("main") {
@@ -3112,11 +3140,21 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
 
     // Monomorphized methods on generic products (no multi-clause on generic
     // templates in v0); an instance has a conformance's only when it meets
-    // the conformance's bounds.
+    // the conformance's bounds. The checking instances' come first (D228
+    // §5): a member that fails there is not lowered for the real ones.
+    let mut failed_members: HashSet<(String, String)> = HashSet::new();
     for job in mono_method_jobs
         .iter()
         .filter(|job| !job.conversion && job_applies(&types_info, &synthetics, job))
     {
+        let checks = checking.get(&job.mono_type);
+        if checks.is_some_and(|(_, requires)| !checks_member(requires, &job.method)) {
+            continue;
+        }
+        let member = template_member(&types_info, job);
+        if checks.is_none() && failed_members.contains(&member) {
+            continue;
+        }
         let m = package
             .modules
             .iter()
@@ -3140,7 +3178,12 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             &synthetics,
         ) {
             Ok(f) => functions.push(f),
-            Err(e) => body_errors.push(in_module_file(e, &m.path)),
+            Err(e) => {
+                if checks.is_some() {
+                    failed_members.insert(member);
+                }
+                body_errors.push(in_module_file(e, &m.path));
+            }
         }
     }
 
@@ -3194,7 +3237,16 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         }
     }
 
-    for (mod_id, mangled, function, is_entry) in &mono_conversions {
+    for (mod_id, mangled, function, is_entry, member) in &mono_conversions {
+        // A `from` clause is checked once, with the type's own bounds.
+        let checks = match checking.get(&member.0) {
+            Some((_, requires)) if !requires.iter().all(Vec::is_empty) => continue,
+            Some(_) => true,
+            None => false,
+        };
+        if !checks && failed_members.contains(&member.1) {
+            continue;
+        }
         let maps = package_maps.get(mod_id).unwrap();
         let module_path = package
             .modules
@@ -3217,10 +3269,15 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             &synthetics,
         ) {
             Ok(fun) => functions.push(fun),
-            Err(e) => body_errors.push(match &module_path {
-                Some(path) => in_module_file(e, path),
-                None => e,
-            }),
+            Err(e) => {
+                if checks {
+                    failed_members.insert(member.1.clone());
+                }
+                body_errors.push(match &module_path {
+                    Some(path) => in_module_file(e, path),
+                    None => e,
+                });
+            }
         }
     }
 
@@ -3230,10 +3287,11 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     let mut lowered_instances: HashSet<String> = HashSet::new();
     let mut failed_templates: HashSet<String> = HashSet::new();
     let mut failed_methods: HashSet<(String, String)> = HashSet::new();
-    // Each method template checked once against its archetypes (D228 §5).
+    // Each method template checked once against its archetypes (D228 §5): a
+    // generic type's on its checking instance.
     let mut with_templates: Vec<(String, String)> = types_info
         .iter()
-        .filter(|(_, info)| !info.templates.is_empty())
+        .filter(|(name, info)| !info.templates.is_empty() && (info.instance.is_none() || checking.contains_key(*name)))
         .map(|(name, info)| (name.clone(), info.def_mod.clone()))
         .collect();
     with_templates.sort();
@@ -3276,10 +3334,11 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             if late.is_empty() && made_methods.is_empty() {
                 break;
             }
-            for job in late
-                .iter()
-                .filter(|job| !job.conversion && job_applies(&types_info, &synthetics, job))
-            {
+            for job in late.iter().filter(|job| {
+                !job.conversion
+                    && job_applies(&types_info, &synthetics, job)
+                    && !failed_members.contains(&template_member(&types_info, job))
+            }) {
                 let m = package.modules.iter().find(|x| x.id == job.def_mod).unwrap();
                 let maps = package_maps.get(&job.def_mod).unwrap();
                 let method = subst_method(&job.method, &job.subst);
@@ -3486,6 +3545,22 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     for (_, (_, layout)) in synthetics.borrow().entries.iter() {
         type_layouts.push(layout.clone());
     }
+    // The types only generic code's checks use are not the program's.
+    let archetypes: HashSet<String> = type_defs
+        .iter()
+        .filter(|(_, _, td)| td.name.starts_with("Param_") || is_archetype(td))
+        .map(|(_, mangled, _)| mangled.clone())
+        .collect();
+    let mut instances: HashMap<String, Vec<Ty>> = HashMap::new();
+    for (name, info) in types_info
+        .iter()
+        .chain(synthetics.borrow().entries.iter().map(|(name, (info, _))| (name, info)))
+    {
+        if let Some((_, args)) = &info.instance {
+            instances.insert(name.clone(), args.clone());
+        }
+    }
+    let type_layouts = without_checking_types(type_layouts, archetypes, &instances);
 
     if std::env::var_os("THOXA_PROFILE").is_some() {
         eprintln!("thoxa profile: mir-total {:?}", lower_started.elapsed());
@@ -3931,14 +4006,33 @@ fn mangle_type(mod_id: &str, name: &str, is_entry: bool) -> String {
     }
 }
 
+/// How to make `ty` conform to `traits`: a type parameter takes `bound` where
+/// it is declared (D228 §5), any other type a conformance, written `how`.
+fn conform_help(ty: &Ty, traits: &str, bound: &str, how: &str) -> String {
+    let shown = display_ty(ty);
+    if !is_param_archetype(ty) {
+        format!("declare `conform {shown} to {traits}`: {how}")
+    } else if shown.contains('.') {
+        format!("bound it where it is declared: `where {shown}: {bound}`")
+    } else {
+        format!("bound it where it is declared: `<{shown}: {bound}>`")
+    }
+}
+
+/// Whether `ty` is a type parameter's archetype (`Param_largest_T`), which
+/// has only its bounds' members (D228 §5).
+fn is_param_archetype(ty: &Ty) -> bool {
+    matches!(ty, Ty::User(name) if name.starts_with("Param_") || name.contains("_Param_"))
+}
+
 /// "no field `rank` on `Card`"; for a trait's archetype, the trait has no such
 /// member (D228).
 fn no_member_message(type_mangled: &str, member: &str, kind: &str) -> String {
     let shown = display_ty(&Ty::User(type_mangled.to_string()));
     if type_mangled.starts_with("Self_") || type_mangled.contains("_Self_") {
         format!("`{shown}` has no member `{member}` (a trait's body sees only the trait)")
-    } else if type_mangled.starts_with("Param_") || type_mangled.contains("_Param_") {
-        format!("`{shown}` has no member `{member}` (a generic function sees only its type parameters' bounds)")
+    } else if is_param_archetype(&Ty::User(type_mangled.to_string())) {
+        format!("`{shown}` has no member `{member}` (generic code sees only its type parameters' bounds)")
     } else {
         format!("no {kind} `{member}` on `{shown}`")
     }
@@ -6447,6 +6541,16 @@ fn monomorphize_package(
     }
     // Worklist of (base_mangled, arg_tys, name_map, span)
     let mut pending: Vec<(String, Vec<Ty>, HashMap<String, String>, Span)> = Vec::new();
+    // Each generic product's checking instances first (D228 §5), so their
+    // methods are lowered before any real instance's.
+    let mut bases: Vec<&String> = generics.keys().collect();
+    bases.sort();
+    for base in bases {
+        let gdef = &generics[base];
+        for (args, _) in &gdef.checking {
+            pending.push((base.clone(), args.clone(), gdef.name_map.clone(), gdef.name_span));
+        }
+    }
 
     for m in &package.modules {
         let mut apps = Vec::new();
@@ -7279,6 +7383,73 @@ fn job_applies(types: &HashMap<String, TypeInfo>, synthetics: &Rc<RefCell<Synthe
         return true;
     };
     requires_met(types, &synthetics.borrow().conditional, &sig.requires)
+}
+
+/// The layouts without the types only generic code's checks use (D228 §5):
+/// archetypes, the instances made with them, and the types that hold one
+/// (`May<T>` in a generic function). Only those checks name them, and no
+/// program runs one, so they are not emitted, nor their members kept.
+fn without_checking_types(
+    layouts: Vec<TypeLayout>,
+    mut checking: HashSet<String>,
+    instances: &HashMap<String, Vec<Ty>>,
+) -> Vec<TypeLayout> {
+    fn names_any(ty: &Ty, names: &HashSet<String>) -> bool {
+        match ty {
+            Ty::User(name) => names.contains(name),
+            Ty::Array { elem } | Ty::FixedArray { elem, .. } => names_any(elem, names),
+            Ty::Address(inner) => names_any(inner, names),
+            Ty::Map { key, val } => names_any(key, names) || names_any(val, names),
+            Ty::Fn { params, ret } => params.iter().any(|param| names_any(param, names)) || names_any(ret, names),
+            _ => false,
+        }
+    }
+    loop {
+        let before = checking.len();
+        for layout in &layouts {
+            if checking.contains(&layout.name) {
+                continue;
+            }
+            let holds = layout.fields.iter().any(|field| names_any(&field.ty, &checking))
+                || layout.sum.iter().flatten().any(|variant| names_any(&variant.payload_ty, &checking))
+                || instances
+                    .get(&layout.name)
+                    .is_some_and(|args| args.iter().any(|arg| names_any(arg, &checking)));
+            if holds {
+                checking.insert(layout.name.clone());
+            }
+        }
+        if checking.len() == before {
+            break;
+        }
+    }
+    layouts.into_iter().filter(|layout| !checking.contains(&layout.name)).collect()
+}
+
+/// Whether a checking instance (D228 §5) lowers `method`: one written under
+/// its bounds, and not a trait's provided member, which is checked at the
+/// trait.
+fn checks_member(requires: &[Vec<TraitRef>], method: &Method) -> bool {
+    let plain = |lists: &[Vec<TraitRef>]| lists.iter().all(Vec::is_empty);
+    method.provided.is_none() && (method.requires == requires || plain(&method.requires) && plain(requires))
+}
+
+/// A generic instance's method or `from` clause as its template's member:
+/// the template, and the member's name (`from 0` for the first clause). A
+/// member whose checking instance fails is not lowered for the real ones
+/// (D228 §5).
+fn template_member(types: &HashMap<String, TypeInfo>, job: &MonoMethodJob) -> (String, String) {
+    let base = types
+        .get(&job.mono_type)
+        .and_then(|info| info.instance.as_ref())
+        .map_or_else(|| job.mono_type.clone(), |(base, _)| base.clone());
+    let member = if job.conversion {
+        let index = job.method.name.rsplit('_').next().unwrap_or_default();
+        format!("from {index}")
+    } else {
+        job.method.name.clone()
+    };
+    (base, member)
 }
 
 /// Whether an instance's arguments meet what `requires` asks (D228).
@@ -17344,6 +17515,25 @@ fn lower_binary(
     };
     match op {
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
+            // A type parameter has only its bounds' members (D228 §5), and no
+            // trait gives arithmetic.
+            if let Some(param) = [&lt, &rt].into_iter().find(|ty| is_param_archetype(ty)) {
+                let shown = display_ty(param);
+                let symbol = match op {
+                    BinaryOp::Add => "+",
+                    BinaryOp::Sub => "-",
+                    BinaryOp::Mul => "*",
+                    BinaryOp::Div => "/",
+                    _ => "%",
+                };
+                return Err(Error::at(
+                    format!("`{shown}` has no `{symbol}` (generic code sees only its type parameters' bounds)"),
+                    span,
+                )
+                .with_help(format!(
+                    "bound `{shown}` by a trait with a method for it (`fn plus(other!: Self) -> Self`) and call that"
+                )));
+            }
             if is_float(&lt) || is_float(&rt) {
                 if matches!(op, BinaryOp::Rem) {
                     return Err(Error::at("`%` is not defined for Float64", span));
@@ -17814,9 +18004,7 @@ fn lower_user_eq(
             format!("cannot compare {shown} values: `{shown}` is not `Equatable`"),
             span,
         )
-        .with_help(format!(
-            "declare `conform {shown} to Equatable`: field by field, or with its own `equals`"
-        )));
+        .with_help(conform_help(&ty, "Equatable", "Equatable", "field by field, or with its own `equals`")));
     }
     if info.is_some_and(|info| info.methods.contains_key("equals") && !info.derived.contains("equals")) {
         let other = ctx.fresh("eqarg");

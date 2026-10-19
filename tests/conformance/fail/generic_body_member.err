@@ -1,1 +1,1 @@
-`T` has no member `label` (a generic function sees only its type parameters' bounds)
+`T` has no member `label` (generic code sees only its type parameters' bounds)

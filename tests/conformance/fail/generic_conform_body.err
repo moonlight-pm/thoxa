@@ -1,0 +1,2 @@
+cannot interpolate T: `T` is not `Show`
+bound it where it is declared: `<T: Show>`

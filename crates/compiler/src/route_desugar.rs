@@ -775,6 +775,7 @@ fn parse_int_type() -> TypeDef {
         bounds: Vec::new(),
         mixed: None,
         assoc: Vec::new(),
+        checking: Vec::new(),
     }
 }
 

@@ -1,0 +1,16 @@
+## D228 §5: a conformance that holds per instance is checked once, against
+## the type's bounds and its own: here `T` is `Equatable`, not `Show`, so
+## `value` has no `show`. Two instances report it once.
+import logging, { info } from "std/logging"
+
+type Box<T>(value: T)
+conform Box<T: Equatable> to Show {
+    fn show() -> String {
+        "Box({value.show()})"
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    info("{Box(value: 1)} {Box(value: "a")}")
+}

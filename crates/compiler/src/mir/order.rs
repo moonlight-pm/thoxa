@@ -10,7 +10,7 @@
 //! and are compared field by field where they are met.
 
 use super::{
-    borrow_field, display_ty, emit_call_result, extension_method, has_storage, is_int,
+    borrow_field, conform_help, display_ty, emit_call_result, extension_method, has_storage, is_int,
     lower_expr, lower_extension_call, refined_info, try_sum_inject_lit, unwrap_refined, Callee,
     LowerCtx, Place, RValue, Stmt, Ty,
 };
@@ -178,9 +178,12 @@ pub(super) fn int_to_order(ctx: &mut LowerCtx, sign: Place, span: Span) -> Resul
 /// "`Point` is not `Ordered`", with how to declare it.
 pub(super) fn not_ordered(ty: &Ty, span: Span) -> Error {
     let shown = display_ty(ty);
-    Error::at(format!("cannot order {shown} values: `{shown}` is not `Ordered`"), span).with_help(
-        format!("declare `conform {shown} to Equatable, Ordered`: field by field, or with its own `compare`"),
-    )
+    Error::at(format!("cannot order {shown} values: `{shown}` is not `Ordered`"), span).with_help(conform_help(
+        ty,
+        "Equatable, Ordered",
+        "Ordered",
+        "field by field, or with its own `compare`",
+    ))
 }
 
 /// -1 / 0 / 1 for two values of `ty`, which must be `Ordered`.
@@ -494,7 +497,7 @@ pub(super) fn show_text(ctx: &mut LowerCtx, value: Place, ty: &Ty, span: Span) -
             format!("cannot interpolate {shown}: `{shown}` is not `Show`"),
             span,
         )
-        .with_help(format!("declare `conform {shown} to Show`: field by field, or with its own `show`")));
+        .with_help(conform_help(ty, "Show", "Show", "field by field, or with its own `show`")));
     }
     if let Ty::User(type_name) = ty {
         if ctx.types.get(type_name).is_some_and(|info| info.methods.contains_key("show")) {

@@ -751,6 +751,7 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
             }
         }
     }
+    checking_instances(package, &scope)?;
     let (mixed, mixed_closed) = mixed_unions(package, &scope, &conformed, &traits)?;
     Ok(TraitOutput {
         built_in,
@@ -857,6 +858,7 @@ fn mixed_unions(
                 bounds: Vec::new(),
                 mixed: Some(trait_ref.clone()),
                 assoc: Vec::new(),
+                checking: Vec::new(),
             },
         ));
         made.insert(trait_ref.clone(), mangle(&trait_ref.module, &name));
@@ -1945,6 +1947,7 @@ fn archetype(trait_ref: &TraitRef, scope: &Scope) -> Result<Vec<TypeDef>> {
         bounds: Vec::new(),
         mixed: None,
         assoc: archetypes.entries("", span),
+        checking: Vec::new(),
     });
     Ok(defs)
 }
@@ -2132,6 +2135,98 @@ fn type_bounds(package: &mut Package, scope: &Scope) -> Result<()> {
                 resolved.push(list);
             }
             def.bounds = resolved;
+        }
+        module.ast.items.extend(archetypes.into_iter().map(Item::Type));
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::multi(errors))
+    }
+}
+
+/// A generic product's checking instances (D228 §5): archetypes for its type
+/// parameters with the type's bounds, for its own methods and `from`
+/// clauses (`Param_Box_T`), and with a conformance's bounds added, for the
+/// members of a conformance that holds per instance (`Param_Box_when1_T`).
+/// The MIR makes each instance and lowers those bodies there, so each is
+/// checked once, against the bounds alone. A trait's provided members are
+/// checked at the trait.
+fn checking_instances(package: &mut Package, scope: &Scope) -> Result<()> {
+    let mut errors = Vec::new();
+    for module in &mut package.modules {
+        let mut archetypes = Vec::new();
+        for item in &mut module.ast.items {
+            let Item::Type(def) = item else { continue };
+            if def.type_params.is_empty() || def.union_members.is_some() {
+                continue;
+            }
+            let written: Vec<&Method> = def.methods.iter().filter(|method| method.provided.is_none()).collect();
+            let mut sets: Vec<Vec<Vec<TraitRef>>> = Vec::new();
+            if !def.conversions.is_empty() || written.iter().any(|method| method.requires.iter().all(Vec::is_empty)) {
+                sets.push(Vec::new());
+            }
+            for method in &written {
+                if !method.requires.iter().all(Vec::is_empty) && !sets.contains(&method.requires) {
+                    sets.push(method.requires.clone());
+                }
+            }
+            for (index, requires) in sets.into_iter().enumerate() {
+                let name = if requires.is_empty() {
+                    def.name.clone()
+                } else {
+                    format!("{}_when{index}", def.name)
+                };
+                let resolved: HashMap<String, Vec<TraitRef>> = def
+                    .type_params
+                    .iter()
+                    .enumerate()
+                    .map(|(position, param)| {
+                        let mut bounds = def.bounds.get(position).cloned().unwrap_or_default();
+                        for bound in requires.get(position).into_iter().flatten() {
+                            if !bounds.contains(bound) {
+                                bounds.push(bound.clone());
+                            }
+                        }
+                        (param.clone(), bounds)
+                    })
+                    .collect();
+                let mut function = Function {
+                    exported: false,
+                    name,
+                    name_span: def.name_span,
+                    type_params: def
+                        .type_params
+                        .iter()
+                        .map(|param| TypeParamBound {
+                            name: param.clone(),
+                            span: def.name_span,
+                            traits: Vec::new(),
+                            same: None,
+                        })
+                        .collect(),
+                    params: Vec::new(),
+                    return_type: None,
+                    body: Block {
+                        items: Vec::new(),
+                        tail: None,
+                        span: def.name_span,
+                    },
+                    generic: Vec::new(),
+                };
+                match resolve_generics(&mut function, &module.id, scope, &mut archetypes, &resolved) {
+                    Ok(()) => def.checking.push(Checking {
+                        archetypes: function
+                            .generic
+                            .iter()
+                            .filter(|param| param.derived.is_none())
+                            .map(|param| param.archetype.clone())
+                            .collect(),
+                        requires,
+                    }),
+                    Err(error) => errors.push(error.with_path(module.path.clone())),
+                }
+            }
         }
         module.ast.items.extend(archetypes.into_iter().map(Item::Type));
     }
@@ -2414,6 +2509,7 @@ fn param_archetype(
         bounds: Vec::new(),
         mixed: None,
         assoc,
+        checking: Vec::new(),
     })
 }
 

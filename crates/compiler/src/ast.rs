@@ -126,6 +126,20 @@ pub struct TypeDef {
     /// Its conformances' associated types (D228 §7): name, the type (its
     /// declared types named by their mangled names), and the bounds it meets.
     pub assoc: Vec<(String, TypeExpr, Vec<TraitRef>)>,
+    /// A generic product's checking instances (D228 §5), made by
+    /// `trait_desugar`: its methods are checked once, as an instance for
+    /// archetypes that have only the bounds' members. Empty for every other
+    /// type.
+    pub checking: Vec<Checking>,
+}
+
+/// One checking instance of a generic type (D228 §5): an archetype per type
+/// parameter, and the bounds a conformance adds that the methods it checks
+/// were written under (empty for the type's own methods).
+#[derive(Debug, Clone)]
+pub struct Checking {
+    pub archetypes: Vec<String>,
+    pub requires: Vec<Vec<TraitRef>>,
 }
 
 /// Starts a type name that is already a MIR type's, put there by a
