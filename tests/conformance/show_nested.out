@@ -1,0 +1,7 @@
+ann large ["large"] ["text", 5, $2]
+[$1] [<x>] y
+Box<String>(value: "s") [Box<Int64>(value: 1)] Stack("a" "b")
+["tab\there", "nl\nx", "back\\slash", "bell\x07"]
+{1: ["a"], 2: []} [1.5, 2.0] [true] [[1], [2, 3]]
+Entry<String, Int64>(key: "k", value: 1) "k" "x" x 5
+["less"]

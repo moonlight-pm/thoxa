@@ -1,0 +1,61 @@
+## D245: a value's text writes the values inside it with `showNested()`: a
+## `String` is `quoted()` (and so is a refined one or a union's string
+## literal), a type with its own `show` uses it, and a type may write its own
+## `showNested`. `"{x}"` and `x.show()` agree.
+import logging, { info } from "std/logging"
+
+type Name = String where 1..20
+type Money(cents: Int64)
+type Label(text: String)
+type Box<T>(value: T)
+type Stack<T>(items: Array<T>)
+type Size = "small" | "large"
+
+conform Money to Show {
+    fn show() -> String {
+        "${cents / 100}"
+    }
+}
+
+conform Label to Show {
+    fn show() -> String {
+        text
+    }
+
+    fn showNested() -> String {
+        "<{text}>"
+    }
+}
+
+conform Box<T: Show> to Show
+conform Size to Show
+
+conform Stack<T: Show> to Show {
+    fn show() -> String {
+        mut parts: Array<String> = []
+        for item in items {
+            parts.append(item.showNested())
+        }
+        "Stack({parts.join(" ")})"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let name: Name = "ann"
+    let size: Size = "large"
+    let values: Array<mixed Show> = ["text", 5, Money(cents: 250)]
+    info("{name} {size} {[size]} {values}")
+    info("{[Money(cents: 100)]} {[Label(text: "x")]} {Label(text: "y")}")
+    info("{Box(value: "s")} {[Box(value: 1)]} {Stack(items: ["a", "b"])}")
+    info("{["tab\there", "nl\nx", "back\\slash", "bell\x07"]}")
+    let byNumber: Map<Int64, Array<String>> = {1: ["a"], 2: []}
+    info("{byNumber} {[1.5, 2.0]} {[true]} {[[1], [2, 3]]}")
+    let table = {"k": 1}
+    for entry in table {
+        info("{entry} {entry.key.showNested()} {"x".showNested()} {"x".show()} {5.showNested()}")
+    }
+    info("{[1.compare(2)]}")
+    0
+}

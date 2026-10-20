@@ -74,6 +74,14 @@ export trait Sequence {
 ## union as its member.
 export trait Show {
     fn show() -> String
+
+    ## Its text inside another value's text: an array's element, a map's key
+    ## or value, a field, a union's payload. A `String`'s is `quoted()`, so
+    ## `["a", "b"]` shows two strings; every other type's is its `show()`
+    ## (D245).
+    fn showNested() -> String {
+        show()
+    }
 }
 
 conform Order to Equatable, Hashable, Ordered
@@ -99,7 +107,11 @@ conform UInt32 to Show
 conform Byte to Show
 conform Float64 to Show
 conform Bool to Show
-conform String to Show
+conform String to Show {
+    fn showNested() -> String {
+        self.quoted()
+    }
+}
 conform Order to Show
 conform Array<T: Show> to Show
 
@@ -140,6 +152,18 @@ conform Map<K, V> to Sequence {
 
     fn iterate() -> MapCursor<K, V> {
         MapCursor(entries: self, keys: self.keys(), index: 0)
+    }
+}
+
+## `{"a": 1}`: each key and its value in insertion order, nested, so a
+## `String` is in quotes (D245).
+conform Map<K: Show, V: Show> to Show {
+    fn show() -> String {
+        mut parts: Array<String> = []
+        for key, value in self {
+            parts.append("{key.showNested()}: {value.showNested()}")
+        }
+        "\u{7B}{parts.join(", ")}\u{7D}"
     }
 }
 

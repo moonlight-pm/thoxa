@@ -42,11 +42,12 @@ extend Array<T: Hashable> {
 }
 
 extend Array<T: Show> {
-    ## `[a, b]`: each element's text.
+    ## `[1, 2]`: each element's nested text, so a `String` is in quotes
+    ## (`["a", "b"]`).
     export fn show() -> String {
         mut parts: Array<String> = []
         for element in self {
-            parts.append(element.show())
+            parts.append(element.showNested())
         }
         "[{parts.join(", ")}]"
     }

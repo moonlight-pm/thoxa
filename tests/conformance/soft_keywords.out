@@ -1,4 +1,4 @@
 loop 0
 loop 1
 café at byte 7
-word! 3 5 5.0 {type: "latte", from: "cart"}
+word! 3 5 5.0 {"type": "latte", "from": "cart"}

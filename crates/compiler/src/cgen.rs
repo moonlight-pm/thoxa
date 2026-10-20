@@ -1811,18 +1811,6 @@ fn emit_rvalue(
             Ty::Bool => {
                 let _ = write!(out, "thoxa_string_from_bool({})", value.name);
             }
-            Ty::Array { elem } if matches!(elem.as_ref(), Ty::Int64 | Ty::Bool) => {
-                let _ = write!(out, "thoxa_array_i64_to_string({})", value.name);
-            }
-            Ty::Array { elem } if matches!(elem.as_ref(), Ty::String) => {
-                let _ = write!(out, "thoxa_array_string_to_string({})", value.name);
-            }
-            Ty::Map { val, .. } if matches!(val.as_ref(), Ty::String) => {
-                let _ = write!(out, "thoxa_map_to_string({}, 1)", value.name);
-            }
-            Ty::Map { .. } => {
-                let _ = write!(out, "thoxa_map_to_string({}, 0)", value.name);
-            }
             // MIR should reject unsupported ToString; keep a non-null placeholder if
             // a path slips through so println does not crash on NULL.
             _ => {

@@ -12239,45 +12239,6 @@ fn lower_interpolate(ctx: &mut LowerCtx, parts: &[InterpPart], span: Span) -> Re
                         );
                         p
                     }
-                    Ty::Array { ref elem }
-                        if matches!(elem.as_ref(), Ty::Int64 | Ty::Bool | Ty::String) =>
-                    {
-                        let p = ctx.fresh("ats");
-                        ctx.assign(
-                            p.clone(),
-                            Ty::String,
-                            RValue::ToString {
-                                value: v,
-                                from: Ty::Array { elem: elem.clone() },
-                            },
-                        );
-                        p
-                    }
-                    ref array @ Ty::Array { .. } => order::show_text(ctx, v, array, span)?,
-                    Ty::Map { ref key, ref val }
-                        if matches!(key.as_ref(), Ty::String | Ty::Int64 | Ty::Bool)
-                            && matches!(val.as_ref(), Ty::Int64 | Ty::Bool | Ty::String) =>
-                    {
-                        let p = ctx.fresh("mts");
-                        ctx.assign(
-                            p.clone(),
-                            Ty::String,
-                            RValue::ToString {
-                                value: v,
-                                from: Ty::Map {
-                                    key: key.clone(),
-                                    val: val.clone(),
-                                },
-                            },
-                        );
-                        p
-                    }
-                    Ty::Map { .. } => {
-                        return Err(Error::at(
-                            "cannot interpolate this Map into String (supported values: Int64, Bool, String)",
-                            span,
-                        ));
-                    }
                     other if refined_info(&ctx.types, &other).is_some() => {
                         let (inner, ity) = unwrap_refined(ctx, v, &other)?;
                         match &ity {
@@ -13539,6 +13500,10 @@ fn lower_method_call_typed(
             // generic type's instance): the structural default (D228).
             if !info.methods.contains_key(method) && method == "show" && args.is_empty() {
                 let text = order::show_text(ctx, recv_p, &recv_ty, method_span)?;
+                return Ok((text, Ty::String));
+            }
+            if !info.methods.contains_key(method) && method == "showNested" && args.is_empty() {
+                let text = order::shown_nested(ctx, recv_p, &recv_ty, method_span)?;
                 return Ok((text, Ty::String));
             }
             if !info.methods.contains_key(method) && method == "hash" {
@@ -20521,6 +20486,7 @@ fn lower_call(
         "__compare" => order::lower_compare_intrinsic(ctx, args, span),
         "__hash" => order::lower_hash_intrinsic(ctx, args, span),
         "__show" => order::lower_show_intrinsic(ctx, args, span),
+        "__showNested" => order::lower_show_nested_intrinsic(ctx, args, span),
         // The exactness test of a generated `as Float64` reader (D224).
         "__float64Exact" => lower_float_exact(ctx, args, span),
         "Map" => lower_map_new(ctx, args, span, expect),

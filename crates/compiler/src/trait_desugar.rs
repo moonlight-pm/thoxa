@@ -1579,6 +1579,19 @@ fn check_conformance(
                     methods.push(field_accessor(&member.name, field_ty, conformance.span));
                 }
                 (None, Some(_)) if own_method.is_some() || stored.is_some() => return Err(clash()),
+                // A derived `show`'s nested text is derived too (D245), so a
+                // union's string literal inside another value is in quotes.
+                (None, Some(_))
+                    if has_defaults(trait_ref)
+                        && member.name == "showNested"
+                        && !implemented.contains_key("show")
+                        && !own.methods.contains_key("show") =>
+                {
+                    if bounds.is_none() && !unions.contains_key(&target) {
+                        methods.push(default_member(member, conformance.span));
+                        derived.push(member.name.clone());
+                    }
+                }
                 (None, Some(body)) => methods.push(provided_method(
                     member,
                     body.clone(),
@@ -2246,6 +2259,11 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
         },
         "show" => ExprKind::Call {
             callee: "__show".into(),
+            args: vec![Arg::Pos(name("self"))],
+            type_args: Vec::new(),
+        },
+        "showNested" => ExprKind::Call {
+            callee: "__showNested".into(),
             args: vec![Arg::Pos(name("self"))],
             type_args: Vec::new(),
         },

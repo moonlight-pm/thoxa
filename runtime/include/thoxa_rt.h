@@ -485,10 +485,6 @@ ThoxaArray *thoxa_array_remove_at_ex(
 );
 /* Build argv as Array<String> for `fn main(arguments: Array<String>)`. */
 ThoxaArray *thoxa_argv_to_array(int argc, char **argv);
-/* Display as `[a, b, c]` for Int64 arrays. */
-ThoxaString *thoxa_array_i64_to_string(const ThoxaArray *a);
-/* Display as `["a", "b"]` for String arrays. */
-ThoxaString *thoxa_array_string_to_string(const ThoxaArray *a);
 /* Drop with element RC walk when heap_elems. Prefer over bare thoxa_drop. */
 void thoxa_array_drop(ThoxaArray *a);
 /* Drop calling `elem_drop` on each element first (User inline arrays). */
@@ -599,8 +595,6 @@ ThoxaArray *thoxa_map_values_elem(
 void thoxa_map_dup(ThoxaMap *m);
 void thoxa_map_drop(ThoxaMap *m);
 void thoxa_map_drop_ex(ThoxaMap *m, ThoxaArrayElemFn elem_drop);
-/* Display `{k: v, …}` for i64/bool/string keys and i64/bool/string values. */
-ThoxaString *thoxa_map_to_string(const ThoxaMap *m, int val_is_string);
 
 /* --- HTML tree (builtin `Node`, JSX runtime) ---------------------------- */
 

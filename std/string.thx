@@ -26,6 +26,24 @@ extend String {
         self
     }
 
+    ## In double quotes, with `\`, `"`, and control characters escaped as a
+    ## literal writes them: `"say \"hi\""`. A String inside another value's
+    ## text is shown this way (D245).
+    export fn quoted() -> String {
+        mut out = "\""
+        mut start = 0
+        mut index = 0
+        while index < self.byteCount {
+            let escape = escapeOf(self.byteAt(index))
+            if not escape.isEmpty() {
+                out = "{out}{self.byteSlice(start, index)}{escape}"
+                start = index + 1
+            }
+            index = index + 1
+        }
+        "{out}{self.byteSlice(start, self.byteCount)}\""
+    }
+
     ## Its bytes, then its length (D228).
     export fn hash(mut hasher!: Hasher) {
         mut index = 0
@@ -330,6 +348,30 @@ export fn parseUInt(s!: String) -> May<Int64> {
             Not()
         }
     }
+}
+
+## --- Quoting ---------------------------------------------------------------
+
+## The escape `quoted` writes for `byte`, or "" when the byte is written as
+## itself.
+fn escapeOf(byte!: Int64) -> String {
+    match byte {
+        92 => "\\\\"
+        34 => "\\\""
+        10 => "\\n"
+        9 => "\\t"
+        13 => "\\r"
+        0 => "\\0"
+        _ => if byte < 32 or byte == 127 {
+            "\\x{hexDigit(byte / 16)}{hexDigit(byte % 16)}"
+        } else {
+            ""
+        }
+    }
+}
+
+fn hexDigit(value!: Int64) -> String {
+    "0123456789ABCDEF".byteSlice(value, value + 1)
 }
 
 ## --- Positions ------------------------------------------------------------

@@ -116,12 +116,20 @@ of a hole.
 
 `{expr}` inside a string is an interpolation hole: the expression's value is
 formatted into the string. A hole may contain strings of its own
-(`"{greet("ada")}"`). `{{` and `}}` are literal braces. Holes accept `String`,
-the integer types, `Float64`, `Bool`, arrays and maps of those, and any type
-that is `Show` (see [Equality and order](#equality-and-order)): a hole writes
-its `show()`. Without its own `show`, a product shows as `Point(x: 1, y: 2)`
-(a `String` field in quotes), a union as its member, and an array of `Show`
-values as `[a, b]`. A `Node` does not interpolate; call `.html()`.
+(`"{greet("ada")}"`). `{{` and `}}` are literal braces. Holes accept any type
+that is `Show` (see [Traits](#traits)): the built-in scalars, `String`, arrays
+and maps of `Show` values, and declared types that conform. A hole writes the
+value's `show()`, which for a `String` is the string itself.
+
+A value's text writes the values inside it (elements, keys and values,
+fields, a union's payload) with `showNested()`. `showNested()` is `show()`,
+except that a `String`'s is `.quoted()`: in double quotes, with `\`, `"`, and
+control characters escaped as a literal writes them. So `"{["a", "b"]}"` and
+`["a", "b"].show()` are both `["a", "b"]`, and a map shows as `{"k": 1}`.
+Without its own `show`, a product shows as `Point(x: 1, name: "a")` and a
+union as its member, with a string literal member in quotes when it is
+nested. A type with its own `show` is nested as that text; it may write its
+own `showNested` too. A `Node` does not interpolate; call `.html()`.
 
 ```thx
 let name = "ada"
@@ -388,6 +396,7 @@ comparison); `<` and `>` on strings are a compile error.
 | `.truncate(max)` | the first `max` scalars |
 | `.padLeft(width, pad: " ")`, `.padRight(width, pad: " ")` | padded with `pad`, repeated, to `width` scalars |
 | `.reverse()` | the scalars in reverse order |
+| `.quoted()` | in double quotes, with `\`, `"`, and control characters escaped as a literal writes them: `"say \"hi\""` |
 | `.byteAt(offset)` | the byte at a byte offset, as `Int64`; out of range panics |
 | `.byteSlice(start, end)` | the bytes from `start` up to `end`, clamped; a cut inside a character becomes U+FFFD |
 | `.byteIndexOf(needle, from: 0)` | `May<Int64>`, the byte offset of the first `needle` at or after `from` |

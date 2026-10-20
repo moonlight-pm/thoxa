@@ -2,10 +2,10 @@ empty=0 has=false
 count=2 has_a=true has_z=false
 get_a=1
 get_z=missing
-over={a: 10, b: 2}
-lit={Cookie: "a=1", Host: "localhost"} lit_n=2
+over={"a": 10, "b": 2}
+lit={"Cookie": "a=1", "Host": "localhost"} lit_n=2
 frozen_n=1 shared_n=2
-after_rm={y: 2}
+after_rm={"y": 2}
 walk=Cookie=a=1;Host=localhost;
 keys=2 k0=Cookie v0=a=1
 nums={1: "one", 2: "two"} n1=true

@@ -523,6 +523,24 @@ pub(super) fn lower_hash_intrinsic(ctx: &mut LowerCtx, args: &[Arg], span: Span)
 /// (D228): a user type's `show`, its own or derived; a union's or a generic
 /// instance's from its member or fields; an array's from std's `show`.
 pub(super) fn show_text(ctx: &mut LowerCtx, value: Place, ty: &Ty, span: Span) -> Result<Place> {
+    show_value(ctx, value, ty, false, span)
+}
+
+/// A value's `showNested()`, its text inside another value's text (D245): a
+/// `String`, refined or a union's literal, in quotes, and anything else as
+/// `show_text` writes it unless its type writes its own.
+pub(super) fn shown_nested(ctx: &mut LowerCtx, value: Place, ty: &Ty, span: Span) -> Result<Place> {
+    show_value(ctx, value, ty, true, span)
+}
+
+fn show_value(ctx: &mut LowerCtx, value: Place, ty: &Ty, nested: bool, span: Span) -> Result<Place> {
+    if nested && *ty == Ty::String {
+        return call_text(ctx, value, ty, "quoted");
+    }
+    if nested && refined_info(&ctx.types, ty).is_some_and(|info| info.base == Ty::String) {
+        let (text, _) = unwrap_refined(ctx, value, ty)?;
+        return call_text(ctx, text, &Ty::String, "quoted");
+    }
     let shown = display_ty(ty);
     if !ctx.conforms(ty, "Show") {
         return Err(Error::at(
@@ -533,33 +551,56 @@ pub(super) fn show_text(ctx: &mut LowerCtx, value: Place, ty: &Ty, span: Span) -
     }
     if let Ty::User(type_name) = ty {
         // A `mixed` value's text is its member's `show` (D235).
+        let member = if nested { "showNested" } else { "show" };
         if super::is_mixed(type_name) {
             let read = super::ReceiverWrite::ReadOnly("a value shown".into());
-            let (text, _) = super::lower_mixed_call(ctx, value, read, type_name, "show", &[], span)?;
+            let (text, _) = super::lower_mixed_call(ctx, value, read, type_name, member, &[], span)?;
             return Ok(text);
         }
-        if ctx.types.get(type_name).is_some_and(|info| info.methods.contains_key("show")) {
-            let (text, _) = emit_call_result(
-                ctx,
-                Callee::Method {
-                    type_name: type_name.clone(),
-                    method: "show".into(),
-                },
-                vec![value],
-                Ty::String,
-            )?;
-            return Ok(text);
+        // The type's own member; a derived one is lowered here.
+        let own = |info: &super::TypeInfo| info.methods.contains_key(member) && !info.derived.contains(member);
+        let derived_show = |info: &super::TypeInfo| info.derived.contains("show");
+        if let Some(info) = ctx.types.get(type_name) {
+            if own(info) {
+                let (text, _) = emit_call_result(
+                    ctx,
+                    Callee::Method {
+                        type_name: type_name.clone(),
+                        method: member.into(),
+                    },
+                    vec![value],
+                    Ty::String,
+                )?;
+                return Ok(text);
+            }
+            // Its own `show` and the provided `showNested`: the `show`.
+            if nested && info.methods.contains_key("show") && !derived_show(info) {
+                return show_value(ctx, value, ty, false, span);
+            }
         }
-        return lower_structural_show(ctx, value, type_name, span);
+        return lower_structural_show(ctx, value, type_name, nested, span);
     }
+    call_text(ctx, value, ty, if nested { "showNested" } else { "show" })
+}
+
+/// `value.method()`, a method that returns a value's text.
+fn call_text(ctx: &mut LowerCtx, value: Place, ty: &Ty, method: &str) -> Result<Place> {
     let bound = super::codec::bind_fresh(ctx, "__shown", ty, value);
-    let call = crate::ast_build::method_call(crate::ast_build::name(&bound), "show", Vec::new());
+    let call = crate::ast_build::method_call(crate::ast_build::name(&bound), method, Vec::new());
     let (text, _) = lower_expr(ctx, &call)?;
     Ok(text)
 }
 
-/// `Point(x: 1, y: "a")`, or a union's member's text (D228 §4).
-fn lower_structural_show(ctx: &mut LowerCtx, value: Place, type_name: &str, span: Span) -> Result<Place> {
+/// `Point(x: 1, y: "a")`, or a union's member's text (D228 §4): each field
+/// nested. `nested` in another value's text, a union's string literal is in
+/// quotes and its payload nested (D245).
+fn lower_structural_show(
+    ctx: &mut LowerCtx,
+    value: Place,
+    type_name: &str,
+    nested: bool,
+    span: Span,
+) -> Result<Place> {
     use crate::ast::{Expr, ExprKind, InterpPart};
     let info = ctx
         .types
@@ -596,7 +637,11 @@ fn lower_structural_show(ctx: &mut LowerCtx, value: Place, type_name: &str, span
                                 TypeLit::String(value) => value.clone(),
                             };
                             ctx.assign(place.clone(), Ty::String, RValue::StringLit(literal));
-                            place
+                            if nested && matches!(lit, TypeLit::String(_)) {
+                                call_text(ctx, place, &Ty::String, "quoted")?
+                            } else {
+                                place
+                            }
                         }
                         None if !has_storage(&ctx.types, &variant.ty) => {
                             let place = ctx.fresh("showname");
@@ -618,7 +663,7 @@ fn lower_structural_show(ctx: &mut LowerCtx, value: Place, type_name: &str, span
                                     payload_ty: variant.ty.clone(),
                                 },
                             );
-                            show_text(ctx, payload, &variant.ty, span)?
+                            show_value(ctx, payload, &variant.ty, nested, span)?
                         }
                     };
                     ctx.assign(result.clone(), Ty::String, RValue::Use(text));
@@ -644,13 +689,14 @@ fn lower_structural_show(ctx: &mut LowerCtx, value: Place, type_name: &str, span
             parts.push(InterpPart::Lit(", ".into()));
         }
         parts.push(InterpPart::Lit(format!("{}: ", info_field.name)));
-        if info_field.ty == Ty::String {
-            parts.push(InterpPart::Lit("\"".into()));
-            parts.push(InterpPart::Expr(field(&info_field.name)));
-            parts.push(InterpPart::Lit("\"".into()));
-        } else {
-            parts.push(InterpPart::Expr(field(&info_field.name)));
-        }
+        parts.push(InterpPart::Expr(Expr {
+            kind: ExprKind::Call {
+                callee: "__showNested".into(),
+                args: vec![Arg::Pos(field(&info_field.name))],
+                type_args: Vec::new(),
+            },
+            span,
+        }));
     }
     parts.push(InterpPart::Lit(")".into()));
     let (text, _) = lower_expr(
@@ -672,6 +718,17 @@ pub(super) fn lower_show_intrinsic(ctx: &mut LowerCtx, args: &[Arg], span: Span)
     let Ty::User(type_name) = &ty else {
         return Err(Error::at("`__show` shows declared types", span));
     };
-    let text = lower_structural_show(ctx, place, type_name, span)?;
+    let text = lower_structural_show(ctx, place, type_name, false, span)?;
+    Ok((text, Ty::String))
+}
+
+/// `__showNested(value)`: a derived `showNested`'s body, and a field's text
+/// in a derived `show` (D245).
+pub(super) fn lower_show_nested_intrinsic(ctx: &mut LowerCtx, args: &[Arg], span: Span) -> Result<(Place, Ty)> {
+    let [Arg::Pos(value)] = args else {
+        return Err(Error::at("`__showNested` takes a value", span));
+    };
+    let (place, ty) = lower_expr(ctx, value)?;
+    let text = shown_nested(ctx, place, &ty, span)?;
     Ok((text, Ty::String))
 }
