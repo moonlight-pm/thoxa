@@ -1,4 +1,4 @@
-# thoxa.dev landing.
+# thoxa.moonlight.pm landing.
 #
 # The image builds the compiler, emits the site's C, and compiles that C with
 # thoxa_rt, so an image built from a commit runs that commit's Thoxa (no host

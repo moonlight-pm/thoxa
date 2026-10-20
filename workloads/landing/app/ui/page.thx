@@ -1,4 +1,4 @@
-## HTML shell for thoxa.dev.
+## HTML shell for thoxa.moonlight.pm.
 
 import http, { Request } from "std/http"
 

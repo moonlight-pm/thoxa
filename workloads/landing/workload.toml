@@ -1,4 +1,4 @@
-# thoxa.dev landing.
+# thoxa.moonlight.pm landing (thoxa.dev parked, D246).
 # Apply: wicketctl workload apply aulos --file workloads/landing/workload.toml --confirm
 #
 # Stable ids assigned on first apply (L1/L2 paths use these, not the name).
@@ -15,7 +15,7 @@ image = "registry.wicket.cloud/thoxa-landing:latest"
 ports = [{ name = "http" }]
 
 [[routes]]
-host = "thoxa.dev"
+host = "thoxa.moonlight.pm"
 container = "web"
 port = "http"
 

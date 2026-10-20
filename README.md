@@ -4,8 +4,8 @@ Thoxa is a statically typed, expression-oriented programming language. The
 compiler, written in Rust, translates Thoxa to C; a C compiler links that with
 a small C runtime into a native executable.
 
-**Site:** [thoxa.dev](https://thoxa.dev) · **Manual:**
-[thoxa.dev/manual](https://thoxa.dev/manual) (the same text as
+**Site:** [thoxa.moonlight.pm](https://thoxa.moonlight.pm) · **Manual:**
+[thoxa.moonlight.pm/manual](https://thoxa.moonlight.pm/manual) (the same text as
 [`docs/handbook/`](docs/handbook/))
 
 > **Pre-alpha.** The syntax and semantics still change, there are no releases,
@@ -51,7 +51,7 @@ size: expected "small" | "large", got huge; quantity: expected integer <= 12, go
 - `thoxa run`, `build`, `check` (with `--json`), `lsp`; a Zed extension.
 
 What it does not have yet: closures, generic functions, traits, threads, a
-package manager, releases. The [manual](https://thoxa.dev/manual) states
+package manager, releases. The [manual](https://thoxa.moonlight.pm/manual) states
 exactly what works.
 
 ## Building
@@ -84,7 +84,7 @@ Programs to try:
 cargo make run tests/conformance/hello.thx
 cargo make run examples/http                  # a small web app with SQLite (port 9091)
 cargo run -p thoxa -- run examples/kilo examples/kilo/sample.txt   # a terminal text editor
-cargo make run workloads/landing              # thoxa.dev itself (port 8088)
+cargo make run workloads/landing              # the site itself (port 8088)
 ```
 
 ## Repository
@@ -96,7 +96,7 @@ runtime/          the C runtime (thoxa_rt)
 std/              the standard library (std/… imports)
 tests/conformance programs with expected output; the definition of done
 examples/         runnable programs: examples/http (web app), examples/kilo (editor)
-workloads/        deployed Thoxa programs: landing = thoxa.dev, sola
+workloads/        deployed Thoxa programs: landing = thoxa.moonlight.pm, sola
 extras/           editor support (Tree-sitter grammar, Zed)
 vendor/           the SQLite amalgamation
 docs/             manual (docs/handbook) and engineering docs
@@ -112,7 +112,7 @@ runtime library), `target/thoxa/` (generated C and program binaries).
 
 | Document | What it is |
 |----------|------------|
-| [`docs/handbook/`](docs/handbook/) | The manual: shipped behaviour only, rendered at thoxa.dev/manual |
+| [`docs/handbook/`](docs/handbook/) | The manual: shipped behaviour only, rendered at thoxa.moonlight.pm/manual |
 | [`docs/capabilities.md`](docs/capabilities.md) | Each capability's status, gates, and known gaps |
 | [`docs/decisions.md`](docs/decisions.md) | Design decisions by id (D1…) |
 | [`docs/architecture.md`](docs/architecture.md) | Pipeline, crates, runtime layout |

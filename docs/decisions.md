@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — The site moves to thoxa.moonlight.pm
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D246 | The site is thoxa.moonlight.pm; thoxa.dev is parked | Joshua 2026-10-19: "set thoxa.moonlight.pm to point to thoxa -- and lets make that the official thoxa url for now. park thoxa.dev -- remove the a record". The `thoxa` workload's one route is `thoxa.moonlight.pm` (the `*.moonlight.pm` A record already points at aulos); the `thoxa.dev` route and A record are removed. The README, the handbook, and the docs link to thoxa.moonlight.pm. | **Shipped** 2026-10-19 (workload apply, no image change). thoxa.dev's other records (MX, SPF, DMARC, DKIM) stay; its MX names `thoxa.dev` itself, so mail to the domain has nowhere to go while it is parked. Unparking: restore the A record (`170.39.39.68`) and add the route back. Earlier decisions that say thoxa.dev (D172, D189, D241) mean this site. |
+
 ## 2026-10-19 — Line starts, clearer errors, nested text, and two proposals settled
 
 | ID | Decision | Choice | Notes |

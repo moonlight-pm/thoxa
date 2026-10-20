@@ -79,7 +79,7 @@ documented ASan). Alloc size wrap panics; `Socket.close` clears `fd`.
 `HEAP_ELEMS`, heap params owned (**D154**), early-return final `drop_places`,
 if/match result overwrite-drop. Language harvest **D147–D150** shipped.
 **D151** LeakSanitizer is the default leak gate; **D152** match/init RC.
-`workloads/landing` = thoxa.dev; `workloads/sola` = sola.computer.
+`workloads/landing` = thoxa.moonlight.pm (thoxa.dev parked, D246); `workloads/sola` = sola.computer.
 Crema Phase **E** through **E5**; **E6** WebSockets parked. **`having`/`else` parked indefinitely.**
 
 ---
@@ -234,7 +234,7 @@ encoding where a `Json` is expected (and `match` takes its expected type), §5
 typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
 Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 (route clauses import only what they write; generated code names `std/http`
-itself). thoxa.dev runs `3ec9f70` (redeployed 2026-10-19 at Joshua's request; its manual goes through D245; a redeploy needs Joshua's go-ahead).
+itself). The site (thoxa.moonlight.pm since D246) runs `3ec9f70` (redeployed 2026-10-19 at Joshua's request; its manual goes through D245; a redeploy needs Joshua's go-ahead).
 
 **Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
 order"):** done; each slice with conformance and docs, decisions on the
@@ -310,7 +310,7 @@ lits; overwrite-drop; **D152** match/init RC.
 session items (Ctrl-C in a loop, the command-or-Thoxa guess, redefining a
 session `fn`) went with D227. Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14) and the copied site templates (finding 38). thoxa.dev runs `7e5451d` (D232; redeployed 2026-10-19); sola.computer still runs `e0c0bcf` (D170–D172, redeployed 2026-10-16).
+14) and the copied site templates (finding 38). thoxa.moonlight.pm runs `3ec9f70` (redeployed 2026-10-19); sola.computer still runs `e0c0bcf` (D170–D172, redeployed 2026-10-16).
 
 ### Proceed order
 
@@ -328,7 +328,7 @@ the site work: the event loop's wake scan and blocking log writes (finding
 conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
 delete its line). Further **`std/` growth is sample-driven** (D97/D136).
 Crema **domain** (pages, models, cookies policy) stays in `examples/http/`.
-Public sites are **`workloads/landing`** (thoxa.dev) and
+Public sites are **`workloads/landing`** (thoxa.moonlight.pm; thoxa.dev parked, D246) and
 **`workloads/sola`** (sola.computer) — not `examples/`, not `extras/`.
 oath.wicket.cloud moved to the Oath project (2026-10-19).
 

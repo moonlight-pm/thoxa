@@ -45,7 +45,7 @@ Incomplete meta work means incomplete product work.
 | As-built map | `docs/architecture.md` | Pipeline, crates, runtime |
 | Target design | `docs/specs/*` | Freezes (desired shape) |
 | Horizon | `docs/roadmap.md` | Phase-level program status |
-| Product docs | `docs/handbook/` | **Shipped** user truth only; rendered publicly at thoxa.dev/manual (Markdown subset and voice: `docs/handbook/README.md`) |
+| Product docs | `docs/handbook/` | **Shipped** user truth only; rendered publicly at thoxa.moonlight.pm/manual (Markdown subset and voice: `docs/handbook/README.md`) |
 | Decisions | `docs/decisions.md` | D-ids |
 
 **End of every real product slice (same change as code):**
@@ -92,7 +92,7 @@ over ad-hoc scripts (D10).
 | `tests/conformance/` | `*.thx` + `*.out` |
 | `extras/` | Non-product DX (tree-sitter grammar, Zed extension) |
 | `examples/` | Runnable demos (not conformance); `examples/http`, `examples/kilo` |
-| `workloads/` | Deployed Thoxa programs; `landing` = thoxa.dev; `sola` = sola.computer |
+| `workloads/` | Deployed Thoxa programs; `landing` = thoxa.moonlight.pm (thoxa.dev parked, D246); `sola` = sola.computer |
 | `vendor/` | Vendored upstream (the SQLite amalgamation) |
 | `CURRENT.md` | Living focus |
 | `docs/` | Canonical docs (see `docs/README.md`) |

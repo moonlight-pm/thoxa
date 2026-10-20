@@ -1,6 +1,6 @@
-# workloads/landing — thoxa.dev
+# workloads/landing — thoxa.moonlight.pm
 
-Public site for **thoxa.dev**, written in Thoxa. Two pages:
+Public site for **thoxa.moonlight.pm**, written in Thoxa. Two pages:
 
 | Path | What |
 |------|------|
@@ -11,8 +11,9 @@ Anything else falls through to the static files in `web/`, then a 404 page.
 
 Not product std. Not an `examples/` demo.
 
-**Live (aulos):** https://thoxa.dev/ — workload `thoxa`
+**Live (aulos):** https://thoxa.moonlight.pm/ — workload `thoxa`
 (`wl-cada9b4cd855`), image `registry.wicket.cloud/thoxa-landing:latest`.
+thoxa.dev is parked: no A record, no route (D246).
 
 ## How it works
 

@@ -1,7 +1,7 @@
 # Thoxa manual
 
 The manual for Thoxa as it is implemented today. The site renders these files,
-in this order, as one page at [thoxa.dev/manual](https://thoxa.dev/manual).
+in this order, as one page at [thoxa.moonlight.pm/manual](https://thoxa.moonlight.pm/manual).
 
 | Chapter | Contents |
 |---------|----------|

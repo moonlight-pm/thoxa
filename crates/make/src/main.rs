@@ -250,7 +250,7 @@ fn cmd_test() -> i32 {
     }
 }
 
-/// The programs on thoxa.dev's home page (`workloads/landing/samples`, D189).
+/// The programs on the site's home page (`workloads/landing/samples`, D189).
 /// One with a sibling `.out` must exit 0 and print exactly that, under
 /// LeakSanitizer like the conformance suite; one without (a server, a
 /// terminal program) must typecheck.
