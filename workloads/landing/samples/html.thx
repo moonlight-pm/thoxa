@@ -1,7 +1,8 @@
 ## HTML as values
-## A tag is an expression of type `Node`. A type with a `view` method is a
-## component. Text and attributes are escaped when the tree is written out;
-## there is no template language and no string building.
+## A tag is an expression of type `Node`. A type becomes a component by
+## conforming to `Component` and writing its `view`. Text and attributes are
+## escaped when the tree is written out; there is no template language and no
+## string building.
 import logging, { info } from "std/logging"
 
 type Drink(name: String, cents: Int64)
