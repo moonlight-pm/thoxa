@@ -164,7 +164,11 @@ header.site nav {
     font-size: 0.9375rem;
 }
 
+/* Each link is as tall as the header, so the whole bar is the tap target. */
 header.site nav a {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
     color: var(--muted);
     text-decoration: none;
 }
@@ -446,7 +450,7 @@ footer.site p {
     display: none;
     border: 1px solid var(--line);
     border-radius: 6px;
-    padding: 0.5rem 0.9rem;
+    padding: 0 0.9rem;
     font-family: var(--sans);
     font-size: 0.9rem;
 }
@@ -454,10 +458,11 @@ footer.site p {
 .contents-inline summary {
     cursor: pointer;
     font-weight: 600;
+    padding: 0.6rem 0;
 }
 
 .contents-inline .toc {
-    margin-top: 0.75rem;
+    margin: 0.15rem 0 0.5rem;
 }
 
 .chapter h2 {
@@ -616,5 +621,13 @@ td code {
 
     footer.site p {
         padding: 1.25rem 1rem;
+    }
+}
+
+/* Touch screens: contents rows tall enough to tap one without its neighbour. */
+
+@media (pointer: coarse) {
+    .toc a {
+        padding: 0.45rem 0;
     }
 }
