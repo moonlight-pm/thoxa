@@ -120,6 +120,9 @@ pub struct TypeDef {
     /// parallel to `type_params`, and as `trait_desugar` resolves them.
     pub param_bounds: Vec<Vec<(String, Span)>>,
     pub bounds: Vec<Vec<TraitRef>>,
+    /// `where S.Item: Show` (or `== Int64`) after a generic type's header:
+    /// bounds on its parameters' associated types, as written (D237).
+    pub assoc_bounds: Vec<TypeParamBound>,
     /// The union `trait_desugar` makes for `mixed Trait`, of every type that
     /// conforms (D228 §6): its member calls dispatch on the member.
     pub mixed: Option<TraitRef>,
@@ -140,6 +143,23 @@ pub struct TypeDef {
 pub struct Checking {
     pub archetypes: Vec<String>,
     pub requires: Vec<Vec<TraitRef>>,
+    /// The type parameters' associated types the type may write (D237).
+    pub derived: Vec<DerivedParam>,
+}
+
+/// An associated type of a generic type's parameter, `S.Item` (D237): in a
+/// checking instance its archetype; in an instance, read off the argument
+/// for `owner` (`S`, or `S.Cursor`) as its `assoc`. Owners come first.
+#[derive(Debug, Clone)]
+pub struct DerivedParam {
+    pub name: String,
+    pub archetype: String,
+    pub owner: String,
+    pub assoc: String,
+    /// What an instance's must meet: the trait's bounds and the `where`'s.
+    pub bounds: Vec<TraitRef>,
+    /// `where S.Item == Int64`: the type it must be, in MIR names.
+    pub fixed: Option<TypeExpr>,
 }
 
 /// Starts a type name that is already a MIR type's, put there by a

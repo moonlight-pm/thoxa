@@ -1,0 +1,1 @@
+bound it where it is declared: `where S.Cursor.Item: Show`

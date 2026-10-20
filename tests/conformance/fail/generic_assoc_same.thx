@@ -1,0 +1,16 @@
+## D237: `where S.Item == Int64` after a generic type's header fixes the
+## associated type for every instance.
+type Total<S: Sequence>(items: S) where S.Item == Int64 {
+    export fn sum() -> Int64 {
+        mut total = 0
+        for item in items {
+            total = total + item
+        }
+        total
+    }
+}
+
+fn main() -> Int64 {
+    let wrong = Total(items: ["a"])
+    wrong.sum()
+}

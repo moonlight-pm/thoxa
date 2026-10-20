@@ -773,6 +773,7 @@ fn parse_int_type() -> TypeDef {
         derived: vec![],
         param_bounds: Vec::new(),
         bounds: Vec::new(),
+        assoc_bounds: Vec::new(),
         mixed: None,
         assoc: Vec::new(),
         checking: Vec::new(),

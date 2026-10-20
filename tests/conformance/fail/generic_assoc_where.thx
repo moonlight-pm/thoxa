@@ -1,0 +1,18 @@
+## D237: a generic type's `where` bounds its parameters' associated types,
+## and an instance's must meet them.
+type Secret(code: Int64)
+
+type Line<S: Sequence>(items: S) where S.Item: Show {
+    export fn text() -> String {
+        mut out = ""
+        for item in items {
+            out = "{out}{item}"
+        }
+        out
+    }
+}
+
+fn main() -> Int64 {
+    let line = Line(items: [Secret(code: 1)])
+    line.text().count
+}

@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Associated types in generic types
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D237 | A generic type writes its parameters' associated types; `where` after its header bounds them | `type Batch<S: Sequence>(items: S, fallback: S.Item) { fn first() -> S.Item … }`: `S.Item` and `S.Cursor` go in a generic type's fields, methods, and conformances, and each instance reads them off its argument (`Batch<Array<Int64>>`'s `S.Item` is `Int64`). In its checks (D232) they are archetypes with their traits' bounds. `where S.Item: Show` or `where S.Item == Int64` after the header (a name after `where`, as for functions, so it is never a refinement) bounds or fixes them, and every instance must meet it ("`Line<Array<Secret>>`: `S.Item` must be `Show`, and Secret is not"). An `extend` method writes them as a generic function does; std/array gains `flattened()` on `Array<T: Sequence>`, an `Array<T.Item>`. | **Shipped** 2026-10-19 (the D228 gap "`T.Item` is written in generic functions only, not in generic types' or `extend` methods' headers"; `extend` headers already worked through `resolve_generics`). `TypeDef.assoc_bounds` holds the `where`; `trait_desugar::checking_instances` passes it to the checking function's `resolve_generics` (with a base checking set whenever a parameter's bounds have associated types) and records the derived parameters on `Checking::derived` (`ast::DerivedParam`: name, archetype, owner, associated type, bounds, fixed). The MIR's `GenericDef::derived` drives `derived_subst`, which `monomorphize_pending` runs for each instance (a checking instance takes the archetypes) over `assoc_of`, a lookup that needs no lowering context (`AssocTables`: declared types' associated types as written, the resolved ones, the built-in ones), queueing the instances it names; `instance_meets_bounds` checks the bounds, after a late instance is made. Gates: `generic_type_assoc`, `fail/generic_assoc_where`, `fail/generic_assoc_same`, `fail/generic_assoc_unbounded`. |
+
 ## 2026-10-19 — Maps and strings as sequences, arrays ordered
 
 | ID | Decision | Choice | Notes |

@@ -490,8 +490,9 @@ mut names: Array<String> = []
 | `.sorted()` | a copy in ascending order, equal elements in their order; `T` is `Ordered` |
 | `.map(transform)` | each element through the function `transform`, an `Array<U>` |
 | `.filter(keep)` | the elements the function `keep` returns `true` for |
+| `.flattened()` | each element's items in order, an `Array<T.Item>`: `[[1, 2], [3]]` is `[1, 2, 3]`; `T` is a `Sequence` |
 
-The last five are written in Thoxa in std/array, for the arrays whose
+The last six are written in Thoxa in std/array, for the arrays whose
 element type meets their bound (see [Generic functions](#generic-functions)).
 The writing members return `Void` and need a writable place: write
 `xs.append(4)`, not `xs = xs.append(4)`. Arrays may nest; an inner array is
@@ -722,6 +723,26 @@ They are compiled for each instance the program uses, so a method without
 `->` infers its return type per instance (see [Return types](#return-types)).
 A conformance can hold for some instances only; its members are checked with
 the type's bounds and the conformance's (see [Traits](#traits)).
+
+A generic type writes its parameters' associated types (see
+[Associated types](#associated-types)) in its fields, methods, and
+conformances: `S.Item`, `S.Cursor`. Each instance reads them off its
+argument, so a `Batch<Array<Int64>>`'s `S.Item` is `Int64`. A `where` after
+the header bounds them, or fixes one, and every instance must meet it:
+
+```thx
+type Batch<S: Sequence>(items: S, fallback: S.Item) where S.Item: Show {
+    export fn line() -> String {
+        mut out = ""
+        for item in items {
+            out = "{out}{item} "
+        }
+        out
+    }
+}
+
+let line = Batch(items: [1, 2], fallback: 0).line()   ## "1 2 "
+```
 
 ### Generic functions
 
@@ -1820,9 +1841,8 @@ let six = total([1, 2, 3])
   `Entry<K, V>` with `key` and `value` (std/core's, in every program), and a
   `String` is one of its Unicode scalars, each a one-scalar `String`.
 
-Limits: `S.Item` is written in generic functions, not in generic types; and
-a member whose signature names an associated type cannot be called through
-`mixed`.
+A member whose signature names an associated type cannot be called through
+`mixed`: each conforming type names its own.
 
 ### Mixed values
 

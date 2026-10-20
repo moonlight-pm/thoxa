@@ -1,0 +1,14 @@
+## D237: in a generic type's methods `S.Item` has only its bounds' members.
+type Line<S: Sequence>(items: S) {
+    export fn text() -> String {
+        mut out = ""
+        for item in items {
+            out = "{out}{item}"
+        }
+        out
+    }
+}
+
+fn main() -> Int64 {
+    Line(items: [1]).text().count
+}

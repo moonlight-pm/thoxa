@@ -848,6 +848,7 @@ fn mixed_unions(
                 derived: Vec::new(),
                 param_bounds: Vec::new(),
                 bounds: Vec::new(),
+                assoc_bounds: Vec::new(),
                 mixed: Some(trait_ref.clone()),
                 assoc: Vec::new(),
                 checking: Vec::new(),
@@ -1943,6 +1944,7 @@ fn archetype(trait_ref: &TraitRef, scope: &Scope) -> Result<Vec<TypeDef>> {
         derived: Vec::new(),
         param_bounds: Vec::new(),
         bounds: Vec::new(),
+        assoc_bounds: Vec::new(),
         mixed: None,
         assoc: archetypes.entries("", span),
         checking: Vec::new(),
@@ -2161,7 +2163,13 @@ fn checking_instances(package: &mut Package, scope: &Scope) -> Result<()> {
             }
             let written: Vec<&Method> = def.methods.iter().filter(|method| method.provided.is_none()).collect();
             let mut sets: Vec<Vec<Vec<TraitRef>>> = Vec::new();
-            if !def.conversions.is_empty() || written.iter().any(|method| method.requires.iter().all(Vec::is_empty)) {
+            // A type whose parameters have associated types gets the base
+            // set too: its instances read `S.Item` from it (D237).
+            let has_assoc = def.bounds.iter().flatten().any(|bound| {
+                scope.traits.get(bound).is_some_and(|entry| !entry.def.assoc.is_empty())
+                    || lineage(bound, scope.traits).iter().any(|each| !scope.traits[each].def.assoc.is_empty())
+            });
+            if !def.conversions.is_empty() || has_assoc || written.iter().any(|method| method.requires.iter().all(Vec::is_empty)) {
                 sets.push(Vec::new());
             }
             for method in &written {
@@ -2202,6 +2210,7 @@ fn checking_instances(package: &mut Package, scope: &Scope) -> Result<()> {
                             traits: Vec::new(),
                             same: None,
                         })
+                        .chain(def.assoc_bounds.iter().cloned())
                         .collect(),
                     params: Vec::new(),
                     return_type: None,
@@ -2221,6 +2230,21 @@ fn checking_instances(package: &mut Package, scope: &Scope) -> Result<()> {
                             .map(|param| param.archetype.clone())
                             .collect(),
                         requires,
+                        derived: function
+                            .generic
+                            .iter()
+                            .filter_map(|param| {
+                                let (owner, assoc) = param.derived.clone()?;
+                                Some(DerivedParam {
+                                    name: param.name.clone(),
+                                    archetype: param.archetype.clone(),
+                                    owner,
+                                    assoc,
+                                    bounds: param.bounds.clone(),
+                                    fixed: param.fixed.clone(),
+                                })
+                            })
+                            .collect(),
                     }),
                     Err(error) => errors.push(error.with_path(module.path.clone())),
                 }
@@ -2505,6 +2529,7 @@ fn param_archetype(
         derived: Vec::new(),
         param_bounds: Vec::new(),
         bounds: Vec::new(),
+        assoc_bounds: Vec::new(),
         mixed: None,
         assoc,
         checking: Vec::new(),

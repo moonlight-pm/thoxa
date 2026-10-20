@@ -52,6 +52,19 @@ extend Array<T: Show> {
     }
 }
 
+extend Array<T: Sequence> {
+    ## Each element's items, in order: `[[1, 2], [3]]` is `[1, 2, 3]` (D237).
+    export fn flattened() -> Array<T.Item> {
+        mut out: Array<T.Item> = []
+        for inner in self {
+            for item in inner {
+                out.append(item)
+            }
+        }
+        out
+    }
+}
+
 extend Array<T: Ordered> {
     ## The elements in ascending order; equal ones keep their order.
     export fn sorted() -> Array<T> {

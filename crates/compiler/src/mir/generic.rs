@@ -559,18 +559,34 @@ pub(super) fn make_instance(
     }
     let generics = ctx.synthetics.borrow().generics.clone();
     let conditional = ctx.synthetics.borrow().conditional.clone();
-    super::instance_meets_bounds(&ctx.types, &conditional, &generics, base, &args)
-        .map_err(|error| Error::at(error.message, span))?;
     let mut types = ctx.types.clone();
     let mut layouts = Vec::new();
     let mut jobs = Vec::new();
+    let tables = {
+        let synthetics = ctx.synthetics.borrow();
+        super::AssocTables {
+            resolved: synthetics.assoc.clone(),
+            built_in: synthetics.built_in_assoc.clone(),
+            core_names: ctx
+                .package_maps
+                .get("std_core")
+                .map(|maps| maps.name_to_type.clone())
+                .unwrap_or_default(),
+            ..super::AssocTables::default()
+        }
+    };
     monomorphize_pending(
-        vec![(base.to_string(), args, name_map.clone(), span)],
+        vec![(base.to_string(), args.clone(), name_map.clone(), span)],
         &mut types,
         &mut layouts,
         &generics,
+        &tables,
         &mut jobs,
     )?;
+    // Checked once it is made, so the types its parameters' associated
+    // types name are too (D237).
+    super::instance_meets_bounds(&types, &conditional, &generics, &tables, base, &args)
+        .map_err(|error| Error::at(error.message, span))?;
     // Methods without `->` infer their return type per instance (D211), as
     // the instances made before lowering do; twice, so a sibling's is known.
     let probed: Vec<&super::MonoMethodJob> = jobs

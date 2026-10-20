@@ -1,0 +1,94 @@
+## A generic type writes its parameters' associated types (D237): `S.Item`
+## and `S.Cursor` in its fields, methods, and conformances, read off each
+## instance's argument; `where S.Item: Show` (or `== Int64`) after its
+## header bounds them, and every instance must meet the bounds. An `extend`
+## method writes them too: std's `flattened()` on `Array<T: Sequence>`
+## gives an `Array<T.Item>`.
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Countdown(from: Int64)
+
+conform Countdown to Sequence {
+    type Cursor = CountCursor
+
+    fn iterate() -> CountCursor {
+        CountCursor(at: from)
+    }
+}
+
+type CountCursor(at: Int64)
+
+conform CountCursor to Iterator {
+    type Item = Int64
+
+    fn next() -> May<Int64> {
+        if at == 0 {
+            return Not()
+        }
+        at = at - 1
+        Has(at + 1)
+    }
+}
+
+type Batch<S: Sequence>(items: S, fallback: S.Item) {
+    export fn first() -> S.Item {
+        mut cursor: S.Cursor = items.iterate()
+        match cursor.next() {
+            Has(value) => value
+            Not => fallback
+        }
+    }
+
+    export fn all() -> Array<S.Item> {
+        mut out: Array<S.Item> = []
+        for item in items {
+            out.append(item)
+        }
+        out
+    }
+}
+
+trait Summary {
+    fn summary() -> String
+}
+
+conform Batch<S: Sequence> to Summary {
+    fn summary() -> String {
+        "{all().count} items"
+    }
+}
+
+type Line<S: Sequence>(items: S) where S.Item: Show {
+    export fn text() -> String {
+        mut out = ""
+        for item in items {
+            out = "{out}{item}"
+        }
+        out
+    }
+}
+
+type Total<S: Sequence>(items: S) where S.Item == Int64 {
+    export fn sum() -> Int64 {
+        mut total = 0
+        for item in items {
+            total = total + item
+        }
+        total
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let numbers: Batch<Array<Int64>> = Batch(items: [3, 4], fallback: 0)
+    info("{numbers.first()} {numbers.all()} {numbers.summary()}")
+    let nothing: Array<String> = []
+    info(Batch(items: nothing, fallback: "none").first())
+    let counting = Batch(items: Countdown(from: 3), fallback: -1)
+    info("{counting.all()} {counting.first()}")
+    info("{Batch(items: "abc", fallback: "?").all()}")
+    info("{Line(items: [1, 2, 3]).text()} {Line(items: "xyz").text()} {Total(items: Countdown(from: 4)).sum()}")
+    info("{[[1, 2], [3]].flattened()} {["ab", "c"].flattened()}")
+}

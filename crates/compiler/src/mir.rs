@@ -239,12 +239,59 @@ fn instance_meets_bounds(
     types: &HashMap<String, TypeInfo>,
     conditional: &HashMap<String, Vec<ast::ConditionalConformance>>,
     generics: &HashMap<String, GenericDef>,
+    tables: &AssocTables,
     base: &str,
     args: &[Ty],
 ) -> Result<()> {
     let Some(gdef) = generics.get(base) else {
         return Ok(());
     };
+    let shown_instance = || {
+        let shown: Vec<String> = args.iter().map(display_ty).collect();
+        format!("{}<{}>", gdef.source_name, shown.join(", "))
+    };
+    // Its parameters' associated types meet theirs (D237), but a checking
+    // instance's are archetypes.
+    if !gdef.derived.is_empty() && gdef.checking.iter().all(|(each, ..)| each != args) {
+        let mut subst: HashMap<String, Ty> = gdef.type_params.iter().cloned().zip(args.iter().cloned()).collect();
+        derived_subst(gdef, &mut subst, types, generics, tables, &mut Vec::new(), gdef.name_span)?;
+        // `S.Item` before `S.Cursor.Item`, the path the trait fixes it as.
+        let mut by_name: Vec<&ast::DerivedParam> = gdef.derived.iter().collect();
+        by_name.sort_by_key(|param| param.name.len());
+        for param in by_name {
+            let Some(ty) = subst.get(&param.name) else { continue };
+            for bound in &param.bounds {
+                if !ty_conforms(types, conditional, ty, bound) {
+                    return Err(Error::at(
+                        format!(
+                            "`{}`: `{}` must be `{}`, and {} is not",
+                            shown_instance(),
+                            param.name,
+                            bound.name,
+                            display_ty(ty)
+                        ),
+                        gdef.name_span,
+                    ));
+                }
+            }
+            if let Some(fixed) = &param.fixed {
+                let written = subst_type_expr(fixed, &subst);
+                let want = resolve_ty(&written, types, &gdef.name_map)?;
+                if want != *ty {
+                    return Err(Error::at(
+                        format!(
+                            "`{}`: `{}` must be {}, and it is {}",
+                            shown_instance(),
+                            param.name,
+                            display_ty(&want),
+                            display_ty(ty)
+                        ),
+                        gdef.name_span,
+                    ));
+                }
+            }
+        }
+    }
     for ((param, bounds), arg) in gdef.type_params.iter().zip(&gdef.bounds).zip(args) {
         for bound in bounds {
             if !ty_conforms(types, conditional, arg, bound) {
@@ -1554,8 +1601,12 @@ struct GenericDef {
     /// (`type Cursor = StackCursor<T>`), and their bounds (D228 §7).
     assoc: Vec<(String, TypeExpr, Vec<TraitRef>)>,
     /// Its checking instances' arguments, archetypes, each with the bounds a
-    /// conformance adds for the members it checks (D228 §5).
-    checking: Vec<(Vec<Ty>, Vec<Vec<TraitRef>>)>,
+    /// conformance adds for the members it checks (D228 §5), and the
+    /// archetypes of its parameters' associated types (D237).
+    checking: Vec<(Vec<Ty>, Vec<Vec<TraitRef>>, HashMap<String, Ty>)>,
+    /// Its parameters' associated types, `S.Item`, read off each instance's
+    /// arguments in order, with what they must meet (D237).
+    derived: Vec<ast::DerivedParam>,
 }
 
 #[derive(Clone)]
@@ -2205,9 +2256,17 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                                     .iter()
                                     .map(|archetype| Ty::User(mangle_type(&m.id, archetype, m.is_entry)))
                                     .collect();
-                                (args, checking.requires.clone())
+                                let derived = checking
+                                    .derived
+                                    .iter()
+                                    .map(|param| {
+                                        (param.name.clone(), Ty::User(mangle_type(&m.id, &param.archetype, m.is_entry)))
+                                    })
+                                    .collect();
+                                (args, checking.requires.clone(), derived)
                             })
                             .collect(),
+                        derived: td.checking.first().map(|checking| checking.derived.clone()).unwrap_or_default(),
                     },
                 );
                 if td.exported {
@@ -2310,12 +2369,27 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     )?;
     // Then materialize every GenericApp found in the package (including nested).
     let mut mono_method_jobs: Vec<MonoMethodJob> = Vec::new();
+    // What instances read their parameters' associated types from (D237).
+    let mut tables = AssocTables {
+        built_in: trait_output.built_in_assoc.clone(),
+        core_names: per_mod_types.get("std_core").cloned().unwrap_or_default(),
+        ..AssocTables::default()
+    };
+    for (mod_id, mangled, td) in &type_defs {
+        if td.assoc.is_empty() || !td.type_params.is_empty() {
+            continue;
+        }
+        let names = per_mod_types.get(mod_id).cloned().unwrap_or_default();
+        let written = td.assoc.iter().map(|(name, te, _)| (name.clone(), te.clone())).collect();
+        tables.written.insert(mangled.clone(), (names, written));
+    }
     monomorphize_package(
         package,
         &mut types_info,
         &mut type_layouts,
         &generics,
         &per_mod_types,
+        &tables,
         &mut mono_method_jobs,
     )?;
     // Generic types' checking instances (D228 §5), by name: the template,
@@ -2325,7 +2399,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         .flat_map(|(base, gdef)| {
             gdef.checking
                 .iter()
-                .map(move |(args, requires)| (mono_type_name(base, args), (base.clone(), requires.clone())))
+                .map(move |(args, requires, _)| (mono_type_name(base, args), (base.clone(), requires.clone())))
         })
         .collect();
     mono_method_jobs.sort_by_key(|job| !checking.contains_key(&job.mono_type));
@@ -2921,7 +2995,7 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     let mut bound_errors = Vec::new();
     for info in types_info.values() {
         if let Some((base, args)) = &info.instance {
-            if let Err(error) = instance_meets_bounds(&types_info, &conditional, &generics, base, args) {
+            if let Err(error) = instance_meets_bounds(&types_info, &conditional, &generics, &tables, base, args) {
                 bound_errors.push(in_module_id(error, package, &info.def_mod));
             }
         }
@@ -5628,7 +5702,7 @@ fn ensure_union_mono(
     let name_map = HashMap::new();
     let pending = vec![(base.to_string(), args.to_vec(), name_map, span)];
     let mut ignore_methods = Vec::new();
-    monomorphize_pending(pending, types, layouts, generics, &mut ignore_methods)?;
+    monomorphize_pending(pending, types, layouts, generics, &AssocTables::default(), &mut ignore_methods)?;
     if !types.contains_key(&mono) {
         // Retry with def_mod empty map still — seed may need Fallible inners only.
         let _ = def_mod;
@@ -6829,7 +6903,7 @@ fn seed_fallible_monos(
         }
     }
     let mut ignore_methods = Vec::new();
-    monomorphize_pending(pending, types, layouts, generics, &mut ignore_methods)?;
+    monomorphize_pending(pending, types, layouts, generics, &AssocTables::default(), &mut ignore_methods)?;
     Ok(())
 }
 
@@ -6838,6 +6912,7 @@ fn monomorphize_pending(
     types: &mut HashMap<String, TypeInfo>,
     layouts: &mut Vec<TypeLayout>,
     generics: &HashMap<String, GenericDef>,
+    tables: &AssocTables,
     mono_methods: &mut Vec<MonoMethodJob>,
 ) -> Result<()> {
     let mut guard = 0;
@@ -6874,6 +6949,14 @@ fn monomorphize_pending(
         let mut subst: HashMap<String, Ty> = HashMap::new();
         for (p, ty) in gdef.type_params.iter().zip(arg_tys.iter()) {
             subst.insert(p.clone(), ty.clone());
+        }
+        // `S.Item` (D237): a checking instance's archetype, else read off
+        // the argument.
+        match gdef.checking.iter().find(|(args, ..)| *args == arg_tys) {
+            Some((_, _, derived)) => subst.extend(derived.iter().map(|(name, ty)| (name.clone(), ty.clone()))),
+            None => {
+                derived_subst(gdef, &mut subst, types, generics, tables, &mut pending, span)?;
+            }
         }
         match &gdef.kind {
             GenericKind::Product {
@@ -6930,6 +7013,7 @@ fn monomorphize_package(
     layouts: &mut Vec<TypeLayout>,
     generics: &HashMap<String, GenericDef>,
     per_mod_types: &HashMap<String, HashMap<String, String>>,
+    tables: &AssocTables,
     mono_methods: &mut Vec<MonoMethodJob>,
 ) -> Result<()> {
     if generics.is_empty() {
@@ -6943,7 +7027,7 @@ fn monomorphize_package(
     bases.sort();
     for base in bases {
         let gdef = &generics[base];
-        for (args, _) in &gdef.checking {
+        for (args, ..) in &gdef.checking {
             pending.push((base.clone(), args.clone(), gdef.name_map.clone(), gdef.name_span));
         }
     }
@@ -7035,7 +7119,7 @@ fn monomorphize_package(
         }
     }
 
-    monomorphize_pending(pending, types, layouts, generics, mono_methods)
+    monomorphize_pending(pending, types, layouts, generics, tables, mono_methods)
 }
 
 fn is_builtin_generic(name: &str) -> bool {
@@ -7912,6 +7996,104 @@ fn enqueue_type_app_mono(
         pending.push((base, arg_tys, name_map.clone(), span));
     }
     Some(Ty::User(mono))
+}
+
+/// An instance's parameters' associated types, `S.Item`, into `subst`,
+/// read off its arguments in order, owners first (D237).
+fn derived_subst(
+    gdef: &GenericDef,
+    subst: &mut HashMap<String, Ty>,
+    types: &HashMap<String, TypeInfo>,
+    generics: &HashMap<String, GenericDef>,
+    tables: &AssocTables,
+    pending: &mut Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
+    span: Span,
+) -> Result<()> {
+    for param in &gdef.derived {
+        let Some(owner_ty) = subst.get(&param.owner).cloned() else { continue };
+        let Some(ty) = assoc_of(&owner_ty, &param.assoc, types, generics, tables, pending, span) else {
+            return Err(Error::at(
+                format!(
+                    "`{}` needs `{}`, and {} names no `{}`",
+                    gdef.source_name,
+                    param.name,
+                    display_ty(&owner_ty),
+                    param.assoc
+                ),
+                span,
+            ));
+        };
+        subst.insert(param.name.clone(), ty);
+    }
+    Ok(())
+}
+
+/// Where an instance reads its parameters' associated types from while
+/// instances are being made, before any body is lowered (D237).
+#[derive(Default)]
+struct AssocTables {
+    /// Declared types' associated types as written, with their module's
+    /// type names.
+    written: HashMap<String, (HashMap<String, String>, Vec<(String, TypeExpr)>)>,
+    /// Those already worked out (`SyntheticRegistry::assoc`).
+    resolved: HashMap<String, HashMap<String, Ty>>,
+    /// The built-in types' (`Array`'s `Cursor`), written in std/core's names.
+    built_in: crate::trait_desugar::BuiltInAssoc,
+    core_names: HashMap<String, String>,
+}
+
+/// `owner`'s associated type `name` (D237): a declared type's, a generic
+/// type's instance's (made or still to make), or a built-in type's. An
+/// instance it names is queued, so the type is given by its name.
+fn assoc_of(
+    owner: &Ty,
+    name: &str,
+    types: &HashMap<String, TypeInfo>,
+    generics: &HashMap<String, GenericDef>,
+    tables: &AssocTables,
+    pending: &mut Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
+    span: Span,
+) -> Option<Ty> {
+    let (written, names, subst): (TypeExpr, HashMap<String, String>, HashMap<String, Ty>) = match owner {
+        Ty::User(mangled) => {
+            if let Some(found) = tables.resolved.get(mangled).and_then(|each| each.get(name)) {
+                return Some(found.clone());
+            }
+            if let Some((names, entries)) = tables.written.get(mangled) {
+                let (_, te) = entries.iter().find(|(each, _)| each == name)?;
+                (te.clone(), names.clone(), HashMap::new())
+            } else {
+                let (base, args) = types
+                    .get(mangled)
+                    .and_then(|info| info.instance.clone())
+                    .or_else(|| {
+                        pending
+                            .iter()
+                            .find(|(base, args, ..)| mono_type_name(base, args) == *mangled)
+                            .map(|(base, args, ..)| (base.clone(), args.clone()))
+                    })?;
+                let gdef = generics.get(&base)?;
+                let (_, te, _) = gdef.assoc.iter().find(|(each, ..)| each == name)?;
+                let subst = gdef.type_params.iter().cloned().zip(args).collect();
+                (te.clone(), gdef.name_map.clone(), subst)
+            }
+        }
+        other => {
+            let (base, args): (String, Vec<Ty>) = match other {
+                Ty::Array { elem } => ("Array".into(), vec![elem.as_ref().clone()]),
+                Ty::Map { key, val } => ("Map".into(), vec![key.as_ref().clone(), val.as_ref().clone()]),
+                _ => (extension_key(other)?, Vec::new()),
+            };
+            let (params, _, te, _) = tables.built_in.get(&base)?.iter().find(|(_, each, ..)| each == name)?;
+            let subst = params.iter().cloned().zip(args).collect();
+            (te.clone(), tables.core_names.clone(), subst)
+        }
+    };
+    let written = TypeExpr {
+        span,
+        ..subst_type_expr(&written, &subst)
+    };
+    enqueue_type_app_mono(&written, types, &names, generics, pending, span)
 }
 
 fn instantiate_union_mono(

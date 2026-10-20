@@ -459,6 +459,7 @@ impl Parser {
                 derived: Vec::new(),
                 param_bounds: param_bounds.clone(),
                 bounds: Vec::new(),
+                assoc_bounds: Vec::new(),
                 mixed: None,
                 assoc: Vec::new(),
                 checking: Vec::new(),
@@ -490,6 +491,21 @@ impl Parser {
                 }
             }
             self.expect_kind(&TokenKind::RParen)?;
+        }
+        // `where S.Item: Show` bounds its parameters' associated types (D237).
+        let mut assoc_bounds = Vec::new();
+        if !type_params.is_empty() && self.at_where_bounds() {
+            let mut written: Vec<TypeParamBound> = type_params
+                .iter()
+                .map(|param| TypeParamBound {
+                    name: param.clone(),
+                    span: name_span,
+                    traits: Vec::new(),
+                    same: None,
+                })
+                .collect();
+            self.parse_where_bounds(&mut written)?;
+            assoc_bounds = written.into_iter().filter(|bound| bound.name.contains('.')).collect();
         }
 
         // Body is optional: `type Point(x: Int64, y: Int64)` needs no `{}`
@@ -602,6 +618,7 @@ impl Parser {
             derived: Vec::new(),
             param_bounds: param_bounds.clone(),
             bounds: Vec::new(),
+            assoc_bounds,
             mixed: None,
             assoc: Vec::new(),
             checking: Vec::new(),
@@ -1079,7 +1096,7 @@ impl Parser {
             let traits = if same.is_none() { self.parse_bounds()? } else { Vec::new() };
             let owner = name.split('.').next().unwrap_or_default();
             if !type_params.iter().any(|param| param.name == owner) {
-                return Err(Error::at(format!("`{owner}` is not a type parameter of this function"), span));
+                return Err(Error::at(format!("`{owner}` is not a type parameter here"), span));
             }
             match type_params.iter_mut().find(|param| param.name == name) {
                 Some(param) if same.is_some() && param.same.is_some() => {
