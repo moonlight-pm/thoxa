@@ -137,8 +137,8 @@ first"): D228's twelve slices and every gap after them, D232–D240; the
 **D241 shipped** (Joshua 2026-10-19: the docs' highlighting "needs updated
 for trait, conform, to etc."): the site's highlighter, the Zed queries, and
 the LSP colour `trait` / `conform` / `extend`, `self`, and `to` / `get` /
-`set` / `field` / `mixed` where they are keywords. thoxa.dev shows it after a
-redeploy, which needs Joshua's go-ahead.
+`set` / `field` / `mixed` where they are keywords. thoxa.dev shows it since
+its redeploy at `3ec9f70`.
 **D242–D244 shipped** (Joshua 2026-10-19, on the proposals and fixes
 after traits): a line that starts with `(` or `[` starts a new expression
 (D242); three errors name the real problem: a type written as a value, a
@@ -235,7 +235,7 @@ encoding where a `Json` is expected (and `match` takes its expected type), §5
 typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
 Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 (route clauses import only what they write; generated code names `std/http`
-itself). thoxa.dev runs `7e5451d` (redeployed 2026-10-19 at Joshua's request; its manual goes through D232; a redeploy needs Joshua's go-ahead).
+itself). thoxa.dev runs `3ec9f70` (redeployed 2026-10-19 at Joshua's request; its manual goes through D245; a redeploy needs Joshua's go-ahead).
 
 **Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
 order"):** done; each slice with conformance and docs, decisions on the
