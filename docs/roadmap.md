@@ -161,7 +161,8 @@ by design ([`capabilities.md`](capabilities.md), `traits` row).
 
 **Status: unplanned**
 
-- Public handbook site beyond the repo
+- A handbook site beyond the site's `/manual` (which renders `docs/handbook`
+  publicly today, D189; at thoxa.moonlight.pm since D246)
 - Broader editor ecosystem
 - Distribution story beyond workspace `cargo make`
 

@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-19 (**D245**: nested text quotes strings, `"{names}"` and `names.show()` agree; **D242**: a line starting `(` or `[` starts a new expression; **D243**: three clearer errors; **D244**: operators stay built-in, generic codecs parked; **D241**: highlighting knows the trait words, on the site, in Zed, and from the LSP; **traits finished**: D228's twelve slices and the gaps after them, D232–D240; **D240**: generic types write their own codecs; **D239**: trait member defaults, members in clauses; **D238**: members in the trait's module and on unions; **D237**: `S.Item` in generic types; **D236**: maps and strings as sequences, arrays ordered; **D235**: open `mixed`, generic instances and built-in types; **D233**: writes through `self`, built-in members that write `self`, mutating members through `mixed`, getters only read; **D234**: `>>` before a comma; **D232**: a generic type's methods are checked once against its bounds; **D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-19 (**D247**: names come from imports as far as possible (direction, not applied); **D246**: the site is thoxa.moonlight.pm, thoxa.dev parked; oath.wicket.cloud and sola.computer moved to their own projects; **D245**: nested text quotes strings, `"{names}"` and `names.show()` agree; **D242**: a line starting `(` or `[` starts a new expression; **D243**: three clearer errors; **D244**: operators stay built-in, generic codecs parked; **D241**: highlighting knows the trait words, on the site, in Zed, and from the LSP; **traits finished**: D228's twelve slices and the gaps after them, D232–D240; **D240**: generic types write their own codecs; **D239**: trait member defaults, members in clauses; **D238**: members in the trait's module and on unions; **D237**: `S.Item` in generic types; **D236**: maps and strings as sequences, arrays ordered; **D235**: open `mixed`, generic instances and built-in types; **D233**: writes through `self`, built-in members that write `self`, mutating members through `mixed`, getters only read; **D234**: `>>` before a comma; **D232**: a generic type's methods are checked once against its bounds; **D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -136,7 +136,7 @@ first"): D228's twelve slices and every gap after them, D232–D240; the
 **D241 shipped** (Joshua 2026-10-19: the docs' highlighting "needs updated
 for trait, conform, to etc."): the site's highlighter, the Zed queries, and
 the LSP colour `trait` / `conform` / `extend`, `self`, and `to` / `get` /
-`set` / `field` / `mixed` where they are keywords. thoxa.dev shows it since
+`set` / `field` / `mixed` where they are keywords. The site shows it since
 its redeploy at `3ec9f70`.
 **D242–D244 shipped** (Joshua 2026-10-19, on the proposals and fixes
 after traits): a line that starts with `(` or `[` starts a new expression
@@ -234,7 +234,7 @@ encoding where a `Json` is expected (and `match` takes its expected type), §5
 typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
 Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 (route clauses import only what they write; generated code names `std/http`
-itself). The site (thoxa.moonlight.pm since D246) runs `68a9a33` (redeployed 2026-10-19 at Joshua's request; transparent favicon; its manual goes through D246; a redeploy needs Joshua's go-ahead).
+itself). The site (thoxa.moonlight.pm since D246) runs `fa7ce7e` (redeployed 2026-10-19 at Joshua's request: transparent favicon, phone-sized tap targets, the HTML sample's `Component` wording; a redeploy needs Joshua's go-ahead).
 
 **Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
 order"):** done; each slice with conformance and docs, decisions on the
@@ -316,7 +316,7 @@ lits; overwrite-drop; **D152** match/init RC.
 session items (Ctrl-C in a loop, the command-or-Thoxa guess, redefining a
 session `fn`) went with D227. Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14) and the copied site templates (finding 38). thoxa.moonlight.pm runs `68a9a33` (redeployed 2026-10-19).
+14). Finding 38 (the copied site templates) is moot: one site is left. thoxa.moonlight.pm runs `fa7ce7e` (redeployed 2026-10-19).
 
 ### Proceed order
 
