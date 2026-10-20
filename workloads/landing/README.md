@@ -71,7 +71,7 @@ emitted earlier. The final stage also copies `docs/handbook` (as
 the handbook of the commit the image was built from. Bases are pinned by
 digest (bump them by hand); the server runs as UID 65534 and, as PID 1, ends
 on SIGTERM (D170). The first build pulls the Rust base image; the compiler
-then builds in about 15 s, and the three site images share that stage.
+then builds in about 15 s.
 
 ```bash
 podman build -f workloads/landing/Containerfile \

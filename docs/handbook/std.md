@@ -244,9 +244,8 @@ client sends without waiting for replies (pipelining) are answered in order.
 
 Example servers in the repository: `cargo make run examples/http` (an
 order-taking demo using `http`, `http/server`, `http/static`, `json`, and
-`sqlite`; see `examples/http/README.md`), and the deployed sites
-`workloads/landing` (thoxa.moonlight.pm, port 8088) and `workloads/sola` (sola.computer,
-port 8089).
+`sqlite`; see `examples/http/README.md`), and the deployed site
+`workloads/landing` (thoxa.moonlight.pm, port 8088).
 
 ## std/json
 

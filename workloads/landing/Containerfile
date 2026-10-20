@@ -12,8 +12,6 @@
 # Wicket injects PORT / WICKET_PORT_HTTP.
 #   podman run --rm -p 8080:8080 thoxa-landing:latest
 
-# Identical in all three site images up to the site's own COPY, so podman
-# builds the compiler and the runtime once for them.
 FROM docker.io/library/rust:1.95-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1 AS build
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./

@@ -18,5 +18,4 @@
 
 # Local SQLite for deployed sites
 /workloads/landing/data/
-/workloads/sola/data/
 /.worktrees/

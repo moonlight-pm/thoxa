@@ -79,7 +79,7 @@ documented ASan). Alloc size wrap panics; `Socket.close` clears `fd`.
 `HEAP_ELEMS`, heap params owned (**D154**), early-return final `drop_places`,
 if/match result overwrite-drop. Language harvest **D147–D150** shipped.
 **D151** LeakSanitizer is the default leak gate; **D152** match/init RC.
-`workloads/landing` = thoxa.moonlight.pm (thoxa.dev parked, D246); `workloads/sola` = sola.computer.
+`workloads/landing` = thoxa.moonlight.pm (thoxa.dev parked, D246).
 Crema Phase **E** through **E5**; **E6** WebSockets parked. **`having`/`else` parked indefinitely.**
 
 ---
@@ -310,7 +310,7 @@ lits; overwrite-drop; **D152** match/init RC.
 session items (Ctrl-C in a loop, the command-or-Thoxa guess, redefining a
 session `fn`) went with D227. Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14) and the copied site templates (finding 38). thoxa.moonlight.pm runs `68a9a33` (redeployed 2026-10-19); sola.computer still runs `e0c0bcf` (D170–D172, redeployed 2026-10-16).
+14) and the copied site templates (finding 38). thoxa.moonlight.pm runs `68a9a33` (redeployed 2026-10-19).
 
 ### Proceed order
 
@@ -328,9 +328,9 @@ the site work: the event loop's wake scan and blocking log writes (finding
 conformance green-ups; shrinking `lsan-skip` (LSan-clean a listed test, then
 delete its line). Further **`std/` growth is sample-driven** (D97/D136).
 Crema **domain** (pages, models, cookies policy) stays in `examples/http/`.
-Public sites are **`workloads/landing`** (thoxa.moonlight.pm; thoxa.dev parked, D246) and
-**`workloads/sola`** (sola.computer) — not `examples/`, not `extras/`.
-oath.wicket.cloud moved to the Oath project (2026-10-19).
+The public site is **`workloads/landing`** (thoxa.moonlight.pm; thoxa.dev parked, D246)
+— not `examples/`, not `extras/`. oath.wicket.cloud and sola.computer moved to
+their own projects (2026-10-19).
 
 **Explicit holds:**
 
@@ -440,7 +440,6 @@ cargo make test-asan
 cargo test -p thoxa --lib
 cargo make run examples/http
 cargo make run workloads/landing
-cargo make run workloads/sola
 cargo run -p thoxa -- tests/conformance/param_defaults.thx
 ```
 
