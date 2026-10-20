@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Names come from imports
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D247 | A program's names come from imports, as far as possible | Joshua 2026-10-19, on the HTML sample conforming to `Component` with no import: "I'd like to try to avoid surprises in code. For now, at least note, that all symbols, as far as possible should be imported." A name a program uses should be visible in its imports; a name that appears with no import is the exception, kept only where the language cannot do without it. | **Direction, not applied**: no code changed. Implicit today: std/core's names (`Equatable`, `Hashable`, `Hasher`, `Ordered`, `Order`, `Show`, `Component`, `Resource`, `Iterator`, `Sequence`, `ArrayCursor`, and the cursors and `Entry` of D236), `Node` and its members (D147, D204), and the built-in types. Already imported: `Encodable` / `Decodable` (std/json), `May` / `Trial` and their members (std/fallible). To settle when a slice takes it up: which names are the exceptions (the built-in types; syntax that rests on a trait: `==`, `<`, `"{x}"`, `for`, tag literals), and whether using such syntax stays import-free while naming the trait (`conform Menu to Component`) needs the import. New names should not be added to std/core without this in mind. |
+
 ## 2026-10-19 — The site moves to thoxa.moonlight.pm
 
 | ID | Decision | Choice | Notes |

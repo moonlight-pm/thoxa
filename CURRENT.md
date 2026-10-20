@@ -274,6 +274,12 @@ the 2026-10-18 pass: multi-clause parameters cannot join `Int64` and `Float64`
 (no union of built-in scalars); a `UInt64` above `Int64` max cannot be
 written to JSON.
 
+**Direction (D247, Joshua 2026-10-19; not applied):** names come from
+imports as far as possible, to avoid surprises. std/core's traits (e.g.
+`Component`), `Node`, and the built-in types need no import today; which of
+them stay implicit is settled when a slice takes it up. Do not grow the set
+of implicit names meanwhile.
+
 **To discuss (Joshua, 2026-10-18):** TypeScript-style destructuring as
 arguments. Field access does not pun (`options.deadline` stays positional;
 only a bare name fills the parameter it names, D202).
