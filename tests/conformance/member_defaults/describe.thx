@@ -1,0 +1,7 @@
+## The trait gives `level` a default, written with this module's private
+## names, which every call that leaves it out takes (D239).
+let standard = 2
+
+export trait Describe {
+    fn describe(level: Int64 = standard) -> String
+}

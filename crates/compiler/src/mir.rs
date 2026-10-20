@@ -5258,7 +5258,8 @@ fn merge_method_clauses(
                 defaults,
                 ret,
                 exported: m.exported,
-                def_mod: mod_id.to_string(),
+                // A trait's defaults resolve in its module (D239).
+                def_mod: m.defaults_module.clone().unwrap_or_else(|| mod_id.to_string()),
                 multi_clause: false,
                 mutable,
                 positional,
@@ -7705,7 +7706,11 @@ fn instantiate_product_methods(
                 defaults,
                 ret,
                 exported: m.exported,
-                def_mod: gdef.def_mod.clone(),
+                // A trait's defaults resolve in its module (D239).
+                def_mod: m
+                    .defaults_module
+                    .clone()
+                    .unwrap_or_else(|| method_scope(m, &gdef.def_mod).to_string()),
                 multi_clause: false,
                 mutable: m.params.iter().map(|p| p.mutable).collect(),
                 positional: m.params.iter().map(|p| p.positional).collect(),
@@ -7742,6 +7747,7 @@ fn instantiate_product_methods(
                 type_params: Vec::new(),
                 provided: None,
                 scope_module: None,
+                defaults_module: None,
                 requires: Vec::new(),
                 generic: Vec::new(),
             },
@@ -9128,6 +9134,7 @@ pub(crate) fn subst_method<S: TypeSubst + ?Sized>(m: &Method, subst: &S) -> Meth
         type_params: m.type_params.clone(),
         provided: m.provided.clone(),
         scope_module: m.scope_module.clone(),
+        defaults_module: m.defaults_module.clone(),
         requires: m.requires.clone(),
         generic: m.generic.clone(),
     }

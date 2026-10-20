@@ -1,0 +1,20 @@
+## D239: each clause takes the trait's type or a part of it.
+trait Rank {
+    fn rank(level: Int64) -> String
+}
+
+type Thing(name: String)
+
+conform Thing to Rank {
+    fn rank(level: "top") -> String {
+        "top"
+    }
+
+    fn rank(level: Int64) -> String {
+        "{level}"
+    }
+}
+
+fn main() -> Int64 {
+    Thing(name: "t").rank(level: 1).count
+}

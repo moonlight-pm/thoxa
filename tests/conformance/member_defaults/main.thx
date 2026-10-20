@@ -1,0 +1,58 @@
+## A trait member's parameters may have defaults (D239): a call that leaves
+## one out takes the trait's, resolved in the trait's module, whether it
+## calls the type's member, a generic function's, or one through `mixed`;
+## a conformance's member writes none of its own. A member may be written
+## in clauses, as a type's methods may, which together take every value the
+## trait declares.
+import { Describe } from "~/describe"
+import logging, { info } from "std/logging"
+
+type Thing(name: String)
+
+conform Thing to Describe {
+    fn describe(level: Int64) -> String {
+        "{name} at {level}"
+    }
+}
+
+trait Rank {
+    fn rank(level: Int64) -> String
+    fn badge(color!: Color) -> String
+}
+
+type Gold
+type Silver
+type Color = Gold | Silver
+
+conform Thing to Rank {
+    fn rank(level: 0) -> String {
+        "unranked"
+    }
+
+    fn rank(level: Int64) -> String {
+        "rank {level}"
+    }
+
+    fn badge(color!: Gold) -> String {
+        "gold"
+    }
+
+    fn badge(color!: Silver) -> String {
+        "silver"
+    }
+}
+
+fn twice<T: Describe>(item!: T) -> String {
+    "{item.describe()}; {item.describe(level: 5)}"
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let thing = Thing(name: "t")
+    info(thing.describe())
+    info(twice(thing))
+    let held: mixed Describe = thing
+    info(held.describe())
+    info("{thing.rank(level: 0)} {thing.rank(level: 3)} {thing.badge(Silver())}")
+}

@@ -1,0 +1,21 @@
+## D239: a member written in clauses takes every value the trait declares:
+## `0` and `1` leave the other Int64 values without a clause.
+trait Rank {
+    fn rank(level: Int64) -> String
+}
+
+type Thing(name: String)
+
+conform Thing to Rank {
+    fn rank(level: 0) -> String {
+        "none"
+    }
+
+    fn rank(level: 1) -> String {
+        "one"
+    }
+}
+
+fn main() -> Int64 {
+    Thing(name: "t").rank(level: 1).count
+}

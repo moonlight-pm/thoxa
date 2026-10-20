@@ -463,7 +463,9 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
     // The type's own members, before any conformance adds to them.
     let mut own_members: HashMap<(String, String), OwnMembers> = HashMap::new();
     let mut generic: HashMap<(String, String), Vec<String>> = HashMap::new();
-    let mut unions: HashSet<(String, String)> = HashSet::new();
+    // Each union's members, written in its module (D239: a member's clauses
+    // may take them one by one).
+    let mut unions: HashMap<(String, String), Vec<TypeExpr>> = HashMap::new();
     for module in &package.modules {
         for item in &module.ast.items {
             let Item::Type(def) = item else { continue };
@@ -482,8 +484,8 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
                     .collect(),
             };
             own_members.insert(key.clone(), members);
-            if def.union_members.is_some() {
-                unions.insert(key.clone());
+            if let Some(members) = &def.union_members {
+                unions.insert(key.clone(), members.clone());
             }
             if !def.type_params.is_empty() {
                 generic.insert(key, def.type_params.clone());
@@ -549,6 +551,7 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
                     body: function.body.clone(),
                     provided: None,
                     scope_module: None,
+                    defaults_module: None,
                     requires: Vec::new(),
                     generic: Vec::new(),
                 };
@@ -954,12 +957,6 @@ fn check_trait(def: &TraitDef) -> Result<()> {
                 member.name_span,
             ));
         }
-        if let Some(param) = member.params.iter().find(|param| param.default.is_some()) {
-            return Err(Error::at(
-                "a trait member's parameters take no defaults",
-                param.name_span,
-            ));
-        }
     }
     let mut seen = HashSet::new();
     for assoc in &def.assoc {
@@ -1280,7 +1277,7 @@ fn check_conformance(
     scope: &Scope,
     own_members: &HashMap<(String, String), OwnMembers>,
     generic: &HashMap<(String, String), Vec<String>>,
-    unions: &HashSet<(String, String)>,
+    unions: &HashMap<(String, String), Vec<TypeExpr>>,
     conformed: &mut Conformed,
     trait_members: &mut HashMap<(String, String), HashMap<String, TraitRef>>,
     named: &Named,
@@ -1412,13 +1409,13 @@ fn check_conformance(
     }
 
     // Each member goes to the listed trait that declares it.
-    let mut implemented: HashMap<&str, &Method> = HashMap::new();
+    // A member may be written in clauses, as a type's methods may (D239).
+    let mut implemented: HashMap<&str, Vec<&Method>> = HashMap::new();
     for method in &conformance.methods {
-        if implemented.insert(method.name.as_str(), method).is_some() {
-            return Err(Error::at(
-                format!("`{}` is implemented twice", method.name),
-                method.name_span,
-            ));
+        let clauses = implemented.entry(method.name.as_str()).or_default();
+        clauses.push(method);
+        if clauses.len() > 1 {
+            continue;
         }
         let declaring: Vec<&TraitRef> = refs
             .iter()
@@ -1501,14 +1498,24 @@ fn check_conformance(
             }
             match (implemented.get(member.name.as_str()), &member.body) {
                 (Some(_), _) if own_method.is_some() => return Err(clash()),
-                (Some(method), _) => methods.push(implementation(
-                    method,
+                (Some(clauses), _) if clauses.len() == 1 => methods.push(implementation(
+                    clauses[0],
                     member,
                     trait_ref,
                     item,
                     &target,
                     scope,
                     &assoc,
+                )?),
+                (Some(clauses), _) => methods.extend(clause_implementations(
+                    clauses,
+                    member,
+                    trait_ref,
+                    item,
+                    &target,
+                    scope,
+                    &assoc,
+                    unions,
                 )?),
                 // A required accessor the type's own accessor or field
                 // satisfies: uniform access.
@@ -1563,7 +1570,7 @@ fn check_conformance(
                 // structurally without one.
                 (None, None) if has_defaults(trait_ref) => {
                     // The codecs generate `toJson` themselves.
-                    if bounds.is_none() && !unions.contains(&target) && trait_ref.module == CORE_MODULE {
+                    if bounds.is_none() && !unions.contains_key(&target) && trait_ref.module == CORE_MODULE {
                         methods.push(default_member(member, conformance.span));
                         derived.push(member.name.clone());
                     }
@@ -1755,7 +1762,7 @@ fn implementation(
         }
         if written.default.is_some() {
             return Err(Error::at(
-                "a trait member's parameters take no defaults",
+                format!("`{}` takes its default from `{}`: write it there", written.name, trait_ref.name),
                 written.name_span,
             ));
         }
@@ -1785,6 +1792,165 @@ fn implementation(
     let mut method = method.clone();
     method.exported = true;
     method.return_type.get_or_insert(declared_return);
+    // The trait's defaults, resolved in the trait's module (D239).
+    for (param, declared) in method.params.iter_mut().zip(&member.params) {
+        param.default = declared.default.clone();
+    }
+    if member.params.iter().any(|param| param.default.is_some()) {
+        method.defaults_module = Some(trait_ref.module.clone());
+    }
+    Ok(method)
+}
+
+/// A conformance's member written in clauses (D239), checked against the
+/// trait member it implements: each clause has its parameters, each of the
+/// type the trait declares or narrower (one of its literals, a member of a
+/// union it names), and together they take every value of the declared
+/// types: one clause takes them all as declared, or, for one parameter, the
+/// clauses take every member or literal of its union. Clauses take no
+/// defaults, so the member has none.
+#[allow(clippy::too_many_arguments)]
+fn clause_implementations(
+    clauses: &[&Method],
+    member: &TraitMember,
+    trait_ref: &TraitRef,
+    item: &Pending,
+    target: &(String, String),
+    scope: &Scope,
+    assoc: &ConformedAssoc,
+    unions: &HashMap<(String, String), Vec<TypeExpr>>,
+) -> Result<Vec<Method>> {
+    let in_trait = |ty: &TypeExpr| canonical(ty, &trait_ref.module, target, scope, &assoc.canonical);
+    let in_conformance = |ty: &TypeExpr| canonical(ty, &item.module, target, scope, &assoc.canonical);
+    if let Some(param) = member.params.iter().find(|param| param.default.is_some()) {
+        return Err(Error::at(
+            format!(
+                "`{}` has a default in `{}`, so it is written once, not in clauses",
+                param.name, trait_ref.name
+            ),
+            clauses[1].name_span,
+        ));
+    }
+    // The pieces a declared type is made of, each as the conformance's
+    // types are rendered: a union's members, or a literal union's literals.
+    let pieces = |declared: &TypeExpr| -> Vec<String> {
+        if let Some(members) = &declared.union_members {
+            return members.iter().map(&in_trait).collect();
+        }
+        let Some(key) = declared.args.is_empty().then(|| scope.type_named(&trait_ref.module, &declared.name)).flatten() else {
+            return Vec::new();
+        };
+        let Some(members) = unions.get(&key) else {
+            return Vec::new();
+        };
+        members
+            .iter()
+            .map(|written| canonical(written, &key.0, target, scope, &HashMap::new()))
+            .collect()
+    };
+    let base_of = |lit: &TypeLit| match lit {
+        TypeLit::Int(_) => ["Int64", "Int32", "UInt64", "UInt32", "Byte"].as_slice(),
+        TypeLit::Bool(_) => ["Bool"].as_slice(),
+        TypeLit::String(_) => ["String"].as_slice(),
+    };
+    let mut general = false;
+    let mut first_taken: Vec<String> = Vec::new();
+    let mut out = Vec::new();
+    for clause in clauses {
+        let one = implementation_shape(clause, member, trait_ref, target, assoc, &in_conformance, &in_trait)?;
+        let mut as_declared = true;
+        for (index, (written, declared)) in clause.params.iter().zip(&member.params).enumerate() {
+            if written.default.is_some() {
+                return Err(Error::at("a member written in clauses takes no defaults", written.name_span));
+            }
+            let (written_ty, declared_ty) = (in_conformance(&written.ty), in_trait(&declared.ty));
+            if index == 0 {
+                first_taken.push(written_ty.clone());
+            }
+            if written_ty == declared_ty {
+                continue;
+            }
+            as_declared = false;
+            let literal = written.ty.lit.as_ref().is_some_and(|lit| {
+                base_of(lit).iter().any(|base| declared.ty.name == *base && declared.ty.args.is_empty())
+            });
+            if !literal && !pieces(&declared.ty).contains(&written_ty) {
+                return Err(Error::at(
+                    format!(
+                        "a clause of `{}` takes `{}` as {}, which is not `{}` (as `{}` declares it) or a part of it",
+                        clause.name,
+                        written.name,
+                        render(&written.ty, &|name: &str| name.to_string()),
+                        render(&declared.ty, &|name: &str| name.to_string()),
+                        trait_ref.name
+                    ),
+                    written.name_span,
+                ));
+            }
+        }
+        general |= as_declared;
+        out.push(one);
+    }
+    let covered = general
+        || (member.params.len() == 1 && {
+            let parts = pieces(&member.params[0].ty);
+            !parts.is_empty() && parts.iter().all(|part| first_taken.contains(part))
+        });
+    if !covered {
+        return Err(Error::at(
+            format!(
+                "the clauses of `{}` do not take every value `{}` declares: add one that takes its parameters as declared",
+                member.name, trait_ref.name
+            ),
+            clauses[0].name_span,
+        ));
+    }
+    Ok(out)
+}
+
+/// A clause as `implementation` makes a member: the trait's parameter names,
+/// marks, and return type; public.
+#[allow(clippy::too_many_arguments)]
+fn implementation_shape(
+    method: &Method,
+    member: &TraitMember,
+    trait_ref: &TraitRef,
+    target: &(String, String),
+    assoc: &ConformedAssoc,
+    in_conformance: &dyn Fn(&TypeExpr) -> String,
+    in_trait: &dyn Fn(&TypeExpr) -> String,
+) -> Result<Method> {
+    let mismatch = || {
+        Error::at(
+            format!(
+                "`{}` must match `{}` in `{}`",
+                method.name,
+                signature(member, &target.1, &assoc.shown),
+                trait_ref.name
+            ),
+            method.name_span,
+        )
+    };
+    if method.params.len() != member.params.len() {
+        return Err(mismatch());
+    }
+    for (written, declared) in method.params.iter().zip(&member.params) {
+        if written.name != declared.name || written.positional != declared.positional || written.mutable != declared.mutable {
+            return Err(mismatch());
+        }
+    }
+    let declared_return = member
+        .return_type
+        .clone()
+        .unwrap_or_else(|| void_type(member.name_span));
+    if let Some(written) = &method.return_type {
+        if in_conformance(written) != in_trait(&declared_return) {
+            return Err(mismatch());
+        }
+    }
+    let mut method = method.clone();
+    method.exported = true;
+    method.return_type.get_or_insert(declared_return);
     Ok(method)
 }
 
@@ -1806,6 +1972,7 @@ fn provided_method(
         return_type: member.return_type.clone(),
         body,
         scope_module: None,
+        defaults_module: None,
         provided: Some(Provided {
             module: trait_ref.module.clone(),
             members,
@@ -1990,6 +2157,7 @@ fn field_accessor(method: &str, field_ty: &TypeExpr, span: Span) -> Method {
         type_params: Vec::new(),
         provided: None,
         scope_module: None,
+        defaults_module: None,
         requires: Vec::new(),
         generic: Vec::new(),
     }
@@ -2046,6 +2214,7 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
         type_params: Vec::new(),
         provided: None,
         scope_module: None,
+        defaults_module: None,
         requires: Vec::new(),
         generic: Vec::new(),
     }

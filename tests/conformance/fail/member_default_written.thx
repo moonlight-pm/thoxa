@@ -1,0 +1,16 @@
+## D239: a member's defaults are its trait's; the conformance writes none.
+trait Describe {
+    fn describe(level: Int64 = 1) -> String
+}
+
+type Thing(name: String)
+
+conform Thing to Describe {
+    fn describe(level: Int64 = 3) -> String {
+        "{name} {level}"
+    }
+}
+
+fn main() -> Int64 {
+    Thing(name: "t").describe().count
+}

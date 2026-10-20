@@ -1585,6 +1585,18 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
 
 - A member without a body is required: a conforming type supplies it with the
   trait's parameters, and may leave out the return type to take the trait's.
+- A trait member's parameters may have defaults, `fn describe(level: Int64 =
+  2) -> String`. A call that leaves one out takes the trait's, however it
+  calls the member (on the type, in generic code, through `mixed`), and the
+  default's names resolve in the trait's module; a conformance's member
+  writes no defaults of its own.
+- A conformance may write a member in clauses, as a type's methods are (see
+  [Multi-clause functions](#multi-clause-functions)): each clause takes a
+  parameter as the trait declares it or narrower (one of its literals, a
+  member of its union), and together they take every value, with one clause
+  as declared, or, for a one-parameter member, a clause for each member of
+  its union: `fn badge(color!: Gold)` and `fn badge(color!: Silver)` for a
+  `Color = Gold | Silver`.
 - A trait may ask for a property: `get name: Type` and `set name(value:
   Type)`. A getter or setter in the conformance meets it, and so does the
   type's own accessor or a field of that name and type. A field that meets a

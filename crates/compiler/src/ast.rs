@@ -316,6 +316,9 @@ pub struct Method {
     /// The module whose names the method sees when it is written in another
     /// than its type's: a conformance's member in the trait's module (D238).
     pub scope_module: Option<String>,
+    /// The module its parameters' defaults resolve in when they are its
+    /// trait's, which a conformance's member takes (D239).
+    pub defaults_module: Option<String>,
     /// A generic type's conformance that holds only for some instances
     /// (`conform Box<T: Equatable> to Equatable { … }`): the bounds it puts on
     /// the type's parameters, one list per parameter. The method exists for

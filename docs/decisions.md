@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Members in clauses, defaults on members
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D239 | A trait member's parameters may have defaults; a conformance's member may be written in clauses | `fn describe(level: Int64 = standard) -> String` in a trait: every call that leaves `level` out takes the trait's default, on the type, in generic code, or through `mixed`, and the default's names resolve in the trait's module (D116's rule for defaults); a conformance's member writes none (an error names the trait). A conformance may write a member in clauses (D131), each taking a parameter as declared or narrower (a literal of it, a member of a union it names), and together every value: one clause as declared, or, with one parameter, a clause for every member or literal of its union. Since clauses take no defaults (D131), a member with a default is written once. | **Shipped** 2026-10-19 (the D228 gaps "multi-clause members" and "parameter defaults on members"). `trait_desugar::implementation` copies the trait's defaults onto the member and sets `Method::defaults_module`, which the MIR's method signatures take as `def_mod`; `clause_implementations` checks clauses against the trait (`implementation_shape`, with the unions' members from the map `unions` now keeps); provided members and `mixed` signatures already resolved in the trait's module. Gates: `member_defaults` (a package), `fail/member_clauses_uncovered`, `fail/member_default_written`, `fail/member_clause_type`. |
+
 ## 2026-10-19 — Conformance members in the trait's module and on unions
 
 | ID | Decision | Choice | Notes |

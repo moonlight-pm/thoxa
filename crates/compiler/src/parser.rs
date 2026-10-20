@@ -1179,6 +1179,7 @@ impl Parser {
             type_params: Vec::new(),
             provided: None,
             scope_module: None,
+            defaults_module: None,
             requires: Vec::new(),
             generic: Vec::new(),
         };
@@ -1257,6 +1258,7 @@ impl Parser {
             type_params,
             provided: None,
             scope_module: None,
+            defaults_module: None,
             requires: Vec::new(),
             generic: Vec::new(),
         })
