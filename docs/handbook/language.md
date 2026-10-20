@@ -1612,8 +1612,14 @@ let wins = ace.beats(Card(name: "king", rank: 13))   ## true
   type's own methods or fields, or with another trait's member on the same
   type.
 - A conformance goes in the module that defines the type or the one that
-  defines the trait; one with methods goes in the type's module (a built-in
-  type's may go in the trait's). A type conforms to a trait once.
+  defines the trait. Wherever it is, its members are the type's methods and
+  see its fields; the other names in them resolve in the module the
+  conformance is written in, so one in the trait's module may call that
+  module's private functions. A type conforms to a trait once.
+- A union conforms with members too, written as a type's are: `self` is the
+  whole value, which a member takes apart with `match self { … }`. A generic
+  union's (`conform May<T: Show> to Describe`) are its instances' that meet
+  the bounds.
 - A trait is private to its module unless marked `export`, and is imported by
   name like a type. The built-in traits, `Equatable`, `Hashable`, `Ordered`
   (see [Equality and order](#equality-and-order)), `Show`, `Component` (see

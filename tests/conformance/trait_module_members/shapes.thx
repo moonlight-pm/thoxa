@@ -1,0 +1,46 @@
+## The trait's module: it conforms the types of another module to its
+## trait, members and all, with its own names (D238).
+import { Point, Segment, Path } from "~/geometry"
+
+export trait Measured {
+    fn size() -> Int64
+    fn describe() -> String
+}
+
+## Private to this module, yet the members written here call it.
+fn unit(count!: Int64) -> String {
+    if count == 1 { "unit" } else { "units" }
+}
+
+conform Point to Measured {
+    fn size() -> Int64 {
+        0
+    }
+
+    fn describe() -> String {
+        "point at {x}, {y}"
+    }
+}
+
+conform Segment to Measured {
+    fn size() -> Int64 {
+        length
+    }
+
+    fn describe() -> String {
+        "segment of {length} {unit(length)}"
+    }
+}
+
+conform Path to Measured {
+    fn size() -> Int64 {
+        match self {
+            Point(x, y) => 0
+            Segment(length) => length
+        }
+    }
+
+    fn describe() -> String {
+        "a path of size {size()}"
+    }
+}

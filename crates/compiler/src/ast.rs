@@ -313,6 +313,9 @@ pub struct Method {
     /// Set on a method a trait provides, copied into a conforming type by
     /// `trait_desugar` (D228). `None` for a type's own methods.
     pub provided: Option<Provided>,
+    /// The module whose names the method sees when it is written in another
+    /// than its type's: a conformance's member in the trait's module (D238).
+    pub scope_module: Option<String>,
     /// A generic type's conformance that holds only for some instances
     /// (`conform Box<T: Equatable> to Equatable { … }`): the bounds it puts on
     /// the type's parameters, one list per parameter. The method exists for

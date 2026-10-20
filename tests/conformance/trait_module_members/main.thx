@@ -1,0 +1,20 @@
+## A conformance with members may go in the trait's module, and a union may
+## have members (D238): the members are the types' own methods, see the
+## types' fields, and resolve names in the module they are written in.
+import { Point, Segment, Path } from "~/geometry"
+import { Measured } from "~/shapes"
+import logging, { info } from "std/logging"
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info(Point(x: 1, y: 2).describe())
+    info(Segment(length: 1).describe())
+    info(Segment(length: 3).describe())
+    let path: Path = Segment(length: 4)
+    info("{path.describe()} {path.size()}")
+    let things: Array<mixed Measured> = [Point(x: 0, y: 0), Segment(length: 2), path]
+    for thing in things {
+        info("{thing.size()}")
+    }
+}

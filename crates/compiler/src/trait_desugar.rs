@@ -548,6 +548,7 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
                     return_type: function.return_type.clone(),
                     body: function.body.clone(),
                     provided: None,
+                    scope_module: None,
                     requires: Vec::new(),
                     generic: Vec::new(),
                 };
@@ -642,7 +643,13 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
                     .extend(entries.into_iter().map(|(name, ty, bounds)| (params.clone(), name, ty, bounds)));
                 let _ = defaults;
             }
-            Ok((target, refs, methods, defaults, entries)) => {
+            Ok((target, refs, mut methods, defaults, entries)) => {
+                // Members written in the trait's module see its names (D238).
+                if item.module != target.0 {
+                    for method in methods.iter_mut().filter(|method| method.provided.is_none()) {
+                        method.scope_module = Some(item.module.clone());
+                    }
+                }
                 assoc_types.entry(target.clone()).or_default().extend(entries);
                 derived.entry(target.clone()).or_default().extend(defaults);
                 for trait_ref in refs {
@@ -1382,26 +1389,6 @@ fn check_conformance(
         }
         refs.push((trait_ref, *span));
     }
-    if !conformance.methods.is_empty() && unions.contains(&target) {
-        return Err(Error::at(
-            format!(
-                "`{}` is a union, and a union's methods are not supported yet",
-                target.1
-            ),
-            conformance.span,
-        ));
-    }
-    // A built-in type's members are functions of the module they are written
-    // in, so they may be written in the trait's.
-    if !conformance.methods.is_empty() && item.module != target.0 && built_in.is_none() {
-        return Err(Error::at(
-            format!(
-                "a conformance with members goes in the module that defines `{}` (members in the trait's module are not supported yet)",
-                target.1
-            ),
-            conformance.span,
-        ));
-    }
 
     let mut assoc = conformance_assoc(item, &target, &refs, named, listed, scope)?;
     // A generic type's `Self` is its instance: `Box<T>`, with the type's own
@@ -1818,6 +1805,7 @@ fn provided_method(
         params: member.params.clone(),
         return_type: member.return_type.clone(),
         body,
+        scope_module: None,
         provided: Some(Provided {
             module: trait_ref.module.clone(),
             members,
@@ -2001,6 +1989,7 @@ fn field_accessor(method: &str, field_ty: &TypeExpr, span: Span) -> Method {
         body,
         type_params: Vec::new(),
         provided: None,
+        scope_module: None,
         requires: Vec::new(),
         generic: Vec::new(),
     }
@@ -2056,6 +2045,7 @@ fn default_member(member: &TraitMember, span: Span) -> Method {
         },
         type_params: Vec::new(),
         provided: None,
+        scope_module: None,
         requires: Vec::new(),
         generic: Vec::new(),
     }
@@ -2158,7 +2148,8 @@ fn checking_instances(package: &mut Package, scope: &Scope) -> Result<()> {
         let mut archetypes = Vec::new();
         for item in &mut module.ast.items {
             let Item::Type(def) = item else { continue };
-            if def.type_params.is_empty() || def.union_members.is_some() {
+            // A generic union's members from conformances are checked too (D238).
+            if def.type_params.is_empty() || (def.union_members.is_some() && def.methods.is_empty()) {
                 continue;
             }
             let written: Vec<&Method> = def.methods.iter().filter(|method| method.provided.is_none()).collect();

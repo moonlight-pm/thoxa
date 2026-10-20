@@ -1,0 +1,68 @@
+## A union conforms with members, written as a type's are, `self` the whole
+## value (D238); a generic union's members exist for the instances that meet
+## the conformance's bounds, `May<Int64>` among them, and are checked once.
+import { Has, Not, May } from "std/fallible"
+import logging, { info } from "std/logging"
+
+trait Describe {
+    fn describe() -> String
+}
+
+conform May<T: Show> to Describe {
+    fn describe() -> String {
+        match self {
+            Has(value) => "has {value}"
+            Not => "nothing"
+        }
+    }
+}
+
+type Left<T>(value: T)
+type Right<T>(value: T)
+type Either<T> = Left<T> | Right<T>
+
+conform Either<T: Show> to Describe {
+    fn describe() -> String {
+        match self {
+            Left(value) => "left {value}"
+            Right(value) => "right {value}"
+        }
+    }
+}
+
+type Circle(radius: Int64)
+type Square(side: Int64)
+type Shape = Circle | Square
+
+conform Shape to Describe {
+    fn describe() -> String {
+        "a shape of area {area()}"
+    }
+}
+
+trait Area {
+    fn area() -> Int64
+}
+
+conform Shape to Area {
+    fn area() -> Int64 {
+        match self {
+            Circle(radius) => 3 * radius * radius
+            Square(side) => side * side
+        }
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let some: May<Int64> = Has(3)
+    let none: May<String> = Not()
+    info("{some.describe()} / {none.describe()}")
+    let side: Either<String> = Right(value: "r")
+    info(side.describe())
+    let shapes: Array<Shape> = [Circle(radius: 1), Square(side: 2)]
+    for shape in shapes {
+        info(shape.describe())
+    }
+}

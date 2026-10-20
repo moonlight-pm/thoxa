@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-19 (**D237**: `S.Item` in generic types; **D236**: maps and strings as sequences, arrays ordered; **D235**: open `mixed`, generic instances and built-in types; **D233**: writes through `self`, built-in members that write `self`, mutating members through `mixed`, getters only read; **D234**: `>>` before a comma; **D232**: a generic type's methods are checked once against its bounds; **D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-19 (**D238**: members in the trait's module and on unions; **D237**: `S.Item` in generic types; **D236**: maps and strings as sequences, arrays ordered; **D235**: open `mixed`, generic instances and built-in types; **D233**: writes through `self`, built-in members that write `self`, mutating members through `mixed`, getters only read; **D234**: `>>` before a comma; **D232**: a generic type's methods are checked once against its bounds; **D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -135,10 +135,12 @@ design rather than short term stop gaps."
 sense and keep working through the rest"; all in the `traits` row of
 [`docs/capabilities.md`](docs/capabilities.md)). Every gap Joshua listed is
 now shipped; the ones left are smaller (the `traits` row's **Gaps**):
-a conformance with members in the trait's
-module, members on unions, multi-clause members, defaults on members.
+multi-clause members, defaults on members.
 Joshua 2026-10-19: "just finish traits out first", then the syntax
 highlighting (`trait`, `conform`, `to`, …) on the site and in the editor.
+**D238 shipped**: a conformance's members may be written in the trait's
+module (they resolve names there), and unions, generic ones included, conform
+with members (`match self`).
 **D237 shipped**: a generic type writes `S.Item` / `S.Cursor` in its
 fields, methods, and conformances, and `where S.Item: Show` (or `== Int64`)
 after its header; std/array's `flattened()`.
@@ -271,12 +273,12 @@ Freezes:
 [`docs/specs/2026-09-02-simple-rc-correctness.md`](docs/specs/2026-09-02-simple-rc-correctness.md)
 (**D153**).
 
-**Shipped recently:** D228 slices 1–8 (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions, declared `Show` / `Component` / codecs, `mixed`, associated types) slice 9 (generic and built-in types' conformances with members, `Array` a `Sequence`), slice 10 (methods with type parameters), D229 (integer constructor fields, `UInt64` literals), D230 (explicit type arguments, slice 11), D231 (same-type constraints, slice 12), D232 (generic types' methods checked once), D233–D234 (writes through `self`, built-in and `mixed` members that write, getters only read; `>>` before a comma), D235 (open `mixed`), D236 (`Map` and `String` sequences, `Array` ordered), and D237 (`S.Item` in generic types), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
+**Shipped recently:** D228 slices 1–8 (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions, declared `Show` / `Component` / codecs, `mixed`, associated types) slice 9 (generic and built-in types' conformances with members, `Array` a `Sequence`), slice 10 (methods with type parameters), D229 (integer constructor fields, `UInt64` literals), D230 (explicit type arguments, slice 11), D231 (same-type constraints, slice 12), D232 (generic types' methods checked once), D233–D234 (writes through `self`, built-in and `mixed` members that write, getters only read; `>>` before a comma), D235 (open `mixed`), D236 (`Map` and `String` sequences, `Array` ordered), D237 (`S.Item` in generic types), and D238 (members in the trait's module and on unions), D202–D206 (label punning, built-in labels, `Element` field names, `insert(item, at:)`, fields passed `mut`), D197–D201 (reachable-only emit, soft keywords, `mut` parameters, label rules, assignment arms), D196 (String's methods in Thoxa via `extend`), D195
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 195 programs, 145 rejections, 8 site samples, 223 unit tests
-after D237 (2026-10-19); `cargo make test-asan` 180 clean, 10 excepted (2026-10-19, after D231). Before them: the
+`cargo make test` 197 programs, 145 rejections, 8 site samples, 223 unit tests
+after D238 (2026-10-19); `cargo make test-asan` 180 clean, 10 excepted (2026-10-19, after D231). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`

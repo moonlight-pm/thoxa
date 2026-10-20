@@ -1,0 +1,4 @@
+## The type's module knows nothing of `Measured`.
+export type Point(x: Int64, y: Int64)
+export type Segment(length: Int64)
+export type Path = Point | Segment

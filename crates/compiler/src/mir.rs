@@ -1619,6 +1619,8 @@ enum GenericKind {
     },
     Union {
         members: Vec<TypeExpr>,
+        /// Its conformances' members (D238).
+        methods: Vec<Method>,
     },
 }
 
@@ -2211,14 +2213,16 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                     ));
                 }
                 let kind = if let Some(members) = &td.union_members {
-                    if !td.params.is_empty() || !td.fields.is_empty() || !td.methods.is_empty() {
+                    if !td.params.is_empty() || !td.fields.is_empty() {
                         return Err(Error::at(
-                            "union type cannot have constructor params, body fields, or methods",
+                            "union type cannot have constructor params or body fields",
                             td.name_span,
                         ));
                     }
+                    // Its methods are its conformances' members (D238).
                     GenericKind::Union {
                         members: members.clone(),
+                        methods: td.methods.clone(),
                     }
                 } else if !td.fields.is_empty() {
                     return Err(Error::at(
@@ -2392,6 +2396,10 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         &tables,
         &mut mono_method_jobs,
     )?;
+    // Each instance's methods once, generic unions' included (D238).
+    let mut method_jobs_made: HashSet<String> = HashSet::new();
+    mono_method_jobs.retain(|job| job.conversion || method_jobs_made.insert(job_function_name(job)));
+    mono_method_jobs.extend(union_method_jobs(&types_info, &generics, &mut method_jobs_made));
     // Generic types' checking instances (D228 §5), by name: the template,
     // and the bounds a conformance adds for the members checked there.
     let checking: HashMap<String, (String, Vec<Vec<TraitRef>>)> = generics
@@ -3460,6 +3468,13 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         .map(|module| module.id.clone())
         .unwrap_or_else(|| "Main".into());
     let mut mixed_made: HashMap<String, usize> = HashMap::new();
+    // The instance methods lowered so far, by function name: an instance
+    // made again elsewhere does not lower them twice (D238).
+    let mut lowered_method_jobs: HashSet<String> = mono_method_jobs
+        .iter()
+        .filter(|job| !job.conversion)
+        .map(job_function_name)
+        .collect();
     loop {
         let job = {
             let mut synthetics = synthetics.borrow_mut();
@@ -3474,7 +3489,16 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
             }
         };
         let Some(job) = job else {
-            let late = std::mem::take(&mut synthetics.borrow_mut().late_mono_jobs);
+            let mut late = std::mem::take(&mut synthetics.borrow_mut().late_mono_jobs);
+            // Generic unions' instances made while lowering (D238).
+            {
+                let mut types_now = types_info.clone();
+                seed_synthetics(&mut types_now, &synthetics.borrow());
+                let generics_now = synthetics.borrow().generics.clone();
+                late.extend(union_method_jobs(&types_now, &generics_now, &mut method_jobs_made));
+            }
+            late.retain(|job| job.conversion || !lowered_method_jobs.contains(&job_function_name(job)));
+            lowered_method_jobs.extend(late.iter().filter(|job| !job.conversion).map(job_function_name));
             let mut made_methods = std::mem::take(&mut synthetics.borrow_mut().method_jobs);
             if late.is_empty() && made_methods.is_empty() {
                 // Calls through `mixed` values (D235), over every member known
@@ -3792,11 +3816,12 @@ fn resolve_type_def_shape(
     let zero_init;
     let mut sum_info: Option<SumInfo> = None;
 
-    // Union alias: `type Dir = Up | Down` (D118).
+    // Union alias: `type Dir = Up | Down` (D118). Its methods are its
+    // conformances' members (D238).
     if let Some(members) = &td.union_members {
-        if !td.params.is_empty() || !td.fields.is_empty() || !td.methods.is_empty() {
+        if !td.params.is_empty() || !td.fields.is_empty() {
             return Err(Error::at(
-                "union type cannot have constructor params, body fields, or methods",
+                "union type cannot have constructor params or body fields",
                 td.name_span,
             ));
         }
@@ -4677,12 +4702,14 @@ fn is_archetype(td: &TypeDef) -> bool {
 }
 
 /// The module whose names a method's signature and body see: its trait's for
-/// a body a trait provides, else its type's (D228).
+/// a body a trait provides or a conformance's member written there (D238),
+/// else its type's (D228).
 fn method_scope<'a>(method: &'a Method, type_module: &'a str) -> &'a str {
-    method
-        .provided
-        .as_ref()
-        .map_or(type_module, |provided| provided.module.as_str())
+    match (&method.provided, &method.scope_module) {
+        (Some(provided), _) => provided.module.as_str(),
+        (None, Some(module)) => module.as_str(),
+        (None, None) => type_module,
+    }
 }
 
 /// A module's type names, plus `Self` for the type whose method is resolved
@@ -5658,7 +5685,7 @@ fn collapse_residual_exit(
     // Longest base prefix wins (more specific mangled base).
     bases.sort_by_key(|(b, _)| std::cmp::Reverse(b.len()));
     if let Some((base, gdef)) = bases.first() {
-        if let GenericKind::Union { members } = &gdef.kind {
+        if let GenericKind::Union { members, .. } = &gdef.kind {
             let mut args = Vec::with_capacity(gdef.type_params.len());
             for p in &gdef.type_params {
                 match type_param_role(p, members) {
@@ -5768,7 +5795,7 @@ fn refine_residual_with_success(
         .collect();
     bases.sort_by_key(|(b, _)| std::cmp::Reverse(b.len()));
     if let Some((base, gdef)) = bases.first() {
-        if let GenericKind::Union { members } = &gdef.kind {
+        if let GenericKind::Union { members, .. } = &gdef.kind {
             let mut args = Vec::with_capacity(gdef.type_params.len());
             for p in &gdef.type_params {
                 match type_param_role(p, members) {
@@ -6980,9 +7007,9 @@ fn monomorphize_pending(
                 )?;
                 made.push((mono, base.clone(), subst, name_map));
             }
-            GenericKind::Union { members } => {
+            GenericKind::Union { members, methods } => {
                 instantiate_union_mono(
-                    mono,
+                    mono.clone(),
                     gdef,
                     members,
                     &subst,
@@ -6993,13 +7020,22 @@ fn monomorphize_pending(
                     &mut pending,
                     span,
                 )?;
+                // Its members' signatures name instances to make first.
+                for method in methods.iter().filter(|method| method.generic.is_empty()) {
+                    for te in method_sig_type_exprs(method) {
+                        let te = subst_type_expr(te, &subst);
+                        enqueue_type_app_mono(&te, types, &name_map, generics, &mut pending, span);
+                    }
+                }
+                made.push((mono, base.clone(), subst, name_map));
             }
         }
     }
     for (mono, base, subst, name_map) in made {
         let gdef = &generics[&base];
-        let GenericKind::Product { methods, conversions, .. } = &gdef.kind else {
-            continue;
+        let (methods, conversions): (&[Method], &[ast::Conversion]) = match &gdef.kind {
+            GenericKind::Product { methods, conversions, .. } => (methods, conversions),
+            GenericKind::Union { methods, .. } => (methods, &[]),
         };
         instantiate_product_methods(&mono, gdef, methods, conversions, &subst, types, &name_map, mono_methods)?;
     }
@@ -7705,6 +7741,7 @@ fn instantiate_product_methods(
                 body: clause.body.clone(),
                 type_params: Vec::new(),
                 provided: None,
+                scope_module: None,
                 requires: Vec::new(),
                 generic: Vec::new(),
             },
@@ -8026,6 +8063,43 @@ fn derived_subst(
         subst.insert(param.name.clone(), ty);
     }
     Ok(())
+}
+
+/// The function a method job lowers, `{instance}__{method}`.
+fn job_function_name(job: &MonoMethodJob) -> String {
+    format!("{}__{}", job.mono_type, job.method.name)
+}
+
+/// The method jobs of generic unions' instances that no path that made them
+/// kept (D238): seeding `May` and return inference make instances without
+/// their jobs, and an instance may be made more than once. Each method once,
+/// by `known`.
+fn union_method_jobs(
+    types: &HashMap<String, TypeInfo>,
+    generics: &HashMap<String, GenericDef>,
+    known: &mut HashSet<String>,
+) -> Vec<MonoMethodJob> {
+    let mut names: Vec<&String> = types.keys().collect();
+    names.sort();
+    let mut jobs = Vec::new();
+    for name in names {
+        let Some((base, args)) = &types[name].instance else { continue };
+        let Some(gdef) = generics.get(base) else { continue };
+        let GenericKind::Union { methods, .. } = &gdef.kind else { continue };
+        let subst: HashMap<String, Ty> = gdef.type_params.iter().cloned().zip(args.iter().cloned()).collect();
+        for method in methods.iter().filter(|method| method.generic.is_empty()) {
+            if known.insert(format!("{name}__{}", method.name)) {
+                jobs.push(MonoMethodJob {
+                    mono_type: name.clone(),
+                    method: method.clone(),
+                    subst: subst.clone(),
+                    def_mod: gdef.def_mod.clone(),
+                    conversion: false,
+                });
+            }
+        }
+    }
+    jobs
 }
 
 /// Where an instance reads its parameters' associated types from while
@@ -9053,6 +9127,7 @@ pub(crate) fn subst_method<S: TypeSubst + ?Sized>(m: &Method, subst: &S) -> Meth
         body: subst_block(&m.body, subst),
         type_params: m.type_params.clone(),
         provided: m.provided.clone(),
+        scope_module: m.scope_module.clone(),
         requires: m.requires.clone(),
         generic: m.generic.clone(),
     }

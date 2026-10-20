@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Conformance members in the trait's module and on unions
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D238 | A conformance's members may be written in the trait's module, and a union may have them | As freeze §2 says, a conformance goes in the type's module or the trait's, members and all: written in the trait's module, its members are still the type's methods and see its fields, and the other names in them resolve there (the trait's module's private functions). A union, generic or not, conforms with members: `self` is the whole value (`match self { … }`); a generic union's are its instances' that meet the bounds (`conform May<T: Show> to Describe`). | **Shipped** 2026-10-19 (the D228 gaps "a conformance's methods written outside the type's module" and "unions with methods"). `Method::scope_module` names the module a member written outside its type's module resolves in, and `method_scope` honours it; `GenericKind::Union` carries methods, made per instance as a product's are (`instantiate_product_methods`), and generic unions with members get checking instances (D232). Found on the way: instances of generic unions are made in several places (seeding `May`, return inference) without their method jobs, so `union_method_jobs` sweeps instances for the jobs no path kept, and every instance method is lowered once by its function name. `fail/resource_union` now names the rule (a union cannot be a `Resource`). Gates: `trait_module_members` (a package), `union_members`. |
+
 ## 2026-10-19 — Associated types in generic types
 
 | ID | Decision | Choice | Notes |

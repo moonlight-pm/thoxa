@@ -1,1 +1,1 @@
-`Light` is a union, and a union's methods are not supported yet
+union type `Light` cannot be a `Resource`
