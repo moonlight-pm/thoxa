@@ -161,8 +161,10 @@ ambiguous:
    operand) starts a new expression. It is not a subtraction from the line
    above. To continue an expression onto the next line, end the first line
    with the operator, or put a space after the minus (`- x`).
-2. **A line that starts with `(` or `[`** continues the expression on the line
-   above, as a call or an index. Start such a line with a `let` instead.
+2. **A line that starts with `(` or `[`** starts a new expression. It does not
+   call or index the expression on the line above, so a block can end with
+   `(a + b) * 2` or `[first, second]` after a call. A call's `(` and an
+   index's `[` go on the same line as what they call or index.
 3. **`<` followed directly by a name or by `>`** (`<div`, `<>`) starts a tag
    literal. As an operator, `<` needs a space after it: `a < b`. `a<b` with no
    space on either side is a compile error.
@@ -178,6 +180,11 @@ fn sign(n!: Int64) -> Int64 {
 
 let total = first
     + second         ## continues: the line above ends the operand, `+ second` is a binary operator
+
+fn pair(value!: Int64) -> Array<Int64> {
+    info("pairing {value}")
+    [value, value + 1]   ## a new expression, not an index into `info(…)`
+}
 ```
 
 Match patterns take negative literals (`-1 => …`).

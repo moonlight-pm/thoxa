@@ -1,0 +1,16 @@
+## D243: a conformance's member that names a type its module does not import
+## (`May`, from std/fallible) reports the unknown type, not a signature that
+## differs from the trait's.
+type Countdown(left: Int64)
+
+conform Countdown to Iterator {
+    type Item = Int64
+
+    fn next() -> May<Int64> {
+        Not()
+    }
+}
+
+fn main() -> Int64 {
+    0
+}

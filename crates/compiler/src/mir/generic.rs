@@ -71,6 +71,7 @@ pub(super) fn instantiate_call(
         _ => names.clone(),
     };
     let mut bindings = written_bindings(&own, explicit, shown, span)?;
+    super::check_generic_labels(&function.params, args)?;
     for (param, arg) in function.params.iter().zip(match_args(&function.params, args)) {
         let Some(arg) = arg else { continue };
         if !mentions(&param.ty, &names) {

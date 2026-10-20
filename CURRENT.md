@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-19 (**D241**: highlighting knows the trait words, on the site, in Zed, and from the LSP; **traits finished**: D228's twelve slices and the gaps after them, D232–D240; **D240**: generic types write their own codecs; **D239**: trait member defaults, members in clauses; **D238**: members in the trait's module and on unions; **D237**: `S.Item` in generic types; **D236**: maps and strings as sequences, arrays ordered; **D235**: open `mixed`, generic instances and built-in types; **D233**: writes through `self`, built-in members that write `self`, mutating members through `mixed`, getters only read; **D234**: `>>` before a comma; **D232**: a generic type's methods are checked once against its bounds; **D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-19 (**D242**: a line starting `(` or `[` starts a new expression; **D243**: three clearer errors; **D244**: operators stay built-in, generic codecs parked; **D241**: highlighting knows the trait words, on the site, in Zed, and from the LSP; **traits finished**: D228's twelve slices and the gaps after them, D232–D240; **D240**: generic types write their own codecs; **D239**: trait member defaults, members in clauses; **D238**: members in the trait's module and on unions; **D237**: `S.Item` in generic types; **D236**: maps and strings as sequences, arrays ordered; **D235**: open `mixed`, generic instances and built-in types; **D233**: writes through `self`, built-in members that write `self`, mutating members through `mixed`, getters only read; **D234**: `>>` before a comma; **D232**: a generic type's methods are checked once against its bounds; **D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -139,16 +139,16 @@ for trait, conform, to etc."): the site's highlighter, the Zed queries, and
 the LSP colour `trait` / `conform` / `extend`, `self`, and `to` / `get` /
 `set` / `field` / `mixed` where they are keywords. thoxa.dev shows it after a
 redeploy, which needs Joshua's go-ahead.
-**Next: none queued.** To propose: `+` through a trait (the freeze's
-"arithmetic operators through traits" non-goal, now that D232 makes generic
-code write `value.plus(amount)`); generated codecs for generic types (D182's
-non-goal; needs `json as T` in generic code); a `(` at a line's start
-continuing the call above (`info(x)` then `(a + b).f()` on the next line is
-one call). Smaller fixes found: `"{names}"` quotes strings and
-`names.show()` does not; "undefined name `Not`" should say `Not()`; a
-signature check against a trait reports a mismatch when a type in it is not
-imported; a generic call passing a labelled parameter by position reports
-"cannot infer" instead of the label rule.
+**D242–D244 shipped** (Joshua 2026-10-19, on the proposals and fixes
+after traits): a line that starts with `(` or `[` starts a new expression
+(D242); three errors name the real problem: a type written as a value, a
+type a conformance's module does not import, a labelled parameter of a
+generic call passed by position (D243); operators stay built-in, and
+generated codecs for generic types are parked as a maybe-later idea (D244).
+**Open: `"{names}"` quotes strings and `names.show()` does not.** Making
+them agree needs a way for std's `Array` / `Map` `show` to quote a `String`
+element, which is Joshua's call: a provided `Show` member (a change to the
+traits freeze) or another route.
 **D240 shipped**: a generic type's `Encodable` conformance writes `toJson`
 (a body-less one is an error), `encode` uses it, and declared types encode
 fields of such instances.

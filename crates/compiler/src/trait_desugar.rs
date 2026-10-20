@@ -1768,6 +1768,9 @@ fn implementation(
 ) -> Result<Method> {
     let in_trait = |ty: &TypeExpr| canonical(ty, &trait_ref.module, target, scope, &assoc.canonical);
     let in_conformance = |ty: &TypeExpr| canonical(ty, &item.module, target, scope, &assoc.canonical);
+    if let Some(error) = unimported_type(method, &item.module, &trait_ref.module, scope) {
+        return Err(error);
+    }
     let mismatch = || {
         Error::at(
             format!(
@@ -1852,6 +1855,12 @@ fn clause_implementations(
 ) -> Result<Vec<Method>> {
     let in_trait = |ty: &TypeExpr| canonical(ty, &trait_ref.module, target, scope, &assoc.canonical);
     let in_conformance = |ty: &TypeExpr| canonical(ty, &item.module, target, scope, &assoc.canonical);
+    if let Some(error) = clauses
+        .iter()
+        .find_map(|clause| unimported_type(clause, &item.module, &trait_ref.module, scope))
+    {
+        return Err(error);
+    }
     if let Some(param) = member.params.iter().find(|param| param.default.is_some()) {
         return Err(Error::at(
             format!(
@@ -1936,6 +1945,33 @@ fn clause_implementations(
         ));
     }
     Ok(out)
+}
+
+/// A type a conformance's member writes that its module does not have and
+/// the trait's module does (`May` without its import): an unknown type there,
+/// not a signature that differs from the trait's.
+fn unimported_type(method: &Method, module: &str, trait_module: &str, scope: &Scope) -> Option<Error> {
+    fn find(ty: &TypeExpr, module: &str, trait_module: &str, scope: &Scope) -> Option<(String, Span)> {
+        if !ty.name.is_empty()
+            && scope.type_named(module, &ty.name).is_none()
+            && scope.type_named(trait_module, &ty.name).is_some()
+        {
+            return Some((ty.name.clone(), ty.span));
+        }
+        let args = ty.args.iter().filter_map(|arg| match arg {
+            TypeArg::Type(inner) => Some(inner),
+            TypeArg::Int { .. } => None,
+        });
+        args.chain(ty.union_members.iter().flatten())
+            .find_map(|inner| find(inner, module, trait_module, scope))
+    }
+    let (name, span) = method
+        .params
+        .iter()
+        .map(|param| &param.ty)
+        .chain(&method.return_type)
+        .find_map(|ty| find(ty, module, trait_module, scope))?;
+    Some(crate::mir::unknown_type_error(&name, span))
 }
 
 /// A clause as `implementation` makes a member: the trait's parameter names,

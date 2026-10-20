@@ -19,6 +19,14 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Line starts, clearer errors, and two proposals settled
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D244 | Operators stay built-in; generated codecs for generic types are a maybe-later idea | Joshua 2026-10-19, on the proposals after traits: "no operator overloading for now", and generated codecs are "maybe future". Arithmetic and comparison operators keep their built-in meanings; generic code over a user trait calls a method (`value.plus(amount)`, D232), and the traits freeze's "arithmetic operators through traits" non-goal stands. A generic type still writes its own `toJson` and `from(json: Json)` (D240); the generated ones are parked in [`ideas/2026-10-19-generic-codecs.md`](ideas/2026-10-19-generic-codecs.md). | **Decided.** No code. |
+| D243 | Three errors name the real problem | A type's name written as a value (`Not`, `Point`) is "`Not` is a type, not a value", with "write `Not()` to make one" (`Point(…)` when it has fields), instead of "undefined name". A conformance's member that names a type its module does not import, though the trait's module does (`May` in `conform Countdown to Iterator` without `std/fallible`), is "unknown type `May`" with the import, instead of "must match". A generic call that passes a labelled parameter by position (`largest([3, 1])` for `largest(items: Array<T>)`) gets the label rule's error before its type arguments are inferred, instead of "cannot infer `T`". | **Shipped.** Gates: `fail/type_as_value`, `fail/type_as_value_fields`, `fail/conform_unimported_type`, `fail/generic_label_position`. `type_as_value` (MIR), `trait_desugar::unimported_type`, `check_generic_labels` before inference in `generic::instantiate_call`. Found finishing traits. |
+| D242 | A line that starts with `(` or `[` starts a new expression | A call's `(` and an index's `[` must be on the line of what they call or index: after a name, a `.member`, explicit type arguments, or any expression. One at a line's start begins a new expression, so `info(x)` then `(a + b).f()` are two statements and a block's `[first, second]` tail after a call is a value. | **Shipped** (Joshua 2026-10-19: "yes do this"). Gate: `line_start_paren`. The parser's `at_postfix` reads the lexer's line-start mark (D162's). Before, the handbook said such a line continued the one above, which made `info(x)(a + b)` one call and `info(x)[a, b]` a parse error; nothing in std, the tests, or the workloads relied on it. Swift's rule, as D162 is. |
+
 ## 2026-10-19 — Highlighting the trait words
 
 | ID | Decision | Choice | Notes |

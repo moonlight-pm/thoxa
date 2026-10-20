@@ -20,6 +20,7 @@ locked and (if needed) scheduled. Living priority never lives here — see root
 | [`std/json` codec](2026-08-15-json-codec.md) | **shipped** (**D141**) | Dynamic `Json` tree; `decode` / `encode`. Crema `POST /api/orders` dogfoods it |
 | [built-in validation](2026-08-17-builtin-validation.md) | **shipped** (**D149**) | Freeze [`../specs/2026-08-23-type-read.md`](../specs/2026-08-23-type-read.md); handbook language |
 | [HTML-over-the-wire](2026-08-18-html-over-the-wire.md) | **active experiment** | SSR + cacheable fragments + tiny own runtime (not HTMX). SSE before WebSockets. Crema Phase E dogfoods it |
+| [generated codecs for generic types](2026-10-19-generic-codecs.md) | sleeping | Maybe later (**D244**). Generic types write `toJson` / `from(json:)` by hand (**D240**); generating them needs `json as T` in generic code |
 
 **Rules of thumb**
 

@@ -10713,7 +10713,8 @@ fn lower_expr_expect(ctx: &mut LowerCtx, expr: &Expr, expect: Option<&Ty>) -> Re
             } else if ctx.name_to_fn.contains_key(name) {
                 form_free_fn(ctx, name, expr.span)
             } else {
-                Err(Error::at(format!("undefined name `{name}`"), expr.span))
+                Err(type_as_value(ctx, name, expr.span)
+                    .unwrap_or_else(|| Error::at(format!("undefined name `{name}`"), expr.span)))
             }
         }
         ExprKind::Unary { op, expr: inner } => {
@@ -15259,7 +15260,8 @@ fn resolve_call_args_full(
 
     let default_at = |i: usize| -> Option<&Expr> { defaults.get(i).and_then(|d| d.as_ref()) };
 
-    let punned = punned_arguments(formal, marked, args);
+    let names: Vec<&str> = formal.iter().map(|(name, _)| name.as_str()).collect();
+    let punned = punned_arguments(&names, marked, args);
     let labelled;
     let args: &[Arg] = if punned.iter().any(|pun| pun.is_some()) {
         labelled = args
@@ -15300,7 +15302,7 @@ fn resolve_call_args_full(
         ));
     }
     let all_pos = positional == args.len();
-    check_argument_labels(formal, marked, args, positional)?;
+    check_argument_labels(&names, marked, args, positional)?;
 
     if all_pos {
         if args.len() > formal.len() {
@@ -15552,7 +15554,7 @@ fn resolve_call_args_with_spreads(
 /// `deadline` is `deadline: deadline`, so `connect(host, deadline)` needs no
 /// `deadline: deadline`. A call that also labels `deadline:` keeps the bare
 /// one positional.
-fn punned_arguments(formal: &[(String, Ty)], marked: &[bool], args: &[Arg]) -> Vec<Option<String>> {
+fn punned_arguments(names: &[&str], marked: &[bool], args: &[Arg]) -> Vec<Option<String>> {
     let labelled_in_call = |name: &str| {
         args.iter()
             .any(|arg| matches!(arg, Arg::Named { name: label, .. } if label == name))
@@ -15565,7 +15567,7 @@ fn punned_arguments(formal: &[(String, Ty)], marked: &[bool], args: &[Arg]) -> V
             let (ExprKind::Name(name) | ExprKind::MutArg(name)) = &value.kind else {
                 return None;
             };
-            let index = formal.iter().position(|(formal_name, _)| formal_name == name)?;
+            let index = names.iter().position(|formal_name| formal_name == name)?;
             let is_labelled = !marked.get(index).copied().unwrap_or(true);
             (is_labelled && !labelled_in_call(name)).then(|| name.clone())
         })
@@ -15575,14 +15577,9 @@ fn punned_arguments(formal: &[(String, Ty)], marked: &[bool], args: &[Arg]) -> V
 /// `!` parameters are passed by position and the rest by label (D200):
 /// `contains(needle!: String, ignoreCase: Bool = false)` is called
 /// `s.contains(x, ignoreCase: true)`, never `s.contains(x, true)`.
-fn check_argument_labels(
-    formal: &[(String, Ty)],
-    marked: &[bool],
-    args: &[Arg],
-    positional: usize,
-) -> Result<()> {
+fn check_argument_labels(names: &[&str], marked: &[bool], args: &[Arg], positional: usize) -> Result<()> {
     for (index, arg) in args[..positional].iter().enumerate() {
-        let (Some((name, _)), Arg::Pos(value)) = (formal.get(index), arg) else {
+        let (Some(name), Arg::Pos(value)) = (names.get(index), arg) else {
             continue;
         };
         if !marked.get(index).copied().unwrap_or(true) {
@@ -15594,7 +15591,7 @@ fn check_argument_labels(
         let Arg::Named { name, name_span, .. } = arg else {
             continue;
         };
-        let index = formal.iter().position(|(formal_name, _)| formal_name == name);
+        let index = names.iter().position(|formal_name| formal_name == name);
         if index.is_some_and(|index| marked.get(index).copied().unwrap_or(false)) {
             return Err(Error::at(
                 format!("`{name}` is positional (`!`): pass it without `{name}:`"),
@@ -15603,6 +15600,32 @@ fn check_argument_labels(
         }
     }
     Ok(())
+}
+
+/// A generic call's labels (D200), checked before its type arguments are
+/// inferred: `largest([3, 1])` for `largest(items: Array<T>)` says to write
+/// `items:`, not that `T` cannot be inferred.
+pub(super) fn check_generic_labels(params: &[ast::Param], args: &[Arg]) -> Result<()> {
+    let names: Vec<&str> = params.iter().map(|param| param.name.as_str()).collect();
+    let marked: Vec<bool> = params.iter().map(|param| param.positional).collect();
+    let punned = punned_arguments(&names, &marked, args);
+    let labelled: Vec<Arg> = args
+        .iter()
+        .zip(&punned)
+        .map(|(arg, pun)| match (arg, pun) {
+            (Arg::Pos(value), Some(name)) => Arg::Named {
+                name: name.clone(),
+                name_span: value.span,
+                value: value.clone(),
+            },
+            _ => arg.clone(),
+        })
+        .collect();
+    if labelled.iter().any(|arg| matches!(arg, Arg::Spread { .. })) {
+        return Ok(());
+    }
+    let positional = labelled.iter().take_while(|arg| matches!(arg, Arg::Pos(_))).count();
+    check_argument_labels(&names, &marked, &labelled, positional)
 }
 
 /// An argument for parameter `name`. A `mut` parameter takes `mut binding`:
@@ -20702,6 +20725,34 @@ fn lower_start(ctx: &mut LowerCtx, callee: &str, args: &[Arg], span: Span) -> Re
 }
 
 /// Coerce a place to a target type when a conversion is defined (FFI integer widths).
+/// A product type's name written as a value, `Not` or `Point`: calling it
+/// makes one (`Not()`).
+fn type_as_value(ctx: &LowerCtx, name: &str, span: Span) -> Option<Error> {
+    let fields = match name {
+        "Not" => false,
+        "Has" | "Pass" | "Fail" => true,
+        _ => {
+            let mangled = ctx.resolve_type_name(name)?;
+            if let Some(info) = ctx.types.get(&mangled) {
+                if info.sum.is_some() || info.refined.is_some() {
+                    return None;
+                }
+                info.fields.iter().any(|field| field.ty != Ty::Void)
+            } else {
+                match &ctx.generics.get(&mangled)?.kind {
+                    GenericKind::Product { params, .. } => !params.is_empty(),
+                    GenericKind::Union { .. } => return None,
+                }
+            }
+        }
+    };
+    let call = if fields { format!("{name}(…)") } else { format!("{name}()") };
+    Some(
+        Error::at(format!("`{name}` is a type, not a value"), span)
+            .with_help(format!("write `{call}` to make one")),
+    )
+}
+
 fn refined_info<'a>(types: &'a HashMap<String, TypeInfo>, ty: &Ty) -> Option<&'a RefinedInfo> {
     match ty {
         Ty::User(n) => types.get(n).and_then(|i| i.refined.as_ref()),
@@ -20830,7 +20881,7 @@ fn refine_implies(from: &crate::ast::WhereExpr, to: &crate::ast::WhereExpr, base
 
 /// `unknown type `X``, naming the import for the `std/fallible` types, which
 /// are not ambient.
-fn unknown_type_error(name: &str, span: Span) -> Error {
+pub(crate) fn unknown_type_error(name: &str, span: Span) -> Error {
     let error = Error::at(format!("unknown type `{name}`"), span);
     match name {
         "May" | "Trial" => error.with_help(format!(

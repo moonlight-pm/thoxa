@@ -1764,6 +1764,13 @@ impl Parser {
                 .is_some_and(|next| next.span.start == minus.span.end)
     }
 
+    /// A `(` or `[` that begins a line starts a new expression instead of
+    /// calling or indexing the one above, so `info(x)` then `(a + b).f()` on
+    /// the next line are two statements (D242).
+    fn at_postfix(&self, kind: TokenKind) -> bool {
+        self.at(kind) && !self.current().line_start
+    }
+
     /// `>` or the first half of `>>` (lexer emits Shr for nested generics like `May<Array<T>>`).
     fn at_rangle(&self) -> bool {
         self.at(TokenKind::RAngle) || self.at(TokenKind::Shr)
@@ -2421,7 +2428,7 @@ impl Parser {
                 self.bump();
                 let (name, name_span) = self.expect_member_name()?;
                 let type_args = self.call_type_args();
-                if self.at(TokenKind::LParen) {
+                if self.at_postfix(TokenKind::LParen) {
                     self.bump();
                     let args = self.parse_arg_list()?;
                     self.expect_kind(&TokenKind::RParen)?;
@@ -2449,7 +2456,7 @@ impl Parser {
                 }
                 continue;
             }
-            if self.at(TokenKind::LBracket) {
+            if self.at_postfix(TokenKind::LBracket) {
                 let start = expr.span.start;
                 self.bump();
                 let index = self.parse_expr()?;
@@ -2464,7 +2471,7 @@ impl Parser {
                 };
                 continue;
             }
-            if self.at(TokenKind::LParen) {
+            if self.at_postfix(TokenKind::LParen) {
                 let start = expr.span.start;
                 self.bump();
                 let args = self.parse_arg_list()?;
@@ -2575,7 +2582,7 @@ impl Parser {
                     return self.parse_tagged_interp(name, name_span);
                 }
                 let type_args = self.call_type_args();
-                if self.at(TokenKind::LParen) {
+                if self.at_postfix(TokenKind::LParen) {
                     self.bump();
                     let args = self.parse_arg_list()?;
                     self.expect_kind(&TokenKind::RParen)?;
@@ -2863,7 +2870,7 @@ impl Parser {
             Ok(args)
         })();
         match parsed {
-            Ok(args) if self.at(TokenKind::LParen) => args,
+            Ok(args) if self.at_postfix(TokenKind::LParen) => args,
             _ => {
                 self.pos = pos;
                 for (at, token) in self.split_shr.drain(splits..).rev() {

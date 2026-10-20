@@ -1,0 +1,37 @@
+## D242: a line that starts with `(` or `[` starts a new expression; it does
+## not call or index the expression on the line above.
+import logging, { info } from "std/logging"
+
+fn scaled(value!: Int64) -> Int64 {
+    info("scaling {value}")
+    (value + 1) * 2
+}
+
+fn pair(value!: Int64) -> Array<Int64> {
+    info("pairing {value}")
+    [value, value + 1]
+}
+
+fn largest(values!: Array<Int64>) -> Int64 {
+    mut best = values[0]
+    for value in values {
+        if value > best {
+            best = value
+        }
+    }
+    best
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let values = pair(scaled(4))
+    let best = largest(
+        values
+    )
+    let second = values[
+        1
+    ]
+    info("values={values} best={best} second={second}")
+    0
+}

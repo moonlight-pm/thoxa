@@ -1,0 +1,7 @@
+## D243: a product type's name written as a value; calling it makes one.
+type Point(x: Int64, y: Int64)
+
+fn main() -> Int64 {
+    let origin = Point
+    0
+}

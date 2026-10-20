@@ -1,0 +1,9 @@
+## D243: a generic call follows the label rule before its type arguments are
+## inferred; a labelled parameter passed by position says so.
+fn largest<T: Ordered>(items: Array<T>) -> T {
+    items[0]
+}
+
+fn main() -> Int64 {
+    largest([3, 1])
+}

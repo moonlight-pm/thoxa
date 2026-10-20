@@ -1,0 +1,13 @@
+## D243: a type's name is not a value; the error says to call it.
+import { Has, Not, May } from "std/fallible"
+
+fn find(value!: Int64) -> May<Int64> {
+    if value > 0 {
+        return Has(value)
+    }
+    Not
+}
+
+fn main() -> Int64 {
+    0
+}
