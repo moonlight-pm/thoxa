@@ -1,0 +1,11 @@
+## D240: a generic type's JSON encoding is not generated; its `Encodable`
+## conformance writes `toJson`.
+import { Encodable } from "std/json"
+
+type Box<T>(value: T)
+
+conform Box<T: Encodable> to Encodable
+
+fn main() -> Int64 {
+    Box(value: 1).encode().count
+}

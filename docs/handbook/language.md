@@ -2221,9 +2221,28 @@ toJson() -> Json { … } }`; the type is then encoded by it, including inside
 other types, and gets no generated reader (a
 [`from(json: Json)` clause](#from-clauses) gives it one). `Bytes`, `Buffer`,
 `Node`, functions, `Address`, a `Resource`, C-layout types, maps with
-non-`String` keys, unions that mix literals and products, generic types, and
-`Trial` have no encoding; using one is a compile error that names the type
-(and the field, when there is one). Types in `std/` get no generated codec.
+non-`String` keys, unions that mix literals and products, and `Trial` have no
+encoding; using one is a compile error that names the type (and the field,
+when there is one). Types in `std/` get no generated codec.
+
+A generic type gets no generated codec either: its `Encodable` conformance
+writes `toJson`, and its reader is a `from(json: Json)` clause. A conformance
+without the member is a compile error.
+
+```thx
+type Box<T>(value: T, label: String)
+
+conform Box<T: Encodable> to Encodable {
+    fn toJson() -> Json {
+        {"value": value, "label": label}
+    }
+}
+
+let text = Box(value: [1, 2], label: "b").encode()   ## {"value":[1,2],"label":"b"}
+```
+
+That `toJson` encodes every `Box` whose `T` is `Encodable`, `encode` gives
+its text, and a type holding a `Box<Int64>` encodes it.
 
 ### Json literals and implicit encoding
 

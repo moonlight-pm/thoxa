@@ -1,0 +1,29 @@
+## A generic type writes its own JSON encoding, as a member of its
+## `Encodable` conformance (D240): nothing is generated for generic types.
+## `encode` gives that `toJson`'s text, a declared type holding the instances
+## encodes them, and so does a `mixed Encodable`.
+import logging, { info } from "std/logging"
+import { Encodable, Json } from "std/json"
+
+type Box<T>(value: T, label: String)
+
+conform Box<T: Encodable> to Encodable {
+    fn toJson() -> Json {
+        {"value": value, "label": label}
+    }
+}
+
+type Shelf(boxes: Array<Box<Int64>>, name: String)
+
+conform Shelf to Encodable
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let box = Box(value: [1, 2], label: "b")
+    info(box.toJson().encode())
+    info(box.encode())
+    info(Shelf(boxes: [Box(value: 3, label: "c")], name: "top").encode())
+    let held: mixed Encodable = Box(value: "s", label: "d")
+    info(held.encode())
+}

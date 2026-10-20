@@ -42,6 +42,8 @@ const BUILT_IN_TYPES: &[&str] = &[
 struct OwnMembers {
     methods: HashMap<String, Method>,
     fields: HashMap<String, TypeExpr>,
+    /// A `from(json: Json)` clause: the type's own reader (D191 §3).
+    reads_json: bool,
 }
 
 struct TraitEntry {
@@ -482,6 +484,10 @@ pub fn desugar_package(package: &mut Package) -> Result<TraitOutput> {
                     .map(|param| (param.name.clone(), param.ty.clone()))
                     .chain(def.fields.iter().map(|field| (field.name.clone(), field.ty.clone())))
                     .collect(),
+                reads_json: def
+                    .conversions
+                    .iter()
+                    .any(|clause| clause.param.ty.name == "Json" && clause.param.ty.args.is_empty()),
             };
             own_members.insert(key.clone(), members);
             if let Some(members) = &def.union_members {
@@ -1456,6 +1462,30 @@ fn check_conformance(
     // Every member supplied, with the trait's signature; no name taken twice.
     let empty = OwnMembers::default();
     let own = own_members.get(&target).unwrap_or(&empty);
+    // A generic type's codecs are not generated (D240): it writes its own.
+    // std's (`May`) are the MIR's.
+    if generic.contains_key(&target) && !target.0.starts_with("std_") {
+        for (trait_ref, span) in &refs {
+            if trait_ref.module != JSON_MODULE {
+                continue;
+            }
+            let writes_to_json = conformance.methods.iter().any(|method| method.name == "toJson");
+            if trait_ref.name == "Encodable" && !writes_to_json {
+                return Err(Error::at(
+                    format!("`{}` is generic, and a generic type's JSON encoding is not generated", target.1),
+                    *span,
+                )
+                .with_help("write it in the conformance: `fn toJson() -> Json { … }`"));
+            }
+            if trait_ref.name == "Decodable" && !own.reads_json {
+                return Err(Error::at(
+                    format!("`{}` is generic, and a generic type's JSON reader is not generated", target.1),
+                    *span,
+                )
+                .with_help("give the type a `from(json: Json)` clause, its reader"));
+            }
+        }
+    }
     let mut methods = Vec::new();
     let mut derived = Vec::new();
     for (trait_ref, span) in &refs {

@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Generic types write their own codecs
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D240 | A generic type's `Encodable` conformance writes `toJson`; its reader is a `from(json: Json)` clause | Codecs are not generated for generic types (D182's non-goal stands). A generic type is `Encodable` by writing `toJson` in the conformance (`conform Box<T: Encodable> to Encodable { fn toJson() -> Json { … } }`), so a body-less one is an error with that help, and `Decodable` needs a `from(json: Json)` clause. `encode` is then that `toJson`'s text, and a declared type holding the instances (`Shelf(boxes: Array<Box<Int64>>)`) encodes them. "`T` is not `Decodable`" says to bound a type parameter rather than conform it. | **Shipped** 2026-10-19, closing the traits gap where `conform Box<T: Encodable> to Encodable` was accepted and nothing encoded. `trait_desugar::check_conformance` refuses the body-less generic codec conformances (std's, `May`'s, are the MIR's); `validate_desugar::encodable_ty` takes a generic application whose type declares `Encodable` and writes `toJson`; the MIR's `encode` falls back to `toJson().encode()`. Left open, to propose: generating codecs for generic types, which needs `json as T` in generic code (readers made per instance), and is D182's parked non-goal. Gates: `generic_codecs`, `fail/generic_encodable_generated`, `fail/generic_decodable_generated`. |
+
 ## 2026-10-19 — Members in clauses, defaults on members
 
 | ID | Decision | Choice | Notes |

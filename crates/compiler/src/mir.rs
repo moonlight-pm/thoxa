@@ -452,9 +452,12 @@ fn undeclared_part(ctx: &LowerCtx, type_name: &str, name: &str) -> Option<(Strin
 /// "`Point` is not `Encodable`", with how to declare it (D228).
 fn not_codec(ty: &Ty, name: &str, span: Span) -> Error {
     let shown = display_ty(ty);
-    Error::at(format!("`{shown}` is not `{name}`"), span).with_help(format!(
-        "declare `conform {shown} to {name}`, with `import {{ {name} }} from \"std/json\"`"
-    ))
+    let help = if is_param_archetype(ty) {
+        conform_help(ty, name, name, "")
+    } else {
+        format!("declare `conform {shown} to {name}`, with `import {{ {name} }} from \"std/json\"`")
+    };
+    Error::at(format!("`{shown}` is not `{name}`"), span).with_help(help)
 }
 
 /// A user method called on an immutable binding, a field, or a temporary.
@@ -13488,6 +13491,15 @@ fn lower_method_call_typed(
                     }
                     if !info.methods.contains_key(method) && !ctx.json_declares(&recv_ty, "Encodable") {
                         return Err(not_codec(&recv_ty, "Encodable", method_span));
+                    }
+                    // `encode` is the text of its own `toJson` when nothing
+                    // was generated (a generic type's instance, D240).
+                    if method == "encode" && !info.methods.contains_key("encode") && info.methods.contains_key("toJson") {
+                        let bound = codec::bind_fresh(ctx, "__encodedSelf", &recv_ty, recv_p);
+                        let to_json = crate::ast_build::method_call(crate::ast_build::name(&bound), "toJson", Vec::new());
+                        let (json, json_ty) = lower_expr(ctx, &to_json)?;
+                        let json_name = codec::bind_fresh(ctx, "__encodedJson", &json_ty, json);
+                        return lower_method_call(ctx, &crate::ast_build::name(&json_name), "encode", method_span, &[]);
                     }
                     if !info.methods.contains_key(method) {
                         if let Some((part, part_ty)) = undeclared_part(ctx, &type_name, "Encodable") {

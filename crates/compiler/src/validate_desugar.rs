@@ -263,6 +263,24 @@ fn encodable_ty(
                     encodable_ty(value, module_id, world, resolve, visiting)
                 })
         }
+        // A generic type's instance encodes with the `toJson` its
+        // conformance writes (D240), when its arguments encode.
+        (_, count) if count > 0 => {
+            let Some((def_mod, def_name)) = resolve.get(module_id).and_then(|m| m.get(&ty.name)) else {
+                return false;
+            };
+            let Some(td) = world.get(def_mod).and_then(|tys| tys.get(def_name)) else {
+                return false;
+            };
+            let declared = declares(td, "Encodable")
+                || td.conditional.iter().any(|each| each.trait_ref.module == JSON_MODULE_ID && each.trait_ref.name == "Encodable");
+            declared
+                && has_own_method(td, "toJson")
+                && ty.args.iter().all(|arg| match arg {
+                    TypeArg::Type(inner) => encodable_ty(inner, module_id, world, resolve, visiting),
+                    TypeArg::Int { .. } => false,
+                })
+        }
         (_, 0) => {
             let Some((def_mod, def_name)) = resolve.get(module_id).and_then(|m| m.get(&ty.name))
             else {

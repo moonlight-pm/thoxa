@@ -1,0 +1,1 @@
+`Box` is generic, and a generic type's JSON encoding is not generated
