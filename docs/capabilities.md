@@ -15,7 +15,7 @@ change. See [`progress-model.md`](progress-model.md).
 **D148** `-->` nowait **shipped**; **D147** JSX/`Node` **shipped**;
 `workloads/landing` thoxa.dev live;
 `workloads/sola` sola.computer teaser live;
-`workloads/oath` oath.wicket.cloud landing live; static JPEG/font MIME;
+static JPEG/font MIME;
 **D146** SSE `peerFd` / `streamed()`;
 Crema **E4–E5**; **D145** `htmlFragment` / `cached`;
 Crema **E2** fragment GETs;

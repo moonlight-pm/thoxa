@@ -96,7 +96,7 @@ runtime/          the C runtime (thoxa_rt)
 std/              the standard library (std/… imports)
 tests/conformance programs with expected output; the definition of done
 examples/         runnable programs: examples/http (web app), examples/kilo (editor)
-workloads/        deployed Thoxa programs: landing = thoxa.dev, sola, oath
+workloads/        deployed Thoxa programs: landing = thoxa.dev, sola
 extras/           editor support (Tree-sitter grammar, Zed)
 vendor/           the SQLite amalgamation
 docs/             manual (docs/handbook) and engineering docs

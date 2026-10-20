@@ -92,7 +92,7 @@ over ad-hoc scripts (D10).
 | `tests/conformance/` | `*.thx` + `*.out` |
 | `extras/` | Non-product DX (tree-sitter grammar, Zed extension) |
 | `examples/` | Runnable demos (not conformance); `examples/http`, `examples/kilo` |
-| `workloads/` | Deployed Thoxa programs; `landing` = thoxa.dev; `sola` = sola.computer; `oath` = oath.wicket.cloud |
+| `workloads/` | Deployed Thoxa programs; `landing` = thoxa.dev; `sola` = sola.computer |
 | `vendor/` | Vendored upstream (the SQLite amalgamation) |
 | `CURRENT.md` | Living focus |
 | `docs/` | Canonical docs (see `docs/README.md`) |
