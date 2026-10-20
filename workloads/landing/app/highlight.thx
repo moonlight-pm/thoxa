@@ -7,7 +7,7 @@
 
 import { Has, Not, May } from "std/fallible"
 
-let keywords = ["fn", "let", "mut", "if", "else", "match", "type", "export", "extern", "import", "from", "as", "and", "or", "not", "while", "loop", "break", "continue", "for", "in", "return", "where"]
+let keywords = ["fn", "let", "mut", "if", "else", "match", "type", "export", "extern", "import", "from", "as", "and", "or", "not", "while", "loop", "break", "continue", "for", "in", "return", "where", "trait", "conform", "extend", "self"]
 let constants = ["true", "false"]
 let verbs = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
 
@@ -99,7 +99,7 @@ fn token(source!: Bytes, at!: Int64, start!: Int64, end!: Int64) -> May<Scanned>
 
 fn wordKind(source!: Bytes, at!: Int64, stop!: Int64, end!: Int64) -> String {
     let word = slice(source, at, stop)
-    if isOneOf(word, keywords) or isOneOf(word, verbs) {
+    if isOneOf(word, keywords) or isOneOf(word, verbs) or placed(source, word, at, stop, end) {
         "kw"
     } else if isOneOf(word, constants) {
         "nu"
@@ -112,6 +112,55 @@ fn wordKind(source!: Bytes, at!: Int64, stop!: Int64, end!: Int64) -> String {
     } else {
         ""
     }
+}
+
+## The words that are keywords in one place only: `to` in a `conform`
+## line, `get` and `set` starting a member, and `mixed` before a trait.
+fn placed(source!: Bytes, word!: String, at!: Int64, stop!: Int64, end!: Int64) -> Bool {
+    if word == "to" {
+        firstWord(source, at) == "conform"
+    } else if word == "get" or word == "set" {
+        startsLine(source, at) and isLetter(followingByte(source, stop, end))
+    } else if word == "mixed" {
+        isUpper(followingByte(source, stop, end))
+    } else {
+        false
+    }
+}
+
+## The first byte of the line `at` is on.
+fn lineStart(source!: Bytes, at!: Int64) -> Int64 {
+    mut index = at
+    while index > 0 and source.get(index - 1) != newline {
+        index = index - 1
+    }
+    index
+}
+
+## The first byte from `at` that is not a space or a tab.
+fn skipSpaces(source!: Bytes, at!: Int64, end!: Int64) -> Int64 {
+    mut index = at
+    while index < end and (source.get(index) == space or source.get(index) == tab) {
+        index = index + 1
+    }
+    index
+}
+
+## Whether only spaces come before `at` on its line.
+fn startsLine(source!: Bytes, at!: Int64) -> Bool {
+    skipSpaces(source, lineStart(source, at), at) == at
+}
+
+## The first word of the line `at` is on, up to `at`.
+fn firstWord(source!: Bytes, at!: Int64) -> String {
+    let from = skipSpaces(source, lineStart(source, at), at)
+    slice(source, from, wordEnd(source, from, at))
+}
+
+## The byte after the spaces that follow `stop`, when there are some, else 0.
+fn followingByte(source!: Bytes, stop!: Int64, end!: Int64) -> Int64 {
+    let next = skipSpaces(source, stop, end)
+    if next > stop and next < end { source.get(next) } else { 0 }
 }
 
 ## A string literal from its opening quote. Each hole is code; the braces

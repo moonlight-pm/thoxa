@@ -4,7 +4,7 @@
 `AGENTS.md`. Full model: [`docs/progress-model.md`](docs/progress-model.md).
 Capability maturity: [`docs/capabilities.md`](docs/capabilities.md).
 
-**As of:** 2026-10-19 (**traits finished**: D228's twelve slices and the gaps after them, D232–D240; **D240**: generic types write their own codecs; **D239**: trait member defaults, members in clauses; **D238**: members in the trait's module and on unions; **D237**: `S.Item` in generic types; **D236**: maps and strings as sequences, arrays ordered; **D235**: open `mixed`, generic instances and built-in types; **D233**: writes through `self`, built-in members that write `self`, mutating members through `mixed`, getters only read; **D234**: `>>` before a comma; **D232**: a generic type's methods are checked once against its bounds; **D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
+**As of:** 2026-10-19 (**D241**: highlighting knows the trait words, on the site, in Zed, and from the LSP; **traits finished**: D228's twelve slices and the gaps after them, D232–D240; **D240**: generic types write their own codecs; **D239**: trait member defaults, members in clauses; **D238**: members in the trait's module and on unions; **D237**: `S.Item` in generic types; **D236**: maps and strings as sequences, arrays ordered; **D235**: open `mixed`, generic instances and built-in types; **D233**: writes through `self`, built-in members that write `self`, mutating members through `mixed`, getters only read; **D234**: `>>` before a comma; **D232**: a generic type's methods are checked once against its bounds; **D231**: same-type constraints, `where S.Item == Int64` (D228 slice 12); **D230**: explicit type arguments, `none<String>()` (D228 slice 11); **D229**: constructor fields of every integer type, `UInt64` literals above `Int64`, `Hasher` in `UInt64`; **D228**: traits, freeze below; all eight slices shipped (`trait`, `conform`, `Resource`, `self`, provided members, properties, declared comparison, generic functions and bounds, declared `Show` / `Component` / codecs, `mixed Trait`, associated types and `for` over user types), slice 9, conformances of generic and built-in types with members (`Array` is a `Sequence`), and slice 10, methods with type parameters; next is the rest of the gaps, below; **D227**: the shell and the session are removed, below, and thoxa.dev redeployed without them; gap pass D207–D226, below; D202–D206: label punning, built-in labels, `Element`
 field names, `insert(item, at:)`, fields passed `mut`; below). 2026-10-17: **thoxa.dev rewritten (D189)** at Joshua's request: a
 home page that states the design rationale, features, status, and build steps
 and shows nine sample programs (run by `cargo make test`), and `/manual`, the
@@ -134,10 +134,12 @@ design rather than short term stop gaps."
 **Traits are finished** (Joshua 2026-10-19: "just finish traits out
 first"): D228's twelve slices and every gap after them, D232–D240; the
 `traits` row is shipped, with only the freeze's by-design limits left.
-**Next: syntax highlighting** (Joshua 2026-10-19: the docs' highlighting
-"needs updated for trait, conform, to etc."): the site's highlighter
-(`workloads/landing/app/highlight.thx`), the Tree-sitter grammar and the Zed
-extension (`extras/`). Then, to propose: `+` through a trait (the freeze's
+**D241 shipped** (Joshua 2026-10-19: the docs' highlighting "needs updated
+for trait, conform, to etc."): the site's highlighter, the Zed queries, and
+the LSP colour `trait` / `conform` / `extend`, `self`, and `to` / `get` /
+`set` / `field` / `mixed` where they are keywords. thoxa.dev shows it after a
+redeploy, which needs Joshua's go-ahead.
+**Next: none queued.** To propose: `+` through a trait (the freeze's
 "arithmetic operators through traits" non-goal, now that D232 makes generic
 code write `value.plus(amount)`); generated codecs for generic types (D182's
 non-goal; needs `json as T` in generic code); a `(` at a line's start
@@ -292,8 +294,8 @@ Freezes:
 (String methods, Unicode case, scalar counts and positions, valid UTF-8; two
 slices), and D194 (positional then named arguments). D191 conversions (six slices) with D192 and D193, and
 the 2026-10-17 fixes D183–D190, each with conformance and rejection gates;
-`cargo make test` 199 programs, 150 rejections, 8 site samples, 223 unit tests
-after D240 (2026-10-19); `cargo make test-asan` 180 clean, 10 excepted (2026-10-19, after D231). Before them: the
+`cargo make test` 199 programs, 150 rejections, 8 site samples, 224 unit tests
+after D241 (2026-10-19); `cargo make test-asan` 180 clean, 10 excepted (2026-10-19, after D231). Before them: the
 2026-10-16 language pass (D173–D181, above). Before it:
 **D155** `fn drop()` last-RC boxes (`file_drop`; File /
 Socket / Db); `thoxa_alloc` size wrap + `Socket.close` clears `fd`

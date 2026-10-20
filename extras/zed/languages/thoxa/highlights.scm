@@ -12,6 +12,13 @@
 (boolean) @constant.builtin
 (type_identifier) @type
 (identifier) @variable
+; Words that are keywords in one place only (`to` after `conform Type`,
+; `get` / `set` starting a member, `field` in an accessor, `mixed` before a
+; trait) and `self`. The grammar cannot tell the places apart, so these are
+; keywords here; the LSP's semantic tokens make them names again elsewhere.
+((identifier) @keyword
+  (#any-of? @keyword "self" "to" "get" "set" "field" "mixed"))
+((type_identifier) @type.builtin (#eq? @type.builtin "Self"))
 (number) @number
 (char) @string
 (comment) @comment

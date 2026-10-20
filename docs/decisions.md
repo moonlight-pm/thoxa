@@ -19,6 +19,12 @@ No knowledge graph (`docs/graph/`, node databases, etc.) until cross-links and �
 
 ---
 
+## 2026-10-19 — Highlighting the trait words
+
+| ID | Decision | Choice | Notes |
+|----|----------|--------|-------|
+| D241 | The highlighters colour `trait`, `conform`, `extend`, `self`, and the words that are keywords in one place | thoxa.dev's highlighter, the Zed grammar's queries, and the LSP's semantic tokens colour `trait`, `conform`, and `extend` as keywords, `self` always, and `to` (on a `conform` line), `get` / `set` (starting a member before its name), `field` (in an accessor, LSP only), and `mixed` (before a trait's name) only there, so a parameter `to` or a variable `set` stays a name. | **Shipped** 2026-10-19 (Joshua: the docs' highlighting "needs updated for trait, conform, to etc."). `workloads/landing/app/highlight.thx`: `placed`, by line context; `lsp::analysis::placed_keyword`, by tokens, with the accessor's braces tracked for `field`; `highlights.scm` (Zed's and the grammar's) colour the six words as keywords, which Zed's `combined` mode corrects with the semantic tokens. No grammar change. thoxa.dev shows it after a redeploy, which needs Joshua's go-ahead. Gate: `lsp::analysis::tests::semantic_tokens_placed_keywords`. |
+
 ## 2026-10-19 — Generic types write their own codecs
 
 | ID | Decision | Choice | Notes |

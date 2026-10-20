@@ -542,10 +542,18 @@ pub fn semantic_tokens(text: &str) -> Vec<SemanticToken> {
 
     let mut out = Vec::new();
     let mut scopes = vec![Scope::Code { braces: 0 }];
+    // A member's `get` / `set` makes a `{` on its line open the accessor,
+    // where `field` is the stored value (D228).
+    let mut accessor_next = false;
+    let mut accessor_depth: Option<usize> = None;
+    let mut depth = 0usize;
     let mut index = 0;
     while index < tokens.len() {
         let token = &tokens[index];
         let next = tokens.get(index + 1).map(|t| &t.kind);
+        if token.line_start {
+            accessor_next = false;
+        }
         let top = scopes.last_mut().expect("code scope at the bottom");
         match (top, &token.kind) {
             (Scope::Code { .. } | Scope::Children, TokenKind::LAngle)
@@ -560,10 +568,21 @@ pub fn semantic_tokens(text: &str) -> Vec<SemanticToken> {
                     scopes.push(Scope::Children);
                 }
             }
-            (Scope::Code { braces }, TokenKind::LBrace) => *braces += 1,
+            (Scope::Code { braces }, TokenKind::LBrace) => {
+                *braces += 1;
+                depth += 1;
+                if accessor_next {
+                    accessor_depth = Some(depth);
+                    accessor_next = false;
+                }
+            }
             (Scope::Code { braces }, TokenKind::RBrace) => {
                 if *braces > 0 {
                     *braces -= 1;
+                    if accessor_depth == Some(depth) {
+                        accessor_depth = None;
+                    }
+                    depth -= 1;
                 } else if scopes.len() > 1 {
                     // The `}` of a hole: back to the tag around it.
                     scopes.pop();
@@ -573,7 +592,10 @@ pub fn semantic_tokens(text: &str) -> Vec<SemanticToken> {
                 out.push(semantic_token(text, token, "keyword"));
             }
             (Scope::Code { .. }, TokenKind::Ident(name)) => {
-                let kind = if name.starts_with(|c: char| c.is_uppercase()) {
+                let kind = if placed_keyword(&tokens, index, name, accessor_depth.is_some()) {
+                    accessor_next = matches!(name.as_str(), "get" | "set");
+                    "keyword"
+                } else if name.starts_with(|c: char| c.is_uppercase()) {
                     "type"
                 } else if matches!(next, Some(TokenKind::LParen)) {
                     "function"
@@ -616,6 +638,25 @@ pub fn semantic_tokens(text: &str) -> Vec<SemanticToken> {
         index += 1;
     }
     out
+}
+
+/// `self`, and the words that are keywords in one place only (D228): `to` in
+/// a `conform` line, `get` / `set` starting a member before its name, `field`
+/// in an accessor, `mixed` before a trait's name. Anywhere else they are
+/// names.
+fn placed_keyword(tokens: &[Token], index: usize, name: &str, in_accessor: bool) -> bool {
+    let next = tokens.get(index + 1).map(|token| &token.kind);
+    match name {
+        "self" => true,
+        "field" => in_accessor,
+        "mixed" => matches!(next, Some(TokenKind::Ident(word)) if word.starts_with(|c: char| c.is_uppercase())),
+        "get" | "set" => tokens[index].line_start && matches!(next, Some(TokenKind::Ident(_))),
+        "to" => tokens[..index]
+            .iter()
+            .rposition(|token| token.line_start)
+            .is_some_and(|first| matches!(tokens[first].kind, TokenKind::Conform)),
+        _ => false,
+    }
 }
 
 /// `<name` / `<>` with no space after `<` starts a tag, as in the parser,
@@ -1446,6 +1487,24 @@ fn main() -> Int64 { 0 }
                 .any(|t| t.token_type == "function" && t.length == 8),
             "serveOne should stay a function: {toks:?}"
         );
+    }
+
+    #[test]
+    fn semantic_tokens_placed_keywords() {
+        let src = "conform Circle to Shape {\n    get area: Float64 { field * self.scale }\n    fn grow(to: Int64) { let set = to }\n}\nfn all(items!: Array<mixed Shape>) {}\n";
+        let toks = semantic_tokens(src);
+        let kind_at = |line: u32, character: u32| {
+            toks.iter()
+                .find(|t| t.line == line && t.character == character)
+                .map(|t| t.token_type.as_str())
+        };
+        assert_eq!(kind_at(0, 15), Some("keyword"), "conform's `to`: {toks:?}");
+        assert_eq!(kind_at(1, 4), Some("keyword"), "get: {toks:?}");
+        assert_eq!(kind_at(1, 24), Some("keyword"), "field: {toks:?}");
+        assert_eq!(kind_at(1, 32), Some("keyword"), "self: {toks:?}");
+        assert_eq!(kind_at(2, 12), Some("variable"), "a parameter named `to`: {toks:?}");
+        assert_eq!(kind_at(2, 29), Some("variable"), "a variable named `set`: {toks:?}");
+        assert_eq!(kind_at(4, 21), Some("keyword"), "mixed: {toks:?}");
     }
 
     #[test]

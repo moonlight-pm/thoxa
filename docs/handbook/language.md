@@ -74,7 +74,8 @@ Some other words have a meaning only in one position: `sql` directly before
 a string literal (`sql"…"`), `to` after `conform Type`, `get` and `set` at
 the start of a member and `field` inside an accessor (see
 [Properties](#properties)), `self` in a method and `Self` as a type there (see
-[Methods](#methods)), and the HTTP verbs `GET` `POST` `PUT` `PATCH` `DELETE`
+[Methods](#methods)), `mixed` before a trait's name (see
+[Mixed values](#mixed-values)), and the HTTP verbs `GET` `POST` `PUT` `PATCH` `DELETE`
 `HEAD` `OPTIONS` at the start of an entry in a type body (see
 [Route clauses](#route-clauses)).
 
