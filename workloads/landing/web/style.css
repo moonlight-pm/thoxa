@@ -111,13 +111,21 @@ code {
     overflow-wrap: anywhere;
 }
 
+/* A block wider than the page shows a shadow at its right edge. The cover
+   sits at the end of the code and scrolls with it, so it slides over the
+   shadow once the reader reaches the end, and hides it in a block that fits. */
+
 pre {
+    --pre-ground: var(--code-ground);
     font-family: var(--mono);
     font-size: 0.84rem;
     line-height: 1.55;
     margin: 1rem 0 1.25rem;
     padding: 0.9rem 1.1rem;
-    background: var(--code-ground);
+    background:
+        linear-gradient(to left, var(--pre-ground) 40%, transparent) right / 2.5rem 100% no-repeat local,
+        linear-gradient(to left, color-mix(in srgb, var(--ink) 16%, transparent), transparent) right / 1.25rem 100% no-repeat scroll,
+        var(--pre-ground);
     border: 1px solid var(--line);
     border-radius: 6px;
     overflow-x: auto;
@@ -340,8 +348,8 @@ footer.site p {
 }
 
 .output pre {
+    --pre-ground: var(--ground);
     margin-top: 0;
-    background: var(--ground);
     border-left: 3px solid var(--accent);
 }
 
