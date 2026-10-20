@@ -234,7 +234,7 @@ encoding where a `Json` is expected (and `match` takes its expected type), §5
 typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
 Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 (route clauses import only what they write; generated code names `std/http`
-itself). The site (thoxa.moonlight.pm since D246) runs `fa7ce7e` (redeployed 2026-10-19 at Joshua's request: transparent favicon, phone-sized tap targets, the HTML sample's `Component` wording; a redeploy needs Joshua's go-ahead).
+itself). The site (thoxa.moonlight.pm since D246) runs `65c5c1f` (redeployed 2026-10-20 at Joshua's request: a shadow on code blocks wider than the page; 2026-10-19: transparent favicon, phone-sized tap targets, the HTML sample's `Component` wording; a redeploy needs Joshua's go-ahead).
 
 **Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
 order"):** done; each slice with conformance and docs, decisions on the
@@ -316,7 +316,7 @@ lits; overwrite-drop; **D152** match/init RC.
 session items (Ctrl-C in a loop, the command-or-Thoxa guess, redefining a
 session `fn`) went with D227. Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14). Finding 38 (the copied site templates) is moot: one site is left. thoxa.moonlight.pm runs `fa7ce7e` (redeployed 2026-10-19).
+14). Finding 38 (the copied site templates) is moot: one site is left. thoxa.moonlight.pm runs `65c5c1f` (redeployed 2026-10-20).
 
 ### Proceed order
 
