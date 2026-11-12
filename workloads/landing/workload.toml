@@ -1,7 +1,15 @@
-# thoxa.moonlight.pm landing (thoxa.dev parked, D246).
-# Apply: wicketctl workload apply aulos --file workloads/landing/workload.toml --confirm
+# thoxa.moonlight.pm landing (thoxa.dev parked, D246), on dulcia as the Oath
+# cell `cell:thoxa-landing` (README, Cell): the server, static, and the files
+# it reads, built in `oath build`'s sandbox.
+#
+# A new build, after `sudo oath build plan:thoxa-landing`:
+#   wicketctl cell push dulcia thoxa-landing
+# This file, when it changes:
+#   wicketctl workload apply dulcia --file workloads/landing/workload.toml --confirm
 #
 # Stable ids assigned on first apply (L1/L2 paths use these, not the name).
+# It runs as UID 65534, as the image did. Before cells it ran
+# `registry.wicket.cloud/thoxa-landing:latest` (Containerfile).
 
 schema = "wicket.workload/v0"
 
@@ -11,11 +19,14 @@ name = "thoxa"
 
 [[containers]]
 name = "web"
-image = "registry.wicket.cloud/thoxa-landing:latest"
+cell = "thoxa-landing"
+user = "65534:65534"
 ports = [{ name = "http" }]
+
+[containers.health]
+path = "/"
 
 [[routes]]
 host = "thoxa.moonlight.pm"
 container = "web"
 port = "http"
-

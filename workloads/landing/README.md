@@ -11,8 +11,8 @@ Anything else falls through to the static files in `web/`, then a 404 page.
 
 Not product std. Not an `examples/` demo.
 
-**Live (aulos):** https://thoxa.moonlight.pm/ — workload `thoxa`
-(`wl-cada9b4cd855`), image `registry.wicket.cloud/thoxa-landing:latest`.
+**Live (dulcia):** https://thoxa.moonlight.pm/ — workload `thoxa`
+(`wl-cada9b4cd855`), the Oath cell `cell:thoxa-landing` (Cell, below).
 thoxa.dev is parked: no A record, no route (D246).
 
 ## How it works
@@ -61,7 +61,31 @@ repeat request gets a 304. Pages and CSS are `no-cache` (checked on every
 load); images and fonts are reused for a day. A page that loads something new
 needs the CSP widened there.
 
-## Image + Wicket
+## Cell
+
+The site runs as `cell:thoxa-landing`, built in `oath build`'s sandbox the
+way the image is built (the compiler, the site's C, that C with `thoxa_rt`),
+but linked static: `libexec/landing`, beside `web/`, `manual/`
+(`docs/handbook`) and `samples/`, about 2 MB. `bin/thoxa-landing` points
+`THOXA_STATIC`, `THOXA_MANUAL` and `THOXA_SAMPLES` at them; Wicket gives
+`PORT`. It runs as UID 65534, with a health check on `/`.
+
+```bash
+workloads/landing/cell/src /tmp/thoxa-landing-src      # HEAD's tree, and the crates
+sudo oath store cell:thoxa-landing-src /tmp/thoxa-landing-src
+# put its hash in workloads/landing/cell/thoxa-landing.plan (two places), then:
+sudo oath set plan:thoxa-landing --from-file workloads/landing/cell/thoxa-landing.plan
+sudo oath build plan:thoxa-landing
+wicketctl cell push dulcia thoxa-landing    # starts it, waits for /, goes back if not
+```
+
+`src` takes HEAD, not the work tree, and leaves `cell/` out, so the plan
+can pin it. The first build from `9feeaf2` answered every page, asset and
+header as the image did (ETags too).
+
+## Image + Wicket (history)
+
+What ran before the cell, kept for building the image elsewhere.
 
 The image builds `thoxa` from the build context, emits the site's C, and
 compiles it with `thoxa_rt` (Debian gcc). It is not tied to the host linker,
@@ -77,8 +101,8 @@ then builds in about 15 s.
 podman build -f workloads/landing/Containerfile \
   --ignorefile workloads/landing/.containerignore \
   -t registry.wicket.cloud/thoxa-landing:latest .
-wicketctl registry push aulos --image thoxa-landing:latest
-wicketctl workload apply aulos --file workloads/landing/workload.toml --confirm
+wicketctl registry push dulcia --image thoxa-landing:latest
+# then `image =` in place of `cell =` in workload.toml, and apply it
 ```
 
 Wicket injects `PORT` / `WICKET_PORT_HTTP`.

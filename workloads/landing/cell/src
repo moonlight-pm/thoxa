@@ -1,0 +1,23 @@
+#!/bin/sh
+# Makes the source of cell:thoxa-landing in <dir>, for `sudo oath store
+# cell:thoxa-landing-src <dir>`: src/ is what the Containerfile's build copies,
+# from HEAD (not the work tree), and vendor/ every crate in Cargo.lock, so
+# `oath build` needs no network. This directory is left out of src/: the plan
+# pins src's hash, which would otherwise move whenever the plan does.
+#
+#   workloads/landing/cell/src /tmp/thoxa-landing-src
+set -eu
+out=${1:?usage: workloads/landing/cell/src <dir>}
+root=$(git rev-parse --show-toplevel)
+if [ -e "$out" ]; then
+	echo "$out is there already; give a new directory" >&2
+	exit 1
+fi
+mkdir -p "$out/src"
+git -C "$root" archive HEAD \
+	Cargo.toml Cargo.lock .cargo crates runtime std docs/handbook \
+	workloads/landing/main.thx workloads/landing/app \
+	workloads/landing/web workloads/landing/samples |
+	tar -x -C "$out/src"
+(cd "$out/src" && cargo vendor --locked --versioned-dirs "$out/vendor" >/dev/null)
+echo "$out: src/ from $(git -C "$root" rev-parse --short HEAD), vendor/ from Cargo.lock"

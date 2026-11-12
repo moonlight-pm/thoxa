@@ -1,0 +1,100 @@
+#!oath-plan
+{
+  "name": "thoxa-landing",
+  "produces": "cell:thoxa-landing",
+  "build_needs": [
+    {
+      "id": "cell:thoxa-landing-src",
+      "hash": "sha256-3750b7c6ed6bb3e2bcda639cf8f62b373ff0c2155612ea66bc5018ae87832b8a"
+    },
+    {
+      "id": "pkg:bash",
+      "hash": "sha256-80f160c2dd44f5d3801bd5627163e4203d513ea9bc1edf70cccb567a34f6c371"
+    },
+    {
+      "id": "pkg:coreutils",
+      "hash": "sha256-8a793453f26206d3e84614b7ae9e09e29c882dfa103a28022a7772cc3b1fa2da"
+    },
+    {
+      "id": "pkg:gcc",
+      "hash": "sha256-037b1542457e292ba87df1f1e62e9881aaf3c0178605da1e0fef374811dee5a1"
+    },
+    {
+      "id": "pkg:glibc",
+      "hash": "sha256-7eb1564ed48058858efcd82e9786e63dccec1a8e7ad86078ace2a41af797a092"
+    },
+    {
+      "id": "pkg:gmp",
+      "hash": "sha256-0b1e2a5849dec5d1ff60bcc036804fa5a2c42f13eb883b979de90ce60aa101d2"
+    },
+    {
+      "id": "pkg:grep",
+      "hash": "sha256-f4fa7ae2900d8fa5a5b390d16a5d2421a6ebd976a448947261f1c54a0118e8d5"
+    },
+    {
+      "id": "pkg:mpc",
+      "hash": "sha256-877f9c92df8a5af55c48573a0ee1ef5fc055e26c9a14ae866ab8753cbfd1a171"
+    },
+    {
+      "id": "pkg:mpfr",
+      "hash": "sha256-494241b048adac84186882cbd4d973464df07a671aaeebcfdaec9d460976e5e7"
+    },
+    {
+      "id": "pkg:rust",
+      "hash": "sha256-340206a982fa3f3a6f24a8a66c9e5cc0758ea71e0fc2f0bde4148e071e5f81eb"
+    },
+    {
+      "id": "pkg:zlib",
+      "hash": "sha256-32c79818e429d2bf8eca16c9d94b702d29d6ef3991fc01942636ef450994e8fa"
+    }
+  ],
+  "run_needs": []
+}
+---
+#!/bin/sh
+set -eu
+# cell:thoxa-landing: thoxa.moonlight.pm, built as the Containerfile builds it
+# (the compiler, the site's C, that C with thoxa_rt), but linked static, so it
+# runs on nothing but itself.
+#
+#   bin/thoxa-landing   starts it; THOXA_* default to the folders beside it
+#   libexec/landing     the server
+#   web/ manual/ samples/  read at request time
+SRC=/oath/store/cell/thoxa-landing-src/sha256-3750b7c6ed6bb3e2bcda639cf8f62b373ff0c2155612ea66bc5018ae87832b8a
+export CC=cc HOME=/tmp/home CARGO_HOME=/tmp/cargo SOURCE_DATE_EPOCH=0
+mkdir -p "$HOME" "$CARGO_HOME"
+cat >"$CARGO_HOME/config.toml" <<EOF
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "$SRC/vendor"
+EOF
+cp -R "$SRC/src" /tmp/thoxa
+chmod -R u+w /tmp/thoxa
+cd /tmp/thoxa
+cargo build --release --frozen -p thoxa
+# Same flags as the thoxa driver: -fwrapv makes Int64 overflow wrap (D157).
+cc -std=c11 -O2 -fwrapv -c runtime/src/thoxa_rt.c -I runtime/include -o /tmp/thoxa_rt.o
+target/rust/release/thoxa emit-c workloads/landing
+mkdir -p /out/bin /out/libexec
+cc -std=c11 -O2 -fwrapv -static target/thoxa/c/landing.c /tmp/thoxa_rt.o \
+	-I runtime/include -lm -o /out/libexec/landing
+if readelf -lW /out/libexec/landing | grep -q INTERP; then
+	echo "landing is dynamically linked; it must be static" >&2
+	exit 1
+fi
+cp -R workloads/landing/web /out/web
+cp -R docs/handbook /out/manual
+cp -R workloads/landing/samples /out/samples
+
+cat >/out/bin/thoxa-landing <<'EOF'
+#!/bin/sh
+# Wicket gives PORT; THOXA_PORT is the fallback the server reads after it.
+here=/oath/store/cell/thoxa-landing/live
+export THOXA_STATIC="${THOXA_STATIC:-$here/web}"
+export THOXA_MANUAL="${THOXA_MANUAL:-$here/manual}"
+export THOXA_SAMPLES="${THOXA_SAMPLES:-$here/samples}"
+exec "$here/libexec/landing" "$@"
+EOF
+chmod 0755 /out/bin/thoxa-landing
