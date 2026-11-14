@@ -1,0 +1,12 @@
+## D248: exits join as `if` branches do; a Float64 and a String form no
+## union, so the function needs its return type written.
+fn ratio(flag: Bool) {
+    if flag {
+        return 1.5
+    }
+    "none"
+}
+
+fn main() {
+    let value = ratio(flag: true)
+}

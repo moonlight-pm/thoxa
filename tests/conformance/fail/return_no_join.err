@@ -1,0 +1,1 @@
+this function returns Float64 on one path and String on another, which form no union; write its return type (`-> …`)

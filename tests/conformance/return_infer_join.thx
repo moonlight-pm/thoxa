@@ -1,0 +1,88 @@
+## D248: a function's exits join as the branches of one `if` do, and an `if`
+## joins the types a written union can hold (`Int64 | String`).
+import logging from "std/logging"
+import { Done as Finished, Quit } from "./joinmod/outcomes"
+
+type Stop
+type Go(speed: Int64)
+type Signal = Stop | Go
+
+## Early return and tail: Finished | Quit, as the `if` in `either` is.
+fn early(flag: Bool) {
+    if flag {
+        return Finished(count: 1)
+    }
+    Quit()
+}
+
+fn either(flag: Bool) {
+    if flag { Quit() } else { Finished(count: 2) }
+}
+
+## Built-in members: Int64 | String, by return and by `if`.
+fn code(flag: Bool, round: Int64) {
+    if flag {
+        return 404
+    }
+    "missing {round}"
+}
+
+fn label(flag: Bool) {
+    if flag { 7 } else { "seven" }
+}
+
+## A member and its union: the union.
+fn signal(flag: Bool) {
+    let stop: Signal = Stop()
+    if flag {
+        return Go(speed: 3)
+    }
+    stop
+}
+
+fn describe(outcome: Finished | Quit) -> String {
+    match outcome {
+        Finished(count) { "finished {count}" }
+        Quit { "quit" }
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    logging.info(describe(outcome: early(flag: true)))
+    logging.info(describe(outcome: early(flag: false)))
+    match either(flag: false) {
+        Finished(count) { logging.info("either finished {count}") }
+        Quit { logging.info("either quit") }
+    }
+    match either(flag: true) {
+        Finished(count) { logging.info("either finished {count}") }
+        Quit { logging.info("either quit") }
+    }
+
+    for flag in [true, false] {
+        match code(flag: flag, round: 0) {
+            Int64(number) { logging.info("code {number}") }
+            String(text) { logging.info("code {text}") }
+        }
+        logging.info("label {label(flag: flag)}")
+    }
+    ## A String member bound on every pass of a loop is released each pass.
+    for round in [1, 2, 3] {
+        match code(flag: false, round: round) {
+            Int64(number) { logging.info("code {number}") }
+            String(text) { logging.info("code {text}") }
+        }
+    }
+
+    match signal(flag: true) {
+        Go(speed) { logging.info("go {speed}") }
+        Stop { logging.info("stop") }
+    }
+    match signal(flag: false) {
+        Go(speed) { logging.info("go {speed}") }
+        Stop { logging.info("stop") }
+    }
+}

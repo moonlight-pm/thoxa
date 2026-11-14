@@ -1,9 +1,9 @@
 # Freeze: Function return-type inference (D129)
 
-**Status:** shipped (free functions; methods since **D174**; multi-clause and generic types' methods since **D211**, in the same rounds since **D221**; `main` since **D223**)  
-**Decision:** D129, D174, D211, D221, D223  
-**Gate:** `return_infer`, `return_infer_methods`, `return_infer_generic_multi`, `return_infer_multi_calls`, `main_void`, `fail/method_return_recursive`, `fail/main_returns_text`  
-**As of:** 2026-10-18
+**Status:** shipped (free functions; methods since **D174**; multi-clause and generic types' methods since **D211**, in the same rounds since **D221**; `main` since **D223**; exits join as an `if`'s branches do since **D248**)  
+**Decision:** D129, D174, D211, D221, D223, D248  
+**Gate:** `return_infer`, `return_infer_methods`, `return_infer_generic_multi`, `return_infer_multi_calls`, `return_infer_join`, `main_void`, `fail/method_return_recursive`, `fail/main_returns_text`, `fail/return_no_join`  
+**As of:** 2026-11-14
 
 ## Intent
 
@@ -37,8 +37,13 @@ Collect every way a value leaves the function:
 | block tail | type of tail (`Never` from diverging `loop` adds no value exit) |
 | `e?` residual path | **collapsed residual-marked type** of `e` (below) |
 
-**Combine:** unify / form one return type from contributions. If that fails →
-diagnostic requiring `-> …`.
+**Combine (D248):** value exits join as the branches of one `if` do. Equal
+types are one type; a member and its union are the union; types a union can
+hold form the union of their members (`return Done()` and a tail `Quit()`
+give `Done | Quit`; `404` and `"missing"` give `Int64 | String`). Types that
+form no union (`Float64` and `String`) → diagnostic requiring `-> …`. Exits
+that are whole residual unions (`return Pass(…)`) keep to one type and meet
+the residual collapses (§3).
 
 ### 3. Residual `?` collapse (structural, not name-based)
 
@@ -71,7 +76,7 @@ placeholder. Non-residual value exits refine that slot:
 - value exits `Int64` and `String`
 - combined → `Trial<Int64 | String, String>` when that sum is formable
 
-Exact lub/sum laws may grow (D119-style member sets). Intractable → annotate.
+The join is D248's (D119 member sets). Intractable → annotate.
 
 ### 5. Bare `Pass` / `Fail` (and similar)
 

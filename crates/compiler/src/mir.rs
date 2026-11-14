@@ -1087,6 +1087,22 @@ fn display_lit_key(key: &str) -> String {
     if let Some(t) = key.strip_prefix("ty_") {
         return display_type_base(t);
     }
+    if let Some(built_in) = key.strip_prefix("other_") {
+        return display_member_debug(built_in);
+    }
+    key.to_string()
+}
+
+/// A built-in member's key, its `Ty` written with `_` for every other
+/// character (`Int64`, `Array___elem__Int64__`), as its source names it
+/// (`Int64`, `Array<Int64>`).
+fn display_member_debug(key: &str) -> String {
+    if let Some(elem) = key.strip_prefix("Array___elem__").and_then(|rest| rest.strip_suffix("__")) {
+        return format!("Array<{}>", display_member_debug(elem));
+    }
+    if let Some(name) = key.strip_prefix("User__").and_then(|rest| rest.strip_suffix("__")) {
+        return display_user_ty(name);
+    }
     key.to_string()
 }
 
@@ -3744,9 +3760,13 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
         return Err(errors_to_multi(body_errors));
     }
 
-    // Synthetic unions from unannotated if lub (D119).
-    for (_, (_, layout)) in synthetics.borrow().entries.iter() {
-        type_layouts.push(layout.clone());
+    // Synthetic unions from unannotated if lub (D119), each once: a body
+    // can make a union that return inference already made (D248).
+    let laid_out: HashSet<String> = type_layouts.iter().map(|layout| layout.name.clone()).collect();
+    for (name, (_, layout)) in synthetics.borrow().entries.iter() {
+        if !laid_out.contains(name) {
+            type_layouts.push(layout.clone());
+        }
     }
     // The members `mixed` unions gained while lowering (D235).
     for (mixed, added) in &synthetics.borrow().mixed_added {
@@ -5529,19 +5549,9 @@ fn join_return_tys(
     span: Span,
     def_mod: &str,
 ) -> Result<Ty> {
-    if ty_eq(types, a, b) {
-        return Ok(a.clone());
+    if let Some(joined) = join_tys(types, layouts, a, b, span, def_mod)? {
+        return Ok(joined);
     }
-    if is_never(a) {
-        return Ok(b.clone());
-    }
-    if is_never(b) {
-        return Ok(a.clone());
-    }
-    if collect_union_members(types, a).is_some() && collect_union_members(types, b).is_some() {
-        return ensure_member_set_type(types, layouts, &[a.clone(), b.clone()], span, def_mod);
-    }
-    // Scalar lub not supported for multi-clause returns without annotation.
     Err(Error::at(
         format!(
             "cannot join multi-clause return types {} and {}; annotate each clause with compatible `->`",
@@ -5758,8 +5768,10 @@ fn unify_infer_tys(tys: &[Ty], span: Span) -> Result<Ty> {
             (x, y) => {
                 return Err(Error::at(
                     format!(
-                        "cannot infer a single return type from exits ({x:?} vs {y:?}); \
-                         add an explicit `->` annotation"
+                        "this function returns {} on one path and {} on another; \
+                         write its return type (`-> …`)",
+                        display_ty(x),
+                        display_ty(y)
                     ),
                     span,
                 ));
@@ -5770,6 +5782,40 @@ fn unify_infer_tys(tys: &[Ty], span: Span) -> Result<Ty> {
         Ok(Ty::Void)
     } else {
         Ok(acc)
+    }
+}
+
+/// A function's value exits, joined as the branches of one `if` are (D248).
+/// Exits that are whole residual unions (`return Pass(…)`) keep to one type:
+/// they meet the `?` exits' collapsed residuals (§3), not a union of members.
+fn join_exit_tys(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    tys: &[Ty],
+    span: Span,
+    def_mod: &str,
+) -> Result<Ty> {
+    if tys.iter().any(|ty| is_residual_union(types, ty)) {
+        return unify_infer_tys(tys, span);
+    }
+    let mut joined = Ty::Never;
+    for ty in tys {
+        joined = join_tys(types, layouts, &joined, ty, span, def_mod)?.ok_or_else(|| {
+            Error::at(
+                format!(
+                    "this function returns {} on one path and {} on another, which form no union; \
+                     write its return type (`-> …`)",
+                    display_ty(&joined),
+                    display_ty(ty)
+                ),
+                span,
+            )
+        })?;
+    }
+    if is_never(&joined) {
+        Ok(Ty::Void)
+    } else {
+        Ok(joined)
     }
 }
 
@@ -5829,20 +5875,21 @@ fn combine_inferred_return(
     values: &[Ty],
     successes: &[Ty],
     span: Span,
+    def_mod: &str,
 ) -> Result<Ty> {
     let values: Vec<Ty> = values.iter().filter(|t| !is_never(t)).cloned().collect();
     if residuals.is_empty() {
-        return unify_infer_tys(&values, span);
+        return join_exit_tys(types, layouts, &values, span, def_mod);
     }
     let mut r = unify_infer_tys(residuals, span)?;
     if !values.is_empty() {
-        let s = unify_infer_tys(&values, span)?;
+        let s = join_exit_tys(types, layouts, &values, span, def_mod)?;
         // Full residual-union value exits (e.g. `return Pass(…)`) unify with residual
         // collapses — do not treat the whole Trial as a success *payload*.
         if !is_residual_union(types, &s) {
             let mut plain = values;
             plain.extend(successes.iter().cloned());
-            let s = unify_infer_tys(&plain, span)?;
+            let s = join_exit_tys(types, layouts, &plain, span, def_mod)?;
             return refine_residual_with_success(types, layouts, generics, &r, &s, span);
         }
         r = unify_infer_tys(&[r, s], span)?;
@@ -5851,7 +5898,7 @@ fn combine_inferred_return(
         return Ok(r);
     }
     // `x?` then `Pass(value)`: the payload is the success type.
-    let s = unify_infer_tys(successes, span)?;
+    let s = join_exit_tys(types, layouts, successes, span, def_mod)?;
     refine_residual_with_success(types, layouts, generics, &r, &s, span)
 }
 
@@ -6501,6 +6548,7 @@ fn probe_body_return(
         &ctx.infer_values,
         &ctx.infer_successes,
         name_span,
+        &ctx.module_id,
     )
 }
 
@@ -16197,7 +16245,7 @@ fn ensure_member_set_type(
     def_mod: &str,
 ) -> Result<Ty> {
     // Expand to atoms/lits.
-    let mut flat: Vec<(String, Ty, Option<TypeLit>)> = Vec::new();
+    let mut keyed: Vec<(String, String, Ty, Option<TypeLit>)> = Vec::new();
     let mut seen = HashSet::new();
     for ty in mem_tys {
         if let Some(members) = collect_union_members(types, ty) {
@@ -16209,17 +16257,23 @@ fn ensure_member_set_type(
                 } else {
                     format!("{mty:?}")
                 };
-                if seen.insert(key) {
-                    flat.push((name, mty, lit));
+                if seen.insert(key.clone()) {
+                    keyed.push((key, name, mty, lit));
                 }
             }
         } else {
             return Err(Error::at(
-                format!("cannot form union member from {ty:?}"),
+                format!("{} cannot be a union member", display_ty(ty)),
                 span,
             ));
         }
     }
+    // Tags in member order, not the order the members were written: a body
+    // that makes the union again (in its own copy of the types) must lay it
+    // out the same way (D248).
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    let flat: Vec<(String, Ty, Option<TypeLit>)> =
+        keyed.into_iter().map(|(_, name, ty, lit)| (name, ty, lit)).collect();
     if flat.is_empty() {
         return Err(Error::at("empty union type", span));
     }
@@ -17231,7 +17285,7 @@ fn finish_match_arm_ty(
             if let Some(rt) = result_ty {
                 if *rt != ty {
                     return Err(Error::at(
-                        format!("match arms have different types: {rt:?} vs {ty:?}"),
+                        format!("match arms have different types: {} vs {}", display_ty(rt), display_ty(&ty)),
                         span,
                     ));
                 }
@@ -17249,7 +17303,7 @@ fn finish_match_arm_ty(
             if let Some(rt) = result_ty {
                 if *rt != Ty::Void {
                     return Err(Error::at(
-                        format!("match arms have different types: {rt:?} vs Void"),
+                        format!("match arms have different types: {} vs Void", display_ty(rt)),
                         span,
                     ));
                 }
@@ -17582,6 +17636,20 @@ fn generic_template(ctx: &LowerCtx, name: &str) -> Option<String> {
     ctx.synthetics.borrow().generics.contains_key(&mangled).then_some(mangled)
 }
 
+/// The member of a union a pattern names: by its name, or by the type the
+/// name is in this module, for a union made from members whose import
+/// renamed them (`import { Done as Finished }`, then `Finished(count)`; D248).
+fn sum_member_named(ctx: &LowerCtx, sum: &SumInfo, name: &str) -> Option<SumVariant> {
+    if let Some(variant) = sum.variants.iter().find(|variant| variant.name == name) {
+        return Some(variant.clone());
+    }
+    let member = Ty::User(ctx.name_to_type.get(name)?.clone());
+    sum.variants
+        .iter()
+        .find(|variant| variant.lit.is_none() && variant.ty == member)
+        .cloned()
+}
+
 fn lower_match_sum(
     ctx: &mut LowerCtx,
     scrut_p: Place,
@@ -17665,7 +17733,7 @@ fn lower_match_sum(
             Pattern::Bind { name, span: bspan } => {
                 // Bare name that is a union member: tag-only (nullary or discard payload, D130).
                 // Otherwise catch-all bind of the whole sum value (D110).
-                if let Some(variant) = sum.variants.iter().find(|v| v.name == *name).cloned() {
+                if let Some(variant) = sum_member_named(ctx, &sum, name) {
                     let guarded = arm.guard.is_some();
                     if !guarded && !covered.insert(variant.tag) {
                         return Err(Error::at(
@@ -17748,13 +17816,9 @@ fn lower_match_sum(
                             *pspan,
                         ));
                     }
-                    sum.variants
-                        .iter()
-                        .find(|v| v.name == *name)
-                        .ok_or_else(|| {
-                            Error::at(format!("`{name}` is not a member of this union"), *pspan)
-                        })?
-                        .clone()
+                    sum_member_named(ctx, &sum, name).ok_or_else(|| {
+                        Error::at(format!("`{name}` is not a member of this union"), *pspan)
+                    })?
                 };
                 let guarded = arm.guard.is_some();
                 if !guarded && !covered.insert(variant.tag) {
@@ -17786,8 +17850,10 @@ fn lower_match_sum(
                         ));
                     }
                     if let Some(bname) = &binds[0] {
+                        // Owns its own ref, as a field bind does; `assign`
+                        // drops the one the last pass of a loop left (D248).
                         let held = ctx.fresh("spay");
-                        ctx.assign_no_drop(
+                        ctx.assign(
                             held.clone(),
                             variant.ty.clone(),
                             RValue::SumPayload {
@@ -17801,7 +17867,6 @@ fn lower_match_sum(
                                 place: held.clone(),
                                 ty: variant.ty.clone(),
                             });
-                            ctx.note_drop_place(&held, &variant.ty);
                         }
                         ctx.define(bname, variant.ty.clone(), false, held);
                     }
@@ -18390,7 +18455,7 @@ fn unify_match_arm_tys(a: &Ty, b: &Ty, span: Span) -> Result<Ty> {
         (Ty::Void, Ty::Void) => Ok(Ty::Void),
         (x, y) if x == y => Ok(x.clone()),
         (x, y) => Err(Error::at(
-            format!("match arms have different types ({x:?} vs {y:?})"),
+            format!("match arms have different types ({} vs {})", display_ty(x), display_ty(y)),
             span,
         )),
     }
@@ -21198,32 +21263,68 @@ fn unify_if_branch_tys(
     else_absent: bool,
     span: Span,
 ) -> Result<Ty> {
-    match (then_ty, else_ty) {
-        (Ty::Never, x) | (x, Ty::Never) => Ok(x.clone()),
-        (Ty::Void, Ty::Void) => Ok(Ty::Void),
-        // No `else`: the `if` has no value when the condition is false, so it is
-        // Void (a statement). Using it as a value is a type error, not a zero/NULL.
-        (_, Ty::Void) if else_absent => Ok(Ty::Void),
-        (a, b) if a == b => Ok(a.clone()),
-        (a, b) if ty_eq(&ctx.types, a, b) => {
-            // Transparent aliases: prefer the then-branch name as the result type.
-            Ok(a.clone())
-        }
-        (a, b) if can_coerce_ty(&ctx.types, a, b) => Ok(b.clone()),
-        (a, b) if can_coerce_ty(&ctx.types, b, a) => Ok(a.clone()),
-        (a, b) => {
-            // Unannotated lub: synthetic member-set union of true types (D119).
-            if let Some(u) = try_lub_union(ctx, a, b, span)? {
-                return Ok(u);
-            }
-            Err(Error::at(
-                format!(
-                    "if branches have different types ({a:?} vs {b:?}); annotate with a union type"
-                ),
-                span,
-            ))
-        }
+    // No `else`: the `if` has no value when the condition is false, so it is
+    // Void (a statement). Using it as a value is a type error, not a zero/NULL.
+    if else_absent {
+        return Ok(Ty::Void);
     }
+    join_tys_in(ctx, then_ty, else_ty, span)?.ok_or_else(|| {
+        Error::at(
+            format!(
+                "this `if` is {} in one branch and {} in the other, which form no union; \
+                 give it an expected type",
+                display_ty(then_ty),
+                display_ty(else_ty)
+            ),
+            span,
+        )
+    })
+}
+
+/// Two types joined where no type is expected (D119, D248): the branches of
+/// an `if`, a function's exits (D129), a multi-clause function's clauses
+/// (D131). A type joins itself; a type that converts into the other (a
+/// member into its union, a literal into its base) joins as the other; two
+/// that can be union members join as the union of their members, the type
+/// `A | B` names. `None` when they form nothing, and an annotation must say.
+fn join_tys(
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    a: &Ty,
+    b: &Ty,
+    span: Span,
+    def_mod: &str,
+) -> Result<Option<Ty>> {
+    if is_never(a) {
+        return Ok(Some(b.clone()));
+    }
+    // Equal under a transparent alias: the first one's name.
+    if is_never(b) || ty_eq(types, a, b) {
+        return Ok(Some(a.clone()));
+    }
+    if can_coerce_ty(types, a, b) {
+        return Ok(Some(b.clone()));
+    }
+    if can_coerce_ty(types, b, a) {
+        return Ok(Some(a.clone()));
+    }
+    if collect_union_members(types, a).is_none() || collect_union_members(types, b).is_none() {
+        return Ok(None);
+    }
+    ensure_member_set_type(types, layouts, &[a.clone(), b.clone()], span, def_mod).map(Some)
+}
+
+/// `join_tys` while lowering a body: a union it makes goes to the package's
+/// synthetic types, as every type a body makes does.
+fn join_tys_in(ctx: &mut LowerCtx, a: &Ty, b: &Ty, span: Span) -> Result<Option<Ty>> {
+    let mut layouts = Vec::new();
+    let def_mod = ctx.module_id.clone();
+    let joined = join_tys(&mut ctx.types, &mut layouts, a, b, span, &def_mod)?;
+    for layout in layouts {
+        let info = ctx.types[&layout.name].clone();
+        ctx.synthetics.borrow_mut().entries.insert(layout.name.clone(), (info, layout));
+    }
+    Ok(joined)
 }
 
 /// Collect atom / lit members of a type for set-union lub (expand sums).
@@ -21241,8 +21342,10 @@ fn collect_union_members(
                 }
                 Some(out)
             } else {
-                // Nominal atom (product / empty type).
-                Some(vec![(n.clone(), ty.clone(), None)])
+                // Nominal atom (product / empty type), named as declared
+                // (`Done`, not `outcomes_Done`), as a pattern names it.
+                let base = n.split("__").next().unwrap_or(n);
+                Some(vec![(display_type_base(base), ty.clone(), None)])
             }
         }
         // Builtins as single-member sets so D131 can join String | User | Array.
@@ -21257,181 +21360,6 @@ fn collect_union_members(
         }
         _ => None,
     }
-}
-
-/// Reverse local type map: mangled → source name (for synthetic union arm labels).
-fn source_name_of(ctx: &LowerCtx, mangled: &str) -> String {
-    for (src, m) in &ctx.name_to_type {
-        if m == mangled {
-            return src.clone();
-        }
-    }
-    mangled.to_string()
-}
-
-/// Ensure a synthetic sum type for the given members exists; return its Ty.
-fn ensure_synthetic_sum(
-    ctx: &mut LowerCtx,
-    members: Vec<(String, Ty, Option<TypeLit>)>,
-    span: Span,
-) -> Result<Ty> {
-    // Canonical name from sorted keys (order-independent).
-    let mut keyed: Vec<(String, String, Ty, Option<TypeLit>)> = members
-        .into_iter()
-        .map(|(name, ty, lit)| {
-            // Same scheme as `sum_variant_key` (C-safe).
-            let key = if let Some(ref l) = lit {
-                match l {
-                    TypeLit::Int(n) => format!("liti_{n}"),
-                    TypeLit::Bool(b) => format!("litb_{b}"),
-                    TypeLit::String(s) => {
-                        let safe: String = s
-                            .chars()
-                            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                            .collect();
-                        format!("lits_{safe}")
-                    }
-                }
-            } else if let Ty::User(n) = &ty {
-                format!("ty_{n}")
-            } else {
-                format!(
-                    "other_{}",
-                    format!("{ty:?}").replace(|c: char| !c.is_ascii_alphanumeric(), "_")
-                )
-            };
-            (key, name, ty, lit)
-        })
-        .collect();
-    keyed.sort_by(|a, b| a.0.cmp(&b.0));
-    keyed.dedup_by(|a, b| a.0 == b.0);
-
-    if keyed.len() < 2 {
-        return Err(Error::at(
-            "internal: synthetic union needs at least two members",
-            span,
-        ));
-    }
-
-    let syn_name = format!(
-        "$union${}",
-        keyed
-            .iter()
-            .map(|(k, _, _, _)| k.as_str())
-            .collect::<Vec<_>>()
-            .join("$")
-    );
-
-    if ctx.types.contains_key(&syn_name) {
-        return Ok(Ty::User(syn_name));
-    }
-
-    // Validate members are injectible atoms (same rules as declared unions).
-    for (_, vname, ty, lit) in &keyed {
-        if lit.is_some() {
-            continue;
-        }
-        let Ty::User(member_name) = ty else {
-            return Err(Error::at(
-                format!("cannot form union member from {ty:?}"),
-                span,
-            ));
-        };
-        if let Some(minfo) = ctx.types.get(member_name) {
-            if minfo.sum.is_some() {
-                return Err(Error::at(
-                    format!("nested union member `{vname}` not yet supported"),
-                    span,
-                ));
-            }
-            for f in &minfo.fields {
-                if !union_member_field_ok(&f.ty) {
-                    return Err(Error::at(
-                        format!(
-                            "union member `{vname}` field `{}` must be a scalar, String/Bytes, User, Array, or Map",
-                            f.name
-                        ),
-                        span,
-                    ));
-                }
-            }
-        }
-    }
-
-    let mut variants = Vec::new();
-    let mut layout_vars = Vec::new();
-    for (i, (_, name, ty, lit)) in keyed.iter().enumerate() {
-        let tag = i as u32;
-        let payload_ty = if lit.is_some() { Ty::Void } else { ty.clone() };
-        // Prefer source atom name for patterns when User.
-        let vname = if lit.is_some() {
-            name.clone()
-        } else if let Ty::User(n) = ty {
-            source_name_of(ctx, n)
-        } else {
-            name.clone()
-        };
-        variants.push(SumVariant {
-            tag,
-            name: vname.clone(),
-            ty: payload_ty.clone(),
-            lit: lit.clone(),
-            mark: None,
-            unwrap_payload: false,
-        });
-        layout_vars.push(SumVariantLayout {
-            tag,
-            name: vname,
-            payload_ty,
-        });
-    }
-
-    let sum = SumInfo {
-        variants,
-        residual_tag: None,
-        extract_tag: None,
-    };
-    let info = TypeInfo {
-        fields: Vec::new(),
-        methods: HashMap::new(),
-        zero_init: false,
-        def_mod: ctx.module_id.clone(),
-        sum: Some(sum),
-        refined: None,
-        resource: false,
-        traits: Vec::new(),
-        derived: HashSet::new(),
-        instance: None,
-        templates: HashMap::new(),
-    };
-    let layout = TypeLayout {
-        name: syn_name.clone(),
-        fields: Vec::new(),
-        sum: Some(layout_vars),
-        sum_scalar: None,
-        has_drop: false,
-        own_hash: false,
-        own_equals: false,
-    };
-
-    ctx.types.insert(syn_name.clone(), info.clone());
-    ctx.synthetics
-        .borrow_mut()
-        .entries
-        .insert(syn_name.clone(), (info, layout));
-
-    Ok(Ty::User(syn_name))
-}
-
-fn try_lub_union(ctx: &mut LowerCtx, a: &Ty, b: &Ty, span: Span) -> Result<Option<Ty>> {
-    let Some(mut ma) = collect_union_members(&ctx.types, a) else {
-        return Ok(None);
-    };
-    let Some(mb) = collect_union_members(&ctx.types, b) else {
-        return Ok(None);
-    };
-    ma.extend(mb);
-    Ok(Some(ensure_synthetic_sum(ctx, ma, span)?))
 }
 
 fn lower_block_into(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Option<Place>> {

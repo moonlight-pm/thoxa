@@ -1,0 +1,3 @@
+## Members for `return_infer_join`, imported from another module (D248).
+export type Done(count: Int64)
+export type Quit

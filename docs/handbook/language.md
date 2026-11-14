@@ -623,11 +623,29 @@ fn area(shape!: Shape) -> Float64 {
 }
 ```
 
-Members are product types (with or without fields), literal values, or other
-unions (which flatten). A value of a member converts to the union wherever the
-union is expected: an argument, a return, an annotated `let`, or an `if` /
-`match` branch whose result is expected to be the union. A union of string
-literals is a subtype of `String`.
+Members are product types (with or without fields), literal values, the
+built-in types `Int64`, `String`, `Bool`, `Bytes`, `Node`, and `Array<T>`, or
+other unions (which flatten). A value of a member converts to the union
+wherever the union is expected: an argument, a return, an annotated `let`, or
+an `if` / `match` branch whose result is expected to be the union. A union of
+string literals is a subtype of `String`. A built-in member is matched by its
+type's name:
+
+```thx
+fn describe(value: Int64 | String) -> String {
+    match value {
+        Int64(number) => "number {number}"
+        String(text) => "text {text}"
+    }
+}
+```
+
+Where no type is expected, an `if` whose branches have different types is
+the union of their members (`if found { count } else { "none" }` is an
+`Int64 | String`), and so is a function without `->` whose exits do (see
+[Return types](#return-types)). A branch that is a member of the other's
+union gives that union. Branches that form no union (a `Float64` and a
+`String`) are a compile error.
 
 **Marks.** A member may carry `!` (the success case) and another `?` (the
 residual case). The [`?` operator](#propagating-failure) unwraps the `!` member and
@@ -1378,6 +1396,10 @@ function or method without `->` infers its return type from its exits:
 
 - a `return value` or the block's final value gives that type (`42` gives
   `Int64`; no value gives `Void`);
+- exits of different types join as the branches of an `if` do (see
+  [Unions](#unions)): an early `return Done()` and a final `Quit()` give
+  `Done | Quit`, and `404` and `"missing"` give `Int64 | String`. Types that
+  form no union (a `Float64` and a `String`) are a compile error: write `->`;
 - `x?` followed by `Pass(value)` (or `Has(value)` after a `May`) gives
   `Trial<T, E>` (or `May<T>`) with the payload's type. A function that uses
   `?` and has no value to return ends with `Pass(Void)`, giving
@@ -1411,7 +1433,7 @@ fn page(path!: "admin") -> String {
   value in that domain.
 - Duplicate domains, unreachable clauses, and `export` on only some clauses
   are compile errors.
-- Return types join like match arms.
+- Return types join as an `if`'s branches do.
 - A multi-clause method sees and writes its type's fields as any method does.
 
 Multi-clause and `extern` functions cannot be used as values.

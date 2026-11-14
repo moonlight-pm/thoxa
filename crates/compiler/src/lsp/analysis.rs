@@ -1663,6 +1663,36 @@ fn main() -> Int64 {
     }
 
     #[test]
+    fn return_types_show_joined_unions() {
+        // D248: exits join into the union a signature would write.
+        let src = "\
+type Point(x: Int64)
+fn code(flag: Bool) {
+    if flag {
+        return 404
+    }
+    \"missing\"
+}
+fn items(flag: Bool) {
+    if flag {
+        return [Point(x: 1)]
+    }
+    if true { [[1]] } else { Point(x: 2) }
+}
+fn main() -> Int64 {
+    0
+}
+";
+        let rets = return_types_with_overlays("<input>", src, &HashMap::new());
+        assert_eq!(rets.get("code").map(String::as_str), Some("Int64 | String"), "got {rets:?}");
+        assert_eq!(
+            rets.get("items").map(String::as_str),
+            Some("Array<Array<Int64>> | Array<Point> | Point"),
+            "got {rets:?}"
+        );
+    }
+
+    #[test]
     fn return_types_include_inferred_trial_from_try() {
         use std::fs;
         // Imports need a real path so package load can find std/.

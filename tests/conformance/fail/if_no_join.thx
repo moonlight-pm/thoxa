@@ -1,0 +1,5 @@
+## D248: an `if` joins its branches into a union when they can be members;
+## a Float64 and a String cannot.
+fn main() {
+    let value = if true { 1.5 } else { "none" }
+}
