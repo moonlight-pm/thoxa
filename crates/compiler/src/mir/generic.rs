@@ -558,6 +558,12 @@ pub(super) fn make_instance(
     if ctx.types.contains_key(&mono) {
         return Ok(mono);
     }
+    // Made already in a copy of the types: an `if` branch or a match arm is
+    // typed ahead in one (D249). Making it again would queue its methods twice.
+    if ctx.synthetics.borrow().entries.contains_key(&mono) {
+        super::seed_synthetics(&mut ctx.types, &ctx.synthetics.borrow());
+        return Ok(mono);
+    }
     let generics = ctx.synthetics.borrow().generics.clone();
     let conditional = ctx.synthetics.borrow().conditional.clone();
     let mut types = ctx.types.clone();

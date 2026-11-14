@@ -1,0 +1,13 @@
+## D249: a match's arms join as an `if`'s branches do; a Float64 and a String
+## form no union, so the match needs an expected type.
+type Stop
+type Go(speed: Int64)
+type Signal = Stop | Go
+
+fn main() {
+    let signal: Signal = Stop()
+    let value = match signal {
+        Go(speed) => 1.5
+        Stop => "stopped"
+    }
+}

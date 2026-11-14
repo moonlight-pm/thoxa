@@ -17237,6 +17237,13 @@ fn lower_match(
     if matches!(scrut_ty, Ty::String | Ty::Int64 | Ty::Bool) {
         return lower_match_value(ctx, scrut_p, scrut_ty, arms, span, expect);
     }
+    // Without one, arms of different types join as an `if`'s branches do,
+    // and lower expecting the join (D249).
+    let joined = match expect {
+        Some(_) => None,
+        None => match_arm_join(ctx, &scrut_ty, arms, span)?,
+    };
+    let expect = expect.or(joined.as_ref());
     if scrut_ty == Ty::Node {
         return lower_match_node(ctx, scrut_p, arms, span, expect);
     }
@@ -17249,6 +17256,110 @@ fn lower_match(
         "match supports Trial, May, String, Int64, Bool, Node, or union types",
         span,
     ))
+}
+
+/// The type a match on a union or a `Node` is when its arms' types differ:
+/// their join (D248), each arm's type worked out ahead with its pattern's
+/// names bound (D249). `None` when the arms agree, or when an arm cannot be
+/// typed ahead (its lowering reports why).
+fn match_arm_join(ctx: &mut LowerCtx, scrut_ty: &Ty, arms: &[MatchArm], span: Span) -> Result<Option<Ty>> {
+    let mut arm_tys = Vec::new();
+    for arm in arms {
+        let Some(binds) = arm_binds(ctx, scrut_ty, &arm.pattern) else {
+            return Ok(None);
+        };
+        ctx.push_scope();
+        for (name, ty) in binds {
+            let place = Place {
+                name: sanitize_name(&name),
+            };
+            ctx.define(&name, ty, false, place);
+        }
+        let ty = infer_block_ty(ctx, &arm.body);
+        ctx.pop_scope();
+        let Ok(ty) = ty else {
+            return Ok(None);
+        };
+        arm_tys.push(ty);
+    }
+    let mut joined = Ty::Never;
+    for ty in &arm_tys {
+        joined = join_match_arm_tys(ctx, &joined, ty, span)?;
+    }
+    let agree = arm_tys.iter().all(|ty| is_never(ty) || *ty == joined);
+    Ok((!agree).then_some(joined))
+}
+
+/// Two arms' types joined (D248), or the error naming both.
+fn join_match_arm_tys(ctx: &mut LowerCtx, a: &Ty, b: &Ty, span: Span) -> Result<Ty> {
+    join_tys_in(ctx, a, b, span)?.ok_or_else(|| {
+        Error::at(
+            format!(
+                "this `match` is {} in one arm and {} in another, which form no union; \
+                 give it an expected type",
+                display_ty(a),
+                display_ty(b)
+            ),
+            span,
+        )
+    })
+}
+
+/// The names a pattern binds over a union or `Node` scrutinee, with their
+/// types, as its arm's lowering binds them. `None` when the pattern does not
+/// name a member (its lowering reports it).
+fn arm_binds(ctx: &mut LowerCtx, scrut_ty: &Ty, pattern: &Pattern) -> Option<Vec<(String, Ty)>> {
+    let node = *scrut_ty == Ty::Node;
+    let sum = if node {
+        node_sum_info()
+    } else {
+        let Ty::User(sum_name) = scrut_ty else {
+            return None;
+        };
+        ctx.types.get(sum_name)?.sum.clone()?
+    };
+    match pattern {
+        Pattern::Bind { name, .. } => {
+            let member = if node {
+                sum.variants.iter().any(|variant| variant.name == *name)
+            } else {
+                sum_member_named(ctx, &sum, name).is_some()
+            };
+            Some(if member { Vec::new() } else { vec![(name.clone(), scrut_ty.clone())] })
+        }
+        Pattern::Variant {
+            name,
+            type_args,
+            binds,
+            span,
+            ..
+        } => {
+            let variant = match scrut_ty {
+                Ty::User(sum_name) if is_mixed(sum_name) => mixed_arm(ctx, sum_name, name, type_args, *span).ok()?,
+                Ty::Node => sum.variants.iter().find(|variant| variant.name == *name)?.clone(),
+                _ => sum_member_named(ctx, &sum, name)?,
+            };
+            if binds.is_empty() {
+                return Some(Vec::new());
+            }
+            let fields = match &variant.ty {
+                Ty::User(member) => ctx.types.get(member)?.fields.iter().map(|field| field.ty.clone()).collect(),
+                // A built-in member binds the value (D235).
+                built_in => vec![built_in.clone()],
+            };
+            if fields.len() != binds.len() {
+                return None;
+            }
+            Some(
+                binds
+                    .iter()
+                    .zip(fields)
+                    .filter_map(|(bind, ty)| bind.clone().map(|name| (name, ty)))
+                    .collect(),
+            )
+        }
+        _ => Some(Vec::new()),
+    }
 }
 
 /// A match arm's value: lowered expecting the match's expected type and
@@ -18215,7 +18326,7 @@ fn lower_match_value(
         ctx.pop_scope();
         result_ty = Some(match result_ty {
             None => ty,
-            Some(prev) => unify_match_arm_tys(&prev, &ty, span)?,
+            Some(prev) => join_match_arm_tys(ctx, &prev, &ty, span)?,
         });
     }
     let result_ty = result_ty.unwrap_or(Ty::Void);
@@ -18446,18 +18557,6 @@ fn lower_value_pattern_eq(
             Ok(eq_p)
         }
         _ => Err(Error::at("internal: not a value pattern", span)),
-    }
-}
-
-fn unify_match_arm_tys(a: &Ty, b: &Ty, span: Span) -> Result<Ty> {
-    match (a, b) {
-        (Ty::Never, x) | (x, Ty::Never) => Ok(x.clone()),
-        (Ty::Void, Ty::Void) => Ok(Ty::Void),
-        (x, y) if x == y => Ok(x.clone()),
-        (x, y) => Err(Error::at(
-            format!("match arms have different types ({} vs {})", display_ty(x), display_ty(y)),
-            span,
-        )),
     }
 }
 

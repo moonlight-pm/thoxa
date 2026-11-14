@@ -1,0 +1,34 @@
+## D249: a generic type's instance first used in an `if` branch or a match
+## arm is made once. Both are typed ahead in a copy of the types; the
+## instance made there used to be made again, its methods emitted twice.
+import logging from "std/logging"
+
+type Key<T>(value: T)
+conform Key<T: Hashable> to Equatable, Hashable {
+    fn equals(other!: Key<T>) -> Bool {
+        value == other.value
+    }
+    fn hash(mut hasher!: Hasher) {
+        value.hash(mut hasher)
+    }
+}
+
+type Stop
+type Go(speed: Int64)
+type Signal = Stop | Go
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let same = if true { Key(value: 5) == Key(value: 5) } else { false }
+    logging.info("{same}")
+    let signal: Signal = Go(speed: 2)
+    let found = match signal {
+        Go(speed) => Key(value: "fast") == Key(value: "fast")
+        Stop => "stopped"
+    }
+    match found {
+        Bool(flag) { logging.info("go {flag}") }
+        String(text) { logging.info(text) }
+    }
+}

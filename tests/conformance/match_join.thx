@@ -1,0 +1,73 @@
+## D249: a match's arms of different types join as an `if`'s branches do,
+## over a union, a renamed import's members, a literal, a `Node`, and a
+## `mixed` value; a function ending in such a match returns the join.
+import logging from "std/logging"
+import { Done as Finished, Quit } from "./joinmod/outcomes"
+
+type Stop
+type Go(speed: Int64, note: String)
+type Signal = Stop | Go
+
+trait Named {
+    fn name() -> String
+}
+type Cat(lives: Int64)
+conform Cat to Named {
+    fn name() -> String { "cat" }
+}
+
+fn describe(value: Int64 | String) -> String {
+    match value {
+        Int64(number) => "number {number}"
+        String(text) => "text {text}"
+    }
+}
+
+## Finished | Quit, from the match's arms.
+fn outcome(signal: Signal) {
+    match signal {
+        Go(speed, note) => Finished(count: speed)
+        Stop => Quit()
+    }
+}
+
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    ## Each pass binds a new String, so a leaked one would show.
+    let signals: Array<Signal> = [Go(speed: 4, note: "fast"), Stop(), Go(speed: 6, note: "faster")]
+    for signal in signals {
+        let value = match signal {
+            Go(speed, note) => "{note} {speed}"
+            Stop => 0
+        }
+        logging.info(describe(value: value))
+        match outcome(signal: signal) {
+            Finished(count) { logging.info("finished {count}") }
+            Quit { logging.info("quit") }
+        }
+    }
+
+    for word in ["one", "two"] {
+        let size = match word {
+            "one" => 1
+            other => "word {other}"
+        }
+        logging.info(describe(value: size))
+    }
+
+    let page: Node = <p>hi</p>
+    let kind = match page {
+        Text(text) => text
+        else => 0
+    }
+    logging.info(describe(value: kind))
+
+    let pet: mixed Named = Cat(lives: 9)
+    let lives = match pet {
+        Cat(lives) => lives
+        else => "unknown"
+    }
+    logging.info(describe(value: lives))
+}

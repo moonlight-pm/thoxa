@@ -642,7 +642,8 @@ fn describe(value: Int64 | String) -> String {
 
 Where no type is expected, an `if` whose branches have different types is
 the union of their members (`if found { count } else { "none" }` is an
-`Int64 | String`), and so is a function without `->` whose exits do (see
+`Int64 | String`), and so are a `match` whose arms do (see [match](#match))
+and a function without `->` whose exits do (see
 [Return types](#return-types)). A branch that is a member of the other's
 union gives that union. Branches that form no union (a `Float64` and a
 `String`) are a compile error.
@@ -1338,7 +1339,10 @@ visible in it. A guarded arm does not count toward covering its member.
 return, an annotated `let`, an argument), each arm converts to it as a
 block's last value does, so arms may be different members of an expected
 union, or values that encode into an expected `Json`. Without an expected
-type, the arms must have the same type.
+type, arms of different types join as an `if`'s branches do (see
+[Unions](#unions)): `match signal { Go(speed) => speed  Stop => "stopped" }`
+is an `Int64 | String`. Arms that form no union (a `Float64` and a `String`)
+are a compile error.
 
 **`Node` values** match with `Element(tag, attributes, children)`,
 `Text(text)`, and `Fragment(children)`.
