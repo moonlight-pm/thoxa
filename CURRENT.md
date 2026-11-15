@@ -234,7 +234,7 @@ encoding where a `Json` is expected (and `match` takes its expected type), §5
 typed body parameters in route clauses, §6 `T.from` / `T.fromJson` removed.
 Also on the way: D192 (`return` / `=` convert to the expected type) and D193
 (route clauses import only what they write; generated code names `std/http`
-itself). The site (thoxa.moonlight.pm since D246) runs `65c5c1f` (redeployed 2026-10-20 at Joshua's request: a shadow on code blocks wider than the page; 2026-10-19: transparent favicon, phone-sized tap targets, the HTML sample's `Component` wording; a redeploy needs Joshua's go-ahead). Since 2026-11-12 it is the Oath cell `cell:thoxa-landing` sha256-a4d9f860…, built from `9feeaf2` (the same tree), on dulcia; the image is history (workloads/landing/README.md, Cell).
+itself). The site (thoxa.moonlight.pm since D246) runs `44c4f3b` (redeployed 2026-11-14 at Joshua's request: the manual's D248 / D249 joins; 2026-10-20: a shadow on code blocks wider than the page; 2026-10-19: transparent favicon, phone-sized tap targets, the HTML sample's `Component` wording; a redeploy needs Joshua's go-ahead). It is the Oath cell `cell:thoxa-landing` sha256-25c1dbfc… (source sha256-d0440d66…), on dulcia, since 2026-11-12; the image is history (workloads/landing/README.md, Cell). Before it: sha256-a4d9f860…, built from `9feeaf2`.
 
 **Language gap pass (Joshua, 2026-10-18: "cover all these … pick your
 order"):** done; each slice with conformance and docs, decisions on the
@@ -316,7 +316,7 @@ lits; overwrite-drop; **D152** match/init RC.
 session items (Ctrl-C in a loop, the command-or-Thoxa guess, redefining a
 session `fn`) went with D227. Paused with
 the site work: the event loop's wake scan and blocking log writes (finding
-14). Finding 38 (the copied site templates) is moot: one site is left. thoxa.moonlight.pm runs `65c5c1f` (redeployed 2026-10-20; a cell since 2026-11-12).
+14). Finding 38 (the copied site templates) is moot: one site is left. thoxa.moonlight.pm runs `44c4f3b` (redeployed 2026-11-14; a cell since 2026-11-12).
 
 ### Proceed order
 

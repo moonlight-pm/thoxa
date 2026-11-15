@@ -5,7 +5,7 @@
   "build_needs": [
     {
       "id": "cell:thoxa-landing-src",
-      "hash": "sha256-3750b7c6ed6bb3e2bcda639cf8f62b373ff0c2155612ea66bc5018ae87832b8a"
+      "hash": "sha256-d0440d66bb62ac5d9c91b553b1e691ddf5e719cd3c08192f43530f17b5197795"
     },
     {
       "id": "pkg:bash",
@@ -60,7 +60,7 @@ set -eu
 #   bin/thoxa-landing   starts it; THOXA_* default to the folders beside it
 #   libexec/landing     the server
 #   web/ manual/ samples/  read at request time
-SRC=/oath/store/cell/thoxa-landing-src/sha256-3750b7c6ed6bb3e2bcda639cf8f62b373ff0c2155612ea66bc5018ae87832b8a
+SRC=/oath/store/cell/thoxa-landing-src/sha256-d0440d66bb62ac5d9c91b553b1e691ddf5e719cd3c08192f43530f17b5197795
 export CC=cc HOME=/tmp/home CARGO_HOME=/tmp/cargo SOURCE_DATE_EPOCH=0
 mkdir -p "$HOME" "$CARGO_HOME"
 cat >"$CARGO_HOME/config.toml" <<EOF
