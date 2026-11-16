@@ -158,9 +158,8 @@ join yet (`[1, "one"]` is an error, not `Array<Int64 | String>`);
 `Float64` and the other numeric
 types, `Map`, and function types cannot be union members; about ten
 errors still print types in their internal form (`User("Point")`), which
-fail tests match; Cloudflare's Email Obfuscation turns `ada@example.com`
-in a manual code sample into `[email protected]` (the CSP blocks its
-decode script).
+fail tests match. (Cloudflare's Email Obfuscation is off for the site since
+2026-11-16; see workloads/landing/README.md, Headers.)
 **Next: none queued.**
 **D240 shipped**: a generic type's `Encodable` conformance writes `toJson`
 (a body-less one is an error), `encode` uses it, and declared types encode

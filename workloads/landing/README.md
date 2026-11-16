@@ -61,6 +61,11 @@ repeat request gets a 304. Pages and CSS are `no-cache` (checked on every
 load); images and fonts are reused for a day. A page that loads something new
 needs the CSP widened there.
 
+Cloudflare's Email Obfuscation is off for this host (a configuration rule in
+the moonlight.pm zone, `http.host eq "thoxa.moonlight.pm"` → `email_obfuscation:
+false`, since 2026-11-16): it rewrote addresses in code samples and injected a
+decode script the CSP blocks, so readers saw `[email protected]`.
+
 ## Cell
 
 The site runs as `cell:thoxa-landing`, built in `oath build`'s sandbox the
