@@ -173,9 +173,11 @@ rules as the rest of the language. Not a special sum dialect.
   downcast.
 - **`if` / control-flow with expect:** when the outside provides an expected
   type (`-> Outcome`, `let x: Outcome = if …`), each branch is checked against
-  that expect (inject allowed). Unannotated `if` arms: unify true types to a
-  member-set union (`Done | Quit`) or require agreement — do **not** search for
-  a named alias.
+  that expect (inject allowed). With no expected type, `if` branches, `match`
+  arms, and a function's exits join (**D248**, **D249**): equal types are one
+  type, a member and its union the union, otherwise the member-set union of
+  their true types (`Done | Quit`, `Int64 | String`) — do **not** search for a
+  named alias. Types no union holds (`Float64`, `Map`) do not join: annotate.
 
 ---
 
@@ -397,3 +399,4 @@ This freeze is **accepted product intent** when:
 | 2026-08-08 | Dead `Ty::May`/`Trial` removed; methods on generic products (`sums_generic_methods`) |
 | 2026-08-08 | Exhaustiveness names missing arms; OpenMode union sample (`file_openmode`) |
 | 2026-08-09 | May/Trial **import required** from `std/Fallible` (D123; no ambient inject) |
+| 2026-11-14 | One join for `if`, `match` arms, and return exits; built-in members (`Int64 \| String`) join; member-set unions laid out in one order (**D248**, **D249**; `return_infer_join`, `match_join`) |

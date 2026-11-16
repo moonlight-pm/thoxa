@@ -91,7 +91,7 @@ codegen, runtime semantics. Site and hosting work is paused (see holds); the
 2026-10-17 thoxa.dev rewrite was an explicit request, not a change of focus.
 One language slice at a time, each with conformance.
 
-**Next: traits (D228, Joshua 2026-10-18), freeze
+**Traits (D228, Joshua 2026-10-18), shipped, freeze
 [`docs/specs/2026-10-18-traits.md`](docs/specs/2026-10-18-traits.md).**
 Declared conformance (`conform Type to Trait`), traits that carry shared
 code, getters and setters, `self`, built-in abilities as declared traits
@@ -147,6 +147,20 @@ generated codecs for generic types are parked as a maybe-later idea (D244).
 **D245 shipped** (Joshua 2026-10-19 chose it): `Show` has a provided
 `showNested()`, a `String`'s is `.quoted()`, and arrays, maps, fields, and
 payloads are written with it, so `"{names}"` and `names.show()` agree.
+**D248–D249 shipped** (Joshua 2026-11-14, after comparing Thoxa with
+Hindley–Milner): where no type is expected, `if` branches, `match` arms,
+and a function's exits join into one type, the union of their members
+when they differ (`Done | Quit`, `Int64 | String`). Fixed on the way: an
+inline union of imported members matches by name, a `String` member
+bound in a loop no longer leaks, a generic instance first used in a
+branch is made once. Open, not queued: array literal elements do not
+join yet (`[1, "one"]` is an error, not `Array<Int64 | String>`);
+`Float64` and the other numeric
+types, `Map`, and function types cannot be union members; about ten
+errors still print types in their internal form (`User("Point")`), which
+fail tests match; Cloudflare's Email Obfuscation turns `ada@example.com`
+in a manual code sample into `[email protected]` (the CSP blocks its
+decode script).
 **Next: none queued.**
 **D240 shipped**: a generic type's `Encodable` conformance writes `toJson`
 (a body-less one is an error), `encode` uses it, and declared types encode
