@@ -1495,7 +1495,7 @@ impl Parser {
             self.bump();
             if !self.at_rangle() {
                 loop {
-                    args.push(self.parse_type_arg()?);
+                    args.push(self.parse_type_arg(&name, args.len())?);
                     if self.at(TokenKind::Comma) {
                         self.bump();
                         continue;
@@ -1801,12 +1801,15 @@ impl Parser {
         }
     }
 
-    fn parse_type_arg(&mut self) -> Result<TypeArg> {
+    /// A type argument. An integer is a length only as `Array<T, N>`'s
+    /// second argument; anywhere else it is the literal type (D251).
+    fn parse_type_arg(&mut self, applied: &str, index: usize) -> Result<TypeArg> {
         if let TokenKind::Int(n) = self.current().kind {
-            let n = n;
-            let span = self.current().span;
-            self.bump();
-            return Ok(TypeArg::Int { value: n, span });
+            if applied == "Array" && index == 1 {
+                let span = self.current().span;
+                self.bump();
+                return Ok(TypeArg::Int { value: n, span });
+            }
         }
         Ok(TypeArg::Type(self.parse_type()?))
     }
@@ -2344,7 +2347,7 @@ impl Parser {
             self.bump();
             if !self.at_rangle() {
                 loop {
-                    args.push(self.parse_type_arg()?);
+                    args.push(self.parse_type_arg(&name, args.len())?);
                     if self.at(TokenKind::Comma) {
                         self.bump();
                         continue;

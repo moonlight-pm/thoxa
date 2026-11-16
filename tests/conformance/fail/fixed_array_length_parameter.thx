@@ -1,0 +1,5 @@
+## D251: a fixed array's length is an integer literal; a type parameter
+## cannot be one, in any instance.
+type Grid<N>(cells: Array<Int64, N>)
+
+fn main() {}

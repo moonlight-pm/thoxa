@@ -2249,6 +2249,11 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
                         td.name_span,
                     ));
                 } else {
+                    // A field is resolved per instance; a length that is a
+                    // type is wrong in all of them (D251).
+                    if let Some(length) = td.params.iter().find_map(|param| type_as_length(&param.ty)) {
+                        return Err(in_module_id(fixed_length_error(length), package, &m.id));
+                    }
                     GenericKind::Product {
                         params: td.params.clone(),
                         methods: td.methods.clone(),
@@ -6738,6 +6743,7 @@ fn resolve_ty(
                 len: *n as u64,
             })
         }
+        ("Array", [TypeArg::Type(_), TypeArg::Type(length)]) => Err(fixed_length_error(length)),
         ("Array", _) => Err(Error::at(
             "Array expects Array<T> (dynamic) or Array<T, N> (fixed field)",
             t.span,
@@ -6986,6 +6992,16 @@ fn seed_fallible_monos(
     Ok(())
 }
 
+/// Whether `ty` names a declared type or an instance that does not exist yet.
+fn names_unmade_type(ty: &Ty, types: &HashMap<String, TypeInfo>) -> bool {
+    match ty {
+        Ty::User(name) => !types.contains_key(name),
+        Ty::Array { elem } => names_unmade_type(elem, types),
+        Ty::Map { key, val } => names_unmade_type(key, types) || names_unmade_type(val, types),
+        _ => false,
+    }
+}
+
 fn monomorphize_pending(
     mut pending: Vec<(String, Vec<Ty>, HashMap<String, String>, Span)>,
     types: &mut HashMap<String, TypeInfo>,
@@ -6998,6 +7014,9 @@ fn monomorphize_pending(
     // Products made, whose methods' signatures resolve once every instance
     // they name is made.
     let mut made: Vec<(String, String, HashMap<String, Ty>, HashMap<String, String>)> = Vec::new();
+    // Instances put back in a row to wait for an argument; past the queue's
+    // length nothing queued will make it, and the instance says so itself.
+    let mut waiting = 0;
     while !pending.is_empty() {
         guard += 1;
         if guard > 10_000 {
@@ -7013,6 +7032,14 @@ fn monomorphize_pending(
         let Some(gdef) = generics.get(&base) else {
             continue;
         };
+        // An argument that is an instance still queued (`Pair<May<A>, B>`,
+        // whose `May<A>` waits on its `Has<A>`): this one goes after it.
+        if waiting <= pending.len() && arg_tys.iter().any(|ty| names_unmade_type(ty, types)) {
+            waiting += 1;
+            pending.push((base, arg_tys, name_map, span));
+            continue;
+        }
+        waiting = 0;
         let name_map = if gdef.name_map.is_empty() { name_map } else { gdef.name_map.clone() };
         if gdef.type_params.len() != arg_tys.len() {
             return Err(Error::at(
@@ -7144,6 +7171,9 @@ fn monomorphize_package(
         let empty = HashMap::new();
         for (te, span, module) in scoped {
             let name_map = per_mod_types.get(module).unwrap_or(&empty);
+            // `Door<"open">`: the literal type is made here, ahead of the
+            // other written types (D251), so the instance can name it.
+            materialize_literal_args(&te, types, layouts, name_map, module);
             // `m[k]` / `.get` is `May<V>` (D134). Seed it from every `Map<K, V>`.
             if te.name == "Map" && te.args.len() == 2 {
                 if let Some(may_base) = name_map.get("May") {
@@ -7184,26 +7214,9 @@ fn monomorphize_package(
             if !generics.contains_key(&base) {
                 continue;
             }
-            let mut arg_tys = Vec::new();
-            let mut ok = true;
-            for arg in &te.args {
-                match arg {
-                    TypeArg::Type(inner) => match resolve_ty(inner, types, &name_map) {
-                        Ok(ty) => arg_tys.push(ty),
-                        Err(_) => {
-                            ok = false;
-                            break;
-                        }
-                    },
-                    TypeArg::Int { .. } => {
-                        ok = false;
-                        break;
-                    }
-                }
-            }
-            if ok && !arg_tys.is_empty() {
-                pending.push((base, arg_tys, name_map.clone(), span));
-            }
+            // An argument that is an instance not made yet is named as it
+            // will be and queued ahead of this one (`Box<Pair<A, B>>`).
+            enqueue_type_app_mono(&te, types, name_map, generics, &mut pending, span);
         }
     }
 
@@ -9930,25 +9943,13 @@ fn lower_block_value(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<O
             if is_never(&ty) {
                 return Ok(None);
             }
+            // The body's value converts as a `return`'s does (D250).
             let place = if *expect != Ty::Void && &ty != expect {
-                match try_sum_coerce(
-                    ctx,
-                    place.clone(),
-                    &ty,
-                    expect,
-                    expr_as_type_lit(tail).as_ref(),
-                    tail.span,
-                )? {
+                match coerce_to_expected(ctx, place, &ty, expect, tail)? {
                     Some(p) => p,
-                    None if can_numeric_cast(&ty, expect) => {
-                        coerce_place(ctx, place, &ty, expect, tail.span)?
+                    None => {
+                        return Err(Error::at(ctx.type_mismatch_msg(expect, &ty), tail.span));
                     }
-                    None => match convert::encode_where_json_expected(ctx, place, &ty, expect)? {
-                        Some(p) => p,
-                        None => {
-                            return Err(Error::at(ctx.type_mismatch_msg(expect, &ty), tail.span));
-                        }
-                    },
                 }
             } else {
                 place
@@ -16489,7 +16490,16 @@ fn materialize_expr_typespace(
             materialize_expr_typespace(left, types, layouts, name_map, def_mod)?;
             materialize_expr_typespace(right, types, layouts, name_map, def_mod)?;
         }
-        ExprKind::Call { args, .. } | ExprKind::Start { args, .. } => {
+        ExprKind::Call { args, type_args, .. } => {
+            // `Box<"open">(…)`: a call's written type arguments (D251).
+            for te in type_args {
+                materialize_type_expr(te, types, layouts, name_map, def_mod)?;
+            }
+            for a in args {
+                materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
+            }
+        }
+        ExprKind::Start { args, .. } => {
             for a in args {
                 materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
             }
@@ -16500,8 +16510,11 @@ fn materialize_expr_typespace(
                 materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
             }
         }
-        ExprKind::MethodCall { receiver, args, .. } => {
+        ExprKind::MethodCall { receiver, args, type_args, .. } => {
             materialize_expr_typespace(receiver, types, layouts, name_map, def_mod)?;
+            for te in type_args {
+                materialize_type_expr(te, types, layouts, name_map, def_mod)?;
+            }
             for a in args {
                 materialize_arg_typespace(a, types, layouts, name_map, def_mod)?;
             }
@@ -16590,6 +16603,56 @@ fn materialize_arg_typespace(
             materialize_expr_typespace(e, types, layouts, name_map, def_mod)
         }
     }
+}
+
+/// The literal types among `te`'s type arguments, nested ones too, and the
+/// unions written of literals and built-in types alone (`"open" | "closed"`,
+/// `Int64 | String`): none of them waits on a declared type's shape, so an
+/// instance that names one can be made before those are resolved (D251).
+fn materialize_literal_args(
+    te: &TypeExpr,
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    name_map: &HashMap<String, String>,
+    def_mod: &str,
+) {
+    fn stands_alone(te: &TypeExpr) -> bool {
+        te.lit.is_some()
+            || (te.args.is_empty()
+                && te.union_members.is_none()
+                && te.fn_type.is_none()
+                && matches!(te.name.as_str(), "Int64" | "String" | "Bool" | "Bytes"))
+    }
+    for arg in &te.args {
+        let TypeArg::Type(inner) = arg else { continue };
+        let alone = match &inner.union_members {
+            Some(members) => members.iter().all(stands_alone),
+            None => inner.lit.is_some(),
+        };
+        if alone {
+            // A union that cannot be one is reported where it is resolved.
+            let _ = materialize_type_expr(inner, types, layouts, name_map, def_mod);
+        }
+        materialize_literal_args(inner, types, layouts, name_map, def_mod);
+    }
+}
+
+/// The type written where an `Array<T, N>`'s length goes, anywhere in `te`.
+fn type_as_length(te: &TypeExpr) -> Option<&TypeExpr> {
+    if let ("Array", [TypeArg::Type(_), TypeArg::Type(length)]) = (te.name.as_str(), te.args.as_slice()) {
+        return Some(length);
+    }
+    let args = te.args.iter().filter_map(|arg| match arg {
+        TypeArg::Type(inner) => Some(inner),
+        TypeArg::Int { .. } => None,
+    });
+    args.chain(te.union_members.iter().flatten()).find_map(type_as_length)
+}
+
+/// `Array<T, N>` with a type where the length goes.
+fn fixed_length_error(length: &TypeExpr) -> Error {
+    Error::at("a fixed array's length is an integer literal, as in `Array<Byte, 4>`", length.span)
+        .with_help("a type or a type parameter cannot be a length")
 }
 
 fn materialize_type_expr(
@@ -21473,29 +21536,15 @@ fn lower_block_into(ctx: &mut LowerCtx, block: &Block, expect: &Ty) -> Result<Op
         if is_never(&ty) {
             return Ok(None);
         }
+        // A branch's value converts as a `return`'s does (D250).
         if *expect != Ty::Void && &ty != expect {
-            match try_sum_coerce(
-                ctx,
-                place.clone(),
-                &ty,
-                expect,
-                expr_as_type_lit(tail).as_ref(),
-                tail.span,
-            )? {
-                Some(p) => return Ok(Some(p)),
-                None if can_numeric_cast(&ty, expect) => {
-                    return Ok(Some(coerce_place(ctx, place, &ty, expect, tail.span)?));
-                }
-                None => {
-                    if let Some(p) = convert::encode_where_json_expected(ctx, place, &ty, expect)? {
-                        return Ok(Some(p));
-                    }
-                    return Err(Error::at(
-                        format!("expected {expect:?}, found {ty:?}"),
-                        tail.span,
-                    ));
-                }
-            }
+            return match coerce_to_expected(ctx, place, &ty, expect, tail)? {
+                Some(p) => Ok(Some(p)),
+                None => Err(Error::at(
+                    format!("expected {expect:?}, found {ty:?}"),
+                    tail.span,
+                )),
+            };
         }
         Ok(Some(place))
     } else if *expect == Ty::Void {

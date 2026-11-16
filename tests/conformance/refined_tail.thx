@@ -1,0 +1,59 @@
+## A refined value is its base where a body's or a branch's value is expected,
+## as it is at a `return`, an argument, and an annotated `let` (D250).
+import logging, { info } from "std/logging"
+
+type Quantity = Int64 where >= 1
+type Name = String where 1..=12
+
+type Line(name: Name, quantity: Quantity) {
+    export fn count() -> Int64 {
+        quantity
+    }
+
+    export fn label() -> String {
+        if quantity > 1 {
+            name
+        } else {
+            "one {name}"
+        }
+    }
+}
+
+fn base(quantity!: Quantity) -> Int64 {
+    quantity
+}
+
+fn orZero(quantity!: Quantity, keep!: Bool) -> Int64 {
+    if keep {
+        quantity
+    } else {
+        0
+    }
+}
+
+fn spelled(name!: Name, short!: Bool) -> String {
+    match short {
+        true => "n."
+        else => name
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let three: Quantity = 3
+    info("base {base(three)}")
+    info("kept {orZero(three, true)} dropped {orZero(three, false)}")
+    let doubled: Int64 = {
+        info("in a block")
+        three
+    }
+    info("block {doubled + doubled}")
+    let name: Name = "espresso"
+    info("long {spelled(name, false)} short {spelled(name, true)}")
+    let line = Line(name: name, quantity: three)
+    info("line {line.label()} x{line.count()}")
+    let single = Line(name: name, quantity: 1)
+    info("line {single.label()} x{single.count()}")
+    0
+}

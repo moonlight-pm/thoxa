@@ -1,0 +1,74 @@
+## A literal type is a type argument like any other: `Door<"open">`, `Box<4>`,
+## `Box<true>`, written in a type or on a call (D251). So is a union written
+## of literals and built-in types, and an instance of another generic type.
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Door<State>(id: Int64)
+
+fn open(door!: Door<"closed">) -> Door<"open"> {
+    Door<"open">(id: door.id)
+}
+
+fn close(door!: Door<"open">) -> Door<"closed"> {
+    Door(id: door.id)
+}
+
+type Box<T>(value: T)
+type Pair<A, B>(left: A, right: B)
+type Point(x: Int64)
+
+type Shelf(four: Box<4>, mode: Box<"read" | "write">)
+
+fn either(flag!: Bool) -> May<Int64 | String> {
+    if flag {
+        return Has(7)
+    }
+    Has("seven")
+}
+
+fn describe(value!: May<Int64 | String>) -> String {
+    match value {
+        Has(inner) {
+            match inner {
+                Int64(number) => "number {number}"
+                String(text) => "text {text}"
+            }
+        }
+        Not => "nothing"
+    }
+}
+
+fn nest(point!: Point) -> Box<Pair<May<Point>, Box<Point>>> {
+    Box(value: Pair(left: Has(point), right: Box(value: point)))
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+
+    let closed = Door<"closed">(id: 7)
+    let opened = open(closed)
+    let shut: Door<"closed"> = close(opened)
+    info("door {opened.id} {shut.id}")
+
+    let four: Box<4> = Box(value: 4)
+    let written = Box<4>(value: 4)
+    let yes: Box<true> = Box(value: true)
+    let sum: Int64 = four.value + written.value
+    info("four {sum} {yes.value}")
+
+    let mode: Box<"read" | "write"> = Box(value: "write")
+    let shelf = Shelf(four: four, mode: mode)
+    let text: String = shelf.mode.value
+    info("shelf {shelf.four.value} {text}")
+
+    info("{describe(either(true))}, {describe(either(false))}, {describe(Not())}")
+
+    let nested = nest(Point(x: 3))
+    match nested.value.left {
+        Has(point) => info("nested {point.x} {nested.value.right.value.x}")
+        Not => info("nested nothing")
+    }
+    0
+}

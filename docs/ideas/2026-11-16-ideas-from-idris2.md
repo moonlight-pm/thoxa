@@ -758,9 +758,10 @@ by default, kept when written `{n : Nat}` ([Vectors][i-vect],
 [Erasure][i-erasure]).
 
 **As built.** `Array<T, N>` with a literal `N` is the one place a number sits
-in a type. A declared type cannot take one: `Grid<4>` for `type Grid<N>(cells:
-Array<Int64, N>)` fails inside the compiler ("literal type `4` was not
-materialized").
+in a type. A declared type cannot take one as a length: `type Grid<N>(cells:
+Array<Int64, N>)` is an error where it is declared, and `Grid<4>` names the
+instance for the literal type `4`, as `Door<"open">` does for a string
+(D251, fixed after this survey found both failing inside the compiler).
 
 **Idea.** Type parameters that stand for integers:
 

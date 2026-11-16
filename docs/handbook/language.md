@@ -518,7 +518,8 @@ reference counted like any other heap value.
 **Fixed arrays.** `Array<T, N>` is a fixed-length inline array, used as a
 field of a [C-layout type](#c-layout-types) or as a local. Elements can be
 read and written, and the whole array can be assigned or bound. An index
-outside `0..N-1` panics with `fixed array index out of bounds`.
+outside `0..N-1` panics with `fixed array index out of bounds`. The length is
+an integer literal; a type or a type parameter there is a compile error.
 
 ### Maps
 
@@ -717,6 +718,22 @@ type Opt<T> = Box<T!> | Empty?
 
 let a: Opt<Int64> = Box(value: 7)
 let b = Box(value: "seven")             ## a Box<String>
+```
+
+A type argument is any type, a literal type or a written union included:
+`Door<"open">`, `Box<4>`, `May<Int64 | String>`. A parameter no field uses
+still tells instances apart, so a `Door<"open">` does not fit where a
+`Door<"closed">` is expected:
+
+```thx
+type Door<State>(id: Int64)
+
+fn open(door!: Door<"closed">) -> Door<"open"> {
+    Door(id: door.id)
+}
+
+let closed = Door<"closed">(id: 7)
+let opened = open(closed)              ## open(opened) is a compile error
 ```
 
 A type parameter may have bounds, which every instance's argument must meet:
@@ -1281,8 +1298,9 @@ Breaks of nested loops do not count for the outer one.
 
 `return expr` (or `return` in a `Void` function) leaves the function early.
 The value converts to the return type as a block's last value does: a union
-member into the union, a literal into a literal or refined type, an integer
-into `Float64`, `[]` and `Json` literals typed by it. `return` has the type
+member into the union, a literal into a literal or refined type, a refined
+value into its base, an integer into `Float64`, `[]` and `Json` literals
+typed by it. `return` has the type
 Never, so an `if` or `match` arm that returns fits beside
 an arm of any other type:
 

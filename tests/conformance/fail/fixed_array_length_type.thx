@@ -1,0 +1,8 @@
+## D251: a type where a fixed array's length goes.
+type Count = 4
+
+fn first(cells!: Array<Int64, Count>) -> Int64 {
+    cells[0]
+}
+
+fn main() {}

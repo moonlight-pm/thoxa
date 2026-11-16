@@ -1,0 +1,1 @@
+a fixed array's length is an integer literal, as in `Array<Byte, 4>`
