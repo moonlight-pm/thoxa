@@ -1,0 +1,18 @@
+## A written union as a field, and a named union with a built-in member,
+## declared in one module and used from another (D253). `Hidden` is not
+## exported: the field's union still names it.
+export type Point(x: Int64)
+type Hidden(code: Int64)
+export type Holder(value: Point | String, inner: Hidden | Int64 = 0)
+export type PointOrText = Point | String
+
+export fn hide(code!: Int64) -> Holder {
+    Holder(value: "hidden", inner: Hidden(code: code))
+}
+
+export fn code(holder!: Holder) -> Int64 {
+    match holder.inner {
+        Hidden(code) => code
+        Int64(number) => number
+    }
+}

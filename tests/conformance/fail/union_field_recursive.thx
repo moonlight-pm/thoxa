@@ -1,0 +1,5 @@
+## D253: a type cannot contain itself through a union written in a field; the
+## error names the declared type, not the union.
+type Tree(child: Tree | String)
+
+fn main() {}

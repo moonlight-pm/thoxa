@@ -599,7 +599,8 @@ let x = p.x                   ## 3
 
 A type with no parameters and no body (`type Empty`) has one value, written
 `Empty()`. Fields may hold any type, including every integer type, heap
-values, `Node`, other user types, and unions. A field may not contain its own type, directly or through
+values, `Node`, other user types, and unions, named or written in place
+(`type Holder(value: Point | String)`). A field may not contain its own type, directly or through
 other products (use an `Array` or a `Map`). Fields are readable from outside
 the type and read-only there, unless a setter makes them writable (see
 [Properties](#properties)). Constructors take arguments like any call (see

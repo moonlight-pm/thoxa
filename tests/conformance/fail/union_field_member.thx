@@ -1,0 +1,4 @@
+## D253: a union written in a field is checked as a named one is.
+type Holder(value: Float64 | String)
+
+fn main() {}

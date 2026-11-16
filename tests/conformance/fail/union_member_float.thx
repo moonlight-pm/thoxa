@@ -1,0 +1,5 @@
+## D253: a union takes `Int64`, `String`, `Bool`, `Bytes`, `Node`, and `Array<T>`
+## among the built-in types; `Float64` is not one of them.
+type Reading = Float64 | String
+
+fn main() {}

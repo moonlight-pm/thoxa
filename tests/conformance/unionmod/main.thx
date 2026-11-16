@@ -1,0 +1,21 @@
+import logging, { info } from "std/logging"
+import { Point, Holder, PointOrText, hide, code } from "./shapes"
+
+fn name(value!: PointOrText) -> String {
+    match value {
+        Point(x) => "point {x}"
+        String(text) => text
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let holder = Holder(value: Point(x: 2))
+    info("{name(holder.value)} {code(holder)}")
+    let hidden = hide(41)
+    info("{name(hidden.value)} {code(hidden)}")
+    let text: PointOrText = "text"
+    info(name(text))
+    0
+}

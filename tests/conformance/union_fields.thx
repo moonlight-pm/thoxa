@@ -1,0 +1,107 @@
+## A union written in place is a constructor field (`value: Point | String`),
+## alone or as a type argument there, and a named union takes the built-in
+## members a written one does (`type PointOrText = Point | String`) (D253).
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Point(x: Int64)
+type Circle(radius: Int64)
+type Square(side: Int64)
+type Shape = Circle | Square
+
+type Holder(value: Point | String, shape: Shape | Int64, mode: "read" | "write" = "read")
+type Shelf(first: May<Shape | String>, boxes: Array<Point | String>)
+type Outer(holder: Holder, extra: Holder | Int64)
+conform Point to Equatable, Show
+conform Circle to Equatable
+conform Square to Equatable
+conform Holder to Equatable
+
+type PointOrText = Point | String
+type Content = Int64 | String | Bool | Array<Int64>
+type Wide = PointOrText | Shape | Bytes
+conform PointOrText to Equatable, Show
+
+type Missing
+type Reply = String! | Missing?
+
+fn show(value!: PointOrText) -> String {
+    match value {
+        Point(x) => "point {x}"
+        String(text) => "text {text}"
+    }
+}
+
+fn content(value!: Content) -> String {
+    match value {
+        Int64(number) => "number {number}"
+        String(text) => "text {text}"
+        Bool(flag) => "flag {flag}"
+        else => "numbers"
+    }
+}
+
+fn wide(value!: Wide) -> String {
+    match value {
+        Point(x) => "point {x}"
+        String(text) => "text {text}"
+        Circle(radius) => "circle {radius}"
+        Square(side) => "square {side}"
+        Bytes(bytes) => "bytes {bytes.count}"
+    }
+}
+
+fn find(key!: String) -> Reply {
+    if key == "missing" { Missing() } else { "found {key}" }
+}
+
+fn both(first!: String, second!: String) -> Reply {
+    let left = find(first)?
+    let right = find(second)?
+    "{left}, {right}"
+}
+
+fn reply(value!: Reply) -> String {
+    match value {
+        String(text) => text
+        Missing => "missing"
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let holder = Holder(value: "text", shape: Circle(radius: 2))
+    let other = Holder(value: Point(x: 4), shape: 9, mode: "write")
+    match holder.value {
+        Point(x) => info("point {x}")
+        String(text) => info("held {text}")
+    }
+    match other.shape {
+        Circle(radius) => info("circle {radius}")
+        Square(side) => info("square {side}")
+        Int64(number) => info("number {number}")
+    }
+    let mode: String = other.mode
+    info("mode {mode} {holder == other} {holder == Holder(value: "text", shape: Circle(radius: 2))}")
+
+    let shelf = Shelf(first: Has("first"), boxes: [Point(x: 1), "two"])
+    match shelf.first {
+        Has(_) => info("shelf {shelf.boxes.count}")
+        Not => info("empty")
+    }
+    let outer = Outer(holder: holder, extra: 5)
+    match outer.extra {
+        Holder(_, _, _) => info("holder")
+        Int64(number) => info("extra {number}")
+    }
+
+    let named: PointOrText = "named"
+    let written: Point | String = named
+    info("{show(named)}, {show(Point(x: 7))}, {show(written)}")
+    info("{named == written} {named} {show(Point(x: 7)) == "point 7"}")
+    info("{content(3)}, {content("three")}, {content(true)}, {content([1, 2])}")
+    info("{wide(Circle(radius: 1))}, {wide("wide")}, {wide(Bytes(3))}")
+    info("{reply(both("a", "b"))}; {reply(both("a", "missing"))}")
+    0
+}

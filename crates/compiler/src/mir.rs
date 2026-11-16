@@ -2503,12 +2503,43 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     if !type_reg_errors.is_empty() {
         return Err(errors_to_multi(type_reg_errors));
     }
-    for (mod_id, mangled, td) in &type_defs {
+    // A constructor field that is a written union (`value: Point | String`)
+    // needs the shapes of the declared types it names, so the types with
+    // one are resolved after the others (D253).
+    let (plain_defs, union_field_defs): (Vec<_>, Vec<_>) =
+        type_defs.iter().partition(|(_, _, td)| !has_union_field(td));
+    let mut late_method_jobs: Vec<MonoMethodJob> = Vec::new();
+    let mut union_fields_made = false;
+    let mut union_fields_failed: HashSet<String> = HashSet::new();
+    for (mod_id, mangled, td) in plain_defs.iter().chain(union_field_defs.iter()).copied() {
         if types_info
             .get(mangled)
             .and_then(|i| i.refined.as_ref())
             .is_some()
         {
+            continue;
+        }
+        if has_union_field(td) && !union_fields_made {
+            // The unions would be made of half-resolved types.
+            if !type_reg_errors.is_empty() {
+                break;
+            }
+            union_fields_made = true;
+            let failed = materialize_union_fields(
+                &union_field_defs,
+                &mut types_info,
+                &mut type_layouts,
+                &generics,
+                &per_mod_types,
+                &tables,
+                &mut late_method_jobs,
+            )?;
+            for (failed_type, error, failed_mod) in failed {
+                union_fields_failed.insert(failed_type);
+                type_reg_errors.push(in_module_id(error, package, &failed_mod));
+            }
+        }
+        if union_fields_failed.contains(mangled) {
             continue;
         }
         let name_map = per_mod_types.get(mod_id).cloned().unwrap_or_default();
@@ -2566,7 +2597,6 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
     // An instance whose argument is a union with a declared type among its
     // members (`May<Point | String>`) is made now: the union needed the
     // declared types' shapes (D252).
-    let mut late_method_jobs: Vec<MonoMethodJob> = Vec::new();
     monomorphize_package(
         package,
         &mut types_info,
@@ -3851,6 +3881,68 @@ fn union_member_field_ok(ty: &Ty) -> bool {
 }
 
 /// Resolve concrete type fields / union shape (type-reg phase).
+/// Whether `te` writes a union: itself, a member, or among its arguments.
+fn writes_union(te: &TypeExpr) -> bool {
+    let args = te.args.iter().filter_map(|arg| match arg {
+        TypeArg::Type(inner) => Some(inner),
+        TypeArg::Int { .. } => None,
+    });
+    te.union_members.is_some() || args.into_iter().any(writes_union)
+}
+
+/// A product with a constructor field that writes a union (D253).
+fn has_union_field(td: &TypeDef) -> bool {
+    td.union_members.is_none() && td.params.iter().any(|param| writes_union(&param.ty))
+}
+
+/// The unions written in these types' constructor fields, and the instances
+/// that name them, made once the other declared types have their shapes
+/// (D253). A union may name an instance and an instance a union, so this
+/// goes round until nothing new is made. Gives the types whose fields
+/// could not be made, each with why and its module.
+fn materialize_union_fields(
+    defs: &[&(String, String, &TypeDef)],
+    types: &mut HashMap<String, TypeInfo>,
+    layouts: &mut Vec<TypeLayout>,
+    generics: &HashMap<String, GenericDef>,
+    per_mod_types: &HashMap<String, HashMap<String, String>>,
+    tables: &AssocTables,
+    jobs: &mut Vec<MonoMethodJob>,
+) -> Result<Vec<(String, Error, String)>> {
+    let empty = HashMap::new();
+    loop {
+        let before = types.len();
+        let mut pending = Vec::new();
+        for (mod_id, _, td) in defs.iter().copied() {
+            let name_map = per_mod_types.get(mod_id).unwrap_or(&empty);
+            for param in &td.params {
+                // What cannot be made yet is tried again next round.
+                let _ = materialize_type_expr(&param.ty, types, layouts, name_map, mod_id);
+                let mut apps = Vec::new();
+                collect_type_apps(&param.ty, &mut apps);
+                for (te, span) in apps {
+                    enqueue_type_app_mono(&te, types, name_map, generics, &mut pending, span);
+                }
+            }
+        }
+        monomorphize_pending(pending, types, layouts, generics, tables, jobs)?;
+        if types.len() == before {
+            break;
+        }
+    }
+    let mut failed = Vec::new();
+    for (mod_id, mangled, td) in defs.iter().copied() {
+        let name_map = per_mod_types.get(mod_id).unwrap_or(&empty);
+        for param in &td.params {
+            if let Err(error) = materialize_type_expr(&param.ty, types, layouts, name_map, mod_id) {
+                failed.push((mangled.clone(), error, mod_id.clone()));
+                break;
+            }
+        }
+    }
+    Ok(failed)
+}
+
 fn resolve_type_def_shape(
     td: &TypeDef,
     types_info: &HashMap<String, TypeInfo>,
@@ -3947,10 +4039,44 @@ fn resolve_type_def_shape(
             }
             let ty = resolve_ty(mem, &types_info, &name_map)?;
             let Ty::User(ref member_name) = ty else {
-                return Err(Error::at(
-                    format!("union member must be a named type or literal, got {ty:?}"),
-                    mem.span,
-                ));
+                // A built-in member, as a union written in place takes
+                // (`Point | String`), under the name a pattern writes (D253).
+                let Some((vname, member_ty, _)) =
+                    collect_union_members(types_info, &ty).and_then(|members| members.into_iter().next())
+                else {
+                    return Err(Error::at(
+                        format!("{} cannot be a union member", display_ty(&ty)),
+                        mem.span,
+                    ));
+                };
+                if arg_extract || arg_residual {
+                    return Err(Error::at(
+                        "a mark on a type argument needs a product member (`Hold<Int64!>`)",
+                        mem.span,
+                    ));
+                }
+                if !seen_names.insert(vname.clone()) {
+                    return Err(Error::at(
+                        format!("duplicate union member `{}`", display_ty(&ty)),
+                        mem.span,
+                    ));
+                }
+                let tag = variants.len() as u32;
+                if whole_residual {
+                    residual_tag = Some(tag);
+                }
+                if whole_extract {
+                    extract_tag = Some(tag);
+                }
+                variants.push(SumVariant {
+                    tag,
+                    name: vname,
+                    ty: member_ty,
+                    lit: None,
+                    mark,
+                    unwrap_payload: false,
+                });
+                continue;
             };
             // Flatten nested union aliases: `Outer = Inner | C` → members of Inner + C
             // (D118; transparent composition). Nested marks on the sum itself are rejected.
@@ -4244,12 +4370,21 @@ fn user_field_cycle_errors(
             for n in &cycle {
                 seen.insert(n.clone());
             }
-            let shown = cycle.join(" → ");
+            // A union written in a field (`child: Tree | String`) has no
+            // name of its own: the cycle is shown by the declared types on
+            // it, starting from one of them (D253).
+            let mut declared: Vec<&String> =
+                cycle[..cycle.len() - 1].iter().filter(|name| !name.starts_with('$')).collect();
+            if let Some(first) = declared.first().copied() {
+                declared.push(first);
+            }
+            let shown = declared.iter().map(|name| name.as_str()).collect::<Vec<_>>().join(" → ");
+            let at = declared.first().map_or_else(Span::dummy, |name| span_of(name));
             errors.push(Error::at(
                 format!(
                     "constructor-param type cannot contain itself through fields ({shown}); use Array or Map for a recursive shape"
                 ),
-                span_of(&cycle[0]),
+                at,
             ));
         }
     }

@@ -1,0 +1,1 @@
+constructor-param type cannot contain itself through fields (Tree → Tree)
