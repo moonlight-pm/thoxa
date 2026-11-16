@@ -1,0 +1,48 @@
+## A union written with declared types among its members is a type argument,
+## in a signature and in an annotation: `May<Point | String>`, `Box<Shape |
+## Int64>`. The instance is made once the declared types' shapes are known
+## (D252).
+import logging, { info } from "std/logging"
+import { Has, Not, May } from "std/fallible"
+
+type Point(x: Int64)
+type Circle(radius: Int64)
+type Square(side: Int64)
+type Shape = Circle | Square
+type Box<T>(value: T)
+
+fn describe(value!: May<Point | String>) -> String {
+    match value {
+        Has(inner) {
+            match inner {
+                Point(x) => "point {x}"
+                String(text) => "text {text}"
+            }
+        }
+        Not => "nothing"
+    }
+}
+
+fn size(box!: Box<Shape | Int64>) -> Int64 {
+    match box.value {
+        Circle(radius) => radius
+        Square(side) => side
+        Int64(number) => number
+    }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let point: May<Point | String> = Has(Point(x: 3))
+    info("{describe(point)}, {describe(Has("three"))}, {describe(Not())}")
+
+    let round: Box<Shape | Int64> = Box(value: Circle(radius: 2))
+    let boxes: Array<Box<Shape | Int64>> = [round, Box(value: Square(side: 5)), Box(value: 7)]
+    mut total = 0
+    for box in boxes {
+        total = total + size(box)
+    }
+    info("sizes {total}")
+    0
+}

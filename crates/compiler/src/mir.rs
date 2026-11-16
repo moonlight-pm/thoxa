@@ -2563,6 +2563,22 @@ fn lower_package_full(package: &Package, opts: LowerOptions) -> Result<Program> 
 
     // D131: bare singleton literal types + inline `A | B` in formals / annotations.
     materialize_package_typespace(package, &mut types_info, &mut type_layouts, &per_mod_types)?;
+    // An instance whose argument is a union with a declared type among its
+    // members (`May<Point | String>`) is made now: the union needed the
+    // declared types' shapes (D252).
+    let mut late_method_jobs: Vec<MonoMethodJob> = Vec::new();
+    monomorphize_package(
+        package,
+        &mut types_info,
+        &mut type_layouts,
+        &generics,
+        &per_mod_types,
+        &tables,
+        &mut late_method_jobs,
+    )?;
+    late_method_jobs.retain(|job| job.conversion || method_jobs_made.insert(job_function_name(job)));
+    mono_method_jobs.extend(late_method_jobs);
+    mono_method_jobs.extend(union_method_jobs(&types_info, &generics, &mut method_jobs_made));
 
     // Methods (signature type-reg; multi-clause merge — D131).
     let mut method_reg_errors: Vec<Error> = Vec::new();
@@ -9006,17 +9022,7 @@ fn emit_clause_match_cond(
                     .iter()
                     .map(|(_n, ty, lit)| {
                         if let Some(l) = lit {
-                            match l {
-                                TypeLit::Int(v) => format!("liti_{v}"),
-                                TypeLit::Bool(b) => format!("litb_{b}"),
-                                TypeLit::String(s) => {
-                                    let safe: String = s
-                                        .chars()
-                                        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                                        .collect();
-                                    format!("lits_{safe}")
-                                }
-                            }
+                            lit_key(l)
                         } else if let Ty::User(un) = ty {
                             format!("ty_{un}")
                         } else {
@@ -16126,19 +16132,32 @@ fn display_type_lit(lit: &TypeLit) -> String {
     }
 }
 
-/// Stable mangled name for a bare singleton literal type (D131).
-fn lit_type_name(lit: &TypeLit) -> String {
+/// A literal as part of a type's name: one key per literal, and nothing a C
+/// identifier cannot hold. A string keeps its ASCII letters and digits and
+/// writes every other character as its code point between underscores, so
+/// `"a-b"` (`a_2D_b`) and `"a_b"` (`a_5F_b`) are two types (D252).
+fn lit_key(lit: &TypeLit) -> String {
     match lit {
-        TypeLit::Int(n) => format!("$lit$liti_{n}"),
-        TypeLit::Bool(b) => format!("$lit$litb_{b}"),
+        TypeLit::Int(n) if *n < 0 => format!("liti_m{}", n.unsigned_abs()),
+        TypeLit::Int(n) => format!("liti_{n}"),
+        TypeLit::Bool(b) => format!("litb_{b}"),
         TypeLit::String(s) => {
-            let safe: String = s
-                .chars()
-                .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                .collect();
-            format!("$lit$lits_{safe}")
+            let mut key = String::from("lits_");
+            for c in s.chars() {
+                if c.is_ascii_alphanumeric() {
+                    key.push(c);
+                } else {
+                    key.push_str(&format!("_{:X}_", c as u32));
+                }
+            }
+            key
         }
     }
+}
+
+/// Stable mangled name for a bare singleton literal type (D131).
+fn lit_type_name(lit: &TypeLit) -> String {
+    format!("$lit${}", lit_key(lit))
 }
 
 /// Ensure a single-member pure-literal sum type exists; return its `Ty::User`.
@@ -16203,17 +16222,7 @@ fn member_set_type_name(types: &HashMap<String, TypeInfo>, mem_tys: &[Ty]) -> St
         if let Some(members) = collect_union_members(types, ty) {
             for (name, mty, lit) in members {
                 let key = if let Some(ref l) = lit {
-                    match l {
-                        TypeLit::Int(n) => format!("liti_{n}"),
-                        TypeLit::Bool(b) => format!("litb_{b}"),
-                        TypeLit::String(s) => {
-                            let safe: String = s
-                                .chars()
-                                .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                                .collect();
-                            format!("lits_{safe}")
-                        }
-                    }
+                    lit_key(l)
                 } else if let Ty::User(n) = &mty {
                     format!("ty_{n}")
                 } else {
@@ -16693,17 +16702,7 @@ fn materialize_type_expr(
 /// Keys must be C-identifier-safe when embedded in synthetic type names.
 fn sum_variant_key(v: &SumVariant) -> String {
     if let Some(lit) = &v.lit {
-        match lit {
-            TypeLit::Int(n) => format!("liti_{n}"),
-            TypeLit::Bool(b) => format!("litb_{b}"),
-            TypeLit::String(s) => {
-                let safe: String = s
-                    .chars()
-                    .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                    .collect();
-                format!("lits_{safe}")
-            }
-        }
+        lit_key(lit)
     } else if let Ty::User(n) = &v.ty {
         format!("ty_{n}")
     } else {
@@ -17274,6 +17273,11 @@ fn try_sum_inject_lit(
 fn expr_as_type_lit(expr: &Expr) -> Option<TypeLit> {
     match &expr.kind {
         ExprKind::Int(n) => Some(TypeLit::Int(*n)),
+        // `-1`: a minus sign on an integer literal (D252).
+        ExprKind::Unary { op: ast::UnaryOp::Neg, expr: inner } => match &inner.kind {
+            ExprKind::Int(n) => Some(TypeLit::Int(-*n)),
+            _ => None,
+        },
         ExprKind::Bool(b) => Some(TypeLit::Bool(*b)),
         ExprKind::String(s) => Some(TypeLit::String(s.clone())),
         _ => None,

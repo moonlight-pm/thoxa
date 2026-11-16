@@ -1,0 +1,7 @@
+negative zero positive 0
+minus one zero
+boxed -2
+shown -1 {"direction":-1}
+read negative
+direction: expected -1 | 0 | 1, got -2
+expected -1 | 0 | 1, got -5

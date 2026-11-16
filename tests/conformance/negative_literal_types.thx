@@ -1,0 +1,55 @@
+## A negative integer literal is a type: `-1` in a union, a parameter, a type
+## argument, and a field read from JSON (D252).
+import logging, { info } from "std/logging"
+import { Pass, Fail } from "std/fallible"
+import { messages, Encodable, Decodable } from "std/json"
+
+type Sign = -1 | 0 | 1
+type Box<T>(value: T)
+type Step(direction: Sign)
+conform Step to Encodable, Decodable
+
+fn name(sign!: Sign) -> String {
+    match sign {
+        -1 => "negative"
+        0 => "zero"
+        1 => "positive"
+    }
+}
+
+fn below(value!: -1) -> String { "minus one" }
+fn below(value!: 0) -> String { "zero" }
+
+fn signOf(number!: Int64) -> Sign {
+    if number < 0 {
+        return -1
+    }
+    if number > 0 { 1 } else { 0 }
+}
+
+fn main() -> Int64 {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    let down: Sign = -1
+    let plain: Int64 = down
+    info("{name(down)} {name(0)} {name(signOf(12))} {plain + 1}")
+    info("{below(-1)} {below(0)}")
+    let boxed: Box<-1> = Box(value: -1)
+    let written = Box<-1>(value: -1)
+    let total: Int64 = boxed.value + written.value
+    info("boxed {total}")
+    info("shown {down} {Step(direction: -1).encode()}")
+    match Step.read("{{\"direction\": -1}}") {
+        Pass(step) => info("read {name(step.direction)}")
+        Fail(issues) => info(messages(issues))
+    }
+    match Step.read("{{\"direction\": -2}}") {
+        Pass(step) => info("read {name(step.direction)}")
+        Fail(issues) => info(messages(issues))
+    }
+    match -5 as Sign {
+        Pass(sign) => info("converted {name(sign)}")
+        Fail(issues) => info(messages(issues))
+    }
+    0
+}

@@ -1,0 +1,25 @@
+## Each string literal is its own type, whatever characters it holds: `"a-b"`,
+## `"a_b"`, `"a b"`, and `"a.b"` are four types (D252). They were one before,
+## so a function taking one rejected the value of another.
+import logging, { info } from "std/logging"
+fn dash(value!: "a-b") -> Int64 { 1 }
+fn under(value!: "a_b") -> Int64 { 2 }
+fn pick(value!: "a-b") -> String { "dash" }
+fn pick(value!: "a_b") -> String { "underscore" }
+fn pick(value!: "a b") -> String { "space" }
+type Separator = "a-b" | "a_b" | "a b" | "a.b"
+fn name(separator!: Separator) -> String {
+    match separator {
+        "a-b" => "dash"
+        "a_b" => "underscore"
+        "a b" => "space"
+        "a.b" => "dot"
+    }
+}
+fn main() {
+    logging.toStdout()
+    logging.setFormat(logging.formatPlain)
+    info("{dash("a-b")} {under("a_b")}")
+    info("{pick("a-b")} {pick("a_b")} {pick("a b")}")
+    info("{name("a-b")} {name("a_b")} {name("a b")} {name("a.b")}")
+}

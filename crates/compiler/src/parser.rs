@@ -1412,7 +1412,29 @@ impl Parser {
                 where_clause: None,
             });
         }
-        // Literal types (D118/D131): `0`, `true`, `"x"` in any type position.
+        // Literal types (D118/D131): `0`, `true`, `"x"` in any type position,
+        // and `-1`, a minus sign directly before the digits (D252).
+        if self.at(TokenKind::Minus) {
+            let minus = self.current().span;
+            if let Some(Token { kind: TokenKind::Int(n), span, .. }) = self.tokens.get(self.pos + 1).cloned() {
+                if span.start == minus.end {
+                    self.bump();
+                    self.bump();
+                    let mark = self.parse_type_mark();
+                    let end = mark.map(|_| self.prev_span().end).unwrap_or(span.end);
+                    return Ok(TypeExpr {
+                        name: String::new(),
+                        args: Vec::new(),
+                        span: Span::new(minus.start, end),
+                        lit: Some(TypeLit::Int(-n)),
+                        mark,
+                        union_members: None,
+                        fn_type: None,
+                        where_clause: None,
+                    });
+                }
+            }
+        }
         if let TokenKind::Int(n) = self.current().kind {
             let n = n;
             let span = self.current().span;

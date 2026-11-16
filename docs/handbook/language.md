@@ -666,8 +666,9 @@ type Wrapped = Hold! | Empty?          ## `wrapped?` yields the Hold
 
 ### Literal types
 
-A literal (`"home"`, `0`, `true`) is a type with one value, usable in
-parameters, returns, and annotations. Literal unions are written inline
+A literal (`"home"`, `0`, `-1`, `true`) is a type with one value, usable in
+parameters, returns, and annotations. A negative integer is written with the
+minus sign directly before its digits. Literal unions are written inline
 (`mode: "read" | "write"`) or named:
 
 ```thx
